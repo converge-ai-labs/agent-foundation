@@ -4,6 +4,7 @@ import asyncio
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 
+import httpx2
 import pytest
 from a13n_service import app as assembly
 from a13n_service.app_definitions import AppDefinition, InstalledApp, OrganizationSweep
@@ -22,13 +23,14 @@ from a13n_service.runs.agent import ResolvedSubagent, build
 from a13n_service.runs.claim import claim
 from a13n_service.runs.execute import _plan
 from a13n_service.runs.tables import RunRow
+from a13n_service.settings import Settings
 from a13n_service.tenancy.app_plugins import app_router
 from a13n_service.tenancy.tables import OrganizationRow
 from fastapi import Depends
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import DBAPIError
 
-from .conftest import if_match
+from .conftest import EMAIL, PASSWORD, if_match
 from .test_agents import HELPER, HELPER_REVISION, PLUGINS, config, resolved
 from .test_tenancy import join
 
@@ -116,6 +118,46 @@ async def toggle(service, enabled):
     result = await service.client.put(f"{path}/{APP_ID}", json={"enabled": enabled}, headers=if_match(current.json()))
     assert result.status_code == 200, result.text
     return result
+
+
+@pytest.mark.parametrize("missing", [False, True])
+async def test_http_bootstrap_seeds_app_policy_once(settings: Settings, missing: bool) -> None:
+    app = InstalledApp(AppDefinition(app_id=APP_ID, name="Reports"), "test-reports", "1.0")
+    other = InstalledApp(AppDefinition(app_id="test.other", name="Other"), "test-other", "1.0")
+    enabled = (APP_ID, "test.missing") if missing else (APP_ID, APP_ID)
+    config = settings.model_copy(
+        update={"plugins": settings.plugins.model_copy(update={"bootstrap_enabled_apps": enabled})}
+    )
+    service = assembly.build_app(role="control", settings=config, apps=(app, other))
+    async with (
+        service.router.lifespan_context(service),
+        httpx2.AsyncClient(transport=httpx2.ASGITransport(app=service), base_url="https://service.test") as client,
+    ):
+        await service.state.runtime.redis.flushdb()
+        credentials = {"email": EMAIL, "password": PASSWORD}
+        created = await client.post("/api/v1/auth/bootstrap", json=credentials)
+        if missing:
+            assert created.status_code == 503, created.text
+            assert created.json()["error"]["code"] == "unavailable"
+            assert (await client.get("/api/v1/auth/configuration")).json()["initialized"] is False
+            return
+        assert created.status_code == 200, created.text
+        [org] = (await client.get("/api/v1/organizations")).json()["items"]
+        path = f"/api/v1/organizations/{org['id']}/app-plugins"
+        current = await client.get(path)
+        assert {item["app_id"]: item["enabled"] for item in current.json()["items"]} == {
+            APP_ID: True,
+            "test.other": False,
+        }
+        disabled = await client.put(
+            f"{path}/{APP_ID}",
+            json={"enabled": False},
+            headers={"If-Match": current.headers["etag"], "X-CSRF-Token": created.json()["csrf_token"]},
+        )
+        assert disabled.status_code == 200, disabled.text
+        repeat = await client.post("/api/v1/auth/bootstrap", json=credentials)
+        assert repeat.status_code == 409
+        assert (await client.get(path)).json() == disabled.json()
 
 
 async def test_policy_preconditions_authority_and_atomic_audit(apps_service):

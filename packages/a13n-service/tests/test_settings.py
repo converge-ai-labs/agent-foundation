@@ -27,6 +27,17 @@ def test_environment_overrides_the_file_and_unknown_keys_fail(
         load_settings(config)
 
 
+def test_app_bootstrap_defaults_load_from_toml_and_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_environment: None
+) -> None:
+    assert load_settings().plugins.bootstrap_enabled_apps == ()
+    config = tmp_path / "service.toml"
+    config.write_text('[plugins]\nbootstrap_enabled_apps = ["acme.reports"]\n')
+    assert load_settings(config).plugins.bootstrap_enabled_apps == ("acme.reports",)
+    monkeypatch.setenv("A13N_PLUGINS__BOOTSTRAP_ENABLED_APPS", '["acme.audit", "acme.search"]')
+    assert load_settings(config).plugins.bootstrap_enabled_apps == ("acme.audit", "acme.search")
+
+
 def test_environment_variables_carry_lists_maps_and_sections_as_json(
     monkeypatch: pytest.MonkeyPatch, clean_environment: None
 ) -> None:
@@ -59,6 +70,12 @@ def test_environment_variables_carry_lists_maps_and_sections_as_json(
     assert loaded.encryption.keys["k"].get_secret_value() == key
     assert loaded.auth.mail.smtp_host == "127.0.0.1"
     assert loaded.memory.default_guide.record == "Keep one fact per record."
+
+
+def test_app_bootstrap_defaults_do_not_reserve_the_app_plugins_extension_section(clean_environment: None) -> None:
+    settings = load_settings(extensions={"app_plugins": Server})
+    assert settings.extensions["app_plugins"] == Server()
+    assert settings.plugins.bootstrap_enabled_apps == ()
 
 
 def test_a_distribution_section_cannot_shadow_a_core_section() -> None:

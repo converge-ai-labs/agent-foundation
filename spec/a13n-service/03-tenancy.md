@@ -254,6 +254,8 @@ Scope never changes in place: triggers keep identity, scope and authorship of re
 
 `POST /auth/bootstrap` with `{email, password}` does the same over HTTP and is public, so that Console can offer it to its first visitor: whoever reaches an uninitialized Service first becomes its administrator, and an operator exposing a new deployment to others runs the command first. It checks `Origin` and its rate limit, refuses with `already_exists` (kind `organization`) before hashing the password once an organization exists, and signs the new administrator in like login. `GET /auth/configuration` reports `initialized`, whether an organization exists.
 
+Both bootstrap entry points seed the first organization's [App plugin policy](15-app-plugins.md#organization-policy-and-management) from operator configuration in the same transaction; the public request does not select App IDs.
+
 ### Organizations and workspaces
 
 An organization administrator renames the organization, creates workspaces and archives them. A workspace administrator renames the workspace. Names need not be unique; everything refers to organizations and workspaces by ID. Archiving is permanent and leaves the workspace listed with `archived_at`; archiving an archived workspace is `conflict` (reason `archived`). Archiving revokes the workspace's unaccepted invitations in the same transaction, under the organization lock that acceptance also takes, and its audit details carry `revoked_invitations`. The organization list contains the organizations in which the caller holds a grant (a confined principal: only its own). The workspace list contains the workspaces the caller can read, archived ones included, across its organizations or within one requested organization.
