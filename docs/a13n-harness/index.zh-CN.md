@@ -1,100 +1,101 @@
 ---
 title: Harness
 sidebarTitle: 概览
-description: 学习构建 Python Agent、连接工具，并跨轮次和重启继续工作。
+description: 专为 Python 开发者打造的内嵌式 Agent 运行时，提供强类型执行、确定性测试、持久化状态恢复与模块化工具组合能力。
 ---
 
-当 Python 应用需要自行管理 Agent 执行时，使用 Harness。你提供指令、模型和工具；Harness 执行对话，返回输出以及下一轮所需的状态。
+**Harness** 是专为 Python 开发者设计的内嵌式、类型安全 Agent 执行引擎。当您的业务应用需要精准掌控 Agent 的执行流程、连接本地工具、跨轮次维持对话状态，或者在服务中断后可靠恢复时，Harness 能够提供无黑盒封装的稳健工程基石。
 
-从[快速入门](getting-started.md)开始：按锁文件安装源码包，运行离线 Agent，继续同一 Thread，再显示流式回答。这条路径跑通后再连接 provider。
+Harness 基于现代 Python (3.13+) 构建，能够原生无缝接入 FastAPI、Celery 以及自建的异步后台任务工作池。
 
 ## 从一个简单的 Agent 开始
 
-第一次集成时，按以下顺序阅读：
+在配置真实模型密钥或云端基础设施前，只需几分钟即可在本地完全离线构建并跑通一个确定性的 Agent：
 
-| 步骤                                    | 构建内容               | 检查结果                                   |
-| --------------------------------------- | ---------------------- | ------------------------------------------ |
-| [快速入门](getting-started.md)          | 一个执行对象和离线模型 | 得到问候，并在同一 Thread 中开始第二次 Run |
-| [工具与依赖](tools-and-dependencies.md) | 有类型的 Python 函数   | Agent 调用 `double(4)` 并返回 `8`          |
-| [状态与恢复](state-and-resume.md)       | 保存并重新加载续接状态 | 后续调用保留同一 Thread                    |
-| [测试](testing.md)                      | 确定性测试             | 无需 provider 即可验证工具调用和结果       |
+| 步骤 | 关注重点 | 您将构建的内容 |
+| :--- | :--- | :--- |
+| [快速入门](getting-started.md) | 离线执行流程 | 使用确定性函数模型构建可执行对象、消费流式回复并验证多轮对话延续性 |
+| [工具与依赖](tools-and-dependencies.md) | 函数调用（Function Calling） | 挂载带类型约束的 Python 原生函数，捕获并检验结构化工具调用结果 |
+| [状态与恢复](state-and-resume.md) | 检查点持久化 | 提取序列化的 `HarnessState`，跨进程重启平滑恢复会话上下文 |
+| [测试](testing.md) | 确定性质量保障 | 编写单元与集成测试，在完全无需外部 API 请求的情况下精确验证 Agent 的工具决策与输出 |
 
-四步使用相同的执行路径：
+上述四个开发里程碑遵循统一、直观的执行生命周期：
 
 ```mermaid
 flowchart TB
-    Spec["定义指令和工具"] --> Build["构建 ExecutableAgent"]
-    Build --> Run["运行或流式处理输入"]
-    State["上一次 HarnessState"] --> Run
-    Run --> Result["检查结果"]
-    Result --> Save["保存返回状态"]
-    Save --> State
+    Spec["定义 AgentSpec 与系统提示词"] --> Build["HarnessBuilder().build(...)"]
+    Build --> Exec["获得 ExecutableAgent 可执行对象"]
+    Exec --> Run["await executable.run() 或 stream()"]
+    State["上一轮保存的 HarnessState"] --> Run
+    Run --> Result["获得执行结果 HarnessRunResult"]
+    Result --> Extract["持久化保存 result.state"]
+    Extract --> State
 
-    class Spec,Build,Run a13n
-    class State,Save store
+    class Spec,Build,Exec,Run a13n
+    class State,Extract store
     class Result success
 ```
 
-用 `HarnessBuilder` 构建一次，再调用 `run()` 获取终态结果，或调用 `stream()` 接收事件。传入 `previous_state` 继续同一 Thread。[Agent 与执行](agents-and-runs.md)介绍这些对象及其生命周期。
+您通过 `HarnessBuilder` 声明式地完成指令、模型与能力的组装。构建产出的 `ExecutableAgent` 具备线程安全性，可被高并发调用复用。调用 `executable.run()` 即可同步等待终态结果，调用 `async with executable.stream()` 即可实时消费流式事件。
 
 ## 为 Agent 提供所需能力
 
-根据希望 Agent 完成的任务选择下一篇指南：
+根据业务场景的逐步深入，按需为 Agent 挂载丰富的能力插件（Capabilities）：
 
-| 任务                           | 指南                                                                                     |
-| ------------------------------ | ---------------------------------------------------------------------------------------- |
-| 连接模型账号                   | [模型](models.md)与[身份验证](model-authentication.md)                                   |
-| 调用应用函数                   | [工具与依赖](tools-and-dependencies.md)                                                  |
-| 询问用户或请求审批             | [结构化问题](human-in-the-loop.md)与[工具审批](managed-tools.md#select-tool-permissions) |
-| 接收文件或返回指定类型的结果   | [输入与输出](inputs-and-outputs.md)                                                      |
-| 理解图片、音频、视频或媒体 URL | [多媒体理解](multimedia-understanding.md)                                                |
-| 进行实时语音对话               | [Live](live.md)                                                                          |
-| 读取文件和执行命令             | [环境](environments.md)                                                                  |
-| 连接 MCP 工具和交互式结果      | [MCP](mcp.md)                                                                            |
-| 加载可复用的任务指引           | [Skill](skills.md)                                                                       |
-| 委派工作或用 Python 编排工具   | [委派与 CodeAct](delegation-and-codeact.md)                                              |
+| 能力维度 | 重点功能 | 集成指南 |
+| :--- | :--- | :--- |
+| **多模型生态** | 原生兼容 OpenAI、Anthropic、Gemini、开源本地模型等 | [模型接入](models.md)与[身份认证](model-authentication.md) |
+| **Python 本地工具** | 基于 Pydantic 自动完成参数校验的异步函数调用 | [工具与依赖](tools-and-dependencies.md) |
+| **人机交互协同** | 支持交互式决策卡片、敏感操作二次确认与主动向人提问 | [人机交互](human-in-the-loop.md)与[工具权限控制](managed-tools.md#select-tool-permissions) |
+| **强类型结构化 I/O** | 强制返回符合 Pydantic Model 规范的确定性数据对象 | [输入与输出](inputs-and-outputs.md) |
+| **多模态数据理解** | 原生解析图像、音频、视频文件及远程多媒体资源 | [多媒体理解](multimedia-understanding.md) |
+| **实时全双工语音** | 基于 WebRTC 的超低延迟双向实时语音通话流 | [Live 实时语音](live.md) |
+| **沙箱执行环境** | 安全地遍历目录、读写代码并执行终端命令 | [执行环境 Environments](environments.md) |
+| **标准协议工具接入** | 挂载 Model Context Protocol (MCP) 服务并渲染交互式网页控件 | [MCP 集成](mcp.md) |
+| **动态技能与操作规程** | 自动发现并按需加载基于规范编写的 `SKILL.md` 指令 | [Skills 技能系统](skills.md) |
+| **多智能体与代码执行** | 调度专属 Subagent 子智能体或借助 CodeAct 用 Python 并发编排工具 | [委派与 CodeAct 编排](delegation-and-codeact.md) |
 
-[Capabilities](capabilities.md) 用于组合可复用功能。先选择当前任务需要的功能，再随应用扩展逐步添加。
+通过 [Capabilities](capabilities.md) 机制，您可以保持极高的系统掌控度：仅挂载当前场景确需的功能，有效压低模型上下文窗口消耗并提升响应稳定性。
 
 ## 继续并管理工作
 
-| 任务                         | 指南                                                                         |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| 保存、恢复或分叉 Thread      | [状态与恢复](state-and-resume.md)                                            |
-| 管理上下文、压缩、笔记和任务 | [上下文](context.md)                                                         |
-| 跨 Thread 共享记忆信息       | [记忆](memory.md)                                                            |
-| 设置预算并查看用量           | [用量与限制](usage-and-limits.md)                                            |
-| 追踪执行或发布事件流         | [观测](observation.md)与 [Stream Protocol](../a13n-stream-protocol/index.md) |
-| 离线验证行为                 | [测试](testing.md)                                                           |
+生产环境下的智能体架构必须能够从容应对网络抖动、进程重启与长时间运行的复杂业务流程：
+
+| 生产级工程需求 | 实现方案 | 深度指南 |
+| :--- | :--- | :--- |
+| **状态持久化与分支派生** | 基于轻量可序列化的检查点安全保存、恢复或派生分支对话 | [状态与恢复](state-and-resume.md) |
+| **上下文预算精细管控** | 自动管理窗口配额、会话记录压缩与临时任务备忘录 | [上下文治理](context.md) |
+| **跨会话长期记忆** | 将跨会话的事实沉淀并结构化检索回填至 Prompt | [记忆管理 Memory](memory.md) |
+| **Token 与耗时配额限制** | 严格限制 Token 预算、单次调用超时截断并追踪费用开销 | [配额与使用限制](usage-and-limits.md) |
+| **全链路可观测性与审计** | 捕获 OpenTelemetry Trace、原始模型通信 Spans 与 AG-UI 事件流 | [可观测性](observation.md)与 [Stream Protocol](../a13n-stream-protocol/index.md) |
+| **自动化确定性评测** | 借助 Mock 确定性模型在 CI 流程中秒级回归多轮对话质量 | [单元与集成测试](testing.md) |
 
 ## 将 Harness 嵌入应用
 
-区分三类输入：
+在微服务系统中集成 Harness 时，建议将三层生命周期对象清晰解耦：
 
-| 输入                                                 | 放置位置                    | 生命周期            |
-| ---------------------------------------------------- | --------------------------- | ------------------- |
-| 指令、输出类型、工具和稳定功能                       | `AgentSpec` 和 builder 参数 | 可复用的 Agent 定义 |
-| 当前身份、模型解析器、受支持的服务绑定和 Environment | `RunBindings` 和调用参数    | 新的 Run            |
-| 消息和可移植的功能状态                               | `HarnessState`              | 保存的续接状态      |
+| 架构层级 | 核心职责 | 对应运行时对象 |
+| :--- | :--- | :--- |
+| **Agent 定义层** | 静态系统提示词、模型选型、工具契约与启用的 Capabilities | `AgentSpec` 以及构建器参数 |
+| **调用绑定层** | 单次调用的临时请求上下文、认证令牌、客户端注入的执行环境 | `RunBindings` |
+| **状态持久层** | 历史消息栈、工具执行结果快照以及可序列化的检查点数据 | `HarnessState` |
 
-应用负责凭据、访问策略和持久存储。恢复状态时，另外提供重新授权的活跃资源。普通 Python 工具放入构建时的 Capability；`RunBindings.capabilities` 只接受限定的 MCP 和调用策略类型。
+这种严格的分层设计确保您的业务宿主对敏感认证密钥、数据库事务以及租户隔离控制享有绝对的所有权。
 
-通过[托管与嵌入](hosting.md)连接这些生命周期，通过[插件](plugins.md)添加应用中间件或 Environment 集成。Harness 直接使用 Pydantic AI 原生的模型、消息、工具和输出类型。
-
-需要现成的工作台时，从 [Harness UI](../a13n-harness-ui/index.md) 开始。需要受管理的用户和持久服务端执行时，使用 [Service](../a13n-service/index.md)。
+若您需要开箱即用的本地命令行与浏览器工作台，请参阅 [Harness UI](../a13n-harness-ui/index.md)；若需面向企业部署支持多租户与分布式调度的高可用后端平台，请查阅 [Service 平台](../a13n-service/index.md)。
 
 ## 可运行的应用示例
 
-需要超出单页示例的完整流程时，参考以下应用：
+欢迎查阅 `examples/` 目录下提供的端到端生产级参考工程：
 
-| 示例                                                                                                                 | 演示内容                           |
-| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| [Agent 应用](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)                      | 离线流式执行、持久化轮次、重启恢复 |
-| [Environment Provider](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) | 执行连接与目标生命周期             |
-| [插件](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)                              | 中间件和 Environment 扩展          |
-| [已安装的 Provider](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin)         | 打包发布的 Provider 发现           |
-| [MCP App](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/mcp-apps)                          | 交互式工具结果                     |
+| 典型架构示例 | 核心技术亮点与参考源码 |
+| :--- | :--- |
+| **流式智能体服务** | [examples/agent-app](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)（SSE 流式推送、按轮次检查点持久化、SQLite 状态存储、重启恢复） |
+| **自定义执行环境提供方** | [examples/environment-provider](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider)（Direct Local 本地目录、Docker 沙箱生命周期管理） |
+| **中间件插件开发** | [examples/plugins](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)（自定义 Capability、运行时执行环境拦截器） |
+| **已打包的环境插件** | [examples/provider-plugin](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin)（基于 Python Entry-Point 机制自动加载扩展） |
+| **交互式 MCP 网页应用** | [examples/mcp-apps](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/mcp-apps)（通过 stdio MCP 协议在前端渲染响应式交互控件） |
 
 ## 版本与适用范围
 
-这些指南对应 `main` 分支的源码 API；快速入门使用配套的锁文件。Harness 和 Stream Protocol 以完全相同的版本号发布，Harness UI 则独立发布。架构约定见[已接受的规范](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-harness)。
+本文档完全同步自 `main` 主分支 API 契约。Harness 严格锁定核心依赖版本以保证构建的一致性与可复现性，底层充分融合 Pydantic AI 的模型交互原语，并在上层扩展了完整的状态持久化、环境沙箱管理与流式通信协议。深入了解底层正式协议设计，请参阅 [Harness 架构技术规范](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-harness)。

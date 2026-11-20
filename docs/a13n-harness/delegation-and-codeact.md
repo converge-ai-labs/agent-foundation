@@ -1,29 +1,30 @@
 ---
 title: Delegation and CodeAct
-description: Give another Agent a task, or use restricted Python to combine tools in the current Agent.
+description: Orchestrate multi-agent workflows with subagents or execute concurrent Python control flow over external tools using CodeAct.
 ---
 
-Delegation gives a task to another Agent with its own instructions, Model, and tools. CodeAct lets the current Agent combine tool calls with Python loops, conditions, and concurrency.
+Complex agentic workflows often require two advanced orchestration patterns: **Delegation** (dividing work among specialized agents with independent prompts and models) and **CodeAct** (letting an agent write and execute Python code to invoke tools with loops, branching, and concurrency in a single round-trip).
 
 ## Choosing Between Them
 
-| Task                                                               | Use                                                   |
-| ------------------------------------------------------------------ | ----------------------------------------------------- |
-| Perform one operation                                              | Call the tool directly                                |
-| Ask another Agent to review, research, or solve a bounded task     | [Inline delegation](#inline-delegation)               |
-| Combine tool results with Python control flow                      | [CodeAct](#codeact)                                   |
-| Keep child work running after the parent Run closes                | [Asynchronous children](#asynchronous-children)       |
-| Run application Python with installed libraries or native commands | Application code or an [Environment](environments.md) |
+Select the orchestration strategy suited to your architectural requirements:
 
-The examples below build on the [quickstart's model setup](getting-started.md#use-a-real-model). Set `HARNESS_MODEL` and the provider credential before running them.
+| Operational requirement | Recommended approach | Primary advantage |
+| :--- | :--- | :--- |
+| Single, direct tool execution | Direct tool call | Zero overhead; standard model invocation |
+| Bounded review, specialist tasks, or role separation | [Inline delegation](#inline-delegation) | Separate prompt contexts, dedicated model selection, and clean result aggregation |
+| Combining multiple tool outputs with loops or filters | [CodeAct](#codeact) | Minimizes model round-trips; filters massive datasets inside Python before returning |
+| Parallel tool calls without serial model steps | [CodeAct concurrency](#combine-tool-calls) | Executes arbitrary tools concurrently via `asyncio.gather` |
+| Long-running background jobs surviving the parent run | [Asynchronous children](#asynchronous-children) | Decoupled execution lifecycle managed by host scheduling |
+| Native system libraries, package installs, and shell | Application code or [Environments](environments.md) | Full OS capabilities outside restricted interpreters |
 
 ## Inline Delegation
 
-Inline delegation waits for a declared child to finish and returns its output to the parent Model. Harness runs the child; your application needs no scheduler.
+Inline delegation allows a parent agent to invoke a specialized child agent and wait synchronously for its response. Harness manages child execution within the active run lifecycle.
 
 ### Declare a Child
 
-Give the child a complete `AgentDefinition`, then register it under a name in the parent. `SubagentCapability()` exposes the delegation tools to the parent Model.
+Define the child agent using a complete `AgentDefinition`, then register it within the parent builder via `SubagentCapability` and `SubagentDefinition`:
 
 ```python title="delegation_demo.py"
 import asyncio
@@ -32,32 +33,41 @@ import os
 from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder, SubagentDefinition
 from a13n_harness.capabilities import SubagentCapability
 
+# 1. Define the specialized child agent
 reviewer = AgentDefinition(
     agent=AgentSpec(
         model=os.environ["HARNESS_MODEL"],
-        instructions="Review the supplied plan. Identify concrete risks and missing steps.",
+        instructions="You are an expert security reviewer. Analyze the plan and identify concrete architectural risks.",
     ),
     output_type=str,
     definition_id="plan-reviewer-v1",
 )
+
+# 2. Register child within the coordinator agent
 parent = HarnessBuilder().build(
     AgentDefinition(
         agent=AgentSpec(
             model=os.environ["HARNESS_MODEL"],
-            instructions="Delegate plan reviews to reviewer, then summarize its findings.",
+            instructions="Coordinate the overall plan. Delegate deep architectural reviews to the 'reviewer' subagent, then synthesize the final recommendation.",
         ),
         output_type=str,
         definition_id="coordinator-v1",
         capabilities=(SubagentCapability(),),
-        subagents=(SubagentDefinition(
-            name="reviewer", description="Review a plan for concrete risks.", agent=reviewer,
-        ),),
+        subagents=(
+            SubagentDefinition(
+                name="reviewer",
+                description="Delegates architectural and security reviews to a specialized reviewer agent.",
+                agent=reviewer,
+            ),
+        ),
     )
 )
 
 
 async def main() -> None:
-    result = await parent.run("Review this plan: deploy the update, then run the tests.")
+    result = await parent.run(
+        "Review this migration strategy: update database schema directly on production, then run data migrations."
+    )
     print(result.output_or_raise())
 
 
@@ -65,25 +75,23 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Run `uv run python delegation_demo.py`. The parent can call `delegate(subagent="reviewer", prompt=...)` and use the child's answer. The wording depends on your Model.
+When you execute this script, the parent model calls `delegate(subagent="reviewer", prompt=...)`. Harness initializes the reviewer agent, executes its run to completion, and delivers its structured response back to the parent model.
 
 ### Continue a Child Conversation
 
-`delegate` returns an `execution_id` with the child's output. The parent Model can call `resume_subagent(execution_id=..., prompt=...)` to continue that conversation. Calling `delegate` again starts a new conversation.
+When the child returns a result, Harness provides a unique `execution_id`. To continue the discussion with that same child agent in a follow-up step, the parent model invokes `resume_subagent(execution_id=..., prompt=...)`. Calling `delegate` again creates a fresh, separate child thread.
 
-Save and restore the parent's complete `HarnessState` to preserve inline children across Runs. Keep definition IDs stable when rebuilding compatible definitions. See [State and resume](state-and-resume.md) for persistence.
-
-Inline children share the parent's entered Environment and inherited invocation policy. Set each child's budget explicitly: child usage is independent of the parent's budget, and `SubagentDefinition.usage_limits` can narrow the child's definition limits.
-
-Inline children cannot suspend for deferred tool feedback. Use a Host-managed child when that interaction is required.
+Child conversation lineages are serialized inside the parent's `HarnessState`. When you save and restore parent state across sessions, all associated child threads and continuation IDs are fully preserved.
 
 ## CodeAct
 
-CodeAct adds two tools: `run_code` for inline Python and `run_program` for reusable source files. Both execute restricted Python. File, network, process, environment-variable, and credential access goes through eligible tools. Use an Environment shell for ordinary Python packages or native programs.
+Standard model tool calling requires a round-trip per operation: the model emits a tool call, waits for execution, reads the result, and decides the next step. For tasks involving multiple items or iterative processing, this approach introduces compounding network latency and heavy token costs.
+
+**CodeAct** addresses this by giving the model a restricted Python runtime. The agent writes Python code that directly calls registered tools, processes return values with conditional logic, and returns only the final summary to the model.
 
 ### Enable CodeAct for Your Tools
 
-Add `CodeActCapability()` and explicitly allow the tools that Python may call. This example exposes a `double` function:
+Register `CodeActCapability()` and wrap your target tools with `CodeActPolicyToolset` to grant Python execution access:
 
 ```python title="codeact_demo.py"
 import asyncio
@@ -97,20 +105,27 @@ from pydantic_ai.toolsets import FunctionToolset
 
 
 def double(value: int) -> int:
-    """Return twice the supplied value."""
+    """Return twice the supplied integer value."""
     return value * 2
 
 
+# Wrap native tools with a CodeAct policy granting Python access
 math_tools = Capability(
     id="math-tools",
-    toolsets=[CodeActPolicyToolset(
-        wrapped=FunctionToolset([double], id="math-functions"),
-        policy=CodeActToolPolicy(tools={"double": True}),
-        reject_unknown_tools=True,
-    )],
+    toolsets=[
+        CodeActPolicyToolset(
+            wrapped=FunctionToolset([double], id="math-functions"),
+            policy=CodeActToolPolicy(tools={"double": True}),
+            reject_unknown_tools=True,
+        )
+    ],
 )
+
 calculator = HarnessBuilder().build(
-    AgentSpec(model=os.environ["HARNESS_MODEL"]),
+    AgentSpec(
+        model=os.environ["HARNESS_MODEL"],
+        instructions="Use Python code through run_code to perform computations efficiently.",
+    ),
     output_type=str,
     capabilities=(math_tools, CodeActCapability()),
 )
@@ -118,7 +133,7 @@ calculator = HarnessBuilder().build(
 
 async def main() -> None:
     result = await calculator.run(
-        "Use run_code to double each of 2, 4, and 6, then return their sum."
+        "Use run_code to double each number in [2, 4, 6, 8, 10], sum them, and return the total."
     )
     print(result.output_or_raise())
 
@@ -127,133 +142,147 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Run `uv run python codeact_demo.py`. The expected sum is `24`. `CodeActToolPolicy` grants eligibility; normal availability, argument validation, permissions, and approval checks still apply to each call.
-
 ### Combine Tool Calls
 
-The Model supplies code like this to `run_code`. These snippets are runner payloads, not standalone Python modules:
+Within `run_code`, the model generates idiomatic async Python. Tools are exposed as top-level asynchronous functions:
 
 ```python
+# Sequential iteration over tool calls
 values = []
-for value in [2, 4, 6]:
-    values.append(await double(value=value))
+for item in [2, 4, 6]:
+    doubled = await double(value=item)
+    values.append(doubled)
+
 sum(values)
 ```
 
-Use keyword arguments and await every tool call. `run_code` returns the final expression. To run independent calls concurrently:
+To maximize throughput across independent I/O calls, the model can execute multiple tool calls concurrently using `asyncio.gather`:
 
 ```python
 import asyncio
 
-values = await asyncio.gather(double(value=2), double(value=4), double(value=6))
-sum(values)
+# Concurrent tool fan-out
+results = await asyncio.gather(
+    double(value=10),
+    double(value=20),
+    double(value=30),
+)
+sum(results)
 ```
 
-Keep the runner as the only tool call in its Model response. Compose the needed calls inside its code and return only the data the Agent needs.
-
-With a Host-held execution runtime, a background receipt lets the Agent choose independent work or explicitly wait for a result. A later runner does not implicitly wait for an unrelated background Shell command to exit. Check server readiness separately before using it. Independent `run_program` calls from successive Model responses can overlap; `run_code` keeps one persistent inline session per logical Run, so wait for its active execution before another inline feed or `restart=True`. Explicit global sequential mode still waits for actual completion.
-
-For tools with `defer_loading=True`, discover the tool or load its Capability before calling the runner. For large collections, [grouped ToolSearch](tool-search.md#use-with-codeact) supports discovery inside the runner. ToolSearch proxy calls remain sequential, including inside `asyncio.gather`.
+Only the final evaluated expression or explicit return value is delivered back into model context, keeping the conversation history concise.
 
 ### Compose Browser Tools
 
-An embedded Host can compose `BrowserUseCapability()` with `CodeActCapability()` and supply its authorized `BrowserBackend` through `RunBindings.embedded(browser_backend=backend)`. The same browser tools remain callable directly. Use `BrowserUseCapability(enabled_tools=frozenset({"observe", "js", "cdp"}))` to select a subset; no separate browser mode is needed. Custom backends implement `js(expression)` and `cdp(method, params)` for the two programming tools.
-
-Inside `run_code`, combine task-specific page extraction with protocol queries:
+You can pair `CodeActCapability()` with `BrowserUseCapability()` to perform high-efficiency web scraping and automated browser workflows:
 
 ```python
+# Inspect rendered web state, extract CSS elements, and query accessibility trees
 await browser_observe()
 cards = await browser_js(
-    expression="[...document.querySelectorAll('.card')].map(el => el.textContent)"
+    expression="[...document.querySelectorAll('.pricing-card')].map(el => el.innerText)"
 )
-tree = await browser_cdp(method="Accessibility.getFullAXTree", params={})
-{"cards": cards, "accessibility_nodes": len(tree["nodes"])}
+ax_tree = await browser_cdp(method="Accessibility.getFullAXTree", params={})
+
+{"cards": cards, "total_ax_nodes": len(ax_tree.get("nodes", []))}
 ```
 
-`browser_js` runs in the selected page's main world, awaits Promises, and returns JSON values. Undefined returns `None`; non-JSON results fail explicitly. `browser_cdp` returns the selected page session's protocol result. Its tool description lists supported page domains and excluded methods. Browser/target management, Host file paths, and runtime event subscriptions stay with their existing owners; use `browser_tabs` and `browser_files` for those operations.
-
-Both tools expire element and screenshot references, including on failure. Observe again before using native references. Await consecutive page operations in order. If a command opens a JavaScript dialog, its result is abandoned and the tool returns control: use `browser_dialog`, then observe the outcome without replaying the command. Page effects can continue after closing the dialog. A thrown script can leave earlier changes applied. Timeout, cancellation and human handback do not roll back page effects or remove installed timers and listeners. Promise waiting can reach the transport deadline even though synchronous renderer execution is bounded; implement a Promise timeout in the expression when a known asynchronous deadline is needed. The Host's ordinary admission and human-control checks still apply to each tool request.
+`browser_js` executes inside the page's main JavaScript context and returns parsed JSON values. `browser_cdp` provides direct access to Chrome DevTools Protocol domains for advanced inspection.
 
 ### Reuse a Program
 
-Save a UTF-8 file in a readable Environment mount. Define one undecorated `async def main(inputs)` and return a JSON-compatible result:
+For structured, repeatable procedures, save Python source files in a mounted environment rather than generating inline code strings on every turn:
 
-```python title="double.codeact.py"
-async def main(inputs):
-    result = await double(value=inputs["value"])
-    await store(key="math.result", value=result)
-    return result
+```python title="calculate_metrics.codeact.py"
+async def main(inputs: dict) -> dict:
+    raw_val = inputs["value"]
+    computed = await double(value=raw_val)
+    await store(key="last_computed_metric", value=computed)
+    return {"input": raw_val, "result": computed}
 ```
 
-If the file is at `/workspace/double.codeact.py`, the Model calls `run_program` with:
+The agent invokes the file using `run_program`:
 
 ```json
-{"path": "/workspace/double.codeact.py", "inputs": {"value": 6}}
+{
+  "path": "/workspace/calculate_metrics.codeact.py",
+  "inputs": {"value": 42}
+}
 ```
 
-The result is `12`, also saved as `math.result`. Replace the example path with a path in your bound [Environment](environments.md). Harness reads the file through that Environment; the Model does not need a file-reading tool.
-
-Each invocation reads the source again and starts a fresh interpreter. Supported imports, helpers, dataclasses, and module initialization can accompany `main`. Keep the workflow in `main`; initialization also runs on every invocation under the same tool policy and limits.
+Harness reads the script through the bound environment, runs its `main()` entry point, and delivers the structured dictionary result back to the model.
 
 ### Keep Data Across Calls
 
-| State                              | Lifetime                                                    |
-| ---------------------------------- | ----------------------------------------------------------- |
-| `run_code` variables and functions | Successful calls within the current Run                     |
-| `run_program` variables            | One invocation                                              |
-| Values saved with `store`          | Across Runs when the Host saves and restores `HarnessState` |
+Harness provides distinct persistence scopes for CodeAct execution:
 
-Use `store` and `load` for explicit JSON data:
+| Scope | Lifetime | Mechanism |
+| :--- | :--- | :--- |
+| Ephemeral variables | Active logical run | Variables and functions declared in `run_code` |
+| Program scope | Single script invocation | Local execution scope of `run_program` |
+| Durable key-value state | Across runs and restarts | `await store(key, value)` and `await load(key)` |
+
+Use the built-in storage helpers to persist intermediate computation results without polluting model context:
 
 ```python
-await store(key="search.results", value={"ids": [12, 34], "next_page": 3})
-results = await load(key="search.results")
-results["ids"]
+# Save intermediate data
+await store(key="report.data", value={"summary": "Q4 Performance", "score": 98})
+
+# Retrieve saved data in a subsequent turn
+saved = await load(key="report.data")
+
+# Delete when no longer needed
+await forget(key="report.data")
 ```
 
-`load()` lists keys. `forget(key="search.results")` deletes a value. Loading returns a detached copy; call `store` again to save edits. A missing key fails, while a stored JSON null loads as `None`.
-
-`run_code(restart=True)` clears temporary variables before evaluation. A failed evaluation also clears them. Successful `store` writes survive either operation. To retain those writes after process exit, persist the returned State as described in [State and resume](state-and-resume.md).
+Values saved with `store` are serialized directly into `HarnessState`, ensuring they persist across process restarts.
 
 ### Handle Failures and Set Limits
 
-Failure results identify the error and include a source location when available. Correct the code before retrying. A failed runner may have completed earlier tool calls: inspect their outcomes before repeating writes or other external effects. Completed effects and stored values are not rolled back.
-
-Use `CodeActConfig` to lower execution and storage limits:
+Protect your host environment by configuring execution timeouts, concurrency caps, and memory limits via `CodeActConfig`:
 
 ```python
 from a13n_harness.capabilities import CodeActCapability, CodeActConfig
 
-codeact = CodeActCapability(CodeActConfig(
-    max_tool_calls=16,
-    max_concurrency=4,
-    timeout_seconds=60,
-    max_state_entries=64,
-    max_state_bytes=1024 * 1024,
-))
+codeact_capability = CodeActCapability(
+    CodeActConfig(
+        max_tool_calls=32,          # Max nested tool invocations per code run
+        max_concurrency=8,           # Max parallel asyncio tasks
+        timeout_seconds=60,          # Wall-clock execution deadline
+        max_state_entries=128,       # Max stored key-value pairs
+        max_state_bytes=2 * 1024 * 1024,  # Max storage memory (2 MiB)
+    )
+)
 ```
 
-Use this instance in place of `CodeActCapability()` in the builder. Defaults allow 128 nested tool attempts, concurrency 16, and 300 seconds per runner. Stored data defaults to 256 entries and 10 MiB. Parent tool-call limits and provider ceilings still apply.
-
-The catalog lists callable names and canonical-name mappings; use the native tool definitions for arguments. Set `catalog_argument_schemas=True` in `CodeActConfig` to also include exact argument JSON Schemas in the catalog. This strict boolean defaults to `False`; neither mode includes descriptions, Python declarations, or return schemas. A tool whose result fields a program must use before seeing a result can set Pydantic AI's `include_return_schema=True` so its native definition carries the return schema.
+When code execution encounters an unhandled exception or exceeds configured limits, Harness captures the stack trace and line number, returning a descriptive error to the model so it can diagnose the issue and adjust its code.
 
 ## Asynchronous Children
 
-Use asynchronous children when work must outlive the parent Run. Your Host implements `SubagentOperator` to schedule children, retain checkpoints, and deliver results. Pass that operator to `SubagentCapability(async_enabled=True, operator=operator)` instead of the inline Capability.
+When an agent needs to spawn subagents whose execution outlives the parent turn, configure asynchronous subagent execution. In this architecture, the host platform supplies a `SubagentOperator` implementation responsible for scheduling runs, recording checkpoints, and routing results:
 
-| Model tool                              | Result                                       |
-| --------------------------------------- | -------------------------------------------- |
-| `delegate(subagent_name, prompt)`       | Admission receipt; work continues separately |
-| `subagent_info(...)`                    | Current execution status                     |
-| `wait_subagent(...)`                    | Bounded wait for one or more executions      |
-| `steer_subagent(execution_id, message)` | Acknowledgement of a steering request        |
-| `cancel_subagent(execution_id)`         | Acknowledgement of a cancellation request    |
-| `resume_subagent(execution_id, prompt)` | Admission of a linked continuation           |
+```python
+from a13n_harness.capabilities import SubagentCapability
 
-A wait timeout does not cancel work. A cancellation receipt does not prove cleanup. Query the current execution record to confirm the outcome. Closing the parent Run does not cancel accepted async work.
+# Enable host-managed async delegation
+capability = SubagentCapability(async_enabled=True, operator=host_operator)
+```
 
-The Host owns fresh child bindings, storage, shutdown, and recovery. See [Host embedding](hosting.md) for lifecycle integration.
+Asynchronous delegation exposes management tools to the model:
+
+| Tool | Purpose |
+| :--- | :--- |
+| `delegate(subagent_name, prompt)` | Dispatches child execution; returns an admission receipt |
+| `subagent_info(execution_id)` | Queries current progress, run status, and metrics |
+| `wait_subagent(execution_ids)` | Pauses parent execution until one or more subagents complete |
+| `steer_subagent(execution_id, message)` | Delivers steering instructions to an active child run |
+| `cancel_subagent(execution_id)` | Requests graceful termination of a child run |
+| `resume_subagent(execution_id, prompt)` | Dispatches a follow-up turn to a completed child |
 
 ### Host-Managed Feedback
 
-A Host that supports child feedback uses the [structured suspension flow](state-and-resume.md#structured-suspension): save the child's State and deferred request, collect feedback, then resume the child directly with `DeferredToolResume`. Otherwise, set `RunBindings.deferred_tools_supported=False`; Harness omits deferred tools and denies runtime deferral requests. Harness UI uses this setting for async children.
+For long-running subagents that require human intervention or tool approval, the host coordinates suspension and resumption:
+
+1. When a child encounters a deferred tool or question, Harness transitions the run status to `suspended` and saves its `HarnessState`.
+2. The host notifies users or external systems to collect the required feedback.
+3. Once the answers are ready, the host invokes `DeferredToolResume` to resume child execution from its exact checkpoint.

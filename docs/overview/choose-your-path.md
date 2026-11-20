@@ -1,50 +1,52 @@
 ---
 title: Choose your path
-description: Pick Service, Harness, or Harness UI by where your agents run and who operates them.
+description: Select the right Agent Foundation product based on your operational model, architecture requirements, and technical audience.
 ---
 
-Choose the guide for your first task. You can run an agent inside a Python application, work with one interactively, or use a Service deployment that manages execution for you.
+Agent Foundation offers three distinct ways to run and interact with agents. Whether you are embedding execution logic in Python, collaborating hands-on with a local assistant, or establishing a central enterprise platform, pick the path tailored to your workflow.
 
-| Your goal                              | What you need                                                   | Start here                                                          |
-| -------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Deploy a shared agent platform         | Docker Compose and a model provider account for the local trial | [Service quickstart](../a13n-service/get-started.md)                |
-| Use your team's agents                 | Console URL, an account, and permission to run an agent         | [Use an existing platform](../a13n-service/use-platform.md)         |
-| Call remote agents from an application | Service URL, workspace API key, and a configured agent          | [Connect your application](../a13n-service/connect-application.md)  |
-| Deliver agents in a customer's cloud   | Access to the customer's infrastructure and model accounts      | [Forward deployed engineering](../a13n-service/forward-deployed.md) |
-| Run agents inside your Python process  | Python 3.13+ and uv; the first example uses an offline model    | [Harness quickstart](../a13n-harness/getting-started.md)            |
-| Work interactively in a repository     | Harness UI and a supported model subscription or API key        | [Harness UI setup](../a13n-harness-ui/setup.md)                     |
+| Primary goal | Target audience | Prerequisites | Quickstart |
+| :--- | :--- | :--- | :--- |
+| **Embed agents in Python** | Python developers & backend engineers | Python 3.13+, `uv` package manager | [Harness quickstart](../a13n-harness/getting-started.md) |
+| **Interactive workbench** | Developers & DIY builders | Terminal or modern browser, model API key/subscription | [Harness UI setup](../a13n-harness-ui/setup.md) |
+| **Self-host team platform** | Platform engineers & administrators | Docker Compose or Kubernetes, model provider account | [Service quickstart](../a13n-service/get-started.md) |
+| **Access shared workspace** | Team members & operators | Browser, Console URL, workspace account | [Use an existing platform](../a13n-service/use-platform.md) |
+| **Integrate remote agents** | Application developers | Workspace API key, Service endpoint | [Connect your application](../a13n-service/connect-application.md) |
+| **Customer cloud delivery** | Forward deployed engineers (FDE) | Target cloud infrastructure, customer model credentials | [Forward deployed engineering](../a13n-service/forward-deployed.md) |
 
 ## Choose where execution lives
 
-- **Service:** submit work through Console or an application. Service manages identities, saved conversations, and durable execution in a running deployment.
-- **Harness:** construct and run the agent in your Python process. Supply storage, access policy, and result delivery in your application.
-- **Harness UI:** configure an agent and work with it through the terminal or WebUI. Share the instance only with trusted collaborators: its configuration, conversations, and environment access have no per-user isolation.
+The three products address different execution boundaries, persistence models, and isolation requirements:
+
+- **Harness (Embedded Library):** Runs directly within your own Python process. You define the instruction lifecycle, attach Python native tools and MCP servers, and retain full programmatic control over state serialization, concurrency, and persistence.
+- **Harness UI (Local & Collaborative Workbench):** Operates as a focused, high-productivity workbench in your terminal (TUI) or browser (WebUI). It directly mounts your workspace directory, supports rich file inspection and Git diffing, enables real-time Live voice streaming, and accepts modular extensions via Skills and Content Plugins.
+- **Service (Distributed Multi-Tenant Platform):** Operates as a self-hosted, resilient backend with dedicated control and worker tiers. It manages authentication, fine-grained workspace RBAC, background task queues, periodic schedules, long-term memory spaces, and durable checkpoint recovery across worker failovers.
 
 ```mermaid
 flowchart TB
-    Console["Console"] -->|"Configure, test, inspect"| Service["Service deployment"]
-    Client["Your application"] -->|"SDK or HTTP API"| Service
-    Process["Your Python process"]
-    Workbench["Harness UI: terminal or browser"]
-    Service -->|"Managed"| Harness["Harness runs each agent"]
-    Process -->|"Embedded"| Harness
-    Workbench -->|"Interactive"| Harness
+    Console["Web Console"] -->|"Configure, test & inspect"| Service["Service Platform"]
+    Client["External Application"] -->|"SDK or HTTP API"| Service
+    Process["Python Application Process"]
+    Workbench["Harness UI: Terminal or Browser"]
+    Service -->|"Managed Execution"| Harness["Harness: Execution Engine"]
+    Process -->|"Embedded Execution"| Harness
+    Workbench -->|"Interactive Execution"| Harness
 
     class Console,Client,Process,Workbench app
     class Service,Harness a13n
 ```
 
-Both Service and Harness UI embed Harness. To call a Service deployment from another application, install a **Service SDK**. To execute agents in that application's own process, install the **Harness library**. Use Console for Service and WebUI for Harness UI.
+Both Service and Harness UI build upon the foundational Harness runtime. When you need to interact with a centralized Service deployment, integrate using the official **Service SDKs** or HTTP API. When building an agentic service from scratch in Python, import the **Harness library**.
 
 ## Use individual components
 
-Add a component when the integration needs it:
+You can also incorporate Agent Foundation building blocks independently into existing architectures:
 
-| Need                                                  | Guide                                               |
-| ----------------------------------------------------- | --------------------------------------------------- |
-| Portable files and commands, with or without an agent | [Environments](../environments/index.md)            |
-| Environment operations through a daemon               | [Envd](../a13n-envd/index.md)                       |
-| AG-UI events from Harness observations                | [Stream Protocol](../a13n-stream-protocol/index.md) |
-| Distribution names, imports, and runnable examples    | [Package catalog](packages.md)                      |
+| Capability | Underlying component | Integration guide |
+| :--- | :--- | :--- |
+| **Portable environment execution** | Environments (`a13n-harness`) | [Environments overview](../environments/index.md) |
+| **Remote execution daemon** | Envd (`crates/a13n-envd`) | [Envd operations](../a13n-envd/index.md) |
+| **Streaming UI protocol** | Stream Protocol (`a13n-stream-protocol`) | [Stream Protocol guide](../a13n-stream-protocol/index.md) |
+| **Distribution mapping** | All repository packages | [Package catalog](packages.md) |
 
-Follow a Service conversation in [Core concepts](../a13n-service/core-concepts.md), or use [Operate the Service](../a13n-service/operations.md) to manage a deployment. When choosing a Service client version, match its [supported contract](../a13n-service/sdks.md#keep-version-ownership-clear) to that deployment.
+To understand how high-level conversations translate into durable runs and checkpoint attempts, explore [Service core concepts](../a13n-service/core-concepts.md). To design and scale a production deployment, consult [Service operations](../a13n-service/operations.md).

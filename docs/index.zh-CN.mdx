@@ -1,63 +1,61 @@
 ---
 title: Agent Foundation (a13n)
-description: 用 Python 构建 agent，与 agent 交互式协作，或为团队部署 agent。
+description: 使用 Harness 在 Python 中构建可嵌入生产级 Agent，借助 Harness UI 在终端与浏览器中沉浸式交互，或通过 Service 为整个团队搭建私有化托管平台。
 ---
 
-<Intro title="Agent Foundation (a13n)" action={{ text: "选择使用方式", href: "/overview/choose-your-path/" }}>
+<Intro title="Agent Foundation (a13n)" action={{ text: "选择适合的路径", href: "/overview/choose-your-path/" }}>
 
-在自己的基础设施上构建和运行 agent。在 Console 中配置、测试 agent，再从应用通过 SDK 或 HTTP API 调用同一个 agent。
+在您自主可控的基础设施上构建、运行与扩展 AI Agent。无论您是需要在 Python 微服务中内嵌灵活的 Agent 运行时，还是想在代码仓库中通过终端与 Web 界面与 Agent 并肩编码，亦或是为全公司部署支持多租户与长期记忆的企业级 Agent 托管平台，Agent Foundation 都能提供扎实、模块化的系统基石。
 
 </Intro>
 
-<RuntimeMap alt="Console 和使用 SDK 或 HTTP API 的应用连接到 Service。control 角色将工作写入 PostgreSQL，worker 领取 run 后通过 Harness 执行，并将检查点保存到对象存储。租约过期后，后续尝试可以从已保存的检查点继续执行。Harness UI 和 Python 应用也可以直接嵌入 Harness。" />
+<RuntimeMap alt="Console 与 SDK/HTTP 客户端连接到 Service API。control 节点将持久化状态写入 PostgreSQL，worker 节点认领 run 并通过内嵌的 Harness 执行，同时将执行检查点保存至对象存储。租约过期后，后续重试将基于保存的检查点无缝恢复。Harness UI 和 Python 应用程序亦可直接独立内嵌 Harness。" />
 
-<Section title="从任务开始">
+<Section title="从核心目标起步">
 <Rows>
-<Row title="部署共享 agent 平台" href="/a13n-service/get-started/">在本地运行 Service 并配置模型</Row>
-<Row title="使用团队的 agent" href="/a13n-service/use-platform/">在已有平台上开始对话</Row>
-<Row title="为应用接入托管 agent" href="/a13n-service/connect-application/">完成认证、提交任务并读取结果</Row>
-<Row title="用 Python 构建 agent" href="/a13n-harness/getting-started/">先运行离线示例，再添加工具和模型</Row>
-<Row title="在仓库中交互式工作" href="/a13n-harness-ui/setup/">连接模型，通过终端或浏览器使用</Row>
+<Row title="部署私有化 Agent 平台" href="/a13n-service/get-started/">使用 Docker Compose 一键启动 Service，在 Console 中配置模型并管理多智能体</Row>
+<Row title="在代码仓库中交互式协作" href="/a13n-harness-ui/setup/">快速配置 Harness UI，通过命令行终端或浏览器直观审查代码、修改工程并执行任务</Row>
+<Row title="使用 Python 构建定制 Agent" href="/a13n-harness/getting-started/">基于 Harness 构建类型安全的 Agent，灵活挂载自定义工具并流式消费运行结果</Row>
+<Row title="将托管 Agent 接入现有业务" href="/a13n-service/connect-application/">通过 API 密钥认证发起异步任务，接收 Webhook 变更并通过 SSE 订阅实时输出流</Row>
+<Row title="在安全沙箱环境中运行任务" href="/environments/getting-started/">跨本地文件系统、Docker 容器以及云端沙箱无缝执行命令与文件操作</Row>
 </Rows>
 </Section>
 
-<Section title="产品">
+<Section title="产品矩阵">
 <Products>
-<Product icon="service" title="Service" audience="团队与应用" href="/a13n-service/" start="/a13n-service/get-started/">
-
-在共享工作空间里管理 agent 和访问权限。Service 保存对话，并在客户端断开后继续处理已接受的任务。
-
-</Product>
 <Product icon="harness" title="Harness" audience="Python 开发者" href="/a13n-harness/" start="/a13n-harness/getting-started/">
 
-用指令、工具和能力组合 agent，在 Python 进程中运行。存储、访问控制和结果交付由你的应用负责。
+将类型安全、可控的 Agent 执行引擎直接嵌入 Python 服务。灵活定义角色提示词、组合 Python 原生函数与 MCP 工具、编排人机交互（HITL）审批，并跨服务重启完整维系持久化的会话状态。
 
 </Product>
-<Product icon="harness-ui" title="Harness UI" audience="个人与可信小团队" href="/a13n-harness-ui/" start="/a13n-harness-ui/setup/">
+<Product icon="harness-ui" title="Harness UI" audience="开发者与 DIY 定制玩家" href="/a13n-harness-ui/" start="/a13n-harness-ui/setup/">
 
-连接模型，在代码仓库中与 agent 协作。终端和浏览器界面在同一个可信实例内共享对话、文件和终端。
+兼具终端 TUI 与全功能 WebUI 的交互式工作台。直接在真实工程中分析与修改文件、调度多智能体协作、开启 Live 实时语音通话，并可通过自定义 Skill 与 Content Plugin 无限扩展专属工作流。
+
+</Product>
+<Product icon="service" title="Service" audience="平台工程师与团队管理员" href="/a13n-service/" start="/a13n-service/get-started/">
+
+支持企业私有化部署的多租户 Agent 运行平台。内置细粒度 RBAC 权限控制、Agent Composer 自然语言建构、周期性 Cron 调度、企业级 MCP 外部连接，以及跨会话持久沉淀的团队记忆空间。
 
 </Product>
 </Products>
 </Section>
 
-<Section id="providers-and-integrations" title="提供方与集成">
-<ProviderMap alt="在自己的云上部署 a13n，自选模型、执行环境、网页搜索与抓取服务，以及要连接的应用。" />
+<Section id="providers-and-integrations" title="模型生态与扩展集成">
+<ProviderMap alt="全面支持主流生态。自主掌控底层架构，按需接入任意模型、执行沙箱、网页抓取服务与企业应用连接。" />
 </Section>
 
-<Section title="基础组件">
+<Section title="核心基础设施组件">
 <Rows>
-<Row title="Environments" href="/environments/">可移植的文件、命令、进程和计算机访问</Row>
-<Row title="Envd" href="/a13n-envd/">通过 EIP 操作文件、进程和计算机</Row>
-<Row title="Stream Protocol" href="/a13n-stream-protocol/">将 Harness 观测转换为有类型的 AG-UI 事件</Row>
-<Row title="Logging" href="/a13n-logging/">结构化日志和进程级日志配置</Row>
+<Row title="Environments" href="/environments/">统一且可移植的执行运行时抽象，覆盖本地路径、Docker 容器、E2B 及主流云端沙箱</Row>
+<Row title="Envd" href="/a13n-envd/">基于 EIP 协议的高性能沙箱守护进程，提供隔离进程管理、桌面 Computer Use 与出网安全控制</Row>
+<Row title="Stream Protocol" href="/a13n-stream-protocol/">将 Harness 内部执行观测无缝转换为强类型 AG-UI 事件的高保真流式协议</Row>
+<Row title="Logging" href="/a13n-logging/">专为分布式智能体系统设计的结构化日志体系与全链路跟踪关联支持</Row>
 </Rows>
 </Section>
 
 <Note>
 
-这些指南描述仓库 `main` 分支的功能。按照指南操作时，请核对已安装版本的发布说明。
-
-在[软件包目录](overview/packages.md)中查找可安装的组件。参与源码开发请从[贡献指南](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md)开始；已接受的架构约定位于[规范](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec)中。
+本站所有指南与技术规范均同步自 `main` 主分支。如需查看各独立发行包版本与依赖关系，请参阅[软件包目录](overview/packages.md)。参与源码开发请遵循[贡献指南](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md)，架构契约与底层设计说明请查阅[规范目录](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec)。
 
 </Note>

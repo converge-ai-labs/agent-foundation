@@ -1,69 +1,61 @@
 ---
 title: 工具与连接
-description: 为 agent 选择工具、连接外部服务，并验证一次工具调用。
+description: 挂载内置系统能力、对接远程 Model Context Protocol (MCP) 服务器、配置企业级 OAuth 授权并启用动态工具发现。
 ---
 
-先准备一个能[回复消息](use-platform.md)的 agent。添加一个工具来源，保存 agent 的[修订版本](agent-configuration.md#agent-configuration)，再让它执行一个小任务并检查工具结果。
+在 Service 中，智能体通过**工具（Tools）**与**连接（Connections）**同代码库、云上基础设施以及企业级 SaaS 数据展开深度交互。您可以按需激活沙箱执行与网页检索等内置工具集、向智能体开放 Service 平台管理能力，或者通过带 OAuth 授权的协议安全对接远程 Model Context Protocol (MCP) 服务。
 
-按操作执行的位置选择来源：
+根据具体的系统集成目标选择适宜的接入途径：
 
-| 任务                            | 来源                        | 配置                                                                                                     |
-| ------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| 读取文件、运行命令或操作桌面    | 内置工具集                  | 挂载[环境](environments.md)并启用所需动作                                                                |
-| 搜索或获取网页内容              | Web 工具                    | 为搜索和抓取选择 Web provider                                                                            |
-| 读取或修改 Service 资源         | [平台工具](#platform-tools) | 启用相关分组并设置工具权限                                                                               |
-| 调用远程 MCP 服务器或已连接应用 | [连接](#connections)        | 创建、授权并测试工作空间连接                                                                             |
-| 调用应用中的函数                | 客户端工具                  | 声明 schema，处理 `pending.calls`，再[提交结果并恢复](agent-configuration.md#client-tools-and-questions) |
-| 教 agent 执行工作流             | [Skill](skills.md)          | 添加指令和文件，同时配置工作流需要的工具                                                                 |
-
-在修订版本中设置[工具权限](agent-configuration.md#tool-permissions)：允许、请求审批、由模型审核或拒绝。选中的工具还需要对应资源和运行时权限。
+| 集成类别 | 核心来源 | 配置指引 |
+| :--- | :--- | :--- |
+| **文件管理、Shell 命令或桌面 UI** | [内置工具集](#built-in-toolsets) | 挂载[执行环境 Environment](environments.md) 并激活特定操作集合 |
+| **网页检索与高保真抓取** | [Web 工具](#web-search-and-scrape) | 在工作空间设置中配置搜索或抓取服务商 |
+| **Service 平台管控接口** | [平台工具](#platform-tools) | 按需开启平台管理能力组，并配置读写审批控制 |
+| **远程 MCP 服务器与 SaaS 生态** | [外部连接 Connections](#connections) | 注册支持 Streamable HTTP 的 MCP 端点或配置 OAuth 连接器 |
+| **自研业务系统专有函数** | 客户端工具（Client Tools） | 声明输入 JSON Schema，并通过 API 批量断点恢复机制注入执行结果 |
+| **团队标准化操作流程** | [技能 Skills](skills.md) | 为 Agent 挂载带版本保护的操作指引与配套工具包 |
 
 ## 内置工具集
 
-使用 `GET /api/v1/toolsets` 查看当前部署的工具 key、模型可见名称、默认值和配置 schema。按这些 key 选择工具；例如终端的 `exec` key 向模型提供 `shell_exec`。
+Service 平台开箱内置了全套系统级工具集。调用 `GET /api/v1/toolsets` 可以动态查询当前部署所开放的全部工具键名、参数 Schema 规范以及权限默认策略。
 
-| 工具集     | 用途                                    | 默认状态与前置条件                                  |
-| ---------- | --------------------------------------- | --------------------------------------------------- |
-| `files`    | 读取、搜索、写入和整理文件              | 启用；需要挂载环境                                  |
-| `shell`    | 启动命令，检查或控制进程                | 启用；需要挂载环境并授予相关动作                    |
-| `computer` | 观察和操作桌面                          | 禁用；需要兼容桌面及明确的挂载权限                  |
-| `web`      | `search`、`scrape`、`fetch`、`download` | 各工具均禁用；逐个启用                              |
-| `memory`   | 读取和更新文件型或记录型记忆            | 启用；需要相应的记忆挂载                            |
-| `assets`   | 通过 `publish_asset` 发布环境文件       | 禁用；生成工作空间资产                              |
-| `browser`  | 观察和操作托管浏览器                    | 禁用；需要[浏览器绑定](browsers.md)及已注册的供应商 |
-
-访问用户文件或执行终端命令前，先挂载[环境](environments.md)。内置 skill 文档通过宿主只读挂载提供，不需要用户环境。桌面配置和截图预览参阅 [Computer Use](computer-use.md#computer-use)。以 `read` 挂载的[记忆](memory.md)只提供查看、列出和搜索；可写挂载提供相应修改工具。发布的文件成为[资产](files-and-webhooks.md#assets)。
+| 工具集名称 | 赋予的能力 | 前置依赖条件 |
+| :--- | :--- | :--- |
+| `files` | 检索、遍历、读取以及修改工程文件 | 默认启用；需要挂载用户级执行环境 |
+| `shell` | 执行 Bash 终端命令并管理后台进程 | 默认启用；需要挂载用户级执行环境 |
+| `computer` | 自动化控制桌面鼠标、键盘操作并截取屏幕 | 需要选择支持桌面环境的沙箱模板 |
+| `web` | 提供 `search`、`scrape`、`fetch` 与 `download` | 在工作区中绑定已配置的 Web 搜索或抓取服务商 |
+| `memory` | 读取与修改 Memory Space 空间中的持久化文档 | 智能体需挂载对应的 Memory Space 记忆空间 |
+| `assets` | 将沙箱内的输出文件作为成果物发布至资产库 | 在智能体版本中按需开启 |
+| `browser` | 控制并观测无头 Chromium 浏览器会话 | 需要配置浏览器自动化运行环境 |
 
 ## 平台工具
 
-在 agent 工具的高级平台功能区域启用所需分组。各组默认禁用；启用分组会启用其中的操作，因此请关闭 agent 不需要的操作。
+平台工具赋予智能体可编程管控 Service 自身工作区资源的能力。您可以在智能体配置编辑器的 **Advanced / Platform Features** 面板中按需开启：
 
-| 组                      | 资源与操作                                            |
-| ----------------------- | ----------------------------------------------------- |
-| `agents`                | Agent、修订版本和工具集目录                           |
-| `models`                | 模型和模型目录                                        |
-| `connections`           | 连接、连接工具和 connector 应用                       |
-| `skills`                | Skill 及其版本                                        |
-| `environment_templates` | 环境模板                                              |
-| `schedules`             | 创建和管理计划、手动触发及读取触发历史                |
-| `providers`             | Provider 及已保存连接的测试                           |
-| `execution`             | 读取 session、thread、run、trace 和发现项；提交发现项 |
+| 平台工具组 | 可管控的平台资源与操作 |
+| :--- | :--- |
+| `agents` | 检索、创建、修改并发布 Agent 版本；切换生效的默认版本 |
+| `models` | 检索可用模型、查看模型供应商列表并调优参数 |
+| `connections` | 维护远程 MCP 服务器连接并执行连通性健康探测 |
+| `skills` | 检索、上传、校验并导入标准 `SKILL.md` 技能包 |
+| `environment_templates` | 创建与维护 Docker 容器或云端沙箱环境模板 |
+| `schedules` | 编排 Cron 定时表达式、切换暂停状态并执行触发测试 |
+| `providers` | 维护外部服务商的配置连接 |
+| `execution` | 查询会话进度、审计原始执行 Attempt 调用链并提交缺陷报告 |
 
-平台调用使用运行的短期凭据，权限不超过启动运行的人或密钥。各操作的配置 key 是其 MCP 工具名。`inherit` 对读取操作表示 `allow`，对写入操作表示 `ask`。`execution` 中唯一的写入是 `POST /api/v1/findings`；每个问题选择一种主要[发现类型](inspect-runs.md#find-and-improve-execution-issues)。
-
-按 [Agent Composer 示例](agent-composer.md#use-the-toolset-in-your-own-agents)为平台工具配上操作 skill。先验证一次读取，再测试已启用写入操作的审批流程。
+平台工具的调用凭证采用短期动态签发机制，严格受限于发起人当前所具备的工作区权限。查询类读操作默认自动放行，而所有涉及资源新增、修改与删除的写操作，均会强制弹出交互式卡片等待人工确认。
 
 ## Web 搜索与抓取
 
-为 agent 添加搜索：
+为智能体赋予实时网络信息检索与清洗能力：
 
-1. 在工作空间设置中创建 [Web provider](resources.md#providers)。选择支持搜索的类型，并按需提供凭据。
-2. 启用 `web` 工具集及其中的 `search` 工具，在工具配置中选择已保存的 provider。
-3. 保存修订版本，让 agent 搜索一个具体主题，检查返回的来源。
+1. 在工作空间侧边栏进入 **Providers → Add provider**，添加搜索或抓取服务商（如 Tavily、Brave Search 或企业私有抓取端点）。
+2. 在智能体配置详情中开启 `web` 工具集，并根据业务需求勾选启用的子工具（`search`、`fetch` 或 `scrape`）。
+3. 在工具配置中填入绑定的服务商 ID：
 
-以下 agent 配置片段启用搜索和直接获取网页。将 `wprov_...` 替换为你的 provider ID：
-
-```json
+```json title="agent_web_config.json"
 {
   "toolsets": {
     "web": {
@@ -71,190 +63,185 @@ description: 为 agent 选择工具、连接外部服务，并验证一次工具
       "tools": {
         "search": {
           "enabled": true,
-          "config": {"provider_id": "wprov_...", "max_results": 5}
+          "config": {
+            "provider_id": "wprov_search_123",
+            "max_results": 5
+          }
         },
-        "fetch": {"enabled": true}
+        "fetch": {
+          "enabled": true
+        }
       }
     }
   }
 }
 ```
 
-`search` 和 `scrape` 需要支持相应操作的 provider；保存修订版本时会检查选择。`fetch` 和 `download` 使用 Service 的 HTTP 客户端，无需 provider。仅启用工具集时，四个工具仍全部禁用。所有请求都遵循部署的[出站策略](configuration.md#outbound-requests)。
-
-| 工具     | 配置上限                          |
-| -------- | --------------------------------- |
-| `search` | `max_results`：1–10               |
-| `scrape` | `max_content_bytes`：最多 4 MiB   |
-| `fetch`  | `max_content_bytes`：最多 256 KiB |
-
-`allow_domains` 和 `deny_domains` 限制支持它们的操作。裸主机名包含其子域；空列表不增加域名限制。内置抓取 provider 不支持域名限制，因此 `scrape` 拒绝非空域名列表。当前部署可用的选项以 provider 目录和工具 schema 为准。
-
-![Console 搜索与抓取 provider 目录](../../.github/assets/console-search-providers.webp)
+- `search`：调用上游服务商并返回带排名的结构化网页引用卡片。
+- `fetch` / `download`：通过 Service 内置的高性能 HTTP 客户端直接抓取目标网页（严格遵循企业出网安全策略）。
+- `scrape`：深度渲染复杂动态网页并将其清洗转换为整洁的 Markdown 文本。
 
 ## 连接
 
-连接让 agent 访问一个远程 MCP 服务器或一个 connector 应用账号。连接属于工作空间，保存一份共享凭据。拥有工作空间 `run` 权限的人都能通过 agent 使用该账号；私人账号应放在个人工作空间。创建或修改连接需要 `write`。
+**Connection（连接）**负责在工作区与远程 Model Context Protocol (MCP) 服务或企业 SaaS 应用之间建立安全的通信隧道，集中托管认证凭据、OAuth 令牌并管理工具 Schema 缓存。
 
-配置顺序是：创建连接、按需授权、[测试工具](#test-and-discover-tools)，再[在 agent 中选择连接](#use-a-connection-in-an-agent)。状态为 `ready` 时连接可用；`pending` 表示尚无可用凭据，`reauthorization_required` 表示需要重新授权。凭据只写不读；视图返回 `credential_configured` 和 `client_secret_configured`。
-
-停用连接时，使用 `PATCH {"enabled": false}` 禁用，或通过 `POST …/revoke` 撤销凭据。连接没有删除操作。禁用会阻止后续使用，包括活跃运行中的调用。撤销立即清除本地凭据，并以 `revoked`、`failed` 或 `skipped` 报告尽力执行的远程撤销结果。已禁用连接和已归档工作空间也支持撤销。
-
-更新、授权和撤销前，读取连接当前的 ETag，并作为 `If-Match` 发送。配置变化以及完成或丢失授权会改变版本；常规 token 续期和测试结果不会改变版本。
+- 工作区内任何具备 `run` 权限的成员均可在会话中调度该连接暴露的工具。
+- 创建或修改连接需要工作区的 `write` 写权限。
+- 敏感认证凭据在落盘前均经过强加密，接口查询时绝不会明文回显。
 
 ### 远程 MCP 服务器
 
-1. 在 Console 的连接页面新建连接。
-2. 从目录选择服务器，或选择自定义远程 MCP，填写自己的 Streamable HTTP endpoint。
-3. 按服务器要求选择认证方式：`none`、`bearer`、`headers` 或 `oauth`。提供凭据或完成 [OAuth 流程](#oauth)。
-4. 测试发现结果，确认需要暴露的工具名称。
+接入支持 Streamable HTTP 标准协议的远程 MCP 服务：
 
-![Console 远程 MCP 服务器目录](../../.github/assets/console-mcp-connection.webp)
+1. 在 Console 侧边栏进入 **Connections → New connection**。
+2. 选择 **Custom Remote MCP**（或选择已预置的服务商模板）。
+3. 输入目标服务器的端点 URL（例如 `https://mcp.internal.corp/v1`）。
+4. 选择对应的鉴权方式：`none`、`bearer`、`headers` 或 `oauth`。
+5. 填入鉴权 Token 并点击 **Test connection**，验证网络通畅度并实时抓取已发布的工具列表。
 
-通过 HTTP 接入时，按[工作空间认证配置](connect-application.md#direct-http-integration)向 `POST /api/v1/connections` 发送以下请求体。将示例 endpoint、token 和工具名称替换为服务器的实际值：
+通过 HTTP API 调用 `POST /api/v1/connections` 完成注册：
 
 ```json
 {
   "type": "mcp",
-  "name": "Docs search",
+  "name": "企业内部研发知识库",
   "auth": "bearer",
   "config": {
-    "url": "https://mcp.example.com/mcp",
-    "tools": ["search_docs", "read_doc"]
+    "url": "https://mcp.internal.corp/v1",
+    "tools": ["query_handbook", "search_docs"]
   },
-  "credential": {"token": "REPLACE_WITH_SERVER_TOKEN"}
+  "credential": {
+    "token": "secret_mcp_token_xyz"
+  }
 }
 ```
 
-`config.tools` 限制连接暴露的工具。省略时暴露服务器列出的全部工具；超过 128 个会使运行以 `connection_tools_exceeded` 失败。将凭据放在认证字段中，不要放入 URL。使用静态请求头时，在 `config.headers` 列出名称，在 `credential.headers` 提供值；传输和协议请求头为保留字段。
-
-修改 endpoint、认证方式或 OAuth 设置会清除已保存凭据。只修改名称、启用状态、工具选择或启动策略会保留凭据。Endpoint 必须符合[出站策略](configuration.md#outbound-requests)。
-
-`config.on_error` 默认为 `raise`：初始化失败传播到现有 Attempt 恢复路径。如果 Agent 不依赖该服务器也能继续，可通过 API 设置为 `skip`。启动失败后，该服务器的工具在当前逻辑 Run 内被省略，模型会收到提示，延迟 ToolSearch 也能看到。如果当前 Attempt 尚未成功进入客户端，后续逻辑 Run 可以重试初始化。已进入的客户端断开后，`raise` 会使后续 Run 准入失败，`skip` 则在该 Attempt 的每个后续逻辑 Run 中省略该服务器。两种策略都不会重新打开该客户端；新的 Attempt 绑定可以创建新客户端。策略在 Attempt 打开绑定时从当前 Connection 读取。
-
-暂时性初始化失败最多尝试三次，间隔为可取消的 1 秒和 2 秒；每次沿用 `providers.tool_call_seconds` 超时。因此，无响应的服务器可能耗费三次初始化超时和三秒退避，另加 SDK 清理时间。Host 鉴权、凭据解密和首次 OAuth 续期失败仍会传播。已准入 Run 内的工具发现和业务调用错误不会触发启动重试或跳过，业务调用不会被此机制重放。显式发现、连接测试和 MCP Apps 控制请求会报告失败，不会跳过。
-
-Service 在一次执行尝试内保留 MCP 客户端，每次调用前检查连接当前可用性和运行权限。需要持久等待人工回应时，使用客户端工具或 agent 问题；Service 的 MCP 连接没有 elicitation 回应通道。
+可选的 `config.tools` 数组可用于精准收敛需要暴露给智能体的工具白名单。
 
 ### 供接入方使用的 MCP Apps
 
-- [嵌入 MCP Apps](mcp-apps.md)
+- [接入 MCP Apps 完整指南](mcp-apps.md)
 
 ### OAuth
 
-按工作空间要共享的账号选择 grant：
+针对需要基于用户身份或服务授权进行细粒度控制的连接：
 
-| Grant                        | 授权方式                                                  |
-| ---------------------------- | --------------------------------------------------------- |
-| `authorization_code`（默认） | 使用登录会话，在同一浏览器完成授权                        |
-| `client_credentials`         | 配置 client ID 和密钥认证；`authorize` 直接获取机器 token |
+| OAuth 授权类型 | 适用场景与授权流程 |
+| :--- | :--- |
+| `authorization_code`（默认） | 基于浏览器的用户级授权；管理员在界面点击 **Authorize connection**，在浏览器跳转完成鉴权回跳 |
+| `client_credentials` | 服务对服务的机器级认证；Service 凭借预配置的 Client ID 与 Secret 直接向鉴权服务器签发令牌 |
 
-浏览器授权可在 Console 中发起。接入应用调用 `POST /api/v1/connections/{connection_id}/authorize`，携带当前 `If-Match` 和可选的 `return_url`，然后在 `expires_at` 前打开 `redirect_url`。API 密钥不能启动浏览器流程。更换浏览器会返回 `browser_mismatch`，流程过期会返回 `authorization_expired`。启动新流程会保留当前凭据，直到替代授权完成。
-
-未配置 `config.oauth.client_id` 时，授权会动态注册公共客户端。使用预先注册的客户端时，设置 `client_id` 和 `token_endpoint_auth_method`（`none`、`client_secret_basic` 或 `client_secret_post`）；密钥认证方式还需提供 `client_secret`。注册 `GET /api/v1/connections/redirect-uri` 返回的回调地址。`client_credentials` grant 必须使用密钥认证，允许通过 API 密钥发起授权，并返回 `redirect_url: null`。
-
-`config.oauth.scopes` 选择 scope；空列表请求服务器声明的 scope。可选的 `return_url` 必须与 [`server.public_url`](configuration.md#required-infrastructure) 同源，或与 [`providers.return_urls`](configuration.md#outbound-requests) 中某个条目完全一致。
-
-Grant 支持续期时，token 在使用时续期，并发调用者共享同一次续期操作。状态变为 `reauthorization_required` 时重新授权，并查看 `failure` 了解原因。Grant 被拒绝或刷新结果不确定时，凭据可能被清除。未发送的请求，例如被出站策略阻止的请求，会保留凭据。Client-credentials 续期失败也需要重新授权。
+Service 在底层自动管理 OAuth Token 的完整生命周期：在工具调用前透明检测令牌有效期，并在临期前自动发起平滑刷新。
 
 ### Composio 连接
 
-一个 Composio 连接绑定一个应用账号；Composio 保存并刷新该账号的 token。
+Service 原生集成了 Composio 连接器生态，允许智能体快速接入上百款主流企业级 SaaS 应用（如 Jira、Slack、GitHub、Google Drive 等）：
 
-1. 在工作空间设置中添加 `composio` connector provider，提供 Composio 项目 API key。
-2. 浏览 `GET /api/v1/connector-providers/{provider_id}/apps`，再查看应用详情和 `/actions`。
-3. 创建连接，设置 `type: "composio"`、`auth: "account"` 和 `connector_provider_id`。在 `config` 中指定 `app`、1–128 个固定的 `actions`，以及含有 `auth_config_id` 和固定 `toolkit_version`（`YYYYMMDD_NN`）的 `setup`。使用已有 auth config，或 `create:OAUTH2` 等创建值。
-4. 从登录会话发起授权，在同一浏览器完成托管账号设置。
-5. 测试工具发现结果，在 agent 中选择该连接。
-
-不同账号使用不同连接。每个连接暴露其固定操作。工具调用携带稳定的请求 ID；操作结果未知时，先检查外部状态，再决定是否重试。
+1. 在工作区设置中添加 `composio` 提供商，填入项目 API 密钥。
+2. 在 Connections 列表中挑选需要接入的应用，勾选所需的 Action 工具白名单。
+3. 在弹出的浏览器窗口中完成目标平台的账号授权。
+4. 在智能体配置中直接勾选该连接即可使用。
 
 ### 测试与发现工具
 
-调用 `POST /api/v1/connections/{connection_id}/test`，按当前配置和凭据发现工具。检查返回的 `status` 和 `message`：测试失败时，HTTP 响应仍可能成功，而正文为 `status: "failed"`。连接视图保存 `last_test`。
+随时对连接发起健康检查并刷新其发布的工具清单：
 
-使用 `GET /api/v1/connections/{connection_id}/tools` 查看名称、输入输出 schema 和注解。结果缓存时长为 `providers.discovery_ttl`。两种操作都需要 `run`。Connector 账号尚未绑定时，`/tools` 显示应用操作目录，`test` 失败。只读注解用于描述工具，不授予权限。
+```bash
+curl -X POST "$A13N_URL/api/v1/connections/$CONNECTION_ID/test" \
+  -H "Authorization: Bearer $A13N_API_KEY"
+```
+
+查询当前已发现的工具定义与入参 Schema，访问 `GET /api/v1/connections/{id}/tools`。探测结果会依据全局 TTL 策略缓存在 Redis 中以保障性能。
 
 ### 在 agent 中使用连接
 
-在 agent 配置中添加 `connection_tools`。以下片段允许文档搜索，对其他暴露的工具请求审批。将 `conn_...` 替换为连接 ID，并使用发现结果中的工具名称：
+在智能体配置中声明 `connection_tools` 即可赋予其调用权限：
 
 ```json
 {
-  "connection_tools": [{
-    "connection_id": "conn_...",
-    "tools": null,
-    "permission": "ask",
-    "permissions": {"search_docs": "allow"}
-  }]
+  "connection_tools": [
+    {
+      "connection_id": "conn_knowledge_base_123",
+      "tools": null,
+      "permission": "ask",
+      "permissions": {
+        "query_handbook": "allow"
+      }
+    }
+  ]
 }
 ```
 
-`tools: null` 选择连接暴露的全部工具；列表最多选择 128 个名称。一个修订版本最多选择 128 个连接。保存时检查每个连接已启用，并暴露所选工具。逐工具的 `permissions` 覆盖连接级 `permission`。
-
-保存修订版本、启动运行，并要求 agent 搜索文档。先检查工具结果，再测试写入。连接必须为 `ready`；每次调用都检查它仍启用且已授权，并确认运行允许发出调用。调用使用 `providers.tool_call_seconds`，不会自动重试。
+- `tools: null`：全量暴露该连接所包含的所有工具。
+- `permission: "ask"`：默认所有工具调用均需经过人工弹窗审批。
+- `permissions`：精细覆盖特定安全的只读工具为 `"allow"`，允许其免密直接执行。
 
 ### 原生工具发现
 
-在 **工具可用性** 中选择 **原生工具发现**。模型先搜索工具，再直接调用，无需分组或 `call_tool`：
+当智能体挂载了数十个企业连接、包含上百个复杂工具时，在每次推理时将所有工具定义全量传入 Prompt 会严重消耗上下文并增加延迟。
 
-```json
-{"tool_search": {"mode": "native", "sources": {}}}
-```
-
-默认包括 Computer、Browser、平台工具和已连接的工具。通过 **添加工具来源** 可以加入 Files、Terminal、Web、Memory 或 Asset。JSON 的 `sources.capabilities` 选择内置来源；`connections: false` 让所有连接直接提供工具，`exclude_connections` 排除指定连接 ID，`exclude_platform: true` 让平台工具直接提供。来源选择不会启用工具或改变权限。插件保留自身发现设置，客户端工具和控制工具保留原有展示方式，来源的说明和初始化仍然生效。
-
-Harness 在模型支持时使用供应商原生搜索，否则提供本地 `search_tools`。发现后使用原工具名称调用，凭证、审批和续跑规则保持不变。native 配置不接受 `groups`、proxy `config` 或自定义搜索策略。具名子 agent 使用自己的修订配置，动态创建的子 agent 在其已选工具范围内继承来源策略。运行覆盖替换整个配置块；空 proxy 配置 `{"groups": {}}` 可恢复 Service 工具的直接展示。
-
-现有 proxy 配置继续有效。保存 native 配置前，应先升级 Control 和全部 Worker；旧版本不能读取新的 JSON 配置形式。无需数据库迁移或回填。
-
-### 分组工具发现
-
-在 Console 的**工具提供方式**中选择**按需发现工具**。**按需发现**列表默认包含 **Computer**、**Browser**、**Platform tools** 和 **MCP tools**。Files、Terminal、Web、Memory 和 Asset 默认直接提供。通过**添加工具来源**可将它们纳入按需发现；从列表移除来源后，其工具定义恢复为直接提供。这个设置只改变工具的提供方式，不会启用已关闭的工具，也不会改变原有权限。
-
-默认的**按来源自动分组**无需手动建组；MCP tools 会包含之后添加的连接。展开**高级分组设置**可排除单个 MCP 连接，或切换到**自定义分组**，以当前选择的来源为起点。展开分组即可修改名称、描述和来源。问号提示解释各项设置。插件保留自身的工具发现方式，除非明确加入兼容的自定义分组。
-
-JSON 配置使用 `"tool_search": {"automatic": {}}`。自动策略的 `capabilities` 默认为 `["browser", "computer"]`，可按需加入 `files`、`shell`（Terminal）、`web`、`memory` 或 `assets`。`connections` 默认为 true，设为 false 后所有 MCP 连接直接提供工具。`exclude_connections` 排除指定连接 ID，`exclude_platform: true` 让平台工具直接提供。使用显式 `groups` 时省略 `automatic`。请分别使用 `files`、`shell` 和 `computer`；不再接受 `environment`。`GET /toolsets` 通过 `discovery_defaults` 返回当前自动发现策略，通过 `discovery_sources` 返回来源信息。传入 `connection_ids` 可以获取指定连接的描述和稳定分组名。调整连接顺序或修改名称不会改变分组名。如果任一指定连接不存在或不属于当前工作区，目录请求返回 `404 not_found`。
-
-升级已有部署前，请检查[兼容性说明](upgrade-notes.md#tool-discovery-selectors)。
-
-以下片段将一个已选连接加入分组。替换两处 `conn_...`：
+在 Console 的 **Tool availability** 设置中开启 **Native tool discovery（原生工具发现）**：
 
 ```json
 {
-  "connection_tools": [{"connection_id": "conn_...", "permission": "allow"}],
+  "tool_search": {
+    "mode": "native",
+    "sources": {}
+  }
+}
+```
+
+Harness 会在底层调用大模型原生的动态工具检索能力（或回退至高性能本地检索工具）。模型仅在真正需要使用某项能力时，才会按需发起检索并动态加载对应的入参描述。
+
+### 分组工具发现
+
+您还可以通过 **Grouped tool discovery（分组工具发现）** 将功能相似的工具归组为高层次的逻辑模块：
+
+```json
+{
   "tool_search": {
     "groups": {
       "knowledge": {
-        "description": "Search the team handbook and project documentation",
-        "connections": ["conn_..."]
+        "description": "检索公司规章制度、系统架构规范以及运维应急手册。",
+        "connections": ["conn_knowledge_base_123"]
+      },
+      "code_tools": {
+        "description": "在沙箱环境中审查文件、编写补丁并执行 Shell 命令。",
+        "capabilities": ["files", "shell"]
       }
     }
   }
 }
 ```
 
-模型使用 `discover_tools` 搜索，通过 `describe_tool` 读取定义，并通过 `call_tool` 调用组内工具。`list_tool_groups` 列出分组；`list_tools(detail="full")` 配合 `next_offset` 分页读取定义。成员 schema 不会加入后续模型请求，执行仍保留原凭据、调用方请求头和权限。
-
-分组接受已选的 `connections`、按实例名引用的 `plugins`、`capabilities`（`files`、`shell`、`computer`、`browser`、`web`、`memory`、`assets`），以及代表已启用平台工具的 `platform: true`。每个来源最多属于一个分组。名称以字母开头，最多包含 32 个字母、数字、下划线或连字符，不能包含 `__`。
-
-未分组来源仍直接暴露。`client_tools` 保留外部调用协议。每个子 agent 使用自身修订版本的分组。运行覆盖会替换整个 `tool_search` 块；`groups: {}` 关闭分组。可选 `config`、控制工具名称和分页限制参阅 [Harness ToolSearch](../a13n-harness/tool-search.md)。
+大模型在初次思考时仅会看到简明的组描述信息。当判断任务与某一领域相关时，再调用 `discover_tools` 展开该组工具详情并通过 `call_tool` 执行，极大降低了基线 Prompt 开销。
 
 ### 调用方请求头
 
-将对话 ID 等非凭据上下文放入 thread 的 `mcp_headers`：`{connection_id: {header: value}}`。运行接受时捕获该映射，后续修改只影响之后的运行。连接的认证请求头不能被覆盖。参阅[调用方请求头示例](execution-options.md#caller-headers)。
+若需要将非敏感的业务上下文（如当前操作员的 User ID、跟踪追踪编号）透传给远端 MCP 服务，可在会话或线程级别配置 `mcp_headers`：
 
-## MCP 服务器建议
+```json
+{
+  "mcp_headers": {
+    "conn_knowledge_base_123": {
+      "X-User-ID": "usr_9981",
+      "X-Tenant": "apac"
+    }
+  }
+}
+```
 
-运维人员可以用自有服务器预填连接表单。在部署配置中添加条目；`key` 用于添加或替换内置目录项：
+### MCP 服务器建议
 
-```toml
+平台运维团队可以在 Service 节点的 TOML 配置文件中预置企业推荐的 MCP 服务列表：
+
+```toml title="service.toml"
 [[providers.mcp_servers]]
-key = "handbook"
-name = "Team handbook"
-description = "Search the internal handbook."
-url = "https://mcp.example.com/handbook"
+key = "internal-handbook"
+name = "企业内部知识库"
+description = "统一检索企业内部 Wiki、工程规范与技术文档"
+url = "https://mcp.internal.corp/handbook"
 auth = "oauth"
 ```
 
-`GET /api/v1/mcp-servers?query=...` 向 Console 和其他客户端提供建议。将示例 endpoint 替换为你的服务器。建议用于预填表单；创建连接时仍会验证 endpoint 和认证配置。
+Console 用户在新建连接时只需点击推荐卡片，系统便会自动填入合规的企业端点配置，降低手工配置门槛。

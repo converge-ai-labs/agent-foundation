@@ -1,29 +1,30 @@
 ---
 title: 委派与 CodeAct
-description: 把任务交给另一个 Agent，或用受限 Python 在当前 Agent 中组合工具。
+description: 通过子智能体编排复杂的多 Agent 协作流程，或借助 CodeAct 让 Agent 编写 Python 代码并发调用与编排外部工具。
 ---
 
-委派把任务交给另一个拥有独立指令、Model 和工具的 Agent。CodeAct 让当前 Agent 用 Python 循环、条件和并发组合工具调用。
+复杂的智能体业务系统往往需要两类高阶编排能力：**委派（Delegation）**（将独立任务分派给具备专属提示词和特定模型的子智能体）以及 **CodeAct**（让智能体编写并执行 Python 代码，在单轮交互内通过循环、分支与并发高效编排多个工具）。
 
 ## 如何选择
 
-| 任务                                          | 使用方式                                  |
-| --------------------------------------------- | ----------------------------------------- |
-| 执行单次操作                                  | 直接调用工具                              |
-| 请另一个 Agent 审查、研究或解决范围明确的任务 | [内联委派](#inline-delegation)            |
-| 用 Python 控制流组合工具结果                  | [CodeAct](#codeact)                       |
-| 让子任务在父 Run 关闭后继续执行               | [异步子级](#asynchronous-children)        |
-| 用已安装的库运行应用 Python，或执行原生命令   | 应用代码或 [Environment](environments.md) |
+根据具体的系统架构与交互延迟要求选择合适的编排策略：
 
-下面的示例沿用[快速开始中的 Model 设置](getting-started.md#use-a-real-model)。运行前设置 `HARNESS_MODEL` 和提供方凭据。
+| 业务场景 | 推荐方案 | 核心优势 |
+| :--- | :--- | :--- |
+| 单次直接的工具操作 | 直接工具调用 | 零额外开销；标准模型函数调用机制 |
+| 边界明确的审查、专家分工或角色解耦 | [内联委派](#inline-delegation) | 拥有独立的 Prompt 上下文与专属模型选型，结果干净汇聚 |
+| 涉及多轮遍历、数组过滤或计算聚合 | [CodeAct](#codeact) | 将中间结果在 Python 内过滤，避免巨量数据冲垮上下文与往返延迟 |
+| 无需串行等待的大规模外部工具并发调用 | [CodeAct 并发调用](#combine-tool-calls) | 通过 `asyncio.gather` 秒级并发调度任意已注册工具 |
+| 执行周期长、需跨越父级会话轮次的后台任务 | [异步子级](#asynchronous-children) | 任务生命周期与父会话解耦，由宿主调度器独立托管 |
+| 需要调用系统原生命令、安装第三方依赖 | 业务代码或[执行环境 Environments](environments.md) | 在受限沙箱之外获得完整的操作系统原生能力 |
 
 ## 内联委派
 
-内联委派等待已声明的子 Agent 完成，再把结果返回父 Model。Harness 负责执行子级，应用无需实现调度器。
+内联委派允许父级 Agent 调度一个专业的子级 Agent，并同步等待其交付最终成果。Harness 负责在当前执行轮次内透明地管理子智能体的生命周期。
 
 ### 声明子级
 
-为子级提供完整的 `AgentDefinition`，再用一个名称将它注册到父级。`SubagentCapability()` 向父 Model 提供委派工具。
+使用完整的 `AgentDefinition` 定义子级 Agent，并通过 `SubagentCapability` 与 `SubagentDefinition` 在父级构建器中完成注册：
 
 ```python title="delegation_demo.py"
 import asyncio
@@ -32,32 +33,41 @@ import os
 from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder, SubagentDefinition
 from a13n_harness.capabilities import SubagentCapability
 
+# 1. 定义专属领域的子级智能体
 reviewer = AgentDefinition(
     agent=AgentSpec(
         model=os.environ["HARNESS_MODEL"],
-        instructions="Review the supplied plan. Identify concrete risks and missing steps.",
+        instructions="你是一位资深的系统架构安全专家。请深入审查传入的方案，精准识别关键架构风险与遗漏步骤。",
     ),
     output_type=str,
     definition_id="plan-reviewer-v1",
 )
+
+# 2. 将子级智能体挂载至父级协调智能体中
 parent = HarnessBuilder().build(
     AgentDefinition(
         agent=AgentSpec(
             model=os.environ["HARNESS_MODEL"],
-            instructions="Delegate plan reviews to reviewer, then summarize its findings.",
+            instructions="负责全局任务的统筹推进。将架构方案的深度审查委派给 'reviewer' 子智能体，随后汇总输出最终建议。",
         ),
         output_type=str,
         definition_id="coordinator-v1",
         capabilities=(SubagentCapability(),),
-        subagents=(SubagentDefinition(
-            name="reviewer", description="Review a plan for concrete risks.", agent=reviewer,
-        ),),
+        subagents=(
+            SubagentDefinition(
+                name="reviewer",
+                description="负责对架构与部署方案进行深度安全及风险审查的专家智能体。",
+                agent=reviewer,
+            ),
+        ),
     )
 )
 
 
 async def main() -> None:
-    result = await parent.run("Review this plan: deploy the update, then run the tests.")
+    result = await parent.run(
+        "请审查这份数据库变更方案：直接在生产库执行 DDL，随后逐步启动数据迁移脚本。"
+    )
     print(result.output_or_raise())
 
 
@@ -65,25 +75,23 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-运行 `uv run python delegation_demo.py`。父级可调用 `delegate(subagent="reviewer", prompt=...)` 并使用子级的答案。具体措辞取决于所用 Model。
+当运行该脚本时，父级模型会自动发起 `delegate(subagent="reviewer", prompt=...)` 调用。Harness 将初始化并执行 reviewer 智能体，直至其完成计算并将结构化结果交付给父级模型。
 
 ### 继续子级对话
 
-`delegate` 随子级输出返回 `execution_id`。父 Model 可调用 `resume_subagent(execution_id=..., prompt=...)` 继续该对话。再次调用 `delegate` 会开始新的对话。
+子智能体返回结果时，Harness 会生成一个唯一的 `execution_id`。如果父级模型在后续思考中希望继续与该子智能体深挖细节，只需调用 `resume_subagent(execution_id=..., prompt=...)` 即可承接上一轮对话；若再次调用 `delegate`，则会启动一个全新的独立子线程。
 
-保存并恢复父级完整的 `HarnessState`，即可跨 Run 保留内联子级。重建兼容定义时，保持定义 ID 稳定。持久化方式见[状态与恢复](state-and-resume.md)。
-
-内联子级共享父级已进入的 Environment，并继承调用策略。为每个子级明确设置预算：子级用量独立于父级预算，`SubagentDefinition.usage_limits` 可进一步收紧子级定义的限制。
-
-内联子级不能挂起等待延迟工具反馈。需要这类交互时，使用 Host 管理的子级。
+子智能体的完整对话线索已无缝序列化在父级的 `HarnessState` 中。跨进程重启保存与加载父级状态时，所有已委派的子级会话上下文均得到完整维系。
 
 ## CodeAct
 
-CodeAct 提供两个工具：`run_code` 执行内联 Python，`run_program` 执行可复用源码文件。两者都运行受限 Python。文件、网络、进程、环境变量和凭据访问通过允许调用的工具完成。需要常规 Python 包或原生程序时，使用 Environment shell。
+传统的大模型工具调用（Tool Calling）采用“单步往返”机制：模型输出一条调用指令，宿主执行并返回结果，模型阅读后再决定下一步。如果遇到遍历数组、分页拉取或数据聚合等任务，这种往返会产生大量网络延迟并消耗成倍的 Token。
+
+**CodeAct** 彻底改变了这一模式：它为模型赋予了一个受保护的异步 Python 运行环境。Agent 可以自主编写 Python 代码，利用循环、条件与并发直接调度注册的工具，仅将最终处理后的核心结果回传至 Prompt 上下文。
 
 ### 为工具启用 CodeAct
 
-添加 `CodeActCapability()`，并显式允许 Python 调用所需工具。下面的示例开放一个 `double` 函数：
+注册 `CodeActCapability()`，并使用 `CodeActPolicyToolset` 为需要暴露给 Python 代码的工具授予调用权限：
 
 ```python title="codeact_demo.py"
 import asyncio
@@ -97,20 +105,27 @@ from pydantic_ai.toolsets import FunctionToolset
 
 
 def double(value: int) -> int:
-    """Return twice the supplied value."""
+    """返回传入整数值的两倍。"""
     return value * 2
 
 
+# 为原生工具配置 CodeAct 策略，允许被 Python 代码直接调度
 math_tools = Capability(
     id="math-tools",
-    toolsets=[CodeActPolicyToolset(
-        wrapped=FunctionToolset([double], id="math-functions"),
-        policy=CodeActToolPolicy(tools={"double": True}),
-        reject_unknown_tools=True,
-    )],
+    toolsets=[
+        CodeActPolicyToolset(
+            wrapped=FunctionToolset([double], id="math-functions"),
+            policy=CodeActToolPolicy(tools={"double": True}),
+            reject_unknown_tools=True,
+        )
+    ],
 )
+
 calculator = HarnessBuilder().build(
-    AgentSpec(model=os.environ["HARNESS_MODEL"]),
+    AgentSpec(
+        model=os.environ["HARNESS_MODEL"],
+        instructions="遇到多项计算时，优先通过 run_code 编写 Python 代码高效执行计算。",
+    ),
     output_type=str,
     capabilities=(math_tools, CodeActCapability()),
 )
@@ -118,7 +133,7 @@ calculator = HarnessBuilder().build(
 
 async def main() -> None:
     result = await calculator.run(
-        "Use run_code to double each of 2, 4, and 6, then return their sum."
+        "请使用 run_code 对 [2, 4, 6, 8, 10] 中的每个数计算两倍并求和，返回最终总数。"
     )
     print(result.output_or_raise())
 
@@ -127,133 +142,147 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-运行 `uv run python codeact_demo.py`，预期总和为 `24`。`CodeActToolPolicy` 赋予调用资格；每次调用仍须通过正常的可用性、参数验证、权限和审批检查。
-
 ### 组合工具调用
 
-Model 向 `run_code` 提供如下代码。这些片段是 runner 的输入，不是独立 Python 模块：
+在 `run_code` 中，模型编写的是标准的异步 Python 代码，所有授权工具均以顶级异步函数形式直接可用：
 
 ```python
+# 串行遍历多个工具调用
 values = []
-for value in [2, 4, 6]:
-    values.append(await double(value=value))
+for item in [2, 4, 6]:
+    doubled = await double(value=item)
+    values.append(doubled)
+
 sum(values)
 ```
 
-使用关键字参数，并 await 每次工具调用。`run_code` 返回最后一个表达式。相互独立的调用可以并发执行：
+对于无依赖关系的独立 I/O 操作，模型可以使用 `asyncio.gather` 进行高吞吐并发调用：
 
 ```python
 import asyncio
 
-values = await asyncio.gather(double(value=2), double(value=4), double(value=6))
-sum(values)
+# 并发工具调用，大幅缩短等待延迟
+results = await asyncio.gather(
+    double(value=10),
+    double(value=20),
+    double(value=30),
+)
+sum(results)
 ```
 
-一个 Model 响应中只放一个 runner 工具调用。在代码内部组合所需调用，并只返回 Agent 需要的数据。
-
-使用 Host 持有的执行 runtime 时，收到后台回执后，Agent 可以选择独立工作，或显式等待结果。后续 runner 不会隐式等待无关的后台 Shell 命令退出；使用服务器前仍需单独检查就绪状态。不同 Model 响应中的独立 `run_program` 调用可以重叠执行。`run_code` 在一个逻辑 Run 中保留同一份内联会话，因此再次提交内联代码或 `restart=True` 前，要先等待正在使用该会话的执行完成。显式全局串行模式仍等待实际完成。
-
-对于设置了 `defer_loading=True` 的工具，先发现工具或加载其 Capability，再调用 runner。大型工具集合可使用 [ToolSearch 分组](tool-search.md#use-with-codeact)，在 runner 内发现工具。ToolSearch 代理调用始终顺序执行，包括放在 `asyncio.gather` 中时。
+中间大量的调试输出与原始响应均留在沙箱内，仅最后一个表达式的值或显式返回对象会注入至模型上下文，极大节省了窗口开销。
 
 ### 组合浏览器工具
 
-嵌入式 Host 可以同时组合 `BrowserUseCapability()` 与 `CodeActCapability()`，通过 `RunBindings.embedded(browser_backend=backend)` 提供已授权的 `BrowserBackend`。同一组浏览器工具仍可直接调用。用 `BrowserUseCapability(enabled_tools=frozenset({"observe", "js", "cdp"}))` 选择工具子集，无需另设浏览器模式。自定义 backend 通过实现 `js(expression)` 和 `cdp(method, params)` 支持这两个编程工具。
-
-在 `run_code` 中组合任务专用页面提取与协议查询：
+将 `CodeActCapability()` 与 `BrowserUseCapability()` 组合，可以实现极其高效的网页自动化抓取与交互逻辑：
 
 ```python
+# 观测页面、批量抓取卡片文本并读取可访问性无障碍树
 await browser_observe()
 cards = await browser_js(
-    expression="[...document.querySelectorAll('.card')].map(el => el.textContent)"
+    expression="[...document.querySelectorAll('.pricing-card')].map(el => el.innerText)"
 )
-tree = await browser_cdp(method="Accessibility.getFullAXTree", params={})
-{"cards": cards, "accessibility_nodes": len(tree["nodes"])}
+ax_tree = await browser_cdp(method="Accessibility.getFullAXTree", params={})
+
+{"cards": cards, "total_ax_nodes": len(ax_tree.get("nodes", []))}
 ```
 
-`browser_js` 在选中页的主世界执行，等待 Promise，并返回 JSON 值。Undefined 返回 `None`，非 JSON 结果明确报错。`browser_cdp` 返回选中页 session 的协议结果。工具说明列出支持的页面协议域与排除的方法。浏览器和 target 管理、Host 文件路径及运行时事件订阅保留在现有责任边界中；相应操作使用 `browser_tabs` 与 `browser_files`。
-
-两个工具都会使元素和截图引用失效，包括执行失败时。使用原生引用前重新观察。同一页面上的连续操作应顺序等待。如果命令打开 JavaScript 对话框，工具会放弃该命令的结果并交还控制权：使用 `browser_dialog`，再观察结果，不要重放原命令。关闭对话框后，页面效果仍可能继续。脚本抛错前可能已经完成部分修改。超时、取消和人接管不会回滚页面效果，也不会卸载已安装的 timer 和 listener。同步 renderer 执行有时间限制，但 Promise 等待仍可能达到传输期限；需要确定的异步截止时间时，在表达式中实现 Promise 超时。每次工具请求仍遵循 Host 现有的准入与人接管检查。
+`browser_js` 直接在网页主页面上下文中求值并返回解析后的 JSON 对象；`browser_cdp` 支持直接调用 Chrome DevTools Protocol 协议域实现底层审计。
 
 ### 复用程序
 
-将 UTF-8 文件保存到可读的 Environment 挂载。定义一个不带装饰器的 `async def main(inputs)`，返回 JSON 兼容结果：
+对于结构固定、需反复执行的操作流，可以将代码保存为环境挂载目录下的 Python 文件，无需每轮由模型重新动态生成：
 
-```python title="double.codeact.py"
-async def main(inputs):
-    result = await double(value=inputs["value"])
-    await store(key="math.result", value=result)
-    return result
+```python title="calculate_metrics.codeact.py"
+async def main(inputs: dict) -> dict:
+    raw_val = inputs["value"]
+    computed = await double(value=raw_val)
+    await store(key="last_computed_metric", value=computed)
+    return {"input": raw_val, "result": computed}
 ```
 
-文件位于 `/workspace/double.codeact.py` 时，Model 用以下参数调用 `run_program`：
+Agent 在后续任务中只需通过 `run_program` 传入入参即可调用：
 
 ```json
-{"path": "/workspace/double.codeact.py", "inputs": {"value": 6}}
+{
+  "path": "/workspace/calculate_metrics.codeact.py",
+  "inputs": {"value": 42}
+}
 ```
 
-结果为 `12`，同时保存为 `math.result`。将示例路径替换为已绑定 [Environment](environments.md) 中的路径。Harness 通过该 Environment 读取文件，Model 无需具备文件读取工具。
-
-每次调用都会重新读取源码，并启动新的解释器。`main` 之外可包含受支持的导入、辅助函数、dataclass 和模块初始化。主要流程放在 `main` 中；模块初始化也会在每次调用时执行，遵循相同的工具策略和限制。
+Harness 会通过绑定的执行环境加载该文件，启动独立的沙箱解释器运行 `main()` 函数，并将强类型的字典结果安全回传。
 
 ### 跨调用保留数据
 
-| 状态                  | 生命周期                                       |
-| --------------------- | ---------------------------------------------- |
-| `run_code` 变量和函数 | 当前 Run 内的成功调用之间                      |
-| `run_program` 变量    | 单次调用                                       |
-| 用 `store` 保存的值   | Host 保存并恢复 `HarnessState` 后可跨 Run 使用 |
+Harness 为 CodeAct 的状态管理提供了三层生命周期维度：
 
-用 `store` 和 `load` 显式保存、读取 JSON 数据：
+| 作用域 | 生命周期 | 适用机制 |
+| :--- | :--- | :--- |
+| 临时局部变量 | 当前单次逻辑 Run 内 | 在 `run_code` 中定义的临时变量与辅助函数 |
+| 脚本内部变量 | 单次脚本文件执行过程 | `run_program` 运行时的模块局部空间 |
+| 持久化 KV 状态 | 跨会话轮次及服务重启持久保留 | `await store(key, value)` 与 `await load(key)` |
+
+借助内置存储函数，可以在多轮任务间无缝共享结构化计算结果，而不会占用珍贵的 Prompt 空间：
 
 ```python
-await store(key="search.results", value={"ids": [12, 34], "next_page": 3})
-results = await load(key="search.results")
-results["ids"]
+# 存储中间计算成果
+await store(key="report.data", value={"summary": "第四季度财报", "score": 98})
+
+# 在后续交互轮次中提取
+saved = await load(key="report.data")
+
+# 清理不再需要的数据
+await forget(key="report.data")
 ```
 
-`load()` 列出键。`forget(key="search.results")` 删除一个值。读取结果是独立副本，修改后需要再次调用 `store` 保存。缺失键会失败，保存的 JSON null 则读取为 `None`。
-
-`run_code(restart=True)` 在求值前清空临时变量。求值失败也会清空临时变量。成功的 `store` 写入在这两种情况下都会保留。要在进程退出后保留写入，按[状态与恢复](state-and-resume.md)保存返回的 State。
+所有通过 `store` 保存的键值对均被自动打包至 `HarnessState` 检查点中，即使应用进程重启也能完整恢复。
 
 ### 处理失败并设置限制
 
-失败结果说明错误，并在可用时提供源码位置。修正代码后再重试。runner 失败前可能已经完成部分工具调用：重复写入或其他外部操作前，先核对执行结果。已完成的效果和已存储的值不会回滚。
-
-用 `CodeActConfig` 收紧执行和存储限制：
+为确保宿主系统的健壮性，可以通过 `CodeActConfig` 设置精细的执行超时、并发上限与内存配额：
 
 ```python
 from a13n_harness.capabilities import CodeActCapability, CodeActConfig
 
-codeact = CodeActCapability(CodeActConfig(
-    max_tool_calls=16,
-    max_concurrency=4,
-    timeout_seconds=60,
-    max_state_entries=64,
-    max_state_bytes=1024 * 1024,
-))
+codeact_capability = CodeActCapability(
+    CodeActConfig(
+        max_tool_calls=32,          # 单次代码执行允许调用的工具上限
+        max_concurrency=8,           # asyncio.gather 最大并发任务数
+        timeout_seconds=60,          # 单次执行墙钟超时时间（秒）
+        max_state_entries=128,       # 持久化存储条目上限
+        max_state_bytes=2 * 1024 * 1024,  # 持久化状态内存上限（2 MiB）
+    )
+)
 ```
 
-在 builder 中用此实例替换 `CodeActCapability()`。默认每次 runner 允许 128 次嵌套工具尝试、16 路并发和 300 秒执行时间。存储默认最多 256 项、10 MiB。父级工具调用限制和提供方上限仍然生效。
-
-目录列出可调用名称及其规范名称映射；参数以原生工具定义为准。在 `CodeActConfig` 中设置 `catalog_argument_schemas=True`，可在目录中额外包含精确的参数 JSON Schema。该字段必须是布尔值，默认为 `False`；两种模式均不包含描述、Python 声明或返回值 Schema。如果程序在看到工具结果前就需要使用其中的字段，工具可以设置 Pydantic AI 的 `include_return_schema=True`，让原生工具定义包含返回值 Schema。
+当代码抛出未捕获的异常或超出配额边界时，Harness 会精准定位代码行号与调用栈信息，以结构化错误形式反馈给模型，协助其自我反思并修正代码。
 
 ## 异步子级
 
-子任务需要在父 Run 结束后继续时，使用异步子级。Host 实现 `SubagentOperator`，负责调度子级、保留检查点并交付结果。将 operator 传给 `SubagentCapability(async_enabled=True, operator=operator)`，替换内联 Capability。
+当智能体需要启动长期后台运行、甚至执行生命周期超出当前轮次的子任务时，应采用异步子级架构。在该模式下，宿主平台需要提供一个 `SubagentOperator` 实现，负责物理任务调度、状态快照记录与结果转发：
 
-| Model 工具                              | 结果                   |
-| --------------------------------------- | ---------------------- |
-| `delegate(subagent_name, prompt)`       | 受理回执，任务独立继续 |
-| `subagent_info(...)`                    | 当前执行状态           |
-| `wait_subagent(...)`                    | 有限等待一个或多个执行 |
-| `steer_subagent(execution_id, message)` | 引导请求的确认回执     |
-| `cancel_subagent(execution_id)`         | 取消请求的确认回执     |
-| `resume_subagent(execution_id, prompt)` | 关联续接的受理回执     |
+```python
+from a13n_harness.capabilities import SubagentCapability
 
-等待超时不会取消任务。取消回执不代表清理已经完成。查询当前执行记录以确认结果。关闭父 Run 不会取消已受理的异步任务。
+# 启用由宿主系统调度的异步委派机制
+capability = SubagentCapability(async_enabled=True, operator=host_operator)
+```
 
-Host 负责新的子级绑定、存储、关闭和恢复。生命周期接入见 [Host 嵌入](hosting.md)。
+开启后，模型将获得全套异步任务管理原语：
+
+| 工具名称 | 作用 |
+| :--- | :--- |
+| `delegate(subagent_name, prompt)` | 提交子级任务并立即返回认领凭证（Receipt） |
+| `subagent_info(execution_id)` | 查询子任务的实时运行进度、状态及性能指标 |
+| `wait_subagent(execution_ids)` | 阻塞等待一个或多个子任务执行完毕 |
+| `steer_subagent(execution_id, message)` | 向正在运行中的子任务发送实时引导指令 |
+| `cancel_subagent(execution_id)` | 请求温和取消指定的子任务 |
+| `resume_subagent(execution_id, prompt)` | 向已完结的子任务提交后续追加指令 |
 
 ### Host 管理的反馈
 
-支持子级反馈的 Host 使用[结构化挂起流程](state-and-resume.md#structured-suspension)：保存子级 State 和延迟请求，收集反馈，再通过 `DeferredToolResume` 直接续接子级。否则，设置 `RunBindings.deferred_tools_supported=False`；Harness 会省略延迟工具，并拒绝运行时延迟请求。Harness UI 对异步子级采用此设置。
+对于执行过程中需要人工介入或二次授权的长期运行子智能体，由宿主系统统筹其挂起与恢复流程：
+
+1. 当子级遇到延迟决策工具或提问时，Harness 会将状态置为 `suspended`，并落盘持久化其 `HarnessState`。
+2. 宿主系统通过界面通知用户或外系统收集确认信息。
+3. 反馈就绪后，宿主系统发起 `DeferredToolResume`，将决策结果注入子智能体，使其从精准检查点处无缝接续。

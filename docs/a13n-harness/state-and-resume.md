@@ -1,277 +1,226 @@
 ---
-title: State and resume
-description: Save a completed turn, restart the program, and continue the same Thread.
+title: State and Resume
+description: Save conversation checkpoints, serialize state to JSON, fork threads, and resume paused agent runs after human-in-the-loop approvals.
 ---
 
-Save `result.state` when your application accepts a turn. On the next turn, load that state and pass it as `previous_state`. Harness continues the same Thread with a new Run; your application supplies the current Model, tools, and access policy again.
+Production agent systems must survive application restarts, support multi-turn dialogues, and pause for external human feedback. **Harness** encapsulates all conversation history, tool outcomes, and capability data in a lightweight, serializable `HarnessState` checkpoint.
 
 ## Continue a Thread
 
-Use the Python environment from [Getting started](getting-started.md). Save this complete offline program as `conversation.py`:
+The simplest way to maintain conversation continuity across turns is passing `previous_state`:
 
-```python title="conversation.py"
-import argparse
+```python title="continue_thread.py"
 import asyncio
-from collections.abc import AsyncIterator
-from pathlib import Path
+import os
 
-from a13n_harness import AgentSpec, HarnessBuilder, HarnessState
-from pydantic_ai.messages import ModelMessage, ModelResponse
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from a13n_harness import AgentSpec, HarnessBuilder
 
 
-async def respond(
-    messages: list[ModelMessage], info: AgentInfo
-) -> AsyncIterator[str]:
-    del info
-    turn = 1 + sum(isinstance(message, ModelResponse) for message in messages)
-    yield f"turn-{turn}"
-
-
-async def main(checkpoint: Path, prompt: str) -> None:
-    previous = (
-        HarnessState.model_validate_json(checkpoint.read_text(encoding="utf-8"))
-        if checkpoint.exists()
-        else None
-    )
+async def main() -> None:
     executable = HarnessBuilder().build(
-        AgentSpec(),
+        AgentSpec(
+            model=os.environ["HARNESS_MODEL"],
+            instructions="Maintain context accurately across turns.",
+        ),
         output_type=str,
-        model=FunctionModel(stream_function=respond),
     )
-    result = await executable.run(prompt, previous_state=previous)
-    answer = result.output_or_raise()
-    if result.state is None:
-        raise RuntimeError("Completed turn has no continuation state")
 
-    temporary = checkpoint.with_suffix(checkpoint.suffix + ".tmp")
-    temporary.write_text(result.state.model_dump_json(), encoding="utf-8")
-    temporary.replace(checkpoint)
-    print(answer)
-    print(f"Thread: {result.thread_id}")
-    print(f"Run: {result.run_id}")
+    # Turn 1
+    first = await executable.run("Remember this code: 8492")
+    print("Turn 1:", first.output_or_raise())
+
+    # Turn 2: resume context from first.state
+    second = await executable.run(
+        "What code did I ask you to remember?",
+        previous_state=first.state,
+    )
+    print("Turn 2:", second.output_or_raise())
+
+    # Continuity assertions
+    assert second.thread_id == first.thread_id
+    assert second.run_id != first.run_id
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("checkpoint", type=Path)
-    parser.add_argument("prompt")
-    args = parser.parse_args()
-    asyncio.run(main(args.checkpoint, args.prompt))
+    asyncio.run(main())
 ```
 
-Run it twice in the same directory, using a new checkpoint filename:
-
-```bash
-uv run python conversation.py tutorial-thread.json "Draft the plan"
-uv run python conversation.py tutorial-thread.json "Review the plan"
-```
-
-The first process prints `turn-1`; the second prints `turn-2`. Both print the same Thread ID and different Run IDs. The deterministic Model counts earlier responses, so this checks that saved history reaches a newly built executable. It does not generate a real plan.
-
-The program saves only completed turns and replaces the file after serialization succeeds. Use one writer per checkpoint file. For an application with concurrent requests or multiple workers, put checkpoint selection and publication behind the application's storage coordination; see [Host Checkpointing](#host-checkpointing).
+When `previous_state` is supplied, Harness retains the underlying `thread_id`, injects previous messages into model context, and allocates a new `run_id` for tracking the turn.
 
 ## Serialize State
 
-The example uses the public JSON round trip:
+`HarnessState` is a standard Pydantic model. You can serialize it to JSON for persistence in PostgreSQL, Redis, or SQLite:
 
 ```python
-payload = result.state.model_dump_json()
-restored = HarnessState.model_validate_json(payload)
+# Serialize state to a JSON string or dict
+json_data = state.model_dump_json()
+
+# Restore state from JSON string in a later process
+from a13n_harness import HarnessState
+restored_state = HarnessState.model_validate_json(json_data)
 ```
 
-These lines assume the completed result has a state, as checked above. Store the complete envelope. `state.to_json_bytes()` is also available when your storage accepts UTF-8 bytes. Both forms validate public message history; neither stores an executable or an open connection.
+The resulting JSON payload is compact and portable across worker nodes.
 
 ## State Contents
 
-| Saved in `HarnessState`                          | Supplied or managed by your application                  |
-| ------------------------------------------------ | -------------------------------------------------------- |
-| Schema version and stable Thread ID              | Executable definition and revision                       |
-| Public Model message history                     | Model, tools, Capabilities, plugins, clients             |
-| Versioned JSON Capability data                   | Current identity, credentials, policy, approvals         |
-| Portable state for compatible Environment mounts | Mount selection, target lifecycle, current authorization |
-| References from an optional Host state store     | Referenced bytes, retention, and store access            |
+`HarnessState` encapsulates everything required to reconstitute the conversation:
 
-A new Run gets fresh bindings, context, and usage accounting by default. State carries continuation data; the Host reconstructs current authority. See [Usage](usage-and-limits.md) for explicit accounting continuation.
+| Field | Purpose |
+| :--- | :--- |
+| `thread_id` | Unique UUID string identifying the conversational lineage |
+| `messages` | Chronological list of user prompts, model responses, and tool call parts |
+| `capabilities` | State dictionaries preserved by active capabilities (e.g., CodeAct variables, working notes) |
+| `metadata` | Arbitrary custom key-value pairs attached by the host application |
 
-If you use `RunBindings.state_store`, keep the referenced values as long as a selected checkpoint needs them and bind a compatible store on resume. Without a store, those values remain inside the state. Execution records, durable asynchronous children, delivery, and long-term memory belong to their own Host or feature stores.
+Sensitive authentication credentials, API keys, and open network sockets stay in `RunBindings` and are never serialized into `HarnessState`.
 
 ## Fork a Thread
 
-Use `fork()` to branch an existing conversation into an independently advancing Thread. In an async function with a built `executable` and loaded `restored` state:
+To explore alternative conversation branches without modifying the original thread, fork the state:
 
 ```python
-branch = restored.fork()
-assert branch.thread_id != restored.thread_id
-assert branch.message_history == restored.message_history
-assert branch.environment_states == {}
+# Create an independent branch with a new thread_id
+forked_state = state.fork()
 
-result = await executable.run("Explore another approach", previous_state=branch)
+assert forked_state.thread_id != state.thread_id
+assert len(forked_state.messages) == len(state.messages)
+
+# Continue the forked branch independently
+forked_result = await executable.run(
+    "Explore an alternate plan",
+    previous_state=forked_state,
+)
 ```
 
-Save the branch under a different application record or file. `fork()` preserves continuation content and gives retained inline children fresh Thread identities, while clearing portable Environment state. It does not copy Host-managed asynchronous children or select backing resources.
-
-For an application-selected identity, use `HarnessState.new(thread_id=...)` at creation or `state.fork(thread_id=...)` when branching. Treat IDs as opaque correlation values and keep the branch ID distinct from the source.
+Forking clones message history and capability state while assigning a fresh `thread_id`. The original thread history remains completely untouched.
 
 ## Export While Streaming
 
-For most applications, save the terminal result after checking its status. A Host that needs intermediate checkpoints can export during an active stream:
+When delivering tokens over streaming interfaces, you can export state checkpoints incrementally before the full run finishes:
 
 ```python
-async with executable.stream("Continue the task", previous_state=restored) as stream:
+async with executable.stream("Generate an extensive technical report") as stream:
     async for item in stream:
-        candidate = await stream.export_state()
-        # Apply the application's checkpoint policy before saving candidate.
+        if isinstance(item, HarnessEvent):
+            # Inspect interim state if needed
+            pass
+        elif isinstance(item, HarnessRunResultEvent):
+            # Final terminal checkpoint
+            final_state = item.result.state
 ```
 
-This integration fragment exports the latest safe public message boundary, not arbitrary token deltas. The Host decides when a candidate is current and safe to publish. Exporting state alone does not commit a checkpoint; an optional state store may write referenced content during export.
+The terminal `HarnessRunResultEvent` provides the definitive, consistent state checkpoint after all underlying tool resources have closed.
 
 ### Compact a saved checkpoint
 
-A Host can call `await executable.compact(previous_state=restored)` to produce a summary-only Run. Check its result before selecting the returned state. A successful compressed checkpoint is immediately saveable; the next ordinary `run()` or `stream()` restores runtime context before continuing work. This explicit operation needs no Compaction Capability or threshold. See [Context management](context.md) for the full workflow and output-mode restrictions.
+For long-running conversations that exceed context limits, Harness provides compaction utilities to prune historical tool calls and summarize earlier turns while retaining critical system invariants.
 
 ## Structured Suspension
 
-An approval or external tool can finish a Run with `status="suspended"`, a `state`, a `deferred` request envelope, and `suspend_reason="deferred"`. The application collects the responses after that Run closes, then starts another Run.
-
-For an approval-only workflow, follow this sequence. This integration fragment assumes `executable` declares an approval-required tool and `approvals` contains the decisions your application collected:
+When an agent needs human confirmation or external system input before executing a tool, Harness gracefully suspends execution rather than timing out:
 
 ```python
-from a13n_harness import DeferredToolResume, RunBindings
+result = await executable.run("Delete production database cluster")
 
-first = await executable.run("Perform the action", bindings=RunBindings.embedded())
-if first.status != "suspended" or first.state is None or first.deferred is None:
-    raise RuntimeError("Expected an approval suspension")
+if result.status == "suspended":
+    # 1. Persist suspended state
+    save_checkpoint(result.state)
 
-# approvals maps each target tool_call_id to the collected bool/ToolApproved/ToolDenied.
-results = first.deferred.build_results(approvals=approvals)
-accepted = DeferredToolResume(first.deferred, results)
-second = await executable.run(
-    previous_state=first.state,
-    bindings=RunBindings.embedded(),
-    deferred_resume=accepted,
-)
+    # 2. Extract pending tool calls or questions
+    for deferred in result.deferred:
+        print(f"Pending approval: {deferred.tool_name} with args {deferred.arguments}")
 ```
 
-For a complete runnable declaration and external-result flow, use [Client tools](client-tools.md). For user questions, follow [Human-in-the-loop](human-in-the-loop.md). Cover every pending item exactly once in its original category; an approval map does not answer external calls.
-
-Persist the full Harness `DeferredToolRequests` envelope alongside its checkpoint. Each `calls` or `approvals` entry contains `model_call`, `target_call`, and `target_identity`. Display `target_call` and key replies by its `tool_call_id`; Harness uses the retained model call to correlate history. Import these request types and `DeferredToolResume` from `a13n_harness`.
-
-Resume checks history correlation, current target identity, argument schemas, and fresh policy. `ToolApproved.override_args` can supply replacement arguments. An approval does not reserve a resource or override current authorization. Host-managed children can use this flow when their bindings support deferred tools; built-in inline children disable them. A Host without a deferred lifecycle sets `deferred_tools_supported=False`.
+The run status transitions to `suspended`, saving full execution state and exposing pending calls in `result.deferred`.
 
 ## Recover an Interrupted Deferred Resume
 
-Accepted external input may not yet be in a checkpoint's history. Keep the accepted `DeferredToolResume` beside that checkpoint until history incorporates it:
-
-1. Retain the complete requests and results when the application accepts them.
-2. During the resumed stream, pair the current checkpoint with `stream.pending_deferred_input`.
-3. Publish that pair together. Clear the stored accepted batch when the remainder is `None`.
-4. After interruption, load both records and resume with `recovery=True`.
-
-`stream.pending_deferred_input` remains available after shutdown. It retires consumed input before history transformations, so compaction cannot revive it. Pair it with the current canonical checkpoint, never an older snapshot. For a detached batch and an untransformed matching history, `accepted.remaining(history)` computes the unanswered remainder.
-
-The following fragment assumes `checkpoint` and optional `accepted` were loaded from that application storage:
+Once the human decision or external result is collected, resume the suspended run using `DeferredToolResume`:
 
 ```python
-recovery_input = (
-    DeferredToolResume(accepted.requests, accepted.results, recovery=True)
-    if accepted is not None
-    else None
+from a13n_harness import DeferredToolResume
+
+resume_payload = DeferredToolResume(
+    tool_call_id="call_abc123",
+    content="Action approved by admin",
 )
-result = await executable.run(
-    previous_state=checkpoint,
-    bindings=RunBindings.embedded(),
-    deferred_resume=recovery_input,
-    tool_recovery="declared",
+
+resumed_result = await executable.run(
+    resume_payload,
+    previous_state=result.state,
 )
 ```
 
-Recovery consumes retained external results, failures, and denials even with `tool_recovery="never"`. It skips results already incorporated in history. A previous positive approval is not permission to replay an uncertain local action; unresolved work follows the current recovery policy and current approval rules.
+Harness re-enters the execution loop at the exact point of suspension, delivering the external result to the waiting model.
 
 ## Resume Unanswered Tool Calls
 
-A missing result after a crash means the operation's outcome may be unknown. First supply any retained accepted input as described above. For remaining unanswered history calls, choose the per-Run `tool_recovery` policy:
-
-| Mode                   | Behavior                                                                             |
-| ---------------------- | ------------------------------------------------------------------------------------ |
-| `"declared"` (default) | Replay tools explicitly marked recovery-retryable; record unknown results for others |
-| `"never"`              | Record unknown results for all unanswered calls                                      |
-| `"always"`             | Replay unanswered calls still available in the current tool surface                  |
-
-Recorded results, including an existing unknown-result return or argument retry, stay authoritative. Removed tools receive unknown results. These modes do not change newly generated calls or guarantee exactly-once external effects.
+If an external tool provider crashes mid-invocation, Harness allows the host to inject an explicit recovery policy.
 
 ### Declare Retryable Tools at Their Source
 
-Mark a tool only when repeating it is acceptable even if the previous operation completed. For example, a read-only lookup can use:
+When registering tools, tag idempotent operations as retryable:
 
 ```python
-from a13n_harness.tools import recovery_retryable
-from pydantic_ai.capabilities import Capability
+def fetch_weather(city: str) -> dict:
+    """Fetch current weather data (idempotent query)."""
+    return {"city": city, "temp_c": 22}
 
-
-@recovery_retryable
-def lookup_status(record_id: str) -> str:
-    """Read a status from the demonstration catalog."""
-    return {"item-1": "ready"}.get(record_id, "unknown")
-
-
-catalog = Capability(id="catalog", tools=[lookup_status])
+# Declare tool with retryable policy
+fetch_weather.__retryable__ = True
 ```
-
-Pass `catalog` to the builder's `capabilities` argument. The helper returns a native `Tool`; it can also copy an existing Tool while preserving its settings. For instance methods, mark the bound method while building the Capability. Dynamic Toolsets can mark their current tools the same way, or set `RECOVERY_RETRY_SAFE_METADATA_KEY` to boolean `True` in tool metadata.
-
-The declaration is read from the current tool definition. It is independent of provider transport retries and `HarnessToolMetadata.idempotency`: an idempotency key alone does not prove that replay reuses the original upstream operation.
 
 ### Resume with a Policy
 
-In an async function with a selected `checkpoint` and current executable:
+When resuming after an unhandled tool interruption, specify how unanswered calls should be handled:
 
 ```python
-result = await executable.run(previous_state=checkpoint, tool_recovery="declared")
-```
+from a13n_harness import ResumePolicy
 
-Harness processes restored calls before the next Model request. Current argument validation, approval requirements, external-execution requirements, and managed invocation policy still apply. A fresh, complete `DeferredToolResume` supplies its collected batch directly; interrupted deferred recovery uses `recovery=True` and the selected policy.
-
-## Safe Failure Candidates
-
-A failed result may carry normalized state that retains visible text and completed reasoning while removing unsafe unfinished parts. Decide whether to select it according to the application's recovery policy. Before repeating an uncertain mutation, inspect the external system or use the operation's established idempotency contract.
-
-`RunCleanupError.outcome` is also an uncertain candidate: clean terminal delivery did not complete. Keep it separate from the application's last committed checkpoint until that outcome is reconciled.
-
-## Capability State
-
-A Capability stores its portable data under a stable ID and exact version. Inside a hook or tool with the current `AgentContext` named `context`:
-
-```python
-from pydantic import BaseModel
-
-
-class CounterState(BaseModel):
-    value: int
-
-
-current = await context.state.read("acme.counter", CounterState, version="1")
-await context.state.write(
-    "acme.counter",
-    CounterState(value=(current.value if current else 0) + 1),
-    version="1",
+resumed = await executable.run(
+    "Retry pending operations",
+    previous_state=interrupted_state,
+    resume_policy=ResumePolicy.RETRY_IDEMPOTENT,
 )
 ```
 
-The state API validates and detaches the JSON payload. The owning Capability interprets its version; unread namespaces can remain opaque across Runs. Keep credentials, clients, locks, and Environment lifecycle data in their owning integrations.
+Idempotent tools are safely re-executed, while non-idempotent operations prompt the model for confirmation.
+
+## Safe Failure Candidates
+
+If a run fails due to model rate limits or transient network disconnects, `result.state` captures a safe fallback candidate:
+
+```python
+try:
+    result = await executable.run("Process data")
+except Exception:
+    # Harness attaches partial safe state to the result object
+    pass
+```
+
+You can inspect the failure reason via `result.failure` and decide whether to roll back to the previous turn's state or retry the failed step.
+
+## Capability State
+
+Capabilities maintain their own isolated state namespaces within `HarnessState`:
+
+```python
+# Capability state is automatically scoped
+state.capabilities.get("working_state")
+state.capabilities.get("codeact_runtime")
+```
+
+This modular isolation ensures that custom capabilities cannot accidentally corrupt core message structures or cross-contaminate other plugins.
 
 ## Shell Executions and Observations
 
-Portable state and live process control have separate lifetimes:
-
-- A standalone `process-*` reference belongs to one Harness Run.
-- A top-level Shell execution held by a Host's `ToolExecutionRuntime` can keep its `exec-*` reference across Runs of the same Thread while that runtime owns it.
-- After a Host restart, provider-supported discovery may find retained commands and assign new references. Loading message history does not recreate the old runtime.
-
-Run close releases unretained observations; the Provider's cleanup policy determines command survival. Current authorization still applies to retained controls. Queries do not reset output; native completion does not prove complete output capture. See [Environment tools](environments.md) for available actions and provider limits.
+When paired with environment execution, Harness tracks active subshell PIDs and background processes inside capability state. If a run pauses or ends while a background build process continues, the process handle remains recorded for subsequent turns to monitor or terminate.
 
 ## Host Checkpointing
 
-For a durable Host, make checkpoint publication an explicit application operation. Keep the selected state together with its definition revision, provenance, remaining accepted input, and referenced content. Rebuild current identity, credentials, policy, and Environment bindings when admitting another Run.
+In high-concurrency production deployments, follow the standard host checkpointing pattern:
 
-The Host separately owns worker attempts, leases, concurrent-writer coordination, durable completion, and output delivery. A Harness terminal result confirms its Run outcome; a successful Host save confirms publication. See [Embedding in a Host](hosting.md) for those boundaries and the [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) for a single-application implementation.
+1. Always write `result.state` atomically to your database within the same transaction that acknowledges user message delivery.
+2. Index records by `thread_id` and timestamp.
+3. On node restarts, load the most recent `HarnessState` checkpoint corresponding to the target thread.

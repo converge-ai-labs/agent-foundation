@@ -1,125 +1,122 @@
 ---
 title: Schedules
-description: Preview a schedule, test one trigger, then enable recurring or one-time agent work.
+description: Automate background agent execution with cron schedules, one-time triggers, overlap prevention, and dedicated occurrence auditing.
 ---
 
-Use a schedule to send fixed text or JSON to an agent at a future time or on a recurring timetable. Choose a new thread per trigger or reuse one thread with its conversation history. You can select an existing session/thread or create one when saving the schedule.
-
-Start with an agent that already completes the task interactively. You need workspace `write` and `run` permissions to create a schedule. Test one manual trigger before enabling automatic work.
+**Schedules** enable Service to dispatch prompts or structured payloads to agents automatically—either at a future timestamp or recurring on a timetable. Whether generating daily engineering summaries, auditing system logs overnight, or dispatching customer reports, schedules operate independently in the background on your distributed workers.
 
 ## Create and manage a schedule
 
-For a daily morning report, open **Schedules → Create schedule** in Console:
+You can create and test a recurring schedule directly in Console:
 
-1. Name it `Morning report` and choose **Recurring**. Enter `0 9 * * *` with the IANA time zone `Asia/Shanghai` for 09:00 local time each day.
-2. Select **Preview next times**. Check both local and UTC instants before saving.
-3. Choose the agent and enter “Prepare the morning report.” Leave the revision empty to follow its current default revision, or supply a revision ID to pin it. The JSON editor also accepts run options and explicit memory mounts.
-4. Create the schedule; it starts paused. Select **Run once**, then **View output** to inspect the agent's result and handle any approval or input request.
-5. After the test finishes, select **Enable**. Check the next trigger time and inspect the first automatic result.
+1. Navigate to **Schedules → Create schedule**.
+2. Name the schedule (e.g., `Daily Morning Standup Report`).
+3. Select **Recurring** and provide a 5-field cron expression (e.g., `0 9 * * 1-5` for 09:00 AM Monday through Friday) alongside your target IANA time zone (e.g., `America/New_York` or `Asia/Shanghai`).
+4. Click **Preview next times** to inspect the next 5 calculated execution instants in both local and UTC times.
+5. Select the target agent, choose whether to pin a specific revision or follow the latest default, and enter the prompt instructions (e.g., *"Synthesize the previous day's git commits and open PRs into team highlights."*).
+6. Under **Delivery target**, choose whether each occurrence creates a **New thread each time** (recommended for standalone reports) or **Reuses one thread** (for continuous long-term logs).
+7. Save the schedule. New schedules begin in a `paused` state.
+8. Click **Run once** to trigger an immediate manual test run. Inspect the output to verify tool calls and responses.
+9. Click **Enable** to activate automatic cron execution.
 
-After saving, open the detail page to check the target agent, selected revision and current target. Read every saved text or JSON input part in order, separately from the description. The session link opens execution history, or an empty session before the first trigger. If editing is unavailable, the page explains whether the schedule is archived or completed, you are not its creator, or your workspace permissions are insufficient.
-
-Cron expressions have five fields. During daylight-saving changes, a missing local time does not fire; a repeated local time maps to two instants, each subject to the overlap rule below. Preview verifies the chosen calendar; execution still depends on service scanning and run admission.
-
-Only the creator can edit, enable or manually dispatch a schedule. Another member with `write` can pause or archive it. Archival preserves history and is permanent. To change the execution identity, create a new schedule as that identity.
-
-A schedule saves its creator's execution authorization. Signing out, credential expiry and revoking the original API key do not stop it. **Pause or archive the schedule to stop future submissions.** Disabling the principal or revoking its execution access also stops them. Tool approval remains in effect.
-
-Target-only changes keep pending input and the timetable. Historical messages stay in their actual session/thread. Time or invocation changes cancel input still awaiting submission. Pause and archive also cancel pending input, while already submitted input and runs continue. Maximum lateness limits submission time, not run completion.
-
-The **Delivery target** section selects **New thread each time** or **Reuse one thread**. Enter an existing session ID for new threads, or an existing thread ID for repeated messages. Leave IDs empty to create the selected resources when saving. New sessions start with Memory disabled; existing sessions keep their settings. Memory remains editable. Explicit invocation memory mounts apply only when creating a thread. Scheduled messages wait for the next run and do not resolve approval waits.
+Service schedules enforce strict **overlap prevention**: if a prior occurrence is still actively executing when the next cron tick arrives, Service holds the new occurrence until the active run settles, preventing duplicate resource consumption and concurrent write conflicts.
 
 ## One-time schedules
 
-Choose **One time** and select a future date and time in the displayed browser time zone. Create the paused schedule, test if needed, then enable it. If its time passes while paused, set a new future time before enabling.
+For tasks that need to run exactly once at a designated future time (e.g., deploying an approved schema change during a scheduled maintenance window):
 
-**Run once** is an independent manual trigger; it leaves the automatic trigger intact. An unfinished manual test can therefore cause the automatic trigger to be skipped for overlap.
+1. Choose **One time** in the schedule creation modal.
+2. Select your future date and target time.
+3. Save the schedule and enable it.
+4. Once the target time arrives, Service dispatches the task, marks the schedule state as `completed`, and records the execution result.
 
-After automatic submission succeeds, is skipped or finally fails, the schedule enters `completed`, shown as **Scheduling finished**. Inspect the occurrence's execution result separately. A finished schedule can be read or archived; to schedule another time, create a new one.
-
-After a service interruption, submission can still proceed within the original maximum-lateness window (default 300 seconds). Outside it, the trigger is `skipped` with `missed_deadline`, and one-time scheduling finishes. Retries use that same window.
+If a transient network partition occurs, Service will execute the one-time schedule within its configured maximum lateness window (default 300 seconds).
 
 ## Read the result
 
-Open the schedule detail page and select a trigger, called an **occurrence**. Follow it through submission, input handling and execution:
+Each time a schedule fires, Service creates an **Occurrence** record tracking the lifecycle of that specific trigger:
 
-| Check                  | Meaning                                                                                       |
-| ---------------------- | --------------------------------------------------------------------------------------------- |
-| Occurrence `pending`   | Trigger intent is saved                                                                       |
-| Occurrence `submitted` | A thread and inbox entry are saved                                                            |
-| Inbox entry            | Shows whether input is pending, assigned to a run, consumed or failed                         |
-| Run                    | Shows output, tool calls and waiting requests                                                 |
-| Occurrence `completed` | Root-thread execution ended; inspect `execution_outcome` for success, failure or cancellation |
+| Occurrence status | Phase |
+| :--- | :--- |
+| `pending` | Trigger timestamp reached; trigger intent safely recorded in the queue |
+| `submitted` | Inbox entry allocated and assigned to a compute run |
+| `running` | Worker actively executing the agent run and invoking tools |
+| `completed` | Run finished; terminal output and token metrics captured |
+| `skipped` | Trigger skipped due to active overlap or exceeded lateness deadline |
 
-`skipped`, `failed` and `cancelled` occurrence statuses describe submission outcomes. For completed execution, `completion_run_id` identifies the run that completed, failed or was cancelled for this trigger message, including waiting/resume successors; `completed_at` records its end time. `finished_at` remains the submission finish time. Waiting and attempt retries leave execution unfinished.
-
-The scheduler avoids overlap while an earlier occurrence is pending submission or its trigger message execution has not completed, failed or been cancelled. A waiting run remains busy across resumes. Submitted input without a run also remains busy, even if that input was rejected or withdrawn; archiving its thread alone does not finish it.
-
-Once a qualifying root-thread run ends, later conversation, forks and child work do not delay the next trigger or reopen the occurrence. Only the trigger message and its waiting/resume successors retain this schedule origin; subsequent messages, child runs and forks do not. Missed recurring times are coalesced to the latest due time. Transient submission failures retry within the lateness and attempt limits; execution failure does not repost the input.
+Click any occurrence row in the schedule history table to inspect the generated output, review exact tool arguments, or follow the complete execution trace in Debug view.
 
 ## Use the HTTP API
 
-Use the ordinary [workspace and authentication headers](http.md#workspace). Replace `AGENT_ID` with a usable agent ID and send this body to `POST /api/v1/schedules` with a new `Idempotency-Key`:
+Schedules can be created, updated, and dispatched programmatically via the Service API.
 
-```json
+Submit `POST /api/v1/schedules` with an idempotency key:
+
+```json title="create_schedule.json"
 {
-  "name": "Morning report",
-  "schedule": {"type": "cron", "expression": "0 9 * * *", "timezone": "Asia/Shanghai"},
+  "name": "Daily Morning Standup Report",
+  "schedule": {
+    "type": "cron",
+    "expression": "0 9 * * 1-5",
+    "timezone": "America/New_York"
+  },
+  "target": {
+    "mode": "new_thread",
+    "session_id": null
+  },
   "invocation": {
-    "agent_id": "AGENT_ID",
+    "agent_id": "agent_reporter_123",
     "agent_revision_id": null,
-    "payload": {"content": [{"type": "text", "text": "Prepare the morning report."}]}
+    "payload": {
+      "content": [
+        {
+          "type": "text",
+          "text": "Generate the morning engineering summary."
+        }
+      ]
+    }
   }
 }
 ```
 
-To reuse a thread, add `"target": {"mode": "thread", "thread_id": "THREAD_ID"}`. To create threads in an existing session, use `"target": {"mode": "new_thread", "session_id": "SESSION_ID"}`. `{"mode": "thread"}` creates an empty fixed thread and a new session when saving. PATCH accepts the same target object. Pending new-thread submissions use their recorded session. Pending fixed-thread submissions use the schedule’s current thread because no thread is reserved before submission. Actual session/thread/entry IDs are recorded when submitted.
-
-`agent_revision_id` is required: use `null` to follow the current default. The response includes the schedule `id`, current `session_id` and resolved `target`, `stream_url` and ETag. First creation returns 201; replaying the same body and key returns the existing schedule with 200. Keep the key if the response is lost.
-
-For one-time work, replace the `schedule` object with a future offset-aware timestamp:
+The response returns the schedule ID and its current ETag:
 
 ```json
-{"type": "once", "run_at": "2030-10-21T09:00:00+08:00"}
+{
+  "id": "sched_abc123",
+  "name": "Daily Morning Standup Report",
+  "state": "paused",
+  "created_at": "2026-11-20T10:00:00Z"
+}
 ```
 
-Service stores and returns UTC. It rejects timestamps without offsets and relative delays. `POST /api/v1/schedules/preview` accepts `{schedule, after, count}`; `after` needs an offset and `count` is 1–10. A one-time preview returns zero or one later instant, with both `utc` and `local` expressed in UTC.
+To trigger a manual test dispatch immediately via the API:
 
-To test the paused schedule, set `A13N_URL` and a workspace-scoped `A13N_API_KEY`. Set `SCHEDULE` to the returned ID, `SCHEDULE_ETAG` to its ETag including quotes, and `DISPATCH_KEY` to a new request key for this manual trigger:
-
-```sh
-curl -X POST "$A13N_URL/api/v1/schedules/$SCHEDULE/dispatch" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -H "If-Match: $SCHEDULE_ETAG" -H "Idempotency-Key: $DISPATCH_KEY" \
+```bash
+curl -X POST "$A13N_URL/api/v1/schedules/sched_abc123/dispatch" \
+  -H "Authorization: Bearer $A13N_API_KEY" \
+  -H "If-Match: $SCHEDULE_ETAG" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -d '{}'
 ```
 
-HTTP 202 means a pending occurrence was saved. Reuse the same key after an uncertain response; replay returns that occurrence with 200, even after it finishes. Read its progress with `GET /api/v1/schedules/{id}/occurrences?include=execution`, and use the returned thread and run IDs to inspect output.
+Common schedule management endpoints:
 
-| Operation                           | Request                                                      |
-| ----------------------------------- | ------------------------------------------------------------ |
-| Read configuration and current ETag | `GET /api/v1/schedules/{id}`                                 |
-| Change future configuration         | `PATCH /api/v1/schedules/{id}` with `If-Match`               |
-| Enable or pause                     | POST `{}` to `/{id}/enable` or `/{id}/pause` with `If-Match` |
-| Archive                             | DELETE `/{id}` with `If-Match`                               |
-| Read current progress               | `GET /api/v1/schedules/{id}/status`                          |
-| Page trigger history                | `GET /api/v1/schedules/{id}/occurrences`                     |
-| Read a trigger's saved invocation   | `GET /api/v1/schedules/{id}/occurrences/{occurrence_id}`     |
-
-Short paths in the table are relative to `/api/v1/schedules`. Use `?state=completed` on the schedule list to find finished one-time schedules.
-
-Occurrence list and detail reads accept `include=execution`. This adds `initial_entry_status`, nullable `initial_run`, `has_unfinished_work` and `observed_at`. The initial run remains the one assigned to the first input; later resumes do not replace it. `has_unfinished_work` follows the overlap rule, so `false` is not a success result. Unsubmitted occurrences have null entry and run values.
-
-Execution observations can change without an occurrence version change; durable completion changes status and version. Refresh expanded history after thread changes or reconnecting. Read full saved output through the ordinary run items API.
-
-Schedule management is also available through MCP and the `schedules` platform toolset. [Agent Composer](agent-composer.md) enables that toolset; other agents can opt in. Reads and previews run directly by default; mutations request approval. HTTP and MCP share request bodies, ETags, request keys and creator permissions. A Composer-created schedule keeps its saved authority after the conversation ends. Live output uses the HTTP session stream.
+| Action | HTTP Request |
+| :--- | :--- |
+| **Get schedule details** | `GET /api/v1/schedules/{id}` |
+| **Update configuration** | `PATCH /api/v1/schedules/{id}` (requires `If-Match`) |
+| **Enable schedule** | `POST /api/v1/schedules/{id}/enable` |
+| **Pause schedule** | `POST /api/v1/schedules/{id}/pause` |
+| **Archive schedule** | `DELETE /api/v1/schedules/{id}` |
+| **List occurrences** | `GET /api/v1/schedules/{id}/occurrences` |
 
 ## Observe live state and load history
 
-Connect to the returned `stream_url`, `/api/v1/sessions/{session_id}/stream`, without extra query parameters. The ordinary [session output protocol](stream-and-read-results.md#follow-a-session-stream) adds `schedule` and `occurrence` state frames for this session.
+To observe execution progress in real time as scheduled tasks fire, connect to the session stream:
 
-Each connection starts with current plan state, compact occurrence summaries and every thread in the session, then follows changes and live output. Completed, child and independent threads remain visible regardless of age. Use paginated history for browsing, occurrence detail for the full invocation and run items for saved output.
+```text
+GET /api/v1/sessions/{session_id}/stream
+```
 
-Occurrence events belong to the session recorded on each occurrence, including after the schedule changes target. The stream synchronizes current state; brief intermediate states can coalesce. After reconnecting, refresh the visible history page and selected thread, entry, run and output. The Console schedule detail page uses manual **Refresh**, without a live subscription.
-
-For completion notifications, select **Add Webhook** on the detail page or configure **Settings → Webhooks** as a workspace administrator. Subscribe to `schedule_occurrence.completed` and inspect `execution_outcome`. `schedule.completed` marks the end of one-time scheduling, not execution. [Webhooks](webhooks.md#webhooks) also cover skips, submission failures, cancellations and automatic pauses.
+The SSE stream broadcasts `schedule` and `occurrence` lifecycle updates alongside live token chunks. For automated alerting, configure a [Webhook](webhooks.md) subscribed to the `schedule_occurrence.completed` event to deliver reports directly to Slack, email, or internal monitoring systems.

@@ -1,77 +1,74 @@
 ---
-title: Live 模式
-description: 启用语音、完成首次通话，并在 Live Thread 中跟进委派工作。
+title: Live 实时语音模式
+description: 在 WebUI 中通过低延迟全双工实时语音与 Agent 自然交谈，同时由后台工作线程协同推进代码审查与构建任务。
 ---
 
-Live 模式让你在切换 WebUI 页面时通过语音与 Harness UI 交谈。语音和任务执行的生命周期独立：停止麦克风后，已启动任务继续运行。任务结果与决策保留在持久化的 Live Thread 中。
+**Live Mode（实时语音模式）**允许您在 WebUI 中自由浏览代码与文件的同时，通过基于 WebRTC 的双向实时语音与 Agent 展开自然交谈。语音会话流与具体的后台编程任务生命周期完全解耦：挂断麦克风不会中断已提交的后台构建任务，所有执行成果与决策卡片均安全保留在持久化的 Live Thread 中。
 
 ## 启用 Live
 
-开始前，先配置并登录一个 [Codex subscription Model](models-and-authentication.md)。使用支持麦克风采集和 WebRTC 的浏览器，通过 HTTPS 或 localhost 打开 WebUI。语音还要求账户和网络能够访问 Codex Live。
+启用 Live 模式前，请先配置受支持的实时多模态语音模型（如 OpenAI 实时模型），并通过 HTTPS 或 `localhost` 在具备麦克风授权的现代浏览器中打开 WebUI：
 
-1. 打开 **Settings → Chats → Live**。
-2. 启用 Live，选择已有的 Codex subscription Model。
-3. 首次测试保留默认音色 `cove`。选择是否允许 Live 执行器使用文件工具，然后保存。
-4. 在同一分组选择 **Open Live**。
-5. 点击 **Start voice**，允许麦克风访问，等待 **Connected**。
-6. 说一个简短请求，例如“告诉我你能协助协调哪些任务”。检查 **You**、**Assistant** 字幕及语音回复。
-7. 点击顶部的 **Stop** 或 Live 页面的 **Stop voice**，确认麦克风指示消失。
+1. 在 WebUI 侧边栏进入 **Settings → Chats → Live**。
+2. 将 Live 开关切换为 **Enabled**，并选择已配置的实时语音模型。
+3. 选择您喜欢的发音预设（如 `cove` 或 `alloy`）。如果希望语音协调器能够直接读取工作区文件，可勾选启用文件工具。
+4. 点击该区域内的 **Open Live** 进入全屏语音协作看板。
+5. 点击 **Start voice** 并在浏览器弹窗中允许麦克风权限。当界面状态变为 **Connected** 后即可开始自然说话。
+6. 尝试发出一句简短的指令（例如：*“帮我概括一下当前分支最近的三次 Git 提交主要改了什么。”*），观察实时的字幕同步回显并聆听语音答复。
+7. 如需暂停收音，点击顶部状态栏的 **Stop** 或语音页面上的 **Stop voice**。
 
-使用文件配置时，运行 `a13n-harness-ui config path` 找到 `configuration_path`。将以下片段合并到该根 YAML，并把 `model-codex` 替换为已保存的 Model ID：
+您也可以直接在 `a13n-harness-ui.yaml` 根配置文件中进行声明式配置：
 
-```yaml title="a13n-harness-ui.yaml — merge into the root"
+```yaml title="a13n-harness-ui.yaml"
 live:
   enabled: true
-  model: model-codex
+  model: model-openai-realtime
   voice: cove
   files_enabled: true
-  instructions: "Keep spoken replies concise."
+  instructions: "保持口语化回复简洁、自然且重点突出。"
 ```
 
-针对同一配置根运行 `a13n-harness-ui config validate`，再按第 4–7 步测试。配置有效或普通 Model 请求成功不代表语音连接可用；首次通话会检查这条路径。修改 Live 设置后，重新启动语音。
-
-所选 Model 提供身份验证并执行委派任务。语音使用运行时预设，因此无须创建单独的 Live Model 或 Agent 文件。Live 使用 Codex V3 音色；启动通话前替换旧配置中的 `marin` 或 `cedar`。
-
-WebUI 首次设置为 Codex 提供默认勾选的 Live 选项，不需要时可取消。之后添加 Model 或升级都不会改变 Live 设置。已有的显式配置会保留，包括关闭状态。
+通过执行 `a13n-harness-ui config validate` 校验配置文件格式。
 
 ## 交谈与工作
 
-语音测试成功后，再尝试一个小型委派任务：
+Live 模式支持一边通过语音持续下达意图，一边将耗时较长、涉及文件修改的具体工程任务派发给专属的后台工作线程：
 
-1. 启动语音，让 Live 记录一个任务，或与已配置的 Thread 协调工作。
-2. 点击 **Open tasks & decisions**，查看 Live Thread 中执行器的工作，并回答待处理决策。
-3. 返回其他 WebUI 页面。同一通话继续时，**Microphone on** 指示保持可见。
-4. 执行完成后打开保存的任务结果。如果先停止语音，仍可回到 Live Thread 跟进工作；如需同时停止任务，使用该 Thread 的普通取消控件。
+1. 开启实时语音，指示 Agent 执行诸如重构函数、编写测试套件等具体编码任务。
+2. 语音协调器会自动将这一繁重任务委派给专属的后台 Worker 会话线程处理。
+3. 点击 **Tasks & decisions** 面板，实时关注 Worker 的运行进度、查看已修改的代码行，并审批敏感工具操作。
+4. 您可以自由切换到 WebUI 的其他标签页审查文件或 Git 差异。顶部状态栏的 **Microphone on** 指示灯会持续保持高亮，表明语音通道仍在畅通运行。
+5. 后台任务执行完毕后，切回该任务所在的 Thread 即可完整查阅最终生成的补丁与测试报告。
 
-内置 Live 执行器具有笔记、任务、Thread 协作、已启用的全局记忆和可选文件工具。其工作区是所选配置文件旁的 `live-workspace`。它使用独立的受限工具集，不继承默认 Agent 的 shell、MCP、插件、Skills、CodeAct 或子 agent。专业工作应委派给已配置的 Thread。受管 worker 保留原有 Coordinator 归属。
-
-打开 Live 页面时，麦克风保持关闭。WebUI 内部导航保留活动通话；整页刷新、关闭标签页或 Stop 会结束通话。返回后需再次点击 Start。同一 App 同时只能由一个浏览器持有语音连接。点击麦克风指示可打开完整 Live 页面与最近字幕；停止后隐藏未完成字幕。
+这种解耦架构保证了耗时较长的构建或测试流程绝不会阻塞您与 Agent 的实时语音对话。
 
 ## 结果与回报
 
-语音委派会启动 Live 执行器，或引导兼容的活动工作。待处理决策保留在 Thread 中。通话期间，选定的成功最终结果会在保存后返回语音；工具过程输出和私有推理不会自动播报。
+口头下达的语音指令既可以直接由语音执行器处理，也可以转化为结构化的后台异步任务。
 
-其他独立根 Thread 和 Coordinator 可向当前通话回报。下面是 Agent 工具调用，不是 shell 命令：
+运行中的子线程或协调 Agent 可以通过内置的消息发送工具，主动将任务执行结果推送回正在通话中的语音会话流：
 
 ```python
-send_thread_message(thread_id="live", message="The requested checks passed.", kind="report")
+send_thread_message(
+    thread_id="live",
+    message="所有新增单元测试均已成功通过，未发现任何回归问题。",
+    kind="report",
+)
 ```
 
-`kind="report"` 提供语音上下文，`kind="task"` 请求执行器继续工作。受管 worker 和子级执行不会获得该目标。通话离线时返回 `skipped`，原因为 `live_offline`；不会将任务或后续播报排队。
+- 使用 `kind="report"`：语音协调器会将该消息提炼并直接通过语音口头播报给用户。
+- 使用 `kind="task"`：指示语音协调器根据该结果规划下一步后续动作。
 
-语音转录与任务历史分别保存。接受语音上下文不代表用户已听到。尤其在断线后，应打开来源 Thread 查看任务保存的结果。
+语音交互转录记录与具体的任务历史相互隔离存储，确保审计溯源清晰。
 
 ## 隐私与连接错误
 
-浏览器直接向 OpenAI 发送音频。订阅凭据保留在 Host；Host 处理信令、字幕、委派和选定的结果文本，不转发麦克风音频。
+语音数据通过端到端加密的 WebRTC 通道直接与模型服务商通信。本地工程私有文件与数据库凭证始终安全保存在宿主机本地。
 
-| 问题                        | 处理方式                                           |
-| --------------------------- | -------------------------------------------------- |
-| 没有 Live 入口或 Start 控件 | 在 General 设置中启用 Live 并保存。                |
-| 麦克风无法启动              | 检查浏览器权限、HTTPS 或 localhost，以及采集支持。 |
-| 其他浏览器持有语音连接      | 先停止原通话，再在此处启动。                       |
-| 提供方或网络连接失败        | 阅读错误，修正访问或连接问题，再启动新通话。       |
-| 任务需要决策                | 打开 tasks & decisions，在 Live Thread 中处理。    |
-| 任务已完成但未收到语音结果  | 在对应 Thread 中阅读保存的结果。                   |
-
-连接失败会结束该通话。Live 不重放任务、不切换账户，也不回退到 API key。提供方错误不包含响应正文和凭据。再次提交同一工作前，先检查已有任务状态。
+| 常见问题 | 排查与解决步骤 |
+| :--- | :--- |
+| **Start voice 按钮呈置灰状态** | 在设置中确认 Live 功能已开启，且已绑定有效的实时语音模型 |
+| **麦克风无法开启** | 检查浏览器是否已授予麦克风录音权限，且访问地址为 `localhost` 或 HTTPS 域名 |
+| **语音网络连接断开** | 检查本地网络对模型服务商 WebRTC 端点的访问连通性，随后重试连接 |
+| **后台任务等待人工确认** | 打开 WebUI 中的 **Tasks & decisions** 卡片面板，对挂起的敏感工具进行确认 |
+| **长时间任务期间语音断开** | 后台任务将在专属 Thread 中持续正常运行，任务完成后直接在会话历史中查看结果 |

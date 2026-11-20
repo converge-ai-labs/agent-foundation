@@ -1,14 +1,16 @@
 ---
 title: Harness quickstart
 sidebarTitle: Quickstart
-description: Run your first Agent offline, continue its Thread, stream its answer, and connect a provider.
+description: Build your first type-safe Python agent offline, stream token events, maintain multi-turn thread state, and connect external model providers.
 ---
 
-Build a small Python program and get a result before configuring a provider. Then reuse the same program to continue a Thread and stream output. The offline steps need no account, API key, or external service.
+This quickstart guides you through building and running your first agent with **Harness**. You will begin with a completely offline, deterministic Python program that requires zero API keys or external services, then extend it to multi-turn thread continuation, event streaming, and cloud model providers.
 
 ## Requirements
 
-Install Python 3.13 or later, Git, and [uv](https://docs.astral.sh/uv/). These guides follow the source API on `main`; use the repository and its lockfile together:
+Ensure you have Python 3.13 or newer, Git, and the [`uv`](https://docs.astral.sh/uv/) package manager installed.
+
+Clone the repository and synchronize dependencies using the project's locked environment:
 
 ```bash
 git clone https://github.com/converge-ai-labs/agent-foundation.git
@@ -16,73 +18,77 @@ cd agent-foundation
 uv sync --locked --package a13n-harness
 ```
 
-Keep your terminal in this checkout for the following commands. `uv` installs Harness and its dependencies, including the deterministic `FunctionModel` used below. Dependency installation needs network access; running the offline example does not.
+`uv sync` installs Harness along with Pydantic AI and testing utilities. Running the offline examples requires no internet connection.
 
 ## Run an offline Agent
 
-1. Create `app.py` in the checkout root with this complete program:
+Create a file named `app.py` in your repository root with the following minimal script:
 
-   ```python title="app.py"
-   import asyncio
-   from collections.abc import AsyncIterator
+```python title="app.py"
+import asyncio
+from collections.abc import AsyncIterator
 
-   from a13n_harness import AgentSpec, HarnessBuilder
-   from pydantic_ai.messages import ModelMessage
-   from pydantic_ai.models.function import AgentInfo, FunctionModel
-
-
-   async def respond(
-       messages: list[ModelMessage],
-       info: AgentInfo,
-   ) -> AsyncIterator[str]:
-       del messages, info
-       yield "Hello from the Harness"
+from a13n_harness import AgentSpec, HarnessBuilder
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 
-   async def main() -> None:
-       executable = HarnessBuilder().build(
-           AgentSpec(),
-           output_type=str,
-           model=FunctionModel(stream_function=respond),
-       )
-       result = await executable.run("Say hello")
-       print(result.output_or_raise())
+# 1. Define a deterministic offline responder function
+async def respond(
+    messages: list[ModelMessage],
+    info: AgentInfo,
+) -> AsyncIterator[str]:
+    del messages, info
+    yield "Hello from the Harness!"
 
 
-   if __name__ == "__main__":
-       asyncio.run(main())
-   ```
+# 2. Build the agent executable and execute a prompt
+async def main() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(instructions="You are a helpful assistant."),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+    )
+    result = await executable.run("Say hello")
+    print(result.output_or_raise())
 
-2. Run it from the same directory:
 
-   ```bash
-   uv run python app.py
-   ```
+if __name__ == "__main__":
+    asyncio.run(main())
+```
 
-3. Check the output:
+Execute the script with `uv`:
 
-   ```text
-   Hello from the Harness
-   ```
+```bash
+uv run python app.py
+```
 
-The function supplies the model response, but Harness performs the real Run lifecycle. This confirms that your installation, Agent construction, and result handling work together.
+Output:
+
+```text
+Hello from the Harness!
+```
+
+Even though the mock responder returns static text, Harness executes the complete native run lifecycle—validating input parameters, managing run state, and packaging structured execution results.
 
 ## Understand the execution path
 
-| Code                          | Responsibility                                                                |
-| ----------------------------- | ----------------------------------------------------------------------------- |
-| `AgentSpec()`                 | Agent instructions and declarative settings                                   |
-| `HarnessBuilder().build(...)` | Combine the definition, model, and output contract into a reusable executable |
-| `output_type=str`             | Require a final text result                                                   |
-| `executable.run(...)`         | Start a Run and wait for its terminal result                                  |
-| `result.output_or_raise()`    | Return completed output or raise for a non-completed result                   |
-| `result.state`                | Carry messages and portable state into a later Run                            |
+The core architecture separates the agent's static definition from its runtime execution:
 
-Here the concrete model is a builder argument, so `AgentSpec.model` stays unset. Choose one model source. Keep `output_type` explicit even for a text-only Agent.
+| Component | Architecture role |
+| :--- | :--- |
+| `AgentSpec` | Declarative instructions, model identifiers, and static behavior policies |
+| `HarnessBuilder().build(...)` | Assembles instructions, models, and capabilities into a thread-safe executable |
+| `output_type=str` | Type contract for the terminal result (accepts Python primitives or Pydantic models) |
+| `executable.run(...)` | Spawns a new logical run and awaits the terminal result asynchronously |
+| `result.output_or_raise()` | Safely extracts the validated output or raises an exception on failure |
+| `result.state` | Serialized checkpoint encapsulating message history and portable capability state |
 
 ## Build once and continue a Thread
 
-Keep the imports, `respond()`, and final `asyncio.run(main())` from the first program. Replace only `main()` with:
+Agents often need to engage in multi-turn conversations. To continue a conversation within the same thread, pass the `previous_state` returned from the prior turn into your next call.
+
+Update `main()` in `app.py`:
 
 ```python
 async def main() -> None:
@@ -91,22 +97,27 @@ async def main() -> None:
         output_type=str,
         model=FunctionModel(stream_function=respond),
     )
-    first = await executable.run("Say hello")
+
+    # First turn
+    first = await executable.run("First greeting")
     print(first.output_or_raise())
-    second = await executable.run("Say hello again", previous_state=first.state)
+
+    # Second turn: pass previous_state to continue the conversation thread
+    second = await executable.run("Second greeting", previous_state=first.state)
     print(second.output_or_raise())
+
     assert second.thread_id == first.thread_id
     assert second.run_id != first.run_id
-    print("Same Thread, new Run")
+    print("Conversation continuity verified: same Thread, new Run.")
 ```
 
-Run `uv run python app.py` again. It prints two greetings and `Same Thread, new Run`. The assertions check continuation identity; the fixed offline responder still returns the same text for every prompt.
+Run `uv run python app.py` again. The assertions confirm that both executions share the same `thread_id` while generating distinct `run_id` audit traces.
 
-Save the returned `HarnessState` when you need to continue after restarting the program. The [state guide](state-and-resume.md) shows the JSON round trip and storage workflow. Your application reconstructs current credentials and live resources separately.
+To persist conversations across application restarts, serialize `result.state` to JSON and store it in your database. See [State and Resume](state-and-resume.md).
 
 ## Stream public events
 
-To display text as it arrives, start from the original offline program. Add these imports, replace `main()` with the version below, and keep the final `asyncio.run(main())`:
+For interactive chat UIs and command-line streaming, consume live event streams using `executable.stream()`:
 
 ```python
 from a13n_harness import HarnessEvent, HarnessRunResultEvent
@@ -119,7 +130,8 @@ async def main() -> None:
         output_type=str,
         model=FunctionModel(stream_function=respond),
     )
-    async with executable.stream("Say hello") as stream:
+
+    async with executable.stream("Stream a greeting") as stream:
         async for item in stream:
             if isinstance(item, HarnessRunResultEvent):
                 item.result.raise_for_status()
@@ -132,39 +144,38 @@ async def main() -> None:
     print()
 ```
 
-Run the file again and check for the greeting. Text events drive the display; the terminal `HarnessRunResultEvent` tells you whether execution completed. The `async with` scope closes Run resources, including when you stop consuming early. Use that terminal result's `state` when adding persistence to a streaming application.
+The `async with` context manager ensures that all network connections, tool resources, and background tasks are properly cleaned up upon stream completion.
 
 ## Use a real model
 
-Once the offline program works, connect an account you can use. This example uses the OpenAI Responses integration; choose a model ID available to your account.
+Once you have validated the execution loop offline, switch to an external LLM provider such as OpenAI, Anthropic, or Gemini:
 
-1. Return to the original `app.py` and add `import os`.
+1. Add `import os` to `app.py`.
+2. Configure the model in `AgentSpec`:
 
-2. Replace its builder call inside `main()` with:
+```python
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model=os.environ["HARNESS_MODEL"],
+            instructions="You are an expert software engineer. Provide concise, actionable answers.",
+        ),
+        output_type=str,
+    )
+```
 
-   ```python
-       executable = HarnessBuilder().build(
-           AgentSpec(
-               model=os.environ["HARNESS_MODEL"],
-               instructions="Answer clearly and concisely.",
-           ),
-           output_type=str,
-       )
-   ```
+3. Export your provider credentials and model identifier in your shell environment:
 
-3. Set the credential and selection in your process environment. In a POSIX shell, replace both placeholders:
+```bash
+export OPENAI_API_KEY="sk-..."
+export HARNESS_MODEL="openai-responses:gpt-4o"
+uv run python app.py
+```
 
-   ```bash
-   export OPENAI_API_KEY='YOUR_API_KEY'
-   export HARNESS_MODEL='openai-responses:YOUR_MODEL_ID'
-   uv run python app.py
-   ```
-
-The answer now comes from the provider and can vary. The offline `respond()` function and its model imports can be removed. Keep secrets out of source control. Other providers, application-owned clients, and short-lived credentials are covered in [Models](models.md) and [Authentication and HTTP clients](model-authentication.md).
+Harness resolves the provider string, initializes authenticated HTTP transports, and executes the conversation against the upstream API. For client customization and auth proxies, see [Model authentication](model-authentication.md).
 
 ## Add Capabilities
 
-Add features when the Agent needs them. For example, the following replacement builder call adds runtime context and working notes/tasks to the original offline program. Put the imports at the top and the builder call inside `main()`:
+Modular features—such as runtime context, note-taking, or custom toolsets—are attached via **Capabilities**:
 
 ```python
 from a13n_harness.capabilities import RuntimeContextCapability, WorkingStateCapability
@@ -175,29 +186,34 @@ async def main() -> None:
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=respond),
-        capabilities=(RuntimeContextCapability(), WorkingStateCapability()),
+        capabilities=(
+            RuntimeContextCapability(),
+            WorkingStateCapability(),
+        ),
     )
     result = await executable.run("Say hello")
     print(result.output_or_raise())
 ```
 
-The greeting remains unchanged because the deterministic responder does not choose the added tools. Continue with [Tools and dependencies](tools-and-dependencies.md) for an offline example that actually calls a function, or [Capabilities](capabilities.md) to select built-in features.
+Explore [Capabilities](capabilities.md) to discover built-in extensions for memory, environment sandboxes, and tool discovery.
 
 ## Troubleshoot the first run
 
-| Symptom                                    | Check                                                                                             |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------- |
-| Unsupported Python version                 | Use Python 3.13 or later and repeat the locked sync                                               |
-| `No module named a13n_harness`             | Run through `uv run` in the synchronized checkout                                                 |
-| Model-selection conflict                   | Use either a builder `model=` or `AgentSpec.model`, not both                                      |
-| Missing output contract                    | Keep `output_type=str`, or choose the explicit schema workflow in the input/output guide          |
-| Offline greeting works, provider run fails | Check the selected model ID, account access, credential, and provider error                       |
-| A pasted fragment has undefined names      | Apply the stated replacement to the original program; fragments reuse its imports and `respond()` |
+Common setup issues and their resolutions:
+
+| Symptom | Primary check |
+| :--- | :--- |
+| `ModuleNotFoundError: No module named 'a13n_harness'` | Ensure you run scripts via `uv run python app.py` within the synchronized workspace |
+| Python version incompatibility | Harness requires Python 3.13 or newer. Verify with `python3 --version` |
+| Conflicting model configurations | Provide the model either via builder `model=` or `AgentSpec.model`, not both simultaneously |
+| Provider authentication error | Verify your API key environment variable and model ID access permissions |
+| Undefined import names | Ensure you have synchronized the latest package definitions with `uv sync` |
 
 ## Next steps
 
-1. [Call a Python tool](tools-and-dependencies.md) and inspect its result.
-2. [Save and restore a Thread](state-and-resume.md) across program invocations.
-3. [Test offline](testing.md) before connecting external services.
+Now that your core runtime loop is operational:
 
-For application structure, read [Agents and Runs](agents-and-runs.md). For file and command access, continue with [Environments](environments.md). The [Agent Application example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app) combines repeated streaming turns, persistence, and restart recovery.
+1. [Tools and dependencies](tools-and-dependencies.md): Register custom Python functions and handle dependency injection.
+2. [State and Resume](state-and-resume.md): Store and restore serialized checkpoints in production databases.
+3. [Testing](testing.md): Write fast, deterministic unit test suites for complex agent behaviors.
+4. [Environments](../environments/index.md): Grant agents sandboxed file and command execution capabilities.

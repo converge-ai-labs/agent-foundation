@@ -1,59 +1,67 @@
 ---
 title: Harness UI
 sidebarTitle: Overview
-description: Start an Agent in your terminal or browser, then configure it for your work.
+description: High-productivity terminal and browser workbench for interacting with codebases, managing multi-agent workflows, and customizing agent capabilities.
 ---
 
-Harness UI lets you work with an Agent on your own computer or a connected Environment. Use it to understand a repository, make changes, run checks, or investigate a problem. You supply a model subscription or API key; Harness UI supplies the conversation, tools, and configuration.
+**Harness UI** is an interactive, developer-first workbench designed for individuals and DIY builders. Whether you want a responsive terminal interface (TUI) to inspect git repositories and run commands alongside an agent, or a modern browser interface (WebUI) with file trees, git diff viewers, and real-time voice, Harness UI provides an out-of-the-box playground backed by the Harness execution engine.
 
 ## Install and start
 
-For your first session, follow these two guides in order:
+Get up and running in your repository with two straightforward steps:
 
-1. [Install Harness UI](installation.md). The package includes the terminal interface and WebUI.
-2. [Set up your first Agent](setup.md). Connect a Model, choose execution permissions, and send a test message.
+1. [Install Harness UI](installation.md): Install the unified package containing both the CLI terminal application and the web service.
+2. [Set up your first Agent](setup.md): Connect an API key or subscription model, grant execution permissions, and start your first conversation.
 
-You do not need to write YAML or create a Project before starting. Once the first message works, use [the terminal guide](everyday-use.md) or [the WebUI guide](webui.md) to work with files and follow-up tasks.
+No initial configuration files or database setups are required. As soon as the first message succeeds, you can work immediately via terminal or browser.
 
 ## Choose how you work
 
-**Terminal:** launch `a13n-harness-ui` from the repository you want to work on. The terminal interface stays in that working directory. [Learn the conversation controls](everyday-use.md).
+Harness UI adapts to your preferred working environment:
 
-**Browser:** launch `a13n-harness-ui webui` and open the printed login link. WebUI provides conversations, files, Git changes, and terminals. [Start a browser session](webui.md).
-
-**Voice:** enable [Live Mode](live-mode.md) in WebUI to talk through work. Live requires a supported Codex subscription Model and browser microphone access.
+- **Terminal (TUI):** Run `a13n-harness-ui` directly in any project directory. The TUI keeps you focused inside your shell, supporting hotkeys, interactive decision cards, and live prompt steering. [Master the terminal interface](everyday-use.md).
+- **Browser (WebUI):** Run `a13n-harness-ui webui` and open the generated link. Enjoy rich visual Markdown rendering, a collapsible file explorer, syntax-highlighted diffs, and integrated terminal panels. [Explore the WebUI guide](webui.md).
+- **Voice interaction (Live Mode):** Speak directly with an agent in WebUI using low-latency WebRTC audio streaming, allowing hands-free guidance while inspecting code changes. [Learn Live Mode](live-mode.md).
 
 ## Configure the workbench
 
-Three resources explain most configuration tasks:
+Harness UI is configured through three core declarative primitives:
 
-- A **Model** defines the provider connection and request settings.
-- An **Agent** selects a Model and adds instructions and tools.
-- A **Project** groups working directories and creation defaults.
+| Primitive | Role in your workbench | Where to configure |
+| :--- | :--- | :--- |
+| **Model** | Provider credentials, upstream model IDs, and generation settings | `models/` directory or interactive setup |
+| **Agent** | System prompt, default model, tool permissions, and custom subagents | `agents/` directory |
+| **Project** | Working directory roots, local settings, and default environment bindings | `.a13n-project.yaml` or workspace roots |
 
-Start with [common configuration recipes](configuration-recipes.md) when you want to change one of these. Use the [configuration reference](configuration.md) to look up fields and precedence.
+Review [configuration recipes](configuration-recipes.md) for ready-to-use patterns, or consult the [configuration reference](configuration.md) for complete YAML syntax.
 
 ## Shape your workflow
 
-Add one capability at a time, after your first conversation works:
+Customize and extend your workbench as your project needs grow:
 
-- **Change how the Agent thinks:** [connect another Model](models-and-authentication.md), then [configure an Agent](agents-and-subagents.md).
-- **Choose where it works:** [select an Environment and organize Projects](environments-and-projects.md).
-- **Teach a repeatable task:** [add a Skill](skills-and-content-plugins.md).
-- **Remember preferences across conversations:** [configure file memory](configuration.md#file-memory), then [inspect its files and organization](webui.md#observe-memory).
-- **Connect another tool service:** [add an MCP server](mcp.md); use [MCP Apps](mcp-apps.md) for interactive results.
-- **Use provider tools or media:** [configure native and Web tools](native-and-web-tools.md).
+- **Connect alternative models:** Switch easily between OpenAI, Anthropic, Gemini, or local Ollama servers via [models and authentication](models-and-authentication.md).
+- **Organize subagents:** Define specialized child roles (e.g., code reviewer, researcher) using [agents and subagents](agents-and-subagents.md).
+- **Teach repeatable workflows:** Create structured Markdown procedural guides with [Skills and Content Plugins](skills-and-content-plugins.md).
+- **Preserve working notes:** Store personal guidelines and project memories across conversations via [file memory](configuration.md#file-memory).
+- **Connect external tools:** Attach external tool ecosystems through [MCP](mcp.md) and render dynamic browser widgets via [MCP Apps](mcp-apps.md).
+- **Add native and web tools:** Enable desktop computer use, browser scraping, and search tools using [native and web tools](native-and-web-tools.md).
 
-The [command reference](command-reference.md) lists terminal commands once you know the workflow you need.
+Check the [command reference](command-reference.md) for a comprehensive list of CLI arguments and slash commands.
 
 ## Share and continue work
 
-Keep Harness UI running while the Agent works. Closing a browser tab leaves active Runs running. A [graceful WebUI restart](running-webui.md#restart-or-update-the-server) can automatically continue compatible interrupted work after saving and cleanup succeed. After a TUI exit or process crash, inspect the last saved checkpoint and [resume manually](automation-and-troubleshooting.md#resume-after-exit-or-failure). Check the saved outcome before submitting work again.
+Your conversational context, execution history, and drafts are automatically preserved in the local database.
 
-Share a WebUI instance only with trusted collaborators. They use the same credentials, configuration, and files. Native Host file access and terminals are enabled by default; `--no-share-computer` disables that sharing separately from Agent execution permissions.
+- **Conversation continuity:** Closing a browser tab or exiting the TUI does not lose work. Simply run `/resume` in the TUI or select the thread in the WebUI sidebar to continue.
+- **Graceful recovery:** In the event of an unexpected process exit, Harness UI preserves intermediate drafts and saves execution checkpoints for one-click resumption.
+- **Collaborative access:** Harness UI operates as a trusted, high-privilege workbench instance. When sharing an instance across a local team, you share the instance's credentials, project files, and terminals.
 
-For managed users, roles, and durable execution across workers, use [Service](../a13n-service/index.md).
+For centralized multi-tenant deployments requiring fine-grained user roles and remote worker clusters, deploy [Service](../a13n-service/index.md).
 
 ## Build on Harness UI
 
-To build another interface over the same configuration and conversation store, use the [Python App](embedding.md) or [HTTP API](http-api.md). To embed Agent execution in your own application with your own storage and access policy, start with [Harness](../a13n-harness/getting-started.md).
+Harness UI exposes programmatic interfaces for builders:
+
+- **Embed as a Python App:** Import and mount the complete workbench inside custom desktop wrappers or local services using the [Python App interface](embedding.md).
+- **Automate via HTTP:** Integrate third-party scripts, editor extensions, or webhooks via the [HTTP API](http-api.md).
+- **Embed raw execution:** If you want pure agent execution without UI layers, integrate the underlying [Harness SDK](../a13n-harness/getting-started.md).

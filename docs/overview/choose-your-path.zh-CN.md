@@ -1,50 +1,52 @@
 ---
 title: 选择使用方式
-description: 根据 agent 的运行位置和运维负责人，选择 Service、Harness 或 Harness UI。
+description: 根据您的业务场景、系统架构需求与目标技术角色，选择最契合的 Agent Foundation 产品。
 ---
 
-根据第一个任务选择指南：在 Python 应用内运行 agent，与 agent 交互式协作，或使用负责管理执行的 Service 部署。
+Agent Foundation 提供三种不同形态的 Agent 运行与交互方式。无论您是在 Python 微服务中以代码级嵌入执行引擎，还是在个人工作流中通过终端/Web 深度协作，亦或是搭建面向全团队的企业级集中托管平台，都能快速找到清晰的切入点。
 
-| 你的目标                   | 所需条件                                         | 从这里开始                                             |
-| -------------------------- | ------------------------------------------------ | ------------------------------------------------------ |
-| 部署共享 agent 平台        | 本地试用需要 Docker Compose 和模型 provider 账号 | [Service 快速入门](../a13n-service/get-started.md)     |
-| 使用团队的 agent           | Console 地址、账号和运行 agent 的权限            | [使用已有平台](../a13n-service/use-platform.md)        |
-| 从应用调用远程 agent       | Service 地址、工作空间 API 密钥和已配置的 agent  | [连接你的应用](../a13n-service/connect-application.md) |
-| 在客户的云中交付 agent     | 客户基础设施和模型账号的访问权限                 | [前线部署工程](../a13n-service/forward-deployed.md)    |
-| 在 Python 进程内运行 agent | Python 3.13+ 和 uv；首个示例使用离线模型         | [Harness 快速入门](../a13n-harness/getting-started.md) |
-| 在仓库中交互式工作         | Harness UI 和受支持的模型订阅或 API 密钥         | [配置 Harness UI](../a13n-harness-ui/setup.md)         |
+| 核心目标 | 适用角色 | 前置条件 | 快速开始 |
+| :--- | :--- | :--- | :--- |
+| **在 Python 中内嵌 Agent** | Python 开发者与后端架构师 | Python 3.13+，`uv` 包管理器 | [Harness 快速入门](../a13n-harness/getting-started.md) |
+| **交互式工作台协作** | 工程师与 DIY 极客 | 现代终端或浏览器，模型 API 密钥或订阅 | [Harness UI 快速上手](../a13n-harness-ui/setup.md) |
+| **自建团队托管平台** | 平台运维与系统工程师 | Docker Compose 或 Kubernetes，模型账号 | [Service 快速部署](../a13n-service/get-started.md) |
+| **加入团队已有平台** | 业务团队成员与操作人员 | 浏览器、Console 访问地址与工作区账号 | [使用已有平台](../a13n-service/use-platform.md) |
+| **集成远程托管 Agent** | 业务应用开发者 | 工作区 API 密钥、Service 端点 | [连接您的应用程序](../a13n-service/connect-application.md) |
+| **交付客户私有云** | 现场部署工程师（FDE） | 目标基础设施、客户授权的模型资源 | [前线部署工程指南](../a13n-service/forward-deployed.md) |
 
 ## 选择执行位置
 
-- **Service：** 通过 Console 或应用提交任务。Service 在已运行的部署中管理身份、保存对话并提供持久执行。
-- **Harness：** 在 Python 进程中构建并运行 agent。由你的应用提供存储、访问策略和结果交付。
-- **Harness UI：** 配置 agent，通过终端或 WebUI 与其协作。只与可信协作者共享实例：配置、对话和环境访问没有按用户隔离。
+三种产品形态针对不同的系统边界、持久化要求与隔离场景：
+
+- **Harness（内嵌库）：** 直接在您的 Python 应用程序主进程内运行。由您完全掌控 Agent 的生命周期、挂载的原生函数与 MCP 工具集，并享有对状态序列化、并发控制和持久化存储的完全编程自由。
+- **Harness UI（本地与协作工作台）：** 针对高频工程交互优化的沉浸式工作台，支持命令行终端（TUI）与现代 WebUI。可直接挂载本地工作空间，提供丰富的文件审查、Git 变更比对、Live 实时语音通话等功能，并能通过自定义 Skill 与 Content Plugin 随心定制。
+- **Service（分布式多租户平台）：** 专为团队与多系统打造的分布式后端平台，具备独立的控制面（Control）与计算节点（Worker）。提供组织与工作区级 RBAC 权限体系、后台异步任务队列、周期性 Cron 调度、长期记忆空间（Memory Spaces）以及在节点故障时基于检查点的持久化状态恢复能力。
 
 ```mermaid
 flowchart TB
-    Console["Console"] -->|"配置、测试、调试"| Service["Service 部署"]
-    Client["你的应用"] -->|"SDK 或 HTTP API"| Service
-    Process["你的 Python 进程"]
+    Console["Web Console 控制台"] -->|"配置、测试与调试"| Service["Service 托管平台"]
+    Client["业务应用集成"] -->|"SDK 或 HTTP API"| Service
+    Process["Python 业务进程"]
     Workbench["Harness UI：终端或浏览器"]
-    Service -->|"托管"| Harness["Harness 运行每个 agent"]
-    Process -->|"嵌入"| Harness
-    Workbench -->|"交互"| Harness
+    Service -->|"托管调度执行"| Harness["Harness：底层执行引擎"]
+    Process -->|"代码内嵌执行"| Harness
+    Workbench -->|"交互协作执行"| Harness
 
     class Console,Client,Process,Workbench app
     class Service,Harness a13n
 ```
 
-Service 和 Harness UI 都内嵌 Harness。从其他应用调用 Service 部署时，安装 **Service SDK**；在该应用自己的进程中执行 agent 时，安装 **Harness 库**。Service 的浏览器界面是 Console，Harness UI 的浏览器界面是 WebUI。
+Service 与 Harness UI 均以内嵌 Harness 作为其核心执行引擎。如果您的业务需要接入统一集中的 Service 平台，推荐使用官方 **Service SDK** 或标准 HTTP 接口；如果您需要从零自研深度定制的 Python Agent 架构，请直接导入 **Harness 核心库**。
 
 ## 单独使用组件
 
-根据集成需要添加组件：
+您亦可将 Agent Foundation 的底层技术积木独立抽离并无缝集成至现有系统中：
 
-| 需求                                       | 指南                                                |
-| ------------------------------------------ | --------------------------------------------------- |
-| 可移植的文件和命令操作，无论是否使用 agent | [Environments](../environments/index.md)            |
-| 通过守护进程操作环境                       | [Envd](../a13n-envd/index.md)                       |
-| 将 Harness 观测转换为 AG-UI 事件           | [Stream Protocol](../a13n-stream-protocol/index.md) |
-| 发行包名、导入路径和可运行示例             | [软件包目录](packages.md)                           |
+| 核心能力 | 底层支撑组件 | 集成参考指南 |
+| :--- | :--- | :--- |
+| **可移植的环境执行抽象** | Environments (`a13n-harness`) | [Environments 概览](../environments/index.md) |
+| **高性能远程沙箱守护进程** | Envd (`crates/a13n-envd`) | [Envd 运维指南](../a13n-envd/index.md) |
+| **标准流式 UI 协议** | Stream Protocol (`a13n-stream-protocol`) | [Stream Protocol 规范](../a13n-stream-protocol/index.md) |
+| **全库发行版与依赖映射** | 仓库全部组件包 | [软件包目录清单](packages.md) |
 
-在[核心概念](../a13n-service/core-concepts.md)中跟随一次 Service 对话，或通过[运维 Service](../a13n-service/operations.md)管理部署。选择 Service 客户端版本时，核对其[支持的协议约定](../a13n-service/sdks.md#keep-version-ownership-clear)是否匹配该部署。
+深入理解一次业务交互如何转化为底层的 Thread、Run 与恢复 Attempt，请查阅 [Service 核心概念](../a13n-service/core-concepts.md)；如需评估生产高可用架构与扩缩容方案，请参阅 [Service 运维手册](../a13n-service/operations.md)。

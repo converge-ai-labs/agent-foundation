@@ -1,231 +1,163 @@
 ---
 title: Use the TUI
-description: Start a task, guide the Agent, attach files, and return to saved work from the terminal.
+description: Efficiently navigate codebases, guide agent thinking, attach files, review tool approvals, and resume saved work in the terminal.
 ---
+
+The **Harness UI Terminal Interface (TUI)** is built for developers who live in their terminal. It combines the power of modern LLMs with local shell workflows, giving you instantaneous control over file inspection, git reviews, and tool execution without context switching.
 
 ## Everyday interaction
 
-Complete [setup](setup.md), then open a terminal in the repository you want to work on:
+Launch the TUI inside any repository directory after completing [setup](setup.md):
 
 ```bash
 a13n-harness-ui
 ```
 
-1. Enter `/status` and check the Agent, Model, and `Workspace` directory.
-2. Type a concrete task, such as `Explain how this repository runs its tests. Do not change files.`, and press Enter.
-3. Read the response. Press Ctrl+O when you need tool arguments, output, or diffs.
-4. Send a follow-up in the same conversation, or use `/new` for an unrelated task.
+1. Run `/status` to verify your active Agent, Model, and current workspace directory.
+2. Enter a task (e.g., `Review the recent commits and explain the test strategy.`) and press Enter.
+3. Read the incoming response. Press **Ctrl+O** to expand full tool arguments, execution outputs, and git diffs.
+4. Continue the dialogue in the same thread, or type `/new` to initiate a clean task.
 
-A conversation is a root Thread with saved history and settings. Each execution is a Run. The composer shows what Enter will do:
+The composer prompt adapts its behavior dynamically to the current run state:
 
-| Current state             | Enter does this                  |
-| ------------------------- | -------------------------------- |
-| Idle                      | Sends the draft as a new prompt  |
-| Agent working             | Sends guidance to the active Run |
-| Question or approval open | Confirms that interaction        |
+| Active state | Action performed by pressing Enter |
+| :--- | :--- |
+| **Idle** | Submits your draft prompt as a new task turn |
+| **Agent working** | Injects guidance (Steering) directly into the active run |
+| **Decision open** | Confirms your selection on the active approval or question card |
 
-Use Ctrl+J or Alt+Enter for a newline. Pasting multiline text leaves it in the draft until you send it.
+Use **Ctrl+J** or **Alt+Enter** to insert newlines. Multiline text can also be pasted directly.
 
-Press **Ctrl+G** in the ordinary prompt composer to edit the draft in your preferred editor. Harness UI uses `VISUAL`, or `EDITOR` when `VISUAL` is unset or blank; set one before launching, for example `EDITOR=nano a13n-harness-ui` or `VISUAL='code --wait' a13n-harness-ui`. The editor runs on the CLI Host, including over SSH. Save and close it to return to the composer, then press Enter when ready to send. Editing never submits or cancels Agent work.
-
-Long pasted text opens expanded. Attachments appear as readable markers: keep each marker unchanged and exactly once; you can move it with its surrounding text. Invalid markers or a draft changed by background work preserve the current draft and save the editor text to a private recovery file; the notice shows its path. This does not replace an existing `/recover` draft. Open the recovery file to retrieve the text, then delete its directory when done. Editor failures preserve the original draft. Working prompt files are private and removed after editing. Ctrl+G is unavailable in approval, question, and menu inputs.
-
-GUI editors must wait until you finish editing: use `code --wait`, `subl --wait`, or macOS `open -W -t`, as appropriate for your editor. A launcher that exits immediately cannot return later edits to the composer. Windows supports native double-quoted paths and PATH/PATHEXT lookup, including `.cmd` launchers. For example, in PowerShell, set `$env:VISUAL = '"C:\Program Files\Neovim\bin\nvim.exe"'`. POSIX uses shell-style argument quoting; editor selection does not put the prompt text into a shell command.
+To draft extensive prompts using your favorite editor, press **Ctrl+G** in the composer. Harness UI opens `$VISUAL` (or `$EDITOR`, such as `nvim` or `code --wait`), allowing you to compose complex instructions with full editor ergonomics. Saving and closing the editor returns your draft seamlessly to the composer.
 
 ### Choose an Agent or Model
 
-While idle, use `/agent` or `/model` to open a picker. Run `/status` afterward to check the effective selection.
+Quickly inspect or switch models and agents on the fly:
 
-| Change                      | Command                                                   | Effect                                                                                   |
-| --------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Agent                       | `/agent <agent-id>`                                       | Changes instructions, tools, review policy, and the Agent's default Model for later Runs |
-| Model                       | `/model <model-id>`                                       | Keeps the Agent; remembers a Model preference for this Project                           |
-| Return to the default Model | `/model default`                                          | Clears the Project's Model preference                                                    |
-| Reasoning                   | `/thinking`                                               | Shows or changes supported reasoning settings                                            |
-| Temporary reasoning mode    | `/pro on`, `/pro off`, `/pro reset`                       | Overrides or restores the configured mode                                                |
-| Temporary processing tier   | `/fast on`, `/fast off`, `/fast ultrafast`, `/fast reset` | Requests a supported tier or restores its default                                        |
-| Execution permissions       | `/environment`                                            | Shows available Environment choices                                                      |
-
-Agent and Model changes preserve history and clear temporary reasoning and service-tier overrides. A selected Model preference survives `/new`, Agent changes, and TUI restarts. A resumed Thread's saved default Model takes precedence over the launch Project's preference. Other open TUI processes keep their current choice until restart; a removed preference falls back to the Agent's Model. Explicit `--agent`, one-shot `run`, and API callers skip this TUI preference.
-
-To create another Agent, follow [Create an Agent](agents-and-subagents.md#create-an-agent-from-files) or run `a13n-harness-ui add agent` outside the TUI.
+| Task | Command | Effect |
+| :--- | :--- | :--- |
+| **Switch Agent** | `/agent <agent-id>` | Switches instructions, capabilities, toolsets, and child roles |
+| **Switch Model** | `/model <model-id>` | Switches active model provider; saves preference for this project |
+| **Reset Model** | `/model default` | Restores the default model configured in the project |
+| **Toggle Thinking** | `/thinking` | Configures reasoning token effort and thinking parameters |
+| **Pro reasoning tier** | `/pro on`, `/pro off`, `/pro reset` | Overrides or restores the high-effort reasoning tier |
+| **Speed processing tier** | `/fast on`, `/fast off`, `/fast reset` | Toggles ultra-fast inference mode when supported |
+| **Check Environment** | `/environment` | Inspects current sandbox and mount settings |
 
 ### Input, display, and status
 
-**Guide active work.** Type an additional requirement and press Enter, or use `/steer <message>`. Guidance can include attachments. By default it interrupts supported primary model generation; tool review and execution hand off cooperatively. Applied guidance appears in authored order in the transcript. For boundary-only delivery, configure [queued steering](configuration.md#built-in-tools-and-subagents).
-
-**Recover rejected input.** Preparation, cancellation, and completed operations do not accept steering. Rejected or unconfirmed input stays in the draft; if you have started another draft, use `/recover`. Check the displayed outcome before resending: Harness UI never automatically sends that input to a new Run.
-
-**Read more detail.** Ctrl+O switches between concise responses/tool summaries and retained arguments, output, and full diffs. It does not rerun tools. `/status` shows settings and pending decisions; `/help` explains commands. Type `$` to find a Skill and insert `$name` in your prompt.
-
-**Use commands deliberately.** Tab completes commands and supported arguments. A recognized command with invalid arguments preserves the draft and shows an error. Unmatched slash text is sent unchanged as ordinary input with a notice. Quote paths containing spaces; Windows backslashes are preserved.
+- **Steer active work:** While the agent is generating output, you can type steering instructions and press Enter (or use `/steer <message>`). Harness immediately injects your correction into the active run, guiding the model without aborting prior progress.
+- **Inspect tool details:** Toggle **Ctrl+O** to switch between concise summary views and comprehensive diagnostic traces containing raw command arguments, return values, and full diffs.
+- **Recover unsent drafts:** If you close an editor or cancel an action, your unsent prompt is preserved in the draft buffer. Use `/recover` if you need to restore an earlier buffered draft.
+- **Autocomplete commands:** Press **Tab** to view autocomplete options for slash commands, available models, and registered skills. Type `$` to trigger the Skill picker.
 
 ### Approvals and questions
 
-When a decision opens, read its request before choosing an action:
+When the agent executes sensitive commands or needs user clarification, it displays an interactive decision card:
 
-1. Inspect the command, target, arguments, and available risk explanation. Use `/review <request-id>` for retained details.
-2. Choose **Approve once**, **Deny**, or **Deny with reason** using the displayed controls.
-3. If a reason editor opens, type the reason and press Enter. Use Ctrl+J/Alt+Enter for a newline or Esc to return.
-
-Approvals have no preselected answer. **Approve with edited arguments**, when offered, requires a complete JSON object. Bound shell approvals cannot change arguments: deny with a reason and ask for a new command. Requests with omitted arguments cannot be approved.
-
-A request for an external tool result offers **Provide result** instead. Supply the actual result in its JSON editor; this action does not execute the tool. Invalid JSON remains editable.
-
-Each displayed decision uses `tools.interaction_timeout_seconds`, default 120 seconds. Editing does not reset the timer. A timeout returns a denial or a no-answer failure. Cancelling from the action selector leaves requests pending; `/status` or resume reopens them. Use these cards, not `/approve`, `/deny`, or `/result` commands. Shell review has its own model timeout and [configuration recipe](configuration-recipes.md#configure-shell-review).
+1. Review the tool name, arguments, and visual risk summary.
+2. Choose **Approve once**, **Deny**, or **Deny with reason** using the arrow keys.
+3. If providing a denial reason, type your feedback and press Enter so the model can adjust its strategy.
 
 #### Answer a question
 
-A Question Card temporarily replaces the composer and preserves your ordinary draft and attachments.
+When the agent presents a structured question card:
 
-1. Read the question and options. Up/Down or number keys focus an option without submitting it.
-2. For a multiselect question, use Space to toggle choices. Press Enter to confirm.
-3. To write your own answer, press Tab or Ctrl+Space. Enter submits the answer; Ctrl+J/Alt+Enter inserts a newline.
-4. Answer any remaining questions. Look for the successful question-and-answer receipt, not just local collection, before treating the answers as accepted.
-
-PageUp/PageDown scroll the card without choosing an answer. Clicking focuses an option; the wheel only scrolls. Esc in the answer editor returns to choices and keeps the answer draft. Esc from choices cancels collection and leaves requests pending. `/status` reopens them.
-
-The answer editor accepts `/help`, `/mode`, `/status`, `/quit`, `/cancel`, `/theme`, `/mouse`, and `/review`. Other known commands are rejected; unknown slash-prefixed text remains literal answer text. Ctrl+O and Ctrl+T inspect tool details and history without answering. Closing history returns to the card.
+1. Use **Up/Down** arrow keys to highlight an option.
+2. For multiselect questions, press **Space** to toggle choices, then press **Enter** to confirm.
+3. To provide custom text, press **Tab** to switch to the free-text input field, type your answer, and press **Enter**.
 
 ### Theme, scrolling, paste, and attachments
 
-To send a file with a task:
+Harness UI supports rich file and media attachments directly in the terminal:
 
-1. Enter `/attach "path/to/notes.txt"` or `/attach "path/to/image.png"`.
-2. Wait for its loading marker to become a file or image marker.
-3. Add instructions beside the marker and press Enter. Attachment-only messages also work.
+1. Type `/attach "path/to/screenshot.png"` or `/attach "docs/notes.md"`.
+2. Wait for the file marker (e.g., `[image#1]`) to render in the draft.
+3. Add prompt text alongside the attachment and press Enter.
 
-For a clipboard image, explicitly press Ctrl+V or Alt+V, or use `/paste-image`. Ordinary text paste stays text. On Linux, image clipboard access needs a display session and `wl-paste` for Wayland or `xclip` for X11. Over SSH, the clipboard belongs to the machine running the TUI: upload your file first, then attach its remote path. Pasting a local path does not upload a file.
+For clipboard images, press **Ctrl+V** or type `/paste-image` to attach screenshots effortlessly.
 
-Markers such as `[image#1]` and `[file#2: notes.txt]` keep attachments in your authored order. Backspace/Delete removes a whole marker; Undo restores its content. Typing a marker's visible text or recalling it from input history does not attach a file. Delete a failed marker before retrying. The selected Model must support the input modality; a failure does not silently switch Models or discard images.
-
-| Attachment limit | Value                     |
-| ---------------- | ------------------------- |
-| Count            | 8 per draft               |
-| File size        | 10 MiB each, 20 MiB total |
-| Image formats    | PNG, JPEG, WebP, GIF      |
-| Image dimensions | Up to 32 megapixels       |
-
-Use these controls to adjust reading and copying:
-
-| Task                                   | Control                                           |
-| -------------------------------------- | ------------------------------------------------- |
-| Choose colors for this TUI             | `/theme auto`, `/theme dark`, `/theme light`      |
-| Set the persistent theme               | `display.theme` in root configuration             |
-| Scroll output                          | PageUp / PageDown                                 |
-| Follow live output again               | Ctrl+End, or return to the bottom                 |
-| Route mouse wheel to TUI panels        | `/mouse on`                                       |
-| Use terminal-native selection and copy | `/mouse off`                                      |
-| Switch mouse modes                     | Esc, after any open interaction/completion closes |
-
-Auto theme keeps the terminal's foreground/background and ANSI palette. Keyboard scrolling works in either mouse mode. Use Ctrl+T when older output has left the live display.
+| Feature | Shortcut / Command | Action |
+| :--- | :--- | :--- |
+| **Theme selection** | `/theme auto`, `/theme dark`, `/theme light` | Adjusts color palette to match your terminal emulator |
+| **Terminal scroll** | **PageUp** / **PageDown** | Scrolls historical run output |
+| **Jump to live output** | **Ctrl+End** | Returns immediately to active generation output |
+| **Mouse routing** | `/mouse on`, `/mouse off` | Toggles mouse wheel scrolling vs native terminal text selection |
 
 ### Long pasted text and Thread working files
 
-Pastes longer than 1000 characters fold into compact markers. Press Alt+E, or move the cursor into a marker, to edit the text. Backspace after a marker or Delete before it removes the whole block. Enter submits the complete authored text to the App.
+When pasting snippets longer than 1,000 characters, Harness UI folds the text into an expandable marker. Press **Alt+E** with the cursor on the marker to inspect or edit the full block.
 
-A separate [long-text input policy](configuration.md#long-text-inputs) can deliver blocks longer than 8000 Unicode characters as retained text-file references to the Model. Folding changes the editor display; file conversion changes model delivery.
+Each conversation receives a dedicated thread directory for managing attachments and temporary files:
 
-The Agent receives a `thread-files` mount for work associated with this conversation:
-
-| Location            | Purpose and lifetime                                                                    |
-| ------------------- | --------------------------------------------------------------------------------------- |
-| `attachments/`      | Submitted files retained for later Runs and resume                                      |
-| `tmp/`              | Disposable scripts, downloads, and intermediate output; reused across Runs and restarts |
-| `tmp/tool-results/` | Oversized tool output; Run-private and subject to cleanup when that Run ends            |
-
-Temporary files can be pruned after three days of inactivity, checked at startup and hourly. An App protects Thread directories it has used until it exits. This cleanup leaves attachments and Project files intact. Ask the Agent to copy important results to your Project or another chosen destination before relying on them.
-
-In Sandbox, a shell in the Project cannot automatically access the sibling Thread mount. Attachment processing must use a working directory inside that mount. Custom providers may expose it through file tools only.
+| Folder | Lifecycle | Content |
+| :--- | :--- | :--- |
+| `attachments/` | Preserved across turns | User-attached files and images |
+| `tmp/` | Reused across turns | Intermediate build artifacts and downloads |
+| `tmp/tool-results/` | Cleaned up on run completion | Oversized command outputs and raw dumps |
 
 ### Find a saved conversation
 
-1. Start the TUI in the directory where you want to work.
-2. Enter `/resume`. Search by name, ID, or saved input/reply excerpt.
-3. Select a row to preview it. Ctrl+T inspects history without switching.
-4. Press Enter to resume, then `/status` to check the working directory and selections.
+To browse or resume past conversations:
 
-Resuming within the same Project keeps the Thread's saved working directories, even if the Project file has changed. Resuming from another Project uses that launch directory's Project and local roots, while retaining history, Agent, Device bindings, and local execution mode. Check `/status` after resuming; see [Project and recovery rules](environments-and-projects.md#files-projects-and-recovery). An active conversation cannot be resumed in another TUI.
+1. In the TUI, enter `/resume`.
+2. Use **Up/Down** to navigate past conversation threads. A preview panel displays recent prompt excerpts.
+3. Press **Enter** to load the selected thread and continue immediately.
 
-| Browser action                                          | Key               |
-| ------------------------------------------------------- | ----------------- |
-| Select a conversation                                   | Up / Down         |
-| Load another results page                               | PageUp / PageDown |
-| Include other directories and projectless conversations | Ctrl+A            |
-| Rename; empty name restores the first-input label       | F2, then Enter    |
-| Refresh results                                         | F5                |
-| Return without switching                                | Escape            |
-
-Rows are ordered by saved activity. Previews are saved excerpts, with unfinished replies marked as progress. Search, rename, and history inspection make no model requests. Older conversations without excerpts remain searchable by name and ID. Cancelling or failing resume preserves your draft and attachments.
-
-If you know the ID, use `/resume <thread-id>` in the TUI or `a13n-harness-ui --resume <thread-id>` from your shell.
+| Shortcut in `/resume` | Action |
+| :--- | :--- |
+| **Up / Down** | Browse threads |
+| **PageUp / PageDown** | Page through history |
+| **Ctrl+A** | Toggle display of threads across all projects |
+| **F2** | Rename the selected thread |
+| **Escape** | Close picker and return to the active draft |
 
 ### Read retained history
 
-Press Ctrl+T or enter `/history`. Use Up/PageUp for older pages and End for the latest. Ctrl+T, q, or Escape closes history and returns to your draft.
-
-Saved display history is separate from model context. Summarization, compaction, and cold-start compression can shorten the context without deleting retained display content. A saved checkpoint covers only its saved position; newer live output can still be unsaved.
+Press **Ctrl+T** or enter `/history` to open the full conversation transcript reader. Use **PageUp** and **PageDown** to review prior turns, or press **Escape** to return to your composer.
 
 ### Tasks, usage, and terminal feedback
 
-Use the inspection command for the question you need answered. These commands also work while the Agent is busy:
+Query real-time metrics and background status at any time, even while the agent is actively generating:
 
-| Question                                        | Command                                                      |
-| ----------------------------------------------- | ------------------------------------------------------------ |
-| Which settings and decisions are active?        | `/status`                                                    |
-| What did a child Agent return?                  | `/subagents`, `/subagents next`, `/subagents <execution-id>` |
-| Which background processes were observed?       | `/ps`                                                        |
-| How much recorded usage belongs to this Thread? | `/usage` or `/usage all`                                     |
-| How much belongs to one scope?                  | `/usage root`, `/usage subagents`                            |
-| What are the exact costs and coverage?          | `/usage details`                                             |
+| Query | Command | Information returned |
+| :--- | :--- | :--- |
+| **System status** | `/status` | Active agent, model, working directory, and pending approvals |
+| **Subagent status** | `/subagents` | Status and results of spawned child agents |
+| **Running processes** | `/ps` | Active background shell commands and daemons |
+| **Token usage** | `/usage` | Accumulated prompt/completion tokens and estimated cost |
+| **Usage breakdown** | `/usage details` | Per-turn cost and model breakdown |
 
-Process observations are bounded and local to this conversation, not a Host-wide process list. Unavailable does not mean exited. Usage combines observed root, child, and auxiliary-model requests; `ctx` is the latest root request's context footprint. `--` means unavailable, and `+` marks incomplete data or partial known costs. Recorded usage is an estimate, not a subscription invoice.
-
-For a Codex Model, idle `/usage subscription` shows available subscription windows and reset information. `/usage reset` lets you review and explicitly confirm an eligible redemption. If the result is unknown after timeout or cancellation, keep the TUI open and retry the same redemption ID. For a ChatGPT Model, Harness UI instead directs you to manage usage in ChatGPT; it does not provide numeric subscription allowance.
-
-**Tool executions** groups retained-tool checks and results. Completion while idle can trigger an Agent continuation without sending or clearing your draft. Stop cancels that continuation; `/executions cancel <execution-id>` targets the retained tool itself. A cancellation request is not proof that work has stopped.
-
-Ctrl+C during work requests cancellation and waits for cleanup. While idle, the first Ctrl+C clears the draft; a second within two seconds exits. Editing disarms that exit gesture. Ctrl+D on an empty draft, `/quit`, or `/exit` also exits. The terminal bell announces completion or a new decision.
-
-If a failure produces a private diagnostic report, inspect its exception messages for sensitive data before sharing it. Reports are not uploaded automatically. Follow the printed resume hint to return to saved state; unsent drafts and unsaved work are not recovered by that hint.
+Press **Ctrl+C** once to cancel active generation gracefully; pressing **Ctrl+D** on an empty draft or typing `/exit` exits the application.
 
 ### Tasks and notes
 
-Task and note tools are included by default. F2 expands or collapses the task panel, showing up to five saved rows with active work first. `/notes` opens saved note values; Ctrl+O expands note updates. The note panel shows up to 256 entries or 256 KiB and identifies omissions.
-
-To disable notes for an Agent, set `configuration.notes_enabled: false` in its `working_state` Capability entry. Saved task and note changes become visible after an operation or resume.
+Press **F2** to expand or collapse the task progress panel. The panel displays current todo items, in-progress tasks, and completed checklist goals. Type `/notes` to inspect working memory notes recorded by the agent.
 
 ### Work toward a Goal
 
-Use a Goal when you want the same Agent to check its work against an explicit completion criterion:
+When you have a multifaceted objective that requires iterative verification (e.g., implementing a feature, running unit tests, fixing errors, and re-running checks), launch a Goal:
 
 ```text
-/goal Implement the requested change, run its tests, and report any remaining blockers.
+/goal Refactor the database connection pool, run the test suite, and resolve any regressions.
 ```
 
-The initial response is check `0`; the default budget allows 10 additional checks. Watch the Goal bar for progress and outcome. Ctrl+C and `/cancel` still stop execution, and ordinary tool permissions still apply.
-
-The Agent signals completion with `[GOAL_COMPLETE]` on its own line. After summarization or compaction it must audit the original objective again. **Verified is the Agent's own completion claim, not an independent review.** Exhaustion, cancellation, errors, and an unverified stop remain distinct outcomes.
-
-When an external event, unavailable access, or a user decision blocks remaining progress, the Agent can explain the blocker and end with `[GOAL_BLOCKED]` on its own line. **Blocked** ends Goal mode without success or more automatic checks. A browser handback notice can continue the conversation in normal mode; it does not restore the ended Goal or its budget.
-
-Set root `max_goal_iterations` to change the budget for new Goals; zero or a negative value disables follow-up checks. A suspended Goal keeps its captured budget. Resuming a conversation alone does not restart unfinished work. Send ordinary input for normal behavior, or `/goal` for a new objective and budget. WebUI exposes the same policy through its [Goal controls](webui.md).
+In Goal mode, the agent iteratively executes changes and audits the result against your objective across multiple turns. The goal progress bar tracks iteration counts. The agent reports completion when all criteria are satisfied or explains any external blockers encountered.
 
 ### Local host commands
 
-While idle on a POSIX host, enter a command such as:
+To execute quick shell commands in your project directory without sending tokens to the model, prefix your command with an exclamation mark:
 
-```text
+```bash
 !git status
+!cargo test
 ```
 
-This runs in the TUI's working directory with the Host process environment, **outside the Agent's selected Environment and Sandbox**. Its command and output stay out of model context. Windows does not support this TUI shortcut; ordinary Windows CLI use and Agent tools remain available.
-
-Commands are noninteractive, with stdin closed, a 120-second deadline, and a 256 KiB combined output display limit. Ctrl+C or `/cancel` terminates the owned process group and waits for cleanup. Busy work or an open interaction rejects the command while preserving your draft.
+Commands execute immediately in the host shell environment, displaying output directly in your terminal panel.
 
 ### Tool switches
 
-To change built-in interaction tools, merge this fragment into the [selected root YAML](configuration.md#locate-and-validate-your-files):
+You can customize built-in tool configurations by modifying your project's configuration YAML:
 
 ```yaml
 tools:
@@ -234,6 +166,4 @@ tools:
   enable_codeact: true
 ```
 
-Both tools default on. Save the file, run `a13n-harness-ui config validate` outside the TUI, and use a later Run for the changed selection. Set either enable flag to `false` to omit that tool. The interaction timeout must be positive and finite; it controls active TUI waiting, not durable HTTP decision expiry.
-
-CodeAct provides restricted Python `run_code`/`run_program` and saved values through `store`/`load`/`forget`. Its Host effects use the eligible tools and their normal permissions. Advanced runner settings belong in the Agent's `codeact` Capability; root switches and visibility filters take precedence.
+Save the file and run `a13n-harness-ui config validate` to confirm syntax. CodeAct and question asking are enabled by default for maximum interactivity.

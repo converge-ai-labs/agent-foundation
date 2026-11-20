@@ -1,86 +1,111 @@
 ---
 title: Environments
 sidebarTitle: Overview
-description: Read files and run commands on a selected local, container, cloud, or remote target.
+description: Unified execution runtime for reading files, executing shell commands, and driving computer automation across local paths, containers, and cloud sandboxes.
 ---
 
-Environment APIs let your application read files and run commands on a target you choose. Start with an existing local directory, then use the same operation interfaces with a container or remote target. The execution APIs ship in `a13n-harness` and work without an Agent or model.
+The **Environments** subsystem provides a portable, uniform execution interface for interacting with filesystems and operating system processes. With Environments, your application or agent uses the exact same API whether it is editing a file on the local host machine, compiling code inside an isolated Docker container, or driving a browser in an ephemeral cloud micro-VM.
+
+Environments ships as part of `a13n-harness` and can be used directly as a standalone execution library without an LLM.
 
 ## Start here
 
-Follow the [file quickstart](getting-started.md) to open a workspace, write a file, read it back, and close the execution. Then choose the next step for your application:
+Get started with the [Environment quickstart](getting-started.md) to open a workspace, write a file, read it back, and safely release resources. Then explore specific execution patterns:
 
-| Task                                                | Guide                                                  |
-| --------------------------------------------------- | ------------------------------------------------------ |
-| Select local, container, cloud, or remote execution | [Choose a backend](#choose-a-backend)                  |
-| Set configuration, credentials, and runtime objects | [Provider configuration](configuration.md)             |
-| Look up fields and defaults                         | [Configuration reference](configuration-reference.md)  |
-| Run commands and inspect their output               | [Commands and processes](commands.md)                  |
-| Use file paths, searches, and bounded reads         | [Operations](operations.md)                            |
-| Create a target and reconnect to it                 | [Lifecycle and state](lifecycle.md)                    |
-| Try complete programs                               | [Runnable examples](examples.md)                       |
-| Connect an existing daemon                          | [Remote Envd](remote-envd.md)                          |
-| Expose operations as Agent tools                    | [Harness integration](../a13n-harness/environments.md) |
+| Operational task | Reference guide |
+| :--- | :--- |
+| **Select an execution target** | [Choose a backend](#choose-a-backend) (Local, Docker, E2B, cloud sandboxes) |
+| **Configure runtime credentials & options** | [Provider configuration](configuration.md) |
+| **Execute commands & inspect streams** | [Commands and processes](commands.md) |
+| **File inspection, search & bounded reads** | [Operations](operations.md) |
+| **Manage target lifecycles & reconnect** | [Lifecycle and state](lifecycle.md) |
+| **Connect an existing daemon over EIP** | [Remote Envd](remote-envd.md) |
+| **Expose execution to agents as tools** | [Harness integration](../a13n-harness/environments.md) |
 
 ## Choose a backend
 
-Choose **Native Execution** for Files & Shell through the target's native APIs: Direct Local, Docker, E2B, Vercel, Sprites, Runloop, or boxd. Shell covers command execution and the process, stdin, and output operations the backend supports.
+Environments supports two complementary execution pathways:
 
-Choose **Envd Execution** when you need the general execution interface, including OS sandbox and Egress policy, Computer use, or Device metrics. This path connects to a compatible Envd daemon over EIP. The Host selects the policy; the daemon enforces it within the target's available OS boundary. Metrics are read through the Host's Device connection.
+- **Native Execution:** Uses backend-native APIs for standard filesystem access and shell processes. Available for Direct Local paths, Docker containers, E2B micro-VMs, Vercel sandboxes, Sprites, and Runloop Devboxes.
+- **Envd Execution:** Connects over the Environment Inter-Process (EIP) protocol to an Envd daemon. This path unlocks full OS sandboxing, network egress enforcement policies, desktop GUI Computer Use, and real-time device metrics.
 
-| Execution path | Provider         | Connects to                                                  |
-| -------------- | ---------------- | ------------------------------------------------------------ |
-| Native         | `direct_local`   | An existing directory on the Host                            |
-| Native / Envd  | `docker`         | A Docker container; select HTTP EIP for the Envd route       |
-| Native / Envd  | `e2b`            | An E2B sandbox; select HTTP EIP for the Envd route           |
-| Envd           | `local_envd`     | A Host-owned local daemon over stdio                         |
-| Envd           | `daytona`        | A compatible daemon in a Daytona sandbox                     |
-| Envd           | `modal`          | A compatible daemon in a Modal sandbox                       |
-| Native / Envd  | `vercel`         | A Vercel sandbox; select HTTP EIP for the Envd route         |
-| Native / Envd  | `sprites`        | A Sprite; its Envd route uses a private tunnel               |
-| Native         | `runloop`        | A Runloop Devbox; Envd is not integrated                     |
-| Native         | `boxd`           | A boxd machine; Envd is not integrated                       |
-| Envd           | `http_envd`      | An existing daemon over HTTP(S)                              |
-| Envd           | `websocket_envd` | A daemon reverse-connected to a Host-owned WebSocket ingress |
-
-For cloud account and runtime choices, see [Cloud Providers](cloud-providers.md#cloud-providers). Docker, E2B, Daytona, Modal, Vercel, and Sprites can provide desktop access with compatible Envd runtimes. Follow [desktop setup](../a13n-service/environments.md#computer-use) to prepare the image, template, snapshot, or Sprite installation. You can also [try HTTP and WebSocket locally](remote-envd.md) before using a cloud account.
+| Target provider | Execution type | Backend mechanism |
+| :--- | :--- | :--- |
+| `direct_local` | Native | Accesses an existing local path under the host process identity |
+| `docker` | Native / Envd | Executes inside a managed Docker container |
+| `e2b` | Native / Envd | Spawns an isolated cloud sandbox on E2B |
+| `local_envd` | Envd | Connects to a local native Rust Envd daemon via stdio |
+| `daytona` | Envd | Runs inside a secure Daytona cloud workspace |
+| `modal` | Envd | Executes within a serverless Modal sandbox |
+| `vercel` | Native / Envd | Uses a secure Vercel micro-VM environment |
+| `sprites` | Native / Envd | Connects to an ephemeral Sprite container via tunnel |
+| `http_envd` | Envd | Connects to an existing remote daemon over HTTP/HTTPS |
+| `websocket_envd` | Envd | Connects to an Envd daemon reverse-tunneled via WebSocket |
 
 ## Management, connection, and execution
 
-Keep these three steps separate in your application:
-
-1. **Prepare the target.** Use an existing directory or daemon, or manage a target through a Service `EnvironmentProvider`. Save the returned `EnvironmentState` when the provider uses state.
-2. **Build a connector.** An `EnvironmentConnector` describes that fixed target. Construction performs no I/O.
-3. **Open an execution.** Each `open()` returns a ready `EnvironmentExecution` with its own `execution_id` and supported operations. Close it when the work is done.
+Environments cleanly decouples infrastructure provisioning from active task execution:
 
 ```mermaid
 flowchart TB
-    Host[Host prepares target] --> Connector[Build connector]
-    Connector --> Execution[Open execution]
-    Execution --> Operations[Use supported operations]
-    Operations --> Close[Close execution]
-    Close --> Target[Target preserved for reuse]
+    Host["Host: Prepares Target (Local path / Cloud VM)"] --> Connector["Build EnvironmentConnector"]
+    Connector --> Exec["Open Execution via connector.open()"]
+    Exec --> Ops["Perform File & Process Operations"]
+    Ops --> Close["Close Execution"]
+    Close --> Target["Target Container/VM Preserved for Reuse"]
+
     class Host app
-    class Connector,Execution,Operations,Close a13n
+    class Connector,Exec,Ops,Close a13n
     class Target store
 ```
 
-Opening and checking readiness use the selected target; they do not start or recreate it. Closing releases execution-owned resources while preserving the target. To reconnect later, open a new execution. [Lifecycle and state](lifecycle.md) explains management and execution cleanup in detail.
+1. **Prepare the target:** The host provisions a directory, launches a Docker container, or acquires an existing remote daemon.
+2. **Build a connector:** An `EnvironmentConnector` represents a fixed, addressable target. Construction performs zero network I/O.
+3. **Open an execution:** Calling `connector.open()` allocates an active `EnvironmentExecution` session. Your application reads files or starts commands through this handle, closing it cleanly when finished. The underlying container or VM remains preserved for subsequent connections.
 
 ## Use with Harness
 
-Supply an `EnvironmentSource` whose `ensure_ready()` prepares the target and returns its connector. The [complete source example](../a13n-harness/environments.md#supply-a-source) wraps a Direct Local connector in a Host-owned `PreparedSource`.
+To grant an agent access to an environment, define an `EnvironmentSource` and attach `DynamicEnvironmentCapability`:
 
-Set mount paths and permission ceilings with `EnvironmentMount`, and enable `DynamicEnvironmentCapability` to expose model-visible tools. Harness publishes the static mounts, opens a mount on first use, and closes opened executions at Run exit. An unused mount stays unopened.
+```python
+from a13n_harness.capabilities import DynamicEnvironmentCapability
+from a13n_harness.environments import EnvironmentMount, PreparedSource
+
+# 1. Wrap a local connector in a prepared source
+source = PreparedSource(connector)
+
+# 2. Configure mount and permission ceilings
+mount = EnvironmentMount(
+    source=source,
+    mount_path="/workspace",
+    read_only=False,
+)
+
+# 3. Attach capability to builder
+builder.add_capability(
+    DynamicEnvironmentCapability(mounts=[mount])
+)
+```
+
+Harness automatically exposes model-visible file and shell tools (`read_file`, `write_file`, `exec_command`) scoped to the mounted path.
 
 ## Use Local Envd
 
-For Local Envd, create a `LocalEnvdProviderRuntime` with a compatible executable and a private-runtime allocator. Keep that Host-owned runtime alive while executions borrow it. Each execution opens an independent EIP Session; close the runtime when all borrowers have finished. See [Providers and runtime](providers.md#local-envd-runtime).
+For environments requiring hard OS process isolation, network egress restriction, or desktop computer interaction on a single machine, launch a local Envd daemon:
 
-Use Direct Local for access under the Host account; its directory mapping provides no OS isolation. With Local Envd, select the sandbox and network policy at daemon launch. For an already registered remote Device, use the HTTP or WebSocket path in [Remote Envd](remote-envd.md).
+```python
+from a13n_harness.environments.providers.local_envd import LocalEnvdProviderRuntime
+
+runtime = LocalEnvdProviderRuntime(binary_path="/usr/local/bin/envd")
+connector = runtime.create_connector(workspace_path="/tmp/sandbox")
+```
+
+The daemon enforces OS kernel namespaces and cgroups, isolating agent-generated code from your primary host system.
 
 ## Retain targets and manage state
 
-To reuse a managed target across Runs, save the result of creation or start under the Host's concurrency control, then build connectors from that state. Execution does not produce new management state to save after each Run. Stop, renewal, and destruction remain explicit Host actions.
+To reuse a managed target across multiple turns or distributed workers:
 
-[Service environments](../a13n-service/environments.md) adds templates, managed instances, and Run mounts. An embedding application can use Service's management providers or supply its own lifecycle implementation. Continue to [Harness environments](../a13n-harness/environments.md) for Agent integration.
+1. Save the provider's serialized `EnvironmentState` in your application database alongside `HarnessState`.
+2. When launching subsequent runs, re-instantiate the connector using the saved state without re-creating the target container from scratch.
+3. Explicitly terminate or delete the underlying VM or container only when the entire business session is permanently closed.
