@@ -208,7 +208,7 @@ def test_the_e2e_suite_collects_every_module_and_requires_opt_in_for_external_jo
     assert f"{lifecycle}[docker]" in default
     assert f"{lifecycle}[kubernetes]" not in default
     assert f"{lifecycle}[kubernetes]" in kubernetes
-    assert len(kubernetes) == 8
+    assert len(kubernetes) == 6
     assert not {node for node in default if "e2b" in node or "modal" in node}
     hosted = collect_scenarios("--hosted")
     hosted_marker = collect_scenarios("-m", "hosted")

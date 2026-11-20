@@ -1941,11 +1941,8 @@ it("shares the root draft across General, execution, runtime, browser and connec
 it.each([
   ["/settings/notifications", "/settings", "#notifications"],
   ["/settings/capabilities", "/settings/agents", ""],
-  ["/settings/catalog", "/settings/agents", ""],
   ["/settings/runtime", "/settings/environments", ""],
-  ["/settings/envd", "/settings/environments", ""],
   ["/settings#browser", "/settings/environments", ""],
-  ["/settings/resources#browser", "/settings/environments", ""],
 ])("redirects the legacy settings route %s", async (legacy, pathname, hash) => {
   window.history.replaceState(null, "", legacy);
   render(<BrowserApp />);

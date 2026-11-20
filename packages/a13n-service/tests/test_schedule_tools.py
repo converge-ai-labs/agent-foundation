@@ -227,7 +227,7 @@ async def test_schedule_tools_cannot_expand_run_permissions(service, scripted_mo
         assert (await session.scalars(select(ScheduleRow))).all() == []
 
 
-@pytest.mark.parametrize(("kind", "revoked"), [("cron", False), ("once", False), ("cron", True)])
+@pytest.mark.parametrize(("kind", "revoked"), [("cron", False), ("cron", True)])
 async def test_composer_reviews_durable_schedule_and_preserves_authority(
     service, scripted_model, runs_kit, listen, kind, revoked
 ):

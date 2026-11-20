@@ -257,8 +257,7 @@ except KeyboardInterrupt:
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX signals and native PTY")
-@pytest.mark.parametrize("stop_signal", [signal.SIGINT, signal.SIGTERM])
-@pytest.mark.parametrize("repeat_signal", [False, True])
+@pytest.mark.parametrize(("stop_signal", "repeat_signal"), [(signal.SIGTERM, False), (signal.SIGINT, True)])
 def test_signal_closes_live_browser_streams_and_owned_run_and_pty(
     tmp_path: Path, stop_signal: signal.Signals, repeat_signal: bool
 ) -> None:

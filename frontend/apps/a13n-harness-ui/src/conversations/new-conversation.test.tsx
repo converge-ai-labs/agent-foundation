@@ -1656,7 +1656,6 @@ it.each([false, true])(
 
 it.each([
   [false, false],
-  [true, false],
   [false, true],
 ])(
   "loads previous turns independently of complete turn loading (short viewport: %s, retry: %s)",

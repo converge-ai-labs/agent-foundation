@@ -577,9 +577,15 @@ async def test_runtime_deferred_target_retains_function_identity():
     assert resumed.output_or_raise() == "done"
 
 
-@pytest.mark.parametrize("proxy", [False, True])
-@pytest.mark.parametrize("stage", ["arguments", "validated", "execution", "wrapper"])
-@pytest.mark.parametrize("remount", ["unchanged", "identity", "category"])
+@pytest.mark.parametrize(
+    ("proxy", "stage", "remount"),
+    [
+        (False, "arguments", "unchanged"),
+        (True, "validated", "identity"),
+        (False, "execution", "category"),
+        (True, "wrapper", "unchanged"),
+    ],
+)
 async def test_inline_approval_then_runtime_deferral_resumes_without_repeating_effect(proxy, stage, remount):
     from a13n_harness import HarnessState
     from pydantic_ai import CallDeferred

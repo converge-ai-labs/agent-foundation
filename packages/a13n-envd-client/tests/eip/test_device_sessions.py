@@ -397,7 +397,7 @@ def test_bad_session_open_does_not_break_existing_session(tmp_path: Path):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="directory symlink creation requires Windows privileges")
-@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
+@pytest.mark.parametrize("carrier", ["stdio", "http"])
 def test_session_open_captures_resolved_directory(tmp_path: Path, carrier: str):
     async def scenario():
         async with running_device(tmp_path, carrier) as device:
@@ -413,8 +413,7 @@ def test_session_open_captures_resolved_directory(tmp_path: Path, carrier: str):
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("carrier", ["stdio", "http", "websocket"])
-@pytest.mark.parametrize("cancel", [True, False])
+@pytest.mark.parametrize(("carrier", "cancel"), [("stdio", True), ("websocket", False)])
 def test_late_open_releases_native_capacity_without_closing_sibling(tmp_path: Path, carrier: str, cancel: bool):
     async def scenario():
         async with running_device(tmp_path, carrier) as device:

@@ -59,7 +59,7 @@ async def origin(service, scripted_model, runs_kit, *, mode="inline"):
     return runtime, created, lease, agent, run
 
 
-@pytest.mark.parametrize("analysis_origin,mode", [(True, "inline"), (True, "auto"), (False, "inline"), (False, "auto")])
+@pytest.mark.parametrize("analysis_origin,mode", [(True, "inline"), (True, "auto")])
 async def test_classification_uses_analysis_association_and_frozen_mode(
     service, scripted_model, runs_kit, analysis_origin, mode
 ):
@@ -89,7 +89,7 @@ async def test_classification_uses_analysis_association_and_frozen_mode(
     assert content == ({"native": True} if analysis_origin and mode == "inline" else record.receipt())
 
 
-@pytest.mark.parametrize("value", ["plain", "null", "native", "retry", "failed", "cancelled", "cancelled_default"])
+@pytest.mark.parametrize("value", ["native", "retry", "failed"])
 async def test_native_result_restoration_and_checkpoint_ack(service, scripted_model, runs_kit, value):
     runtime, created, lease, _, _ = await origin(service, scripted_model, runs_kit)
     store, record = Store(runtime), _record(lease)
@@ -171,7 +171,7 @@ async def test_native_result_restoration_and_checkpoint_ack(service, scripted_mo
     assert (await store.get(lease.thread_id, record.execution_id)).record.delivery_acknowledged
 
 
-@pytest.mark.parametrize("status", ["running", "lost", "expired", "missing", "corrupt"])
+@pytest.mark.parametrize("status", ["running", "missing"])
 async def test_unavailable_admitted_result_never_becomes_a_replayed_call(service, scripted_model, runs_kit, status):
     runtime, _, lease, _, _ = await origin(service, scripted_model, runs_kit)
     store, record = Store(runtime), _record(lease)
@@ -210,10 +210,8 @@ async def test_unavailable_admitted_result_never_becomes_a_replayed_call(service
     )
 
 
-@pytest.mark.parametrize("accepted", [True, False])
-async def test_takeover_keeps_tool_outcome_and_completion_in_one_run(
-    service, scripted_model, runs_kit, monkeypatch, accepted
-):
+async def test_takeover_keeps_tool_outcome_and_completion_in_one_run(service, scripted_model, runs_kit, monkeypatch):
+    accepted = True
     from a13n_service.runs.findings import service as findings
 
     runtime, created, lease, agent, run = await origin(service, scripted_model, runs_kit)

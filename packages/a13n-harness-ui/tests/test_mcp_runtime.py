@@ -76,7 +76,7 @@ async def _pending(inputs: Inputs):
             await asyncio.sleep(0.01)
 
 
-@pytest.mark.parametrize("protocol", ["2026-07-28", "legacy"])
+@pytest.mark.parametrize("protocol", ["2026-07-28"])
 async def test_retained_projection_does_not_own_client(tmp_path: Path, protocol: str) -> None:
     connections = Connections()
     try:

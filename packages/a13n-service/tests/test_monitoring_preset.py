@@ -65,37 +65,39 @@ async def test_preset_confirmation_is_secret_free_and_snapshots_credentials(serv
     assert saved.json()["config"] == preset["config"] and saved.json()["has_query_credentials"]
 
 
-@pytest.mark.parametrize("change", ["endpoint", "removed_query", "stale", "allowlist", "disabled", "collector"])
-async def test_preset_rejects_changed_destination_revision_or_eligibility(service, monkeypatch, change):
-    configure(service, monkeypatch)
+async def test_preset_rejects_changed_destination_revision_or_eligibility(service, monkeypatch):
+    import copy
+
     base = f"{service.api}/metrics-data-sources"
-    preset = (await service.client.get(f"{base}/deployment-preset")).json()
-    body = {
-        "name": "Confirmed",
-        "config": preset["config"],
-        "deployment_preset_revision": preset["revision"],
-        "use_deployment_query_credentials": True,
-    }
-    if change == "endpoint":
-        body["config"]["query"]["endpoint"] = "http://127.0.0.1:9091/stolen"
-    elif change == "removed_query":
-        body["config"]["query"] = None
-    elif change == "stale":
-        body["deployment_preset_revision"] = "0" * 64
-    elif change == "allowlist":
-        configure(
-            service,
-            monkeypatch,
-            deployment_preset={"query_endpoint": "http://127.0.0.1:9090/gateway", "workspace_ids": []},
-        )
-    elif change == "disabled":
-        configure(service, monkeypatch, enabled=False)
-    else:
-        configure(service, monkeypatch, collectors={})
-    rejected = await service.client.post(base, json=body)
-    assert rejected.status_code == 400, rejected.text
-    if change in {"allowlist", "disabled", "collector"}:
-        assert (await service.client.get(f"{base}/deployment-preset")).json() is None
+    for change in ("endpoint", "removed_query", "stale", "allowlist", "disabled", "collector"):
+        configure(service, monkeypatch)
+        preset = (await service.client.get(f"{base}/deployment-preset")).json()
+        body = {
+            "name": "Confirmed",
+            "config": copy.deepcopy(preset["config"]),
+            "deployment_preset_revision": preset["revision"],
+            "use_deployment_query_credentials": True,
+        }
+        if change == "endpoint":
+            body["config"]["query"]["endpoint"] = "http://127.0.0.1:9091/stolen"
+        elif change == "removed_query":
+            body["config"]["query"] = None
+        elif change == "stale":
+            body["deployment_preset_revision"] = "0" * 64
+        elif change == "allowlist":
+            configure(
+                service,
+                monkeypatch,
+                deployment_preset={"query_endpoint": "http://127.0.0.1:9090/gateway", "workspace_ids": []},
+            )
+        elif change == "disabled":
+            configure(service, monkeypatch, enabled=False)
+        else:
+            configure(service, monkeypatch, collectors={})
+        rejected = await service.client.post(base, json=body)
+        assert rejected.status_code == 400, (change, rejected.text)
+        if change in {"allowlist", "disabled", "collector"}:
+            assert (await service.client.get(f"{base}/deployment-preset")).json() is None
     async with short_session(service.runtime.storage) as session:
         assert await session.scalar(select(func.count()).select_from(DataSourceRow)) == 0
 

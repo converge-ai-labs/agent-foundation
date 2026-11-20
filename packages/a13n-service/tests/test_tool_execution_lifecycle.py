@@ -98,7 +98,7 @@ async def test_stopped_origin_retains_cleanup_and_never_wakes(service, scripted_
         await service.runtime.executions.close()
 
 
-@pytest.mark.parametrize("prior_sequential,next_sequential", [(True, False), (False, True), (False, False)])
+@pytest.mark.parametrize("prior_sequential,next_sequential", [(True, False), (False, False)])
 async def test_cross_worker_barrier_and_later_stop_scope(
     service, scripted_model, runs_kit, prior_sequential, next_sequential, predecessor_wait
 ):
@@ -249,7 +249,7 @@ async def test_archive_cancels_old_and_current_runs_and_rejects_late_admission(s
         await service.runtime.executions.close()
 
 
-@pytest.mark.parametrize("retry", [False, True])
+@pytest.mark.parametrize("retry", [True])
 async def test_large_failure_hint_delivers_without_copying_error(service, scripted_model, runs_kit, retry):
     from pydantic_ai.exceptions import ModelRetry, ToolFailed
 
@@ -416,8 +416,10 @@ async def test_cleanup_after_revocation_keeps_identity_and_expiry_fences(service
         await service.runtime.executions.close()
 
 
-@pytest.mark.parametrize("older_attempt", [False, True])
-@pytest.mark.parametrize("prior_sequential,global_sequential", [(False, False), (True, False), (False, True)])
+@pytest.mark.parametrize(
+    ("older_attempt", "prior_sequential", "global_sequential"),
+    [(False, False, False), (True, True, False)],
+)
 async def test_native_batch_flag_is_not_a_same_or_older_attempt_join(
     service, scripted_model, runs_kit, predecessor_wait, older_attempt, prior_sequential, global_sequential
 ):

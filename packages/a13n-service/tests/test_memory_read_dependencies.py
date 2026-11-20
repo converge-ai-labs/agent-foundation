@@ -15,39 +15,40 @@ from .test_runs_memory import mount, team_memory, tool_result
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("change", ["update", "delete", "move"])
-@pytest.mark.parametrize("operation", ["create", "write", "move", "delete"])
-async def test_postgres_dependency_conflict_has_no_file_revision_or_counter_effect(service, change, operation):
-    memory = await create_memory(service)
-    files = store(service, memory)
-    source = await files.write("source.md", "v1", expected=None, origin=Origin())
-    target = await files.write("target.md", "target", expected=None, origin=Origin())
-    if change == "update":
-        await files.write("source.md", "v2", expected=source, origin=Origin())
-    elif change == "delete":
-        await files.delete("source.md", expected=source, origin=Origin())
-    else:
-        await files.move("source.md", "renamed.md", expected=source, origin=Origin())
-    before = await files.list()
-    totals = await counters(service, memory)
-    revision_count = len(await revisions(service, memory))
-    dependencies = {"source.md": source}
-    calls = {
-        "create": lambda: files.write("derived.md", "stale", expected=None, origin=Origin(), dependencies=dependencies),
-        "write": lambda: files.write("target.md", "stale", expected=target, origin=Origin(), dependencies=dependencies),
-        "move": lambda: files.move(
-            "target.md", "derived.md", expected=target, origin=Origin(), dependencies=dependencies
-        ),
-        "delete": lambda: files.delete("target.md", expected=target, origin=Origin(), dependencies=dependencies),
-    }
-    with pytest.raises(MemoryStoreError) as caught:
-        await calls[operation]()
-    assert caught.value.code == "read_conflict"
-    assert await files.list() == before
-    assert len(await revisions(service, memory)) == revision_count
-    after = await counters(service, memory)
-    for field in ("seq", "file_count", "content_bytes", "history_bytes"):
-        assert getattr(after, field) == getattr(totals, field)
+async def test_postgres_dependency_conflict_has_no_file_revision_or_counter_effect(service):
+    for change in ("update", "delete", "move"):
+        memory = await create_memory(service)
+        files = store(service, memory)
+        source = await files.write("source.md", "v1", expected=None, origin=Origin())
+        target = await files.write("target.md", "target", expected=None, origin=Origin())
+        if change == "update":
+            await files.write("source.md", "v2", expected=source, origin=Origin())
+        elif change == "delete":
+            await files.delete("source.md", expected=source, origin=Origin())
+        else:
+            await files.move("source.md", "renamed.md", expected=source, origin=Origin())
+        before = await files.list()
+        totals = await counters(service, memory)
+        revision_count = len(await revisions(service, memory))
+        dependencies = {"source.md": source}
+        for op in ("create", "update", "move", "delete"):
+            with pytest.raises(MemoryStoreError) as caught:
+                if op == "create":
+                    await files.write("derived.md", "stale", expected=None, origin=Origin(), dependencies=dependencies)
+                elif op == "update":
+                    await files.write("target.md", "stale", expected=target, origin=Origin(), dependencies=dependencies)
+                elif op == "move":
+                    await files.move(
+                        "target.md", "derived.md", expected=target, origin=Origin(), dependencies=dependencies
+                    )
+                else:
+                    await files.delete("target.md", expected=target, origin=Origin(), dependencies=dependencies)
+            assert caught.value.code == "read_conflict"
+        assert await files.list() == before
+        assert len(await revisions(service, memory)) == revision_count
+        after = await counters(service, memory)
+        for field in ("seq", "file_count", "content_bytes", "history_bytes"):
+            assert getattr(after, field) == getattr(totals, field)
 
 
 async def test_postgres_cross_file_write_skew_has_one_winner(service):

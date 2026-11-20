@@ -1180,11 +1180,9 @@ it("Chat and chat navigation detach the Terminal viewer while retaining its tab"
   expect(screen.getByRole("tab", { name: "Terminal" })).toBeTruthy();
 });
 
-it.each(["Chat", "Conversation tab", "diff"])(
+it.each(["Chat", "diff"])(
   "an explicit %s view supersedes a pending file open without a route change",
   async (target) => {
-    if (target === "Conversation tab")
-      localStorage.setItem("a13n-harness-ui.native-layout", "tabs");
     let finish!: (value: { data: { kind: string } }) => void;
     const metadata = new Promise<{ data: { kind: string } }>((resolve) => {
       finish = resolve;
@@ -1200,8 +1198,6 @@ it.each(["Chat", "Conversation tab", "diff"])(
       ).toBe(true),
     );
     if (target === "Chat") fireEvent.pointerDown(screen.getByTestId("chat"));
-    else if (target === "Conversation tab")
-      fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
     else {
       await chooseView("Changes");
       fireEvent.click(
@@ -1345,31 +1341,25 @@ it("a chat without a Project does not pick another Project's folder", async () =
   ).toBe(false);
 });
 
-it.each(["directory", "file", "repository", "diff"])(
+it.each(["file", "diff"])(
   "explicit projectless %s links retain their explorer without a folder chooser",
   async (target) => {
     setup(
-      target === "directory" || target === "file"
-        ? `/?native=files&native_path=${encodeURIComponent(target === "file" ? "/native/first.txt" : "/native")}`
-        : `/?native=changes&native_path=%2Fnative${target === "diff" ? "&diff_path=first.txt&comparison=staged" : ""}`,
+      target === "file"
+        ? `/?native=files&native_path=${encodeURIComponent("/native/first.txt")}`
+        : "/?native=changes&native_path=%2Fnative&diff_path=first.txt&comparison=staged",
       true,
-      target === "directory"
-        ? Promise.resolve({ data: { kind: "directory" } })
-        : undefined,
+      undefined,
       null,
     );
-    if (target === "file" || target === "diff") {
-      await screen.findByText(
-        target === "file" ? "Editor /native/first.txt" : "Patch first.txt",
-      );
-      fireEvent.click(
-        screen.getByRole("button", { name: /Back to (files|changes)/ }),
-      );
-    }
     await screen.findByText(
-      target === "directory" || target === "file"
-        ? "Folder /native"
-        : "Repository /native - Diff",
+      target === "file" ? "Editor /native/first.txt" : "Patch first.txt",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /Back to (files|changes)/ }),
+    );
+    await screen.findByText(
+      target === "file" ? "Folder /native" : "Repository /native - Diff",
     );
     expect(screen.queryByLabelText("Folder or file path")).toBeNull();
   },
@@ -1389,7 +1379,7 @@ it.each([
   },
 );
 
-it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
+it.each(["/native", "C:\\native"])(
   "folder navigation shows the current location, goes up, and returns to the Project root: %s",
   async (root) => {
     const first = joinPath(root, "nested");

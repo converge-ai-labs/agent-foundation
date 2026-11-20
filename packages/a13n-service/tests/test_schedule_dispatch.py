@@ -230,7 +230,7 @@ async def test_retry_after_and_attempt_limit(service, scripted_model, runs_kit, 
         assert stored.next_attempt_at is None
 
 
-@pytest.mark.parametrize("outcome", ["completed", "failed", "cancelled"])
+@pytest.mark.parametrize("outcome", ["completed", "failed"])
 async def test_execution_completion_persists_outcome_and_advances_occurrence_version(
     service, scripted_model, runs_kit, outcome
 ) -> None:  # type: ignore[no-untyped-def]

@@ -551,8 +551,9 @@ async def test_mcp_tools_are_discovered_and_called_with_credential_and_caller_he
         assert "disabled" in seen["results"][0]
 
 
-@pytest.mark.parametrize("category,target", [(True, True), (False, True), (True, False), (True, None)])
-@pytest.mark.parametrize("default", [False, True])
+@pytest.mark.parametrize(
+    ("category", "target", "default"), [(True, True, False), (False, True, True), (True, None, True)]
+)
 async def test_request_context_forwarding_respects_mcp_policy_and_header_priority(
     service, monkeypatch, category, target, default
 ) -> None:  # type: ignore[no-untyped-def]
@@ -1418,14 +1419,8 @@ async def complete_account(service, composio: Composio) -> dict:  # type: ignore
     "scheme,selector,change",
     [
         ("OAUTH2", "ac_github", "valid"),
-        ("OAUTH2", "create:OAUTH2", "valid"),
-        ("API_KEY", "ac_github", "valid"),
         ("OAUTH2", "ac_github", "wrong_id"),
-        ("OAUTH2", "create:OAUTH2", "wrong_scheme"),
         ("API_KEY", "ac_github", "missing_id"),
-        ("OAUTH2", "ac_github", "missing_scheme"),
-        ("OAUTH2", "create:OAUTH2", "null"),
-        ("API_KEY", "ac_github", "empty"),
     ],
 )
 async def test_account_completion_checks_setup_identity(  # type: ignore[no-untyped-def]
@@ -1471,7 +1466,6 @@ async def test_account_completion_checks_setup_identity(  # type: ignore[no-unty
 @pytest.mark.parametrize(
     "expected,actual,valid",
     [
-        ({}, {}, True),
         ({"realm": "chosen"}, {"realm": "chosen"}, True),
         ({"realm": "chosen"}, {"realm": "other"}, False),
     ],

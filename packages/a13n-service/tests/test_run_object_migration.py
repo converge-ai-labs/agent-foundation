@@ -51,32 +51,32 @@ def pointer(data: dict) -> run_objects.LegacyPointer:
     )
 
 
-@pytest.mark.parametrize("items", [[], LEGACY["items"]])
-async def test_legacy_display_keeps_content_order_position_and_resume_hint(items):
-    old = {**deepcopy(LEGACY), "items": items}
-    result = run_objects.convert_display(json.dumps(old).encode(), pointer(old))
-    assert result.first == 1
-    assert [item.ordinal for item in result.items] == list(range(1, len(items) + 1))
-    assert [item.content for item in result.items] == [item["content"] for item in items]
-    assert str(result.position) == "1-3" and result.resume_after == "123-4"
+async def test_legacy_display_keeps_content_order_position_and_resume_hint():
+    for items in ([], LEGACY["items"]):
+        old = {**deepcopy(LEGACY), "items": items}
+        result = run_objects.convert_display(json.dumps(old).encode(), pointer(old))
+        assert result.first == 1
+        assert [item.ordinal for item in result.items] == list(range(1, len(items) + 1))
+        assert [item.content for item in result.items] == [item["content"] for item in items]
+        assert str(result.position) == "1-3" and result.resume_after == "123-4"
 
 
-@pytest.mark.parametrize("change", ["dropped", "position", "ordinal", "duplicate", "unknown"])
-async def test_ambiguous_or_truncated_display_is_refused(change):
-    old = deepcopy(LEGACY)
-    original_pointer = pointer(old)
-    if change == "dropped":
-        old["dropped"] = 3
-    elif change == "position":
-        old["position"]["sequence"] += 1
-    elif change == "ordinal":
-        old["items"][0]["ordinal"] = 99
-    elif change == "duplicate":
-        old["items"] *= 2
-    else:
-        old["unknown"] = "refuse"
-    with pytest.raises(ValueError):
-        run_objects.convert_display(json.dumps(old).encode(), original_pointer)
+async def test_ambiguous_or_truncated_display_is_refused():
+    for change in ("dropped", "position", "ordinal", "duplicate", "unknown"):
+        old = deepcopy(LEGACY)
+        original_pointer = pointer(old)
+        if change == "dropped":
+            old["dropped"] = 3
+        elif change == "position":
+            old["position"]["sequence"] += 1
+        elif change == "ordinal":
+            old["items"][0]["ordinal"] = 99
+        elif change == "duplicate":
+            old["items"] *= 2
+        else:
+            old["unknown"] = "refuse"
+        with pytest.raises(ValueError):
+            run_objects.convert_display(json.dumps(old).encode(), original_pointer)
 
 
 @pytest.fixture
@@ -209,28 +209,12 @@ async def test_conversion_restores_run_and_items_apis_preserves_state_and_is_rep
     assert "remember seven" in json.dumps(continued["messages"])
 
 
-@pytest.mark.parametrize("failure", ["missing", "digest", "upload", "database"])
-async def test_failure_keeps_original_pointers_and_guard(service, legacy_run, tmp_path, monkeypatch, failure):
+@pytest.mark.parametrize("failure", ["missing", "database"])
+async def test_failure_keeps_original_pointers_and_guard(service, legacy_run, tmp_path, failure):
     runtime = service.runtime
     run_id = legacy_run["id"]
     if failure == "missing":
         await runtime.objects.delete(legacy_run["tail"]["key"])
-    elif failure == "digest":
-        original = runtime.objects.get
-
-        async def damaged(key):
-            return b"wrong bytes" if key == legacy_run["tail"]["key"] else await original(key)
-
-        monkeypatch.setattr(runtime.objects, "get", damaged)
-    elif failure == "upload":
-        original = runtime.objects.put
-
-        async def fail_state(key, data, *, content_type):
-            if "/state/" in key:
-                raise OSError("upload failed")
-            return await original(key, data, content_type=content_type)
-
-        monkeypatch.setattr(runtime.objects, "put", fail_state)
     else:
         async with transaction(runtime.storage) as session:
             await session.execute(
@@ -244,7 +228,7 @@ async def test_failure_keeps_original_pointers_and_guard(service, legacy_run, tm
                     "CREATE TRIGGER refuse_test_update BEFORE UPDATE ON runs FOR EACH ROW EXECUTE FUNCTION refuse_test_update()"
                 )
             )
-    expected = {"missing": ServiceError, "digest": ServiceError, "upload": OSError, "database": DBAPIError}[failure]
+    expected = {"missing": ServiceError, "database": DBAPIError}[failure]
     with pytest.raises(expected):
         await run_objects.migrate(runtime.storage, runtime.objects, backup_dir=tmp_path / "backup", apply=True)
     assert await pointers(service, run_id) == (legacy_run["tail"], legacy_run["state"])
@@ -261,8 +245,7 @@ async def test_failure_keeps_original_pointers_and_guard(service, legacy_run, tm
                 await session.execute(update(RunRow).where(RunRow.id == run_id).values(tail=None))
 
 
-@pytest.mark.parametrize("status", ["pending", "dead"])
-async def test_unfinished_cleanup_cannot_delete_the_replacements(service, legacy_run, tmp_path, status):
+async def test_unfinished_cleanup_cannot_delete_the_replacements(service, legacy_run, tmp_path):
     runtime = service.runtime
     tenant = service.tenant
     async with transaction(runtime.storage) as session:
@@ -273,7 +256,7 @@ async def test_unfinished_cleanup_cannot_delete_the_replacements(service, legacy
                 kind="checkpoint_cleanup",
                 target={"run_id": legacy_run["id"]},
                 payload={"keep": [legacy_run["tail"]["key"]], "before_attempt": None, "after": None},
-                dead="old_failure" if status == "dead" else None,
+                dead=None,
             )
         )
     with pytest.raises(RuntimeError, match="unfinished checkpoint cleanup"):

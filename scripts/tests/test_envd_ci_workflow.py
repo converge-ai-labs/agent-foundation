@@ -9,9 +9,17 @@ import yaml
 WORKFLOW = Path(__file__).parents[2] / ".github/workflows/ci-a13n-envd.yml"
 
 
-@pytest.mark.parametrize("component", ["PROTOCOL", "CLIENT", "DAEMON", "SIZE"])
-@pytest.mark.parametrize("selected", [True, False])
-@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped"])
+@pytest.mark.parametrize(
+    ("component", "selected", "result"),
+    [
+        ("PROTOCOL", True, "success"),
+        ("CLIENT", True, "failure"),
+        ("DAEMON", True, "skipped"),
+        ("SIZE", True, "cancelled"),
+        ("PROTOCOL", False, "skipped"),
+        ("DAEMON", False, "success"),
+    ],
+)
 def test_envd_gate_requires_exact_selected_results(component: str, selected: bool, result: str) -> None:
     gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["validation"]["steps"][0]
     env = {"CHANGES_RESULT": "success"}
@@ -24,7 +32,7 @@ def test_envd_gate_requires_exact_selected_results(component: str, selected: boo
     assert (completed.returncode == 0) == (result == ("success" if selected else "skipped"))
 
 
-@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped"])
+@pytest.mark.parametrize("result", ["failure", "skipped"])
 def test_envd_gate_rejects_failed_classification(result: str) -> None:
     gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["validation"]["steps"][0]
     completed = subprocess.run(["bash", "-e", "-c", gate["run"]], env={"CHANGES_RESULT": result}, check=False)

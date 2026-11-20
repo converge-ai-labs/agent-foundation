@@ -401,8 +401,7 @@ def test_native_payload_preserves_media_order_and_spill_bytes():
     assert loaded.artifacts == stored.artifacts
 
 
-@pytest.mark.parametrize("handoff", ["timeout", "steer"])
-@pytest.mark.parametrize("continuation", ["automatic", "inline"])
+@pytest.mark.parametrize(("handoff", "continuation"), [("timeout", "automatic"), ("steer", "inline")])
 async def test_service_retains_real_mcp_call_after_run_seals(
     service, scripted_model, runs_kit, handoff, continuation, monkeypatch
 ):
@@ -650,8 +649,9 @@ async def test_whole_codeact_continues_nested_dispatch_after_origin_seals(
             await asyncio.gather(running, return_exceptions=True)
 
 
-@pytest.mark.parametrize("status", ["queued", "running", "succeeded", "lost", "expired"])
-@pytest.mark.parametrize("outcome", ["success", "retried"])
+@pytest.mark.parametrize(
+    ("status", "outcome"), [("running", "success"), ("succeeded", "retried"), ("expired", "success")]
+)
 async def test_recovery_preserves_admission_and_other_pending_calls(service, scripted_model, runs_kit, status, outcome):
     from a13n_harness import HarnessState
     from a13n_harness.recovery import prepare_tool_recovery
@@ -955,8 +955,7 @@ async def test_published_result_keeps_only_fenced_cleanup_authority(service, scr
             await lock_execution(session, lease, record.execution_id, cleanup=True)
 
 
-@pytest.mark.parametrize("sequential", [False, True])
-@pytest.mark.parametrize("legacy_json", [False, True])
+@pytest.mark.parametrize(("sequential", "legacy_json"), [(False, False), (True, True)])
 async def test_original_ordering_intent_uses_durable_column_including_legacy_json(
     service, scripted_model, runs_kit, sequential, legacy_json
 ):

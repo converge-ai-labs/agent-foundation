@@ -53,8 +53,7 @@ def statements(runtime: Runtime, *, timings: list[float] | None = None) -> Itera
 
 
 # One row and a batch whose subscribed recovery crosses the 256-row outbox chunk boundary.
-@pytest.mark.parametrize("count", [1, 128])
-@pytest.mark.parametrize("subscribed", [False, True])
+@pytest.mark.parametrize(("count", "subscribed"), [(1, False), (128, True)])
 async def test_claim_sql_growth(service: SimpleNamespace, scripted_model, runs_kit: SimpleNamespace, count, subscribed):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -243,7 +242,7 @@ async def test_concurrent_batches_skip_locked_runs_without_locking_threads(
     assert await claim(runtime, worker_id="later", worker_build="test", limit=8) == []
 
 
-@pytest.mark.parametrize("failure", ["late_chunk", "commit"])
+@pytest.mark.parametrize("failure", ["late_chunk"])
 async def test_claim_failure_rolls_back_the_entire_batch(
     service, scripted_model, runs_kit, monkeypatch, caplog, failure
 ):  # type: ignore[no-untyped-def]

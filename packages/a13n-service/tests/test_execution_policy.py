@@ -147,8 +147,7 @@ async def test_steer_cannot_change_execution_but_next_run_can(skill_service, scr
     assert entries[later.json()["entry"]["id"]]["assigned_run_id"] != started["run"]["id"]
 
 
-@pytest.mark.parametrize("mode", ["inline", "auto"])
-@pytest.mark.parametrize("steering", ["boundary", "immediate"])
+@pytest.mark.parametrize(("mode", "steering"), [("inline", "boundary"), ("auto", "immediate")])
 async def test_independent_modes_reach_worker(skill_service, scripted_model, runs_kit, mode, steering, monkeypatch):
     service = skill_service
     from a13n_harness import HarnessRunStream

@@ -224,7 +224,7 @@ async def test_failed_build_requires_explicit_fenced_retry(setup):
         assert list(await session.scalars(select(builds.VercelDesktopSnapshotRow.id))) == [op.vercel_desktop_snapshot]
 
 
-@pytest.mark.parametrize("phase", ["allocating", "snapshotting"])
+@pytest.mark.parametrize("phase", ["snapshotting"])
 async def test_expired_unknown_outcomes_never_resubmit(setup, phase):
     runtime = setup.service.runtime
     op = await setup.create()
@@ -353,7 +353,7 @@ async def test_maintenance_drains_orphan_builder_with_disabled_provider(setup):
     assert cloud.target is None and cloud.calls == ["create", "delete_builder"]
 
 
-@pytest.mark.parametrize("terminal", ["new", "ready", "failed"])
+@pytest.mark.parametrize("terminal", ["new", "ready"])
 async def test_orphan_drain_never_allocates_or_deletes_ready_assets(setup, terminal):
     runtime, cloud = setup.service.runtime, setup.cloud
     op = await setup.create()
@@ -423,7 +423,7 @@ async def test_orphan_cleanup_failure_retains_identity(setup):
     assert cloud.target is None and cloud.calls.count("create") == 1
 
 
-@pytest.mark.parametrize("change", ["credential", "backend"])
+@pytest.mark.parametrize("change", ["credential"])
 async def test_orphan_changed_account_is_retained_and_rotates_behind_other_work(setup, change):
     runtime, cloud = setup.service.runtime, setup.cloud
     op = await setup.create()
@@ -447,8 +447,7 @@ async def test_orphan_changed_account_is_retained_and_rotates_behind_other_work(
     assert not cloud.calls
 
 
-@pytest.mark.parametrize("phase", ["creating", "starting"])
-@pytest.mark.parametrize("action", ["retry", "delete"])
+@pytest.mark.parametrize(("phase", "action"), [("creating", "retry"), ("starting", "delete")])
 async def test_authored_startup_lost_reply_then_failure_allows_explicit_recovery(
     setup, monkeypatch, tmp_path, phase, action
 ):

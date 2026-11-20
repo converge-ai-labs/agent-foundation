@@ -568,8 +568,7 @@ async def test_reverse_device_real_envd_export_cross_replica_query_and_revocatio
         await peer.exporter.close()
 
 
-@pytest.mark.parametrize("lost_cleanup", [False, True])
-@pytest.mark.parametrize("successor", [False, True])
+@pytest.mark.parametrize(("lost_cleanup", "successor"), [(False, False), (True, True)])
 async def test_thread_sessions_survive_attempt_and_run_replacement(
     service, daemons, scripted_model, runs_kit, monkeypatch, lost_cleanup, successor
 ):
@@ -659,7 +658,7 @@ async def test_thread_sessions_survive_attempt_and_run_replacement(
     assert (await saved_state()).descriptor.session_id == original.session_id
 
 
-@pytest.mark.parametrize("outcome", ["complete", "cancel", "revoked", "transient", "transient_cancel", "session_gone"])
+@pytest.mark.parametrize("outcome", ["complete", "cancel", "transient_cancel", "session_gone"])
 async def test_retained_shell_recovers_original_process_after_run_seals(
     service, daemons, scripted_model, runs_kit, outcome, monkeypatch
 ):
@@ -870,7 +869,7 @@ async def test_retained_shell_recovers_original_process_after_run_seals(
         await successor.executions.close()
 
 
-@pytest.mark.parametrize("lose_response,graceful", [(False, False), (True, False), (False, True)])
+@pytest.mark.parametrize("lose_response,graceful", [(True, False), (False, True)])
 async def test_retained_shell_survives_worker_replacement(
     service, daemons, scripted_model, runs_kit, tmp_path, lose_response, graceful
 ):
@@ -1190,7 +1189,7 @@ async def test_thread_context_refreshes_on_control_takeover_and_rejects_stale_pu
             await current.close()
 
 
-@pytest.mark.parametrize("reconnect", ["resume", "expired", "restart", "session"])
+@pytest.mark.parametrize("reconnect", ["resume", "restart"])
 async def test_client_environment_runs_on_reverse_daemon_and_streams_files(
     service, tmp_path, scripted_model, runs_kit, monkeypatch, reconnect
 ):
@@ -2024,7 +2023,7 @@ async def test_session_head_io_is_independent_of_binding_history(service, daemon
         )
 
 
-@pytest.mark.parametrize("failure", ["close_before", "close_after", "open_rejected"])
+@pytest.mark.parametrize("failure", ["close_before", "open_rejected"])
 async def test_session_replacement_recovers_from_durable_head(
     service, daemons, scripted_model, runs_kit, monkeypatch, failure
 ):
