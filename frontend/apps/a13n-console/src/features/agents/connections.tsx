@@ -20,6 +20,7 @@ import { data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import type { AgentConfig } from "./configuration";
 import { connectionState } from "../connections/api";
+import { useConnectionStateLabels } from "../connections/status";
 import { MCPConnectionIcon } from "../connections/mcp-icon";
 import { ToolPermissions, type PermissionChoice } from "./tool-permissions";
 import { connectionReviewTarget, type ReviewTarget } from "./reviewer";
@@ -81,6 +82,7 @@ export function ConnectionGroup({
 }) {
   const { t } = useTranslation();
   const client = useClient();
+  const stateLabels = useConnectionStateLabels();
   const [expanded, setExpanded] = useState(false);
   const [limit, setLimit] = useState(40);
   const catalog = useQuery({
@@ -168,7 +170,7 @@ export function ConnectionGroup({
     ? t("Unavailable")
     : state === "ready"
       ? connectionEndpoint(connection)
-      : t(connectionState(connection));
+      : stateLabels[connectionState(connection)];
   return (
     <section className={styles.toolsetGroup}>
       <Collapsible open={expanded} onOpenChange={setExpanded}>

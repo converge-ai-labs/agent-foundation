@@ -38,12 +38,13 @@ import { MCPAuthorization } from "../mcp/authorization";
 import { MCPTools } from "../mcp/tools";
 import { MCPConnectionIcon } from "./mcp-icon";
 import {
-  connectionState,
+  authorizationRemoval,
   revokeCleanup,
   testConnection,
-  type RemoteCleanup,
+  type AuthorizationRemovalResult,
 } from "./api";
 import styles from "./connections.module.css";
+import { ConnectionStatus } from "./status";
 
 /** One connection, inspected beside the collection instead of over it. */
 export function ConnectionDetails({
@@ -52,15 +53,17 @@ export function ConnectionDetails({
   onClose,
 }: {
   connectionId: string;
-  onCleanup: (cleanup: RemoteCleanup) => void;
+  onCleanup: (cleanup: AuthorizationRemovalResult) => void;
   onClose: () => void;
 }) {
   const client = useClient(),
     { can, workspace } = useWorkspace(),
     { t } = useTranslation(),
     [generation, setGeneration] = useState(0);
-  const query = useQuery({
+  const query = useQuery<Schema["Connection"]>({
     queryKey: ["connections", workspace.id, connectionId],
+    refetchInterval: (query) =>
+      query.state.data?.authorization_pending ? 5000 : false,
     queryFn: ({ signal }) =>
       client
         .workspace(workspace.id)
@@ -113,9 +116,7 @@ export function ConnectionDetails({
           <strong title={connection?.name}>
             {connection?.name ?? t("Connection")}
           </strong>
-          <StatePill
-            state={connection ? connectionState(connection) : "pending"}
-          />
+          {connection && <ConnectionStatus connection={connection} />}
         </>
       }
       actions={
@@ -211,12 +212,13 @@ export function ConnectionMenuItems({
   onDone,
 }: {
   connection: Schema["Connection"];
-  onCleanup: (cleanup: RemoteCleanup) => void;
+  onCleanup: (cleanup: AuthorizationRemovalResult) => void;
   onDone: () => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation();
+  const removal = authorizationRemoval(connection);
   return (
     <>
       <AvailabilityConfirm
@@ -228,7 +230,7 @@ export function ConnectionMenuItems({
           </MenuItem>
         }
       />
-      {connection.auth !== "none" && (
+      {removal && (
         <>
           <MenuSeparator />
           <Confirm
@@ -236,14 +238,24 @@ export function ConnectionMenuItems({
             retry={() =>
               void cache.invalidateQueries({ queryKey: ["connections"] })
             }
-            title={t("Revoke authorization")}
+            title={t(
+              removal === "cancel"
+                ? "Cancel authorization"
+                : "Revoke authorization",
+            )}
             description={t(
-              "Local access is disabled immediately. The result reports whether external cleanup succeeded.",
+              removal === "cancel"
+                ? "Cancel this authorization request? The previous authorization page will no longer connect this account."
+                : "a13n will stop using this connection and cancel any authorization in progress. Its settings will be kept. The result reports whether authorization was also removed from the provider.",
             )}
             triggerElement={
               <MenuItem closeOnClick={false} variant="destructive">
                 <ProhibitIcon size={14} />
-                {t("Revoke")}
+                {t(
+                  removal === "cancel"
+                    ? "Cancel authorization"
+                    : "Revoke authorization",
+                )}
               </MenuItem>
             }
             danger
@@ -256,7 +268,9 @@ export function ConnectionMenuItems({
                     headers: ifMatch(rowTag(connection)),
                   }),
               );
-              onCleanup(revokeCleanup(revoked));
+              onCleanup(
+                removal === "cancel" ? "cancelled" : revokeCleanup(revoked),
+              );
               void cache.invalidateQueries({ queryKey: ["connections"] });
               onDone();
             }}

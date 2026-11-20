@@ -84,7 +84,7 @@ it("submits a renamed Connection from the bottom action row", async () => {
 });
 
 for (const kind of ["connector", "mcp"] as const) {
-  for (const action of ["Enable", "Revoke"]) {
+  for (const action of ["Enable", "Revoke authorization"]) {
     it(`${kind} ${action} follows a refreshed resource version without remounting`, async () => {
       const user = userEvent.setup();
       const cache = new QueryClient({
@@ -109,7 +109,8 @@ for (const kind of ["connector", "mcp"] as const) {
               auth: "bearer",
               config: { url: "https://mcp.example" },
             }),
-        credential_configured: false,
+        credential_configured: true,
+        authorization_pending: false,
       };
       const queryKey = ["connections", "ws_test", resource.id];
       cache.setQueryData(queryKey, resource);
@@ -159,7 +160,7 @@ for (const kind of ["connector", "mcp"] as const) {
       await user.click(
         screen.getByRole("button", {
           name:
-            action === "Revoke"
+            action === "Revoke authorization"
               ? "Revoke authorization"
               : `${action} connection`,
         }),
@@ -170,7 +171,7 @@ for (const kind of ["connector", "mcp"] as const) {
         },
         headers: { "If-Match": '"connection_test:3"' },
       };
-      if (action === "Revoke") {
+      if (action === "Revoke authorization") {
         await waitFor(() =>
           expect(http.POST).toHaveBeenCalledWith(
             "/api/v1/connections/{connection_id}/revoke",
@@ -226,7 +227,9 @@ it("offers no revoke for a connection without a credential", async () => {
   expect(
     await screen.findByRole("menuitem", { name: "Disable" }),
   ).not.toBeNull();
-  expect(screen.queryByRole("menuitem", { name: "Revoke" })).toBeNull();
+  expect(
+    screen.queryByRole("menuitem", { name: "Revoke authorization" }),
+  ).toBeNull();
   cache.clear();
 });
 
@@ -270,3 +273,75 @@ it("shows the persisted outcome of the last check", async () => {
   ).toBeTruthy();
   cache.clear();
 });
+
+it.each([false, true])(
+  "cancels a pending flow with existing credential=%s using the correct consequence",
+  async (credential) => {
+    const user = userEvent.setup();
+    const cache = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    const resource = {
+      id: "connection_test",
+      workspace_id: "ws_test",
+      name: "Pending account",
+      type: "composio",
+      auth: "account",
+      connector_provider_id: "cprov_test",
+      config: { app: "github", actions: ["GITHUB_GET_REPO"] },
+      status: credential ? "ready" : "pending",
+      enabled: true,
+      version: 2,
+      credential_configured: credential,
+      authorization_pending: true,
+    };
+    cache.setQueryData(["connections", "ws_test", resource.id], resource);
+    http.GET.mockResolvedValue({ data: resource, response: new Response() });
+    http.POST.mockResolvedValue({
+      data: {
+        ...resource,
+        status: "pending",
+        credential_configured: false,
+        authorization_pending: false,
+        remote_revocation: "skipped",
+      },
+      response: new Response(),
+    });
+    const onCleanup = vi.fn();
+    render(
+      <QueryClientProvider client={cache}>
+        <ConnectionDetails
+          connectionId={resource.id}
+          onClose={vi.fn()}
+          onCleanup={onCleanup}
+        />
+      </QueryClientProvider>,
+    );
+    if (credential) {
+      expect(
+        await screen.findByText("Reauthorization in progress"),
+      ).toBeTruthy();
+      expect(screen.getByText("Connected")).toBeTruthy();
+    } else expect(await screen.findByText("Authorizing")).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "Connection actions" }),
+    );
+    const label = credential ? "Revoke authorization" : "Cancel authorization";
+    await user.click(await screen.findByRole("menuitem", { name: label }));
+    expect(http.POST).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: label }));
+    await waitFor(() =>
+      expect(onCleanup).toHaveBeenCalledWith(
+        credential ? "skipped" : "cancelled",
+      ),
+    );
+    expect(http.POST).toHaveBeenCalledWith(
+      "/api/v1/connections/{connection_id}/revoke",
+      {
+        params: { path: { connection_id: resource.id } },
+        headers: { "If-Match": '\"connection_test:2\"' },
+      },
+    );
+    cache.clear();
+  },
+);

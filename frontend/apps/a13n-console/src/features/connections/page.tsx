@@ -12,7 +12,13 @@ import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, data, matchesSearch, matchingPage } from "../../shared/api";
+import {
+  allPages,
+  data,
+  matchesSearch,
+  matchingPage,
+  type Schema,
+} from "../../shared/api";
 import {
   CollectionFooter,
   Empty,
@@ -22,19 +28,15 @@ import {
   Toolbar,
   useCursor,
 } from "../../shared/collection";
-import {
-  ErrorNotice,
-  Loading,
-  StatePill,
-  Timestamp,
-} from "../../shared/feedback";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { Page, PageActions } from "../../shared/page";
 import { ConnectionDetails, ConnectionMenuItems } from "./editor";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { connectorApi } from "../connectors/api";
 import { NewConnection } from "./new";
 import { MCPConnectionIcon } from "./mcp-icon";
-import { connectionState, type RemoteCleanup } from "./api";
+import { connectionState, type AuthorizationRemovalResult } from "./api";
+import { ConnectionStatus, useConnectionStateLabels } from "./status";
 import styles from "./connections.module.css";
 
 /** A remote endpoint reads better as its host than as a full URL. */
@@ -46,22 +48,30 @@ function endpointHost(url: string) {
   }
 }
 
-const STATES = ["ready", "pending", "reauthorization_required", "disabled"];
-
 export function ConnectionsPage() {
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
-  const [cleanup, setCleanup] = useState<RemoteCleanup>();
+  const [cleanup, setCleanup] = useState<AuthorizationRemovalResult>();
+  const stateLabels = useConnectionStateLabels();
   const [query, setQuery] = useState("");
   const [state, setState] = useState("all");
   const term = query.trim().toLocaleLowerCase();
   const filtered = !!term || state !== "all";
   const page = useCursor({ term, state });
-  const connections = useQuery({
+  const connections = useQuery<{
+    items: Schema["Connection"][];
+    next_cursor?: string | null;
+  }>({
     queryKey: ["connections", workspace.id, "list", page.cursor, term, state],
     enabled: can("read"),
+    refetchInterval: (query) =>
+      query.state.data?.items.some(
+        (connection) => connection.authorization_pending,
+      )
+        ? 5000
+        : false,
     queryFn: ({ signal }) =>
       matchingPage(
         (cursor, limit) =>
@@ -124,9 +134,9 @@ export function ConnectionsPage() {
               onValueChange={setState}
               options={[
                 { value: "all", label: t("All statuses") },
-                ...STATES.map((value) => ({
+                ...Object.entries(stateLabels).map(([value, label]) => ({
                   value,
-                  label: t(`state.${value}`),
+                  label,
                 })),
               ]}
             />
@@ -141,20 +151,35 @@ export function ConnectionsPage() {
       {cleanup && (
         <div className={styles.cleanup} role="status">
           <div>
-            <h3>{t("Connection revoked")}</h3>
+            <h3>
+              {t(
+                cleanup === "cancelled"
+                  ? "Authorization cancelled"
+                  : "Connection revoked",
+              )}
+            </h3>
             <p>
               {t(
-                {
-                  skipped:
-                    "External cleanup was skipped. If your provider still holds the authorization, remove it there.",
-                  revoked: "External authorization was removed.",
-                  failed:
-                    "External cleanup failed. Remove the authorization with your provider.",
-                  unknown:
-                    "External cleanup could not be confirmed; check with your provider.",
-                }[cleanup],
+                cleanup === "cancelled"
+                  ? "The authorization request was cancelled. Start a new authorization to connect."
+                  : "a13n has stopped using this connection. Its settings are kept so you can authorize again.",
               )}
             </p>
+            {cleanup !== "cancelled" && (
+              <p>
+                {t(
+                  {
+                    skipped:
+                      "Authorization was not automatically removed from the provider. To fully disconnect, remove it in your provider's settings.",
+                    revoked: "External authorization was removed.",
+                    failed:
+                      "External cleanup failed. Remove the authorization with your provider.",
+                    unknown:
+                      "External cleanup could not be confirmed; check with your provider.",
+                  }[cleanup],
+                )}
+              </p>
+            )}
           </div>
           <Button
             variant="ghost"
@@ -229,7 +254,7 @@ export function ConnectionsPage() {
               {
                 label: t("Status"),
                 render: (connection) => (
-                  <StatePill state={connectionState(connection)} />
+                  <ConnectionStatus connection={connection} />
                 ),
               },
               {
