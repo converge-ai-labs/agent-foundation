@@ -10,9 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .contracts import MemoryStoreError
 
-# A fence is a `---` line; files saved with CRLF line endings count too.
+# Fences accept LF and CRLF. The closing fence can also end the file.
 _OPENING = re.compile(r"---\r?\n")
-_CLOSING = re.compile(r"\n---\r?\n")
+_CLOSING = re.compile(r"\n---(?:\r?\n|\Z)")
 
 
 class FileFormat(BaseModel):

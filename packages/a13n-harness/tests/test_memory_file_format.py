@@ -55,6 +55,8 @@ def test_invalid_directories_are_rejected(path: str) -> None:
         ("---\r\ndescription: Tea preferences\r\n---\r\nlikes tea\r\n", "Tea preferences"),
         ("---\r\ntags: [a]\r\n---\r\n\r\n  first line  \r\nsecond\r\n", "first line"),
         ("---\r\n---\r\nbody\r\n", "body"),
+        ("---\ndescription: Tea preferences\n---", "Tea preferences"),
+        ("---\r\ndescription: Tea preferences\r\n---", "Tea preferences"),
     ],
 )
 def test_description_comes_from_frontmatter_or_the_first_line(text: str, description: str | None) -> None:
@@ -75,6 +77,7 @@ def test_description_comes_from_frontmatter_or_the_first_line(text: str, descrip
         ("---\ndescription: longer than twenty characters\n---\n", "invalid_file"),
         ("---\r\ndescription: unclosed\r\n", "invalid_file"),
         ("---\r\n[unbalanced\r\n---\r\n", "invalid_file"),
+        ("---\r\ndescription: Tea\r\n---suffix", "invalid_file"),
         ("---\r\n" + "k: v\r\n" * 20 + "---\r\n", "invalid_file"),
     ],
 )
@@ -82,3 +85,13 @@ def test_invalid_files_are_rejected(text: str, code: str) -> None:
     with pytest.raises(MemoryStoreError) as caught:
         describe(text, FORMAT)
     assert caught.value.code == code
+
+
+@pytest.mark.parametrize("ending", ["", "\r\n"])
+def test_crlf_frontmatter_limit_counts_the_original_utf8_bytes(ending: str) -> None:
+    text = f"---\r\ndescription: café\r\n---{ending}"
+    size = len(text.encode())
+    assert describe(text, FileFormat(frontmatter_bytes=size)) == "café"
+    with pytest.raises(MemoryStoreError) as caught:
+        describe(text, FileFormat(frontmatter_bytes=size - 1))
+    assert caught.value.code == "invalid_file"
