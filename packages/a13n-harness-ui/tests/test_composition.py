@@ -1368,9 +1368,9 @@ async def test_apps_union_preserves_generic_selection_for_every_child(
         assert tuple(item.server_id for item in node.mcp_servers) == (
             tuple(dict.fromkeys((*inherited, "mcp-docs", "mcp-app"))) if injected else inherited
         )
-        configuration = _initial_child_configuration(composition, edge)
+        configuration = _initial_child_configuration(composition.model_copy(update={"root": edge.definition}))
         assert configuration.mcp_server_ids == inherited
-        # Child admission/resume reapplies the union to its generic sticky selection.
+        # Explicit resume reapplies the union to its generic sticky selection.
         resumed = resolver.resolve_run(source, child_selection("child", configuration), parent_node=root)
         assert resumed.root.mcp_servers == node.mcp_servers
 
@@ -1379,7 +1379,7 @@ async def test_apps_union_preserves_generic_selection_for_every_child(
     path.write_text(yaml.safe_dump(document))
     changed = await load_harness_ui_configuration(path)
     for edge in root.children:
-        configuration = _initial_child_configuration(composition, edge)
+        configuration = _initial_child_configuration(composition.model_copy(update={"root": edge.definition}))
         resumed = resolver.resolve_run(changed, child_selection("child", configuration), parent_node=root)
         assert tuple(item.server_id for item in resumed.root.mcp_servers) == configuration.mcp_server_ids
         assert all(not item.apps_enabled for item in resumed.root.mcp_servers)
@@ -1426,7 +1426,9 @@ async def test_legacy_mcp_recipes_preserve_generic_child_selection(tmp_path: Pat
     assert '"generic_selected"' not in payload
     restored = type(composition).model_validate_json(payload)
     assert restored.model_dump_json() == payload
-    assert _initial_child_configuration(restored, restored.root.children[0]).mcp_server_ids == ("mcp-docs",)
+    assert _initial_child_configuration(
+        restored.model_copy(update={"root": restored.root.children[0].definition})
+    ).mcp_server_ids == ("mcp-docs",)
 
 
 async def test_legacy_composition_missing_proxy_roundtrips_without_changing_payload(tmp_path: Path) -> None:
@@ -1995,7 +1997,9 @@ async def test_nested_declared_rosters_keep_delegation_in_definitions_and_child_
 
     child = resolver.resolve_run(
         source,
-        child_selection("child-reviewer", _initial_child_configuration(composition, edge)),
+        child_selection(
+            "child-reviewer", _initial_child_configuration(composition.model_copy(update={"root": edge.definition}))
+        ),
         parent_node=composition.root,
     )
     assert child.root.children

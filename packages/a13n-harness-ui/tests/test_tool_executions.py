@@ -711,6 +711,7 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
 async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_path, monkeypatch, change):
     from dataclasses import replace
 
+    from a13n_harness_ui.composition import resolver
     from a13n_harness_ui.environment_runtime import EnvironmentRunService
     from a13n_harness_ui.storage import StoredChildCheckpoint
     from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
@@ -816,6 +817,7 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
     if change == "source":
         agent = tmp_path / "agents/main.yaml"
         agent.write_text(agent.read_text() + "instructions: Changed authority.\n")
+    monkeypatch.setattr(resolver, "PACKAGE_SYSTEM_PROMPT", "Updated between child segments")
     original_prepare = EnvironmentRunService.prepare
     prepare_stopped = Event()
 
@@ -859,6 +861,7 @@ async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_
             latest = await successor._store.child_executions.latest_for_child(child_id)
             restored = await successor._store.objects.read_model(latest.selected_checkpoint, StoredChildCheckpoint)
             assert latest.execution_id != first.execution_id
+            assert latest.run_composition == head.run_composition
             assert restored.authority == checkpoint.authority
             assert observed_contexts[-1] == (child_id, {"tenant": "two"}, {"x-tenant": "two"})
             assert not await successor._store.tool_executions.pending(child_id)

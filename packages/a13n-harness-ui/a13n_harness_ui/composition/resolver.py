@@ -366,12 +366,12 @@ class AgentCompositionResolver:
                 tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
                 subagents=source.document.subagents,
                 root=self._live_node(source),
-                environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
+                environment_profile=self.environment_profile(source, FULL_CONTROL_PROFILE_ID),
             )
         root = self.resolve_agent(
             source, selection, parent_node=parent_node, dynamic_node=dynamic_node, model_overrides=model_overrides
         )
-        environment = self._environment_profile(source, selection.environment_profile_id)
+        environment = self.environment_profile(source, selection.environment_profile_id)
         run_extensions, extension_dependencies = self._run_extensions(source, selection.environment_run_extension_ids)
         dependencies = [
             *self._agent_dependencies(source, root),
@@ -448,7 +448,7 @@ class AgentCompositionResolver:
                 name=project.name,
                 project_id=project.id,
                 project_roots=tuple(root.path for root in project.roots),
-                environment_profile=self._environment_profile(
+                environment_profile=self.environment_profile(
                     source,
                     project.defaults.environment_profile
                     or source.document.defaults.environment_profile
@@ -469,7 +469,7 @@ class AgentCompositionResolver:
                 target_id="host-desktop",
                 name="Host desktop",
                 project_roots=selection.local_roots,
-                environment_profile=self._environment_profile(source, "environment-desktop"),
+                environment_profile=self.environment_profile(source, "environment-desktop"),
             )
         )
         return tuple(targets)
@@ -818,7 +818,7 @@ class AgentCompositionResolver:
             ),
             # Retained for the shared composition schema; memory execution never
             # enters this profile or grants Environment capabilities.
-            environment_profile=self._environment_profile(source, FULL_CONTROL_PROFILE_ID),
+            environment_profile=self.environment_profile(source, FULL_CONTROL_PROFILE_ID),
         )
 
     def model_recipe(self, item: ModelResource, source: LoadedHarnessUiConfiguration) -> ResolvedModelRecipe:
@@ -1072,7 +1072,7 @@ class AgentCompositionResolver:
             )
         return tuple(result)
 
-    def _environment_profile(
+    def environment_profile(
         self,
         source: LoadedHarnessUiConfiguration,
         profile_id: str,
