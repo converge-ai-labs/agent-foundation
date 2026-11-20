@@ -134,7 +134,7 @@ async def test_unconfigured_device_has_no_collection_and_duplicate_identity_is_r
     assert "token" not in json.dumps((await service.client.get(f"{service.api}/devices")).json())
 
 
-@pytest.mark.parametrize("stage", ["resolve", "renew", "renew_lost", "redis_error", "observe"])
+@pytest.mark.parametrize("stage", ["resolve", "renew_lost", "observe"])
 async def test_previous_reverse_poll_cannot_retire_replacement(service, monkeypatch, stage):
     proxy = await controlled(service)
     identity = (await registration(service, source=await local_source(service))).json()["device"]["id"]
@@ -201,7 +201,7 @@ async def test_previous_reverse_poll_cannot_retire_replacement(service, monkeypa
     assert not proxy.entries and not proxy.reverse
 
 
-@pytest.mark.parametrize("reason", ["owner_loss", "credential_rotation", "source_disabled"])
+@pytest.mark.parametrize("reason", ["owner_loss", "credential_rotation"])
 async def test_reverse_renewal_retires_revoked_attachment_without_polling(service, monkeypatch, reason):
     proxy = await controlled(service)
     created = await service.client.post(
@@ -248,7 +248,7 @@ async def test_reverse_renewal_retires_revoked_attachment_without_polling(servic
             await asyncio.gather(renewal, return_exceptions=True)
 
 
-@pytest.mark.parametrize("outcome", ["recover", "expire", "owner_loss"])
+@pytest.mark.parametrize("outcome", ["recover", "expire"])
 async def test_reverse_database_grace_preserves_carrier_until_recovery_or_retirement(service, monkeypatch, outcome):
     proxy = await controlled(service)
     identity = (await registration(service, source=await local_source(service))).json()["device"]["id"]

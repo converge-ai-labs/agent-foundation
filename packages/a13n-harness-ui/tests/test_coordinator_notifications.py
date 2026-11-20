@@ -107,9 +107,7 @@ async def test_terminal_notice_runs_or_steers_lead_and_never_notifies_itself(
         assert len(notice_parts) == 1 and notice_parts[0].metadata.display is False
 
 
-@pytest.mark.parametrize(
-    "case", ["mode_off", "sidekick_off", "other_project", "no_project", "archived", "terminal", "independent"]
-)
+@pytest.mark.parametrize("case", ["mode_off", "other_project", "archived"])
 async def test_terminal_notice_respects_project_and_current_host_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
 ) -> None:

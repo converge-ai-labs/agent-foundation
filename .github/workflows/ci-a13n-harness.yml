@@ -59,14 +59,10 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.13", "3.14", "3.15"]
-        name: [tests-1, tests-2, checks, browser, Windows]
+        name: [tests, checks, browser, Windows]
         include:
-          - name: tests-1
+          - name: tests
             runner: ubuntu-24.04
-            shard: 1
-          - name: tests-2
-            runner: ubuntu-24.04
-            shard: 2
           - name: checks
             runner: ubuntu-24.04
           - name: browser
@@ -112,13 +108,13 @@ jobs:
         if: matrix.name == 'Windows'
         run: uv run --locked python -m pytest -vv ${{ matrix.test_options }} ${{ matrix.test_targets }} --junitxml=test-results/harness.xml --durations=30 -r a
 
-      - name: Test a13n Harness shard
-        if: startsWith(matrix.name, 'tests-')
+      - name: Test a13n Harness
+        if: matrix.name == 'tests'
         env:
           PYTEST_ADDOPTS: -vv --junitxml=test-results/harness.xml --durations=30 -r a
         run: >-
           uv run --locked python scripts/run_python_tests.py
-          --workers 2 --shard ${{ matrix.shard }} 2 packages/a13n-harness/tests
+          --workers 4 packages/a13n-harness/tests
 
       - name: Set up Chrome for Testing
         if: matrix.name == 'browser'

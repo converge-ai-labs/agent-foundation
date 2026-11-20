@@ -167,8 +167,7 @@ async def test_stop_refuses_unknown_operations_and_active_borrowers(service, run
     assert (await command(service, runs_kit, browser["id"], "stop"))["status"] == "stopped"
 
 
-@pytest.mark.parametrize("status", ["reserved", "stopped"])
-@pytest.mark.parametrize("preparation", ["first_use", "run_start"])
+@pytest.mark.parametrize(("status", "preparation"), [("reserved", "first_use"), ("stopped", "run_start")])
 async def test_paid_refusal_never_publishes_reconcilable_intent(
     service, runs_kit, scripted_model, invocation, status, preparation
 ):

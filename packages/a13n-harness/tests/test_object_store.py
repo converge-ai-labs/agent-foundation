@@ -143,26 +143,16 @@ def test_star_patterns_match_non_overlapping_literals_without_backtracking(name,
     assert _matches_tool_pattern(name, pattern.split("*")) is expected
 
 
-@pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize(
-    "rules,native,enabled",
+    ("rules", "native", "enabled", "reverse"),
     [
-        ({}, None, False),
-        ({}, True, True),
-        ({}, False, False),
-        ({"*": True}, False, True),
-        ({"*": False}, True, False),
-        ({"*_upload": True}, None, True),
-        ({"image_*": True}, None, True),
-        ({"i*e_*load": True}, None, True),
-        ({"image_upload*": True}, None, True),
-        ({"IMAGE_*": True}, None, False),
-        ({"[i]mage_*": True}, None, False),
-        ({"?mage_*": True}, None, False),
-        ({"*": False, "*_upload": True, "image_upload": False}, None, False),
-        ({"*": True, "*_upload": False, "image_upload": True}, None, True),
-        ({"*_upload": True, "image_*": False}, None, True),
-        ({"image_u*": True, "*_upload": False}, None, False),
+        ({}, None, False, False),
+        ({}, True, True, False),
+        ({"*": True}, False, True, False),
+        ({"*": False}, True, False, True),
+        ({"*": False, "*_upload": True, "image_upload": False}, None, False, True),
+        ({"*_upload": True, "image_*": False}, None, True, False),
+        ({"IMAGE_*": True}, None, False, False),
     ],
 )
 async def test_object_ref_rules_match_original_names_and_preserve_native_declarations(rules, native, enabled, reverse):

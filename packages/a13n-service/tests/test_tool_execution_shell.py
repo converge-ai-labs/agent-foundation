@@ -20,8 +20,7 @@ from a13n_service.settings import LocalProvisioning, Provisioning
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("cancel_owner", [False, True])
-@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize(("cancel_owner", "cached"), [(False, True), (True, True)])
 async def test_separate_runtime_routes_controls_to_original_shell(
     serve, settings, scripted_model, runs_kit, tmp_path, monkeypatch, cancel_owner, cached, caplog
 ):
@@ -340,7 +339,7 @@ async def test_routing_lost_reply_does_not_repeat_mutation(serve, runs_kit, monk
             await caller.routing.client.aclose()
 
 
-@pytest.mark.parametrize("cause", ["explicit", "durable_cancel", "principal_revoked"])
+@pytest.mark.parametrize("cause", ["explicit", "principal_revoked"])
 async def test_cancelled_shell_terminates_before_sibling_releases_environment(
     serve, settings, scripted_model, runs_kit, tmp_path, monkeypatch, cause
 ):

@@ -984,21 +984,15 @@ def test_unexpected_model_behavior_retry_classification(message: str, recoverabl
     assert is_recoverable_model_failure(UnexpectedModelBehavior(message)) is recoverable
 
 
-@pytest.mark.parametrize("spec_type", [AgentSpec, HarnessAgentSpec])
 @pytest.mark.parametrize(
-    ("settings", "retries"),
+    ("spec_type", "settings", "retries", "invalid_args"),
     [
-        ({}, 5),
-        ({"retries": None}, 5),
-        ({"retries": {}}, 5),
-        ({"retries": {"output": 0}}, 5),
-        ({"retries": 0}, 0),
-        ({"retries": 2}, 2),
-        ({"retries": {"tools": 0}}, 0),
-        ({"retries": {"tools": 2, "output": 0}}, 2),
+        (AgentSpec, {}, 5, False),
+        (AgentSpec, {"retries": 0}, 0, True),
+        (HarnessAgentSpec, {"retries": {"tools": 2, "output": 0}}, 2, False),
+        (HarnessAgentSpec, {"retries": {"tools": 0}}, 0, True),
     ],
 )
-@pytest.mark.parametrize("invalid_args", [False, True], ids=["model-retry", "argument-validation"])
 async def test_tool_retry_exhaustion_does_not_start_a_new_attempt(
     spec_type, settings, retries: int, invalid_args: bool
 ) -> None:

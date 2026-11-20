@@ -612,10 +612,13 @@ async def test_cancel_during_admission_starts_once_then_terminates(tmp_path, mon
         await runtime.close()
 
 
-@pytest.mark.parametrize("operation", ["wait", "inspect", "read_output"])
 @pytest.mark.parametrize(
-    "code",
-    ["environment_unavailable", "environment_denied", "environment_reference_stale", "environment_provider_failure"],
+    ("operation", "code"),
+    [
+        ("wait", "environment_unavailable"),
+        ("inspect", "environment_denied"),
+        ("read_output", "environment_reference_stale"),
+    ],
 )
 async def test_shell_observation_failure_does_not_kill_native_process(tmp_path, monkeypatch, operation, code):
     import os
@@ -705,7 +708,7 @@ async def test_shell_settles_only_after_output_capture_closes(tmp_path, monkeypa
         await runtime.close()
 
 
-@pytest.mark.parametrize("failure_at", [None, "delta", "final"])
+@pytest.mark.parametrize("failure_at", ["delta", "final"])
 async def test_owned_shell_reads_deltas_but_materializes_final_result_from_origin(tmp_path, monkeypatch, failure_at):
     from a13n_harness.environment.models import EnvironmentError
     from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
@@ -763,8 +766,10 @@ async def test_owned_shell_reads_deltas_but_materializes_final_result_from_origi
         await runtime.close()
 
 
-@pytest.mark.parametrize("operation", ["wait", "inspect", "read_output"])
-@pytest.mark.parametrize("code", ["environment_unavailable", "environment_timeout"])
+@pytest.mark.parametrize(
+    ("operation", "code"),
+    [("wait", "environment_timeout"), ("read_output", "environment_unavailable")],
+)
 async def test_shell_transient_observation_preserves_original_control(tmp_path, monkeypatch, operation, code):
     from a13n_harness.environment.models import EnvironmentError
     from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager

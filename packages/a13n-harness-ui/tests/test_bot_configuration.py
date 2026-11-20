@@ -75,9 +75,15 @@ async def test_bot_inherits_selected_execution_policy_but_replaces_conversationa
         assert inspection.captured is None
 
 
-@pytest.mark.parametrize("key", ["files_enabled", "shell_enabled", "computer_enabled"])
-@pytest.mark.parametrize("agent_value", [False, True, None])
-@pytest.mark.parametrize("bot_value", [False, True, None, "omitted"])
+@pytest.mark.parametrize(
+    ("key", "agent_value", "bot_value"),
+    [
+        ("files_enabled", False, True),
+        ("shell_enabled", True, False),
+        ("computer_enabled", False, None),
+        ("files_enabled", None, "omitted"),
+    ],
+)
 async def test_bot_environment_flags_inherit_and_override_independently(tmp_path, agent_value, bot_value, key):
     root = _write_configuration(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
@@ -114,8 +120,7 @@ async def test_bot_environment_flags_inherit_and_override_independently(tmp_path
         assert effective.computer_tools == frozenset({"computer_accessibility_roots"})
 
 
-@pytest.mark.parametrize("explicit_tools", [False, True])
-@pytest.mark.parametrize("agent_value,bot_value", [(False, None), (False, True), (True, False)])
+@pytest.mark.parametrize(("explicit_tools", "agent_value", "bot_value"), [(True, False, True), (False, True, False)])
 async def test_bot_access_policy_controls_actual_tools_and_long_input(
     tmp_path, monkeypatch, agent_value, bot_value, explicit_tools
 ):

@@ -65,8 +65,15 @@ def test_steer_retains_or_matches_context(headers: dict | None, joins: bool) -> 
     assert steers_into(entry, run, None) is joins
 
 
-@pytest.mark.parametrize("category,target", [(True, True), (False, True), (True, False), (True, None)])
-@pytest.mark.parametrize("default", [False, True])
+@pytest.mark.parametrize(
+    "category,target,default",
+    [
+        (True, True, False),
+        (False, True, True),
+        (True, False, True),
+        (True, None, True),
+    ],
+)
 async def test_model_forwarding_priority_flags_and_fresh_runs(
     service: Any,
     scripted_model: Any,

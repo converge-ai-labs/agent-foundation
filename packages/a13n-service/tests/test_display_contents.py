@@ -518,8 +518,7 @@ async def test_harness_handoff_reaches_service_live_and_saved_display(immediate)
         await runtime.close()
 
 
-@pytest.mark.parametrize("change", ["content", "position", "resume_after", "search", "first", "continuation"])
-async def test_tail_reuse_compares_final_json_and_still_writes_pages(runtime, tenant, change):
+async def test_tail_reuse_compares_final_json_and_still_writes_pages(runtime, tenant):
     from a13n_service.runs.search import SearchState
     from a13n_stream_protocol.display import DisplayContinuation
 
@@ -545,15 +544,16 @@ async def test_tail_reuse_compares_final_json_and_still_writes_pages(runtime, te
             "continuation": DisplayContinuation(run_id=lease.run_id, position=snapshot.tail.position, next_ordinal=2)
         },
     }
-    different = await checkpoints.publish_display(
-        runtime,
-        lease,
-        Snapshot([], snapshot.tail.model_copy(update=changes[change])),
-        contents=contents,
-        previous_tail=first.tail,
-        previous_tail_bytes=first.tail_bytes,
-    )
-    assert different.tail != first.tail and different.tail_bytes != first.tail_bytes
+    for update in changes.values():
+        different = await checkpoints.publish_display(
+            runtime,
+            lease,
+            Snapshot([], snapshot.tail.model_copy(update=update)),
+            contents=contents,
+            previous_tail=first.tail,
+            previous_tail_bytes=first.tail_bytes,
+        )
+        assert different.tail != first.tail and different.tail_bytes != first.tail_bytes
     # Even when the tail is identical, new page publications cannot be skipped or mis-indexed.
     paged = await checkpoints.publish_display(
         runtime,

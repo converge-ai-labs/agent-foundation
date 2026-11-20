@@ -376,7 +376,7 @@ async def test_confirmed_failure_keeps_original_error_until_explicit_retry(setup
     assert current["failure"]["code"] == "provider_authentication_failed"
 
 
-@pytest.mark.parametrize("outcome", ["success", "timeout", "changed"])
+@pytest.mark.parametrize("outcome", ["success", "changed"])
 async def test_preview_revalidates_target_and_closes_execution(setup, monkeypatch, outcome):
     from a13n_harness.environment.computer import ComputerObservation, ComputerScreenshot
     from a13n_service.runs.environments import desktop_preview

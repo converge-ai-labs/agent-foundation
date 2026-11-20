@@ -200,18 +200,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: storage
-            selection: claim_lifecycle
-            count: 1
-          - name: failures
-            selection: failed_preparation
-            count: 4
-          - name: recovery
-            selection: fresh_run_survives
-            count: 1
-          - name: lifecycle
-            selection: not (claim_lifecycle or failed_preparation or fresh_run_survives)
-            count: 2
+          - name: storage-and-failures
+            selection: claim_lifecycle or failed_preparation
+            count: 3
+          - name: recovery-and-lifecycle
+            selection: not (claim_lifecycle or failed_preparation)
+            count: 3
     env:
       E2E_KUBERNETES_CONNECTION: port_forward
       SANDBOX_IMAGE: a13n-sandbox:ci

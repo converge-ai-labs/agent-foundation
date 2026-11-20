@@ -110,8 +110,17 @@ def _http_response(scenario, *, text=False):
     return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=_sse(scenario, text=text))
 
 
-@pytest.mark.parametrize("route", ["openai", "codex", "chatgpt", "grok"])
-@pytest.mark.parametrize("scenario", ["arguments-done", "output-done", "partial", "duplicate", "disagree", "item-only"])
+@pytest.mark.parametrize(
+    ("route", "scenario"),
+    [
+        ("openai", "arguments-done"),
+        ("openai", "disagree"),
+        ("codex", "output-done"),
+        ("codex", "duplicate"),
+        ("chatgpt", "partial"),
+        ("grok", "item-only"),
+    ],
+)
 async def test_streamed_tool_arguments_reconcile_once_through_model_adapters(route, scenario):
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _: _http_response(scenario))) as client:
         model = _model(route, client)

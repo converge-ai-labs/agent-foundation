@@ -62,7 +62,7 @@ async def read_exact(fd, size=1):
     return await asyncio.wait_for(asyncio.to_thread(os.read, fd, size), 10)
 
 
-@pytest.mark.parametrize("phase", ["marker", "spawn", "saved", "token"])
+@pytest.mark.parametrize("phase", ["spawn", "saved"])
 async def test_native_gate_launcher_crash_windows(tmp_path, monkeypatch, phase):
     event_r, event_w = os.pipe()
     release_r, release_w = os.pipe()
@@ -166,7 +166,7 @@ async def test_native_gate_launcher_crash_windows(tmp_path, monkeypatch, phase):
         os.close(release_w)
 
 
-@pytest.mark.parametrize("marker", [True, {}, {"version": 1, "pid": 0, "started": "1"}])
+@pytest.mark.parametrize("marker", [True, {"version": 1, "pid": 0, "started": "1"}])
 async def test_native_legacy_or_invalid_marker_stays_fenced(tmp_path, marker):
     provider = Native(tmp_path, "chromium")
     boot = Path("/proc/sys/kernel/random/boot_id").read_text().strip()

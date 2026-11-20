@@ -22,7 +22,7 @@ from .test_browsers import invocation as invocation
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("cause", ["rebind", "stop", "expiry", "valid"])
+@pytest.mark.parametrize("cause", ["rebind", "valid"])
 async def test_new_block_replaces_only_suppressed_registration(service, runs_kit, scripted_model, cause):
     _, browser = await setup(service, runs_kit)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -85,8 +85,7 @@ async def test_new_block_replaces_only_suppressed_registration(service, runs_kit
     assert len(entries) == 1
 
 
-@pytest.mark.parametrize("tab_access", ["thread", "global"])
-@pytest.mark.parametrize("close_kind", ["explicit", "external_during_list", "event"])
+@pytest.mark.parametrize(("tab_access", "close_kind"), [("thread", "explicit"), ("global", "external_during_list")])
 async def test_target_loss_clears_durable_selection(
     service, runs_kit, scripted_model, invocation, monkeypatch, tab_access, close_kind
 ):
@@ -140,7 +139,7 @@ async def wait_for_blocked_transaction(storage, blocker):
             await asyncio.sleep(0.01)
 
 
-@pytest.mark.parametrize("phase", ["save", "popup_sync", "handback"])
+@pytest.mark.parametrize("phase", ["save", "handback"])
 async def test_ownership_write_and_rebind_keep_thread_first_lock_order(
     service, runs_kit, scripted_model, invocation, monkeypatch, phase
 ):

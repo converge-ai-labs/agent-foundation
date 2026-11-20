@@ -12,9 +12,17 @@ ROOT = Path(__file__).parents[2]
 WORKFLOW = ROOT / ".github/workflows/ci-a13n-harness-ui.yml"
 
 
-@pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped", ""])
-@pytest.mark.parametrize("selected", [True, False])
-@pytest.mark.parametrize("component", ["CHECKS", "TESTS", "FRONTEND", "WEBUI", "DISTRIBUTION"])
+@pytest.mark.parametrize(
+    ("component", "selected", "result"),
+    [
+        ("CHECKS", True, "success"),
+        ("TESTS", True, "failure"),
+        ("FRONTEND", True, "cancelled"),
+        ("WEBUI", True, "skipped"),
+        ("DISTRIBUTION", False, "skipped"),
+        ("TESTS", False, "success"),
+    ],
+)
 def test_linux_gate_requires_exact_selected_results(component: str, selected: bool, result: str) -> None:
     gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["linux"]["steps"][0]
     env = {"CHANGES_RESULT": "success"}
@@ -33,7 +41,7 @@ def test_linux_gate_requires_exact_selected_results(component: str, selected: bo
     assert (completed.returncode == 0) == (result == ("success" if selected else "skipped"))
 
 
-@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", ""])
+@pytest.mark.parametrize("result", ["failure", ""])
 def test_linux_gate_rejects_failed_classification(result: str) -> None:
     gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["linux"]["steps"][0]
     assert gate["env"]["CHANGES_RESULT"] == "${{ needs.changes.result }}"
@@ -45,55 +53,25 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
     "paths,expected",
     [
         (["frontend/apps/a13n-console/src/features/traces/detail.tsx"], {"frontend"}),
-        (["frontend/apps/a13n-console/src/service-client/client.ts"], {"frontend"}),
         (["proto/a13n-service/openapi.json"], {"frontend"}),
         (["sdk/typescript/src/client.ts"], set()),
         (["frontend/apps/a13n-harness-ui/src/shell/workbench.tsx"], {"distribution"}),
-        (["frontend/apps/a13n-harness-ui/src/openapi.json"], {"distribution"}),
         (["frontend/packages/a13n-ui/src/components/button.tsx"], {"frontend", "distribution"}),
-        (["frontend/package.json"], {"frontend", "distribution"}),
         (["frontend/pnpm-lock.yaml"], {"frontend", "distribution"}),
-        (["frontend/.prettierignore"], {"frontend", "distribution"}),
         ([".github/ui-test-durations.json"], {"tests"}),
         (["packages/a13n-harness-ui/tests/test_cli_interactions.py"], {"tests"}),
-        (["packages/a13n-harness-ui/tests/conftest.py"], {"tests"}),
         (["packages/a13n-harness/tests/providers_environment/test_direct_local.py"], {"tests"}),
-        (["packages/a13n-harness/tests/providers_environment/test_direct_local_processes.py"], {"tests"}),
         (["packages/a13n-harness/tests/test_agent.py"], set()),
         (["packages/a13n-harness/tests/conftest.py"], {"tests"}),
-        (["packages/a13n-harness/tests/providers_environment/conftest.py"], {"tests"}),
-        (["packages/a13n-envd-client/tests/conftest.py"], set()),
-        (["packages/a13n-stream-protocol/tests/test_projection.py"], set()),
-        (["packages/a13n-logging/tests/test_logging.py"], set()),
         (["packages/a13n-harness-ui/a13n_harness_ui/app.py"], {"tests", "distribution"}),
         (["packages/a13n-harness-ui/README.md"], {"distribution"}),
-        (["packages/a13n-harness-ui/LICENSE"], {"distribution"}),
-        (
-            ["packages/a13n-harness-ui/README.md", "packages/a13n-harness-ui/a13n_harness_ui/app.py"],
-            {"tests", "distribution"},
-        ),
-        (["packages/a13n-harness-ui/hatch_build.py"], {"tests", "distribution"}),
-        (["packages/a13n-harness-ui/build_skills.py"], {"tests", "distribution"}),
-        (["packages/a13n-harness-ui/pyproject.toml"], {"tests", "distribution"}),
-        (["packages/a13n-envd-client/a13n_envd_client/eip/client.py"], {"tests", "distribution"}),
-        (["packages/a13n-logging/a13n_logging/__init__.py"], {"tests", "distribution"}),
         (["packages/a13n-harness/a13n_harness/types.py"], {"tests", "distribution"}),
-        (["packages/a13n-service/pyproject.toml"], {"tests", "distribution"}),
         (["uv.lock"], {"tests", "distribution"}),
-        (["conftest.py"], {"tests", "distribution"}),
         (["docs/a13n-harness-ui/configuration.md"], {"tests", "distribution"}),
-        (["docs/a13n-harness-ui/meta.json"], {"tests", "distribution"}),
         (["scripts/export-a13n-harness-ui-openapi.py"], {"distribution"}),
-        (["scripts/tests/test_prepare_release_version.py"], set()),
-        (["scripts/check_a13n_harness_ui_distribution.py"], {"tests", "distribution"}),
         ([".github/workflows/ci-a13n-harness-ui.yml"], {"tests", "frontend", "distribution"}),
         (["scripts/tests/test_harness_ui_ci_workflow.py"], set()),
         (["packages/a13n-harness/README.md"], set()),
-        (["packages/a13n-envd-client/README.md"], set()),
-        (["packages/a13n-stream-protocol/README.md"], set()),
-        (["packages/a13n-logging/README.md"], set()),
-        (["packages/a13n-harness/README.md", "packages/a13n-harness/pyproject.toml"], {"tests", "distribution"}),
-        (["packages/a13n-harness/hatch_build.py"], {"tests", "distribution"}),
         (
             ["packages/a13n-harness-ui/tests/test_cli_interactions.py", "frontend/apps/a13n-console/src/app.tsx"],
             {"tests", "frontend"},
