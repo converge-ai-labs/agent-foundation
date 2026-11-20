@@ -123,6 +123,19 @@ async def test_bookkeeping_and_unreadable_files_stay_out_of_the_listing(tmp_path
     assert caught.value.code == "invalid_file"
 
 
+async def test_files_with_crlf_line_endings_keep_their_frontmatter(tmp_path: Path) -> None:
+    store = DirectoryFileStore(tmp_path)
+    (tmp_path / "tea.md").write_bytes(b"---\r\ndescription: Tea preferences\r\n---\r\nlikes tea\r\n")
+    (tmp_path / "broken.md").write_bytes(b"---\r\ndescription: [unclosed\r\n---\r\n")
+
+    entries = {entry.path: entry for entry in await store.list()}
+    assert entries["tea.md"].description == "Tea preferences"
+    assert entries["broken.md"].description is None
+    with pytest.raises(MemoryStoreError) as caught:
+        await store.write("new.md", "---\r\ndescription: [unclosed\r\n---\r\n", expected=None, origin=ORIGIN)
+    assert caught.value.code == "invalid_file"
+
+
 async def test_symbolic_links_are_never_followed(tmp_path: Path) -> None:
     root, outside = tmp_path / "memory", tmp_path / "outside"
     outside.mkdir()
@@ -163,7 +176,11 @@ async def test_a_file_and_a_directory_cannot_share_a_name(tmp_path: Path) -> Non
         with pytest.raises(MemoryStoreError) as caught:
             await store.write(path, "y\n", expected=None, origin=ORIGIN)
         assert caught.value.code == "invalid_path"
-    assert list((tmp_path / ".a13n-memory").iterdir()) == [tmp_path / ".a13n-memory/lock"]
+    loose = await store.write("loose.md", "z\n", expected=None, origin=ORIGIN)
+    assert (await _failure(store.move("loose.md", "notes", expected=loose, origin=ORIGIN))).code == "invalid_path"
+    assert (await _failure(store.read("notes"))).code == "not_found"
+    # No staged file is left behind; the lock file itself is removed on release on Windows.
+    assert [file.name for file in (tmp_path / ".a13n-memory").iterdir() if file.name != "lock"] == []
 
 
 async def test_the_cursor_is_a_listing_digest_and_any_change_resyncs(tmp_path: Path) -> None:

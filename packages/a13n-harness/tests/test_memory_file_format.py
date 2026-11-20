@@ -52,6 +52,9 @@ def test_invalid_directories_are_rejected(path: str) -> None:
         ("a very long first line that is cut\n", "a very long first li"),
         ("", None),
         ("---\ndescription: null\n---\n", None),
+        ("---\r\ndescription: Tea preferences\r\n---\r\nlikes tea\r\n", "Tea preferences"),
+        ("---\r\ntags: [a]\r\n---\r\n\r\n  first line  \r\nsecond\r\n", "first line"),
+        ("---\r\n---\r\nbody\r\n", "body"),
     ],
 )
 def test_description_comes_from_frontmatter_or_the_first_line(text: str, description: str | None) -> None:
@@ -70,6 +73,9 @@ def test_description_comes_from_frontmatter_or_the_first_line(text: str, descrip
         ("---\ndescription: '   '\n---\n", "invalid_file"),
         ("---\ndescription: |\n  two\n  lines\n---\n", "invalid_file"),
         ("---\ndescription: longer than twenty characters\n---\n", "invalid_file"),
+        ("---\r\ndescription: unclosed\r\n", "invalid_file"),
+        ("---\r\n[unbalanced\r\n---\r\n", "invalid_file"),
+        ("---\r\n" + "k: v\r\n" * 20 + "---\r\n", "invalid_file"),
     ],
 )
 def test_invalid_files_are_rejected(text: str, code: str) -> None:
