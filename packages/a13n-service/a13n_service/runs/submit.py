@@ -31,13 +31,24 @@ from a13n_service.runs.accept import (
     snapshot_options,
 )
 from a13n_service.runs.attachments import asset_fields, require_readable
-from a13n_service.runs.environments.mounts import mount_environments, shared_mounts, thread_has_primary
+from a13n_service.runs.environments.mounts import PRIMARY, mount_environments, shared_mounts, thread_has_primary
+from a13n_service.runs.environments.schemas import MountCreate
 from a13n_service.runs.inbox import Request, append_message, check_replay, find_request
 from a13n_service.runs.memories.mounts import mount_memories, shared_memory_mounts
 from a13n_service.runs.memories.session_memory import configure
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import EntryView, Fork, Message, NewThread, RunOptions, Submitted, ThreadView
+from a13n_service.runs.schemas import (
+    EntryView,
+    ExistingRunEnvironment,
+    Fork,
+    InitialMounts,
+    Message,
+    NewThread,
+    RunOptions,
+    Submitted,
+    ThreadView,
+)
 from a13n_service.runs.sessions import find_session, new_session, require_conversation
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread, new_thread, refresh_version, require_open
@@ -58,6 +69,7 @@ async def validate_message(
     message: Message,
     *,
     authority: ExecutionAuthority,
+    initial_environments: InitialMounts = (),
 ) -> tuple[definitions.Definition, AgentOverride | None, RunOptions]:
     """Malformed or unauthorized input fails before anything is appended, and a pending edit before it applies.
     Returns the selected definition, validated overrides and resolved execution options.
@@ -95,6 +107,18 @@ async def validate_message(
             message.options.overrides,
             authority=authority,
         )
+    if initial_environments:
+        # Acceptance can share-lock another existing primary. Lock it together with the initial mounts
+        # so another Thread taking exclusive locks in ID order (desktop handback) cannot deadlock.
+        selection = options.environment
+        primary_id = None
+        if isinstance(selection, ExistingRunEnvironment):
+            primary_id = selection.environment_id
+        elif selection is None and all(mount.name != PRIMARY for mount in initial_environments):
+            primary = await primary_source(session, thread, revision.config)
+            if isinstance(primary, MountCreate):
+                primary_id = primary.environment_id
+        await mount_environments(session, thread, initial_environments, principal=principal, run_primary_id=primary_id)
     await require_thread_tool_names(session, thread, revision, overrides)
     await require_usable(session, scope.workspace_id, asset_fields(message.payload))
     primary = (
@@ -119,11 +143,12 @@ async def prepare_message(
     *,
     authority: ExecutionAuthority,
     schedule_occurrence_id: str | None = None,
+    initial_environments: InitialMounts = (),
 ) -> Source:
     """Validate and append the command's message; the source it returns starts a run if the thread accepts now."""
     await require_message_source(session, thread, message.agent_id)
     revision, overrides, options = await validate_message(
-        session, runtime, actor, scope, thread, message, authority=authority
+        session, runtime, actor, scope, thread, message, authority=authority, initial_environments=initial_environments
     )
     entry = await append_message(
         session,
@@ -240,7 +265,9 @@ async def prepare_thread(
         from a13n_service.runs.browsers.service import bind_initial
 
         await bind_initial(session, actor, thread, body.browser_binding, authority=authority)
-    await mount_environments(session, thread, body.environments, principal=actor)
+    atomic = body.browser_binding is not None or (schedule_occurrence_id is not None and bool(body.environments))
+    if not atomic:
+        await mount_environments(session, thread, body.environments, principal=actor)
     await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
     source = await prepare_message(
         session,
@@ -252,8 +279,9 @@ async def prepare_thread(
         request,
         authority=authority,
         schedule_occurrence_id=schedule_occurrence_id,
+        initial_environments=body.environments if atomic else (),
     )
-    if body.browser_binding is not None or (schedule_occurrence_id is not None and body.environments):
+    if atomic:
         source = replace(source, atomic_initial_acceptance=True)
     return thread, source
 

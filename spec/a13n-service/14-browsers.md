@@ -18,7 +18,7 @@ A Thread has at most one desired Browser binding:
 | `tab_access`  | `thread` (default) or `global`       |
 | `preparation` | `first_use` (default) or `run_start` |
 
-`POST /threads` accepts an optional `browser_binding` alongside initial Environment mounts. [Fresh-Thread Schedules](13-schedules.md#configuration-and-time) carry the same binding. Both paths validate and install the desired binding before submitting the first Entry, in the same transaction as initial Run acceptance. Selection checks the exact same-workspace resource, its usability and known expiry, and current authorization under the execution authority ceiling. It neither connects to the Browser nor starts it.
+`POST /threads` accepts an optional `browser_binding` alongside initial Environment mounts. [Fresh-Thread Schedules](13-schedules.md#configuration-and-time) carry the same binding. Direct creation and Schedule dispatch validate and install the desired binding before submitting the first Entry, in the same transaction as initial Run acceptance. Initial selection checks the exact same-workspace resource, its usability and known expiry, and current authorization under the execution authority ceiling. It neither connects to the Browser nor starts it.
 
 [Run acceptance](05-runs.md) freezes the binding alongside the execution authority ceiling. Editing or detaching the desired binding affects future Runs; an accepted Run does not silently switch Browsers. A handback continuation uses the originating Run's binding and authority. Child and forked Threads have no implicit Browser binding; callers bind them explicitly. This avoids silently widening a child's target visibility or transferring a parent's tab ownership.
 

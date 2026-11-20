@@ -153,9 +153,11 @@ async def mount_environments(
     *,
     principal: Principal,
     default_session_configuration: SessionConfiguration | None = None,
+    run_primary_id: str | None = None,
 ) -> list[ThreadEnvironmentRow]:
     """Add desired mounts under the caller's thread lock: each name and instance new to the thread, at most
-    `MAX_MOUNTS` in all, and each instance, locked in ID order, usable by the principal."""
+    `MAX_MOUNTS` in all, and each instance usable by the principal. Lock an existing first-Run primary
+    together with the desired mounts in ID order, even if it is not mounted by this call."""
     if not mounts:
         return []
     taken = await desired_mounts(session, thread.id)
@@ -168,9 +170,10 @@ async def mount_environments(
                 "already_exists", "The thread already has this mount", {"kind": "mount", "key": mount.name}
             )
         names.add(mount.name)
-    await lock_environments(
-        session, thread.workspace_id, [mount.environment_id for mount in mounts], principal_id=principal.id
-    )
+    ids = [mount.environment_id for mount in mounts]
+    if run_primary_id is not None:
+        ids.append(run_primary_id)
+    await lock_environments(session, thread.workspace_id, ids, principal_id=principal.id)
     for mount in mounts:
         if mount.session_configuration is not None:
             await validate_references(

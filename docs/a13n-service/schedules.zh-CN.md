@@ -122,7 +122,7 @@ curl -X POST "$A13N_URL/api/v1/schedules/sched_abc123/dispatch" \
 }
 ```
 
-手动触发一次，打开该次触发的首个 Run，查看 `environment_mounts` 和 `browser_binding`。Service 在下发时重新检查资源权限和状态。若资源已被释放或权限已撤销，查看触发记录中的失败原因。
+手动触发一次，打开该次触发的首个 Run，查看 `environment_mounts` 和 `browser_binding`。Service 在下发时检查资源 ID、状态和权限。若找不到资源、资源已释放或权限已撤销，请查看触发记录中的失败原因。
 
 浏览器默认按 thread 隔离标签页：各 thread 共用浏览器配置和登录状态，各自管理自己的标签页。如果计划使用 `target.mode: "thread"` 复用同一对话，请直接在目标 thread 上绑定资源，并省略这两个初始字段。
 

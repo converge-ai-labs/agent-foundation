@@ -10,6 +10,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.providers.registry import Registry
 from a13n_service.runs import accept
 from a13n_service.runs.browsers.tables import BrowserRow, ThreadBrowserRow
+from a13n_service.runs.environments import mounts
 from a13n_service.runs.schedules import dispatch
 from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
@@ -149,12 +150,79 @@ async def test_browser_lock_precedes_fresh_environment_reservation(
     assert run["environment_mounts"][0]["environment_id"] != fields["environments"][0]["environment_id"]
 
 
-@pytest.mark.parametrize("failure", ["released", "expired"])
+@pytest.mark.parametrize("primary_selection", ["agent_default", "run_override"])
+async def test_schedule_locks_initial_mounts_with_existing_primary(
+    service, scripted_model, runs_kit, resources, monkeypatch, primary_selection
+):
+    fields, _ = resources
+    another = await reserve(service, service.template["id"])
+    first, second = sorted([fields["environments"][0]["environment_id"], another["id"]])
+    config = {"default_environment_id": first} if primary_selection == "agent_default" else {}
+    agent = await runs_kit.create_agent(service, scripted_model, **config)
+    invocation = {"environments": [{"name": "sidecar", "environment_id": second}]}
+    if primary_selection == "run_override":
+        invocation["options"] = {"environment": {"mode": "existing", "environment_id": first}}
+    created = await create_schedule(service, runs_kit, agent, invocation)
+    assert created.status_code == 201, created.text
+    schedule = created.json()
+    occurrence = await trigger(service, schedule, runs_kit)
+    acquired_sets = []
+    lock_environments = mounts.lock_environments
+
+    async def check_lock_set(session, workspace_id, environment_ids, *, principal_id):
+        acquired_sets.append(set(environment_ids))
+        return await lock_environments(session, workspace_id, environment_ids, principal_id=principal_id)
+
+    monkeypatch.setattr(mounts, "lock_environments", check_lock_set)
+    await dispatch.process(service.runtime, schedule["id"])
+    assert acquired_sets[0] == {first, second}
+    async with short_session(service.runtime.storage) as session:
+        item = await session.get_one(OccurrenceRow, occurrence["id"])
+        assert item.status == "submitted" and item.entry_id is not None
+        entry = await session.get_one(InboxEntryRow, item.entry_id)
+        assert entry.assigned_run_id is not None
+        run = await session.get_one(RunRow, entry.assigned_run_id)
+        assert {mount["environment_id"] for mount in run.environment_mounts} == {first, second}
+
+
+@pytest.mark.parametrize("with_browser", [False, True])
+async def test_direct_thread_first_run_refusal_preserves_legacy_mount_only_behavior(
+    service, runs_kit, resources, with_browser
+):
+    fields, _ = resources
+    if not with_browser:
+        del fields["browser_binding"]
+    response = await service.client.post(
+        f"{service.api}/threads",
+        json=runs_kit.message(
+            service.agent,
+            "First input",
+            options={"environment": {"mode": "fresh", "template_id": new_object_id("envtpl")}},
+            **fields,
+        ),
+        headers=runs_kit.fresh_key(),
+    )
+    if with_browser:
+        assert response.status_code == 404, response.text
+    else:
+        assert response.status_code == 201, response.text
+        submitted = response.json()
+        assert submitted["run"] is None and submitted["entry"]["status"] == "failed"
+    async with short_session(service.runtime.storage) as session:
+        assert await session.scalar(select(func.count()).select_from(RunRow)) == 0
+        assert await session.scalar(select(func.count()).select_from(ThreadBrowserRow)) == 0
+        for table in (ThreadRow, InboxEntryRow):
+            assert await session.scalar(select(func.count()).select_from(table)) == (0 if with_browser else 1)
+
+
+@pytest.mark.parametrize("failure", ["released", "expired", "missing"])
 async def test_invalid_browser_refuses_dispatch_without_leaving_work(
     service, scripted_model, runs_kit, resources, failure
 ):
     fields, _ = resources
     agent = await runs_kit.create_agent(service, scripted_model)
+    if failure == "missing":
+        fields["browser_binding"]["browser_id"] = new_object_id("browser")
     created = await create_schedule(service, runs_kit, agent, fields)
     assert created.status_code == 201, created.text
     schedule = created.json()
@@ -162,21 +230,25 @@ async def test_invalid_browser_refuses_dispatch_without_leaving_work(
     browser_id = fields["browser_binding"]["browser_id"]
     if failure == "released":
         await command(service, runs_kit, browser_id, "release")
-    else:
+    elif failure == "expired":
         async with transaction(service.runtime.storage) as session:
             browser = await session.get_one(BrowserRow, browser_id)
             browser.expires_at = await now(session) - timedelta(seconds=1)
     rejected = await service.client.post(
         f"{service.api}/threads", json=runs_kit.message(agent, "First input", **fields), headers=runs_kit.fresh_key()
     )
-    assert rejected.status_code == 409, rejected.text
-    assert rejected.json()["error"]["details"]["reason"] == f"browser_{'deleted' if failure == 'released' else failure}"
+    assert rejected.status_code == (404 if failure == "missing" else 409), rejected.text
+    if failure != "missing":
+        assert rejected.json()["error"]["details"]["reason"] == (
+            "browser_deleted" if failure == "released" else "browser_expired"
+        )
     await dispatch.process(service.runtime, schedule["id"])
     async with short_session(service.runtime.storage) as session:
         item = await session.get_one(OccurrenceRow, occurrence["id"])
         row = await session.get_one(ScheduleRow, schedule["id"])
         assert item.status == "failed" and item.reason == row.pause_reason == "target_invalid"
-        assert item.last_error == "conflict" and item.thread_id is None and item.entry_id is None
+        assert item.last_error == ("not_found" if failure == "missing" else "conflict")
+        assert item.thread_id is None and item.entry_id is None
         for table in (ThreadRow, ThreadBrowserRow, InboxEntryRow, RunRow):
             assert await session.scalar(select(func.count()).select_from(table)) == 0
         assert await session.scalar(select(func.count()).select_from(SessionRow)) == 1  # The Schedule's Session.
@@ -190,7 +262,7 @@ async def test_fresh_schedule_rolls_back_initial_mounts_when_run_acceptance_fail
         service.agent,
         {
             "environments": fields["environments"],
-            "options": {"environment": {"mode": "existing", "environment_id": new_object_id("env")}},
+            "options": {"environment": {"mode": "fresh", "template_id": new_object_id("envtpl")}},
         },
     )
     assert created.status_code == 201, created.text

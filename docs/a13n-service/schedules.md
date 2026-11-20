@@ -122,7 +122,7 @@ Reuse the same workspace files and browser sign-in while keeping each firing's c
 }
 ```
 
-Dispatch once manually and open the occurrence's first Run. Check `environment_mounts` and `browser_binding` for the selected resource IDs. Service rechecks resource status and access at dispatch. If a resource was released or access was revoked, check the failure reason on the occurrence.
+Dispatch once manually and open the occurrence's first Run. Check `environment_mounts` and `browser_binding` for the selected resource IDs. Service checks resource IDs, status and access when it dispatches the occurrence. If the ID cannot be resolved, the resource was released or access was revoked, check the failure reason on the occurrence.
 
 By default, threads share the browser profile and sign-in state, and each thread manages its own tabs. For `target.mode: "thread"`, bind the resources on the target thread and omit these two initial fields.
 
