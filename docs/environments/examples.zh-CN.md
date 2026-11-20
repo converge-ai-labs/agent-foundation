@@ -1,7 +1,7 @@
 ---
-title: 内置 provider 示例
+title: 内置环境提供方 (Providers) 可运行示例
 sidebarTitle: 内置示例
-description: 先运行本地文件示例，再了解 Envd Session 和 Docker 目标的所有权。
+description: 完整可运行的 Python 示例脚本：演示 Direct Local、Local Envd 本机沙箱与 Docker 容器的生命周期管理及文件/命令操作。
 ---
 
 运行 [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider)，了解谁创建目标、谁打开执行对象，以及关闭后保留什么。先用 Direct Local 完成离线文件读写，再通过其他示例引入本地守护进程、受管理的 Docker 容器或远程连接。示例使用 Harness 执行操作，使用 Service 管理 Docker，无需 agent 或模型凭据。云端后端见[云端 Provider](cloud-providers.md#cloud-providers)。

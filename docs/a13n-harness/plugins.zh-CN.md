@@ -1,6 +1,6 @@
 ---
-title: 插件与扩展
-description: 添加 Run 中间件，将其打包为可配置插件，并管理 Environment 的初始化与清理。
+title: 插件与运行期扩展体系
+description: 通过运行期中间件插件、自定义环境提供方与生命周期钩子扩展 Harness，支持 Python entry points 与运行时目录自动发现。
 ---
 
 需要观察或改变完整 Run 时，先直接传入插件对象。本页从离线审计插件开始，将同一个实现封装成工厂，再演示 Environment 的初始化与清理。使用[快速开始](getting-started.md)中的 Python 环境；两个独立程序均无需 Model 凭据。

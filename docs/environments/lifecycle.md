@@ -1,6 +1,6 @@
 ---
 title: Lifecycle and state
-description: Prepare a target, save its reference, reuse it across Runs, and destroy it explicitly.
+description: Separate target provisioning (EnvironmentProvider) from inert connectors (EnvironmentConnector) and per-run execution scopes (EnvironmentExecution).
 ---
 
 To reuse a workspace across Runs, manage the target separately from each execution. The Host creates or starts the target and saves its reference. Harness opens an execution against that target and closes the execution when the Run ends.
@@ -13,9 +13,9 @@ To reuse a workspace across Runs, manage the target separately from each executi
 | `EnvironmentConnector` | Describe one fixed target for repeated use, without acquiring a live client at construction                   |
 | `EnvironmentExecution` | Access supported operations after `await connector.open()`, with its own clients, handles, and `execution_id` |
 
-Reuse a connector across Runs; open a separate execution for each owner. Opening or checking an execution does not start, replace, or renew its target. If the saved target is lost, return to Host lifecycle handling rather than selecting another resource with the same name.
+Reuse a connector across Runs; open a separate execution for each owner. Opening an execution connects directly to the already prepared target. If the saved target is lost, return to Host lifecycle handling rather than selecting another resource with the same name.
 
-Execution close releases resources according to the backend. Native Docker and E2B disconnect observations, Direct Local cleans up owned processes, and Envd cleans up Session resources. Closing a management client releases that client. Neither close operation destroys the target.
+Execution close releases resources according to the backend. Native Docker and E2B disconnect observations, Direct Local cleans up owned processes, and Envd cleans up Session resources. Closing a management client releases that client. Closing an execution or runtime releases local connection handles while preserving the underlying target for future runs.
 
 ## Manage and publish before execution
 

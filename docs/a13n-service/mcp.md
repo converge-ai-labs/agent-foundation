@@ -1,6 +1,6 @@
 ---
 title: Manage Service through MCP
-description: Connect an external client, update workspace resources, and investigate runs through MCP.
+description: Connect Claude Code, Cursor, or custom MCP clients to Service's built-in MCP endpoint to query, configure, and debug workspace resources.
 ---
 
 Connect an MCP-capable client to Service to manage workspace resources and inspect execution. Start by listing agents or searching the installed documentation. Then use the same connection to read and update a resource with its returned ETag.

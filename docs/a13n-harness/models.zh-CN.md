@@ -1,6 +1,6 @@
 ---
-title: 模型
-description: 为每次 Run 选择模型，设置上下文策略，并配置网关亲和性与传输。
+title: 模型配置与路由
+description: 在 Harness 中配置模型路由、按 Run 动态解析模型、上下文窗口预算、图像输入策略以及网关会话亲和性。
 ---
 
 Model 将 Agent 连接到 provider 或离线测试实现。先决定模型从哪里来，再设置请求选项和本地上下文策略。Harness 可以在每次 Run 中重新选择模型，同时让对话继续保留在同一个 Thread 中。
@@ -315,7 +315,7 @@ Codex 原生默认值独立于这些开关。在解析器中使用原始 ID 构�
 
 将 API key、认证客户端和账号选择保留在 Host 中。原生 Provider 提供 API key 机制；`a13n_harness.providers.model.oauth` 提供 Codex、ChatGPT、Grok 和 Copilot 的订阅组件。Codex 感知 Thread 的适配器为 `a13n_harness.models.codex.CodexRequestModel`。
 
-新 Run 重新选择已认证 Model。State、工具元数据和 `AgentSpec` 都不是凭据存储。Host 负责用户交互、持久凭据，以及替换账号的许可。从[身份验证与 HTTP 客户端](model-authentication.md)开始，或使用 [Harness UI 登录流程](../a13n-harness-ui/models-and-authentication.md)。[身份验证契约](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/16a-model-authentication.md)描述 SDK 与 Host 的边界。
+新 Run 重新选择已认证 Model。请将访问凭据统一托管在 Host 的安全存储中，并在每次启动新 Run 时通过 `RunBindings` 动态解析。从[身份验证与 HTTP 客户端](model-authentication.md)开始，或使用 [Harness UI 登录流程](../a13n-harness-ui/models-and-authentication.md)。[身份验证契约](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/a13n-harness/16a-model-authentication.md)描述 SDK 与 Host 的边界。
 
 ## Thinking 签名恢复
 

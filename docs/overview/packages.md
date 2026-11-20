@@ -1,73 +1,73 @@
 ---
 title: Package catalog
-description: Distribution names, imports, source locations, runnable examples, and release groups.
+description: Find PyPI distribution names, Python import paths, native daemons, multi-language SDKs, runnable examples, and release groups.
 ---
 
-Use this catalog to find a component's installable distribution, source, and examples. Start with [Choose your path](choose-your-path.md) if you are still deciding between embedded execution, Service, and Harness UI.
+Use this catalog to locate installable packages, repository source directories, and runnable example applications across the Agent Foundation ecosystem. If you are deciding which product fits your architecture, start with [Choose your path](choose-your-path.md).
 
 ## Python packages
 
-Install distributions with hyphenated names such as `a13n-harness`; import their modules with underscores, as in `a13n_harness`.
+Install Python distributions by their hyphenated PyPI names (such as `a13n-harness`) and import their modules using underscores (such as `a13n_harness`).
 
-| Distribution           | Source                          | Purpose and guide                                                                                                                     |
-| ---------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `a13n-harness`         | `packages/a13n-harness`         | [Agent composition and execution](../a13n-harness/index.md), tools, state, and providers                                              |
-| `a13n-stream-protocol` | `packages/a13n-stream-protocol` | [Convert Harness observations to AG-UI events](../a13n-stream-protocol/index.md)                                                      |
-| `a13n-harness-ui`      | `packages/a13n-harness-ui`      | [Terminal and browser workbench](../a13n-harness-ui/index.md), also available as an [embeddable App](../a13n-harness-ui/embedding.md) |
-| `a13n-envd-client`     | `packages/a13n-envd-client`     | [Python EIP client](../a13n-envd/python-client.md) for Envd Sessions, files, processes, and output                                    |
-| `a13n-service`         | `packages/a13n-service`         | [Managed-agent runtime](../a13n-service/index.md) with identity, resources, and durable execution                                     |
-| `a13n-logging`         | `packages/a13n-logging`         | [Structured logging](../a13n-logging/index.md) for libraries and applications                                                         |
+| Distribution           | Repository path                 | Purpose and documentation                                                                                                                                |
+| ---------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a13n-harness`         | `packages/a13n-harness`         | [Embeddable Python agent SDK](../a13n-harness/index.md): agent composition, tools, capabilities, state persistence, and environment providers            |
+| `a13n-stream-protocol` | `packages/a13n-stream-protocol` | [AG-UI stream translator](../a13n-stream-protocol/index.md): convert Harness observations into typed events with checkpoint replay                       |
+| `a13n-harness-ui`      | `packages/a13n-harness-ui`      | [Interactive terminal and browser workbench](../a13n-harness-ui/index.md), also available as an [embeddable Python App](../a13n-harness-ui/embedding.md) |
+| `a13n-envd-client`     | `packages/a13n-envd-client`     | [Python EIP client](../a13n-envd/python-client.md) for communicating with Envd Sessions over HTTP, WebSocket, or stdio                                   |
+| `a13n-service`         | `packages/a13n-service`         | [Self-hosted multi-tenant agent platform](../a13n-service/index.md) with Console, RBAC, Memory Spaces, Schedules, and durable workers                    |
+| `a13n-logging`         | `packages/a13n-logging`         | [Structured logging setup](../a13n-logging/index.md) for libraries and executables                                                                       |
 
-For portable file and command access, use [Environments](../environments/index.md) from Harness. The same providers work in ordinary applications and agent hosts.
+The portable [Environments](../environments/index.md) execution layer ships inside `a13n-harness` and works both inside agent hosts and in standalone Python scripts.
 
-## Native daemon
+## Native daemon (Envd)
 
-Use **Envd** to access files, commands, processes, retained output, and computer operations through EIP Sessions. Its native source lives in `crates/a13n-envd`. For a standalone deployment, [install the daemon](../a13n-envd/installation.md), [configure it](../a13n-envd/configuration.md), and connect with the [Python client](../a13n-envd/python-client.md).
+**Envd** (`crates/a13n-envd`) is a Rust execution daemon that exposes file operations, shell commands, background processes, retained output streams, desktop computer use, and device telemetry over the Environment Interface Protocol (EIP).
 
-In Harness, select the Local Envd provider to use the daemon as an environment. Harness UI can acquire the matching executable automatically for that provider.
+- For standalone or remote hosts: [Install the daemon](../a13n-envd/installation.md), [configure sandboxing and egress policies](../a13n-envd/configuration.md), and connect with the [Python client](../a13n-envd/python-client.md).
+- With Harness and Harness UI: Select the `local_envd` provider for host-local OS sandboxing; Harness UI can automatically acquire the matching co-versioned `a13n-envd` binary.
 
-## Service SDKs and CLI
+## Service SDKs and remote CLI
 
-Choose a Python, TypeScript, Go, or Rust client to call the Service HTTP API. Each client has its own repository; the Rust repository also supplies `a13n-service-cli`.
+Connect your application to a running Service deployment using the official client libraries in Python, TypeScript, Go, or Rust, or operate workspaces from the terminal with `a13n-service-cli` (published from the Rust SDK repository).
 
-Follow [SDKs and CLI](../a13n-service/sdks.md) to install a client and run its examples. Use the [HTTP reference](../a13n-service/api-reference/index.md) to inspect the Service API.
+- Follow [SDKs and CLI](../a13n-service/sdks.md) for installation and quickstart code in each language.
+- Browse the [Service HTTP API reference](../a13n-service/api-reference/index.md) for complete endpoint schemas.
 
-## Frontend source
+## Frontend applications
 
-| Source                          | Purpose                                                     |
-| ------------------------------- | ----------------------------------------------------------- |
-| `frontend/apps/a13n-console`    | Service's browser interface for resources and conversations |
-| `frontend/apps/a13n-harness-ui` | Harness UI's WebUI                                          |
-| `frontend/packages/a13n-ui`     | Shared React components, design tokens, and brand assets    |
-| `frontend/apps/a13n-docs`       | Documentation site built from `docs/`                       |
-| `frontend/apps/a13n-site`       | Public landing page                                         |
+| Repository path                 | Purpose                                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `frontend/apps/a13n-console`    | Service's browser interface (**Console**) for workspace management, Agent Composer, and run debugging    |
+| `frontend/apps/a13n-harness-ui` | Harness UI's browser interface (**WebUI**) for conversations, file trees, Git diffs, and Live voice mode |
+| `frontend/packages/a13n-ui`     | Shared React component library, design tokens, and brand assets                                          |
+| `frontend/apps/a13n-docs`       | Fumadocs documentation site published from `docs/` and `proto/a13n-service/openapi.json`                 |
+| `frontend/apps/a13n-site`       | Public landing page and technical blog                                                                   |
 
-Install Service to get Console, or `a13n-harness-ui` to get WebUI. Their built browser assets ship in the owning application's wheel and sdist, so running an installed application needs no Node.js. To change those assets, follow the [frontend development guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/frontend/README.md).
+Prebuilt browser assets for Console and WebUI are bundled directly into the `a13n-service` and `a13n-harness-ui` Python wheels and source distributions, so running either application requires no Node.js runtime. To develop the frontend source, follow [`frontend/README.md`](https://github.com/converge-ai-labs/agent-foundation/blob/main/frontend/README.md).
 
 ## Runnable example projects
 
-Choose the example closest to your integration, then follow its README for dependencies, execution, and tests:
+Explore complete, self-contained applications under [`examples/`](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/README.md):
 
-| Example                                                                                                                         | Demonstrates                                                                    |
-| ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [Agent application](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/agent-app/README.md)                | Offline streaming turns, saved state, and restart recovery                      |
-| [Environment providers](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/README.md) | Direct Local, Local Envd, and Docker lifecycles                                 |
-| [Capabilities and plugins](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/plugins/README.md)           | Custom capabilities, Harness plugins, environment providers, and run extensions |
-| [Installed provider plugin](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/provider-plugin/README.md)  | Package an environment provider and load its installed entry point              |
-| [MCP App](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/mcp-apps/README.md)                           | A stdio MCP server with an interactive browser counter                          |
+| Example project                                                                                                                 | What it demonstrates                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [Agent application](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/agent-app/README.md)                | Multi-turn offline streaming, JSON state persistence, and restart recovery             |
+| [Environment providers](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/README.md) | Direct Local, Local Envd, and Docker target lifecycles and file/command operations     |
+| [Capabilities and plugins](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/plugins/README.md)           | Custom capabilities, Harness plugins, environment provider plugins, and run extensions |
+| [Installed provider plugin](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/provider-plugin/README.md)  | Packaging a custom environment provider and discovering it via Python entry points     |
+| [MCP App](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/mcp-apps/README.md)                           | Building a stdio MCP server that renders an interactive browser UI widget              |
 
-Use the [examples index](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/README.md) to compare prerequisites and run commands. For more built-in providers, continue to [Environment examples](../environments/examples.md).
+For additional cloud and container environment scripts, see [Environment runnable examples](../environments/examples.md).
 
-## Releases
+## Release groups and version compatibility
 
-Select versions by release group:
+Components publish in coordinated release groups:
 
-| Release group                | Version relationship                                                      |
-| ---------------------------- | ------------------------------------------------------------------------- |
-| Harness and Stream Protocol  | Same release version; Stream Protocol requires that exact Harness version |
-| Envd and its Python client   | Same release version                                                      |
-| Harness UI, Service, Logging | Independent releases; package metadata declares compatible dependencies   |
+| Release group                    | Versioning contract                                                                                                                       |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **Harness & Stream Protocol**    | Always release together at the exact same version; `a13n-stream-protocol` pins that exact `a13n-harness` version.                         |
+| **Envd & `a13n-envd-client`**    | Always release together at the exact same version across Rust binaries, container images, and the Python client.                          |
+| **Service, Harness UI, Logging** | Release independently on their own cadence, pinning reviewed Harness-group versions and compatible dependency bounds in package metadata. |
 
-Choose deployed versions from published package metadata. Source-tree versions are development placeholders, and example projects stay outside production releases.
-
-To develop a package, start with [Contributing](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md). The [repository model](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/repository-model.md) defines package ownership and release relationships.
+To contribute code or understand repository boundaries, see [Contributing](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md) and the [Repository Model specification](https://github.com/converge-ai-labs/agent-foundation/blob/main/spec/repository-model.md).

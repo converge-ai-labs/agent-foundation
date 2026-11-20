@@ -1,6 +1,6 @@
 ---
 title: Desktop computer use
-description: Pair a desktop, grant a Thread access, then use screenshots to guide and verify input through Envd.
+description: Drive Linux, macOS, and Windows graphical desktops through Envd with screenshot observation, pointer/keyboard actions, and native accessibility trees.
 ---
 
 Envd lets an agent observe and operate a logged-in desktop. Pair the Device with Harness UI, authorize the desktop actions for a Thread, and start with a screenshot.
@@ -140,7 +140,7 @@ Linux implements native AT-SPI reads and all 30 AT-SPI mutations on the inherite
 
 Linux focus acquisition and point-hit descent use node/call/deadline budgets independently of tree `depth`. Point acquisition returns native candidates from visible windows without a cross-application frontmost ordering guarantee. GTK acceptance verifies button actions, text edits, numeric values and focus; a controlled D-Bus provider checks all 30 mutation member/argument mappings and failure evidence.
 
-The Computer toolset also exposes semantic desktop access. Begin with `computer_accessibility_describe` to check the backend, readiness and supported reads. Backend support, mount permissions and a particular control's capabilities are separate facts. A daemon without a native backend reports unsupported; enabling Computer use alone does not provide one.
+The Computer toolset also exposes semantic desktop access. Begin with `computer_accessibility_describe` to check the backend, readiness and supported reads. Backend support, mount permissions and a particular control's capabilities are separate facts. Computer use requires a daemon built with a native desktop backend in addition to enabling the feature.
 
 | Tool                                            | Purpose                                                                         |
 | ----------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -171,7 +171,7 @@ Read returns `status: text` and the complete text, including an empty string. `n
 
 Write requires `text`, permits an empty string, rejects NUL and accepts at most 16384 original UTF-8 bytes. Reads and writes normalize CRLF to LF and exchange plain Unicode text. A write replaces clipboard content without saving or restoring it.
 
-To paste, write the clipboard, then send the application's paste chord. To read copied text, send the copy chord, then read the clipboard. Keep both calls in the same live Session and check the application result. These are separate operations: another application can change the clipboard between them, and successful key dispatch does not establish that text was copied or pasted.
+To paste, write the clipboard, then send the application's paste chord. To read copied text, send the copy chord, then read the clipboard. Keep both calls in the same live Session and check the application result. Read or write the clipboard explicitly when you need to confirm its contents after dispatching shortcut keys.
 
 X11 serves `CLIPBOARD` while the Session lives and leaves `PRIMARY` unchanged. macOS and Windows publish native data immediately; persistence across Session replacement, restart or human handoff is not guaranteed. macOS clipboard consent applies, and Windows needs an unlocked input desktop. Reconcile partial/unknown write effects or incomplete `cleanup_complete` before retrying. These calls operate the native clipboard, without synchronizing it to a human desktop viewer.
 

@@ -1,7 +1,7 @@
 ---
 title: Envd
 sidebarTitle: Overview
-description: General execution over EIP, with OS sandbox and Egress policy enforcement, Computer use, and Device metrics.
+description: Native Rust execution daemon implementing the Environment Interface Protocol (EIP) with OS sandboxing, egress filtering, computer use, and telemetry.
 ---
 
 Envd runs file and command operations on a local computer, remote computer, or sandbox. It can also enforce OS sandbox and egress policies, operate a shared desktop, and collect Device metrics. Clients use the **Environment Interaction Protocol (EIP)** over stdio, HTTP(S), or an outbound reverse WebSocket connection.

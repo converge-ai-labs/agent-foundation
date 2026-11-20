@@ -1,7 +1,7 @@
 ---
 title: Device monitoring and metrics
 sidebarTitle: Monitoring
-description: Sample Device resources, inspect freshness, and export metrics through Prometheus or OTLP.
+description: Collect host and container CPU, memory, disk, and network telemetry from Envd devices and export metrics over Prometheus or OTLP.
 ---
 
 Use this guide to monitor an existing Envd deployment. For daemon startup, identity, and transport settings, start with [daemon configuration](configuration.md).

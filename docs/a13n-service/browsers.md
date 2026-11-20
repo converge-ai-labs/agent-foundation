@@ -1,6 +1,6 @@
 ---
 title: Browsers
-description: Choose a browser, connect it to an agent, and manage its lifetime and human control.
+description: Attach managed cloud or containerized Chromium browsers to Service agents, stream live browser views in Console, and support human takeover for logins.
 ---
 
 Give an agent a browser to navigate websites, read pages, fill forms and take screenshots. A browser can stay available across runs and be shared by several threads. You manage it separately from the agent's [environments](environments.md).
@@ -24,7 +24,7 @@ All of these options support the same core agent browser tools. The table shows 
 
 Kubernetes, Docker, and Native keep cookies and login state when stopped. The cloud integrations use temporary profiles that end with the supplier session. External CDP leaves browser lifetime and profile management to you.
 
-Docker browsers require a Linux host and the [host-network deployment setup](#deployment-and-network). Access to a Docker Engine alone does not make browser loopback ports reachable from a bridge-network Service container.
+Docker browsers require a Linux host and the [host-network deployment setup](#deployment-and-network). When Service runs inside a bridge-network container, configure a container-reachable network address for Docker-hosted browsers.
 
 ## Use Console
 
@@ -33,7 +33,7 @@ Docker browsers require a Linux host and the [host-network deployment setup](#de
 3. **Bind the thread.** Open the thread's **Browser** action, select the browser and save. Keep `thread` tab access for tabs created by that thread; use `global` when the agent needs existing tabs.
 4. **Submit work.** The default `first_use` setting prepares the browser on the first browser-tool call. Ask the agent to open or select a tab, observe the page, then perform the task.
 
-For Kubernetes, Docker, and Native, you can also choose **Take control**, wait for human control, and open the viewer to work in the browser yourself. Choose **Return control** when finished. Closing the viewer alone does not return control.
+For Kubernetes, Docker, and Native, you can also choose **Take control**, wait for human control, and open the viewer to work in the browser yourself. Choose **Return control** when finished. Select **Hand back to agent** when you finish interacting so the agent can resume browser automation.
 
 A completed run leaves the browser available for reuse, subject to its retention policy and supplier timeout. Use **stop** to pause Kubernetes, Docker, or Native while keeping its profile; use **release** when you are finished with the browser.
 
@@ -187,7 +187,7 @@ Accepted, running or waiting runs that use the browser, unsettled calls, human c
 Call `POST /api/v1/browsers/{id}/stop` or `POST /api/v1/browsers/{id}/release` with the current browser ETag in `If-Match`.
 
 - **Stop** keeps a Kubernetes, Docker, or Native browser's ID, binding and profile. The next authorized use or `prepare` starts it again. A runtime restart advances its generation and clears old references and tab ownership; restored tabs are not reassigned by URL or title.
-- **Release** requests terminal retirement: Service removes a managed browser's runtime and profile, or disconnects from an external browser. Service refuses release while active use makes it unsafe. Managed cleanup can remain `deleting` until supplier termination is confirmed; release does not guarantee immediate completion.
+- **Release** requests terminal retirement: Service removes a managed browser's runtime and profile, or disconnects from an external browser. Service refuses release while active use makes it unsafe. A released browser transitions through `deleting` until the underlying supplier confirms teardown.
 
 A `lost` or `deleted` browser cannot be restarted. Detach it or bind a replacement before submitting more work to the thread.
 
@@ -243,7 +243,7 @@ Read the browser's `status`, `control`, `expires_at` and `failure` before choosi
 - **A Kubernetes browser stays in preparation.** Check Pod events, PVC binding and image pulls in the browser namespace. See the [deployment guide](configuration.md#kubernetes-browsers).
 - **Cloud creation has an unknown outcome.** Service retries creation only after confirming that the earlier request was not sent or was definitively rejected without creating a session. Otherwise, inspect the supplier account before creating a replacement: the original session may still be running and incurring charges. Kernel and Cloudflare Browser Run cannot automatically find or release it without the returned session ID. Browserbase and Browser Use Cloud can search exact allocation metadata, but no match leaves cleanup unresolved.
 - **An external connection fails.** `browser_connection_failed` does not by itself mark the browser lost. Reconnect to the same instance and observe again. A gateway that silently substitutes another browser cannot preserve continuity. Failed or uncertain actions are never replayed automatically.
-- **Takeover stays in `draining`.** Previously admitted work has not settled. A timeout does not prove completion. Handback can cancel a takeover before any possible viewer grant once active work permits it; this cancellation does not announce browser availability or clear unknown calls.
+- **Takeover stays in `draining`.** Previously admitted work has not settled. If a browser request times out, inspect the current page state before repeating the action. Handback can cancel a takeover before any possible viewer grant once active work permits it; this cancellation does not announce browser availability or clear unknown calls.
 - **Handback stays in `returning`.** Viewer revocation or tab synchronization has not completed, so browser tools remain blocked. Provider disablement, lost controller authority or viewer expiry can also trigger handback. After runs and active operations finish, a workspace writer may release the managed browser instead. Failed termination remains `deleting` and can be retried.
 - **An action's outcome remains unknown.** After runs and active operations finish, release can retire an automation-controlled browser. This does not resolve the old action's outcome or undo external effects. The retired browser ID cannot be reused.
 

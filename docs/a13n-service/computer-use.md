@@ -1,6 +1,6 @@
 ---
 title: Work with a desktop
-description: Prepare a desktop environment, observe it, and hand control between people and agents.
+description: Provision graphical Linux or cloud desktops for Service agents, configure pixel or relative coordinate modes, and hand off live desktop control in Console.
 ---
 
 Start with an [environment provider and template](environments.md), then prepare a desktop target supported by your deployment. Enable Computer tools only after verifying observation and the required permissions. This page covers agent interaction and human takeover; browser-only automation uses the separate [browser guide](browsers.md).

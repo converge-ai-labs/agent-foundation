@@ -1,6 +1,6 @@
 ---
 title: Inspect runs and improve agents
-description: Inspect usage and trace evidence, then review findings before changing configuration.
+description: Analyze token usage, latency, and execution traces in Console, and record structured diagnostic findings to systematically improve agent configurations.
 ---
 
 Open the conversation in Console and switch to **Debug** to inspect its run status, saved configuration, attempts and usage. Those records do not require a trace backend. For model and tool spans or Finding Agent analysis, an operator must separately configure a [trace backend](configuration.md#logs-metrics-and-traces). Use the evidence below to diagnose the run before proposing changes.

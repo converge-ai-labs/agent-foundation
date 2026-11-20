@@ -1,6 +1,6 @@
 ---
 title: Set up your first Agent
-description: Connect a model account, choose where tools may run, and verify your first response.
+description: Connect a model subscription or API key, select Full Control or Sandbox execution permissions, and run your first repository task in Harness UI.
 ---
 
 By the end of this guide, you will have an Agent that can answer a message. Start with [Harness UI installed](installation.md) and either a supported model subscription or a provider API key.
@@ -29,7 +29,7 @@ You can choose to configure a connection now and sign in later with `a13n-harnes
 
 Choose a suggested model or enter its case-sensitive API model ID. Use a model your account can access; the suggestions come from a catalog, not an account-access test. When you reuse an existing Model, its saved settings stay unchanged.
 
-For a first session, keep the offered model settings unless you have a specific requirement. You can change [reasoning and context budgets](models-and-authentication.md#context-and-modality-policy) later. For a Codex connection, **Fast** requests priority service and may use more quota; it does not guarantee a faster response.
+For a first session, keep the offered model settings unless you have a specific requirement. You can change [reasoning and context budgets](models-and-authentication.md#context-and-modality-policy) later. For a Codex connection, **Fast** requests priority service tier processing, which depends on provider capacity and may consume additional quota.
 
 API-key setup also offers an optional **Shell review model**. Select a model to review shell commands, or skip to leave review off. Selecting one creates a separate Model using the same endpoint and key reference. Each review makes an additional model request. Shell review and execution isolation are separate controls.
 

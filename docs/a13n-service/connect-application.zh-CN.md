@@ -1,6 +1,6 @@
 ---
-title: 接入应用
-description: 通过 Service SDK 或 HTTP API 调用 agent，读取结果，并在 Console 调试这次运行。
+title: 将托管 Agent 接入业务应用
+description: 使用工作空间 API key、官方多语言 SDK 或 HTTP API 将已验证的 Agent 接入业务后端，支持幂等提交、结果轮询与审批恢复。
 ---
 
 将应用后端连接到一个已在 Console 中测试通过的 agent。你需要 Service URL、agent ID 和工作空间 API 密钥。如果还没有部署，先按[快速入门](get-started.md)启动 Service，再按 [Console 指南](use-platform.md)配置并测试 agent。

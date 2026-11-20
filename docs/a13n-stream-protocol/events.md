@@ -1,6 +1,6 @@
 ---
 title: Events and processors
-description: Connect a Harness stream, publish event batches, and filter content before delivery.
+description: Transform, filter, and batch AG-UI events from Harness runs using custom event processors and structured display projections.
 ---
 
 Once the [offline quickstart](getting-started.md) works, replace its printing with your application's delivery path. Convert each public source item in order, serialize the returned batch, and store or send it through your Host.

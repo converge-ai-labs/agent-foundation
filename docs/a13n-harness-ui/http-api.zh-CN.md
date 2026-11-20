@@ -1,7 +1,7 @@
 ---
-title: Harness UI HTTP API
+title: Harness UI HTTP API 集成指南
 sidebarTitle: HTTP API
-description: 通过 HTTP 运行对话、处理决策，并接入配置、文件与实时功能。
+description: 通过 Harness UI 提供的 HTTP API 与 SSE 事件流，以编程方式创建对话线程、发送实时引导、处理工具审批并管理工作台资源。
 ---
 
 通过这套 API，你可以用自己的客户端控制正在运行的 Harness UI 实例。先完成一次对话，再按需加入其他控制。监听器与 TUI、[Python 嵌入](embedding.md) 使用同一个 App；Service 的托管 API 则位于独立的 `/api/v1` 下。
@@ -131,7 +131,7 @@ fi
 
 ### 调整运行中的操作
 
-向 `POST /api/operations/{receipt_id}/steer` 发送 `{"parts":["Focus on the configuration files."]}`，或通过 `POST /api/operations/{receipt_id}/cancel` 请求取消。随后继续轮询同一操作。控制请求被接受，不代表取消或回滚已经完成。
+向 `POST /api/operations/{receipt_id}/steer` 发送 `{"parts":["Focus on the configuration files."]}`，或通过 `POST /api/operations/{receipt_id}/cancel` 请求取消。随后继续轮询同一操作。收到取消请求回执后，请查询最新执行状态以确认底层清理已全部完成。
 
 根级和子级 steering 都使用全局 `input.steering_mode`：默认为 `immediate`，设为 `queued` 则等待下一个安全边界。没有逐条消息的模式。支持保留的工具调用可以跨即时 steering 继续。通过 `GET /api/threads/{thread_id}/tool-executions?offset=0&limit=20` 查看指定 Thread 的状态（`limit` 为 1–100），通过 `POST /api/threads/{thread_id}/tool-executions/{execution_id}/cancel` 取消一项。这些进程内状态记录既不暴露也不消耗私有结果。见[工具执行控制](webui.md#tool-executions-and-immediate-steering)。
 
@@ -366,7 +366,7 @@ Provider 查看支持 `codex`、`grok`、`copilot` 和 `chatgpt`。来源选择�
 | `GET /api/devices/{device_id}/directories` | 读取一页目录，不创建 Envd Session            |
 | `WS /api/devices/{device_id}/connect`      | 原生 daemon 反向接入                         |
 
-目录查询接受 `path`、`offset`（0–1,000,000）和 `limit`（1–200，默认 100）。省略 `path` 使用 Device 默认工作目录；沿 `next_offset` 分页。路径属于 Device。在线 Device 也可以禁用发现，一个目录不可读不代表离线。这些读取既不创建 Thread，也不创建 Envd Session，且不要求 computer sharing。
+目录查询接受 `path`、`offset`（0–1,000,000）和 `limit`（1–200，默认 100）。省略 `path` 使用 Device 默认工作目录；沿 `next_offset` 分页。路径属于 Device。如需判断设备是否在线，请直接调用设备就绪检查接口，而非仅依据目录浏览权限判断。这些读取既不创建 Thread，也不创建 Envd Session，且不要求 computer sharing。
 
 Daemon 反向连接协商 `eip.v1`，在 upgrade 请求头中使用 Device Bearer 认证。它不使用浏览器首帧认证或 URL 凭据。
 

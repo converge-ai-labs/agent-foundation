@@ -1,7 +1,7 @@
 ---
-title: Envd
+title: Envd 原生执行守护进程
 sidebarTitle: 概览
-description: 通过 EIP 提供通用执行、OS sandbox 与 Egress 策略控制、Computer use 和设备指标。
+description: 基于 Rust 实现 EIP 协议的原生执行守护进程，提供操作系统级沙箱隔离、出站域名与凭证代理、桌面 GUI 控制与设备指标监控。
 ---
 
 Envd 在本地计算机、远程计算机或沙箱中执行文件和命令操作。它还可以实施 OS sandbox 与出站网络策略、操作共享桌面，并采集 Device 指标。客户端通过 stdio、HTTP(S) 或向外建立的反向 WebSocket 连接使用**环境交互协议（EIP）**。

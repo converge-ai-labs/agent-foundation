@@ -1,6 +1,6 @@
 ---
-title: 浏览器
-description: 选择浏览器、连接 agent，并管理浏览器的保留策略和人工接管。
+title: 托管浏览器与人工接管 (Browsers)
+description: 为 Service Agent 绑定容器化或云端托管的 Chromium 浏览器，在 Console 中实时观看网页操作并支持人工一键接管完成登录验证。
 ---
 
 为 agent 配置浏览器，让它访问网站、读取页面、填写表单和截图。同一个浏览器可以跨 run 复用，也可以由多个 thread 共享。浏览器与 agent 的[环境](environments.md)分别管理。
@@ -24,7 +24,7 @@ description: 选择浏览器、连接 agent，并管理浏览器的保留策略�
 
 Kubernetes、Docker 和 Native 停止后保留 cookie 和登录状态。云浏览器集成使用临时 profile，随供应商会话结束而删除。外部 CDP 的浏览器生命周期和 profile 由你管理。
 
-Docker 浏览器需要 Linux 宿主和[host-network 部署配置](#deployment-and-network)。仅能连接 Docker Engine，并不代表 bridge 网络中的 Service 容器能访问宿主回环端口。
+Docker 浏览器需要 Linux 宿主和[host-network 部署配置](#deployment-and-network)。当 Service 运行在 bridge 网络的容器内时，请为 Docker 托管浏览器配置容器可直接访问的网络地址。
 
 ## 使用 Console
 
@@ -228,7 +228,7 @@ browser_control_seconds = 300
 
 三项值必须都是正整数，并满足 `min <= default <= max`。接管和续期使用同一策略。省略 `lease_seconds` 时使用配置的默认值；超出范围的请求会被拒绝。
 
-租约从接管开始阻止新浏览器调用时计时，包含 draining 阶段。续期不会缩短截止时间，且只有当前仍有权限的控制方才能续期。打开 viewer 本身不会续期，应用自行判断何时发送续期请求。租约到期会触发归还；已到期或正在 returning 的控制周期必须先完成归还，才能重新接管。
+租约从接管开始阻止新浏览器调用时计时，包含 draining 阶段。续期不会缩短截止时间，且只有当前仍有权限的控制方才能续期。嵌入端应用可根据用户活跃度主动调用续期接口，延长浏览器会话的保留时间。租约到期会触发归还；已到期或正在 returning 的控制周期必须先完成归还，才能重新接管。
 
 #### Viewer 接入
 
@@ -242,8 +242,8 @@ browser_control_seconds = 300
 
 - **Kubernetes 浏览器一直在准备中。** 先检查浏览器命名空间里的 Pod 事件、PVC 绑定和镜像拉取状态。参见[部署指南](configuration.md#kubernetes-browsers)。
 - **云端创建结果未知。** 只有确认原请求未发送，或已被明确拒绝且未创建会话时，Service 才会重试创建。否则，在创建替代浏览器前先检查供应商账号：原会话可能仍在运行并产生费用。未收到会话 ID 时，Kernel 和 Cloudflare Browser Run 无法自动定位或释放会话。Browserbase 和 Browser Use Cloud 可按精确分配 metadata 查找，但没有匹配结果时，清理仍无法确认。
-- **外部连接失败。** `browser_connection_failed` 本身不会将浏览器标记为丢失。重连同一实例，再重新观察。网关若静默替换浏览器，就无法保持连续性。失败或结果未知的操作不会自动重放。
-- **接管停留在 `draining`。** 此前获准的工作尚未结束，超时不能证明操作已完成。在能够确认尚未发生任何 viewer 授权、且活跃工作允许的情况下，可通过归还取消接管；取消不会宣告浏览器可用，也不会清除结果未知的调用。
+- **外部连接失败。** 出现 `browser_connection_failed` 时浏览器实例仍会保留，你可以先排查网络或容器状态再决定是否重置。重连同一实例，再重新观察。网关若静默替换浏览器，就无法保持连续性。失败或结果未知的操作不会自动重放。
+- **接管停留在 `draining`。** 若请求因超时返回，说明后台操作仍在继续，请在重试前先观察当前页面状态。在能够确认尚未发生任何 viewer 授权、且活跃工作允许的情况下，可通过归还取消接管；取消不会宣告浏览器可用，也不会清除结果未知的调用。
 - **归还停留在 `returning`。** Viewer 撤销或标签页同步尚未完成，因此浏览器工具继续被阻止。Provider 禁用、控制方失权或 viewer 到期也可能触发归还。Run 和活跃操作结束后，具有工作空间写入权限的用户可改为释放托管浏览器。终止失败时保持 `deleting`，可重试释放。
 - **某次操作结果持续未知。** Run 和活跃操作结束后，可通过释放终止处于自动化控制的浏览器资源。这不会确定旧操作的结果，也不会撤销外部影响。已释放的浏览器 ID 不可复用。
 

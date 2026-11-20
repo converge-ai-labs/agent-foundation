@@ -1,41 +1,41 @@
 ---
 title: Agent Foundation (a13n)
-description: Build agents in Python, work with them interactively, or deploy them for a team.
+description: Build production AI agents in Python with Harness, collaborate in your repository with Harness UI, or operate a self-hosted team platform with Service.
 ---
 
 <Intro title="Agent Foundation (a13n)" action={{ text: "Choose your path", href: "/overview/choose-your-path/" }}>
 
-Build and run agents on your own infrastructure. Configure and test an agent in Console, then call that same agent from your application through an SDK or the HTTP API.
+Build, run, and operate AI agents on your own infrastructure. Embed agent execution directly inside a Python application, work with an interactive agent in your terminal or browser, or deploy a shared platform where your team configures agents in Console and calls them over an SDK or HTTP API.
 
 </Intro>
 
 <RuntimeMap alt="Console and SDK or HTTP clients connect to the Service API. The control role persists work in PostgreSQL. A worker leases a run, executes it with Harness, and saves checkpoints to object storage. A later attempt can resume from a saved checkpoint after lease expiry. Harness UI and Python applications can also embed Harness directly." />
 
-<Section title="Start with a task">
+<Section title="Start with your goal">
 <Rows>
-<Row title="Deploy a shared agent platform" href="/a13n-service/get-started/">Run Service locally and configure a model</Row>
-<Row title="Use your team's agents" href="/a13n-service/use-platform/">Start a conversation on an existing platform</Row>
-<Row title="Add managed agents to your application" href="/a13n-service/connect-application/">Authenticate, submit work, and read results</Row>
-<Row title="Build an agent in Python" href="/a13n-harness/getting-started/">Run an offline example, then add tools and models</Row>
-<Row title="Work interactively in a repository" href="/a13n-harness-ui/setup/">Connect a model and use the terminal or browser</Row>
+<Row title="Deploy a shared agent platform" href="/a13n-service/get-started/">Launch Service with Docker Compose, connect a model, and run your first agent in Console</Row>
+<Row title="Use your team's agents in Console" href="/a13n-service/use-platform/">Run conversations, review tool approvals, and branch threads on an existing Service deployment</Row>
+<Row title="Connect your application to Service" href="/a13n-service/connect-application/">Authenticate with a workspace API key, stream live output, and resume threads over SDK or HTTP</Row>
+<Row title="Build an agent in Python" href="/a13n-harness/getting-started/">Compose instructions, typed tools, and durable state directly inside your Python process</Row>
+<Row title="Work interactively in a repository" href="/a13n-harness-ui/setup/">Launch Harness UI in your terminal or browser, connect a model, and customize skills and subagents</Row>
 </Rows>
 </Section>
 
 <Section title="Products">
 <Products>
-<Product icon="service" title="Service" audience="Teams and applications" href="/a13n-service/" start="/a13n-service/get-started/">
+<Product icon="service" title="Service" audience="Platform engineers & team admins" href="/a13n-service/" start="/a13n-service/get-started/">
 
-Manage agents and access in a shared workspace. Service saves conversations and keeps accepted work running when the client disconnects.
+Self-hosted, multi-tenant agent platform. Build agents visually or with Agent Composer, govern workspace roles and credentials, schedule recurring runs, organize shared Memory Spaces, and keep accepted work running when clients disconnect.
 
 </Product>
 <Product icon="harness" title="Harness" audience="Python developers" href="/a13n-harness/" start="/a13n-harness/getting-started/">
 
-Compose an agent from instructions, tools, and capabilities, then run it in your Python process. Your application controls storage, access, and result delivery.
+Embeddable Python agent SDK. Compose an agent from instructions, typed Python tools, MCP servers, subagents, and CodeAct, while your application controls storage, access policy, and result delivery.
 
 </Product>
-<Product icon="harness-ui" title="Harness UI" audience="Individuals and trusted small teams" href="/a13n-harness-ui/" start="/a13n-harness-ui/setup/">
+<Product icon="harness-ui" title="Harness UI" audience="Developers & DIY builders" href="/a13n-harness-ui/" start="/a13n-harness-ui/setup/">
 
-Connect a model and work with an agent in your repository. The terminal and browser interfaces share conversations, files, and terminals within a trusted instance.
+Interactive terminal and browser workbench for codebases. Inspect files, steer active work, talk through tasks in Live voice mode, and extend your workflow with Markdown subagents, Skills, and Content Plugins.
 
 </Product>
 </Products>
@@ -47,17 +47,17 @@ Connect a model and work with an agent in your repository. The terminal and brow
 
 <Section title="Building blocks">
 <Rows>
-<Row title="Environments" href="/environments/">Portable file, command, process, and computer access</Row>
-<Row title="Envd" href="/a13n-envd/">File, process, and computer operations over EIP</Row>
-<Row title="Stream Protocol" href="/a13n-stream-protocol/">Typed AG-UI events from Harness observations</Row>
-<Row title="Logging" href="/a13n-logging/">Structured logs and process-wide logging setup</Row>
+<Row title="Environments" href="/environments/">Unified file, command, process, and desktop execution across local directories, Docker, and cloud sandboxes</Row>
+<Row title="Envd" href="/a13n-envd/">Native execution daemon providing OS sandboxing, egress policy enforcement, computer use, and device metrics over EIP</Row>
+<Row title="Stream Protocol" href="/a13n-stream-protocol/">Convert Harness execution streams into typed AG-UI events with deterministic checkpoint replay</Row>
+<Row title="Logging" href="/a13n-logging/">Structured JSON and console logging for Python libraries and executables</Row>
 </Rows>
 </Section>
 
 <Note>
 
-The guides describe the repository's `main` branch. Check your installed version's release notes when following them.
+These guides track the repository's `main` branch. Check your installed version's release notes when upgrading a deployment.
 
-Find installable components in the [package catalog](overview/packages.md). To work on the source, use [Contributing](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md); accepted architecture contracts live in the [specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec).
+Browse installable distributions in the [package catalog](overview/packages.md). To contribute to the codebase, see [Contributing](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md) and the architecture [specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec).
 
 </Note>

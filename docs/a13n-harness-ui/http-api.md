@@ -1,7 +1,7 @@
 ---
 title: Harness UI HTTP API
 sidebarTitle: HTTP API
-description: Run a conversation over HTTP, handle decisions, and add configuration, file, or realtime integrations.
+description: Drive Harness UI threads, live SSE streams, steering inputs, tool approvals, and workspace resources programmatically over its local HTTP API.
 ---
 
 Use this API to drive a running Harness UI instance from your own client. Start with one conversation, then add the controls your client needs. The listener uses the same App as the TUI and [Python embedding](embedding.md); Service has a separate managed API under `/api/v1`.
@@ -366,7 +366,7 @@ Create reusable Device connections through configuration sources, for example PU
 | `GET /api/devices/{device_id}/directories` | One directory page without an Envd Session                         |
 | `WS /api/devices/{device_id}/connect`      | Native daemon reverse attachment                                   |
 
-Directory queries accept `path`, `offset` (0–1,000,000), and `limit` (1–200, default 100). Omit `path` for the Device's default working directory; follow `next_offset`. Paths belong to the Device. Discovery can be disabled on an online Device, and one unreadable directory does not establish that it is offline. These reads create neither Threads nor Envd Sessions and do not require computer sharing.
+Directory queries accept `path`, `offset` (0–1,000,000), and `limit` (1–200, default 100). Omit `path` for the Device's default working directory; follow `next_offset`. Paths belong to the Device. Use the Device readiness endpoint to check online status independently of directory-discovery permissions. These reads create neither Threads nor Envd Sessions and do not require computer sharing.
 
 The reverse daemon connection negotiates `eip.v1` with Device bearer authentication in the upgrade header. It does not use browser first-frame authentication or URL credentials.
 
@@ -482,7 +482,7 @@ Check `features.host_terminal` before creating a PTY. Linux/macOS support native
 
 5. Release with `{"kind":"control","control_epoch":1,"release":true}`, or DELETE `/api/host/terminals/{terminal_id}` to close the shared session.
 
-Each connection starts as a viewer. A claim/takeover increments the epoch; stale commands return `host_terminal_control_conflict`. Only the controller can release. Input supports control characters, is limited to 16,384 characters per frame, and can partially deliver before backpressure fails. Never automatically retry keystrokes. Dimensions are 1–1,000.
+Each connection starts as a viewer. A claim/takeover increments the epoch; stale commands return `host_terminal_control_conflict`. Only the controller can release. Input supports control characters, is limited to 16,384 characters per frame, and can partially deliver before backpressure fails. Verify the screen state before sending additional keystrokes. Dimensions are 1–1,000.
 
 Disconnect removes a participant, not the terminal. Exited terminals remain inspectable and count toward the 32-session limit until deleted. DELETE terminates the native session's jobs; deliberately daemonized independent OS sessions have separate lifetimes. App shutdown closes all terminals; PTYs/output do not survive restart. `x-interactive` in OpenAPI describes the wire schemas.
 

@@ -1,14 +1,16 @@
 ---
 title: Harness 快速入门
 sidebarTitle: 快速入门
-description: 离线运行第一个 Agent，继续同一 Thread，接收流式回答，再连接 provider。
+description: 在本地离线构建您的首个类型安全 Python Agent，流式消费 Token 事件，维系多轮会话线程状态，并平滑接入主流云端大模型。
 ---
 
-先用一个小型 Python 程序取得结果，再配置 provider。随后复用这个程序，继续同一 Thread 并显示流式输出。离线步骤无需账号、API 密钥或外部服务。
+本篇快速入门将指引您使用 **Harness** 迅速构建并运行您的首个 Agent。您将从完全离线、确定性且无需任何 API 密钥或外部服务的 Python 脚本起步，逐步掌握多轮对话续接、实时流式推送以及真实云端大模型的接入流程。
 
 ## 环境要求
 
-安装 Python 3.13 或更高版本、Git 和 [uv](https://docs.astral.sh/uv/)。这些指南对应 `main` 分支的源码 API，请配套使用仓库和锁文件：
+确保本地已安装 Python 3.13 或更高版本、Git 以及现代 Python 依赖管理器 [`uv`](https://docs.astral.sh/uv/)。
+
+克隆代码仓库并通过锁文件精准同步工程环境：
 
 ```bash
 git clone https://github.com/converge-ai-labs/agent-foundation.git
@@ -16,73 +18,77 @@ cd agent-foundation
 uv sync --locked --package a13n-harness
 ```
 
-后续命令都在这个 checkout 中执行。`uv` 会安装 Harness 及其依赖，包括下文使用的确定性 `FunctionModel`。安装依赖需要网络，运行离线示例不需要。
+`uv sync` 会高速安装 Harness、底层 Pydantic AI 以及测试套件。离线示例的运行过程完全无需网络连接。
 
 ## 运行离线 Agent
 
-1. 在 checkout 根目录创建 `app.py`，写入以下完整程序：
+在工程根目录下创建名为 `app.py` 的脚本：
 
-   ```python title="app.py"
-   import asyncio
-   from collections.abc import AsyncIterator
+```python title="app.py"
+import asyncio
+from collections.abc import AsyncIterator
 
-   from a13n_harness import AgentSpec, HarnessBuilder
-   from pydantic_ai.messages import ModelMessage
-   from pydantic_ai.models.function import AgentInfo, FunctionModel
-
-
-   async def respond(
-       messages: list[ModelMessage],
-       info: AgentInfo,
-   ) -> AsyncIterator[str]:
-       del messages, info
-       yield "Hello from the Harness"
+from a13n_harness import AgentSpec, HarnessBuilder
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 
-   async def main() -> None:
-       executable = HarnessBuilder().build(
-           AgentSpec(),
-           output_type=str,
-           model=FunctionModel(stream_function=respond),
-       )
-       result = await executable.run("Say hello")
-       print(result.output_or_raise())
+# 1. 定义确定性的离线响应函数
+async def respond(
+    messages: list[ModelMessage],
+    info: AgentInfo,
+) -> AsyncIterator[str]:
+    del messages, info
+    yield "Hello from the Harness!"
 
 
-   if __name__ == "__main__":
-       asyncio.run(main())
-   ```
+# 2. 构建 Agent 可执行对象并执行提示词
+async def main() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(instructions="你是一个严谨且乐于助人的智能助手。"),
+        output_type=str,
+        model=FunctionModel(stream_function=respond),
+    )
+    result = await executable.run("打个招呼")
+    print(result.output_or_raise())
 
-2. 在同一目录运行：
 
-   ```bash
-   uv run python app.py
-   ```
+if __name__ == "__main__":
+    asyncio.run(main())
+```
 
-3. 检查输出：
+使用 `uv` 运行此程序：
 
-   ```text
-   Hello from the Harness
-   ```
+```bash
+uv run python app.py
+```
 
-模型回答由函数提供，Harness 则执行真实的 Run 生命周期。这个结果确认安装、Agent 构建和结果处理已连通。
+控制台将输出：
+
+```text
+Hello from the Harness!
+```
+
+虽然响应函数返回的是确定性文本，但 Harness 已经完整走完了原生生命周期——包括参数校验、执行状态管理以及结构化结果打包。
 
 ## 理解执行流程
 
-| 代码                          | 职责                                         |
-| ----------------------------- | -------------------------------------------- |
-| `AgentSpec()`                 | Agent 指令和声明式设置                       |
-| `HarnessBuilder().build(...)` | 将定义、模型和输出约定组合成可复用的执行对象 |
-| `output_type=str`             | 要求最终返回文本                             |
-| `executable.run(...)`         | 启动 Run，等待终态结果                       |
-| `result.output_or_raise()`    | 返回已完成的输出；结果未完成时抛出异常       |
-| `result.state`                | 将消息和可移植状态带入后续 Run               |
+核心架构将 Agent 的静态配置定义与单次动态执行解耦：
 
-这里通过 builder 参数传入具体模型，因此保持 `AgentSpec.model` 未设置。只选择一种模型来源。即使 Agent 只返回文本，也要明确填写 `output_type`。
+| 核心组件                      | 架构职责                                                          |
+| :---------------------------- | :---------------------------------------------------------------- |
+| `AgentSpec`                   | 声明式系统指令、模型选型标识符与静态运行策略                      |
+| `HarnessBuilder().build(...)` | 将指令、模型与能力组装为线程安全的可执行对象（`ExecutableAgent`） |
+| `output_type=str`             | 终态输出结果的类型契约（支持 Python 基础类型或 Pydantic 模型）    |
+| `executable.run(...)`         | 启动单次逻辑运行（Run）并异步等待终态执行结果                     |
+| `result.output_or_raise()`    | 安全提取经过校验的输出对象，执行失败时抛出具体异常                |
+| `result.state`                | 包含历史消息与能力状态的轻量级序列化检查点快照                    |
 
 ## 构建一次，继续同一 Thread
 
-保留第一个程序的导入、`respond()` 和最后的 `asyncio.run(main())`。只替换 `main()`：
+在多轮业务会话中，必须将上一次对话的上下文无缝传递给下一步。您只需将前一次返回的 `state` 作为 `previous_state` 传入后续调用即可。
+
+更新 `app.py` 中的 `main()` 函数：
 
 ```python
 async def main() -> None:
@@ -91,22 +97,27 @@ async def main() -> None:
         output_type=str,
         model=FunctionModel(stream_function=respond),
     )
-    first = await executable.run("Say hello")
+
+    # 第一轮交互
+    first = await executable.run("第一次问候")
     print(first.output_or_raise())
-    second = await executable.run("Say hello again", previous_state=first.state)
+
+    # 第二轮交互：传入 previous_state 延续同一会话线程
+    second = await executable.run("第二次问候", previous_state=first.state)
     print(second.output_or_raise())
+
     assert second.thread_id == first.thread_id
     assert second.run_id != first.run_id
-    print("Same Thread, new Run")
+    print("会话连续性校验通过：相同的 Thread，独立的 Run 审计记录。")
 ```
 
-再次运行 `uv run python app.py`，应打印两次问候和 `Same Thread, new Run`。断言检查续接身份；固定的离线 responder 对每个提示词仍返回相同文本。
+再次运行 `uv run python app.py`。断言将验证两次运行具有相同的 `thread_id`，同时记录了相互独立的 `run_id` 审计痕迹。
 
-需要在程序重启后继续时，保存返回的 `HarnessState`。[状态指南](state-and-resume.md)介绍 JSON 往返和存储流程。应用另外重建当前凭据和活跃资源。
+如需跨进程重启持久化保存会话，只需将 `result.state` 序列化为 JSON 并存入数据库即可。详情请参阅[状态与恢复](state-and-resume.md)。
 
 ## 流式接收公开事件
 
-要在文本到达时显示它，从最初的离线程序开始。添加以下导入，替换 `main()`，保留最后的 `asyncio.run(main())`：
+对于交互式聊天窗口与命令行实时打字效果，可通过 `executable.stream()` 消费类型化的事件流：
 
 ```python
 from a13n_harness import HarnessEvent, HarnessRunResultEvent
@@ -119,7 +130,8 @@ async def main() -> None:
         output_type=str,
         model=FunctionModel(stream_function=respond),
     )
-    async with executable.stream("Say hello") as stream:
+
+    async with executable.stream("流式打个招呼") as stream:
         async for item in stream:
             if isinstance(item, HarnessRunResultEvent):
                 item.result.raise_for_status()
@@ -132,39 +144,38 @@ async def main() -> None:
     print()
 ```
 
-再次运行文件，检查问候输出。文本事件用于显示，终态 `HarnessRunResultEvent` 用于确认执行是否完成。`async with` 作用域负责关闭 Run 资源，提前停止消费时也会清理。为流式应用添加持久化时，使用终态结果中的 `state`。
+`async with` 上下文管理器确保了在流消费完毕或中途退出时，底层网络连接和工具资源都能被安全释放。
 
 ## 接入真实模型
 
-离线程序运行成功后，再连接可用账号。以下示例使用 OpenAI Responses 集成；请选择该账号可用的模型 ID。
+在离线流程验证通过后，即可接入 OpenAI、Anthropic 或 Gemini 等主流大模型：
 
-1. 回到最初的 `app.py`，添加 `import os`。
+1. 在 `app.py` 顶部添加 `import os`。
+2. 在 `AgentSpec` 中配置模型标识符：
 
-2. 将 `main()` 内的 builder 调用替换为：
+```python
+    executable = HarnessBuilder().build(
+        AgentSpec(
+            model=os.environ["HARNESS_MODEL"],
+            instructions="你是一位专业的资深软件工程师。请给出精确、可落地的回答。",
+        ),
+        output_type=str,
+    )
+```
 
-   ```python
-       executable = HarnessBuilder().build(
-           AgentSpec(
-               model=os.environ["HARNESS_MODEL"],
-               instructions="Answer clearly and concisely.",
-           ),
-           output_type=str,
-       )
-   ```
+3. 在命令行中导出对应的环境变量：
 
-3. 在进程环境中设置凭据和模型选择。以下是 POSIX shell 写法，请替换两个占位值：
+```bash
+export OPENAI_API_KEY="sk-..."
+export HARNESS_MODEL="openai-responses:gpt-4o"
+uv run python app.py
+```
 
-   ```bash
-   export OPENAI_API_KEY='YOUR_API_KEY'
-   export HARNESS_MODEL='openai-responses:YOUR_MODEL_ID'
-   uv run python app.py
-   ```
-
-回答现在来自 provider，内容可能变化。可以删除离线 `respond()` 函数及其模型导入。不要将密钥提交到版本控制。其他 provider、应用管理的客户端和短期凭据见[模型](models.md)及[认证与 HTTP 客户端](model-authentication.md)。
+Harness 会解析模型前缀、建立带认证的 HTTP 传输连接，并与远端模型 API 交互。如需配置自定义代理与端点，请参考[模型认证指南](model-authentication.md)。
 
 ## 添加能力
 
-根据 Agent 的需要添加功能。例如，下文为最初的离线程序添加运行上下文和工作笔记、任务功能。将导入放在文件顶部，并用下文替换 `main()`：
+各种可插拔功能——如运行时上下文、备忘录与任务管理、工具检索等——均通过 **Capabilities** 机制挂载：
 
 ```python
 from a13n_harness.capabilities import RuntimeContextCapability, WorkingStateCapability
@@ -175,29 +186,34 @@ async def main() -> None:
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=respond),
-        capabilities=(RuntimeContextCapability(), WorkingStateCapability()),
+        capabilities=(
+            RuntimeContextCapability(),
+            WorkingStateCapability(),
+        ),
     )
-    result = await executable.run("Say hello")
+    result = await executable.run("打个招呼")
     print(result.output_or_raise())
 ```
 
-问候输出不变，因为确定性 responder 没有选择新增工具。接着阅读[工具与依赖](tools-and-dependencies.md)，运行真正调用函数的离线示例；或阅读 [Capabilities](capabilities.md)，选择内置功能。
+阅读 [Capabilities](capabilities.md) 了解内置的记忆管理、环境沙箱及工具发现扩展。
 
 ## 排查首次运行问题
 
-| 现象                            | 检查项                                                         |
-| ------------------------------- | -------------------------------------------------------------- |
-| Python 版本不受支持             | 使用 Python 3.13 或更高版本，重新执行锁定依赖同步              |
-| `No module named a13n_harness`  | 在已同步依赖的 checkout 中通过 `uv run` 运行                   |
-| 模型选择冲突                    | builder 的 `model=` 与 `AgentSpec.model` 二选一                |
-| 缺少输出约定                    | 保留 `output_type=str`，或采用输入输出指南中的显式 schema 流程 |
-| 离线问候成功，provider 执行失败 | 检查模型 ID、账号访问权、凭据和 provider 错误                  |
-| 粘贴片段后出现未定义名称        | 按说明替换原程序的对应部分；片段复用其导入和 `respond()`       |
+常见初始化问题排查指南：
+
+| 现象                                                  | 排查方向                                                                  |
+| :---------------------------------------------------- | :------------------------------------------------------------------------ |
+| `ModuleNotFoundError: No module named 'a13n_harness'` | 确保在当前目录下使用 `uv run python app.py` 启动，依赖已正确同步          |
+| Python 版本不兼容报错                                 | Harness 依赖 Python 3.13+，请通过 `python3 --version` 确认解释器版本      |
+| 模型配置冲突                                          | 仅在构建器的 `model=` 或 `AgentSpec.model` 中二选一指定模型，避免重复定义 |
+| Provider 鉴权失败                                     | 检查 API Key 环境变量是否正确导出，以及模型账号权限是否已开通             |
+| 缺少导入项报错                                        | 确保已在最新工程根目录完整执行 `uv sync`                                  |
 
 ## 接下来
 
-1. [调用 Python 工具](tools-and-dependencies.md)并检查结果。
-2. [保存和恢复 Thread](state-and-resume.md)，跨程序调用继续工作。
-3. 连接外部服务前先[离线测试](testing.md)。
+在基础执行环境就绪后，建议继续探索：
 
-应用结构见 [Agent 与执行](agents-and-runs.md)。文件和命令访问见[环境](environments.md)。[Agent 应用示例](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)将多轮流式执行、持久化和重启恢复组合起来。
+1. [工具与依赖](tools-and-dependencies.md)：注册自定义 Python 原生函数并处理依赖注入。
+2. [状态与恢复](state-and-resume.md)：在生产级数据库中序列化持久化会话检查点。
+3. [自动化测试](testing.md)：为复杂的智能体逻辑编写高速确定的单元测试。
+4. [执行环境 Environments](../environments/index.md)：为 Agent 赋予受控安全的文件读写与终端命令执行权限。

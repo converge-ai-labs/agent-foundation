@@ -1,6 +1,6 @@
 ---
 title: Resource basics
-description: Choose the right resource, update it with its version, and understand what a run keeps.
+description: Understand Service workspace resource ownership, optimistic concurrency with ETag/If-Match, credential write-only semantics, and revision pinning.
 ---
 
 To build a project-notes agent, first connect a provider account, save a model from that provider, and select the model in an agent. Add a connection for business-system tools or an environment template for file work. These saved objects are **workspace resources**. This page explains how to identify, change and retire them.
@@ -60,7 +60,7 @@ A provider stores one configured backend account. Choose the kind for the work y
 1. Open **Workspace settings → Providers**, choose the category and add a provider of the required type.
 2. Fill in its configuration and credentials. Console builds the form from `GET /api/v1/provider-types/{kind}`: the response contains configuration/credential JSON Schemas, credential requirements and setup links. Model types also describe APIs/settings; web types list operations; environment types describe recipes and lifecycle support.
 3. Save the provider and use its ID when creating the dependent model, connection, template or memory. API clients create it in `/{kind}-providers` with `type`, `name`, `config` and the credential required by that type.
-4. Run the provider test where supported, then test the actual workflow. `POST …/{provider_id}/test` requires `run` and returns `succeeded`, `failed` or `unsupported`. A non-billable probe does not establish that an agent task will succeed.
+4. Run the provider test where supported, then test the actual workflow. `POST …/{provider_id}/test` requires `run` and returns `succeeded`, `failed` or `unsupported`. After a connectivity probe passes, test the resource in an actual agent run to verify end-to-end task permissions.
 
 An `unsupported` result means the type has no probe; verify it through a run. Web types have no probe. Among environment types, only Docker is tested, by pinging the engine without creating anything. Model types use their declared connection probe; memory providers list one page of a namespace no memory uses.
 

@@ -1,6 +1,6 @@
 ---
 title: Monitor environments
-description: Get a first resource chart, connect a historical backend, and operate environment collectors.
+description: Visualize sandbox CPU, memory, disk, and network charts in Console and connect Prometheus or VictoriaMetrics for historical environment telemetry.
 ---
 
 Use environment monitoring to see CPU, memory, network and disk activity on an Envd target, independently of agent runs. Start with **Local Cache** to get charts without a metrics database. Add an external backend when you need durable history. For Service's own health and run usage, see [Service monitoring](monitoring.md).
@@ -28,7 +28,7 @@ curl --fail-with-body --silent --show-error \
   "${A13N_URL%/}/api/v1/environments/$ENVIRONMENT_ID/metrics/query"
 ```
 
-For Local Cache, inspect `observation.status` and `history.series`. Fresh samples and points establish collection; a saved binding alone does not. If the chart stays empty, check the selected source, target readiness and sampler first. For pull sources, also inspect `GET /api/v1/environments/{environment_id}/metrics/collector` and the collector's target status.
+For Local Cache, inspect `observation.status` and `history.series`. Verify active telemetry collection by checking for fresh samples and chart data points after saving the binding. If the chart stays empty, check the selected source, target readiness and sampler first. For pull sources, also inspect `GET /api/v1/environments/{environment_id}/metrics/collector` and the collector's target status.
 
 API clients set `metrics_data_source_id` at creation or use `PUT /api/v1/environments/{environment_id}/metrics-binding` with the environment's ETag in `If-Match`. Set the source ID to `null` to unbind. Custom source selection on external targets and custom identity labels require administrator approval.
 

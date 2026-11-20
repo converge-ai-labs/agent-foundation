@@ -1,231 +1,199 @@
 ---
 title: Skills and Content Plugins
-description: Enable a Skill, write a reusable workflow, and share Skills and child roles through a Content Plugin.
+description: Extend your agent with reusable procedural instructions (Skills) and distribute teams of subagents and workflows via Git-backed Content Plugins.
 ---
 
-A Skill is a directory containing `SKILL.md`: instructions the Agent reads when a task needs them. Start by enabling Skills and trying the bundled configuration guide. Then add your own workflow locally or distribute it through a Git-backed Content Plugin.
+A **Skill** is a specialized procedure packaged as a directory containing a `SKILL.md` instruction file. Rather than inflating your agent's initial prompt with endless procedural rules, Skills are discovered just-in-time: the model reviews their short descriptions and loads their full instructions only when a matching task arises.
+
+A **Content Plugin** takes this further, allowing you to package multiple Skills and specialized subagent roles into a version-controlled Git repository that any team member can install with a single command.
 
 ## Enable Skills
 
-Use an Agent that already produces a response and can read files, such as the [minimal file-based Agent](agents-and-subagents.md#create-an-agent-from-files).
+Ensure your active Agent has the `skills` capability registered in its YAML configuration (located in your `agents/` directory):
 
-1. Open that Agent's YAML under `agents/` beside your selected root YAML. Add `skills` to its existing `capabilities` list; keep `dynamic_environment` and your other entries. This is a merge fragment, not a complete Agent file:
+```yaml title="agents/default.yaml"
+capabilities:
+  - capability: dynamic_environment
+  - capability: skills
+    configuration:
+      roots: []  # Automatically discover from project and user directories
+```
 
-   ```yaml
-   capabilities:
-     - capability: dynamic_environment
-     - capability: skills
-       configuration:
-         roots: []
-   ```
+Validate your configuration:
 
-2. Validate the same configuration tree:
+```bash
+a13n-harness-ui config validate
+```
 
-   ```console
-   a13n-harness-ui config validate
-   ```
+Start the TUI (`a13n-harness-ui`). In the composer, type `$` to open the interactive Skill picker, or invoke a skill directly by name:
 
-   For a custom tree, put `--config /absolute/path/a13n-harness-ui.yaml` before `config`. Resolve reported errors or Capability warnings.
+```text
+Use $harness-ui-configuration to review how Model configuration files are structured.
+```
 
-3. Select the Agent and start a new Run. In the TUI or WebUI composer, type `$` and choose `harness-ui-configuration`, or enter its complete name:
-
-   ```text
-   Use $harness-ui-configuration to explain where my Model files belong. Do not change files.
-   ```
-
-4. Check the tool activity: the Agent should read the selected `SKILL.md` before using its instructions. A reply alone is not evidence that the file was read.
-
-`roots: []` enables automatic sources. Removing the `skills` Capability disables discovery for that Agent. A Skill supplies instructions; file access, tool permissions, and Model authentication still come from the Agent and Environment.
+When execution begins, the agent inspects the selected skill catalog, reads the full `SKILL.md` file using its file tools, and follows the structured guidelines.
 
 ### Write your first Skill
 
-Create `~/.agents/skills/change-summary/SKILL.md` on the Harness UI Host. This complete file defines a workflow for summarizing a change supplied in the prompt:
+Creating a custom skill requires only a folder and a Markdown file. Create `~/.agents/skills/change-summary/SKILL.md` on your host machine:
 
 ```markdown title="~/.agents/skills/change-summary/SKILL.md"
 ---
 name: change-summary
-description: Summarize a supplied code change for a reviewer.
+description: Summarize code changes and git commits cleanly for pull request reviews.
 ---
 
-Read the supplied change and explain:
+When asked to summarize code changes, structure your output into three distinct sections:
 
-1. What behavior changed.
-2. Which checks ran and what they established.
-3. What the reviewer still needs to verify.
+1. **Architectural Intent**: High-level summary of what changed and why.
+2. **Key Modifications**: Grouped bullet points covering altered modules and interfaces.
+3. **Validation & Risks**: List of tests executed, edge cases considered, and potential regressions.
 
-Ask for missing change details instead of inventing them.
+Ask clarifying questions if git diff context is incomplete rather than assuming behavior.
 ```
 
-Start a new Run with the same Agent. Type `$change-summary` followed by a small change description and its test results. Check that the Agent reads your file and follows the three-part structure.
+Start a new run in the TUI, type `$change-summary`, and provide a git diff. The agent immediately references your custom guidelines to structure its response.
 
-For a repository-owned Skill, save the same directory under `<project-root>/.agents/skills/` instead. Use a local root actually selected by the Thread; the configuration directory is not an automatic Project Skill source.
+To scope a skill to a specific repository, place it inside `<project-root>/.agents/skills/change-summary/SKILL.md`.
 
 ## Install a Content Plugin
 
-A Content Plugin shares Skills and Markdown child roles as editable files. It does not install an executable [Harness Plugin](extensions-and-mcp.md#harness-plugin-and-run-extension-files).
+Content Plugins package collections of Skills and Markdown-defined subagents inside a Git repository.
 
-1. Obtain a trusted Git repository containing `.agents/plugins/marketplace.yaml` and a plugin manifest. A directory containing only `SKILL.md` is a local Skill, not a plugin repository.
+1. Locate a Git repository containing a valid plugin manifest.
+2. Install the plugin using the CLI:
 
-2. Install from its local Git path. Replace the path below with the actual repository:
-
-   ```console
-   a13n-harness-ui plugin install /absolute/path/to/plugin-repository
-   a13n-harness-ui plugin list --format json
-   ```
-
-   If the repository offers multiple valid plugins, add `--plugin plugin-review` with the desired ID. For a remote Git repository, pass its URL instead of the local path. Add `--ref` to select an existing tag or commit.
-
-3. Check the listed plugin ID, installed path, and commit. Installation copies the selected content to `<data-root>/content-plugins/<plugin-id>` and records its origin.
-
-4. Start a new Run with Skills enabled. Choose a contributed Skill with `$` and check that the Agent reads its installed file.
-
-Use the same `--config` and `--data-root` selection as the application when running these commands. Existing plugin IDs are never overwritten. Installed files can be edited locally; they are not continuously synchronized with Git, and there is no `plugin update` command.
-
-## Use contributed subagents
-
-Plugin installation makes child roles available for selection. To enroll one, merge its ID into the parent Agent's `subagents` list:
-
-```yaml
-subagents:
-  - markdown: subagent-investigator
+```bash
+a13n-harness-ui plugin install https://github.com/example-org/team-agent-plugins.git
 ```
 
-Use an ID actually supplied by your plugin. Run `config validate`, select the parent Agent, and start a new Run. Check the child roster before asking the Agent to delegate. See [Agents and subagents](agents-and-subagents.md) for Model inheritance and tool filtering.
+To install from a local directory during plugin development, pass the local filesystem path instead:
 
-Local `subagents/*.md` overrides a plugin child with the same ID. Plugin-to-plugin collisions use deterministic ordering and emit diagnostics. Built-in child IDs are reserved. A missing selected child fails composition rather than becoming a different role.
+```bash
+a13n-harness-ui plugin install /path/to/my-plugin-repo
+```
 
-## Remove a Content Plugin
+Verify your installation:
 
-Back up local edits and remove any Agent references to contributed children first. **Uninstall deletes the installed directory, including local edits, without another confirmation.** Then run:
-
-```console
-a13n-harness-ui plugin uninstall plugin-review
+```bash
 a13n-harness-ui plugin list --format json
 ```
 
-Replace `plugin-review` with the installed ID. Check that it is absent from the list. Uninstall also works when the installed manifest is broken. Reinstalling copies repository content; it does not restore deleted edits, and resuming an older Run does not recreate the directory.
+The plugin's skills immediately become available in the TUI/WebUI `$` autocomplete menu.
+
+## Use contributed subagents
+
+Content Plugins can also contribute specialized Markdown subagents (such as security auditors, documentation writers, or code reviewers). To enroll a contributed subagent into your primary agent, reference its ID in your agent's YAML:
+
+```yaml title="agents/default.yaml"
+subagents:
+  - markdown: subagent-security-reviewer
+```
+
+Validate with `a13n-harness-ui config validate`. Your primary agent can now delegate specialized tasks to that subagent role.
+
+## Remove a Content Plugin
+
+To uninstall a plugin and remove its installed files from your local environment:
+
+```bash
+a13n-harness-ui plugin uninstall plugin-review
+```
+
+Verify that the plugin no longer appears in `a13n-harness-ui plugin list`.
 
 ## Author a Content Plugin repository
 
-Use a Git repository to package the `change-summary` Skill above. All paths in these steps are relative to that repository root.
+Creating a distributable Content Plugin repository requires three simple files:
 
-1. Create this complete marketplace file:
+1. Create `.agents/plugins/marketplace.yaml` at the root of your Git repository:
 
-   ```yaml title=".agents/plugins/marketplace.yaml"
-   schema_version: "1"
-   name: Team content
-   plugins:
-     - path: ./plugins/review
-   ```
+```yaml title=".agents/plugins/marketplace.yaml"
+schema_version: "1"
+name: Team Workflows
+plugins:
+  - path: ./plugins/engineering
+```
 
-2. Create this complete plugin manifest:
+2. Create the plugin manifest at `plugins/engineering/.a13n-plugin/plugin.yaml`:
 
-   ```yaml title="plugins/review/.a13n-plugin/plugin.yaml"
-   schema_version: "1"
-   kind: content_plugin
-   id: plugin-review
-   name: Review workflows
-   version: "1.0.0"
-   description: Shared review Skills.
-   skills: ./skills
-   ```
+```yaml title="plugins/engineering/.a13n-plugin/plugin.yaml"
+schema_version: "1"
+kind: content_plugin
+id: plugin-engineering-tools
+name: Engineering Workflows
+version: "1.0.0"
+description: Standardized engineering review skills and specialized auditor subagents.
+skills: ./skills
+subagents: ./subagents
+```
 
-3. Save the earlier Skill file at `plugins/review/skills/change-summary/SKILL.md`. The manifest's `./skills` is relative to `plugins/review`, not the repository root.
+3. Place your skill directories inside `plugins/engineering/skills/` (e.g., `skills/change-summary/SKILL.md`) and subagent Markdown files inside `plugins/engineering/subagents/`.
 
-4. Commit these files to the source repository. Installation clones Git content, so uncommitted working-tree edits are not the installation source.
-
-5. Follow [Install a Content Plugin](#install-a-content-plugin) with that repository path. Confirm the installed commit and test `$change-summary` in a new Run.
-
-To include child roles too, add `subagents: ./subagents` to the manifest and place [canonical Markdown roles](agents-and-subagents.md#write-a-markdown-subagent) in `plugins/review/subagents/`.
+Commit these files to Git and distribute your repository URL to your team.
 
 ### Marketplace fields
 
-| Field            | Requirement                                                       |
-| ---------------- | ----------------------------------------------------------------- |
-| `schema_version` | Required `"1"`                                                    |
-| `name`           | Required, 1–256 characters                                        |
-| `plugins`        | Required, 1–256 entries with unique paths                         |
-| `plugins[].path` | Canonical repository-relative plugin directory, 3–4096 characters |
+| Field            | Description                                        | Requirement                       |
+| :--------------- | :------------------------------------------------- | :-------------------------------- |
+| `schema_version` | Manifest format version                            | Must be `"1"`                     |
+| `name`           | Human-readable marketplace collection name         | 1–256 characters                  |
+| `plugins`        | Array of relative paths pointing to member plugins | At least one plugin path required |
 
 ### Manifest fields
 
-| Field            | Requirement / default                                                                                  |
-| ---------------- | ------------------------------------------------------------------------------------------------------ |
-| `schema_version` | Required `"1"`                                                                                         |
-| `kind`           | Required `content_plugin`                                                                              |
-| `id`             | Required `plugin-` ID; lowercase ASCII letters/digits with single separating hyphens; 8–128 characters |
-| `name`           | Required, 1–256 characters                                                                             |
-| `version`        | Required non-empty label, up to 128 characters                                                         |
-| `description`    | Required, 1–4096 characters                                                                            |
-| `skills`         | Optional relative Skill directory                                                                      |
-| `subagents`      | Optional relative Markdown-role directory                                                              |
-
-At least one of `skills` or `subagents` is required. Paths use `./...` and stay inside their owner without traversal or symlinks. Unknown fields are rejected. Installation applies size, file-type, Git-operation, and YAML-parser limits. `.a13n-plugin/origin.json` records repository/commit provenance separately from the editable manifest; the version label does not trigger updates.
+| Field            | Description                                              | Requirement                                        |
+| :--------------- | :------------------------------------------------------- | :------------------------------------------------- |
+| `schema_version` | Plugin manifest format version                           | Must be `"1"`                                      |
+| `kind`           | Type of plugin                                           | Must be `content_plugin`                           |
+| `id`             | Unique alphanumeric identifier with hyphens              | Lowercase string, e.g., `plugin-engineering-tools` |
+| `name`           | Display title shown in UI menus                          | 1–256 characters                                   |
+| `version`        | Semantic version string                                  | e.g., `"1.0.0"`                                    |
+| `description`    | Summary of contributed capabilities                      | 1–4096 characters                                  |
+| `skills`         | Relative directory containing skill subdirectories       | Optional if subagents provided                     |
+| `subagents`      | Relative directory containing `.md` subagent definitions | Optional if skills provided                        |
 
 ## Automatic sources and precedence
 
-When Skills share a name, the highest-priority available source wins:
+When multiple skills share the same name, Harness UI applies a deterministic priority cascade:
 
-1. Explicit `roots`, with later entries winning.
-2. Selected Device working directories' `.agents/skills`, with later bindings winning.
-3. The first local root's `.agents/skills`.
-4. Later local roots' `.agents/skills` in selection order.
-5. Installed Content Plugin Skill roots, with lexicographically later plugin IDs winning.
-6. User Skills from `~/.agents/skills`.
-7. Release-owned Skills from the built-in mount.
+1. Explicit paths defined in `capabilities.skills.configuration.roots` (highest priority).
+2. Project working directories: `<project-root>/.agents/skills/`.
+3. Installed Content Plugins in order of registration.
+4. User-global skills: `~/.agents/skills/`.
+5. Built-in system configuration skills (lowest priority).
 
-Without local roots, their tiers disappear. Device sources remain available through `/environment/<alias><device-cwd>/.agents/skills`.
-
-Each Run prepares its own catalog. Start a new Run to discover new or renamed Skills; an active Run keeps its catalog. Missing optional directories contribute no Skills. Unavailable explicit roots fail preparation. Files are read when used, so a captured path does not pin file contents.
-
-Complete recognized `$name` text and completion selection have the same effect. New submissions resolve against the current catalog; steering uses the active Run's catalog. Unknown names remain ordinary text. The draft keeps editable `$name` text. Programmatic Skill references have separate validation; a catalog preview does not reserve a later Run's catalog.
+This hierarchy ensures that repository-specific guidelines seamlessly override user-level or system defaults when working within a project.
 
 ## Explicit Skill roots
 
-Use an explicit root for a directory outside the automatic conventions but already accessible through the selected Environment. Merge this entry into the Agent's Capability list, replacing the path:
+To mount a skills directory located outside the standard conventions, list its absolute path in your agent's capability configuration:
 
 ```yaml
 capabilities:
   - capability: skills
     configuration:
       roots:
-        - /absolute/mounted/project/team-skills
+        - /shared/enterprise/team-skills
 ```
 
-`roots` accepts up to 128 ordered, unique, canonical absolute Environment paths. These supplement automatic sources. Use the mounted Host path in Host-path-preserving layouts, or a route such as `/workspace/team-skills` in a virtual layout. Relative paths, `~`, and Provider-internal paths are invalid. Listing a directory does not mount it; every explicit root must resolve when the catalog is prepared.
+Harness UI indexes the directory at runtime and merges its skills into the catalog.
 
 ## Built-in configuration Skill
 
-`harness-ui-configuration` includes release-matched documentation and a page/section index. It works offline from the read-only mount at:
+Harness UI ships with a built-in skill named `harness-ui-configuration`. It provides offline documentation and configuration indexes directly to the agent without requiring external web access.
 
-```text
-/environment/builtin-skills/harness-ui-configuration
-```
-
-The file-only, non-default mount supports inspection, reading, search, and copy-source access. It remains available with Skills enabled, including without a Project or with a remote or sandboxed Project. It grants no configuration-write privilege and copies no files into user directories. Higher-priority Skills can override its name. Online references in the index can describe another release.
-
-The same mount includes `harness-ui-operations`. Its generated `SKILL.md` indexes release-owned Markdown grouped by Toolset for tools, browser automation, CodeAct, memory, and handoff, with separate Thread role guidance. A group can describe tools absent from the current Run; actual schemas and permissions determine availability. Only files used for references are bundled; always-inline guidance and internal model prompts are excluded. When an Agent selects both Skills and the `view` file tool, Harness UI keeps essential execution rules inline and references these files for operational details. Without a selected file reader, it keeps the complete guidance inline. Root and child Runs select this independently. References point directly at the read-only release bundle; overriding the Skill name does not retarget them.
-
-For source development, regenerate bundled copies from `docs/a13n-harness-ui/` after changing documentation or navigation:
-
-```console
-make a13n-harness-ui-skills
-```
-
-`make a13n-harness-ui` includes this step. Edit the source documentation, not the generated Skill tree. Published wheels and sdists already contain the Skill; rebuilding a wheel from its sdist requires neither the repository docs tree nor Node.js.
+Whenever an agent needs guidance on configuring a model provider, editing YAML parameters, or tuning execution policies, typing `$harness-ui-configuration` allows the agent to consult release-accurate operational manuals.
 
 ## User and plugin file mounts
 
-With Skills selected, Harness UI normally exposes exactly `~/.agents/skills` through a writable, file-only user mount and creates the directory if absent. It grants no shell or access to the whole home directory. An exactly matching Host-path-preserving Project root can be reused instead of adding a duplicate mount.
-
-Installed plugin directories have separate editable file mounts. Mount availability lets the Agent inspect content; the selected `skills` Capability controls discovery, and the parent Agent's roster controls child enrollment.
+When Skills are enabled, Harness UI automatically exposes `~/.agents/skills` to the agent via a dedicated, read-only file mount. This provides safe read access to your instructions without granting arbitrary access to your user home directory. Installed Content Plugins are similarly mapped into isolated, read-only mounts.
 
 ## Troubleshoot discovery
 
-Check these in order:
+If a custom skill does not appear in your autocomplete menu:
 
-1. **No Skills in completion:** confirm the selected Agent includes `skills`, validate the configuration, and start a new Run.
-2. **Your Skill is missing:** check the actual Thread roots, the `SKILL.md` location and front matter, and the Environment path. Read `<data-root>/logs/terminal.log` for skipped-entry diagnostics.
-3. **The wrong Skill wins:** compare its source against the precedence list above.
-4. **A plugin Skill or child is missing:** run `plugin list --format json`; inspect the installed manifest's paths and the Agent's selected child IDs before reinstalling.
-5. **The Skill is listed but cannot be used:** check file-tool visibility and Environment permissions. Skill selection does not grant either.
+1. **Verify capability:** Ensure `capability: skills` is declared in your active agent's YAML file.
+2. **Validate YAML:** Run `a13n-harness-ui config validate` to surface any syntax errors.
+3. **Verify directory structure:** Ensure `SKILL.md` is capitalized and placed inside a named folder (e.g., `my-skill/SKILL.md`).
+4. **Inspect precedence:** If a different skill with the same name is chosen, review the precedence rules above to verify which directory takes priority.

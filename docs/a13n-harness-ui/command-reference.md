@@ -1,6 +1,6 @@
 ---
 title: Command reference
-description: Find a shell command or TUI command, its arguments, and the settings it changes.
+description: Complete reference for all a13n-harness-ui CLI subcommands, global flags, and interactive TUI slash commands (/agent, /model, /steer, /goal, /resume).
 ---
 
 Shell commands start and manage Harness UI. Slash commands control a conversation inside the TUI. Start with the task below, then use the reference for exact arguments.
@@ -304,14 +304,14 @@ The tables group commands by task. “Busy” means the parser allows the comman
 
 ## Consequential actions and limitations
 
-| Action                               | Before you use it                                                                              |
-| ------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| `plugin uninstall`                   | Back up local plugin edits; deletion is immediate.                                             |
-| `auth key delete --yes`              | Confirm the reference; this flag skips the prompt.                                             |
-| `update`, `envd update`              | Expect installation without a second confirmation. Detection alone does not install an update. |
-| `import subagents --apply`           | Inspect the preview first; this writes imported files.                                         |
-| `run`                                | Plan to reopen suspended work interactively for decisions.                                     |
-| `webui --dangerous-skip-permissions` | Understand that this removes HTTP authentication, not Agent permission checks.                 |
+| Action                               | Before you use it                                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `plugin uninstall`                   | Back up local plugin edits; deletion is immediate.                                                                                         |
+| `auth key delete --yes`              | Confirm the reference; this flag skips the prompt.                                                                                         |
+| `update`, `envd update`              | Expect installation without a second confirmation. When an update notice appears, run `a13n-harness-ui update` to install the new release. |
+| `import subagents --apply`           | Inspect the preview first; this writes imported files.                                                                                     |
+| `run`                                | Plan to reopen suspended work interactively for decisions.                                                                                 |
+| `webui --dangerous-skip-permissions` | Understand that this removes HTTP authentication, not Agent permission checks.                                                             |
 
 ## Task-oriented guides
 

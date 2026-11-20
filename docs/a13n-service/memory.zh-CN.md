@@ -1,183 +1,191 @@
 ---
 title: 记忆
-description: 保存知识，在另一段对话中复用，并检查 agent 做过的修改。
+description: 跨会话长期沉淀团队知识库，运行受 Dreams 启发的自动化知识提炼工作流，并在发布前审查变更 Diff。
 ---
 
-用记忆保存需要跨对话保留的偏好、决策和参考事实。共享知识和会话笔记可以从记忆空间开始；应用需要在线程上直接连接指定存储时，选择独立记忆。
+在多智能体业务系统中，关键的用户偏好、架构决策与工程规程应当跨越单次会话长期存在。\*\*Service 记忆空间（Memory Spaces）\*\*为团队提供了具备版本追踪能力的结构化文件存储系统，供各个智能体在不同会话中按需检索与持续沉淀。
 
-| 需求                                   | 选择                                                        |
-| -------------------------------------- | ----------------------------------------------------------- |
-| 共享项目知识，同时保留各会话自己的笔记 | [记忆空间](#memory-spaces)                                  |
-| 在指定线程上挂载版本化文件树           | [独立文件型记忆](standalone-memory.md#create-a-file-memory) |
-| 从 mem0 按语义检索简短事实             | [记录型记忆](standalone-memory.md#record-memories)          |
+Service 将该持久化空间与自动化的\*\*知识整理引擎（Organizer Engine）\*\*深度结合（灵感源自人类睡眠时大脑记忆巩固的 "Dreams" 机制）：系统可在后台自动提炼过去多场对话中的事实要点，化解冲突信息，并在一个完全隔离的候选空间中生成全量 Diff，待管理员审查批准后原子合并入生产知识库。
 
-记忆属于工作空间，无需计算环境。示例中的 `A13N_URL` 是 Service 基础地址，`A13N_API_KEY` 是限定到工作空间的密钥。下文 API 路径均位于 `/api/v1` 下。
+| 团队场景需求                               | 推荐记忆模式                                                   |
+| :----------------------------------------- | :------------------------------------------------------------- |
+| **团队共享知识库与会话独立交接笔记**       | [记忆空间 Memory Space](#memory-spaces)                        |
+| **仅为特定单个线程挂载的版本化独立文件树** | [独立文件记忆](standalone-memory.md#create-a-file-memory)      |
+| **基于 Mem0 的简短事实语义向量检索**       | [记录记忆 Record Memory](standalone-memory.md#record-memories) |
 
 ## 记忆空间
 
-**记忆空间**在一个版本化文件存储中保存共享知识和会话笔记。先完成一次保存与复用，再配置自动整理：
+一个 **Memory Space** 内部拥有清晰的规范化文件目录结构：
 
-1. 打开**记忆 → 空间**，创建名为 `Product knowledge` 的空间。
-2. 在 agent 的**记忆**区域启用参与。选择该空间，使用挂载名 `product` 并授予写权限。保持 agent 的记忆工具启用。
-3. 用该 agent 开始新会话，请它：“将我们的文档语言偏好 English 保存到 `product` 记忆中的 `global/preferences.md`。”
-4. 打开空间的**文件**，核对保存内容。在**文件历史**中查看作者和修订记录。
-5. 新建另一个选择了相同空间的会话，请 agent 读取 `global/preferences.md` 并报告保存的偏好。
-
-普通运行可访问 `global/` 和自己的 `sessions/{session_id}/` 文件夹。共享知识放入 `global/`，对话专属笔记放入会话文件夹。上下文默认包含 `global/MEMORY.md`，以及会话的 `MEMORY.md`（如果存在）。通过 Console 和 API 管理空间中的所有文件时，使用工作空间权限。
-
-选择**通用**以维护可复用的主题知识，或选择**通用＋每日记录**，同时按日期保留重要事件。在**自定义指南（Custom guide）**中填写业务关注点。**高级设置**包含时区和可编辑的**系统规则（System guide）**。普通 Agent 和整理器使用同一套规则。修改只影响新 Run，不会自动重组已有文件。创建和更新空间时，可使用与[独立文件型记忆](standalone-memory.md#create-a-file-memory)相同的 `guidance` 对象。
+- `global/`：存放全公司/全团队通用的技术规范、工程准则以及编码偏好，面向所有会话开放。
+- `global/MEMORY.md`：核心全局记忆摘要索引，会在会话建立时按需注入 Agent 的系统提示词中。
+- `sessions/{session_id}/`：各独立会话的私有专属目录，供智能体记录该次会话特定的操作备忘与任务交接记录。
 
 ### 选择空间
 
-使用 `POST /memory-spaces` 创建空间，需要 `write`：
+1. 在 Console 侧边栏进入 **Memories → Spaces**，点击 **Create Space**（例如命名为 `Engineering Guidelines`）。
+2. 打开目标智能体的配置详情，开启 Memory 支持，并将该空间以自定义挂载名（如 `team_kb`）挂载为 `write` 可写权限。
+3. 开启一个测试会话并指示 Agent：
+   > *“请记录一条我们团队的数据库建表规范：所有新建业务表必须在 global/conventions.md 中显式包含 created_at 和 updated_at 的 UTC 时间戳字段。”*
+4. 打开该记忆空间的 **Files** 文件列表标签页，您会看到该 Markdown 文件已被精确提交，并标注了作者身份与版本时间戳。
+5. 开启一个全新的独立会话，选用挂载了相同空间的另一款 Agent 提问：*“我们团队关于数据库时间戳的规范是什么？”*，Agent 会自动检索该空间并给出精准回答。
+
+通过 HTTP API，调用 `POST /api/v1/memory-spaces` 创建空间：
 
 ```json
-{"name": "Product knowledge"}
+{
+  "name": "Engineering Guidelines"
+}
 ```
 
-将返回的 `id` 用于 agent 的 `config.memory`，或用于 `POST /sessions`、`PATCH /sessions/{session_id}`：
+在保存 Agent 版本或创建会话时传入 Space ID 即可挂载：
 
 ```json
 {
   "memory": {
     "enabled": true,
-    "spaces": [{"name": "product", "space_id": "mspace_...", "access": "write"}]
+    "spaces": [
+      {
+        "name": "team_kb",
+        "space_id": "mspace_abc123",
+        "access": "write"
+      }
+    ]
   }
 }
 ```
 
-会话选择需要 `run`；PATCH 还需要会话的 `If-Match`。名称和空间 ID 各只能出现一次。省略的字段在首次接收业务运行时继承 agent 默认值。显式 `spaces` 列表替换整个选择；`[]` 不提供空间上下文或工具。后续修改 agent 或创建分支时，会话保留已经确定的选择。通过会话顶部的**记忆**控制修改后续运行。
-
-关闭参与会保留选择。停用空间会保留文件、历史和绑定，同时将其从新运行中排除。已接收的运行保留选定挂载。空间挂载与独立线程挂载共用数量限制，且必须使用不同名称。
-
 ### 整理已保存的知识
 
-空间已有有用文件后，在**配置 → 整理**中设置整理模型，选择**立即整理**。整理器读取共享知识和所有会话文件夹，维护 `global/MEMORY.md`。在**整理**标签页检查生成的文件和修订记录。每轮在专用会话中使用新线程，只提供该空间的记忆工具，最多调用模型 200 次。
+随着业务的推进，分散在各个文件和会话目录中的笔记难免产生信息冗余与碎片化。\*\*知识整理引擎（Organizer Engine）\*\*能够在后台定期巡检、提炼归并重复项，并同步刷新核心的 `global/MEMORY.md` 索引。
 
-启用**自动整理**以处理后续保存的变更。选择**有变更即触发**或**达到修改次数后触发**。例如，下面的创建或更新片段每分钟检查一次，要求累计十次修改，两轮之间至少等待十五分钟：
+若需手动触发单次知识整理：
+
+1. 在 Console 侧边栏进入 **Memories → Spaces → Organization**。
+2. 选择一款具备强逻辑推理能力的大模型，点击 **Organize now**。
+3. 系统会在后台拉起一个专用的隔离任务，全盘扫描已有文件，消除相互重叠的陈述，并生成结构化的知识网络。
+
+如需全自动免运维治理，可在空间配置中开启**自动化整理策略（Automatic organization policy）**：
 
 ```json
 {
   "organization": {
     "enabled": true,
-    "model": "your-model-key",
+    "model": "model-gemini-pro",
     "check_interval_seconds": 60,
     "cooldown_seconds": 900,
-    "trigger": {"type": "change_count", "count": 10}
+    "trigger": {
+      "type": "change_count",
+      "count": 10
+    }
   }
 }
 ```
 
-次数模式包括 agent、Console 和 API 已保存的文件修改；重命名计一次。内容未变的保存、被拒绝的写入、历史清理和整理器自身的修改不计数。已接收的轮次消耗开始时已有的修改次数，失败或取消也一样。轮次期间保存的修改留给后续处理。计数不受重启和历史清理影响；已有存储在安装此能力后开始累计新修改。
-
-**检查间隔**默认 10 秒（范围 10–86400）；**冷却时间**默认 300 秒（范围 0–604800）。自动整理必须同时满足触发条件和冷却要求，由共用的每 10 秒服务扫描进行检查。这些值表示最短等待时间。已记录的期限保持原值，策略修改用于后续检查和轮次。**立即整理**绕过检查间隔、次数门槛和冷却。
-
-**整理**标签页展示状态、费用、追踪和修订记录，与业务对话分开。失败或取消的轮次保留已保存的修改。历史缺口状态表示保留的修订不足以确定进度；可用**立即整理**请求新一轮。
-
-API 客户端通过 `GET /memory-spaces/{id}/organization` 读取状态，通过 `POST /memory-spaces/{id}/organizations` 请求整理，用同一路径的 `GET` 列出轮次。`/memory-spaces/{id}/sessions` 列出关联业务会话。列表使用 `limit` 和 `cursor`。文件和修订 API 使用空间的 `memory_id`，位于 `/memories/{memory_id}` 下。通过空间管理底层存储；它不出现在独立记忆列表中，也不能直接挂载。
+在上述变更计数模式下，每当团队成员或智能体累计保存了 10 次文件变更，整理引擎便会自动调度一轮整理，且各轮之间维持 15 分钟的静默冷却期（Cooldown），兼顾知识新鲜度与 Token 成本。
 
 ### 自动提取对话知识
 
-自动策略可包含任务 `instructions` 和 `history` 选择。指定对话会话 ID 和显式起始封存时间（`after`）；可选 `before` 关闭时间窗口，`max_runs` 限制每批数量（默认 100，最大 1000）。例如，在空间的 `organization` 策略中添加：
+除了审计显式保存的文件，整理引擎还能直接从已封存（Sealed）的历史真实对话中主动挖掘隐式沉淀的技术决策：
 
 ```json
 {
-  "instructions": "Maintain product decisions and current handoff notes.",
+  "instructions": "提炼所有经过团队确认的架构设计方案、API 接口规范以及生产发布规程。",
   "history": {
-    "session_ids": ["sess_..."],
+    "session_ids": ["sess_backend_refactor", "sess_auth_redesign"],
     "after": "2026-11-01T00:00:00Z",
-    "max_runs": 50
-  }
-}
-```
-
-未处理的已封存 Run 即使没有文件修改、记忆为空也能触发整理。完成的轮次消耗选定 Run；失败和取消的轮次在冷却后仍可重试。每批保留精确来源身份。文件修改计数与历史进度独立，因此清理修订和并发文件修改不会重放已成功处理的对话。修改选择保留已完成的历史进度。一次性整理任务不推进自动进度。
-
-独立文件型记忆使用同一策略，无需创建空间。先调用 `GET /memories/{id}/organization`，再用返回的 ETag 作为 `If-Match`，通过 `PUT` 替换策略。响应包含策略配置、状态、`processed_history_runs` 和配置版本；状态变化不改变策略 ETag。新独立策略默认关闭。托管底层记忆使用所属空间的策略。每轮接收前，服务重新检查配置者的当前权限和已配置资源。
-
-### 运行自定义整理任务
-
-打开文件集合或空间，选择**整理 → 整理记忆**，设置整理模型与可选任务指令。Console 默认选择**生成候选供审阅**；仅在可以接受部分修改保留时选择**直接写入**。开启**包含对话历史**后，选择来源会话、本地封存时间范围和运行数量上限。受理后，在**任务详情**查看已冻结的来源运行，通过**打开运行与用量**检查执行、取消和费用。
-
-通过 `POST /memory-organizations` 使用自己选择的模型和指令，整理独立文件型记忆或已启用的空间。需要工作区 `read`、`write` 和 `run` 权限。无需配置自动策略，空存储也可以使用：
-
-```json
-{
-  "target": {"kind": "memory", "id": "mem_..."},
-  "model": "your-model-key",
-  "instructions": "Consolidate supported product decisions and preserve unresolved disagreements."
-}
-```
-
-整理空间时，使用 `{"kind": "space", "id": "mspace_..."}`。不能直接选择空间托管的底层记忆。响应标识整理请求及其普通运行。通过 `GET /memory-organizations/{id}` 读取请求，使用运行 API 查看状态、取消、用量和追踪。每次提交接受独立任务，包括响应结果不明后的重试；不同任务可以并发整理同一目标，文件写入仍执行常规冲突检查。每个任务保留独立指令与调用者权限。失败或取消的运行保留已提交的修改。
-
-API 字段 `guidance.modules` 可以独立组合 `topics`、`journal` 和 `session_notes`。例如，`{"modules": ["topics", "session_notes"], "timezone": "UTC"}` 同时保留可复用知识和当前交接状态。省略 `modules` 时使用选定预设；`[]` 仅保留共用维护规则。系统覆盖文本替换完整的组合指南。通过 `GET /memories/guidance-presets` 读取可用模块文本。
-
-### 从选定对话中提炼知识
-
-在自定义整理请求中加入 `history`，即可从一个或多个对话 Session 提炼知识，也可写入空记忆：
-
-```json
-{
-  "target": {"kind": "memory", "id": "mem_..."},
-  "model": "your-model-key",
-  "instructions": "Extract supported product decisions, cite source Runs and retain conflicting statements.",
-  "history": {
-    "session_ids": ["ses_first", "ses_second"],
-    "after": "2026-01-01T00:00:00Z",
-    "before": "2026-02-01T00:00:00Z",
     "max_runs": 100
   }
 }
 ```
 
-选择同一工作区内 1–100 个不重复的对话 Session。可选时间边界包含端点，按运行封存时间筛选，而非消息时间。受理时，Service 冻结匹配的已封存运行，并在 `sources` 中返回来源 Session、Thread 和 Run 标识。此后新增的对话不会改变选择。`max_runs` 默认为 100，最高 1000；超出上限会拒绝请求，需要缩小时间范围或拆分 Session。空选择不提供历史事实。
+整理引擎会自动分析指定时间窗口内的完整会话流，提炼具有明确共识的结论，并为知识库拟定追加补丁。
 
-整理器通过有界来源查询与内容读取、搜索工具读取选定范围。它将对话视为证据，保留更正与分歧，并区分用户陈述和 agent 推断。省略 `history` 时仅整理已保存文件。升级不会自动扫描旧对话或消耗模型 token。
+### 运行自定义整理任务
+
+在面临重大项目发版或团队技术交接时，您可以针对特定主题按需下发单次深度知识提炼任务：
+
+```json
+POST /api/v1/memory-organizations
+{
+  "target": {"kind": "space", "id": "mspace_abc123"},
+  "model": "model-flagship-reasoning",
+  "instructions": "系统梳理第四季度所有数据库分库分表的技术决议，并明确标出目前尚未完成数据平滑迁移的遗留表。"
+}
+```
+
+系统会为该任务分配独立受控的后台 Run，并在审计界面中完整追踪其 Token 消耗与执行调用链。
+
+### 从选定对话中提炼知识
+
+精准提炼支持同时圈定最多 100 个历史会话作为提炼样本：
+
+```json
+{
+  "target": {"kind": "space", "id": "mspace_abc123"},
+  "model": "model-flagship-reasoning",
+  "instructions": "提取业务已确认的新功能排期，并忠实记录各方存在分歧的架构备选方案。",
+  "history": {
+    "session_ids": ["ses_feature_planning", "ses_sprint_review"],
+    "after": "2026-10-01T00:00:00Z",
+    "before": "2026-11-01T00:00:00Z",
+    "max_runs": 50
+  }
+}
+```
+
+模型会将人类的发言作为最高权威证据，清晰区分用户的明确纠正与 Agent 的未证实猜测，并完整保留悬而未决的技术争鸣。
 
 ### 审阅候选后再发布
 
-在 Console 的已受理任务中选择**审阅候选**。全高审阅页显示新增、修改和删除文件数量，并提供可调整宽度、可折叠的文件列表。在**变更文件**与**全部文件**间切换，也可以分享页面 URL 直接打开选定路径。手机上先从列表选择文件，通过**文件**返回列表。**差异**比较完整的已保存基线和候选内容；**文件**打开任一完整版本，包括已删除文件的基线。Markdown 文件还支持源码与预览。阅读器支持自动换行、原样复制、差异跳转和展开未变化上下文。使用**上一个文件**或**下一个文件**切换。**标记为已审阅**只记录本地审阅进度，不会选择发布文件。**应用全部变更**确认发布整个候选。**重新加载审阅**会替换显示的版本并清除审阅标记。目标已变化时，校验发布不可用。检查当前目标后，启动新任务，或打开**审阅操作 → 替换整个目标**，确认列出的目标独有文件删除、并发修改覆盖和已删文件恢复。应用结果未确认时保留当前审阅，重新加载后才能再次尝试。**审阅操作 → 放弃候选**禁止发布，但保留文件供检查。发布后通过**查看更新后的记忆**检查结果。
+为防止大模型幻觉对企业生产知识库造成污染，自定义整理任务默认在完全隔离的\*\*候选树（Candidate Tree）\*\*中暂存变更：
 
-在自定义整理请求中设置 `"output": "candidate"`，生成期间保持正式文件不变。响应中的 `candidate_memory_id` 标识从目标复制出的独立文件型记忆。使用普通记忆 API 检查或编辑候选文件，也可以同时选择对话历史来源。
+```json
+{
+  "output": "candidate"
+}
+```
 
-1. 等待普通运行完成并封存。通过 `GET /memory-organizations/{id}/candidate` 查看状态、变更路径、`candidate_seq` 和 `target_seq`。
-2. 使用实际审阅的候选序列号读取 `GET /memory-organizations/{id}/candidate/file?path=...&candidate_seq=7`，获得完整的已保存基线与候选字符串；`null` 表示文件不存在，`""` 表示空文件。原有 `/candidate/diff?path=...` 接口仍提供有界预览。目标已变化时还应单独检查当前目标；`/candidate/replacement?candidate_seq=7&target_seq=4` 列出指定版本下整体替换的确切影响。
-3. 通过 `POST /memory-organizations/{id}/candidate/apply` 发布，例如 `{"mode": "checked", "candidate_seq": 7, "target_seq": 4}`，填写实际审阅的序列号。完整文件树原子发布。未变化的目标文件保留 ID 和版本。
+指定为 `"candidate"` 后，整理引擎的所有增删改操作均在一个临时克隆的影子空间中执行，生产环境的活跃知识文件完全不受影响。
 
-`review_changed` 表示候选或目标在审阅后变化，需要重新加载两者再决定。`baseline_changed` 表示目标在生成开始后发生变化。可以重新生成候选，或审阅当前目标后显式选择 `replace_all`。`replace_all` 覆盖完整目标文件树并删除仅存在于目标中的文件，不会合并并发编辑。同一个完整应用请求可以安全重试，并返回已存储的回执。
+1. 生成完成后，在 Console 中点击 **Review candidate** 进入全屏审查工作台。
+2. 界面会展示本次整理新增、修改与删除的文件计数，并提供可展开的完整目录树。
+3. 点击任意文件即可打开左右对比的 **Diff 差异视图**，直观比对生产基线与候选版本的每一处文本变更。
+4. 逐个核对并将满意的条目标记为已审查。
+5. 点击 **Apply all changes**，将候选树整体原子合并进入生产 Memory Space。
 
-通过 `POST /memory-organizations/{id}/candidate/discard` 放弃已结束的候选。活动运行需要先通过运行 API 取消。失败或取消的生成不能发布。应用需要当前写权限，目标空间也必须处于启用状态。放弃与应用均保留独立候选记忆供检查，不再需要时单独删除。删除目标或候选后无法发布。发布仅更改文件内容，不改变目标指南或 Session 绑定。
+如果在整理期间生产空间发生了并发编辑，Service 会给出基线冲突警告（`baseline_changed`），允许您再次审视最新变更，并在确认无误后选择覆盖或重新生成。
 
 ### 组合 Dreams 风格工作流
 
-Dreams 风格工作流将对话提炼、可复用知识与当前交接状态组合起来：
+一套完整的 Dreams 风格知识流转体系在企业内部形成闭环：
 
-1. 创建空文件集合或空间。在**指南模块**中选择**主题知识**和**会话笔记**；需要保留日期事件时，再选择**事件日志**。业务重点写入**自定义指南**。
-2. 使用候选输出启动**整理记忆**，选择相关对话和有界封存时间范围。要求整理器保留有依据的决策、更正、未解决分歧与来源运行标识。
-3. 审阅生成文件并应用候选。通过普通挂载或空间选择，在后续对话中复用已发布记忆。
-4. 需要持续提炼时，在集合的**自动整理策略**或空间的**配置 → 整理**中设置相同来源与指令，明确选择起始时间后开启自动整理。自动轮次直接写入；成功轮次对来源仅处理一次，失败轮次在冷却后仍可重试。
-
-这一组合使用普通整理运行、文件指南与自动历史进度，没有独立的 Dreams 资源，也不会隐式扫描历史。关闭策略保留文件和进度；修改来源选择不会重放已成功处理的运行。
+1. **日常交互协作：** 工程师与智能体在日常会话中推进业务，智能体在各自 session 目录中随手记录临时过程数据。
+2. **夜间定时提炼：** 自动化整理策略在业务低峰期静默触发，扫描当天新产生的会话记录。
+3. **沉淀与索引更新：** 引擎将高频模式提炼至 `global/` 空间，归档过时的临时笔记，并自动重写精简的 `global/MEMORY.md` 索引。
+4. **人工卡点把关：** 团队管理员在控制台直观审查 Diff 差异并确认合并。
+5. **全局智能升级：** 次日全员的所有新会话即可自动享受到最新沉淀的企业知识加持。
 
 ### 基于当前知识写入
 
-Agent 与整理器会跟踪对话已读取的文件版本。每次文件修改都会原子校验同一份记忆中的这些观察记录，并执行写入。源文件或目标文件变化时返回 `read_conflict`，指出需要重读的文件。
+为了防范多个智能体并发写入同一份知识文件时发生数据覆盖，Service 引入了严谨的乐观并发控制：
 
-继续操作时，agent 用 `memory_file_view` 重读文件，在下一条响应中考虑新内容，再次写入。Harness 自动提供版本条件。与重读一同发出的写入仍使用旧观察记录。观察记录随对话检查点保存。独立文件型记忆使用相同流程。
+- 当智能体阅读某份记忆文件时，Harness 会记录其观察到的文件版本版本号。
+- 当智能体下发写入指令时，Service 会原子校验该文件版本是否被其他会话修改过。
+- 若版本已被更新，写入会被拦截并返回 `read_conflict`。
+- 智能体底层会自动调用 `memory_file_view` 重新拉取最新版本，结合最新内容重新推导后再发起写入。
 
 ## 独立记忆
 
 <span id="create-a-file-memory"></span> <span id="record-memories"></span> <span id="set-up-a-memory-provider"></span> <span id="create-a-record-memory"></span> <span id="read-and-edit-records"></span> <span id="recall"></span> <span id="mount-a-memory-on-a-thread"></span> <span id="what-agents-get"></span> <span id="files-and-history"></span>
 
-- [独立记忆参考](standalone-memory.md)
+如果您的业务微服务需要为特定独立的对话线程绑定专属隔离的临时文件树，或挂载基于向量的语义记忆存储，请参阅[独立记忆参考手册](standalone-memory.md)。
 
 ## 查看回复加载的记忆
 
-要展示自动加载了哪些记忆，将 `memory_sources` 与回复一起保存。线程 SSE 流在 `TEXT_MESSAGE_END` 的 `delta.item.memory_sources` 中提供此数据；运行条目在 `content.memory_sources` 中提供。流中的 boundary 确认检查点持久化；仅消息结束不足以确认。
+若需精确审计某条模型回复究竟引用了哪些长期记忆内容：
 
-每项标识挂载（`memory`）和资源（`memory_id`）。记录项包含召回 ID 和文本 SHA-256 摘要。文件项包含交付状态，以及实际加载内容的路径、摘要、字节数和截断标记。仅列入索引不表示已读取文件内容。`sources_truncated` 表示引用列表不完整。
+- 在 Console 控制台中，展开该条消息下方的 **Debug info（调试信息）** 面板。
+- 在 API 接口流中，检查随 `TEXT_MESSAGE_END` 事件下发的 `memory_sources` 元数据字段。
 
-这可用于确认自动交付内容，不能证明模型使用了某条事实。它不包含继承的对话历史和显式工具读取。字段缺失表示未捕获来源；空列表需结合 `status` 解读。旧回复不会回填来源。
-
-历史查询返回已保存的来源，不会重新查询 provider。后续编辑或删除记忆不会改变这些信息。摘要无法重建早期文本；查看当前内容仍需要有权限的记忆 API 请求，以及可用的资源。
+每一条记录均准确展示了被注入 Prompt 的 Space ID、挂载路径、SHA-256 内容摘要与字数规模，满足企业级合规审计要求。

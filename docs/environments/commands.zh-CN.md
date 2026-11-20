@@ -1,12 +1,12 @@
 ---
-title: 运行命令与观测进程
+title: 执行 Shell 命令与管理后台进程
 sidebarTitle: 命令与进程
-description: 在环境中运行有界命令或长时间进程，并读取输出。
+description: 在 Environment 中运行单次命令或启动长生命周期后台进程，支持非消费式输出分页读取、标准输入写入与信号终止。
 ---
 
 需要返回有界输出的前台结果时，选择 `environment.operations.shell`。需要跨调用观测或控制命令时，选择 `environment.operations.processes`。本页使用带类型的 provider API；Harness 的 `shell_exec` 和 `shell_wait` 等工具有各自的签名。
 
-运行 Direct Local 命令前，先允许可执行文件或配置 shell profile。仅文件操作的快速入门默认禁用命令。获准命令以 Host 账号运行；映射目录不是 shell 沙箱。
+运行 Direct Local 命令前，先允许可执行文件或配置 shell profile。仅文件操作的快速入门默认禁用命令。Direct Local 模式下的获准命令以当前宿主机账号权限运行；如需操作系统级沙箱隔离，请选用 Local Envd 或 Docker 提供方。
 
 ## 执行已配置的可执行文件
 
@@ -110,7 +110,7 @@ asyncio.run(main())
 | `kill(handle)`                                       | 独立的强制控制操作                                              |
 | `release(handle)`                                    | 释放观测，不隐式终止进程                                        |
 
-分别判断三个结果：命令完成、输出完成、进程树清理完成。`initial_terminal` 观测命令的终止状态，此时进程树可能仍需清理。检查可用的阶段、终止原因、退出码或信号、时间戳和清理结果。`missing` 或 `unknown` 表示命令情况不确定，不是再次启动的许可。
+分别判断三个结果：命令完成、输出完成、进程树清理完成。`initial_terminal` 观测命令的终止状态，此时进程树可能仍需清理。检查可用的阶段、终止原因、退出码或信号、时间戳和清理结果。当状态为 `missing` 或 `unknown` 时，请先检查目标环境中的实际执行结果，再决定是否重新发起命令。
 
 原样使用 provider 返回的句柄。`ProcessIdentity` 标识 provider、环境、代次和原生进程，访问仍取决于当前执行范围。只在声明支持时使用 `list` 和 `rebind`，不要将 Harness 执行内进程引用传入 provider 调用。
 

@@ -1,6 +1,6 @@
 ---
 title: Logging
-description: Write structured logs, attach task fields, and choose exception detail for a Python application.
+description: Configure structured JSON or console logging once at application startup and bind contextual correlation fields with a13n-logging.
 ---
 
 Use `a13n-logging` to send Python logs to a terminal, a JSON collector, or a rotating JSON file. Configure output in your executable, then use namespaced loggers throughout the application.

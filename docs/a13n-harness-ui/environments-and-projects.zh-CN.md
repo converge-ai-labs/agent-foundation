@@ -1,9 +1,9 @@
 ---
-title: 环境与 Project
-description: 选择工具在哪里运行，为对话配置工作目录，并连接远程 Device。
+title: 执行环境与 Project 工作区管理
+description: 在 Harness UI 中管理多目录代码仓库 Project，按需切换 Full Control 与 Envd 操作系统级沙箱，并绑定远程 Envd 设备协同工作。
 ---
 
-Environment 决定 Agent 在哪里读取文件和运行命令。Project 对对话分组，并提供初始工作目录和默认值。每个对话保存自己的选择，因此编辑 Project 不会改变已有对话的工作位置。
+Environment 决定 Agent 在哪里读取文件和运行命令。Project 对对话分组，并提供初始工作目录和默认值。每个对话都会固化创建时的工作目录选择，修改 Project 配置仅对新建对话生效。
 
 先使用本地目录和内置执行模式。需要多个目录或可复用默认值时，再添加 Project 文件。要使用另一台计算机，按[添加 Device 绑定](#add-device-bindings)操作。
 
@@ -194,7 +194,7 @@ flowchart TB
 
 5. 等待 **Device online**，再[选择工作目录](#choose-working-directories)。从 Settings 打开的向导在 **Done** 结束，不添加绑定。
 
-daemon 向外连接，因此其计算机不需要入站端口。命令是前台进程，不是已安装服务。审批保存 Device 配置和凭据，无须复制浏览器登录密钥。审批前关闭不会拒绝请求；审批后关闭保留注册，但丢弃未保存绑定编辑。请求消失不代表已经批准。
+daemon 向外连接，因此其计算机不需要入站端口。命令是前台进程，不是已安装服务。审批保存 Device 配置和凭据，无须复制浏览器登录密钥。审批前关闭不会拒绝请求；审批后关闭保留注册，但丢弃未保存绑定编辑。当配对请求关闭后，可在设备状态列表中确认该请求是已获批准还是超时过期。
 
 要以 daemon 账户权限运行命令，使用向导中启用 shell 的命令。POSIX 形式为：
 
@@ -307,7 +307,7 @@ WebUI 原生 Files、Git Changes 和 Terminal 面板访问 Harness UI 服务器�
 
 ## 自定义 Environment 配置
 
-内置模式不满足需求时再创建自定义 profile。内置 ID 为保留值。profile 选择已安装 Provider 和兼容的 Project adapter；它不会创建供应商资源，也不能证明隔离。
+内置模式不满足需求时再创建自定义 profile。内置 ID 为保留值。Profile 用于指定已安装的 Provider 与匹配的 Project 适配器；实际的操作系统隔离边界由所选 Provider（如 Envd Sandbox）强制执行。
 
 1. 在根 YAML 旁将以下完整原生 profile 保存为 `extensions/team.yaml`：
 

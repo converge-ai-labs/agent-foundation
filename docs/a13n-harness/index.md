@@ -1,33 +1,31 @@
 ---
 title: Harness
 sidebarTitle: Overview
-description: Learn to build a Python Agent, connect tools, and keep work going across turns and restarts.
+description: Embed type-safe AI agent execution in your Python application with composable tools, CodeAct, subagents, and durable state.
 ---
 
-Use Harness when your Python application should own an Agent's execution. You provide instructions, a model, and tools. Harness runs the conversation and returns output plus state for the next turn.
+**Harness** (`a13n-harness`) is the embeddable Python agent SDK at the core of Agent Foundation. You define instructions, a model, typed tools, and capabilities; Harness executes the reasoning and tool-calling loop in your Python process and returns validated output plus a serializable `HarnessState` for the next turn.
 
-Start with the [quickstart](getting-started.md): install the locked source package, run an offline Agent, continue its Thread, and display a streamed answer. Connect a provider after that path works.
+Start with the [quickstart](getting-started.md) to run an offline Agent, continue a multi-turn Thread, stream incremental events, and connect a live model provider.
 
-## Start with a small Agent
+## Core execution loop
 
-Follow these guides in order for a first integration:
+Follow these four guides in order to build your first production-ready integration:
 
-| Step                                                | Build                               | Check your result                                |
-| --------------------------------------------------- | ----------------------------------- | ------------------------------------------------ |
-| [Quickstart](getting-started.md)                    | One executable and an offline model | A greeting and a second Run in the same Thread   |
-| [Tools and dependencies](tools-and-dependencies.md) | A typed Python function             | The Agent calls `double(4)` and returns `8`      |
-| [State and Resume](state-and-resume.md)             | Save and reload continuation state  | A later invocation retains the Thread            |
-| [Testing](testing.md)                               | Deterministic tests                 | Verify tool calls and results without a provider |
-
-The same execution path supports all four steps:
+| Step                                                   | What you build                                                  | Outcome                                                                   |
+| ------------------------------------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 1. [Quickstart](getting-started.md)                    | An `ExecutableAgent` backed by a deterministic offline model    | Execute two turns in the same Thread and stream live text events          |
+| 2. [Tools and dependencies](tools-and-dependencies.md) | A typed Python function tool with per-Run `AgentContext` access | The Agent invokes `double(4)` and uses injected request metadata          |
+| 3. [State and resume](state-and-resume.md)             | JSON checkpoint persistence across process restarts             | Reload `HarnessState` from disk and continue the same Thread ID           |
+| 4. [Testing](testing.md)                               | Deterministic unit tests with `FunctionModel` and `TestModel`   | Assert tool calls, structured outputs, and policies without network calls |
 
 ```mermaid
 flowchart TB
-    Spec["Define instructions and tools"] --> Build["Build ExecutableAgent"]
-    Build --> Run["Run or stream input"]
+    Spec["Define AgentSpec & Capabilities"] --> Build["Build reusable ExecutableAgent"]
+    Build --> Run["Call run() or stream() with RunBindings"]
     State["Previous HarnessState"] --> Run
-    Run --> Result["Check the result"]
-    Result --> Save["Save returned state"]
+    Run --> Result["Inspect status & typed output"]
+    Result --> Save["Persist returned HarnessState"]
     Save --> State
 
     class Spec,Build,Run a13n
@@ -35,66 +33,64 @@ flowchart TB
     class Result success
 ```
 
-Build once with `HarnessBuilder`, then call `run()` for a terminal result or `stream()` for events. Pass `previous_state` to continue the Thread. [Agents and Runs](agents-and-runs.md) explains these objects and their lifetimes.
+Build the `ExecutableAgent` once with `HarnessBuilder`, then call `await executable.run(...)` for a final result or `async with executable.stream(...)` for real-time events. Pass `previous_state` to continue the conversation. See [Agents and Runs](agents-and-runs.md) for the full execution lifecycle.
 
-## Give the Agent what it needs
+## Three-lifetime architecture
 
-Choose the next guide by the task you want the Agent to perform:
+Harness cleanly separates build-time definitions, per-run live authority, and portable conversation state so your application stays in control of multi-tenancy, credentials, and storage:
 
-| Task                                           | Guide                                                                                            |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Connect a model account                        | [Models](models.md) and [authentication](model-authentication.md)                                |
-| Call application functions                     | [Tools and dependencies](tools-and-dependencies.md)                                              |
-| Ask the user or request approval               | [Questions](human-in-the-loop.md) and [tool approvals](managed-tools.md#select-tool-permissions) |
-| Accept files or return a typed result          | [Inputs and outputs](inputs-and-outputs.md)                                                      |
-| Understand images, audio, video, or media URLs | [Multimedia understanding](multimedia-understanding.md)                                          |
-| Hold a real-time voice conversation            | [Live](live.md)                                                                                  |
-| Read files and run commands                    | [Environments](environments.md)                                                                  |
-| Connect MCP tools and interactive results      | [MCP](mcp.md)                                                                                    |
-| Load reusable task instructions                | [Skills](skills.md)                                                                              |
-| Delegate work or orchestrate tools in Python   | [Delegation and CodeAct](delegation-and-codeact.md)                                              |
+| Lifetime                         | Primary objects                                  | What belongs here                                                                                                                |
+| -------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| **Build time (reusable)**        | `AgentSpec`, `AgentDefinition`, `HarnessBuilder` | Instructions, output type or JSON Schema, Python function tools, static Capabilities, subagent definitions, and plugins          |
+| **Run time (fresh per turn)**    | `RunBindings`, invocation arguments              | Current caller identity, live model resolver, authorized `Environment` mounts, MCP connections, and invocation approval policies |
+| **Continuation (portable JSON)** | `HarnessState`                                   | Stable `thread_id`, message history, versioned Capability state, and portable environment state                                  |
 
-[Capabilities](capabilities.md) compose reusable features. Start with the ones your task requires; add more as you extend the application.
+Your application owns credentials, access policy, and database storage. On every turn, load the saved `HarnessState` and pair it with freshly authorized `RunBindings`.
 
-## Continue and manage work
+## Add tools, context, and capabilities
 
-| Task                                          | Guide                                                                                 |
-| --------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Save, restore, or fork a Thread               | [State and Resume](state-and-resume.md)                                               |
-| Manage context, compression, notes, and tasks | [Context](context.md)                                                                 |
-| Share remembered information across Threads   | [Memory](memory.md)                                                                   |
-| Set budgets and inspect usage                 | [Usage and limits](usage-and-limits.md)                                               |
-| Trace execution or publish a stream           | [Observation](observation.md) and [Stream Protocol](../a13n-stream-protocol/index.md) |
-| Verify behavior offline                       | [Testing](testing.md)                                                                 |
+Extend your Agent one capability at a time:
 
-## Embed Harness in your application
+| Goal                                                                   | Guide                                                                                                   |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Connect OpenAI, Anthropic, Gemini, Bedrock, Vertex, or custom gateways | [Models](models.md) and [Authentication and HTTP clients](model-authentication.md)                      |
+| Register Python functions and inject live application services         | [Tools and dependencies](tools-and-dependencies.md)                                                     |
+| Pause for human questions or sensitive tool approvals                  | [Human-in-the-loop](human-in-the-loop.md) and [Managed tools](managed-tools.md#select-tool-permissions) |
+| Execute tools in the caller's frontend or external worker              | [Client tools](client-tools.md)                                                                         |
+| Validate Pydantic outputs or pass multimodal inputs                    | [Inputs and outputs](inputs-and-outputs.md) and [Multimedia understanding](multimedia-understanding.md) |
+| Give the Agent sandboxed file, shell, and desktop tools                | [Environments](environments.md)                                                                         |
+| Connect MCP servers and interactive MCP Apps                           | [MCP](mcp.md)                                                                                           |
+| Load on-demand `SKILL.md` workflows                                    | [Skills](skills.md)                                                                                     |
+| Scale to hundreds of tools with native or grouped discovery            | [ToolSearch](tool-search.md)                                                                            |
+| Delegate to child Agents or orchestrate tools with Python CodeAct      | [Delegation and CodeAct](delegation-and-codeact.md)                                                     |
+| Hold real-time bidirectional voice sessions                            | [Live](live.md)                                                                                         |
+| Compose built-in or custom capabilities                                | [Capabilities](capabilities.md)                                                                         |
 
-Keep three kinds of input separate:
+## Manage long conversations and production operations
 
-| Input                                                                     | Put here                               | Lifetime                  |
-| ------------------------------------------------------------------------- | -------------------------------------- | ------------------------- |
-| Instructions, output type, tools, stable features                         | `AgentSpec` and builder arguments      | Reusable Agent definition |
-| Current identity, model resolver, supported service bindings, Environment | `RunBindings` and invocation arguments | Fresh Run                 |
-| Messages and portable feature state                                       | `HarnessState`                         | Saved continuation        |
+| Goal                                                                   | Guide                                                                                 |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Save, restore, fork, or recover interrupted tool calls                 | [State and resume](state-and-resume.md)                                               |
+| Compact long histories, filter context, and manage working notes/tasks | [Context](context.md)                                                                 |
+| Share file or record memories across Threads                           | [Memory](memory.md)                                                                   |
+| Architect a multi-tenant Host around Harness                           | [Hosting](hosting.md) and [Plugins](plugins.md)                                       |
+| Enforce token/request budgets and calculate costs                      | [Usage and limits](usage-and-limits.md)                                               |
+| Export OpenTelemetry traces or stream AG-UI events to a browser        | [Observation](observation.md) and [Stream Protocol](../a13n-stream-protocol/index.md) |
 
-Your application owns credentials, access policy, and durable storage. Restore saved state alongside newly authorized live resources. Arbitrary Python tools belong in build-time Capabilities; `RunBindings.capabilities` has a narrow MCP/invocation-policy contract.
+If you want a ready-to-use interactive terminal and browser workbench built on Harness, see [Harness UI](../a13n-harness-ui/index.md). If you want a self-hosted multi-tenant platform with Console, RBAC, and background workers, see [Service](../a13n-service/index.md).
 
-Use [Hosting](hosting.md) to connect these lifetimes and [Plugins](plugins.md) for application middleware or Environment integrations. Native Pydantic AI model, message, tool, and output types work directly with Harness.
+## Complete runnable example projects
 
-If you want a ready-to-use workbench, start with [Harness UI](../a13n-harness-ui/index.md). Use [Service](../a13n-service/index.md) for managed users and durable server execution.
+Explore full multi-file reference applications in the repository's [`examples/`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples) directory:
 
-## Runnable applications
+| Example                                                                                                               | What it demonstrates                                                        |
+| --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [Agent application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)                | Offline streaming turns, persisted checkpoints, and restart recovery        |
+| [Environment Providers](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) | Direct Local, Local Envd, and Docker execution lifecycles                   |
+| [Plugins](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)                            | Custom Capabilities, Harness middleware plugins, and environment extensions |
+| [Installed Provider](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin)         | Packaging and discovering an Environment Provider via Python entry points   |
+| [MCP App](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/mcp-apps)                           | Interactive browser tool UI backed by a stdio MCP server                    |
 
-Use a complete application when you need more than a single-page example:
+## Versioning and specifications
 
-| Example                                                                                                               | Demonstrates                                         |
-| --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| [Agent application](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app)                | Offline streaming, persisted turns, restart recovery |
-| [Environment Providers](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) | Execution connections and target lifecycles          |
-| [Plugins](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)                            | Middleware and Environment extensions                |
-| [Installed Provider](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin)         | Packaged Provider discovery                          |
-| [MCP App](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/mcp-apps)                           | Interactive tool results                             |
-
-## Versions and scope
-
-These guides follow the source API on `main`; the quickstart uses the matching lockfile. Harness and Stream Protocol release at one exact version, while Harness UI releases independently. Architecture contracts live in the [accepted specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-harness).
+These guides track the `main` branch and use the repository lockfile in quickstart examples. `a13n-harness` and `a13n-stream-protocol` always release together at the exact same version. Deep architectural contracts live in [`spec/a13n-harness/`](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec/a13n-harness).

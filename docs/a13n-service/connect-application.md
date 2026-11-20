@@ -1,6 +1,6 @@
 ---
 title: Connect your application
-description: Call an agent with a Service SDK or the HTTP API, read the result, and inspect the run in Console.
+description: Integrate managed Service agents into your backend using workspace API keys, official SDKs, or the HTTP API with idempotency keys and human approval resume.
 ---
 
 Connect your application's backend to an agent you have already tested in Console. You will need the Service URL, the agent ID, and a workspace API key. If you are starting from scratch, deploy Service with the [quickstart](get-started.md), then configure and test an agent with the [Console guide](use-platform.md).

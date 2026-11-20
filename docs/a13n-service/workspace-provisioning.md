@@ -1,6 +1,6 @@
 ---
 title: Configure workspace provisioning
-description: Provision default execution resources and select sandbox images for a deployment.
+description: Automatically provision default Docker or Kubernetes sandbox templates and pre-configured resources whenever a new Service workspace is created.
 ---
 
 Use this deployment recipe to create default Local or Docker execution resources for workspaces. Automatic provisioning runs only in the all role; split control and worker deployments configure resources explicitly. Set up Engine access before enabling Docker provisioning, and verify an actual environment after the resources are created.
@@ -16,7 +16,7 @@ For Docker initialization, grant the Service process access to the intended Engi
 enabled = true
 ```
 
-The default template uses Service's reviewed sandbox image and `pull_policy = "if_missing"`. Provisioning creates resources once; initialization neither pulls an image nor creates a container. The image is pulled when an instance needs it. Later setting changes do not overwrite existing templates: edit those in Console or through the API. Existing instances keep their image.
+The default template uses Service's reviewed sandbox image and `pull_policy = "if_missing"`. Provisioning registers the default provider and template metadata at workspace creation; images are pulled and containers start when an environment instance is launched. The image is pulled when an instance needs it. Later setting changes do not overwrite existing templates: edit those in Console or through the API. Existing instances keep their image.
 
 For a locally built image in a repository checkout:
 

@@ -1,6 +1,6 @@
 ---
 title: Internal platform-tool reference
-description: Understand agent-side authority, configuration deltas, and the external management boundary.
+description: Reference for how Service agents execute platform management tools under delegated caller authority and versioned configuration deltas.
 ---
 
 Use this reference when configuring [Agent Composer](agent-composer.md) or your own platform tools. To connect an external client, use [management MCP](mcp.md).

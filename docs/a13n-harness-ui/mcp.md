@@ -1,6 +1,6 @@
 ---
 title: MCP servers
-description: Connect an external tool server, select it for an Agent, and verify a tool call.
+description: Connect stdio and HTTP/SSE Model Context Protocol (MCP) servers to Harness UI, manage OAuth or bearer credentials, and filter exposed tools.
 ---
 
 Adding MCP tools takes three steps: **register the server, select it, test a call**. You need an existing [Agent](agents-and-subagents.md) and either a Streamable HTTP endpoint or an installed command-line MCP server.
@@ -58,7 +58,7 @@ Open **Settings → Connections**, select the server and choose **Connect** unde
 
 Login uses the existing WebUI listener. Local access uses the listener's actual loopback port. For remote access, configure the exact public HTTPS origin in `webui.allowed_origins` and route `/oauth/mcp/callback` to the same listener. A wildcard does not authorize OAuth callbacks. The callback requires the browser that started login. Pending attempts expire after ten minutes and are lost on App restart; completed grants survive. Use **Cancel authorization** before restarting an unfinished attempt.
 
-Tokens, registration and absolute expiry stay in this instance's private database. Runtime requests refresh expired access without opening a browser, including TUI use with the same configuration and data roots. An uncertain or rejected refresh requires **Reconnect**; ordinary tool calls are never automatically replayed after a 401. **Disconnect** clears local authorization. Changing the transport or reconnecting invalidates old captured account bindings; start a new Run afterward.
+Tokens, registration and absolute expiry stay in this instance's private database. Runtime requests refresh expired access without opening a browser, including TUI use with the same configuration and data roots. Select **Reconnect** if a token refresh fails, then retry the tool call. **Disconnect** clears local authorization. Changing the transport or reconnecting invalidates old captured account bindings; start a new Run afterward.
 
 OAuth discovery, DCR and token HTTP use the Host network independently of Run `allowed_hosts`. MCP business requests keep their existing network policy. Providers requiring manual application registration or CIMD are unsupported.
 

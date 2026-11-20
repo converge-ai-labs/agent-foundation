@@ -1,6 +1,6 @@
 ---
 title: Client-side tools
-description: Let a client application execute a requested action, then resume the Harness Run with its result.
+description: Declare external client tools in Harness, suspend execution when called, and resume the thread after the caller's frontend or worker returns results.
 ---
 
 Use client tools when an action belongs to another application: opening an editor document, operating a browser, or calling an integration with the client's credentials. You declare the tool's name and arguments in Harness. The model requests it, the Run suspends, and your Host delivers the request to the client. The Host then starts a new Run with the client's result.

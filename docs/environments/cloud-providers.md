@@ -1,7 +1,7 @@
 ---
 title: Cloud Provider setup and limits
 sidebarTitle: Cloud Providers
-description: Prepare cloud accounts and runtimes, choose native or Envd execution, and manage backend-specific lifetimes.
+description: Configure E2B, Daytona, Modal, Vercel, Sprites, Runloop, and boxd cloud sandboxes with native or Envd execution paths and custom desktop images.
 ---
 
 Choose a backend in the [Environment overview](index.md#choose-a-backend). This guide owns cloud-specific preparation and differences; use [configuration](configuration.md) for input ownership and [lifecycle](lifecycle.md) for state publication.
@@ -76,7 +76,7 @@ result = await executable.run("Inspect the sandbox", environment=PreparedSource(
 
 Opening uses a read-only lookup of a running target, without renewal or resume, and rejects targets configured for automatic resume. Closing preserves the sandbox, files, and commands while disconnecting execution observations. Supply credentials from the Host; the library does not read `.env`.
 
-A new execution can discover still-running native processes in the same sandbox. Inspect the results: sandbox identity does not prove process survival, and missing commands are not restarted. Native discovery has no SDK pagination; returned projections are bounded, but upstream inventory is not.
+A new execution can discover still-running native processes in the same sandbox. After reconnecting to a cloud sandbox, query active processes to confirm which background commands are still running. Native discovery has no SDK pagination; returned projections are bounded, but upstream inventory is not.
 
 Tune output separately from sandbox lifetime. Output is SDK-decoded text, not lossless bytes:
 
@@ -171,7 +171,7 @@ Use `{"snapshot": "my-envd"}` for Files & Shell, or add `"desktop": true, "deskt
 
 Agent operations use EIP on private port 8888 at `/workspace`. Daytona proxy authentication and guest Envd credentials remain separate and in memory; the Host validates the discovered endpoint. There is no Native fallback. Enable Computer tools and mount permissions separately. CJK fonts are included, but X11 accepts physical keys rather than literal Chinese or multiline text.
 
-Human access uses a short-lived signed preview route on port 6081. The supervisor enforces read-only viewing, one controller, renewable grants, and disconnect on return. Revoking a signed URL alone does not prove that existing input connections have ended. Service waits for a safe execution boundary before handoff and requires re-observation after return.
+Human access uses a short-lived signed preview route on port 6081. The supervisor enforces read-only viewing, one controller, renewable grants, and disconnect on return. To terminate active desktop viewers immediately after revoking a signed URL, stop or rotate the desktop session. Service waits for a safe execution boundary before handoff and requires re-observation after return.
 
 Stop/start preserves files but recreates desktop processes and invalidates old observations. Stop requires confirmed disabled auto-delete; deletion waits for terminal destruction. `test_daytona_desktop_live.py` covers EIP/desktop/stop-start, and `test_daytona_access_live.py` covers viewing, revocation, expiry, and restart fencing. These billable-target tests are separate from full Console/Agent handoff acceptance.
 

@@ -1,6 +1,6 @@
 ---
 title: Run and restart WebUI
-description: Configure instance access and reverse proxies, update the server, and check recovery and shutdown.
+description: Host WebUI behind a reverse proxy, manage instance access keys, perform graceful restarts that resume interrupted runs, and inspect server logs.
 ---
 
 Use this guide when operating a Harness UI instance for yourself or trusted collaborators. First [start WebUI and verify a conversation](webui.md#start-the-server). Instance access shares workbench authority; use [Service](../a13n-service/index.md) for managed users and durable execution across workers.
@@ -31,7 +31,7 @@ Key precedence is `--apikey`, `A13N_HARNESS_UI_API_KEY`, then a fresh process ke
 
 Origin admission matches scheme, domain, and port. The example does not also allow HTTP or port 443. Default `[]` keeps listener-address restrictions; `allowed_origins: ["*"]` permits any address. Neither disables authentication or enables cross-origin API access. Trust only actual proxy peers; do not rewrite headers to loopback or use unrestricted forwarded-header trust to evade admission. See [allowed origins](configuration.md#webui-allowed-origins).
 
-Device pairing returns root-relative paths resolved against the paired Host URL, retaining public HTTPS and port. Approval alone does not establish Device connection or desktop permission.
+Device pairing returns root-relative paths resolved against the paired Host URL, retaining public HTTPS and port. After approving a Device, confirm its active connection status and OS desktop permissions in Settings.
 
 ## Restart or update the server
 
@@ -68,7 +68,7 @@ Reconnect refreshes observations, not failed saves or submissions. Browser disco
 
 The running server owns the App even without browser clients. Non-loopback listening shares instance authority with a trusted network; use TLS and suitable access controls. It does not provide tenant isolation. Unauthenticated `/healthz` and `/readyz` expose bounded liveness/readiness; readiness can mean ready for setup before a Model exists.
 
-Compatible TUI/WebUI processes can use one local database across package upgrades. An older compatible reader preserves unknown migration history and checks its required tables/columns; a newer migration number alone does not reject it or block an active save. Real storage, continuation/version, and payload incompatibilities still fail. Database compatibility does not share live execution ownership, and released binaries retain their own checks.
+Compatible TUI/WebUI processes can use one local database across package upgrades. Compatible readers validate their required tables and columns directly while preserving newer migration records. Real storage, continuation/version, and payload incompatibilities still fail. Database compatibility does not share live execution ownership, and released binaries retain their own checks.
 
 ## Container and installed assets
 

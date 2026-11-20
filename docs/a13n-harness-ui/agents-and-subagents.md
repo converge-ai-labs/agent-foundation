@@ -1,6 +1,6 @@
 ---
 title: Agents and subagents
-description: Create an Agent, run it in a repository, and add helpers with inherited or independent Models.
+description: Define custom YAML Agents and lightweight Markdown subagent roles with tailored instructions, inherited or dedicated models, and filtered tool permissions.
 ---
 
 An **Agent** saves a Model choice, instructions, tools, and optional helpers. Start by creating one Agent and testing it. Add a subagent when you have a specific task to delegate.

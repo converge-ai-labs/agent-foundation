@@ -1,6 +1,6 @@
 ---
 title: Operate the Service
-description: Check deployment health, upgrade safely, preserve data, and diagnose stalled work.
+description: Run control and worker roles at scale, verify readiness probes, execute zero-downtime database migrations, back up state, and recover stalled runs.
 ---
 
 Operate Service with the same configuration and credentials used by its running processes. The examples below assume `a13n-service` is installed in that environment and `service.toml` names the deployment's [configuration](configuration.md). For containers, run operator commands inside the configured container or migration Job.

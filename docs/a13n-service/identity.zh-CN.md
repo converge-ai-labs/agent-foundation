@@ -1,6 +1,6 @@
 ---
-title: 身份与访问
-description: 邀请团队成员、为应用授予工作空间访问权限，并验证或撤销权限。
+title: 多租户身份认证与 RBAC 权限管理
+description: 管理 Service 组织与工作空间、成员邀请、服务账号（Service Accounts）、RBAC 角色（runner/builder/admin）及工作空间 API key。
 ---
 
 授予访问权限时，先选择工作空间和角色。通过 Console 邀请用户；为应用创建服务账号和 API 密钥。本页带你完成这两条路径，再检查和移除访问权限。

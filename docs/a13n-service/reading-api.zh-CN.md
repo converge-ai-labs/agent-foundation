@@ -1,6 +1,6 @@
 ---
-title: 读取大型 API 结果
-description: 读取紧凑摘要、指定章节和带版本片段，并保留后续读取位置。
+title: 分段读取大型 API 资源
+description: 通过紧凑摘要、按章节筛选与字节分片接口高效读取大型 Service 资源，避免撑满客户端内存或模型上下文窗口。
 ---
 
 身份验证参阅 [HTTP 约定](http.md)，首次集成按[对话教程](connect-application.md)操作。

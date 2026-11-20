@@ -1,7 +1,7 @@
 ---
-title: 环境快速开始
+title: Environments 快速入门
 sidebarTitle: 快速开始
-description: 打开本地工作区、写入文件、读回内容，并关闭执行。
+description: 在 Python 中打开本地工作区，通过统一的 EnvironmentExecution 接口完成文件读写，并确定性地释放执行资源。
 ---
 
 本例通过 Direct Local 操作临时目录，需要 Python 3.13 和 `uv`，无需模型、守护进程、Docker 或云账号。

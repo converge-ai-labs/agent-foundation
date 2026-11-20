@@ -1,7 +1,7 @@
 ---
-title: 人机协作工具
+title: 人机协同与结构化提问
 sidebarTitle: 人机协作
-description: 展示内置的结构化问题、定义应用自己的载荷类型，并携带关联的答案恢复执行。
+description: 通过 ask_user_question 挂起 Python Agent 执行，在宿主应用中渲染结构化单选/多选表单，并携带关联回答恢复运行。
 ---
 
 使用 `ask_user_question` 暂停 Agent，等待用户选择，再携带答案继续。本页用无需 provider 账号的示例演示完整流程。应用负责表单和待处理工作的保存；Harness 提供 schema，并校验关联的答案。

@@ -1,6 +1,6 @@
 ---
-title: 使用 WebUI
-description: 开始浏览器对话、选择工作环境、审阅文件，并与他人和 Agent 协作。
+title: 使用 WebUI 浏览器工作台
+description: 在 WebUI 浏览器界面中与 Agent 协同开发，实时查看项目文件树、对比 Git 变更 diff、操作内置终端并使用 Sidekick 辅助对话。
 ---
 
 WebUI 是 Harness UI 的浏览器工作台，与 TUI 使用相同的 App 和已保存对话。先完成一次对话，再按工作需要加入 Project、文件审阅、浏览器控制和协作。

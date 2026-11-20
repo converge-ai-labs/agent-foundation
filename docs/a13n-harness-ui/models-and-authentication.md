@@ -1,6 +1,6 @@
 ---
 title: Models and authentication
-description: Connect a provider, select the saved Model, and tune requests without confusing connection and context settings.
+description: Configure API keys and OAuth subscriptions (Codex, ChatGPT, Grok, GitHub Copilot), set reasoning effort, and manage context windows in Harness UI.
 ---
 
 A **Model** is a reusable provider connection with request settings. An **Agent** selects a Model by ID and adds instructions and tools. Model files live in `models/` beside the [selected root configuration](configuration.md#locate-and-validate-your-files); credentials live separately.
@@ -159,7 +159,7 @@ Use `settings` for JSON-compatible request parameters. Nested objects, explicit 
 | `extra_headers`, `extra_body`                                                         | Native request extensions                                 |
 | `openai_prompt_cache_key`, `openai_store`                                             | OpenAI options, subject to subscription adapter behavior  |
 
-Responses API Models accept `settings.openai_transport: websocket` or `http`. Models without this setting use HTTP. Harness UI writes `openai_transport: websocket` explicitly when preparing a new Codex subscription Model with recommended defaults, including its setup-generated shell reviewer. Existing Models and explicit settings mappings remain unchanged. In Model defaults, **Use WebSocket** reflects the saved setting and writes `websocket` when checked or `http` when unchecked. Advanced YAML edits the same value. Pydantic AI owns connection reuse, reconnect and fallback; WebSocket mode supplies native `openai_previous_response_id: auto` when no continuation setting is present, including with `openai_store: false`. The `model_request_transport` custom lifecycle event reports the actual `http` or `websocket` response path. A connection failure can fall back to HTTP, so the requested setting alone is not proof of the transport used.
+Responses API Models accept `settings.openai_transport: websocket` or `http`. Models without this setting use HTTP. Harness UI writes `openai_transport: websocket` explicitly when preparing a new Codex subscription Model with recommended defaults, including its setup-generated shell reviewer. Existing Models and explicit settings mappings remain unchanged. In Model defaults, **Use WebSocket** reflects the saved setting and writes `websocket` when checked or `http` when unchecked. Advanced YAML edits the same value. Pydantic AI owns connection reuse, reconnect and fallback; WebSocket mode supplies native `openai_previous_response_id: auto` when no continuation setting is present, including with `openai_store: false`. The `model_request_transport` custom lifecycle event reports the actual `http` or `websocket` response path. Inspect the `model_request_transport` event in traces to see whether a request used WebSocket or fell back to HTTP.
 
 Settings are persisted verbatim, including any secrets placed there. Use dedicated credential references and inspect diagnostics before sharing them.
 
@@ -231,7 +231,7 @@ Replace the endpoint and header with your gateway's settings. Keep the field in 
 | Bifrost               | `x-bf-session-id`      |
 | X-Session-ID / custom | `x-session-id`         |
 
-The picker configures the client, not the gateway. Verify actual routing in gateway logs; a successful model response does not prove affinity or cache reuse. Bifrost's preset addresses API-key affinity, not weighted target pinning. Native xAI gRPC and subscriptions do not expose this setting.
+The picker configures the client, not the gateway. Check your gateway metrics or provider cache-hit fields to confirm session routing affinity and prompt-cache reuse. Bifrost's preset addresses API-key affinity, not weighted target pinning. Native xAI gRPC and subscriptions do not expose this setting.
 
 The same Thread keeps its value across turns/retries; children, forks, and independent Threads use their own IDs. The header name is captured per Run. See [shared derivation](../a13n-harness/models.md#model-request-affinity).
 

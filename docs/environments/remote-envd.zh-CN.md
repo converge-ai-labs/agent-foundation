@@ -1,7 +1,7 @@
 ---
-title: 连接远程 Envd
+title: 连接远程 Envd 设备 (HTTP / WebSocket)
 sidebarTitle: 远程 Envd
-description: 将已有 Device 连接到 Host，打开独立 Session，并在恢复时避免重放操作。
+description: 通过直连 HTTP(S) 或反向 WebSocket 隧道将运行 Envd 的物理机、虚拟机或容器接入宿主应用，开启独立隔离会话。
 ---
 
 按连接方向选择传输：`http_envd` 让 Host 主动连接已有 HTTP(S) 守护进程；`websocket_envd` 让守护进程回连 Host，也适用于 NAT 后的机器。两者都提供基于 EIP 的文件、shell、进程、输出和端口操作。

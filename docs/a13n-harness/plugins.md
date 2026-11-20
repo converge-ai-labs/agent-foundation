@@ -1,6 +1,6 @@
 ---
 title: Plugins and extensions
-description: Add Run middleware, package it for configuration, and manage Environment setup and cleanup.
+description: Extend Harness with run middleware plugins, packaged environment providers, and lifecycle hooks discovered via Python entry points or runtime directories.
 ---
 
 Start with a direct plugin when you need to observe or change a complete Run. This page builds an offline audit plugin, packages the same implementation as a factory, and then demonstrates Environment setup and cleanup. Use the Python environment from [Getting started](getting-started.md); the two standalone programs need no Model credentials.
@@ -418,7 +418,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Run `uv run python environment_extension_demo.py`; expect `Extension example completed. Marker removed.` The first file operation prepares the mount. Entering an extension alone does not prepare targets; setup that needs a family ready can explicitly call `context.environment.ensure_ready(EnvironmentReadinessRequirement(operations=frozenset({"files"})))` after importing that requirement from `a13n_harness.environment`.
+Run `uv run python environment_extension_demo.py`; expect `Extension example completed. Marker removed.` The first file operation prepares the mount. To prepare targets eagerly during extension setup, call `context.environment.ensure_ready(EnvironmentReadinessRequirement(operations=frozenset({"files"})))` after importing that requirement from `a13n_harness.environment`.
 
 Callbacks enter in registration order and exit in reverse. `on_exit` runs after successful entry, including later failure or cancellation. If `on_enter` itself fails partway through setup, that callback owns cleanup of its partial work.
 

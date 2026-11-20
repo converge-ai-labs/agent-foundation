@@ -1,73 +1,78 @@
 ---
 title: Service
 sidebarTitle: Overview
-description: Build an agent in Console, share it with your team, and run it from your application.
+description: Self-hosted, multi-tenant agent execution platform providing distributed worker orchestration, enterprise RBAC, and durable persistence.
 ---
 
-Service runs agents on your infrastructure and manages access, execution, and conversation history. In Console, its browser interface, configure an agent and test it in a conversation. Call the same agent from your application through a Service SDK or the HTTP API. Return to Console to inspect the run, its tool calls, and its usage. Service keeps accepted work running when a client disconnects.
+**Service** is a resilient, self-hosted agent platform designed for platform engineers, infrastructure teams, and enterprise organizations. It manages identity, workspace isolation, durable execution, long-term memory, and background scheduling across distributed infrastructure.
 
-Service entered beta with 0.1.0. You can try it in real product workflows. Some details may change during beta; we aim to keep existing workflows stable and will document changes that affect them in the release notes.
+In **Console**, its intuitive browser interface, team members configure and test agents interactively. Applications and microservices integrate with the identical agents through official language SDKs or standard HTTP/SSE APIs. The Service architecture decouples control planes from compute worker nodes: tasks continue executing reliably in the background even when users disconnect.
 
 ## Start here
 
-Choose the path that matches what you already have:
+Choose the deployment or onboarding guide that aligns with your current infrastructure:
 
-| Starting point                         | Follow this guide                                  | Finish with                                                      |
-| -------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------- |
-| Docker and a model provider account    | [Deploy Service locally](get-started.md)           | A running Console and your first agent response                  |
-| Access to your team's Service          | [Use Console](use-platform.md)                     | A conversation you can return to and continue                    |
-| A working agent to use in your product | [Connect your application](connect-application.md) | An authenticated application that submits work and reads results |
+| Operational stage                  | Recommended path                                     | Outcome                                                                                        |
+| :--------------------------------- | :--------------------------------------------------- | :--------------------------------------------------------------------------------------------- |
+| **Local trial & proof of concept** | [Deploy Service with Docker Compose](get-started.md) | Running Console, PostgreSQL, Redis, and your first executed agent response                     |
+| **Team member onboarding**         | [Use Console](use-platform.md)                       | Access an existing workspace, explore configured agents, and start collaborative threads       |
+| **Application integration**        | [Connect your application](connect-application.md)   | Authenticate via API keys, dispatch background runs, and consume streaming events              |
+| **Production deployment**          | [Deploy via Helm on Kubernetes](operations.md)       | Horizontally scalable control and worker tiers with external managed PostgreSQL and S3 storage |
 
 ## Build an agent for your work
 
-Start with a model and instructions. Test the response in Console, then add the resources the agent needs.
+Constructing an agent begins with selecting instructions and models, then attaching resources tailored to your organization's business needs:
 
-| Add this when the task needs it                   | Guide                                    |
-| ------------------------------------------------- | ---------------------------------------- |
-| Help creating or changing the agent configuration | [Agent Composer](agent-composer.md)      |
-| A different model or provider account             | [Models](models.md)                      |
-| Business-system actions or MCP tools              | [Tools and connections](tools.md)        |
-| Reusable procedures and supporting files          | [Skills](skills.md)                      |
-| Files, commands, or a desktop                     | [Environments](environments.md)          |
-| Knowledge shared across conversations             | [Memory Spaces](memory.md#memory-spaces) |
+| Capability                        | Purpose                                                                          | Configuration guide                 |
+| :-------------------------------- | :------------------------------------------------------------------------------- | :---------------------------------- |
+| **Visual creation**               | Describe workflows naturally and generate agents with AI assistance              | [Agent Composer](agent-composer.md) |
+| **Model connections**             | Configure OpenAI, Anthropic, Gemini, or self-hosted vLLM/Ollama endpoints        | [Models](models.md)                 |
+| **Enterprise integrations**       | Mount remote Model Context Protocol (MCP) servers and business tools             | [Tools and connections](tools.md)   |
+| **Standard operating procedures** | Attach version-controlled procedural files and domain guidelines                 | [Skills](skills.md)                 |
+| **Sandboxed execution**           | Grant isolated container environments for shell commands and computer automation | [Environments](environments.md)     |
+| **Team memory spaces**            | Persist project decisions, preferences, and documentation across sessions        | [Memory](memory.md)                 |
 
-Composer proposes resource changes for your approval. Enter provider credentials in its [private configuration cards](agent-composer.md#configure-a-provider).
+Every configuration modification produces an immutable, auditable **Revision**, allowing seamless rollback and safe production deployment.
 
 ## Work in conversations
 
-Send a request, inspect the reply, and follow up in the same thread. A **session** groups related threads; a **thread** holds a conversation's history; each **run** advances that history with a saved agent revision.
+Conversations are structured into hierarchical primitives that provide clean operational isolation:
 
 ```mermaid
 flowchart TB
-    Agent["Choose an agent"] --> Input["Send a request"]
-    Input --> Work["Follow replies and tools"]
-    Work --> Decision["Answer questions or approvals"]
-    Decision --> Work
-    Work --> Result["Read the result"]
-    Result --> Continue["Continue or branch"]
+    Session["Session: Logical Project Container"] --> Main["Main Thread: User Conversation"]
+    Session --> Task["Delegated Task Thread: Specialized Subagent"]
+    Main --> Runs["Runs: Input Processing Requests"]
+    Runs --> Attempts["Attempts: Distributed Worker Execution Leases"]
 
-    class Agent,Work a13n
-    class Input,Decision,Continue app
-    class Result success
+    class Session,Main,Task store
+    class Runs,Attempts a13n
 ```
 
-Use Chat for the conversation and Debug for execution details, configuration, usage, and cost. Return to saved threads to continue, or create a branch to try a different direction.
+- **Sessions:** Group related collaborative threads under a shared project context.
+- **Threads:** Retain full conversation history, attachments, and tool audit logs.
+- **Runs:** Represent discrete requests to process user inputs or resume paused tasks.
+- **Attempts:** Individual worker node execution leases. If a worker fails or restarts, the scheduler automatically recovers execution from the last durable checkpoint.
 
-When a run waits for your input, complete every pending question and approval, then select **Submit responses**. API clients send the complete batch through `/resume`. [Use Console](use-platform.md) walks through these actions; [Agents, threads and runs](agents-and-runs.md) explains how they affect execution.
+When an agent pauses for user confirmation, pending items are presented as interactive cards in Console or returned as suspended payloads via the API. Completing and submitting the batch resumes execution cleanly.
 
 ## Connect your application
 
-Open an agent's **Connect to app** action to get its ID and your Service URL. Follow [Connect your application](connect-application.md) to create credentials, send a first message, read live output, and continue the thread. Use an [SDK or remote CLI](sdks.md), or call the [HTTP API](http.md) directly.
+External systems integrate easily using the Service HTTP API and official client SDKs:
 
-For other integrations, connect an MCP client to the [Service MCP endpoint](mcp.md) to inspect and configure workspace resources. Use [webhooks](files-and-webhooks.md) to deliver execution events to your application.
+- **SDKs:** Integrate using official libraries for Python, TypeScript/Node.js, Go, or Rust. See [SDKs and CLI](sdks.md).
+- **Streaming endpoints:** Subscribe to `/api/v1/sessions/{id}/stream` to receive typed AG-UI and SSE events in real time.
+- **Webhooks:** Register HTTPS endpoints to receive push notifications for run completions, failures, or schedule triggers via [Webhooks](webhooks.md).
+- **Platform MCP:** Connect IDEs and client tools directly to the Service MCP endpoint to discover and manage workspace resources.
 
 ## Operate a shared deployment
 
-An **organization** manages members. A **workspace** holds agents, resources, and conversations. Assign [roles](identity.md#roles) to control who can run agents, build resources, or administer access.
+Service is built for production enterprise operations:
 
-- [Configuration](configuration.md): connect storage, providers, and deployment services.
-- [Operations](operations.md): deploy, upgrade, back up, and recover Service.
-- [Monitoring](monitoring.md): investigate usage, traces, and failed requests or runs.
-- [Settings reference](configuration-reference.md) and [API reference](api-reference/index.md): look up exact fields and operations.
+- **Identity & RBAC:** Control access using fine-grained [Organization and Workspace roles](identity.md).
+- **Configuration:** Connect external PostgreSQL clusters, Redis caches, S3-compatible object storage, and egress proxies via [Configuration](configuration.md).
+- **High availability & operations:** Scale stateless control nodes and worker pools independently, perform zero-downtime upgrades, and configure automated backups via [Operations](operations.md).
+- **Monitoring & telemetry:** Audit token consumption, request latency, and distributed traces using OpenTelemetry collectors via [Monitoring](monitoring.md).
+- **API reference:** Review endpoints, schemas, and error codes in the [API reference](api-reference/index.md).
 
-Console and the API share one origin. The `a13n-service` executable can run control and worker roles together or separately; use the [operations guide](operations.md) when sizing a deployment.
+Console assets ship precompiled inside the Python distribution image (`ghcr.io/converge-ai-labs/a13n-service`), requiring no Node.js runtime in production.

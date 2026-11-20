@@ -1,7 +1,7 @@
 ---
-title: 扩展 Provider 目录
+title: 开发自定义环境提供方插件
 sidebarTitle: Provider 插件
-description: 选择可信 Provider 插件，或发布固定目标的环境执行适配器。
+description: 将自定义环境执行适配器与管理驱动打包为标准 Python 插件，供 Harness、Harness UI 与 Service 自动发现并加载。
 ---
 
 Host 组装 Provider 目录或实现 Provider 时使用本指南。内置运行时设置见 [Provider 与运行时](providers.md)。

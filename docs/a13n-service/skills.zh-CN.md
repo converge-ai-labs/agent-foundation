@@ -1,6 +1,6 @@
 ---
-title: Skill
-description: 将工作流导入为 skill，固定到 agent，并选择文件发布方式。
+title: Skills 工作流导入与版本管理
+description: 将可复用的 SKILL.md 技能包从压缩包或 GitHub 仓库导入 Service 工作空间，为 Agent 锁定技能版本并配置环境分发策略。
 ---
 
 使用 skill 为 agent 提供可复用的指令和配套文件。Agent 先看到简短的目录条目，需要时再读取相应的 `SKILL.md`。本页以发布说明 skill 为例，从本地文件开始，直到 agent 在运行中使用它。

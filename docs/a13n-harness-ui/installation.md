@@ -1,9 +1,9 @@
 ---
 title: Installation and upgrades
-description: Install the terminal and browser workbench, verify the command, and upgrade an existing installation.
+description: Install Harness UI with uv tool install to get both the terminal TUI and browser WebUI, verify your installation, and upgrade smoothly.
 ---
 
-Install the published package for normal use. It includes both terminal and browser interfaces; you need neither a source checkout nor Node.js. Have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed before continuing.
+Install the published package for normal use. The single published package ships with both the terminal interface and prebuilt WebUI browser assets. Have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed before continuing.
 
 ## Install Harness UI
 
@@ -62,7 +62,7 @@ Upgrade all installations sharing a data root together:
 
 3. After every shared installation has been upgraded, restart the applications and reload open WebUI pages.
 
-Upgrade every installation sharing a data root before starting the new version. Current checkpoints use payload codec `2`; older applications that support only codec `1` cannot read newly written checkpoints. Other compatible upgrades can preserve shared access, but a higher database migration number alone does not establish checkpoint compatibility. Check the release notes before mixing versions or downgrading, and retain a backup from before an incompatible format transition.
+Upgrade every installation sharing a data root before starting the new version. Current checkpoints use payload codec `2`; older applications that support only codec `1` cannot read newly written checkpoints. Check the release notes when upgrading across major checkpoint format transitions, and upgrade all processes sharing a data root together. Check the release notes before mixing versions or downgrading, and retain a backup from before an incompatible format transition.
 
 Startup update checks only display a notice. To turn the check off for one invocation, use `--no-update-check`; for later starts, set `process.terminal_update_check: false` in the root YAML. See [updates and logs](automation-and-troubleshooting.md#logs-updates-and-exit).
 

@@ -1,6 +1,6 @@
 ---
-title: 生命周期与状态
-description: 准备目标、保存引用、跨 Run 复用，并显式销毁目标。
+title: 环境生命周期与状态持久化
+description: 将靶机生命周期管理（EnvironmentProvider）、连接描述（EnvironmentConnector）与单次运行作用域（EnvironmentExecution）清晰解耦。
 ---
 
 要跨 Run 复用工作区，将目标管理与每次执行分开。Host 创建或启动目标并保存引用，Harness 针对该目标打开 execution，并在 Run 结束时关闭 execution。
@@ -13,7 +13,7 @@ description: 准备目标、保存引用、跨 Run 复用，并显式销毁目�
 | `EnvironmentConnector` | 描述一个可重复使用的固定目标，构造时不获取活跃客户端                                |
 | `EnvironmentExecution` | 在 `await connector.open()` 后使用支持的操作，拥有独立客户端、句柄和 `execution_id` |
 
-跨 Run 复用 connector，为每个使用者分别打开 execution。打开或检查 execution 不会启动、替换或续期目标。已保存的目标丢失时，交回 Host 生命周期管理处理，不选择另一个同名资源。
+跨 Run 复用 connector，为每个使用者分别打开 execution。打开或检查 `EnvironmentExecution` 会直接连接已就绪的靶机目标。已保存的目标丢失时，交回 Host 生命周期管理处理，不选择另一个同名资源。
 
 execution 关闭按后端规则释放资源。Native Docker 和 E2B 断开观测，Direct Local 清理自己拥有的进程，Envd 清理 Session 资源。关闭管理客户端只释放该客户端。两种关闭操作都不销毁目标。
 

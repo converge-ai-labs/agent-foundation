@@ -1,6 +1,6 @@
 ---
-title: 上下文与工作状态
-description: 提供当前上下文，跨 Run 保留决策，并在压缩 Thread 时分清摘要生成与检查点保存。
+title: 上下文管理、工作状态与自动压缩
+description: 动态注入运行期环境上下文，维护跨轮次工作笔记与任务清单，并通过主动或恢复式压缩（Compaction）管理超长对话历史。
 ---
 
 下一轮执行既需要当前信息，也需要之前的决策。上下文 Capability 准备本次模型请求，工作状态携带结构化事实，压缩则用摘要替换较长的对话历史。按信息的用途选择对应机制。
@@ -49,7 +49,7 @@ class WorkspaceGuide(AbstractModelContextCapability):
         return ModelContextProjection(blocks=(*projection.blocks, block))
 ```
 
-当前状态 producer（包括独立文件正文）使用同一比较方式。`A → A → B → A` 追加 `A、B、A`：切回 A 时与最近的 B 不同，因此重新发送完整的 A 块。文件上下文另行跟踪所选路径，以显式空列表报告全部移除。无法观测是另一种状态。可选的 `history.contains(block)` 查询相同身份的哈希是否在保留历史中出现过；较早的匹配不能证明当前状态相同。
+当前状态 producer（包括独立文件正文）使用同一比较方式。`A → A → B → A` 追加 `A、B、A`：切回 A 时与最近的 B 不同，因此重新发送完整的 A 块。文件上下文另行跟踪所选路径，以显式空列表报告全部移除。无法观测是另一种状态。可通过 `history.contains(block)` 检查同一标识的内容哈希是否已在历史中出现；如需确认最新状态，请直接与最新块比对。
 
 事件、提醒和增量投递保留各自 owner 的触发条件和 cursor。事件发生时就返回，即使此前事件的文字完全相同；没有 emission 开关，也没有框架返回后的自动过滤。如果外层 middleware 改写 block，它就负责基于已提交的最终正文判断是否注入。
 
@@ -304,7 +304,7 @@ Agent 原有输出模式必须允许文本。原生 JSON 和提示式 JSON 模�
 
 如果检查点还有待处理工具、保留执行、未恢复的 handoff 或待完成的压缩恢复，会在发起摘要前返回 `compaction_boundary_pending`。先通过普通 Run 恢复处理完这些状态。刚压缩的检查点可以立即保存，但再次压缩前必须经过普通 Run。
 
-失败、异常或取消时保留原检查点。失败结果包含安全的错误码、消息和 `failure.details.phase`；准备、middleware 和清理阶段仍可能按普通 Run 契约抛出异常，取消也会继续传播。`CompactionSummaryEvent` 和 `compaction_completed` 表示摘要生成情况，不代表持久发布，也可能早于后续失败发生。之后的恢复不会重复发出它们。分别处理存储冲突和模型失败；调度和空闲计时器由 Host 实现。
+失败、异常或取消时保留原检查点。失败结果包含安全的错误码、消息和 `failure.details.phase`；准备、middleware 和清理阶段仍可能按普通 Run 契约抛出异常，取消也会继续传播。`CompactionSummaryEvent` 与 `compaction_completed` 标志着压缩摘要已生成；请在 Run 正常结束后由宿主将返回的检查点持久化落盘。之后的恢复不会重复发出它们。分别处理存储冲突和模型失败；调度和空闲计时器由 Host 实现。
 
 ### 上下文恢复
 
@@ -327,7 +327,7 @@ Agent 原有输出模式必须允许文本。原生 JSON 和提示式 JSON 模�
 设置 `enabled=False` 关闭这条恢复路径；已配置的主动压缩仍然生效。历史预算覆盖重建摘录，系统指令和重新投影的实时上下文不计入该预算。历史保存使用 Environment 的文件操作和取消语义，没有额外的恢复专用超时或大小上限。重建后再次溢出会以 `context_recovery_exhausted` 失败。
 
 > [!WARNING]
-> 每次有损重建都需要立即调查根因，即使续跑成功。先检查压缩配置和工具输出未受限的问题。警告与恢复结果会持续可见；成功续跑不代表根因已解决。
+> 每次有损重建都需要立即调查根因，即使续跑成功。先检查压缩配置和工具输出未受限的问题。系统会保留告警与自动恢复记录，便于你在任务继续推进后排查上下文溢出的根本原因。
 
 ### 后台压缩
 
@@ -388,7 +388,7 @@ if disposition is not None:
 
 `CompactionBasis` 标识操作、Thread 和捕获的前缀。Harness 在恢复前验证规范历史，只替换匹配的前缀。系统提示变化可以接受，其他前缀修改会得到 `skipped`。未完成的工具或挂起边界会推迟应用，此时在后续 Run 再传入相同结果。历史内容已外置时，通过 `RunBindings(state_store=...)` 提供存储。
 
-使用 `compaction_disposition()`，不要解析私有的 `a13n.compaction` 命名空间。保存过的 `applied` 或 `skipped` 结果使再次交付成为空操作。待恢复的运行时状态单独记录：下一次 Run 刷新工具发现和 CodeAct 描述，并重置记忆交付游标，即使没有配置压缩 Capability 或 operator 也会执行。监听器失败时保留待恢复标记，供后续重试。恢复不代表存储确认。
+使用 `compaction_disposition()`，不要解析私有的 `a13n.compaction` 命名空间。保存过的 `applied` 或 `skipped` 结果使再次交付成为空操作。待恢复的运行时状态单独记录：下一次 Run 刷新工具发现和 CodeAct 描述，并重置记忆交付游标，即使没有配置压缩 Capability 或 operator 也会执行。监听器失败时保留待恢复标记，供后续重试。运行恢复后，请确保持久化层已成功写入新的检查点。
 
 将 `CompactionInput` 和 `CompactionResult` 作为机密执行数据保存。输入包含投影后的摘要请求和模型配置，结果应用时只需自身的 basis 和摘要。规范原始内容保留在 State 中，共用的 `apply_compaction` 函数负责纯历史变换。Host 空闲时保留就绪结果，等待普通 Run 应用，不在后台改写检查点。Service 和 Harness UI 都需要各自接入 operator 和持久化流程才能使用这个模式。
 

@@ -1,12 +1,12 @@
 ---
 title: Human-in-the-loop tools
 sidebarTitle: Human-in-the-loop
-description: Render built-in structured questions, define application-owned payload types, and resume with correlated answers.
+description: Pause Python agent execution with ask_user_question, render structured choice forms in your application, and resume runs with correlated answers.
 ---
 
 Use `ask_user_question` to pause an Agent for a person's choice, then continue with the answer. This page walks through that round trip without a provider account. Your application supplies the form and stores the pending work; Harness supplies the schema and validates the correlated answer.
 
-The lifecycle is: run → suspended result → collect an answer → fresh Run. Waiting does not keep a Harness Run open.
+The lifecycle is: run → suspended result → collect an answer → fresh Run. Each human question closes the active Run cleanly and resumes in a fresh Run once the user responds.
 
 ## Enable structured questions
 

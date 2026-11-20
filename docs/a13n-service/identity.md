@@ -1,6 +1,6 @@
 ---
 title: Identity and access
-description: Invite a teammate, give an application workspace access, and verify or revoke its permissions.
+description: Manage multi-tenant organizations, workspaces, member invitations, service accounts, RBAC roles (runner, builder, admin), and scoped API keys.
 ---
 
 To give someone access, choose a workspace and a role. Invite a person through Console; give an application a service account and an API key. This guide takes you through both paths, then shows how to check and remove access.

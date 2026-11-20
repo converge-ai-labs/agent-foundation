@@ -1,6 +1,6 @@
 ---
 title: Environments
-description: Give an Agent a workspace, route several mounts, and manage file and process lifetimes.
+description: Mount sandboxed workspaces on Harness runs, enforce file and shell permission ceilings, and manage background processes across local and cloud targets.
 ---
 
 An Environment gives a Run access to files, commands, or a desktop selected by your application. Your Host supplies an `EnvironmentSource`; Harness opens it on first use, applies mount permissions, routes operations, and closes execution resources. The Host retains responsibility for creating and destroying the target.
@@ -304,7 +304,7 @@ sequenceDiagram
 
 Use the returned `stdout.next_offset` and `stderr.next_offset` for each subsequent `shell_wait`. Reads are non-consuming, so repeating an offset rereads the same range; Harness keeps no unread cursor. A page reports `origin`, coverage, `observation_closed`, and any reason for missing output. `sdk_text` offsets count UTF-8 bytes of SDK-delivered text rather than original process bytes. Unknown producer counts or completion remain null. Reconnection preserves accumulated offsets and marks gaps.
 
-Keep three observations separate: command exit, complete output capture, and process-tree cleanup. `ok=true` says the tool call returned normally; command success requires a successful process status and exit code. A runtime-owned Shell execution settles after native terminal evidence and closure of both output observations. Capped output does not prove exit. E2B continues checking native status within the wait budget after a cap and reports missing/unknown when final exit evidence is unavailable.
+Keep three observations separate: command exit, complete output capture, and process-tree cleanup. `ok=true` says the tool call returned normally; command success requires a successful process status and exit code. A runtime-owned Shell execution settles after native terminal evidence and closure of both output observations. Check the process status fields to confirm command exit when output reaches its size cap. E2B continues checking native status within the wait budget after a cap and reports missing/unknown when final exit evidence is unavailable.
 
 `shell_wait.timeout_seconds` limits waiting. `shell_exec.execution_timeout_seconds` requests a hard deadline enforced by the Provider. Unsupported deadlines, including native E2B's, fail before the command starts.
 
@@ -312,13 +312,13 @@ Keep three observations separate: command exit, complete output capture, and pro
 
 Use `shell_info(process_id=...)` for status only; it does not attach, read, refresh, or reset output. Where process listing is supported, `shell_info(alias="workspace", limit=50)` can discover recoverable commands. Direct Local has inspection but no discovery, so its schema requires an ID and omits `limit`. Listing and inspection have independent authorization, and listings do not expose native PIDs, arbitrary arguments, or environment variables.
 
-`alias` names an existing mount. Omit it to use the default; an unknown alias or a conflict with a process reference fails. A saved reference alone does not restore authority. A retained `exec-*` remains controllable across Runs of the same Thread while the same runtime owns its original handle and the current mount authorizes that target and every requested action. Native discovery in a later Run creates fresh references and observations. Inspect uncertain outcomes before issuing new work; a missing command is not permission to restart it automatically.
+`alias` names an existing mount. Omit it to use the default; an unknown alias or a conflict with a process reference fails. Each Run re-authorizes retained process references against the current mount and permission ceiling. A retained `exec-*` remains controllable across Runs of the same Thread while the same runtime owns its original handle and the current mount authorizes that target and every requested action. Native discovery in a later Run creates fresh references and observations. Inspect the target environment before re-running a command whose previous outcome is unknown.
 
 Run cleanup releases standalone observations. Backend cleanup determines command survival: Direct Local closes owned process trees, Envd closes Session-owned resources, and native Docker/E2B release observations without blanket termination. Runtime-owned work retains its original scope until settlement; cancellation attempts native termination, and Host shutdown drains owned work. Recovery after Host or scope loss depends on what the Provider actually retained. E2B can discover still-running commands in a restored sandbox.
 
 ### Keep authorization tied to execution
 
-Canonical resource metadata describes the mount and path observed during policy evaluation. It does not reserve that backend while approval waits. If the Host replaces a mount or changes the default, dispatch selects the current route and checks current permissions. To require one exact target, enforce that requirement on the execution path, such as in the Provider or a Host-controlled stable binding; an approval revision alone does not pin it.
+Canonical resource metadata describes the mount and path observed during policy evaluation. It does not reserve that backend while approval waits. If the Host replaces a mount or changes the default, dispatch selects the current route and checks current permissions. To pin execution to one exact target across mount changes, bind that target in your Provider or a Host-controlled stable source.
 
 Once a compound operation starts, it keeps its selected scope. Document conversion holds it from reading the source through publishing output; downloads hold it through fetch and write. Replacing a mount cannot redirect that in-flight operation. Process handles and generation checks retain their exact ownership, and uncertain outcomes are not replayed automatically.
 

@@ -1,7 +1,7 @@
 ---
 title: Managed tools and invocation policy
 sidebarTitle: Managed tools and policy
-description: Author a managed tool, apply current Run authorization, and add permissions, review, and approval when the workflow needs them.
+description: Author managed tools with resource metadata, enforce per-run allow/ask/deny permissions, and add automated LLM risk review before execution.
 ---
 
 Use a managed tool when your application needs to authorize an operation using its effects, resources, and current Run identity. Add tool permissions to choose which local calls run, require approval, or receive a risk review.
@@ -123,7 +123,7 @@ Choose a mode for the outcome you need:
 
 Rules match stable IDs. Managed tools use `HarnessToolMetadata.tool_id`; ordinary tools use `tool/<toolset-id>/<original-name>`; local MCP uses `mcp/<source-id>/<original-name>`. Segments are percent-encoded. Renaming, ToolSearch, and CodeAct preserve identity. Use `ToolIdentityToolset` before a custom naming wrapper that cannot preserve it.
 
-The best match wins: exact ID, longest `.*` or `/*` prefix, `*`, then `default`. Tools default to `allow` without review unless trusted code declares another default. Installing a reviewer or risk rules alone does not select `review`. With no matching reviewer, `review` continues without an added restriction.
+The best match wins: exact ID, longest `.*` or `/*` prefix, `*`, then `default`. Tools default to `allow` without review unless trusted code declares another default. Set the tool's permission mode to `review` to route calls through the configured reviewer and risk rules. With no matching reviewer, `review` continues without an added restriction.
 
 An explicit mode overrides native `requires_approval=True`. For example, `allow` skips declaration-driven approval, while `review` follows the reviewer policy. To preserve one plugin tool's native declaration under a broad override, give that tool an `inherit` rule. Omitting the Capability also preserves native declarations. Tool bodies, validators, and wrappers can still raise `ApprovalRequired` at runtime; automatic allow never sets the human-approved flag.
 
@@ -301,7 +301,7 @@ Attach `InvocationPolicyCapability` only through fresh `RunBindings.capabilities
 
 Keep business credentials out of model arguments. After authorization and approval, Harness asks `CredentialBroker.acquire(audience, invocation, *, context)` for each declared audience. Return a `CredentialLease` with an opaque value and optional async close callback. An adapter reads these task-local values with `current_invocation_scope()` and uses them for the actual provider call.
 
-If the provider also needs a verifiable authorization grant, implement `InvocationGrantBroker.issue(...)`. It can return an `InvocationGrantRef` containing an opaque grant ID, audience, claims digest, and timezone-aware expiry. The Host/provider owns signing, transport, and verification; storing the reference does not establish authority.
+If the provider also needs a verifiable authorization grant, implement `InvocationGrantBroker.issue(...)`. It can return an `InvocationGrantRef` containing an opaque grant ID, audience, claims digest, and timezone-aware expiry. The Host and storage provider authorize and sign object references on each access.
 
 Harness closes credential leases after each invocation. The Host closes any separately owned clients. Keep credential values out of prompts, results, observations, and saved State.
 

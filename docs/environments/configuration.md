@@ -1,6 +1,6 @@
 ---
 title: Configure Providers
-description: Choose a target, supply its connection settings, and open it with current credentials.
+description: Construct validated provider configurations, recipes, and credentials to provision and connect to local, container, or cloud environments.
 ---
 
 Start by choosing a [backend](index.md#choose-a-backend). Then prepare its target inputs, account settings, and credentials separately:

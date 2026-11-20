@@ -1,6 +1,6 @@
 ---
 title: Agents, threads and runs
-description: Configure an agent, continue a conversation, and handle results, approvals and recovery.
+description: 'Master the Service execution API: pin agent revisions, submit idempotent inbox messages, batch human approvals on waiting runs, and steer active runs.'
 ---
 
 Start with one agent and one conversation. Save the agent's configuration, send a message, and follow the resulting run until it completes or asks for input. Send follow-ups to the same thread so they continue its history.

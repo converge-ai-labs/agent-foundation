@@ -1,7 +1,7 @@
 ---
 title: Extend the Provider catalog
 sidebarTitle: Provider plugins
-description: Select trusted Provider plugins or publish a fixed-target Environment execution adapter.
+description: Package custom Environment execution adapters and management drivers as Python entry-point plugins for Harness, Harness UI, and Service.
 ---
 
 Use this guide when your Host assembles a Provider catalog or you are implementing a Provider. For built-in runtime setup, return to [Providers and runtime](providers.md).

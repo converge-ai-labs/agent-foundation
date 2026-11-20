@@ -1,6 +1,6 @@
 ---
 title: Sandbox image
-description: Choose an image, connect it to a Host, and preserve your workspace between containers.
+description: Run the official a13n-envd container images (standard, slim, desktop, and VM variants) with persistent workspace volumes and non-root execution.
 ---
 
 Choose the standard `a13n-sandbox` image for development and browser automation, the desktop image for Computer Use, or slim as a minimal Envd runtime.

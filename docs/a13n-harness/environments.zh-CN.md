@@ -1,6 +1,6 @@
 ---
-title: 环境
-description: 为 Agent 提供工作区，配置多个挂载，并管理文件与进程的生命周期。
+title: Environments 执行环境集成
+description: 为 Harness 运行挂载沙箱工作区，设置文件与 Shell 权限上限，并在本地或云端靶机上管理长生命周期进程。
 ---
 
 Environment 让 Run 使用应用选定的文件、命令或桌面。Host 提供 `EnvironmentSource`，Harness 在首次使用时打开它，检查挂载权限、路由操作，并关闭执行资源。目标的创建和销毁仍由 Host 负责。
@@ -304,7 +304,7 @@ sequenceDiagram
 
 后续每次 `shell_wait` 使用返回的 `stdout.next_offset` 和 `stderr.next_offset`。读取不会消费内容，重复偏移量可重读同一段；Harness 不维护未读游标。输出页报告 `origin`、覆盖情况、`observation_closed` 和缺失原因。`sdk_text` 偏移量计算 SDK 交付文字的 UTF-8 字节数，而非原始进程字节。未知的生产方计数或完成情况保持 null。重连保留累计偏移量，并标记缺口。
 
-分别判断三个结果：命令退出、输出完整捕获和进程树清理。`ok=true` 只说明工具正常返回；命令成功需要对应的进程状态和退出码。runtime 持有的 Shell 执行在取得原生终结证据且两路输出观测关闭后结束。输出达到上限不代表进程退出。E2B 在达到上限后仍会在等待预算内检查原生状态；无法取得最终退出证据时报告 missing/unknown。
+分别判断三个结果：命令退出、输出完整捕获和进程树清理。`ok=true` 只说明工具正常返回；命令成功需要对应的进程状态和退出码。runtime 持有的 Shell 执行在取得原生终结证据且两路输出观测关闭后结束。当输出达到截断上限时，请通过进程状态字段确认命令是否已实际退出。E2B 在达到上限后仍会在等待预算内检查原生状态；无法取得最终退出证据时报告 missing/unknown。
 
 `shell_wait.timeout_seconds` 限制等待时间。`shell_exec.execution_timeout_seconds` 请求 Provider 实施硬执行期限。不支持的期限（包括原生 E2B 的情况）会在启动命令前被拒绝。
 

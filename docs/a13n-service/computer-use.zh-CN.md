@@ -1,6 +1,6 @@
 ---
-title: 使用桌面
-description: 准备桌面环境，观察桌面并在人与 agent 之间交接控制权。
+title: 桌面 GUI 自动化 (Computer Use)
+description: 为 Service Agent 配置可视化桌面环境，设置像素或相对坐标控制模式，并在 Console 中实现人与 Agent 之间的桌面控制权交接。
 ---
 
 先配置[环境 provider 和模板](environments.md)，再准备部署支持的桌面目标。确认观察能力和权限后启用 Computer 工具。本页说明 agent 操作与人工接管；仅需浏览器自动化时，使用独立的[浏览器指南](browsers.md)。

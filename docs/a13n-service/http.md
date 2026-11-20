@@ -1,6 +1,6 @@
 ---
 title: HTTP conventions
-description: Authenticate a request, read and update a resource, and handle retries and paged responses.
+description: Authentication headers, workspace routing, Idempotency-Key replay, ETag conditional updates, cursor pagination, and structured error formats for the Service HTTP API.
 ---
 
 Use this page to build the request handling shared by a Service client: authenticate, retain the IDs and versions you read, then update or submit work with the right headers. For a complete agent conversation, follow [Connect your application](connect-application.md); for a language client, use [SDKs and CLI](sdks.md).
@@ -114,7 +114,7 @@ Use `If-Match` to protect an edit from concurrent changes. Use `Idempotency-Key`
 
 Generate one unique key before submitting. Keep the same key, target and request content for a retry. Use a new key for a new logical request. Keys belong to the caller and workspace and do not expire. Reusing a key for different content or a different target returns `409 conflict` with reason `idempotency_key_reused`.
 
-The first submission normally returns `201`; manual Schedule dispatch returns `202`, and uploads return `200`. A replay returns `200` with the same created objects in their **current** state. Inspect that state to continue; submission acceptance alone does not mean execution finished. [Connect your application](connect-application.md#direct-http-integration) demonstrates retaining the thread and inbox entry before following the assigned run.
+The first submission normally returns `201`; manual Schedule dispatch returns `202`, and uploads return `200`. A replay returns `200` with the same created objects in their **current** state. After submission is accepted, poll the run status or subscribe to the SSE stream until execution reaches a terminal state. [Connect your application](connect-application.md#direct-http-integration) demonstrates retaining the thread and inbox entry before following the assigned run.
 
 Creating a [Schedule](schedules.md) delegates durable execution authority. Revoking or expiring the creating API key does not stop future submissions; pause or archive the Schedule.
 

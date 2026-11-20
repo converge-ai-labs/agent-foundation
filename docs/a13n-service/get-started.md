@@ -1,7 +1,7 @@
 ---
 title: Self-host Service with Docker Compose
 sidebarTitle: Quickstart
-description: Start Service with Docker Compose and get a response from your first agent.
+description: Deploy a13n Service locally with Docker Compose, initialize the administrator account, connect an LLM provider, and run your first agent in Console.
 ---
 
 This guide takes you from an empty directory to an agent conversation in Console. Have Docker with Docker Compose, `curl`, and a model provider API key ready. The stack uses published images, so you need no Python, Node.js, or source build. Model calls use your provider account and may incur charges.

@@ -1,6 +1,6 @@
 ---
-title: Service SDK 与 CLI
-description: 选择 Service 客户端，在运行中的部署上完成第一次对话。
+title: Service 多语言 SDK 与远程 CLI
+description: 安装官方 Python、TypeScript、Go、Rust 客户端 SDK 及 a13n-service-cli 命令行工具，快速集成并管理远程 Service 部署。
 ---
 
 在应用中使用 Service SDK，在终端或 shell 脚本中使用远程 CLI。两者都通过 HTTP API 连接运行中的 Service，由 Service 负责 agent 执行和持久化。需要在自己的进程中执行 agent 时，使用 [Harness](../a13n-harness/index.md)；需要在代码仓库中使用交互式工作台时，使用 [Harness UI](../a13n-harness-ui/index.md)。

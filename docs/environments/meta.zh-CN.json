@@ -1,25 +1,25 @@
 {
-  "title": "环境",
-  "description": "在各类目标中使用文件、命令与进程",
+  "title": "Environments",
+  "description": "跨平台文件、命令与沙箱执行层",
   "root": true,
   "icon": "environments",
   "pages": [
     "index",
-    "---开始使用---",
+    "---快速开始---",
     "getting-started",
     "examples",
-    "---使用环境---",
+    "---文件与进程操作---",
     "operations",
     "commands",
     "lifecycle",
-    "---配置---",
+    "---环境提供方与沙箱配置---",
     "configuration",
     "providers",
     "cloud-providers",
     "provider-plugins",
     "remote-envd",
     "configuration-reference",
-    "---Envd---",
+    "---Envd 守护进程---",
     "...../a13n-envd"
   ]
 }

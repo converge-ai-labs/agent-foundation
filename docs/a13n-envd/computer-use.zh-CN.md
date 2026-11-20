@@ -1,6 +1,6 @@
 ---
-title: 操作桌面电脑
-description: 配对桌面，为线程授权，再通过截图引导并验证 Envd 输入操作。
+title: Envd 桌面 GUI 操控与无障碍树 (Computer Use)
+description: 通过 Envd 驱动 Linux、macOS 与 Windows 图形桌面，支持屏幕截图观测、键鼠操作以及原生无障碍树（AX / UIA / AT-SPI）读写。
 ---
 
 Envd 让 agent 观测并操作已登录的桌面。先将设备与 Harness UI 配对，为线程授权桌面操作，再从截图开始。
