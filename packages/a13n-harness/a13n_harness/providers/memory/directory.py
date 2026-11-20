@@ -146,10 +146,16 @@ class DirectoryFileStore:
         return target
 
     def _current(self, path: str) -> FileText | None:
+        file = self._locate(path)
         try:
-            data = self._locate(path).read_bytes()
+            data = file.read_bytes()
         except (FileNotFoundError, NotADirectoryError, IsADirectoryError):
             return None
+        except PermissionError:
+            # Windows refuses to read a directory as a file with access denied.
+            if file.is_dir():
+                return None
+            raise
         try:
             return FileText(path=path, text=data.decode(), version=_version(data))
         except UnicodeDecodeError as error:
@@ -178,8 +184,8 @@ class DirectoryFileStore:
             with tempfile.NamedTemporaryFile(dir=self.root / _BOOKKEEPING, delete=False) as staged:
                 staged.write(data)
             try:
-                with _path_conflicts(path):
-                    target = self._locate(path)
+                target = self._locate(path)
+                with _path_conflicts(path, target):
                     target.parent.mkdir(parents=True, exist_ok=True)
                     os.replace(staged.name, target)
             except BaseException:
@@ -194,7 +200,7 @@ class DirectoryFileStore:
             if (existing := self._current(destination)) is not None:
                 raise MemoryStoreError("already_exists", f"{destination} already exists.", current=existing)
             file, target = self._locate(source), self._locate(destination)
-            with _path_conflicts(destination):
+            with _path_conflicts(destination, target):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 os.replace(file, target)
             self._prune(file.parent)
@@ -223,10 +229,13 @@ class DirectoryFileStore:
 
 
 @contextmanager
-def _path_conflicts(path: str) -> Iterator[None]:
+def _path_conflicts(path: str, target: Path) -> Iterator[None]:
     try:
         yield
-    except (FileExistsError, NotADirectoryError, IsADirectoryError) as error:
+    except (FileExistsError, NotADirectoryError, IsADirectoryError, PermissionError) as error:
+        # Windows refuses to replace a directory with access denied; any other denial is not a name conflict.
+        if isinstance(error, PermissionError) and not target.is_dir():
+            raise
         raise MemoryStoreError(
             "invalid_path", f"{path} conflicts with an existing file or directory of the same name."
         ) from error
