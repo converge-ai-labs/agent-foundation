@@ -145,7 +145,13 @@ export function ConnectionSetup({
   return (
     <div className={styles.stack}>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        {t("Authorize the external account with your provider.")}
+        {t(
+          connection?.authorization_pending
+            ? connection.status === "ready"
+              ? "This connection remains usable while you complete the new authorization. Starting again replaces the previous request."
+              : "Complete authorization on the provider's page. Starting again replaces the previous request."
+            : "Authorize the external account with your provider.",
+        )}
       </p>
       {definition.isPending ? (
         <Loading variant="form" rows={3} />
@@ -212,7 +218,16 @@ export function ConnectionSetup({
             <FormActions
               pending={launch.isPending}
               leading={refresh}
-              label={t(created.current ? "Authorize connection" : "Connect")}
+              label={t(
+                connection?.authorization_pending
+                  ? "Restart authorization"
+                  : connection?.status === "ready" ||
+                      connection?.status === "reauthorization_required"
+                    ? "Reauthorize"
+                    : created.current
+                      ? "Authorize connection"
+                      : "Connect",
+              )}
             />
           )}
         </form>

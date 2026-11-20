@@ -7,9 +7,9 @@ import { useWorkspace } from "../../layout/workspace";
 import { ApiError } from "../../service-client";
 import { data, type Schema } from "../../shared/api";
 import { AuthorizationLink } from "../../shared/authorization-link";
-import { ErrorNotice, StatePill } from "../../shared/feedback";
+import { ErrorNotice } from "../../shared/feedback";
 import styles from "./mcp.module.css";
-import { connectionState } from "../connections/api";
+import { ConnectionStatus } from "../connections/status";
 import {
   authorizeConnection,
   startBrowserAuthorization,
@@ -39,6 +39,9 @@ export function MCPOAuthSetup({
     gcTime: 0,
     mutationFn: (basis: Schema["Connection"]) =>
       startBrowserAuthorization(client, basis, basePath),
+    onSettled: () => {
+      void cache.invalidateQueries({ queryKey: ["connections"] });
+    },
   });
   // A machine account obtains its token without a browser.
   const authenticate = useMutation({
@@ -89,14 +92,18 @@ export function MCPOAuthSetup({
       ) : (
         <>
           <div className={styles.authorizationState}>
-            <StatePill state={connectionState(connection)} />
+            <ConnectionStatus connection={connection} />
             <span>
               {t(
-                connection.status === "ready"
-                  ? "This connection is authorized and verified."
-                  : needsClientSetup
-                    ? "This server needs your own OAuth application."
-                    : "Authorize this server to let agents call its tools.",
+                connection.authorization_pending
+                  ? connection.status === "ready"
+                    ? "This connection remains usable while you complete the new authorization. Starting again replaces the previous request."
+                    : "Complete authorization on the provider's page. Starting again replaces the previous request."
+                  : connection.status === "ready"
+                    ? "This connection is authorized and verified."
+                    : needsClientSetup
+                      ? "This server needs your own OAuth application."
+                      : "Authorize this server to let agents call its tools.",
               )}
             </span>
           </div>
@@ -109,12 +116,14 @@ export function MCPOAuthSetup({
               onClick={() => connect(connection)}
             >
               {t(
-                connection.status === "ready" ||
-                  connection.status === "reauthorization_required"
-                  ? "Reauthorize"
-                  : grant === "client_credentials"
-                    ? "Connect"
-                    : "Continue authorization",
+                connection.authorization_pending
+                  ? "Restart authorization"
+                  : connection.status === "ready" ||
+                      connection.status === "reauthorization_required"
+                    ? "Reauthorize"
+                    : grant === "client_credentials"
+                      ? "Connect"
+                      : "Authorize",
               )}
             </Button>
           </div>

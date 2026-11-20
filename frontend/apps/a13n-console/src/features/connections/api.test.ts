@@ -1,6 +1,11 @@
 import { expect, it } from "vitest";
 import type { Schema } from "../../shared/api";
-import { revokeCleanup, type RemoteCleanup } from "./api";
+import {
+  connectionState,
+  authorizationRemoval,
+  revokeCleanup,
+  type RemoteCleanup,
+} from "./api";
 
 const connection: Schema["Connection"] = {
   id: "conn_test",
@@ -57,4 +62,48 @@ it.each<[string, Schema["RevokedConnection"], RemoteCleanup]>([
   ],
 ])("reports the cleanup of %s", (_, result, expected) => {
   expect(revokeCleanup(result)).toBe(expected);
+});
+
+it.each([
+  ["pending", false, "unauthorized"],
+  ["pending", true, "authorizing"],
+  ["ready", false, "ready"],
+  ["ready", true, "ready"],
+  ["reauthorization_required", false, "reauthorization_required"],
+  ["reauthorization_required", true, "reauthorizing"],
+] as const)(
+  "displays %s with authorization_pending=%s as %s",
+  (status, authorization_pending, expected) => {
+    const value = { ...connection, status, authorization_pending };
+    expect(connectionState(value)).toBe(expected);
+    expect(connectionState({ ...value, enabled: false })).toBe("disabled");
+  },
+);
+
+it("offers cancellation only for a flow without an existing credential", () => {
+  const pending = {
+    ...connection,
+    status: "pending" as const,
+    credential_configured: false,
+  };
+  expect(authorizationRemoval(pending)).toBeUndefined();
+  expect(
+    authorizationRemoval({ ...pending, authorization_pending: true }),
+  ).toBe("cancel");
+  expect(
+    authorizationRemoval({ ...connection, authorization_pending: true }),
+  ).toBe("revoke");
+  expect(authorizationRemoval({ ...connection, enabled: false })).toBe(
+    "revoke",
+  );
+  expect(
+    authorizationRemoval({
+      ...connection,
+      auth: "none",
+      credential_configured: false,
+    }),
+  ).toBeUndefined();
+  expect(
+    authorizationRemoval({ ...pending, status: "reauthorization_required" }),
+  ).toBe("revoke");
 });

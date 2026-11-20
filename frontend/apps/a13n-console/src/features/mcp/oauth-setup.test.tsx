@@ -282,3 +282,25 @@ it("requires a new secret when the client changes", async () => {
     (screen.getByLabelText("Client secret") as HTMLInputElement).required,
   ).toBe(true);
 });
+
+it("restarts a pending authorization explicitly without claiming the old link can be resumed", async () => {
+  http.start.mockReturnValue(new Promise(() => {}));
+  const pending = { ...connection, authorization_pending: true };
+  renderSetup(pending, false);
+  expect(screen.getByText("Authorizing")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Complete authorization on the provider's page. Starting again replaces the previous request.",
+    ),
+  ).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Restart authorization" }),
+  );
+  await waitFor(() =>
+    expect(http.start).toHaveBeenCalledWith(
+      expect.anything(),
+      pending,
+      "/workspace/test",
+    ),
+  );
+});

@@ -1,3 +1,15 @@
+.status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.statusNote {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+
 /* Details panel ---------------------------------------------------------- */
 .panelTabs {
   padding: 0 20px;
