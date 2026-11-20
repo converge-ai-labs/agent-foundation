@@ -16,7 +16,11 @@ function setup(
   const i18n = createInstance();
   void i18n.init({
     lng: locale,
-    resources: { en: { translation: {} }, "zh-CN": { translation: {} } },
+    resources: {
+      en: { translation: {} },
+      "zh-CN": { translation: {} },
+      hi: { translation: {} },
+    },
     initAsync: false,
   });
   render(
@@ -71,6 +75,13 @@ it("uses the explicitly supplied locale for calendar headings", async () => {
   expect(picker.textContent).toContain("2026年9月");
   expect(picker.textContent).not.toContain("September");
   expect(within(picker).getByRole("option", { name: "9月" })).toBeTruthy();
+});
+it("shows Hindi calendar headings for the Hindi locale", async () => {
+  const { user } = setup("hi");
+  await user.click(screen.getByRole("button", { name: "Expiration date" }));
+  const picker = screen.getByRole("dialog", { name: "Expiration date" });
+  expect(picker.textContent).toContain("सितंबर 2026");
+  expect(picker.textContent).not.toContain("September");
 });
 it("jumps to a future year and month without changing the selected date until confirmation", async () => {
   const { user, change } = setup("en", "second");

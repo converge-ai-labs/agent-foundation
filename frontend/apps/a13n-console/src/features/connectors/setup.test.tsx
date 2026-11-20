@@ -157,7 +157,7 @@ it("reauthorizes a ready account under its stable connection ID", async () => {
   const ready = { ...connection, status: "ready" as const, version: 7 };
   mount(ready);
   await userEvent.click(
-    await screen.findByRole("button", { name: "Authorize connection" }),
+    await screen.findByRole("button", { name: "Reauthorize" }),
   );
   await waitFor(() =>
     expect(mocks.start).toHaveBeenCalledWith(

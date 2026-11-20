@@ -1,4 +1,4 @@
-import { enUS, zhCN } from "@daypicker/react/locale";
+import { enUS, hi, zhCN } from "@daypicker/react/locale";
 import {
   Button,
   Calendar,
@@ -149,7 +149,13 @@ export function DateTimeField({
                     date,
                   ),
               }}
-              locale={locale?.startsWith("zh") ? zhCN : enUS}
+              locale={
+                locale?.startsWith("zh")
+                  ? zhCN
+                  : locale?.startsWith("hi")
+                    ? hi
+                    : enUS
+              }
               autoFocus
             />
             <div className="flex gap-2">

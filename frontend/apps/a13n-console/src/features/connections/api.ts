@@ -3,10 +3,27 @@ import { data, type Schema } from "../../shared/api";
 
 type Connection = Schema["Connection"];
 
-/** A disabled connection keeps its credential state; the collection shows it as disabled. */
+/** Display authorization progress without changing the Service credential states. */
 export function connectionState(connection: Connection) {
-  return connection.enabled ? connection.status : "disabled";
+  if (!connection.enabled) return "disabled";
+  if (connection.status === "ready") return "ready";
+  if (connection.authorization_pending)
+    return connection.status === "reauthorization_required"
+      ? "reauthorizing"
+      : "authorizing";
+  return connection.status === "pending" ? "unauthorized" : connection.status;
 }
+
+/** Cancelling a flow is safe only when there is no existing credential to revoke. */
+export function authorizationRemoval(connection: Connection) {
+  if (connection.auth === "none") return undefined;
+  if (connection.credential_configured) return "revoke";
+  if (connection.authorization_pending) return "cancel";
+  if (connection.status === "reauthorization_required") return "revoke";
+  return undefined;
+}
+
+export type AuthorizationRemovalResult = RemoteCleanup | "cancelled";
 
 /** Discovers the tools with the current configuration and credential; the outcome becomes `last_test`. */
 export function testConnection(client: Client, connection: Connection) {

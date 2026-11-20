@@ -19,7 +19,7 @@ import {
   TabsTab,
 } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useState, type ReactElement } from "react";
+import { useId, useState, type ComponentProps, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -38,12 +38,13 @@ import { MCPAuthorization } from "../mcp/authorization";
 import { MCPTools } from "../mcp/tools";
 import { MCPConnectionIcon } from "./mcp-icon";
 import {
-  connectionState,
+  authorizationRemoval,
   revokeCleanup,
   testConnection,
-  type RemoteCleanup,
+  type AuthorizationRemovalResult,
 } from "./api";
 import styles from "./connections.module.css";
+import { ConnectionStatus } from "./status";
 
 /** One connection, inspected beside the collection instead of over it. */
 export function ConnectionDetails({
@@ -52,15 +53,17 @@ export function ConnectionDetails({
   onClose,
 }: {
   connectionId: string;
-  onCleanup: (cleanup: RemoteCleanup) => void;
+  onCleanup: (cleanup: AuthorizationRemovalResult) => void;
   onClose: () => void;
 }) {
   const client = useClient(),
     { can, workspace } = useWorkspace(),
     { t } = useTranslation(),
     [generation, setGeneration] = useState(0);
-  const query = useQuery({
+  const query = useQuery<Schema["Connection"]>({
     queryKey: ["connections", workspace.id, connectionId],
+    refetchInterval: (query) =>
+      query.state.data?.authorization_pending ? 5000 : false,
     queryFn: ({ signal }) =>
       client
         .workspace(workspace.id)
@@ -113,9 +116,7 @@ export function ConnectionDetails({
           <strong title={connection?.name}>
             {connection?.name ?? t("Connection")}
           </strong>
-          <StatePill
-            state={connection ? connectionState(connection) : "pending"}
-          />
+          {connection && <ConnectionStatus connection={connection} />}
         </>
       }
       actions={
@@ -180,18 +181,8 @@ export function ConnectionDetails({
 }
 
 /** Availability and removal for one connection. */
-function ConnectionMenu({
-  connection,
-  onCleanup,
-  onDone,
-}: {
-  connection: Schema["Connection"];
-  onCleanup: (cleanup: RemoteCleanup) => void;
-  onDone: () => void;
-}) {
-  const client = useClient(),
-    cache = useQueryClient(),
-    { t } = useTranslation();
+function ConnectionMenu(props: ComponentProps<typeof ConnectionMenuItems>) {
+  const { t } = useTranslation();
   return (
     <Menu>
       <MenuTrigger
@@ -208,52 +199,85 @@ function ConnectionMenu({
         <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
       </MenuTrigger>
       <MenuPopup align="end">
-        <AvailabilityConfirm
-          connection={connection}
-          trigger={
-            <MenuItem closeOnClick={false}>
-              <PowerIcon size={14} />
-              {t(connection.enabled ? "Disable" : "Enable")}
-            </MenuItem>
-          }
-        />
-        {connection.auth !== "none" && (
-          <>
-            <MenuSeparator />
-            <Confirm
-              subject={connection.name}
-              retry={() =>
-                void cache.invalidateQueries({ queryKey: ["connections"] })
-              }
-              title={t("Revoke authorization")}
-              description={t(
-                "Local access is disabled immediately. The result reports whether external cleanup succeeded.",
-              )}
-              triggerElement={
-                <MenuItem closeOnClick={false} variant="destructive">
-                  <ProhibitIcon size={14} />
-                  {t("Revoke")}
-                </MenuItem>
-              }
-              danger
-              action={async () => {
-                const revoked = data(
-                  await client
-                    .workspace(connection.workspace_id)
-                    .POST("/api/v1/connections/{connection_id}/revoke", {
-                      params: { path: { connection_id: connection.id } },
-                      headers: ifMatch(rowTag(connection)),
-                    }),
-                );
-                onCleanup(revokeCleanup(revoked));
-                void cache.invalidateQueries({ queryKey: ["connections"] });
-                onDone();
-              }}
-            />
-          </>
-        )}
+        <ConnectionMenuItems {...props} />
       </MenuPopup>
     </Menu>
+  );
+}
+
+/** Shared commands for the collection and detail panel. */
+export function ConnectionMenuItems({
+  connection,
+  onCleanup,
+  onDone,
+}: {
+  connection: Schema["Connection"];
+  onCleanup: (cleanup: AuthorizationRemovalResult) => void;
+  onDone: () => void;
+}) {
+  const client = useClient(),
+    cache = useQueryClient(),
+    { t } = useTranslation();
+  const removal = authorizationRemoval(connection);
+  return (
+    <>
+      <AvailabilityConfirm
+        connection={connection}
+        trigger={
+          <MenuItem closeOnClick={false}>
+            <PowerIcon size={14} />
+            {t(connection.enabled ? "Disable" : "Enable")}
+          </MenuItem>
+        }
+      />
+      {removal && (
+        <>
+          <MenuSeparator />
+          <Confirm
+            subject={connection.name}
+            retry={() =>
+              void cache.invalidateQueries({ queryKey: ["connections"] })
+            }
+            title={t(
+              removal === "cancel"
+                ? "Cancel authorization"
+                : "Revoke authorization",
+            )}
+            description={t(
+              removal === "cancel"
+                ? "Cancel this authorization request? The previous authorization page will no longer connect this account."
+                : "a13n will stop using this connection and cancel any authorization in progress. Its settings will be kept. The result reports whether authorization was also removed from the provider.",
+            )}
+            triggerElement={
+              <MenuItem closeOnClick={false} variant="destructive">
+                <ProhibitIcon size={14} />
+                {t(
+                  removal === "cancel"
+                    ? "Cancel authorization"
+                    : "Revoke authorization",
+                )}
+              </MenuItem>
+            }
+            danger
+            action={async () => {
+              const revoked = data(
+                await client
+                  .workspace(connection.workspace_id)
+                  .POST("/api/v1/connections/{connection_id}/revoke", {
+                    params: { path: { connection_id: connection.id } },
+                    headers: ifMatch(rowTag(connection)),
+                  }),
+              );
+              onCleanup(
+                removal === "cancel" ? "cancelled" : revokeCleanup(revoked),
+              );
+              void cache.invalidateQueries({ queryKey: ["connections"] });
+              onDone();
+            }}
+          />
+        </>
+      )}
+    </>
   );
 }
 

@@ -121,9 +121,7 @@ it("uses the saved app and refreshed version for reconnect after authorization f
       "/workspace/test",
     ),
   );
-  await user.click(
-    await screen.findByRole("button", { name: "Continue authorization" }),
-  );
+  await user.click(await screen.findByRole("button", { name: "Authorize" }));
   await waitFor(() =>
     expect(http.start).toHaveBeenLastCalledWith(
       expect.anything(),

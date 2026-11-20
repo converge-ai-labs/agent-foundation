@@ -24,6 +24,7 @@ import {
   workspaceProvidersQuery,
 } from "../../models/api";
 import { connectionState } from "../../connections/api";
+import { useConnectionStateLabels } from "../../connections/status";
 import { revisionsQuery } from "../../skills/revisions";
 import { SkillAvatar } from "../../skills/source";
 import type { useAgentChoices } from "../choices";
@@ -236,6 +237,7 @@ export function ConnectionsSection({
   const { basePath } = useWorkspace();
   const cache = useQueryClient();
   const catalog = useToolsetCatalog();
+  const stateLabels = useConnectionStateLabels();
   const available = choices.data?.connections ?? [];
   const selected = new Set(draft.connections.map((item) => item.connection_id));
   return (
@@ -293,9 +295,9 @@ export function ConnectionsSection({
                 detail:
                   state === "ready"
                     ? connectionEndpoint(connection)
-                    : `${t(state)} · ${connectionEndpoint(connection)}`,
+                    : `${stateLabels[state]} · ${connectionEndpoint(connection)}`,
                 disabled: state !== "ready",
-                disabledReason: t(state),
+                disabledReason: stateLabels[state],
               };
             })}
             selected={selected}

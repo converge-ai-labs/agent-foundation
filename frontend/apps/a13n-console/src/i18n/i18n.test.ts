@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { i18n } from "./index";
 import en from "./locales/en.json";
+import hi from "./locales/hi.json";
 import zhCN from "./locales/zh-CN.json";
 
 type Catalog = Record<string, string>;
@@ -120,7 +121,7 @@ test("translates catalogue text and shows new English text until translated", as
 });
 
 test("localized catalogs have required, nonempty, compatible messages", () => {
-  expect(catalogErrors({ en, "zh-CN": zhCN })).toEqual([]);
+  expect(catalogErrors({ en, "zh-CN": zhCN, hi })).toEqual([]);
 });
 
 test("catalog validation accepts locale-specific plural suffixes", () => {

@@ -81,6 +81,7 @@ it("updates visible text immediately when the language control changes", async (
 it.each([
   ["English", "en", "Display language"],
   ["简体中文", "zh-CN", "显示语言"],
+  ["हिन्दी", "hi", "डिस्प्ले भाषा"],
 ])("restores the explicit %s choice on remount", async (name, value, label) => {
   const view = await mountSettings();
   await view.selectLanguage(name);
