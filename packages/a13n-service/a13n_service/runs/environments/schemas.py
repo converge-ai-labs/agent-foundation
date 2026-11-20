@@ -217,7 +217,8 @@ class SessionBindingView(BaseModel):
 
 
 class MountCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    # Schedules also return this saved request; retain the established input schema name.
+    model_config = ConfigDict(extra="forbid", json_schema_mode_override="validation")
     name: MountName
     environment_id: ObjectId
     session_binding: MountName = "default"

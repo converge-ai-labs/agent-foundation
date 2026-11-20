@@ -136,6 +136,8 @@ native_chromium = "/usr/bin/chromium"
 
 完成绑定后再提交 run。绑定变更对后续 run 生效，已接受的 run 保留提交时捕获的绑定。子 thread 和 fork 得到的 thread 需要分别显式绑定。
 
+如果新 thread 的首个 Run 就要使用浏览器，请在 `POST /api/v1/threads` 请求的 `browser_binding` 中传入同一个对象。Service 会在接收首个 Run 前应用浏览器绑定及 `environments` 指定的初始环境。[每次触发都创建新 thread 的计划](schedules.md#use-the-http-api)使用 `invocation.browser_binding`。
+
 通过 `GET /api/v1/threads/{thread_id}/browser` 查看期望绑定。解除绑定时，携带新的 thread ETag 向 PUT 端点发送 JSON `null`。解除绑定不会释放浏览器或关闭标签页。
 
 ### 接入已有浏览器

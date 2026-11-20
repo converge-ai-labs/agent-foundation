@@ -136,6 +136,8 @@ Use [authenticated HTTP requests](http.md) within one workspace. Creating, bindi
 
 Submit the run after binding. Binding changes affect future runs; accepted runs keep their captured binding. Child and forked threads need their own explicit binding.
 
+To give a new thread’s first Run access to the browser, put the same object in `browser_binding` in your `POST /api/v1/threads` request. Service applies it alongside any initial `environments` before accepting the first Run. Use `invocation.browser_binding` for a [fresh-thread schedule](schedules.md#use-the-http-api).
+
 Read the desired binding with `GET /api/v1/threads/{thread_id}/browser`. To detach it, send JSON `null` to the PUT endpoint with a fresh thread ETag. Detachment does not release the browser or close its tabs.
 
 ### Attach an existing browser

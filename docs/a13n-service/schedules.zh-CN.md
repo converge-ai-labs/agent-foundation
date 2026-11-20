@@ -79,6 +79,8 @@ Service 调度引擎严格执行**重叠防重入保护（Overlap prevention）*
 }
 ```
 
+当 `target.mode` 为 `"new_thread"` 时，可在 `invocation` 中加入 `environments: [{"name": "workspace", "environment_id": "env_example"}]` 和 `browser_binding: {"browser_id": "brw_example"}`，让每次触发创建的新 thread 复用现有资源。Service 在下发时检查访问权限，并在首个 Run 中记录实际使用的资源。浏览器默认按 thread 隔离标签页：各 thread 共用浏览器配置和登录状态，但只看到各自的标签页。当 `target.mode` 为 `"thread"` 时，请在目标 thread 上配置资源，不要设置这两个初始字段。
+
 接口返回生成的计划对象及其唯一 ID 和当前版本 ETag：
 
 ```json

@@ -79,6 +79,8 @@ Submit `POST /api/v1/schedules` with an idempotency key:
 }
 ```
 
+For `target.mode: "new_thread"`, add `environments: [{"name": "workspace", "environment_id": "env_example"}]` and `browser_binding: {"browser_id": "brw_example"}` inside `invocation` to reuse existing resources in each fresh thread. Service checks access at dispatch and records the actual selections in the first Run. The Browser defaults to thread-scoped tab access: fresh threads share the profile and sign-in state, while each thread sees its own tabs. For `target.mode: "thread"`, configure the resources on the target thread and leave both initial fields unset.
+
 The response returns the schedule ID and its current ETag:
 
 ```json

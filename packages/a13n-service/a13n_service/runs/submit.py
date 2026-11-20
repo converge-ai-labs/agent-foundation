@@ -7,6 +7,7 @@ the winner committed while it waited for a lock, then replays the winner.
 """
 
 from collections.abc import Awaitable, Callable
+from dataclasses import replace
 
 from a13n_harness.configuration import RunConfiguration
 from sqlalchemy.exc import IntegrityError
@@ -235,9 +236,13 @@ async def prepare_thread(
     if body.session is not None and body.session.memory is not None:
         await configure(session, owner, body.session.memory)
         await session.flush()
+    if body.browser_binding is not None:
+        from a13n_service.runs.browsers.service import bind_initial
+
+        await bind_initial(session, actor, thread, body.browser_binding, authority=authority)
     await mount_environments(session, thread, body.environments, principal=actor)
     await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
-    return thread, await prepare_message(
+    source = await prepare_message(
         session,
         runtime,
         actor,
@@ -248,6 +253,9 @@ async def prepare_thread(
         authority=authority,
         schedule_occurrence_id=schedule_occurrence_id,
     )
+    if body.browser_binding is not None or (schedule_occurrence_id is not None and body.environments):
+        source = replace(source, atomic_initial_acceptance=True)
+    return thread, source
 
 
 async def create_thread(
