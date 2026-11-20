@@ -1004,10 +1004,12 @@ async def test_reporter_does_not_retry_permanent_errors_or_cancellation(tmp_path
         assert len(attempts) == 1
 
 
-async def test_harness_reporter_waits_past_old_deadline_and_persists_once(tmp_path, caplog):
+async def test_harness_reporter_waits_for_writer_and_persists_once(tmp_path, caplog, monkeypatch):
     import asyncio
 
+    import anyio
     from a13n_harness.metering import ModelUsageBinding
+    from a13n_harness_ui.storage import usage as usage_module
 
     settings = StorageSettings(data_root=tmp_path)
     async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
@@ -1021,12 +1023,22 @@ async def test_harness_reporter_waits_past_old_deadline_and_persists_once(tmp_pa
                 update={"run_id": ledger.run_id, "agent_instance_id": ledger.instance.agent_instance_id}
             )
         )
-        async with database.sessions.write_lock:
-            pending = asyncio.create_task(ledger._flush(reason="model_request"))
-            # This regression specifically crosses the removed five-second deadline.
-            await asyncio.sleep(5.1)
-            assert not pending.done()
-        await pending
+        writer_reached = asyncio.Event()
+        clock = 0.0
+
+        def observe_transaction(sessions):
+            assert anyio.current_effective_deadline() == float("inf")
+            writer_reached.set()
+            return transaction(sessions)
+
+        monkeypatch.setattr(usage_module, "transaction", observe_transaction)
+        monkeypatch.setattr(usage_module, "monotonic", lambda: clock)
+        async with asyncio.TaskGroup() as tasks:
+            async with database.sessions.write_lock:
+                pending = tasks.create_task(ledger._flush(reason="model_request"))
+                await asyncio.wait_for(writer_reached.wait(), timeout=5)
+                assert not pending.done()
+                clock = 5.1
         await ledger._flush(reason="terminal")
         assert not ledger._pending
         assert (await repository.snapshot(thread_id="thr_root")).combined.model_requests == 1
