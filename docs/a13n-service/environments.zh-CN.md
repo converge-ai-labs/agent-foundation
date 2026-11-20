@@ -1,6 +1,6 @@
 ---
-title: 环境
-description: 为文件和命令任务创建工作空间、复用已有机器，或给 agent 配置桌面。
+title: 沙箱执行环境与模板管理
+description: 在 Service 中配置 Docker、Kubernetes 及主流云沙箱（E2B、Daytona、Modal、Vercel、Sprites）环境模板，为对话线程挂载持久化工作区。
 ---
 
 任务需要文件、命令或桌面时，为 agent 配置环境。先用一个模板和一个线程走通流程：让 agent 写入文件，再在后续消息中读取。这样可以同时验证执行能力和文件复用。
@@ -57,7 +57,7 @@ Modal/Daytona 可通过 `base_image` 选择支持的基础镜像并自动托管�
 
 Service 在创建、启动/恢复，以及固定版本推进后首次使用已有托管实例时升级。它先取得现有持久化准备操作，再安装经过校验的发布版本、请求重启，并验证认证 EIP 就绪状态。并发调用者加入同一操作。已有人工桌面保留和查看会推迟首次使用升级。空闲实例不通过定时任务升级，Service 也不选择 `latest`。
 
-**升级会结束已有 Envd Session，以及其中的进程和输出句柄。** 工作区文件遵循 Provider 原有的持久化规则。Session 恢复可以打开新 Session，但不会重放命令。安装失败会保留旧二进制并记录准备失败。检查目标中受保护的 `/var/lib/a13n-envd/update-<version>/output`，核对结果后，对确认失败的升级使用 Console 的**重试准备**。API 客户端使用 `POST /api/v1/environments/{id}/retry-creation` 并携带当前 `If-Match`。重试保留原实例和选定版本，创建新的客体尝试；仍在执行、结果未知或实例已确认丢失时会被拒绝。升级失败会使此前已就绪的托管实例停留在 `starting`，直到显式重试成功才能使用，但不会启动首次准备失败的自动回收。若缺少发布版本或运行时不兼容，应先修复原因再重试。原生实例确认丢失后需替换或删除。缺少回执不代表命令没有执行。
+**升级会结束已有 Envd Session，以及其中的进程和输出句柄。** 工作区文件遵循 Provider 原有的持久化规则。Session 恢复可以打开新 Session，但不会重放命令。安装失败会保留旧二进制并记录准备失败。检查目标中受保护的 `/var/lib/a13n-envd/update-<version>/output`，核对结果后，对确认失败的升级使用 Console 的**重试准备**。API 客户端使用 `POST /api/v1/environments/{id}/retry-creation` 并携带当前 `If-Match`。重试保留原实例和选定版本，创建新的客体尝试；仍在执行、结果未知或实例已确认丢失时会被拒绝。升级失败会使此前已就绪的托管实例停留在 `starting`，直到显式重试成功才能使用，但不会启动首次准备失败的自动回收。若缺少发布版本或运行时不兼容，应先修复原因再重试。原生实例确认丢失后需替换或删除。若因网络抖动未能收到响应回执，请在重发写操作前先检查目标环境或进程的实际状态。
 
 外部服务管理器运行 `a13n-envd daemon` 并负责重启。没有外部管理器时，准备的运行时使用 `a13n-envd supervise`；Service 安装二进制后请求该原生监督进程重启。局部重启命令见 [Envd 运维](../a13n-envd/operations.md#restart-after-installing-a-release)。
 
@@ -136,7 +136,7 @@ docker push registry.example.com/team/a13n-sandbox:reviewed
 
 私有仓库还需配置原生 `imagePullSecrets`。镜像必须启动 Envd，并使用 Service 注入的凭据文件路径；使用与 Service 相同 checkout 构建的沙箱镜像。`make k8s-up K8S_ENVIRONMENTS=1` 会构建并加载自己的镜像 tag；请读取其 `K8S_STATE_DIR` 下 `deployment.json` 中的 `sandbox_image`，不要假定它是 `:local`。默认目录是 `~/.config/a13n-service-kind`；使用非默认 `K8S_CLUSTER` 时追加 `-<cluster>`。
 
-资源请求与限制、init 容器、sidecar、调度、安全上下文及 ConfigMap、Secret 引用保留在 `pod_template.spec` 中，由 Kubernetes admission 校验这些原生字段。Service 管理 Pod 身份、沙箱 ServiceAccount 和私有 Envd 凭据注入。选定的执行容器必须启动 Envd；Pod 处于 Running 并不代表执行能力已经就绪。
+资源请求与限制、init 容器、sidecar、调度、安全上下文及 ConfigMap、Secret 引用保留在 `pod_template.spec` 中，由 Kubernetes admission 校验这些原生字段。Service 管理 Pod 身份、沙箱 ServiceAccount 和私有 Envd 凭据注入。当 Pod 进入 Running 状态且目标容器内的 Envd 守护进程通过就绪探针后，环境即可开始执行任务。
 
 `direct` 从 Service 连接 Pod IP，Service 可以部署在集群内或集群外。集群外部署时，运维在 Control 和 Worker 上提供 kubeconfig profile。直连要求两个进程都能访问 Pod IP。没有 Pod IP 路由的本地调试可使用 `port_forward`，前提是 kubeconfig profile 明确允许且已安装 `kubectl`；隧道仅属于使用它的进程。两种方式目前都使用 Bearer 认证的 HTTP，需要 profile 显式设置 `allow_plaintext_envd = true`。此类流量应保留在可信私有网络内。provider 检查成功代表配置、认证和 Pod 列举权限正常；镜像拉取、Pod 创建、调度、存储和 Envd 就绪仍需通过真实实例验证。
 
@@ -294,7 +294,7 @@ Agent 在每次模型请求中获得当前选定的变量名、域名和使用�
 
 轮换先同步保存新值，再异步更新活跃 Session。现有 Session 持有者也会定期比较版本，默认间隔十秒，因此通知丢失后仍会补偿。受跟踪的后台任务可以在 Run 结束后继续保持同步。空闲 Session 不会为了更新凭据而被连接；它在下次 attach 时、执行命令前取得最新版本。detach 保留 Session 及其凭据，原生 close 或过期负责清理。
 
-撤销后，Service 接纳流程立即阻止新使用；活跃 Session 异步删除绑定。空闲 Session 可能保留旧值直到再次 attach 或原生清理。需要立即失效时，应同时在上游服务撤销 token。保存或撤销接口成功，不代表所有原生 Session 都已应用。
+撤销后，Service 接纳流程立即阻止新使用；活跃 Session 异步删除绑定。空闲 Session 可能保留旧值直到再次 attach 或原生清理。需要立即失效时，应同时在上游服务撤销 token。保存或撤销出站凭证后，可通过各环境的同步状态字段确认活跃 Session 是否已完成策略更新。
 
 ### 升级到 Session 绑定
 

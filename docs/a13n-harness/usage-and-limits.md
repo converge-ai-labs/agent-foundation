@@ -1,6 +1,6 @@
 ---
 title: Usage, limits, and pricing
-description: Run an offline accounting example, choose when usage resets, and configure cost estimates.
+description: Enforce request and token budgets on Harness runs, accumulate usage across turns and subagents, and calculate costs with customizable pricing catalogs.
 ---
 
 Set a budget before running an Agent, inspect its observed usage, then decide what your Host must persist. The example below shows a new accounting scope and an explicitly continued scope using the same saved conversation.
@@ -184,7 +184,7 @@ Harness prices each response before native usage accumulation using the actual s
 | `max_input_tokens`                                      | Inclusive upper bound; larger requests decline that tariff       |
 | `PriceComponent.tiers`                                  | Token-length price cliffs, independent of service-tier selection |
 
-Unknown tiers decline Harness valuation and retain upstream cost if present; otherwise cost stays unknown. Malformed tier metadata records pricing failure without failing the Run. Missing metadata permits the legacy standard estimate but does not establish which tier served the request.
+Unknown tiers decline Harness valuation and retain upstream cost if present; otherwise cost stays unknown. Malformed tier metadata records pricing failure without failing the Run. Include provider service-tier metadata when you need exact tier-specific cost attribution instead of the standard-tier estimate.
 
 The catalog keeps endpoint-specific coverage. OpenAI and Gemini Developer API response metadata can select their published tier rules. Vertex `traffic_type` becomes a lower-case tier identifier, but the catalog does not borrow Developer API tier tariffs for Vertex. Supply an endpoint-specific policy for such traffic. Request-only capacity or speed preferences do not establish a served token tariff.
 

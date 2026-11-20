@@ -1,7 +1,7 @@
 ---
 title: Operate Sessions and retained output
 sidebarTitle: Sessions and output
-description: Manage daemon readiness, Session lifetime, retained output capacity, and transfers.
+description: Manage Envd Session lifecycles, idle timeouts, detach/attach recovery epochs, retained process output capacity, and chunked file transfers.
 ---
 
 Open a Session for each scope of work, read the output you need, and close the Session when that scope ends. A Session owns its commands, transfers, retained output, and operation history. One daemon serves multiple Sessions; the launcher manages the daemon's lifetime.
@@ -14,7 +14,7 @@ Open a Session for each scope of work, read the output you need, and close the S
 4. Open a Session with that working directory and the required methods, then wait for readiness before dispatching work.
 5. Save the Device generation, Session identity, and operation receipts together so later reads and reconciliation address the same work.
 
-Keep the owning scope alive with Session keepalive. The default idle lifetime is one hour with no maximum lifetime; use the Session descriptor’s effective lifecycle policy. Reattachment to the same Session is explicit and requires the same generation and a newer owner epoch before its deadline. Reconnecting the carrier alone does not restore Sessions or in-flight operations.
+Keep the owning scope alive with Session keepalive. The default idle lifetime is one hour with no maximum lifetime; use the Session descriptor’s effective lifecycle policy. Reattachment to the same Session is explicit and requires the same generation and a newer owner epoch before its deadline. After reconnecting the carrier, re-attach to retained Sessions explicitly using their saved descriptors.
 
 Close the Session when its scope ends. Cleanup leaves sibling Sessions and workspace files intact. Session admission and aggregate Device quotas limit concurrency; failed cleanup continues to consume capacity until reclamation is confirmed.
 
@@ -49,7 +49,7 @@ Size output capacity for concurrent commands, not just the text shown to the use
 | Each Session spool        | 1 GiB   |
 | Aggregate Device spool    | 4 GiB   |
 
-Each command reserves capacity for stdout and stderr before launch. At these defaults, one live pair reserves 512 MiB. Two pairs can fill the 1 GiB Session spool before additional charges, and retained records leave less room. Reducing the inline preview alone does not reduce the reservation.
+Each command reserves capacity for stdout and stderr before launch. At these defaults, one live pair reserves 512 MiB. Two pairs can fill the 1 GiB Session spool before additional charges, and retained records leave less room. Adjust the maximum retained output capacity to lower memory reservation.
 
 If launch returns busy, check output reservations and retained spool charges. Release observations you no longer need, increase the quota, or lower the per-stream limit. Keep `spool >= 2 * per_stream` and `preview <= per_stream`. The daemon can reclaim eligible completed history under pressure; live work keeps its reservation.
 
@@ -71,7 +71,7 @@ Process inspection reports status; it does not attach output or reset the retent
 
 Finish a file transfer with an explicit writer commit and inspect its result. Closing or abandoning the writer aborts incomplete work rather than publishing the file. Keep the operation receipt so you can distinguish non-dispatch, known completion, and an unknown outcome.
 
-After a timeout or transport loss, reconcile the original operation where its replay class permits. A missing acknowledgement does not establish whether the command or write ran. Relaunching it as new intent can repeat the side effect.
+After a timeout or transport loss, reconcile the original operation where its replay class permits. If an acknowledgement is lost, inspect the target file or process state before retrying. Relaunching it as new intent can repeat the side effect.
 
 Check Session and Device generation before reusing handles. A new generation invalidates old generation-bound handles and output selectors, even if the Provider's remote target still exists. Saved Provider state identifies the target; it cannot reconstruct discarded output or restore every command.
 

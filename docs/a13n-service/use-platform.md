@@ -1,6 +1,6 @@
 ---
 title: Run and debug an agent in Console
-description: Test an agent, continue a conversation, and debug a run in Console using its configuration, attempts, and usage.
+description: Test workspace agents in Console, branch conversation threads, review pending tool approvals, and inspect execution traces and token costs.
 ---
 
 Use this guide when your team already runs Service. You need its Console URL, an account, and permission to run an agent. You will send a request, follow up in the same thread, and learn where to inspect or branch the work. To deploy Service yourself, start with the [quickstart](get-started.md). Console is the Service application; Harness UI is a separate workbench.

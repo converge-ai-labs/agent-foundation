@@ -1,6 +1,6 @@
 ---
-title: 日志
-description: 为 Python 应用输出结构化日志、附加任务字段，并选择异常详情。
+title: a13n-logging 结构化日志指南
+description: 使用 a13n-logging 在 Python 应用启动时统一配置结构化 JSON 或终端日志，按上下文绑定追踪字段并管理日志文件轮转。
 ---
 
 使用 `a13n-logging` 将 Python 日志发送到终端、JSON 收集器或轮转 JSON 文件。在可执行程序中配置输出，然后在应用各处使用带命名空间的 logger。

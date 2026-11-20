@@ -1,6 +1,6 @@
 ---
-title: 配置 provider
-description: 选择目标、提供连接设置，并使用当前凭据打开执行。
+title: 配置环境提供方与凭证
+description: 构建经过类型校验的提供方配置、环境 Recipe 与认证凭证，安全连接本地目录、Docker 容器或云端沙箱。
 ---
 
 先选择[后端](index.md#choose-a-backend)，再分别准备目标输入、账号设置和凭据：

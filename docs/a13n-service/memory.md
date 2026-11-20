@@ -1,183 +1,191 @@
 ---
 title: Memory
-description: Save knowledge, reuse it in another conversation, and inspect what agents changed.
+description: Maintain long-term team knowledge across conversations, run automated Dreams-style distillation workflows, and review candidate diffs before publishing.
 ---
 
-Use memory for preferences, decisions and reference facts that should outlive a conversation. Start with a Memory Space for shared knowledge and session notes. Choose a standalone memory when your application needs to attach a particular store directly to a thread.
+In multi-agent systems, important user preferences, architectural decisions, and operational guidelines should outlive single conversations. **Service Memory Spaces** provide versioned, structured file storage that agents can consult and update across sessions.
 
-| Need                                                 | Choose                                                              |
-| ---------------------------------------------------- | ------------------------------------------------------------------- |
-| Shared project knowledge with separate session notes | [Memory Space](#memory-spaces)                                      |
-| A versioned file tree mounted on selected threads    | [Standalone file memory](standalone-memory.md#create-a-file-memory) |
-| Short facts retrieved by meaning from mem0           | [Record memory](standalone-memory.md#record-memories)               |
+Service pairs this durable storage with an automated **Organization Engine** (inspired by cognitive "Dreams" consolidation), extracting verified facts from past dialogues, resolving conflicting information, and staging changes as reviewable candidates before atomically merging them into production memory.
 
-Memories belong to a workspace and need no compute environment. The examples use `A13N_URL` for the Service base URL and `A13N_API_KEY` for a workspace-scoped key. API paths below are under `/api/v1`.
+| Organizational need                                      | Recommended memory pattern                                          |
+| :------------------------------------------------------- | :------------------------------------------------------------------ |
+| **Shared team knowledge & session notes**                | [Memory Space](#memory-spaces)                                      |
+| **Standalone versioned file trees for specific threads** | [Standalone file memory](standalone-memory.md#create-a-file-memory) |
+| **Semantic vector retrieval of short facts**             | [Record memory via Mem0](standalone-memory.md#record-memories)      |
 
 ## Memory Spaces
 
-A **Memory Space** keeps shared knowledge and session notes in one versioned file store. Try a complete save-and-reuse workflow before configuring automatic organization:
+A **Memory Space** organizes persistent information into a clean filesystem structure:
 
-1. Open **Memories → Spaces** and create a Space named `Product knowledge`.
-2. In an agent's **Memory** section, enable participation. Select that Space with the mount name `product` and write access. Keep the agent's memory tools enabled.
-3. Start a new session with the agent. Ask: “Save our documentation language preference, English, in `global/preferences.md` in the `product` memory.”
-4. Open the Space's **Files** and check the saved content. Use **File history** to inspect the author and revision.
-5. Start another session with the same Space selected. Ask the agent to read `global/preferences.md` and report the saved preference.
-
-Ordinary runs can access `global/` and their own `sessions/{session_id}/` folder. Put shared knowledge in `global/`; put conversation-specific notes in the session folder. Context includes `global/MEMORY.md` by default and the session's `MEMORY.md` when present. Workspace permissions govern Console and API management of all Space files.
-
-Choose **General** for reusable topic knowledge or **General with daily records** to also retain important events by date. Add business priorities in **Custom guide**. **Advanced settings** contains the time zone and editable **System guide**. Both ordinary agents and the organizer use these rules. Changes apply to new Runs and do not reorganize existing files automatically. Space creation and updates accept the same `guidance` object as [standalone file memories](standalone-memory.md#create-a-file-memory).
+- `global/`: Contains enterprise guidelines, shared codebase documentation, and team preferences available to all sessions.
+- `global/MEMORY.md`: The primary knowledge index loaded directly into agent prompt contexts.
+- `sessions/{session_id}/`: Dedicated directories where agents maintain session-specific notes and project handoffs.
 
 ### Select Spaces
 
-Create a Space with `POST /memory-spaces` (`write`):
+1. In Console, navigate to **Memories → Spaces** and click **Create Space** (e.g., named `Engineering Guidelines`).
+2. Open your target agent's settings, enable Memory participation, and mount the Space under a mount name such as `team_kb` with `write` access.
+3. Start a test session with the agent and ask:
+   > *"Record our team's database convention: all new tables must include created_at and updated_at UTC timestamps in global/conventions.md."*
+4. Open the Space's **Files** tab to review the newly committed Markdown file, complete with author attribution and revision timestamps.
+5. Start a separate, clean session with another agent mounting the same Space. Ask: *"What are our team's database timestamp conventions?"* The agent consults the memory space and returns the accurate rule.
+
+Through the API, create a Space using `POST /api/v1/memory-spaces`:
 
 ```json
-{"name": "Product knowledge"}
+{
+  "name": "Engineering Guidelines"
+}
 ```
 
-Use the returned `id` in the agent's `config.memory`, or in `POST /sessions` or `PATCH /sessions/{session_id}`:
+Attach the Space to an agent revision or active session by providing its ID:
 
 ```json
 {
   "memory": {
     "enabled": true,
-    "spaces": [{"name": "product", "space_id": "mspace_...", "access": "write"}]
+    "spaces": [
+      {
+        "name": "team_kb",
+        "space_id": "mspace_abc123",
+        "access": "write"
+      }
+    ]
   }
 }
 ```
 
-Session selection needs `run`; PATCH also needs the session's `If-Match`. Each name and Space ID can appear once. Omitted fields inherit agent defaults at the first accepted business run. An explicit `spaces` list replaces the selection; `[]` supplies no Space context or tools. Later agent changes and branches preserve the session's settled choice. Use the session header's **Memory** control to change future runs.
-
-Turning participation off preserves the selection. Disabling a Space preserves its files, history and bindings while excluding it from new runs. Accepted runs keep their selected mounts. Space mounts and standalone thread mounts share the mount limit and must have distinct names.
-
 ### Organize saved knowledge
 
-Once the Space contains useful files, configure an organizer model in **Configuration → Organization** and choose **Organize now**. The organizer reads shared knowledge and all session folders, then maintains `global/MEMORY.md`. Review the resulting files and revisions in the **Organization** tab. Each round uses a fresh thread in a dedicated session, only that Space's memory tools, and a 200-model-request ceiling.
+As agents interact with users, individual notes and working documents can accumulate unstructured data. The **Organizer Engine** runs periodic background sweeps to consolidate documents, reconcile duplicates, and update the central `global/MEMORY.md` index.
 
-Enable **Automatic organization** to process later saved changes. Choose **Any saved change** or **After a number of changes**. For example, this creation or update fragment checks once a minute, requires ten changes and waits fifteen minutes between rounds:
+To trigger an organization cycle manually:
+
+1. In Console, navigate to **Memories → Spaces → Organization**.
+2. Select an organizer reasoning model and click **Organize now**.
+3. The organizer spawns a dedicated, isolated execution run that scans files, deduplicates overlapping records, and produces a structured knowledge graph.
+
+To automate maintenance, enable an **Automatic organization policy** in your Space configuration:
 
 ```json
 {
   "organization": {
     "enabled": true,
-    "model": "your-model-key",
+    "model": "model-gemini-pro",
     "check_interval_seconds": 60,
     "cooldown_seconds": 900,
-    "trigger": {"type": "change_count", "count": 10}
+    "trigger": {
+      "type": "change_count",
+      "count": 10
+    }
   }
 }
 ```
 
-Count mode includes saved file changes from agents, Console and API; a rename counts once. Unchanged saves, rejected writes, history cleanup and organizer edits do not count. An admitted round consumes the changes present at its start, including when it fails or is cancelled. Changes saved during the round remain for later. Counts survive restarts and history cleanup; existing stores begin counting new changes when the capability is installed.
-
-**Check interval** defaults to 10 seconds (range 10–86400); **Cooldown** defaults to 300 seconds (range 0–604800). Automatic rounds require both their trigger and cooldown, evaluated on a shared 10-second service sweep. These are minimum delays. Recorded deadlines retain their timing; policy edits affect later checks and rounds. **Organize now** bypasses the interval, threshold and cooldown.
-
-The **Organization** tab shows status, costs, traces and revisions separately from business conversations. Failed or cancelled rounds keep saved edits. A history-gap status means retained revisions cannot establish progress; use **Organize now** to request another round.
-
-For API clients, `GET /memory-spaces/{id}/organization` reads status; `POST /memory-spaces/{id}/organizations` requests a round; `GET` on that path lists rounds. `/memory-spaces/{id}/sessions` lists associated business sessions. Lists use `limit` and `cursor`. File and revision APIs use the Space's `memory_id` under `/memories/{memory_id}`. Manage the backing store through the Space; it stays out of standalone memory lists and cannot be mounted directly.
+In count-based mode, the organizer executes whenever team members or agents accumulate 10 saved file modifications, observing a 15-minute cooldown between rounds to optimize token costs.
 
 ### Automatically extract conversation knowledge
 
-Automatic policies can include task `instructions` and a `history` selection. Choose conversation Session IDs and an explicit starting seal time (`after`); optional `before` closes the window and `max_runs` limits each batch (default 100, maximum 1000). For example, add this to a Space's `organization` policy:
+Beyond reviewing explicitly saved memory files, the organizer can automatically mine sealed conversation sessions for implicit business decisions:
 
 ```json
 {
-  "instructions": "Maintain product decisions and current handoff notes.",
+  "instructions": "Extract verified architecture decisions, approved API schemas, and production deployment policies.",
   "history": {
-    "session_ids": ["sess_..."],
+    "session_ids": ["sess_backend_refactor", "sess_auth_redesign"],
     "after": "2026-11-01T00:00:00Z",
-    "max_runs": 50
-  }
-}
-```
-
-Unprocessed sealed runs trigger organization even when no files changed or the memory is empty. Completed rounds consume their selected runs; failed and cancelled rounds leave them eligible after cooldown. Each batch keeps its exact source identities. File change counts and history progress are independent, so revision cleanup and concurrent file edits do not replay successfully processed conversations. Changing the selection preserves completed history progress. One-off organization tasks do not advance automatic progress.
-
-Standalone file memories use the same policy without requiring a Space. Read `GET /memories/{id}/organization`, then replace the policy with `PUT` and the returned `If-Match` ETag. The response includes policy configuration, status, `processed_history_runs` and configuration version; status changes leave the policy ETag unchanged. New standalone policies are disabled. Managed backing memories use their Space policy instead. The service rechecks the configuring actor's current permissions and configured resources before admitting every round.
-
-### Run a custom organization task
-
-Open a file collection or Space and choose **Organization → Organize memory**. Select an organizer model and optional task instructions. Console starts with **Candidate for review**; choose **Write directly** only when saved partial edits are acceptable. Turn on **Include conversation history** to select source sessions, local seal-time bounds and a run limit. After acceptance, open **Task details** for frozen source runs and **Open run and usage** for execution, cancellation and cost.
-
-Use `POST /memory-organizations` to organize a standalone file memory or an enabled Space with your own model and instructions. This needs workspace `read`, `write` and `run` permissions. It works without an automatic policy, including on an empty store:
-
-```json
-{
-  "target": {"kind": "memory", "id": "mem_..."},
-  "model": "your-model-key",
-  "instructions": "Consolidate supported product decisions and preserve unresolved disagreements."
-}
-```
-
-For a Space, use `{"kind": "space", "id": "mspace_..."}`. The managed backing memory cannot be selected directly. The response identifies the organization request and its ordinary run. Read it with `GET /memory-organizations/{id}`; use the run API for status, cancellation, usage and traces. Each submission accepts a distinct task, including a retry after an uncertain response; separate tasks may run concurrently against the same target with ordinary file conflict checks. Each keeps its own instructions and caller authority. Failed or cancelled runs retain committed edits.
-
-The `guidance.modules` API field combines `topics`, `journal` and `session_notes` independently. For example, `{"modules": ["topics", "session_notes"], "timezone": "UTC"}` keeps reusable knowledge and current handoff state. Omit `modules` to use the selected preset; `[]` keeps only common maintenance rules. A system override replaces the complete composed guide. Read the available module text with `GET /memories/guidance-presets`.
-
-### Extract knowledge from selected conversations
-
-Add `history` to a custom organization request to extract knowledge from one or several conversation Sessions, including into an empty memory:
-
-```json
-{
-  "target": {"kind": "memory", "id": "mem_..."},
-  "model": "your-model-key",
-  "instructions": "Extract supported product decisions, cite source Runs and retain conflicting statements.",
-  "history": {
-    "session_ids": ["ses_first", "ses_second"],
-    "after": "2026-01-01T00:00:00Z",
-    "before": "2026-02-01T00:00:00Z",
     "max_runs": 100
   }
 }
 ```
 
-Select 1–100 unique conversation Sessions in the same workspace. The optional time bounds apply inclusively to Run seal time, not message time. At acceptance, the Service freezes the matching sealed Runs and returns their Session, Thread and Run provenance in `sources`. Later conversation activity does not change that selection. `max_runs` defaults to 100 and supports up to 1000; an overfull selection is refused, so narrow the window or split the Sessions. An empty selection supplies no historical facts.
+The engine inspects raw conversation transcripts within the designated time window, extracts grounded conclusions, and drafts updates for the knowledge base.
 
-The organizer has bounded source discovery and content reading/search tools limited to that selection. It treats transcripts as evidence, preserves corrections and disagreements, and distinguishes user statements from agent claims. Omitting `history` organizes saved files only. Upgrading does not scan old conversations or spend model tokens automatically.
+### Run a custom organization task
+
+When you need an ad-hoc distillation over specific topics (such as preparing an onboarding guide before a major release), submit a custom organization task:
+
+```json
+POST /api/v1/memory-organizations
+{
+  "target": {"kind": "space", "id": "mspace_abc123"},
+  "model": "model-flagship-reasoning",
+  "instructions": "Consolidate all Q4 database migration decisions and highlight any unaddressed schema migrations."
+}
+```
+
+The system provisions a tracked background run and records all token usage and trace logs under the organization audit view.
+
+### Extract knowledge from selected conversations
+
+Targeted distillation allows you to specify up to 100 session IDs as training ground:
+
+```json
+{
+  "target": {"kind": "space", "id": "mspace_abc123"},
+  "model": "model-flagship-reasoning",
+  "instructions": "Extract approved product roadmap features and capture open technical debates.",
+  "history": {
+    "session_ids": ["ses_feature_planning", "ses_sprint_review"],
+    "after": "2026-10-01T00:00:00Z",
+    "before": "2026-11-01T00:00:00Z",
+    "max_runs": 50
+  }
+}
+```
+
+The model treats human statements as authoritative source evidence, distinguishes user corrections from unconfirmed agent guesses, and retains unresolved debates explicitly.
 
 ### Review a candidate before publishing
 
-In Console, choose **Review candidate** on an accepted task. The full-height review page shows added, modified and deleted file counts beside a resizable, collapsible file explorer. Switch between **Changed files** and **All files**, or share the page URL to open the selected path directly. On a phone, select a file from the list and use **Files** to return. **Diff** compares complete saved-baseline and candidate content; **File** opens either full version, including the baseline of a deleted file. Markdown files also offer source and preview. The reader supports wrapping, exact raw copying, change navigation and expandable unchanged context. Use **Previous file** or **Next file** to move through the changes. **Mark as reviewed** tracks your local progress; it does not select files for publication. **Apply all changes** confirms publication of the entire candidate. **Reload review** replaces the displayed versions and clears review marks. A changed target blocks checked publication. Inspect the current target, then start a fresh task or open **Review actions → Replace entire target** and acknowledge the listed target-only deletions, concurrent edits to overwrite and deleted files to restore. An unconfirmed application preserves the review and requires reload before another attempt. **Review actions → Discard candidate** prevents publication while preserving its inspectable files. After publication, use **View updated memory** to inspect the result.
+To protect enterprise knowledge bases from hallucinated or unverified modifications, custom organization tasks default to staging changes in an isolated **Candidate Tree**:
 
-Set `"output": "candidate"` on a custom organization request to keep live files unchanged during generation. The response's `candidate_memory_id` names an independent file memory copied from the target. Inspect or edit its files through ordinary memory APIs. This also works with selected conversation history.
+```json
+{
+  "output": "candidate"
+}
+```
 
-1. Wait for the ordinary run to complete and seal. Read `GET /memory-organizations/{id}/candidate` for status, changed paths, `candidate_seq` and `target_seq`.
-2. Read `GET /memory-organizations/{id}/candidate/file?path=...&candidate_seq=7` with the actual reviewed candidate sequence. It returns the complete saved-baseline and candidate strings; `null` means absent and `""` means an empty file. The older `/candidate/diff?path=...` endpoint remains a bounded preview. Inspect the current target separately when it has changed; `/candidate/replacement?candidate_seq=7&target_seq=4` lists the exact whole-tree replacement effects for the reviewed versions.
-3. Publish with `POST /memory-organizations/{id}/candidate/apply`, using `{"mode": "checked", "candidate_seq": 7, "target_seq": 4}` with the actual reviewed sequences. The complete tree publishes atomically. Unchanged target files retain their IDs and versions.
+When set to `"candidate"`, the organizer performs all file edits on an ephemeral clone of the target space. Live production documents remain completely untouched.
 
-`review_changed` means the candidate or target changed after review. Reload both before deciding. `baseline_changed` means the target changed since generation began. Generate a fresh candidate, or explicitly choose `replace_all` after reviewing the current target. `replace_all` overwrites the complete target tree and deletes target-only files; it does not merge concurrent edits. The same exact apply request can be retried safely using its stored receipt.
+1. Once generation finishes, open **Review candidate** in Console.
+2. The interactive review portal displays changed file counts, addition/deletion metrics, and a full file tree explorer.
+3. Select any file to open a visual side-by-side **Diff view** comparing the production baseline against the generated candidate.
+4. Mark files as reviewed as you inspect changes.
+5. Click **Apply all changes** to merge the candidate tree atomically into the live Memory Space.
 
-To reject a settled candidate, call `POST /memory-organizations/{id}/candidate/discard`. Cancel an active run first through the run API. Failed and cancelled generation cannot publish. Apply requires current write permission and an enabled target Space. Discard and apply retain the independent candidate memory for inspection; delete it separately when no longer needed. Removing the target or candidate makes publication unavailable. Publication changes file content, not target guidance or Session bindings.
+If concurrent edits occurred on the live space during generation, Service flags the baseline conflict (`baseline_changed`), allowing you to inspect the newer changes or select `replace_all` after deliberate review.
 
 ### Compose a Dreams-style workflow
 
-A Dreams-style workflow combines conversation extraction, reusable knowledge and current handoff state:
+A complete Dreams-inspired workflow establishes a continuous virtuous cycle:
 
-1. Create an empty file collection or a Space. Select **Topic knowledge** and **Session notes** under **Guidance modules**; add **Event journal** when dated events matter. Keep domain priorities in **Custom guide**.
-2. Start **Organize memory** with candidate output. Select the relevant conversations and a bounded seal-time window. Ask the organizer to preserve supported decisions, corrections, unresolved disagreements and source run identities.
-3. Review the generated files and apply the candidate. Reuse the published memory in later conversations through ordinary mounts or Space selections.
-4. For continuing extraction, configure the same sources and instructions in **Automatic policy** for a collection, or **Configuration → Organization** for a Space. Choose an explicit start time and enable automatic organization. Automatic rounds write directly; successful rounds consume sources once, while failed rounds leave sources eligible after cooldown.
-
-This composition uses ordinary organization runs, file guidance and automatic history progress. There is no separate Dreams resource or implicit historical scan. Disabling a policy preserves files and progress; changing source selections does not replay successfully consumed runs.
+1. **Daily interaction:** Developers and agents converse normally across different sessions. Agents store immediate operational notes in their session directories.
+2. **Scheduled distillation:** An automatic policy triggers during off-hours, scanning recently sealed sessions.
+3. **Structured synthesis:** The organizer extracts enduring patterns into `global/`, archives obsolete notes, and compiles an updated `global/MEMORY.md`.
+4. **Candidate gate:** Team administrators review the staged candidate diff in Console and approve publication.
+5. **Enriched context:** All subsequent agent sessions immediately inherit the refined corporate knowledge base.
 
 ### Write from current knowledge
 
-Agents and organizers track the file versions their conversation has read. Each file mutation checks those observations within the same memory, atomically with the write. A changed source or target returns `read_conflict` and names the file to reread.
+To prevent race conditions when multiple concurrent agents update the same memory file, Service implements optimistic concurrency control:
 
-To continue, the agent reads that file with `memory_file_view`, considers the new content in its next response, then writes again. Harness supplies the version conditions. A write issued alongside the reread still uses the old observations. Observations persist with the conversation checkpoint. Standalone file memories use the same workflow.
+- When an agent reads a memory file, Harness records its observed version.
+- When the agent issues a write, Service verifies that the underlying file version matches the observation.
+- If another session modified the document in the interim, the write fails with `read_conflict`.
+- The agent transparently re-reads the updated file via `memory_file_view`, incorporates the latest content, and retries the mutation.
 
 ## Standalone memories
 
 <span id="create-a-file-memory"></span> <span id="record-memories"></span> <span id="set-up-a-memory-provider"></span> <span id="create-a-record-memory"></span> <span id="read-and-edit-records"></span> <span id="recall"></span> <span id="mount-a-memory-on-a-thread"></span> <span id="what-agents-get"></span> <span id="files-and-history"></span>
 
-- [Standalone memory reference](standalone-memory.md)
+For applications that need to bind isolated, ephemeral file trees or specialized semantic vector stores directly to individual conversation threads, explore the [Standalone Memory Reference](standalone-memory.md).
 
 ## Inspect memories loaded for a reply
 
-To show which memories were automatically loaded, save `memory_sources` with the reply. The thread SSE stream supplies it in `delta.item.memory_sources` with `TEXT_MESSAGE_END`; run items expose it in `content.memory_sources`. A stream boundary confirms checkpoint durability; message end alone does not.
+To audit which memories were injected into a model's context for a specific reply:
 
-Each entry identifies the mount (`memory`) and resource (`memory_id`). Record entries contain recalled IDs and SHA-256 text digests. File entries include delivery status and the paths, digests, byte counts and truncation flags of content actually loaded. Index entries alone do not mean file content was read. `sources_truncated` marks an incomplete reference list.
+- In Console, expand the message's **Debug info** panel.
+- In API streams, inspect the `memory_sources` metadata field delivered on the `TEXT_MESSAGE_END` event.
 
-Use this as evidence of automatic delivery, not proof that the model used a particular fact. It excludes inherited conversation history and explicit tool reads. A missing field means sources were not captured; interpret empty lists with their `status`. Old replies are not backfilled.
-
-History returns saved sources without querying the provider again. Later memory edits or deletion leave that evidence unchanged. Digests cannot reconstruct earlier text; viewing current content still needs an authorized memory API request and an available resource.
+Each entry identifies the exact Space ID, mounted path, content digest, and character count injected into the model prompt, providing full audit compliance.

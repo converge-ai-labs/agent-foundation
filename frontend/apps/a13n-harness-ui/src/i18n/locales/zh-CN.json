@@ -3399,6 +3399,8 @@
   "Your theme and text sizes, saved in this browser.": "主题和字号保存在当前浏览器中。",
   "Theme": "主题",
   "Color theme": "颜色主题",
+  "Terminal theme": "终端主题",
+  "Follow theme": "跟随主题",
   "Light": "浅色",
   "Dark": "深色",
   "Text sizes": "字号",

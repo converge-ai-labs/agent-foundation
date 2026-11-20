@@ -1,7 +1,7 @@
 ---
 title: Files, commands, and operation limits
 sidebarTitle: Files, paths, and limits
-description: Choose an Environment operation, address the right files, and read bounded results.
+description: Use unified path routing, text and binary file streaming, glob/grep search, and bounded output policies across any Environment provider.
 ---
 
 Use Environment operations to read and change files, run commands, and observe processes directly from Python. Start with the complete file example in [Getting started](getting-started.md), then use this page to choose methods and interpret their results.
@@ -42,7 +42,7 @@ A mapped root selects file paths; it does not isolate an allowed command at the 
 
 Use the typed Provider interfaces when your application performs operations itself. To let an agent perform them, configure Harness Run inputs and `DynamicEnvironmentCapability` as shown in [Use Environments from Harness](../a13n-harness/environments.md).
 
-Harness supplies mount names, routing, access ceilings, operation timeouts, and state aggregation. Model-facing tools are an additional choice: adding an Environment alone does not expose them. The Provider remains responsible for enforcing the operations it advertises.
+Harness supplies mount names, routing, access ceilings, operation timeouts, and state aggregation. To expose file and shell tools to the model, pair your mounted Environment with `DynamicEnvironmentCapability`. The Provider remains responsible for enforcing the operations it advertises.
 
 ## File operation reference
 

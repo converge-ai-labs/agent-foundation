@@ -1,6 +1,6 @@
 ---
-title: 配置工作空间自动资源
-description: 自动配置默认执行资源，并选择部署使用的沙盒镜像。
+title: 配置工作空间默认资源自动置备
+description: 为新创建的 Service 工作空间自动置备默认 Docker 或 Kubernetes 沙箱环境模板及基础执行资源。
 ---
 
 按本部署配方为工作空间自动创建默认 Local 或 Docker 执行资源。自动配置仅在 all 角色运行；拆分 control/worker 的部署须显式配置资源。启用 Docker 自动配置前先连接 Engine，资源创建后再验证实际环境。
@@ -9,7 +9,7 @@ description: 自动配置默认执行资源，并选择部署使用的沙盒镜�
 
 Local/Docker provider 和模板的自动创建只在 `all` 角色运行。通用设置中两者默认关闭；提供的挂载 socket 的 Compose 部署启用 Docker，关闭 Local。分离的 control/worker 部署需要明确配置执行资源。
 
-初始化 Docker 时，先让 Service 进程通过 `environments.docker_host` 或其 Docker 环境访问目标 Engine。只安装 CLI 不会获得 Engine 访问权限。然后启用：
+初始化 Docker 时，先让 Service 进程通过 `environments.docker_host` 或其 Docker 环境访问目标 Engine。请确保运行 Service 的进程能够直接访问目标 Docker Engine 套接字或 API 端点。然后启用：
 
 ```toml
 [provisioning.docker]

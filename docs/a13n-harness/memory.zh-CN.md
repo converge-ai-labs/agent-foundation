@@ -1,6 +1,6 @@
 ---
-title: 记忆
-description: 跨 Thread 保存偏好，协调共享写入，并接入文件或记录存储。
+title: 跨会话记忆系统 (Memory)
+description: 为 Harness Agent 挂载带版本控制的文件记忆或 Mem0 语义向量记忆，让项目知识与用户偏好跨 Thread 持久生效。
 ---
 
 当一次对话中的知识应该用于后续对话时，就使用记忆，例如用户偏好的语言、项目约定或需要长期保留的决定。Host 决定哪些 Thread 共享存储，以及哪些 Thread 可以修改它。单个 Thread 的任务和笔记使用[工作状态](context.md#working-state)。

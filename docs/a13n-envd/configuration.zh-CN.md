@@ -1,7 +1,7 @@
 ---
-title: 守护进程配置与传输
+title: Envd 守护进程配置与传输层
 sidebarTitle: 配置与传输
-description: 将 Envd 连接到 Host，选择执行设置，并采集资源指标。
+description: 配置 Envd 的 stdio、HTTP 与反向 WebSocket 传输通道、会话默认参数、命令执行开关以及系统资源采样策略。
 ---
 
 在启动时配置 Envd，选择连接方式、执行账号、文件系统隔离和网络模式。Host 负责部署、凭据和守护进程生命周期。随后，每个 EIP 会话通过 `session.open.configuration` 在部署权限内选择工作目录、Sandbox、出站网络模式、生命周期和命令可用性。省略的选项继承启动默认值。
@@ -60,7 +60,7 @@ a13n-envd connect-service https://control.example.com --host work \
 
 首次接入时，如果当前所有者和工作空间下没有这个设备的环境，Service 会创建它。Envd 将环境 ID 和专用设备凭据保存在本地。后续运行 `a13n-envd connect-service work`，不再需要 API token 文件。首次启动可加 `--environment-id env_example`，要求使用已有环境。`--device-id` 会忽略本地身份文件；后续启动继续传相同的值。仍可使用 `--computer-use` 等通用 daemon 参数。
 
-Service 配置保存在 `--state-dir` 下的 `instances/<instance>/services/<name>`，默认根目录为 `~/.a13n-envd`（Windows 使用平台状态目录）。不同账号或工作空间请使用不同名称。禁用、删除或撤销凭据的环境不会自动重建。离线环境仍可显式[挂载到线程](../a13n-service/environments.md#mount-environments-on-a-thread)，连接本身不会挂载环境。
+Service 配置保存在 `--state-dir` 下的 `instances/<instance>/services/<name>`，默认根目录为 `~/.a13n-envd`（Windows 使用平台状态目录）。不同账号或工作空间请使用不同名称。禁用、删除或撤销凭据的环境不会自动重建。如需在对话中使用已注册的设备，请将其显式[挂载到目标线程](../a13n-service/environments.md#mount-environments-on-a-thread)。
 
 如果登记成功但凭据丢失，envd 会提示 `client_credential_required` 和环境 ID。先读取环境的当前 ETag，再使用普通 API token 和 `If-Match` 调用 `POST /api/v1/client-environments/{id}/rotate-credential?workspace_id=…`。将返回的 `token` 保存到私有文件，再运行 `a13n-envd connect-service work --credential-file /private/path/device-token`。启动过程不会自动轮换。凭据文件应保持私有（Unix 权限 `0600`）；API token 不会写入配置，也不会用于 WebSocket 鉴权。
 

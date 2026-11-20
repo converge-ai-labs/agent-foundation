@@ -1,6 +1,6 @@
 ---
 title: Standalone memory reference
-description: Create file or record memories, mount them on threads, and inspect saved knowledge.
+description: Create standalone versioned file memories and Mem0 semantic record memories, mount them directly on Service threads, and manage revision history.
 ---
 
 Use standalone memory when you need to mount an existing file store or a mem0 record backend directly on a thread. For shared knowledge with session notes and an organizer, start with [Memory Spaces](memory.md). Memory tools require workspace access and a selected mount, without a compute environment.

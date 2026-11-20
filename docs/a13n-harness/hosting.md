@@ -1,6 +1,6 @@
 ---
 title: Embedding in a Host
-description: Run a persistent conversation, then add current authority, background tools, and durable delivery.
+description: Architect a multi-tenant Python host around Harness with durable checkpoint publication, worker lease recovery, fresh authority bindings, and event streaming.
 ---
 
 A Host is the application that calls Harness. It selects the Agent, supplies current access and clients, saves accepted state, and delivers results. Start with a single-process conversation; add worker coordination when your application needs it.
@@ -186,7 +186,7 @@ The Model Provider's `forward_context_headers` option uses `A13N_HARNESS_FORWARD
 
 ### Check Model Calls Before Dispatch
 
-Supply a `ModelCallCheck` through `RunBindings.model_call_check` when your application must admit each public Model call. Its `check(ModelCall)` method returns to allow dispatch or raises to refuse it. Recreate this authority for the current Run. Record actual usage separately: admission does not establish that an HTTP request was sent or billed. See [usage correlation](usage-and-limits.md#usage).
+Supply a `ModelCallCheck` through `RunBindings.model_call_check` when your application must admit each public Model call. Its `check(ModelCall)` method returns to allow dispatch or raises to refuse it. Recreate this authority for the current Run. Record usage from completed or observed provider responses after request admission. See [usage correlation](usage-and-limits.md#usage).
 
 ## Durable State Boundary
 

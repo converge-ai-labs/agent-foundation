@@ -1,6 +1,6 @@
 ---
-title: MCP 工具
-description: 调用 MCP 工具，明确客户端的生命周期，再从当前身份和 Run 生成请求头。
+title: MCP 工具集成
+description: 为 Harness Agent 接入 MCP 服务端，跨 Run 复用宿主管理的 FastMCP 客户端，并通过 ContextualMCP 动态注入租户与身份请求头。
 ---
 
 通过 MCP Capability，将 Agent 接到其他进程或服务提供的工具。先运行下面的进程内计算器，无需远程服务或模型账号，即可理解连接生命周期。再根据应用需求选择连接方式：

@@ -1,6 +1,6 @@
 ---
-title: 通过 MCP 管理 Service
-description: 连接外部客户端，通过 MCP 更新工作空间资源并排查运行问题。
+title: 通过平台 MCP 端点管理 Service
+description: 将外部 MCP 客户端连接至 Service 内置的平台 MCP 端点，直接通过工具调用来查询、配置工作空间资源并排查失败的 Run。
 ---
 
 将支持 MCP 的客户端连接到 Service，即可管理工作空间资源并查看执行情况。先列出 agent 或搜索已安装版本的文档，再用同一连接读取资源，携带返回的 ETag 完成更新。
@@ -140,7 +140,7 @@ curl --fail-with-body "$A13N_URL/api/v1/runs/$RUN_ID" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-分配结果标明处理输入的运行，不代表执行完成。`completed` 时读取 `output`；`waiting` 时收集所需回答、审批或工具结果，再显式恢复。分别处理 `failed` 和 `cancelled`。后续输入和恢复可能产生后继运行，因此应跟踪输入及其运行，而不是只看对话的第一次运行。客户端断开连接后，执行仍会继续。
+`assigned_run_id` 标识了负责处理该条输入的 Run，请继续跟踪该 Run 直至执行完成且条目状态变为 `consumed`。`completed` 时读取 `output`；`waiting` 时收集所需回答、审批或工具结果，再显式恢复。分别处理 `failed` 和 `cancelled`。后续输入和恢复可能产生后继运行，因此应跟踪输入及其运行，而不是只看对话的第一次运行。客户端断开连接后，执行仍会继续。
 
 实时输出可通过[会话事件流](stream-and-read-results.md#follow-a-session-stream)跟踪。完整 HTTP 流程及 SDK 选择参阅[应用集成](connect-application.md)。
 

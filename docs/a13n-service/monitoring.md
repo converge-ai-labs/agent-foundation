@@ -1,6 +1,6 @@
 ---
 title: Monitor and troubleshoot
-description: Follow a request into its run, diagnose queue and delivery problems, and inspect workspace usage.
+description: Export Prometheus metrics and OpenTelemetry traces from Service, correlate HTTP request IDs with worker runs, and diagnose queue or webhook backlogs.
 ---
 
 Start with the question you need to answer. For a failed request, follow its request ID into the logs. For a slow run, check the queue and the attempt. For cost, read the workspace's stored usage.

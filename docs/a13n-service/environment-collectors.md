@@ -1,6 +1,6 @@
 ---
 title: Operate environment collectors
-description: Configure data sources, collectors and reverse Devices, then verify history coverage.
+description: Configure remote-write and OTLP telemetry collectors for managed sandboxes and reverse-connected Envd devices in Service.
 ---
 
 Use this operator reference after verifying a [first Local Cache chart](environment-monitoring.md). Choose where samples are collected and retained, configure a collector only when needed, and verify ingestion and query coverage separately. Workspace administrators select data sources; deployment operators own collector processes and credentials.

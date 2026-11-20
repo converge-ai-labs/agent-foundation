@@ -1,6 +1,6 @@
 ---
 title: Native tools and Web providers
-description: Give an Agent web access, choose provider-native tools, and verify saved image output.
+description: Enable web search, page scraping, provider-native search, and AI image generation with automatic workspace file saving in Harness UI.
 ---
 
 Use **Host Web** to search, read public pages, or download files through Harness UI. Use **native tools** when you want the selected Model's provider to perform a supported operation, such as search or image generation. Both are configured on the Agent.
@@ -263,7 +263,7 @@ capabilities:
 
 Harness UI supplies the saver automatically. Use this Capability instead of adding a second raw native image tool. It saves completed images under the current Thread's `tmp/`, including for child Runs, and instructs the model to present the saved location in its reply.
 
-History retains saved references instead of raw image bytes. Preview frames are excluded. A save failure fails the Run. An Agent can later read the image with `view`; storing its path alone does not send its pixels to another Model. Generated files survive ordinary Run completion and restart, but remain temporary storage. Custom Hosts supply their own async saver through [Harness's image Capability](../a13n-harness/capabilities.md).
+History retains saved references instead of raw image bytes. Preview frames are excluded. A save failure fails the Run. When switching to another Model later, ask the Agent to call `view` on the saved image path so the new Model receives the image content. Generated files survive ordinary Run completion and restart, but remain temporary storage. Custom Hosts supply their own async saver through [Harness's image Capability](../a13n-harness/capabilities.md).
 
 ### X Search and Code Execution
 

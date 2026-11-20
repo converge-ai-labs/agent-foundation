@@ -1,6 +1,6 @@
 ---
 title: Observation
-description: Capture a Run locally, inspect its spans and metrics, then export through your Host's OpenTelemetry pipeline.
+description: Export structured OpenTelemetry traces, spans, and metrics from Harness runs to Logfire, Langfuse, or any OTLP collector with fine-grained privacy filters.
 ---
 
 Start with one offline Run and an in-memory exporter. Once you can see its trace and duration metric, connect the same instrumentation to your collector, Logfire, or Langfuse. The Host owns provider setup and export; Harness instruments the Agent it builds.

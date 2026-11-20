@@ -1,6 +1,6 @@
 ---
 title: MCP tools
-description: Call an MCP tool, choose who owns the client, and add headers from the current identity and Run.
+description: Connect Model Context Protocol (MCP) servers to Harness agents, reuse host-managed FastMCP clients, and inject per-run identity headers with ContextualMCP.
 ---
 
 Connect an Agent to tools supplied by another process or service through an MCP Capability. Start with the in-process calculator below to learn the connection lifecycle without a remote server or model account. Then choose the connection form your application needs:

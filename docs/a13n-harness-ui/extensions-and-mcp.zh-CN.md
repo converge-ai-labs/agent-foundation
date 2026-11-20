@@ -1,6 +1,6 @@
 ---
-title: 工具与扩展类型
-description: 为 Agent 添加工具，检查工具是否生效，并选择合适的集成类型。
+title: 工具生态与扩展机制概览
+description: 对比 Skills、Content Plugins、MCP 服务端、Connectors 与 Python 运行期插件，为你的 DIY 工作台选择最合适的扩展方式。
 ---
 
 为 Agent 添加新工具时，先确定由谁提供。多数内置功能是通过 Agent YAML 选择的 **Capability**。外部服务器使用 **MCP**。Environment 决定文件和 shell 操作在哪里运行。

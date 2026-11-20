@@ -1,6 +1,6 @@
 ---
-title: 设置第一个 Agent
-description: 连接模型账户、选择工具执行权限，并验证第一条回复。
+title: 配置首个 Agent
+description: 在 Harness UI 中连接模型订阅账号或 API key，选择 Full Control 或 Sandbox 执行权限，并在代码仓库中完成首次对话。
 ---
 
 完成本指南后，你将得到一个能回复消息的 Agent。开始前，先[安装 Harness UI](installation.md)，并准备受支持的模型订阅或提供方 API 密钥。
@@ -27,7 +27,7 @@ a13n-harness-ui
 
 ## 2. 选择模型和设置
 
-选择推荐模型，或输入区分大小写的 API 模型 ID。使用你的账户能够访问的模型；推荐列表来自目录，不代表已通过账户访问测试。复用已有 Model 时，其保存的设置保持不变。
+选择推荐模型，或输入区分大小写的 API 模型 ID。请从内置推荐目录中选择你的账号有权限调用的模型，并在保存后发送一条测试消息完成验证。复用已有 Model 时，其保存的设置保持不变。
 
 第一次使用时，没有特定需求就保留向导提供的模型设置。之后可以修改[推理和上下文预算](models-and-authentication.md#context-and-modality-policy)。Codex 连接中的 **Fast** 请求优先服务，可能消耗更多配额，不保证回复更快。
 
@@ -50,7 +50,7 @@ API 密钥设置还提供可选的 **Shell review model**。选择模型来审�
 
 ## 4. 验证回复
 
-终端首次设置完成后会打开输入框。如果显式运行了 `setup` 命令，它会返回 shell；此时重新启动 `a13n-harness-ui`。WebUI 保存后会打开空对话。保存配置本身不会发送模型请求。
+终端首次设置完成后会打开输入框。如果显式运行了 `setup` 命令，它会返回 shell；此时重新启动 `a13n-harness-ui`。WebUI 保存后会打开空对话。配置保存成功后，发送第一条测试消息即可验证模型连接是否畅通。
 
 先发送一条不需要文件或 shell 工具的消息：
 

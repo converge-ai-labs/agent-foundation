@@ -1,6 +1,6 @@
 ---
 title: Skill publication reference
-description: Choose shared or isolated package publication and handle cleanup safely.
+description: Compare shared read-only host mounts and isolated environment synchronization for publishing workspace Skills to Service agent runs.
 ---
 
 Use this reference after [importing and testing a workspace skill](skills.md#add-a-skill). Choose shared publication for conventional paths, or isolated publication when concurrent agents must keep distinct package versions. These rules apply to imported workspace skills, not read-only built-in Host skills.

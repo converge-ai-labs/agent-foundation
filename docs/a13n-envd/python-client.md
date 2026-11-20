@@ -1,6 +1,6 @@
 ---
 title: Python EIP client
-description: Connect to a prepared Envd Device, open independent Sessions, and transfer files and process output from Python.
+description: Use a13n-envd-client in Python to connect to Envd devices, negotiate EIP sessions, stream files and process outputs, and invoke generated RPC methods.
 ---
 
 Use `a13n-envd-client` when implementing an Environment Provider or another trusted EIP integration. It handles the Device connection, Session scopes and protocol operations. For agent applications, start with [Environment Providers](../environments/index.md), which adapt those operations for Harness.
@@ -169,7 +169,7 @@ Give each logical operation an `EIPCallContext`. Its operation ID is 1–128 cha
 
 An explicit `timeout_ms` sets the operation budget. Local admission has its own deadline, and response waiting allows that budget plus the coordinator's allowance: 30 seconds when no request timeout is configured. A 60-second operation with that allowance can wait 90 seconds for its response. Without an operation budget, the configured request timeout applies. Initialization and readiness retain their enclosing deadlines.
 
-After cancellation, connection loss or a local timeout, inspect a sent mutation before deciding what to do next. Use `receipt.get`, a replay permitted by the method and retained evidence window, or native-state inspection. The client does not automatically retry ambiguous operations, and `operation.cancel` does not establish rollback.
+After cancellation, connection loss or a local timeout, inspect a sent mutation before deciding what to do next. Use `receipt.get`, a replay permitted by the method and retained evidence window, or native-state inspection. The client does not automatically retry ambiguous operations, and `operation.cancel` requests termination; inspect the target resource to confirm the final state.
 
 Custom transport integrations use `RequestCoordinator` for the Device's single reader, correlation and bounded admission, and `SessionRequester` for scoped operations and transfers. Sent requests abandoned by a caller retain correlation and capacity until a response or terminal carrier event. Caller cancellation leaves a shared stdio write running. Ordinary integrations use `EIPSession` and its generated client above these primitives.
 
@@ -230,6 +230,7 @@ The native accessibility reads below use `active_only` replay. Native mutations 
 | `file.close_reader`          | `file_close_reader`          | `FileReaderCloseParams`        | `FileReaderCloseResult`        | `active_only`       |
 | `file.commit_writer`         | `file_commit_writer`         | `FileWriterCommitParams`       | `FileWriterCommitResult`       | `terminal_evidence` |
 | `file.copy`                  | `file_copy`                  | `FileCopyParams`               | `FileCopyResult`               | `terminal_evidence` |
+| `file.discover_documents`    | `file_discover_documents`    | `FileDiscoverDocumentsParams`  | `FileDiscoverDocumentsResult`  | `active_only`       |
 | `file.find`                  | `file_find`                  | `FileFindParams`               | `FileFindResult`               | `active_only`       |
 | `file.list`                  | `file_list`                  | `FileListParams`               | `FileListResult`               | `active_only`       |
 | `file.mkdir`                 | `file_mkdir`                 | `FileMkdirParams`              | `FileMkdirResult`              | `terminal_evidence` |
@@ -241,6 +242,7 @@ The native accessibility reads below use `active_only` replay. Native mutations 
 | `file.remove`                | `file_remove`                | `FileRemoveParams`             | `FileRemoveResult`             | `terminal_evidence` |
 | `file.search`                | `file_search`                | `FileSearchParams`             | `FileSearchResult`             | `active_only`       |
 | `file.stat`                  | `file_stat`                  | `FileStatParams`               | `FileStatResult`               | `active_only`       |
+| `file.tree`                  | `file_tree`                  | `FileTreeParams`               | `FileTreeResult`               | `active_only`       |
 | `file.write_text`            | `file_write_text`            | `FileWriteTextParams`          | `FileWriteTextResult`          | `terminal_evidence` |
 | `initialize`                 | `initialize`                 | `InitializeParams`             | `InitializeResult`             | `ledger_external`   |
 | `operation.cancel`           | `operation_cancel`           | `OperationCancelParams`        | `OperationCancelResult`        | `active_only`       |

@@ -1,6 +1,6 @@
 ---
 title: Configure an agent
-description: Save revisions, select tools, configure delegation, and extend an agent.
+description: Manage immutable agent revisions, configure tool permissions and LLM risk review, attach subagents, enable context compaction, and bind plugins in Service.
 ---
 
 Start with an agent that already answers a short message in Console. Use this page to add tools, approvals, delegation or plugins, save a revision, and test the changed behavior before selecting it for other callers.

@@ -1,6 +1,6 @@
 ---
 title: Use the Host browser
-description: Prepare browser automation on the WebUI Host, browse with the Agent, and capture or annotate its window.
+description: Enable visual Chromium browser automation on your Linux or macOS host, take over interactive control for logins, and annotate screenshots for the Agent.
 ---
 
 Use the Host browser when the Agent needs to operate a website or you want to review a page together. First [start WebUI](webui.md#start-the-server). The browser runs on the server Host, separately from the browser displaying WebUI.

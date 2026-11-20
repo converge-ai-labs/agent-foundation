@@ -1,25 +1,25 @@
 {
   "title": "Environments",
-  "description": "Files, commands, and processes anywhere",
+  "description": "Portable files, commands, and sandboxes",
   "root": true,
   "icon": "environments",
   "pages": [
     "index",
-    "---Get started---",
+    "---Get Started---",
     "getting-started",
     "examples",
-    "---Work with Environments---",
+    "---File & Process Operations---",
     "operations",
     "commands",
     "lifecycle",
-    "---Configure---",
+    "---Providers & Sandboxes---",
     "configuration",
     "providers",
     "cloud-providers",
     "provider-plugins",
     "remote-envd",
     "configuration-reference",
-    "---Envd---",
+    "---Envd Daemon---",
     "...../a13n-envd"
   ]
 }

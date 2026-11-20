@@ -1,7 +1,7 @@
 ---
 title: Providers and runtime configuration
 sidebarTitle: Providers and runtime
-description: Prepare a backend, connect executions to it, and keep target management separate from runtime cleanup.
+description: Configure host-local runtimes for Local Envd and Docker, manage shared daemon pools, and separate runtime cleanup from target destruction.
 ---
 
 Configure a Provider in three parts: a recipe describes the target, account settings and credentials reach the backend, and a runtime holds shared clients. Start with [Choose a backend](index.md#choose-a-backend), then follow the matching setup below. Use [Provider plugins](provider-plugins.md) to add your own adapter.
@@ -68,7 +68,7 @@ runtime = DockerProviderRuntime(engine=engine)
 
 Keep the borrowed Engine open until its users finish, then close it at Host shutdown. Registry authentication, credential helpers, mirrors, and proxies use Docker client configuration.
 
-Native execution overrides the image entrypoint, enables Docker init, and keeps the container alive between Runs. Relative tool paths start in `/workspace`; absolute paths address the container, with Harness adding its aggregate mount prefix. Execution close releases local observations while preserving the container and background processes. Re-entry uses the saved container; confirmed absence requires an explicit management decision. A transport failure alone does not establish absence.
+Native execution overrides the image entrypoint, enables Docker init, and keeps the container alive between Runs. Relative tool paths start in `/workspace`; absolute paths address the container, with Harness adding its aggregate mount prefix. Execution close releases local observations while preserving the container and background processes. Re-entry uses the saved container; confirmed absence requires an explicit management decision. If a status check fails due to a transient network error, retry the query before assuming the target was destroyed.
 
 Native Docker provides files, shell, process control, and output observation. Ports and Computer require `envd_http`; changing an existing Native recipe does not install a daemon. With HTTP EIP, Session close preserves the desktop, while stop/start preserves files and recreates GUI state. See the [managed desktop image contract](../a13n-envd/sandbox.md#managed-docker-desktop-in-service) for startup and permissions.
 

@@ -1,6 +1,6 @@
 ---
 title: How Service conversations work
-description: Choose an agent, exchange messages, handle requests, and continue a conversation.
+description: Understand how Service workspaces, immutable agent revisions, sessions, threads, runs, and worker attempts coordinate durable execution.
 ---
 
 Follow one conversation in **Service**: give an agent project notes, read its reply, and return with a follow-up. You need access to a Service deployment through **Console** or an SDK. For embedded Python execution or the interactive workbench, see [Choose your path](../overview/choose-your-path.md).

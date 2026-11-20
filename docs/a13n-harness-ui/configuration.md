@@ -1,11 +1,11 @@
 ---
 title: Configuration reference
-description: Find the owning file, check a configuration change, and look up root settings.
+description: Complete YAML configuration reference for Harness UI root settings, model definitions, agent capabilities, projects, and directory precedence.
 ---
 
 Use this page when you know which setting you want to change. For a first working connection, follow [setup](setup.md). For a complete edit-and-test procedure, use [configuration recipes](configuration-recipes.md).
 
-Harness UI keeps three locations separate: **configuration** describes resources, **data** stores conversations and credentials, and a **Project** selects working directories. Running the CLI inside a repository does not make that repository the configuration directory.
+Harness UI keeps three locations separate: **configuration** describes resources, **data** stores conversations and credentials, and a **Project** selects working directories. Harness UI loads configuration from your user configuration root (`~/.a13n-harness-ui`) or an explicit `--config` path, independent of the current repository directory.
 
 ## Locate and validate your files
 
@@ -121,7 +121,7 @@ Create that Agent and its Model with the [file-based Agent guide](agents-and-sub
 
 Setup writes the default Agent and Environment, not a `project-local` resource. A projectless application conversation works in its own `thread-files/tmp/`, with attachments and global guidance/Skills when enabled. The TUI selects a Project from its launch directory on first input or explicit resume. Resuming from another directory reassigns the Project without replacing history or other settings.
 
-The file-only `configuration` mount exposes the selected YAML's directory. It reuses an existing mount of that exact directory and does not establish a shell working directory. The whole directory is accessible, including sensitive files it contains.
+The file-only `configuration` mount exposes the selected YAML's directory. It reuses an existing mount when the directory matches a Project root and keeps file-only access. The whole directory is accessible, including sensitive files it contains.
 
 ### Display settings
 
@@ -274,7 +274,7 @@ dictation:
   context_words: 2000
 ```
 
-Omitting `codex.group` and `codex.account` uses `codex-default`. Speech recognition and correction select independently from that group; `codex.account` pins both to one account. Speech recognition tries another eligible member only after a definite HTTP 401 or 429 rejection, never after an ambiguous upload timeout or network failure. Correction uses normal group failover; if it fails, the original transcript remains available without uploading audio again. Login alone does not enable dictation. Existing `dictation.model: model-id` configurations keep using the selected audio-input Model with `backend: model` (the default). Set that Model to null to turn dictation off; saved Codex presets remain available for later use.
+Omitting `codex.group` and `codex.account` uses `codex-default`. Speech recognition and correction select independently from that group; `codex.account` pins both to one account. Speech recognition tries another eligible member only after a definite HTTP 401 or 429 rejection, never after an ambiguous upload timeout or network failure. Correction uses normal group failover; if it fails, the original transcript remains available without uploading audio again. After signing in, enable dictation in **Settings → Chats → Voice input**. Existing `dictation.model: model-id` configurations keep using the selected audio-input Model with `backend: model` (the default). Set that Model to null to turn dictation off; saved Codex presets remain available for later use.
 
 ### Media understanding
 

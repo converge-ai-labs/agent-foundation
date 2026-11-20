@@ -1,6 +1,6 @@
 ---
 title: Service upgrade notes
-description: Check version-specific cutovers and convert retained data before reopening admission.
+description: Version-specific migration instructions, breaking contract cutovers, and data conversion procedures for upgrading an existing Service deployment.
 ---
 
 Use this page when upgrading an existing Service deployment, not for a new installation. Select the cutovers that apply to the source and target releases, follow the [backup and migration procedure](operations.md), and keep admission closed until data, workers and clients are compatible. Preserve unknown external-operation outcomes for reconciliation.

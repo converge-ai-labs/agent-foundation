@@ -27,6 +27,55 @@ if os.name == "posix":
 
 OUTPUT_BYTES = 1024 * 1024
 MAX_TERMINALS = 32
+_READ_BATCH_LIMIT = 256 * 1024
+_COALESCE_BYTE_LIMIT = 128 * 1024
+_SYNC_BEGIN = b"\x1b[?2026h"
+_SYNC_END = b"\x1b[?2026l"
+_HIDE_CURSOR = b"\x1b[?25l"
+_SHOW_CURSOR = b"\x1b[?25h"
+_ERASE_SUFFIXES = (
+    b"\x1b[J",
+    b"\x1b[0J",
+    b"\x1b[2J",
+    b"\x1b[3J",
+    b"\x1b[K",
+    b"\x1b[0K",
+    b"\x1b[2K",
+    b"\x1b[H",
+    b"\x1b[;H",
+    b"\x1b[1;1H",
+)
+
+
+def _incomplete_utf8_tail(data: bytes | bytearray) -> bool:
+    if not data:
+        return False
+    tail = data[-3:]
+    for idx in range(len(tail) - 1, -1, -1):
+        byte = tail[idx]
+        if byte < 0x80:
+            return False
+        if (byte & 0xC0) == 0x80:
+            continue
+        expected = 2 if (byte & 0xE0) == 0xC0 else 3 if (byte & 0xF0) == 0xE0 else 4 if (byte & 0xF8) == 0xF0 else 1
+        return (len(tail) - idx) < expected
+    return False
+
+
+def _incomplete_escape_tail(data: bytes | bytearray) -> bool:
+    tail = bytes(data[-16:])
+    esc = tail.rfind(b"\x1b")
+    if esc < 0:
+        return False
+    seq = tail[esc:]
+    if len(seq) == 1:
+        return True
+    second = seq[1]
+    if second == ord("["):
+        return not any(0x40 <= b <= 0x7E for b in seq[2:])
+    if second == ord("]"):
+        return b"\x07" not in seq[2:] and b"\x1b\\" not in seq[2:]
+    return False
 
 
 class TerminalSize(SurfaceModel):
@@ -143,22 +192,43 @@ class TerminalSession:
         self.changed = asyncio.Event()
 
     def _read(self) -> None:
-        try:
-            data = os.read(self.master, 65536)
-        except BlockingIOError:
+        chunks = bytearray()
+        while len(chunks) < _READ_BATCH_LIMIT:
+            try:
+                data = os.read(self.master, 65536)
+            except BlockingIOError:
+                break
+            except OSError as exc:
+                if exc.errno != errno.EIO:
+                    raise
+                data = b""
+            if not data:
+                asyncio.get_running_loop().remove_reader(self.master)
+                break
+            chunks.extend(data)
+        if not chunks:
             return
-        except OSError as exc:
-            if exc.errno != errno.EIO:
-                raise
-            data = b""
-        if not data:
-            asyncio.get_running_loop().remove_reader(self.master)
-            return
-        self.output.extend(data)
-        self.end += len(data)
+        self.output.extend(chunks)
+        self.end += len(chunks)
         if len(self.output) > OUTPUT_BYTES:
             del self.output[:-OUTPUT_BYTES]
         self._notify()
+
+    def has_incomplete_frame(self, cursor: int) -> bool:
+        if self.state != "running" or self.end <= cursor:
+            return False
+        first = self.end - len(self.output)
+        start = max(first, min(cursor, self.end))
+        pending = self.output[start - first :]
+        if not pending or len(pending) >= _COALESCE_BYTE_LIMIT:
+            return False
+        if pending.rfind(_SYNC_BEGIN) > pending.rfind(_SYNC_END):
+            return True
+        if pending.rfind(_HIDE_CURSOR) > pending.rfind(_SHOW_CURSOR):
+            return True
+        if _incomplete_utf8_tail(pending) or _incomplete_escape_tail(pending):
+            return True
+        return bytes(pending[-10:]).endswith(_ERASE_SUFFIXES)
 
     async def _wait(self) -> None:
         await self.process.wait()

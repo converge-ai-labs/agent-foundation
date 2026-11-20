@@ -1,6 +1,6 @@
 ---
-title: 模型
-description: 接入 provider，为 agent 配置可用模型，再设置请求默认值、媒体理解和价格。
+title: 模型接入、参数与计费配置
+description: 在 Service 工作空间中接入模型提供方、注册可用模型，统一配置推理参数、上下文策略、多模态媒体解析与自定义 Token 价格。
 ---
 
 先将上游账号接入为**模型 provider**，再保存 agent 可通过它调用的**模型**。Provider 保存凭据和连接设置。每个模型保存上游 ID、调用 API、输入能力、请求默认值和可选价格。两者属于同一[工作空间](resources.md#workspaces)；agent 通过稳定的 key 选择模型。

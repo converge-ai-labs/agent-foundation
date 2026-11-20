@@ -1,6 +1,6 @@
 ---
-title: Live 实时对话
-description: 打开实时对话，处理工具和音频，再关闭连接并通过可移植状态续接。
+title: Live 实时双向语音对话
+description: 在 Harness 中建立低延迟的实时双向音频与文本对话，支持在语音通话中直接调用工具、处理审批并导出可移植状态。
 ---
 
 Live Run 在用户说话、Model 回复和工具执行期间保持对话连接。应用管理输入和播放，Harness 提供 Agent 的工具、权限、Context、插件和状态。

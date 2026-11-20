@@ -1,6 +1,6 @@
 ---
 title: Use WebUI
-description: Start a browser conversation, choose its working environment, review files, and collaborate.
+description: Collaborate with agents in the browser using WebUI's conversation workspace, live file explorer, Git diff viewer, integrated terminals, and Coordinator workers.
 ---
 
 WebUI is the browser workbench for Harness UI. It uses the same App and saved conversations as the TUI. Start with one conversation; add Projects, file review, browser control, and collaboration as your work needs them.
@@ -132,7 +132,7 @@ New Runs look up prices using the selected Model’s configured route. In chat u
 
 ## Voice input
 
-In **Settings → Chats → Dictation**, select **Codex subscription**, then choose a signed-in Codex account or subscription group. Speech recognition and Luna correction are preset; no API key or Model resource is required. Both steps select independently from the chosen group; selecting an individual account pins both steps to it. Login alone does not enable dictation. **Advanced dictation settings** lets you change the correction LLM from the supported Codex models and adjust the context budget (default 2,000 words on each side). You can also select an existing audio-input Model for single-call transcription.
+In **Settings → Chats → Dictation**, select **Codex subscription**, then choose a signed-in Codex account or subscription group. Speech recognition and Luna correction are preset; no API key or Model resource is required. Both steps select independently from the chosen group; selecting an individual account pins both steps to it. After signing in, enable dictation in **Settings → Chats → Voice input**. **Advanced dictation settings** lets you change the correction LLM from the supported Codex models and adjust the context budget (default 2,000 words on each side). You can also select an existing audio-input Model for single-call transcription.
 
 Click the microphone in the composer or an **Add to chat** comment, then click Stop. The backend generates the final text, using the draft, chat title and nearby authored conversation as context. Codex subscription dictation runs ASR followed by text correction; intermediate text is not shown. The final fragment is inserted once at the current input selection without a preview or confirmation step. Nothing is sent automatically. If correction fails, the original transcript is inserted with a warning. After a recognition error, Retry uses the same recording and captured context. Cancel discards it. Microphone capture requires localhost or HTTPS.
 
@@ -175,7 +175,7 @@ Choose **Fast** in **Agent & Model settings**, or **Ultrafast** where the select
 
 The shared composer remembers the choice for later Sends in this conversation. Changing the Agent or effective Model clears it. It does not affect steering, Thinking, or saved Model configuration. The Context / Cost / Cache / Time row displays the active or saved Run's captured **On**, **Off**, **Ultrafast**, or **Default**; a dash means unavailable.
 
-The server exposes supported native speed controls for OpenAI/Codex, direct Anthropic, and Gemini connections. Disabled choices explain their limitation. Provider eligibility and charges determine the outcome; requesting a speed mode does not guarantee faster execution.
+The server exposes supported native speed controls for OpenAI/Codex, direct Anthropic, and Gemini connections. Disabled choices explain their limitation. Speed modes forward the requested service tier to the provider, where actual latency and billing depend on your account tier.
 
 ## Tool executions and immediate steering
 
@@ -201,7 +201,7 @@ Respond in the pending-decision card:
 | External result           | Enter the real result as JSON under **Provide a result**                                     |
 | Several or mixed requests | Complete every item and choose **Submit responses**                                          |
 
-Shell approvals show the risk assessment, reason, command, cwd, and mount; environment-variable values are hidden. Bound Shell arguments cannot be replaced. Deny an unsuitable command with an explanation so the Agent can propose a new one. Server-omitted arguments cannot be approved; a missing risk assessment alone does not block a decision.
+Shell approvals show the risk assessment, reason, command, cwd, and mount; environment-variable values are hidden. Bound Shell arguments cannot be replaced. Deny an unsuitable command with an explanation so the Agent can propose a new one. You can approve or deny a complete tool request even if optional risk-assessment text is absent.
 
 External-result entry does not execute a tool in your browser. Enter `null` explicitly when that is the result; an empty editor is unanswered. Approval authorizes execution, not its success. On lost acknowledgement, inspect the current request before retrying. Stale or competing responses refresh the card.
 
@@ -362,7 +362,9 @@ These limits apply to model tools, not human WebUI access. Workers cannot create
 
 Use `create_thread` for an independent conversation, `create_worker` for an owned worker, and `spawn_subagent` for a bounded task in the current chat.
 
-In **Settings → Agents**, choose the allowed models and default model for agent creation. Independent chats, Coordinator workers and dynamic subagents share these choices. Use `send_thread_message` to continue an existing chat.
+In **Settings → Agents**, choose the allowed models and default model for agent creation. Independent chats, Coordinator workers and dynamic subagents share these choices.
+
+Use `send_thread_message` to continue an existing chat. It steers the active Run or starts a Run in an idle chat. Follow the returned operation or stream events to confirm that the message was processed and saved. If delivery is uncertain, check the target chat before retrying.
 
 ## Fork a conversation
 
@@ -451,7 +453,7 @@ Bot publications show **New message from Bot** and a preview of the actual messa
 3. Check **Enabled on this device**, then choose **Send test notification**.
 4. Keep a WebUI page visible to renew device activity, send a task, and check the system alert after leaving WebUI.
 
-The server must stay running and reach the browser's push service. No separate push account or manual VAPID setup is required. Enable each device separately; existing browser permission alone does not enable background delivery after an upgrade. A test confirms push-service acceptance, not screen display.
+The server must stay running and reach the browser's push service. No separate push account or manual VAPID setup is required. After upgrading, enable push notifications on each browser or device where you want background alerts. A test confirms push-service acceptance, not screen display.
 
 System notices cover completion, failure, and requests for input across all root conversations, including unvisited ones; archived roots are excluded. Actual answer/question/error previews can appear on the lock screen. Opted-in devices are eligible for six hours after activity; any visible WebUI page renews this about every minute without requiring focus or typing.
 

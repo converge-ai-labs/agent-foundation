@@ -1,11 +1,11 @@
 ---
-title: 配置参考
-description: 找到配置所属文件、检查修改，并查阅根设置。
+title: 配置文件参考
+description: Harness UI 完整 YAML 配置参考：涵盖根配置文件、Model 连接定义、Agent 能力声明、Project 工作区以及目录优先级规则。
 ---
 
 已知道要修改哪个设置时，使用本页。首次连接模型请按[设置指南](setup.md)操作；完整的编辑和测试步骤见[常见配置用法](configuration-recipes.md)。
 
-Harness UI 区分三个位置：**配置目录**描述资源，**数据目录**保存对话和凭据，**Project** 选择工作目录。在仓库中启动 CLI，不会将仓库变成配置目录。
+Harness UI 区分三个位置：**配置目录**描述资源，**数据目录**保存对话和凭据，**Project** 选择工作目录。Harness UI 默认从用户配置根目录（`~/.a13n-harness-ui`）或 `--config` 指定路径加载配置，与当前所处的代码仓库目录解耦。
 
 ## 定位并验证文件
 

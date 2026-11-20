@@ -1,6 +1,6 @@
 ---
-title: Agent 与执行
-description: 构建一次 Agent，执行一轮、检查结果，再流式执行下一轮。
+title: Agents 与 Runs
+description: 在 Python 中构建可复用的 ExecutableAgent，通过 RunBindings 运行或流式消费每轮对话，实时引导执行并配置自动恢复策略。
 ---
 
 为 Agent 的行为和输出契约构建一个 executable。只需要最终结果时调用 `run()`，需要实时事件时调用 `stream()`。每次调用都有新的 Run 上下文；传入上次结果的状态即可继续同一个 Thread。
@@ -64,7 +64,7 @@ if __name__ == "__main__":
 
 运行 `uv run python runs.py`。预期先输出 `turn-1`，接着是事件序号，最后是 `turn-2`。确定性的 Model 统计已有响应；断言检查两次 Run 是否属于同一个 Thread。
 
-构建器将可信 Python 对象组合为可复用 executable。Harness 在原生 Agent 执行外管理状态、资源和事件。构建 executable 本身不会发起 Model 请求。
+构建器将可信 Python 对象组合为可复用 executable。Harness 在原生 Agent 执行外管理状态、资源和事件。构建 `ExecutableAgent` 仅在内存中完成组件组装，真正的模型请求在调用 `run()` 或遍历 `stream()` 时发起。
 
 ### 构建时确定的值
 

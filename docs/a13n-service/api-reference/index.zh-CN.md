@@ -1,7 +1,7 @@
 ---
-title: Service API 参考
+title: Service OpenAPI 接口参考手册
 sidebarTitle: API 参考
-description: 查找 HTTP 操作、准备请求，并使用与你的 Service 部署对应的 schema。
+description: 基于 OpenAPI 3.1 生成的 Service 全量 HTTP 接口参考手册，提供完整的请求参数、响应 Schema 与在线调试示例。
 ---
 
 当你已经确定要读取或修改哪类 Service 资源时，使用本参考。导航按 API 领域组织操作；每个操作页展示参数、请求体、响应和请求示例。首次集成请先阅读[连接应用](../connect-application.md)，再回到这里查阅具体字段。

@@ -1,6 +1,6 @@
 ---
 title: Skills
-description: Import a workflow as a skill, pin it to an agent, and choose how its files are published.
+description: Import reusable SKILL.md packages from archives or GitHub repositories into Service workspaces, pin skill versions to agents, and choose publication modes.
 ---
 
 Use a skill to give an agent reusable instructions and supporting files. The agent sees a short catalog entry and reads the relevant `SKILL.md` when needed. This page takes a release-notes skill from a local file to an agent run.

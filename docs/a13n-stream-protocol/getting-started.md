@@ -1,7 +1,7 @@
 ---
 title: Stream Protocol quickstart
 sidebarTitle: Quickstart
-description: Run an offline Agent, convert its output, and inspect the resulting AG-UI events.
+description: Convert a live Harness execution stream into typed AG-UI events in Python and inspect text deltas, tool calls, and terminal results.
 ---
 
 This example runs Harness with a test model and prints one JSON object per event. You will see where execution ends and where your application's storage or transport begins. It needs Python 3.13 and `uv`, with no model credentials.

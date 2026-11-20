@@ -1,6 +1,6 @@
 ---
-title: Bot
-description: 通过协调工作 Thread、默认每小时检查进展的个人助手，持续推进目标。
+title: Bot 常驻协调助手
+description: 开启 WebUI 常驻 Bot 助手，自动跨 Project 协调工作线程、按小时执行 Heartbeat 巡检清单，并实时响应外部 Connector 事件。
 ---
 
 Bot 是 WebUI 侧边栏中的实例级助手。向 Bot 提出持续目标后，它可以查找或创建 Project、启动普通工作 Thread，并在后续 heartbeat 中检查已保存的结果。聊天页面复用现有 Thread 的阅读器、编辑器和原生面板。
@@ -36,7 +36,7 @@ heartbeat 间隔允许 60–86,400 秒，Connector 投递间隔允许 1–86,400
 
 ## 协调工作与记忆
 
-Bot 的专属工作区是所选根 YAML 同级的 `bot/` 目录。默认配置下，路径为 `~/.a13n-harness-ui/bot/`。显式指定 `--config` 会改变其父目录。该目录始终是 Bot 的默认工作目录，打开 Project Environment 后也不改变。Bot 通过原生工具直接完成短小、有明确边界的任务，将耗时的实现、研究或运维交给工作 Thread。此目录用于协调材料，不代表你的工作 Project。
+Bot 的专属工作区是所选根 YAML 同级的 `bot/` 目录。默认配置下，路径为 `~/.a13n-harness-ui/bot/`。显式指定 `--config` 会改变其父目录。该目录始终是 Bot 的默认工作目录，打开 Project Environment 后也不改变。Bot 通过原生工具直接完成短小、有明确边界的任务，将耗时的实现、研究或运维交给工作 Thread。该目录专用于存放 Bot 的协调笔记与巡检清单，你的业务代码仍保存在各自的 Project 目录中。
 
 Bot 可以直接访问所有已配置 Project 的 Environment，无需仅为访问文件或工具而创建 Thread：
 
@@ -44,7 +44,7 @@ Bot 可以直接访问所有已配置 Project 的 Environment，无需仅为访�
 2. 将所选目标 ID 传给 `open_environment_target`。
 3. Files 使用返回的虚拟路径，Shell 或 Computer 使用明确的别名。Bot 的默认目录保持不变。
 
-每个 Project 目标使用其配置的根目录、本地 profile、Device 绑定和默认 Environment。Project 的 Agent、MCP 选择和 Run Extension 不会替换 Bot 的执行策略。连接仅在使用目标时打开；单个目标不可用不会阻止其他工作。不同目标保留独立 Session，即使指向同一个目录。配置变更应用于后续 Run。`host-desktop` 目标在开启且可用时提供 Host Computer Use。Browser 仍由 Host 管理，与 Project 目标独立。现有工具权限和 Environment 限制继续生效；能够访问不代表获得执行有后果操作的授权。
+每个 Project 目标使用其配置的根目录、本地 profile、Device 绑定和默认 Environment。Project 的 Agent、MCP 选择和 Run Extension 不会替换 Bot 的执行策略。连接仅在使用目标时打开；单个目标不可用不会阻止其他工作。不同目标保留独立 Session，即使指向同一个目录。配置变更应用于后续 Run。`host-desktop` 目标在开启且可用时提供 Host Computer Use。Browser 仍由 Host 管理，与 Project 目标独立。打开 Project 目标后，所有工具调用仍遵循当前的工具权限配置与 Environment 安全上限。
 
 将始终适用的工作区指引放在 `bot/AGENTS.md` 中。文件存在时，每个 Bot Run 都会通过有大小限制的文件上下文自动注入其内容，同时保留全局 `AGENTS.md` 指引。
 
@@ -78,7 +78,7 @@ Heartbeat 和其他自动工作直接使用工具，不添加开场白或例行�
 
 直接在 Bot 聊天中处理待回答的人类决策。Bot 只提供聊天视图，通知入口和旧的 Bot Thread 链接都会打开该聊天。heartbeat 和外部事件无法代答审批。服务器启用相应功能后，现有原生面板选择器提供文件和浏览器；Bot 不另做一套浏览器实现。
 
-Bot 使用普通共享输入框：受信任的参与者共同编辑同一份文本和附件选择，沿用在线状态、同步和服务端草稿保存。打开或刷新 `/bot` 会恢复共享草稿，不启动 Run。Send 和 Steer 等待同步后捕获输入，只在接受后清除已捕获的编辑；并发编辑和被拒绝的输入仍保留。提交结果不确定时，保留原命令并使用显式重试。重试沿用相同的输入 ID、有序内容和草稿捕获，不会再创建一份输入。Bot 仍不向限定范围的访客分享开放。Bot 空闲时，新消息会立即启动原生 Run；正在运行时，消息会通过原生 immediate steer 送入该确切的 Run，包括由 Heartbeat 或 Connector 启动的 Run。最终文本回复会显示在聊天中。Run 处于准备、取消或过期状态时可能拒绝输入；草稿会保留，可再次发送。拒绝不会将消息排队，也不会启动替代 Run。接受输入不代表完成。
+Bot 使用普通共享输入框：受信任的参与者共同编辑同一份文本和附件选择，沿用在线状态、同步和服务端草稿保存。打开或刷新 `/bot` 会恢复共享草稿，不启动 Run。Send 和 Steer 等待同步后捕获输入，只在接受后清除已捕获的编辑；并发编辑和被拒绝的输入仍保留。提交结果不确定时，保留原命令并使用显式重试。重试沿用相同的输入 ID、有序内容和草稿捕获，不会再创建一份输入。Bot 仍不向限定范围的访客分享开放。Bot 空闲时，新消息会立即启动原生 Run；正在运行时，消息会通过原生 immediate steer 送入该确切的 Run，包括由 Heartbeat 或 Connector 启动的 Run。最终文本回复会显示在聊天中。Run 处于准备、取消或过期状态时可能拒绝输入；草稿会保留，可再次发送。拒绝不会将消息排队，也不会启动替代 Run。输入被接受后，可通过对话流或保存的线程结果跟踪任务直至执行完成。
 
 ## 暂停与恢复
 
@@ -92,6 +92,6 @@ Run 失败后会保留输入和错误供检查，但不会暂停自动处理。�
 
 Host 提供私有数据库存储，用于保存 Connector 设置、凭据和所选事件信封。heartbeat 和所选 Connector 事件共用自动 inbox，收集不受模型运行状态影响。周期性投递会公平合并待处理 tick 与跨 Connector 事件，并提交给 Bot 或向其确切的当前操作追加输入。原生执行接受输入后消费该批次，不等待模型确认或任务完成。待回答的人类决策会阻止投递。
 
-在 **Settings → Connections → Connectors** 管理账户，也可以打开对话中的配置卡片。[Connector](connectors.md) 提供可信插件 SDK、结构化配置和规则表单、私有状态及原子事件入站。内置 GitHub provider 通过可复用的 Remote MCP 代码库提供服务工具；代码库不增加通用 MCP 配置入口。事件插件负责收集和匹配。Connector 凭据以明文保存在私有本地数据库中；请保护数据目录及其备份。外部事件内容提供上下文，不代表人类授权。
+在 **Settings → Connections → Connectors** 管理账户，也可以打开对话中的配置卡片。[Connector](connectors.md) 提供可信插件 SDK、结构化配置和规则表单、私有状态及原子事件入站。内置 GitHub provider 通过可复用的 Remote MCP 代码库提供服务工具；代码库不增加通用 MCP 配置入口。事件插件负责收集和匹配。Connector 凭据以明文保存在私有本地数据库中；请保护数据目录及其备份。外部事件载荷仅作为任务上下文输入，敏感工具操作仍需经过常规权限校验或人工审批。
 
 客户端集成参见 [Bot HTTP API](http-api.md#bot)，根设置参见[配置参考](configuration.md#webui-bot)。

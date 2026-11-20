@@ -183,3 +183,98 @@ it("rejects oversized paste without sending a prefix and disconnects a congested
   expect(session.state.message).toContain("Some input may have arrived");
   session.dispose();
 });
+
+it("coalesces split TUI redraw sequences, drains queued batches without extra timer stalls, and skips redundant state notifications on pure output", async () => {
+  const { session, emit, callbacks, text } = setup();
+  const changed = vi.spyOn(
+    session as unknown as { changed: () => void },
+    "changed",
+  );
+  // First frame sets up Live state.
+  emit(frame(new Uint8Array(), 0, 1, "participant-self"));
+  changed.mockClear();
+
+  // Split a DEC 2026 synchronized redraw across two frames arriving 6ms apart.
+  const part1 = new TextEncoder().encode("\x1b[?2026h\x1b[2J\x1b[Hclearing...");
+  const part2 = new TextEncoder().encode("redrawn\x1b[?2026l");
+  emit(frame(part1, 0, 1, "participant-self"));
+  // Pure output frame with unchanged view metadata must not trigger React re-renders.
+  expect(changed).not.toHaveBeenCalled();
+
+  await vi.advanceTimersByTimeAsync(6);
+  expect(callbacks).toHaveLength(0);
+  emit(frame(part2, part1.length, 1, "participant-self"));
+  // At 8ms the incomplete-redraw grace check ran; by 16ms the combined frame flushes as one atomic write.
+  await vi.advanceTimersByTimeAsync(10);
+  expect(callbacks).toHaveLength(1);
+  expect(text()).toBe("\x1b[?2026h\x1b[2J\x1b[Hclearing...redrawn\x1b[?2026l");
+
+  // While the first write is still in progress, queue a complete frame and verify it drains immediately on callback.
+  const offset = part1.length + part2.length;
+  const nextChunk = new TextEncoder().encode("immediate-drain\r\n");
+  emit(frame(nextChunk, offset, 1, "participant-self"));
+  expect(callbacks).toHaveLength(1);
+  callbacks.shift()!();
+  expect(callbacks).toHaveLength(1);
+  expect(text()).toContain("immediate-drain\r\n");
+  callbacks.shift()!();
+  expect(session.cursor).toBe(offset + nextChunk.length);
+  expect(changed).not.toHaveBeenCalled();
+  session.dispose();
+});
+
+it("preserves control across view suspend and unexpected socket drops when no other participant took over, and batches input under transport backpressure", async () => {
+  const { session, emit, socket } = setup();
+  emit(frame(new Uint8Array(), 0, 1, "participant-self"));
+  expect(session.controls).toBe(true);
+
+  // Under moderate socket backpressure (0 < bufferedAmount <= 64 KiB), rapid inputs coalesce into one frame.
+  socket.send.mockClear();
+  socket.bufferedAmount = 1024;
+  expect(session.input("a")).toBe(true);
+  expect(session.input("b")).toBe(true);
+  expect(socket.send).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(8);
+  expect(socket.send).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({
+    kind: "input",
+    text: "ab",
+    control_epoch: 1,
+  });
+
+  // Suspending the view (e.g. switching tabs/windows) preserves control intent and reclaims once if unowned.
+  session.suspend();
+  expect(session.recoverable).toBe(true);
+  session.connect("https://example.invalid", "secret");
+  const second = Socket.all[1];
+  second.onopen();
+  second.send.mockClear();
+  emit.call(null, frame());
+  second.onmessage({
+    data: JSON.stringify(frame(new Uint8Array(), 0, 2, null)),
+  });
+  expect(second.send).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(second.send.mock.calls[0][0])).toEqual({
+    kind: "control",
+    control_epoch: 2,
+    release: false,
+  });
+  second.onmessage({
+    data: JSON.stringify(frame(new Uint8Array(), 0, 3, "participant-self")),
+  });
+  expect(session.controls).toBe(true);
+
+  // An unexpected WebSocket drop also marks the session recoverable, but does not steal control if another user took over.
+  second.onclose({ code: 1006 });
+  expect(session.recoverable).toBe(true);
+  session.connect("https://example.invalid", "secret");
+  const third = Socket.all[2];
+  third.onopen();
+  third.send.mockClear();
+  third.onmessage({
+    data: JSON.stringify(frame(new Uint8Array(), 0, 4, "participant-other")),
+  });
+  expect(third.send).not.toHaveBeenCalled();
+  expect(session.controls).toBe(false);
+  session.dispose();
+});

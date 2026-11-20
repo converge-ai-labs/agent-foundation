@@ -1,6 +1,6 @@
 ---
 title: Environments and Projects
-description: Choose where tools run, give a conversation working directories, and connect a remote Device.
+description: Organize multi-root repository Projects, switch between Full Control and Envd OS Sandboxes, and bind remote Envd devices to Harness UI.
 ---
 
 An Environment determines where the Agent reads files and runs commands. A Project groups conversations and supplies initial working directories and defaults. Each conversation saves its own selections, so editing a Project does not move an existing conversation's work.
@@ -52,7 +52,7 @@ Use **Settings → Environments → Local runtime** when you need Sandbox, Envd-
 
 1. Choose **Install & start** on first use, **Start** for an installed runtime, or **Update & start** when only an older release is cached. Harness UI installs the exact release matching its installed Envd client, not an arbitrary latest release.
 2. Choose **Check** to check Full Control and Sandbox support. Setup checks filesystem/process isolation and Host localhost connectivity without depending on an external Internet service.
-3. Select the execution default under **Settings → Environments** and save. Saving defaults alone does not start Envd and does not change existing conversations or Project overrides.
+3. Select the execution default under **Settings → Environments** and save. New defaults apply to newly created conversations, and Envd starts automatically when a Sandbox Run uses an environment tool.
 4. Start a new conversation with that selection and repeat the read-only file test above. Outside setup, runtime readiness is checked when execution needs it, not when the landing page opens.
 
 The runtime actions have different effects:
@@ -194,7 +194,7 @@ You need Envd installed on the other computer and a WebUI address reachable from
 
 5. Wait for **Device online**, then [choose working directories](#choose-working-directories). A wizard opened from Settings finishes at **Done** without adding a binding.
 
-The daemon connects outward, so its computer needs no inbound port. The command is a foreground process, not an installed service. Approval saves the Device configuration and credentials without copying a browser login key. Closing before approval does not reject the request; closing afterward keeps the registration but discards unsaved binding edits. A disappearing request is not proof of approval.
+The daemon connects outward, so its computer needs no inbound port. The command is a foreground process, not an installed service. Approval saves the Device configuration and credentials without copying a browser login key. Closing before approval does not reject the request; closing afterward keeps the registration but discards unsaved binding edits. Check the Device status list to confirm whether a closed pairing request was approved or expired.
 
 To allow commands with the daemon account's authority, use the wizard's shell-enabled command. Its POSIX form is:
 
@@ -358,4 +358,4 @@ Use an image-capable Model and an Agent with Dynamic Environment tools. On the M
 
 Add its binding with **Full control** under **Allowed actions**, then start a new Run and request a screenshot before asking for input actions. That binding permission includes enabled file, command, and computer operations; **Read only** allows file reading/browsing only. It is separate from the Harness UI server's local Full Control mode. New bindings default to Full control; older bindings keep their permissions until explicitly changed.
 
-Approval alone does not enable desktop tools: daemon computer-use and OS permissions are both required. Follow [desktop computer use](../a13n-envd/computer-use.md) for native setup, observation-only access, screenshot preview, and shared-desktop limits.
+To use desktop tools on an approved Device, enable computer-use in the daemon and grant the required OS accessibility and screen permissions. Follow [desktop computer use](../a13n-envd/computer-use.md) for native setup, observation-only access, screenshot preview, and shared-desktop limits.

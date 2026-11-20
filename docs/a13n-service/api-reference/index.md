@@ -1,7 +1,7 @@
 ---
 title: Service API reference
 sidebarTitle: API reference
-description: Find an HTTP operation, prepare its request, and use the schema for your Service deployment.
+description: Interactive OpenAPI 3.1 reference for every Service HTTP endpoint, request body, response schema, and webhook payload.
 ---
 
 Use this reference when you know which Service resource to read or change. The navigation groups operations by API area; each operation page shows parameters, request bodies, responses, and request examples. For a first integration, follow [Connect an application](../connect-application.md), then return here for individual fields.

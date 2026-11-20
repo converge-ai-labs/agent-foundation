@@ -1,6 +1,6 @@
 ---
-title: 模型 provider 参考
-description: 连接模型账号并配置各 provider 的授权。
+title: 模型提供方 (Model Providers) 参考
+description: Service 支持的所有模型提供方完整接入参考：涵盖 OpenAI、Anthropic、Gemini、Bedrock、Vertex AI、订阅账号与自定义网关。
 ---
 
 选择[模型工作流程](models.md)后，使用本页配置具体 provider。

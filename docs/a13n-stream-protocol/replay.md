@@ -1,6 +1,6 @@
 ---
 title: Replay and recovery
-description: Save an unfinished display, restore it, and continue from the next event or source item.
+description: Export compact display checkpoints during active streams and deterministically replay or resume AG-UI frontend state after client reconnection.
 ---
 
 A consumer restart should continue an unfinished message instead of displaying it twice. Save the display content and its parsing state at the same position, then supply the intact suffix. The examples below separate that task from rebuilding event conversion and continuing Agent execution.

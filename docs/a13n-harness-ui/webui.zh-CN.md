@@ -1,6 +1,6 @@
 ---
-title: 使用 WebUI
-description: 开始浏览器对话、选择工作环境、审阅文件，并与他人和 Agent 协作。
+title: 使用 WebUI 浏览器工作台
+description: 在 WebUI 浏览器界面中与 Agent 协同开发，实时查看项目文件树、对比 Git 变更 diff、操作内置终端，并通过 Coordinator 协调工作聊天。
 ---
 
 WebUI 是 Harness UI 的浏览器工作台，与 TUI 使用相同的 App 和已保存对话。先完成一次对话，再按工作需要加入 Project、文件审阅、浏览器控制和协作。
@@ -362,7 +362,9 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 
 使用 `create_thread` 开独立会话，`create_worker` 创建有归属的 worker，`spawn_subagent` 在当前会话中委派任务。
 
-在 **Settings → Agents** 选择可用模型和默认模型。智能体创建独立 chat、Coordinator worker 或动态 subagent 时共用这些选择。 用 `send_thread_message` 继续已有会话。
+在 **Settings → Agents** 选择可用模型和默认模型。智能体创建独立 chat、Coordinator worker 或动态 subagent 时共用这些选择。
+
+使用 `send_thread_message` 给已有会话发消息。如果会话正在运行，消息会送入当前 Run；如果会话空闲，消息会启动新的 Run。跟踪返回的操作或查看流式事件，可以确认消息是否已处理并保存。投递状态不明确时，先查看目标会话再重试。
 
 ## 创建对话副本
 

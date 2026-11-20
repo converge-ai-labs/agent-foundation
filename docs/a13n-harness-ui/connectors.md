@@ -1,6 +1,6 @@
 ---
 title: Connectors
-description: Connect service accounts once for WebUI conversations and Bot.
+description: Connect external service accounts like GitHub to Harness UI once for both interactive WebUI chats and automated Bot event workflows.
 ---
 
 Connectors add instance-wide accounts and tools to WebUI conversations and [Bot](bot.md). Each connection has its own configuration, private credentials and status. You can connect several accounts of the same type. Terminal conversations, Live and child agents do not automatically receive Connector tools.
@@ -57,7 +57,7 @@ Setup success updates saved configuration. It starts no Run and replays no block
 
 The account menu's **Manage** opens a read-only connection summary, saved-credential hints and common account settings. **Edit connection** opens the separate setup dialog; **Set up again** is also available in the account menu. Names distinguish accounts. Disabling stops new operations and holds pending external input; it does not undo upstream writes. Deleting clears the connection's private credentials, state and pending input. Deleted IDs cannot be reused.
 
-If setup or another browser changes saved settings, an untouched settings dialog updates automatically. An edited draft remains intact and shows a conflict; choose **Reload saved settings** before saving. Closing a dirty dialog asks before discarding unsaved changes. GitHub setup reopens with current saved settings after an account change. An already-open stale setup rejects actions; choose **Refresh status**, then **Start again** to reload it. Private setup fields clear when dispatched. After an unknown action response, use **Refresh status** before taking another action. The client never automatically replays that action. Setup sessions expire and do not survive App restart; saved configuration does.
+If setup or another browser changes saved settings, an untouched settings dialog updates automatically. An edited draft remains intact and shows a conflict; choose **Reload saved settings** before saving. Closing a dirty dialog asks before discarding unsaved changes. GitHub setup reopens with current saved settings after an account change. An already-open stale setup rejects actions; choose **Refresh status**, then **Start again** to reload it. Private setup fields clear when dispatched. After an unknown action response, use **Refresh status** before taking another action. Retry the action explicitly after verifying the external state. Setup sessions expire and do not survive App restart; saved configuration does.
 
 Only one WebUI App owns the data root's Bot and Connector runtime. Another App can inspect saved status but cannot operate accounts. A missing plugin preserves its connection data as unavailable.
 

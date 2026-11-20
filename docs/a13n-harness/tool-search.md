@@ -1,6 +1,6 @@
 ---
 title: Grouped ToolSearch
-description: Group a tool collection, discover its definitions on demand, and call the selected tool through a compact model interface.
+description: Scale Python agents to hundreds of tools with on-demand native or grouped ToolSearch discovery, reducing prompt token overhead.
 ---
 
 When an Agent has many tools, group related tools by domain so the model can find the operation it needs without receiving every schema on every request. ToolSearch provides five fixed control tools for discovery and invocation. Selected members stay behind those controls; unrelated tools remain directly available.
@@ -13,7 +13,7 @@ The model follows a short path:
 2. Use `describe_tool` to read a candidate's full definition when the current schema is not already known.
 3. Use `call_tool` with the returned group, local tool name, and arguments.
 
-Discovery does not promote member schemas into later model requests. The call still reaches the original Toolset through the current ToolManager and Harness execution boundary, preserving validation, policy, hooks, credentials, and result handling.
+Discovered schemas are used for the current turn, keeping subsequent model requests compact. The call still reaches the original Toolset through the current ToolManager and Harness execution boundary, preserving validation, policy, hooks, credentials, and result handling.
 
 `ToolSearchCapability` and `ToolSearchPlan` use `ProxyToolSearchConfig()` by default; `ToolSearchConfig()` is an alias. The fixed control schemas and guidance contain no changing inventory, which helps keep the model's prompt prefix stable. Grouped tools also support approval and [client-tool feedback](client-tools.md).
 

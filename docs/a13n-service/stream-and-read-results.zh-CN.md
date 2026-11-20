@@ -1,9 +1,9 @@
 ---
-title: 流式观察与结果读取
-description: 关联提交消息与结果，重连后重建实时输出，并读取保存的历史。
+title: 流式订阅与执行结果读取
+description: 订阅 Service 会话与线程的实时 SSE 事件流，精准关联输入条目与执行 Run，并在客户端断线重连后无损恢复实时输出。
 ---
 
-先[从应用提交任务](connect-application.md)，保留回执中的 session、thread 和 inbox entry ID。最终结果从保存的 run 输出读取，界面需要实时进度时再接入会话事件流。观察者断连不会取消执行。
+先[从应用提交任务](connect-application.md)，保留回执中的 session、thread 和 inbox entry ID。最终结果从保存的 run 输出读取，界面需要实时进度时再接入会话事件流。当客户端断开流式连接时，Service Worker 仍会在后台继续完成已接受的 Run。
 
 ## 结果
 

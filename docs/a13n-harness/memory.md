@@ -1,6 +1,6 @@
 ---
 title: Memory
-description: Save preferences across Threads, control shared writes, and connect file or record stores.
+description: Attach versioned file memories or semantic Mem0 record stores to Harness agents so knowledge and user preferences persist across threads.
 ---
 
 Use memory when one conversation should teach another: a user's preferred language, a project's conventions, or a decision worth keeping. The Host chooses which Threads share a store and which can change it. Use [working state](context.md#working-state) for the tasks and notes of one Thread.

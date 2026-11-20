@@ -1,6 +1,6 @@
 ---
 title: Read large API results
-description: Read compact summaries, selected sections and versioned fragments without losing continuation.
+description: Fetch compact summaries, specific markdown sections, and byte-bounded fragments from large Service resources without exhausting context windows.
 ---
 
 Use [HTTP conventions](http.md) for authentication and a [conversation walkthrough](connect-application.md) for your first integration.

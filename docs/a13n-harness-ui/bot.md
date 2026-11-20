@@ -1,6 +1,6 @@
 ---
 title: Bot
-description: Keep objectives moving with a personal assistant that coordinates working Threads and checks progress every hour.
+description: Enable the always-on WebUI Bot assistant to coordinate multi-project work threads, run hourly heartbeat checklists, and process incoming Connector events.
 ---
 
 Bot is the instance-wide assistant in the WebUI sidebar. Give Bot an ongoing objective. Bot can find or create Projects, start ordinary working Threads, and inspect their saved results on later heartbeats. Its conversation uses the existing Thread reader, editor, and native panels.
@@ -78,7 +78,7 @@ Heartbeats and other automatic work use tools without a preamble or routine prog
 
 Answer pending human decisions directly in the Bot conversation. Bot has one chat view; notification actions and old Bot Thread links open that chat. Heartbeats and external events cannot answer an approval. The existing native panel chooser provides Files and Browser when enabled on the server; Bot does not add a separate browser implementation.
 
-Bot uses the ordinary shared composer: trusted participants edit the same text and attachment selections with presence, synchronization and server-backed draft retention. Opening or refreshing `/bot` restores the shared draft without starting a Run. Send and Steer wait for synchronization and consume only the captured edits after acceptance; concurrent edits and rejected input remain in the draft. If a submission's response is uncertain, keep the retained command and use its explicit retry action. Retrying reuses the same input ID, ordered parts and capture; it does not create another input. Bot remains excluded from scoped guest shares. A new message starts a native Run immediately when Bot is idle. While Bot is running, it uses native immediate steering of that exact Run, including a Run started by Heartbeat or Connector input. The final text reply is visible in the conversation. A preparing, cancelling, or stale Run can reject steering; the draft remains available to send again. Rejection never queues the message or starts a replacement Run. Acceptance is not proof of completion.
+Bot uses the ordinary shared composer: trusted participants edit the same text and attachment selections with presence, synchronization and server-backed draft retention. Opening or refreshing `/bot` restores the shared draft without starting a Run. Send and Steer wait for synchronization and consume only the captured edits after acceptance; concurrent edits and rejected input remain in the draft. If a submission's response is uncertain, keep the retained command and use its explicit retry action. Retrying reuses the same input ID, ordered parts and capture; it does not create another input. Bot remains excluded from scoped guest shares. A new message starts a native Run immediately when Bot is idle. While Bot is running, it uses native immediate steering of that exact Run, including a Run started by Heartbeat or Connector input. The final text reply is visible in the conversation. A preparing, cancelling, or stale Run can reject steering; the draft remains available to send again. Rejection never queues the message or starts a replacement Run. Follow the conversation stream or inspect the saved Thread result to confirm when the accepted work finishes.
 
 ## Pause and recover
 

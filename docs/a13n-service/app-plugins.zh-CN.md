@@ -1,6 +1,6 @@
 ---
-title: 使用 App 插件扩展 Service
-description: 安装可信应用包，按组织启用，并保持已接受 run 的行为稳定。
+title: 使用 App Plugins 扩展平台能力
+description: 开发并安装可信 Python App 插件，为 Service 部署扩展自定义工具集、HTTP 路由、外部事件处理器与 Prometheus 业务指标。
 ---
 
 App 插件为 Service 添加业务 API、组织范围后台工作、Harness factory 和打包的 Console 资源。运维人员在所有 API 和 worker 进程中安装可信 Python 包。组织管理员可以逐个启用 App。运维人员可以在首次初始化部署时指定初始启用列表。
@@ -204,7 +204,7 @@ async def preview(body: PreviewRequest, workspace_id: WorkspaceId, actor: Actor,
 遵循以下规则：
 
 - Service 负责 meter provider、监听器和进程关闭。App 不应调用 `set_meter_provider()`、`serve_metrics()` 或 `start_http_server()`。关闭 metrics 时，标准 API 不执行导出。直接调用 `build_app()` 的嵌入式 Host 负责初始化遥测。
-- 可以在模块导入时创建 meter 和 instrument。应在可执行程序完成初始化后，从 startup 或已获准的业务工作中记录观测；provider 初始化前的观测会被丢弃。即使所有组织都禁用 App，startup 仍会执行，因此 startup 指标表示进程状态，不代表组织启用状态。
+- 可以在模块导入时创建 meter 和 instrument。应在可执行程序完成初始化后，从 startup 或已获准的业务工作中记录观测；provider 初始化前的观测会被丢弃。`startup` 钩子在进程启动时执行一次，因此其指标反映进程级加载状态；按组织启用的业务指标请在运行期上报。
 - 使用固定的指标名称，以及代码中定义的有限属性值。指标标签不得包含组织、workspace、用户或 run ID、模型名称、报告标题、原始 URL、凭证或载荷。宿主不会自动清洗 App 自定义属性。
 - 耗时使用秒，并为具体操作选择 histogram bucket。持久化业务事实只能在事务提交后计数，使用现有 `after_commit(session, callback)` 边界。操作尝试指标可以统计每次尝试，包括重试；名称应明确表达这一口径。
 - Observable gauge 回调在抓取期间执行，只能读取内存缓存快照。通过有界、已获准的后台工作刷新外部系统、SQL 或 Redis 状态，并为库存快照同时发布新鲜度时间戳。禁用 App 会阻止后续组织回调，不会清除已经导出的计数值或缓存样本；看板查询应排除过期样本。

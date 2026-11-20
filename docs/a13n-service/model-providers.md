@@ -1,6 +1,6 @@
 ---
 title: Model provider reference
-description: Connect model accounts and configure provider-specific authorization.
+description: Complete configuration reference for connecting OpenAI, Anthropic, Gemini, Bedrock, Vertex AI, Azure, Codex, ChatGPT, and custom gateways in Service.
 ---
 
 Use this reference for provider-specific setup after choosing your [model workflow](models.md).
@@ -58,7 +58,7 @@ For a gateway that routes or bills by header, add up to 32 **extra request heade
 Use `openai_chatgpt` to authorize ChatGPT plan usage for the workspace. Authorization belongs to the provider and is shared by the workspace, rather than stored as a personal connection.
 
 1. In **Workspace settings → Providers**, add a **ChatGPT** provider. The default flow dynamically registers a public OAuth client and needs no static credential.
-2. Choose **Continue with ChatGPT** and open the authorization link. Approve ChatGPT plan usage; website identity access alone does not grant model access.
+2. Choose **Continue with ChatGPT** and open the authorization link. Grant ChatGPT plan usage consent during sign-in so the connection can invoke models.
 3. Copy the entire callback URL from the browser address bar into **Complete callback URL**, then choose **Complete sign-in**. Copy it even if the loopback page cannot be reached. Keep the URL private.
 4. Add a model using `openai.responses` and an account model slug. Select an account-visible choice or enter an ID manually, then send a test message through an agent.
 

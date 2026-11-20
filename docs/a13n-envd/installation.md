@@ -1,7 +1,7 @@
 ---
 title: Install Envd
 sidebarTitle: Installation
-description: Build or download an Envd binary that matches your EIP client, or run the sandbox image.
+description: Download verified a13n-envd release binaries, choose between standard, slim, desktop, and VM flavors, or build from Cargo source.
 ---
 
 Install Envd on the computer that will execute file, command, or desktop operations. Harness UI acquires its own matching binary for local Sandbox mode. Use this guide when connecting another computer as a Device or when your application manages Envd directly.
@@ -59,7 +59,7 @@ This requires Xcode Command Line Tools and installs a native app at `~/Applicati
 2. Accept the browser's external-app prompt if shown. If the app did not open automatically, choose **Open A13N Envd**.
 3. For a new registration, in the app check the Service address and workspace, choose a starting directory and whether to include desktop access, then click **Allow and connect**. Files and Shell run as your operating-system user; the directory does not restrict access to other files.
 4. For a new registration, enter the six-digit code shown in the app into Console, check the computer details, and approve.
-5. Wait for **Online**, then select this environment in your Agent or conversation settings. Approval alone does not start a task.
+5. Wait for **Online**, then select this environment in your Agent or conversation settings. Once approved, the Device is ready for you to select it in a conversation and start a task.
 
 Envd runs as an app-owned process without opening Terminal. Closing the window keeps it connected; use the menu bar to reopen it. **Disconnect** or quitting the app stops Envd, including if the app crashes. Repeated links while running bring the current connection forward instead of starting another daemon. To switch connections, disconnect first and reopen the new link. The app remembers the last approved Service profile, directory and desktop choice for an explicit **Reconnect**, but never copies the device credential into app preferences. If upgrading from the Terminal launcher, stop its old process with Ctrl+C before connecting in the app. Desktop access additionally requires macOS Screen Recording and Accessibility permission. Complete any system prompts before expecting the computer to appear online.
 

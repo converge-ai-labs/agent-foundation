@@ -1,7 +1,7 @@
 ---
 title: Public API and payload reference
 sidebarTitle: API and payload reference
-description: Look up observer and display APIs, decode custom payloads, and choose processor replacements.
+description: Complete reference for Stream Protocol observers, display checkpoint projectors, custom AG-UI event schemas, and processor replacement rules.
 ---
 
 Use this page while implementing a consumer. For a runnable starting point, use the [quickstart](getting-started.md); for integration order and checkpoint handling, use [Events and processors](events.md) and [Replay and recovery](replay.md).
@@ -106,7 +106,7 @@ Read the outcome to choose the next UI action:
 
 For an interrupt, `id` identifies the deferred target for answers, while `toolCallId` identifies the model call for transcript correlation. Direct calls use the same ID for both. Host answer validation remains authoritative. A non-JSON-safe completed result is omitted and marked `result_omitted` in `rawEvent`.
 
-Source metadata retains Thread, Run, sequence, and occurrence time. Use Host records to confirm durable result storage, external delivery, and billing; terminal presentation alone does not establish those outcomes.
+Source metadata retains Thread, Run, sequence, and occurrence time. Terminal display events drive UI rendering, while your Host's database records remain the source of truth for durable storage and billing.
 
 ## Processor replacement limits
 

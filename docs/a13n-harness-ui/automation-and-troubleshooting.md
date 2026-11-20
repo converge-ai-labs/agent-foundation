@@ -1,6 +1,6 @@
 ---
 title: Automation and troubleshooting
-description: Run Harness UI from a script, inspect failures, update installations, and resume saved conversations.
+description: Run headless one-shot agent tasks from CI or shell scripts, inspect diagnostic logs, update installations, and recover interrupted threads.
 ---
 
 Use `run` for a single scripted task. When something fails, inspect its operation status and saved state before repeating it.

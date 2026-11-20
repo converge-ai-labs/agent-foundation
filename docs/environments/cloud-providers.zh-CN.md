@@ -1,7 +1,7 @@
 ---
-title: 云 Provider 设置与限制
+title: 云沙箱提供方接入与能力矩阵
 sidebarTitle: 云 Provider
-description: 准备云账号与运行时、选择原生或 Envd 执行，并管理各后端的生命周期。
+description: 接入 E2B、Daytona、Modal、Vercel、Sprites、Runloop 与 boxd 云端沙箱，对比 Native 与 Envd 执行路径及桌面镜像配置。
 ---
 
 先在[环境概览](index.md#choose-a-backend)选择后端。本页集中说明云端准备与差异；输入归属见[配置](configuration.md)，状态发布见[生命周期](lifecycle.md)。
@@ -76,7 +76,7 @@ result = await executable.run("Inspect the sandbox", environment=PreparedSource(
 
 打开执行以只读查询连接运行中的目标，不续期或恢复，并拒绝配置为自动恢复的目标。关闭执行保留沙箱、文件和命令，同时断开执行观测。由 Host 提供凭据；库不读取 `.env`。
 
-新执行可发现同一沙箱中仍在运行的原生命令。请检查返回结果：沙箱身份不能证明进程仍存活，缺失命令不会自动重启。SDK 原生发现不分页；返回投影有界，上游清单无界。
+新执行可发现同一沙箱中仍在运行的原生命令。重连云沙箱后，请查询活跃进程列表以确认后台命令是否仍在运行，并按需重新拉起已退出的进程。SDK 原生发现不分页；返回投影有界，上游清单无界。
 
 分别调整输出和沙箱寿命。输出是 SDK 解码后的文本，不是无损字节：
 
@@ -171,7 +171,7 @@ Files & Shell 使用 `{"snapshot": "my-envd"}`；Computer 和人工访问再添�
 
 Agent 操作在 `/workspace` 通过私有 8888 端口使用 EIP。Daytona 代理认证与客体 Envd 凭据独立且仅保留在内存中，Host 校验发现的端点。不提供 Native 回退。Computer 工具与挂载权限单独开启。快照包含中文字体，但 X11 接受物理按键，不接受中文或多行文字的直接输入。
 
-人工访问使用 6081 端口的短期签名预览路由。Supervisor 强制实施只读查看、单一控制者、可续期授权和归还时断开连接。仅撤销签名 URL 不能证明已有输入连接已经终止。Service 在交接前等待安全执行边界，并在归还后要求重新观察。
+人工访问使用 6081 端口的短期签名预览路由。Supervisor 强制实施只读查看、单一控制者、可续期授权和归还时断开连接。撤销签名 URL 可阻止新连接接入；如需立即切断已建立的桌面控制会话，请同时停止或轮转该桌面连接。Service 在交接前等待安全执行边界，并在归还后要求重新观察。
 
 停止/启动保留文件，但重建桌面进程并使旧观察失效。停止要求确认自动删除已禁用，删除等待最终销毁。`test_daytona_desktop_live.py` 覆盖 EIP/桌面/停止启动，`test_daytona_access_live.py` 覆盖查看、撤销、过期和重启隔离。这些计费目标测试与完整 Console/Agent 交接验收分别执行。
 
@@ -260,7 +260,7 @@ Native 执行使用 `/home/sprite`，helper 使用客体 PATH 中的 `python3`�
 
 ### Runloop
 
-默认根目录使用 `/home/user`，Python 使用客体 PATH 中的 `python3`。参见 Runloop 的[默认非特权用户](https://docs.runloop.ai/docs/devboxes/configuration/user-parameters)和 [Python 环境](https://docs.runloop.ai/docs/devboxes/overview)。保活采用返回的空闲间隔，清除状态前检查关闭完成。此 provider 用于 Native Files & Shell；历史独立 Envd 探测不能证明 Provider 或 Console 已集成。
+默认根目录使用 `/home/user`，Python 使用客体 PATH 中的 `python3`。参见 Runloop 的[默认非特权用户](https://docs.runloop.ai/docs/devboxes/configuration/user-parameters)和 [Python 环境](https://docs.runloop.ai/docs/devboxes/overview)。保活采用返回的空闲间隔，清除状态前检查关闭完成。该 Provider 通过原生接口提供文件与 Shell 执行能力（Native Files & Shell）。
 
 ### boxd
 
@@ -287,7 +287,7 @@ async with await connector.open() as execution:
 
 ### 云端验证
 
-先运行确定性适配器测试，检查目录构建、原生 HTTP 响应、Sprites WebSocket 帧和 Modal 异步 SDK 与本地 gRPC fixture 的交互。这些测试执行文件/shell helper，不代表已验证部署中的云账号。
+先运行确定性适配器测试，检查目录构建、原生 HTTP 响应、Sprites WebSocket 帧和 Modal 异步 SDK 与本地 gRPC fixture 的交互。本地单元测试用于验证文件与 Shell 适配逻辑；部署到生产前请使用真实云账号执行一次端到端连通性检查。
 
 要实时检查 Daytona，安全提供 `A13N_TEST_DAYTONA_BACKEND_JSON` 和 `A13N_TEST_DAYTONA_CREDENTIAL_JSON`，再从仓库根目录运行：
 

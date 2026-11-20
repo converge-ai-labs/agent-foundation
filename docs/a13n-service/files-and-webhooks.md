@@ -1,6 +1,6 @@
 ---
 title: Upload and retrieve files
-description: Attach a local file to a message and receive verified lifecycle notifications.
+description: Upload message attachments to Service threads, download agent-published workspace assets, and subscribe to signed lifecycle webhooks.
 ---
 
 Use assets to pass files into a conversation or retrieve files an agent produces. Use the separate [webhook guide](webhooks.md) for lifecycle notifications.

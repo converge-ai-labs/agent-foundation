@@ -1,6 +1,6 @@
 ---
-title: HTTP 约定
-description: 认证请求、读取和更新资源，并处理重试与分页响应。
+title: Service HTTP API 通用协议约定
+description: Service HTTP API 核心协议规范：涵盖认证头、工作空间路由、Idempotency-Key 幂等重放、ETag 并发控制、游标分页与错误结构。
 ---
 
 本页帮助你实现 Service 客户端共用的请求处理：先认证，保存读到的 ID 和版本，再携带相应请求头更新资源或提交工作。完整的 agent 对话流程见[连接应用](connect-application.md)；语言客户端见 [SDK 与 CLI](sdks.md)。
@@ -114,7 +114,7 @@ curl "$A13N_URL/api/v1/agents/$AGENT_ID" \
 
 提交前生成一个唯一 key。重试时保留相同 key、目标和请求内容；新的逻辑请求使用新 key。Key 属于调用者和工作空间，不会过期。同一 key 用于不同内容或目标时返回 `409 conflict`，原因为 `idempotency_key_reused`。
 
-首次提交通常返回 `201`；手动派发 Schedule 返回 `202`，上传返回 `200`。重放返回 `200` 和同一组已创建对象的**当前**状态。根据该状态继续处理；提交被接受不代表执行完成。[连接应用](connect-application.md#direct-http-integration)演示了先保存线程和收件箱记录，再跟踪分配到的运行。
+首次提交通常返回 `201`；手动派发 Schedule 返回 `202`，上传返回 `200`。重放返回 `200` 和同一组已创建对象的**当前**状态。提交请求获接受后，请继续轮询 Run 状态或订阅 SSE 事件流，直至任务达到终止状态。[连接应用](connect-application.md#direct-http-integration)演示了先保存线程和收件箱记录，再跟踪分配到的运行。
 
 创建 [Schedule](schedules.md) 会委托持久执行权限。撤销创建时的 API 密钥或等待其过期不会停止后续提交；请暂停或归档 Schedule。
 

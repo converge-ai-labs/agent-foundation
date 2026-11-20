@@ -1,6 +1,6 @@
 ---
 title: Receive lifecycle webhooks
-description: Configure a receiver, verify signatures, and deduplicate lifecycle notifications.
+description: Configure workspace webhook endpoints in Service, verify HMAC-SHA256 payload signatures, and handle run and schedule lifecycle events idempotently.
 ---
 
 Use webhooks when your server needs lifecycle notifications without keeping a stream open. Prepare a reachable receiver that verifies signatures and durably deduplicates events; a workspace administrator can then create a subscription and verify one delivered notification.

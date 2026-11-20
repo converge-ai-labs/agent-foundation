@@ -1,7 +1,7 @@
 ---
 title: Connect to Remote Envd
 sidebarTitle: Remote Envd
-description: Connect an existing Device to your Host, open independent Sessions, and recover without replaying work.
+description: Connect existing physical machines, VMs, or containers running Envd to your Host over direct HTTP(S) or reverse WebSocket tunnels.
 ---
 
 Choose the transport by connection direction: `http_envd` lets your Host dial an existing HTTP(S) daemon; `websocket_envd` lets the daemon dial back to your Host, including from behind NAT. Both expose EIP-backed file, shell, process, output, and port operations.

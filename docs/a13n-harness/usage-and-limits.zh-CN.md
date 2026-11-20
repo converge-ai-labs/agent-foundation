@@ -1,6 +1,6 @@
 ---
-title: 用量、限制与定价
-description: 运行离线用量示例，选择统计重置时机，并配置费用估算。
+title: 用量统计、预算限制与成本核算
+description: 为 Harness 运行设置请求次数与 Token 预算上限，跨轮次与子 Agent 累计用量，并基于可定制的价格目录精确核算推理成本。
 ---
 
 先设置 Agent 的执行预算，再查看实际观测的用量，最后决定 Host 需要持久化什么。下面用同一份已保存对话，演示新建统计范围和显式继续原范围的区别。
@@ -90,7 +90,7 @@ Run 结束后读取 `result.usage`，流式执行中读取 `stream.usage`。两�
 
 提供方继续同一次生成时，会更新已有记录。反复观测累计值不会重复增加请求或 token。提供方集成可通过 `AgentContext.record_provider_usage()` 添加非模型回执；这些回执不改变原生模型 token 限制。
 
-模型记录可带有 `call_id`，关联原始调用和 Host 的[派发前检查](hosting.md#check-model-calls-before-dispatch)。版本 1 的历史报告缺少该字段时加载为 `None`。去重使用用量贡献的身份：调用 ID 既不是 HTTP 请求 ID，也不是恰好一次的计费键。中断调用保留已观测用量；仅分配 ID 不代表产生费用。
+模型记录可带有 `call_id`，关联原始调用和 Host 的[派发前检查](hosting.md#check-model-calls-before-dispatch)。版本 1 的历史报告缺少该字段时加载为 `None`。去重使用用量贡献的身份：调用 ID 既不是 HTTP 请求 ID，也不是恰好一次的计费键。系统仅对已实际发起并观测到消耗的请求计费；中途中断的调用也会保留已产生的观测用量。
 
 ### 保存与恢复用量
 

@@ -1,7 +1,7 @@
 ---
-title: 文件、命令与操作限制
+title: 文件操作、路径路由与读取上限
 sidebarTitle: 文件、路径与限制
-description: 选择环境操作、定位目标文件并读取有界结果。
+description: 跨所有环境提供方使用统一的路径路由、文本与二进制流式读写、glob/grep 高速检索以及有界输出策略。
 ---
 
 使用环境操作，直接从 Python 读写文件、运行命令和观测进程。先运行[快速入门](getting-started.md)中的完整文件示例，再用本页选择方法并理解返回结果。
@@ -42,7 +42,7 @@ Harness 在这些 provider API 之上添加挂载选择和相对路径解析。�
 
 应用自行执行操作时，使用带类型的 provider 接口。要让 agent 执行操作，请按[在 Harness 中使用环境](../a13n-harness/environments.md)配置执行输入和 `DynamicEnvironmentCapability`。
 
-Harness 提供挂载名称、路由、访问上限、操作超时和状态聚合。模型工具需要额外配置：添加环境本身不会暴露工具。provider 仍负责实施其声明支持的操作。
+Harness 提供挂载名称、路由、访问上限、操作超时和状态聚合。挂载 Environment 后，在 Agent 上同时启用 `DynamicEnvironmentCapability` 即可向模型暴露文件与命令工具。provider 仍负责实施其声明支持的操作。
 
 ## 文件操作参考
 

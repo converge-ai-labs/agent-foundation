@@ -1,7 +1,7 @@
 ---
-title: 公开 API 与载荷参考
+title: Stream Protocol API 与载荷参考
 sidebarTitle: API 与载荷参考
-description: 查阅 observer 与展示 API、解析自定义载荷，并选择处理器可替换的字段。
+description: Stream Protocol 完整 API 参考：涵盖观测器接口、展示检查点投影器、自定义 AG-UI 事件载荷结构及处理器字段替换规则。
 ---
 
 实现消费端时使用本页。可运行示例见[快速入门](getting-started.md)；集成顺序和检查点处理见[事件与处理器](events.md)及[重放与恢复](replay.md)。

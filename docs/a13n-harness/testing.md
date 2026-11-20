@@ -1,7 +1,7 @@
 ---
 title: Testing Harness applications
 sidebarTitle: Testing
-description: Build an offline test suite for output, saved history, streams, and application integrations.
+description: Write fast, deterministic unit and integration tests for Harness agents using FunctionModel, TestModel, and three-tier Environment verification.
 ---
 
 Start with three offline tests: return an answer, restore a saved Thread, and consume a stream. Then add tests for the tools and resources your application actually uses. A deterministic Model keeps these tests fast and makes failures reproducible.

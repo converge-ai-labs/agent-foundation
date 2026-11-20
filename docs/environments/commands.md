@@ -1,12 +1,12 @@
 ---
 title: Run commands and observe processes
 sidebarTitle: Commands and processes
-description: Run bounded commands or long-lived processes in an Environment and read their output.
+description: Execute one-shot shell commands or start background processes with non-consuming output pagination, stdin streaming, and signal control.
 ---
 
 Choose `environment.operations.shell` when you need a foreground result with bounded output. Choose `environment.operations.processes` when you need to observe or control a command across calls. This page uses the typed Provider APIs; Harness tools such as `shell_exec` and `shell_wait` have their own signatures.
 
-Before running a Direct Local command, allow the executable or configure a shell profile. The file-only quickstart leaves commands disabled. An allowed command runs as your Host account; the mapped directory is not a shell sandbox.
+Before running a Direct Local command, allow the executable or configure a shell profile. The file-only quickstart leaves commands disabled. Commands run under your Host user account with the mapped directory as their working root; use Local Envd or Docker when you need OS-level sandboxing.
 
 ## Execute a configured executable
 
@@ -92,7 +92,7 @@ For a long-running command, open an execution and obtain its optional `processes
 1. Call `start(request)` once and keep the returned handle.
 2. Read output and inspect status through that handle. Use a bounded `wait` when you need a completion observation.
 3. If your application must stop the command, use a supported signal or `kill` explicitly.
-4. Release the observation when finished. `release` does not imply termination.
+4. Release the observation when finished. `release` detaches the output observation while allowing the background process to continue running.
 
 Select only actions advertised by the execution:
 
@@ -122,7 +122,7 @@ Read process output in bounded pages:
 
 1. Call `read_output()` with independent stdout/stderr cursors or start offsets and a policy. Set `wait_seconds` if the read should wait for output; its default is zero.
 2. Place each returned chunk at its `start_offset`, then retain the next cursor for that stream. Reads do not consume bytes, so rereading the same range is safe.
-3. Check `available_start` and `available_end`, capture kind, coverage, origin, dropped/produced counts, and completion flags. A preview alone does not establish complete output.
+3. Check `available_start` and `available_end`, capture kind, coverage, origin, dropped/produced counts, and completion flags. Check the `coverage` and completion flags on `read_output()` when you need the complete stream rather than an inline preview.
 
 Use the separate `outputs` interface to read or release a retained output reference. Pass each bound value to its owning API: a process handle, output reference, and output cursor are distinct. Ordinary `shell.exec` returns bounded inline output and releases its own retention resources before returning.
 

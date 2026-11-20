@@ -1,7 +1,7 @@
 ---
 title: Stream Protocol 快速入门
 sidebarTitle: 快速入门
-description: 执行离线 Agent、转换输出，并检查生成的 AG-UI 事件。
+description: 在 Python 中将 Harness 实时运行流转换为符合 AG-UI 规范的类型化事件，直接消费文本增量、工具调用与终止状态。
 ---
 
 本示例使用测试模型运行 Harness，每个事件打印为一个 JSON 对象。你将看到执行在哪里结束，以及应用的存储或传输从哪里接入。需要 Python 3.13 和 `uv`，无需模型凭据。

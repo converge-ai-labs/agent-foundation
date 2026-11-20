@@ -6,7 +6,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { ComposerDrafts } from "../conversations/composer";
 import type { Schema } from "../transport/client";
 import { terminalFileLinks } from "./terminal-links";
-import { TextField } from "../shell/ui";
+import { Input } from "a13n-ui";
 import { ReturnToChat } from "./capture";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -24,6 +24,8 @@ import {
   ArrowDown,
   X,
   ArrowBendUpLeft,
+  Moon,
+  Sun,
 } from "@phosphor-icons/react";
 import { TerminalAction } from "./terminal-action";
 import { terminalShortcut, terminalShortcutLabels } from "./terminal-shortcuts";
@@ -43,6 +45,22 @@ const searchOptions = {
   },
 };
 
+const darkTerminalTheme = {
+  background: "#141416",
+  foreground: "#e4e4e7",
+  cursor: "#e4e4e7",
+  cursorAccent: "#141416",
+  selectionBackground: "#3f3f4680",
+};
+
+const lightTerminalTheme = {
+  background: "#fefefe",
+  foreground: "#27272a",
+  cursor: "#27272a",
+  cursorAccent: "#fefefe",
+  selectionBackground: "#a1a1aa60",
+};
+
 export default function TerminalScreen({
   id,
   visible,
@@ -60,9 +78,11 @@ export default function TerminalScreen({
 }) {
   const { t } = useTranslation();
   const transport = useTransport();
-  const { appearance } = useAppearance();
+  const { appearance, terminalDark, store } = useAppearance();
   const fontSize = useRef(appearance.sizes.terminal);
   fontSize.current = appearance.sizes.terminal;
+  const isTerminalDark = useRef(terminalDark);
+  isTerminalDark.current = terminalDark;
   const scheduleResize = useRef<(() => void) | null>(null);
   const shortcuts = terminalShortcutLabels();
   const shown = useRef(visible);
@@ -151,28 +171,9 @@ export default function TerminalScreen({
     );
 
     terminal.current = term;
-    const paintTheme = () => {
-      const dark = document.documentElement.classList.contains("dark");
-      term.options.theme = dark
-        ? {
-            background: "#141416",
-            foreground: "#e4e4e7",
-            cursor: "#e4e4e7",
-            selectionBackground: "#3f3f4680",
-          }
-        : {
-            background: "#ffffff",
-            foreground: "#27272a",
-            cursor: "#27272a",
-            selectionBackground: "#a1a1aa60",
-          };
-    };
-    paintTheme();
-    const themeObserver = new MutationObserver(paintTheme);
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class"],
-    });
+    term.options.theme = isTerminalDark.current
+      ? darkTerminalTheme
+      : lightTerminalTheme;
     let animation = 0;
     const resize = () => {
       cancelAnimationFrame(animation);
@@ -199,7 +200,13 @@ export default function TerminalScreen({
     const session = new TerminalConnection(
       id,
       {
-        write: (text, done) => term.write(text, done),
+        write: (text, done) => {
+          const wrapSync =
+            text.includes("\x1b[") &&
+            !text.includes("\x1b[?2026") &&
+            /\x1b\[(?:\d*;?\d*[JKH]|\?25l)/.test(text);
+          term.write(wrapSync ? `\x1b[?2026h${text}\x1b[?2026l` : text, done);
+        },
         reset: () => term.reset(),
       },
       (next) => {
@@ -249,7 +256,6 @@ export default function TerminalScreen({
       terminal.current = null;
       scheduleResize.current = null;
       observer.disconnect();
-      themeObserver.disconnect();
       cancelAnimationFrame(animation);
       data.dispose();
       binary.dispose();
@@ -262,19 +268,64 @@ export default function TerminalScreen({
   }, [id, transport, unauthorized]);
   useEffect(() => {
     if (terminal.current)
+      terminal.current.options.theme = terminalDark
+        ? darkTerminalTheme
+        : lightTerminalTheme;
+  }, [terminalDark]);
+  useEffect(() => {
+    if (terminal.current)
       terminal.current.options.fontSize = appearance.sizes.terminal;
     scheduleResize.current?.();
   }, [appearance.sizes.terminal, visible]);
   useEffect(() => {
     const session = connection.current;
     if (!session) return;
-    if (!visible && session.state.connection !== "Detached") {
-      resumeOnShow.current = true;
-      session.detach();
-    } else if (visible && resumeOnShow.current && !session.draining) {
+    if (!visible) {
+      if (session.state.connection !== "Detached") {
+        resumeOnShow.current = true;
+        session.suspend();
+      } else if (session.recoverable) {
+        resumeOnShow.current = true;
+      }
+      return;
+    }
+    if (session.draining || session.state.connection !== "Detached") return;
+    if (resumeOnShow.current) {
       resumeOnShow.current = false;
       session.connect(window.location.origin, transport.key);
+      return;
     }
+    if (!session.recoverable) return;
+    const delay = Math.min(
+      5000,
+      250 * 2 ** Math.max(0, session.reconnectAttempts - 1),
+    );
+    const reconnect = () => {
+      if (
+        shown.current &&
+        connection.current === session &&
+        session.state.connection === "Detached" &&
+        session.recoverable &&
+        !session.draining
+      ) {
+        session.connect(window.location.origin, transport.key);
+      }
+    };
+    const timer = setTimeout(reconnect, delay);
+    const onResume = () => {
+      if (document.visibilityState === "hidden") return;
+      clearTimeout(timer);
+      reconnect();
+    };
+    window.addEventListener("focus", onResume);
+    window.addEventListener("online", onResume);
+    document.addEventListener("visibilitychange", onResume);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", onResume);
+      window.removeEventListener("online", onResume);
+      document.removeEventListener("visibilitychange", onResume);
+    };
   }, [visible, state, transport]);
   useEffect(() => {
     if (visible) terminal.current?.focus();
@@ -374,6 +425,14 @@ export default function TerminalScreen({
       : view?.controller
         ? t("Take over input")
         : t("Take control");
+  const statusTone =
+    state.connection === "Detached"
+      ? "disconnected"
+      : state.connection === "Connecting" || state.pendingControl
+        ? "pending"
+        : session?.controls
+          ? "active"
+          : "viewer";
   return (
     <div
       className={styles.screen}
@@ -397,6 +456,11 @@ export default function TerminalScreen({
     >
       <div className={styles.controlBar}>
         <div className={styles.connectionStatus}>
+          <span
+            className={styles.statusDot}
+            data-tone={statusTone}
+            aria-hidden="true"
+          />
           <span role="status">
             {state.connection === "Connecting"
               ? t("Connecting…")
@@ -408,26 +472,29 @@ export default function TerminalScreen({
                     ? t("You have control")
                     : t("Viewing only")}
           </span>
-          {view && (
-            <small
-              title={t(
-                "Session {{id}} - {{columns}} × {{rows}} - control epoch {{epoch}}",
-                {
-                  id,
-                  columns: view.columns,
-                  rows: view.rows,
-                  epoch: view.control_epoch,
-                },
-              )}
-            >
-              {view.state === "exited"
-                ? t("{{count}} connected - Exited ({{code}})", {
-                    count: view.participants.length,
-                    code: view.exit_code ?? t("unknown"),
-                  })
-                : t("{{count}} connected", { count: view.participants.length })}
-            </small>
-          )}
+          {view &&
+            (view.state === "exited" || view.participants.length > 1) && (
+              <small
+                title={t(
+                  "Session {{id}} - {{columns}} × {{rows}} - control epoch {{epoch}}",
+                  {
+                    id,
+                    columns: view.columns,
+                    rows: view.rows,
+                    epoch: view.control_epoch,
+                  },
+                )}
+              >
+                {view.state === "exited"
+                  ? t("{{count}} connected - Exited ({{code}})", {
+                      count: view.participants.length,
+                      code: view.exit_code ?? t("unknown"),
+                    })
+                  : t("{{count}} connected", {
+                      count: view.participants.length,
+                    })}
+              </small>
+            )}
         </div>
         <div className={styles.actions}>
           <TerminalAction
@@ -461,27 +528,16 @@ export default function TerminalScreen({
           >
             <ChatText />
           </TerminalAction>
-          {state.connection === "Detached" ? (
-            <TerminalAction
-              label={t("Reconnect")}
-              disabled={session?.draining}
-              onClick={() =>
-                session?.connect(window.location.origin, transport.key)
-              }
-            >
-              <Plug />
-            </TerminalAction>
-          ) : (
-            <TerminalAction
-              label={t("Disconnect")}
-              onClick={() => {
-                resumeOnShow.current = false;
-                session?.detach();
-              }}
-            >
-              <Plugs />
-            </TerminalAction>
-          )}
+          <TerminalAction
+            label={t("Terminal theme")}
+            description={terminalDark ? t("Dark") : t("Light")}
+            onClick={() =>
+              store.setTerminalTheme(terminalDark ? "light" : "dark")
+            }
+          >
+            {terminalDark ? <Moon /> : <Sun />}
+          </TerminalAction>
+          <span className={styles.divider} aria-hidden="true" />
           <TerminalAction
             label={controlLabel}
             aria-pressed={!!session?.controls}
@@ -503,96 +559,120 @@ export default function TerminalScreen({
               <Hand />
             )}
           </TerminalAction>
-        </div>
-      </div>
-      {finding && (
-        <div
-          ref={searchElement}
-          className={styles.search}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              closeSearch();
-            }
-            if (event.key === "Enter") {
-              event.preventDefault();
-              event.shiftKey
-                ? search.current?.findPrevious(query, searchOptions)
-                : search.current?.findNext(query, searchOptions);
-            }
-          }}
-        >
-          <TextField
-            label={t("Find in terminal output")}
-            value={query}
-            onChange={setQuery}
-          />
-          <small role="status">
-            {matches &&
-              (matches.index < 0 && matches.count
-                ? t("{{count}}+ matches", { count: matches.count })
-                : `${matches.index + 1} / ${matches.count}`)}
-          </small>
-          <TerminalAction
-            label={t("Previous match")}
-            shortcut="Shift+Enter"
-            disabled={!query}
-            onClick={() => search.current?.findPrevious(query, searchOptions)}
-          >
-            <ArrowUp />
-          </TerminalAction>
-          <TerminalAction
-            label={t("Next match")}
-            shortcut="Enter"
-            disabled={!query}
-            onClick={() => search.current?.findNext(query, searchOptions)}
-          >
-            <ArrowDown />
-          </TerminalAction>
-          <TerminalAction
-            label={t("Close search")}
-            shortcut="Escape"
-            onClick={closeSearch}
-          >
-            <X />
-          </TerminalAction>
-        </div>
-      )}
-      {feedback && (
-        <div className={styles.actions}>
-          <p className={styles.message} role="status">
-            {t(feedback)}
-          </p>
-          {feedback.startsWith("Added") && (
-            <TerminalAction label={t("Return to chat")} onClick={returnToChat}>
-              <ArrowBendUpLeft />
+          {state.connection === "Detached" ? (
+            <TerminalAction
+              label={t("Reconnect")}
+              disabled={session?.draining}
+              onClick={() =>
+                session?.connect(window.location.origin, transport.key)
+              }
+            >
+              <Plug />
+            </TerminalAction>
+          ) : (
+            <TerminalAction
+              label={t("Disconnect")}
+              onClick={() => {
+                resumeOnShow.current = false;
+                session?.detach();
+              }}
+            >
+              <Plugs />
             </TerminalAction>
           )}
         </div>
-      )}
-      {state.message && (
-        <p className={styles.message} role="status">
-          {state.serverMessage && `${state.serverMessage} `}
-          {t(state.message)}
-        </p>
-      )}
-      <div className={styles.viewport}>
+      </div>
+      <div
+        className={styles.viewport}
+        data-terminal-theme={terminalDark ? "dark" : "light"}
+      >
+        {finding && (
+          <div
+            ref={searchElement}
+            className={styles.search}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                closeSearch();
+              }
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.shiftKey
+                  ? search.current?.findPrevious(query, searchOptions)
+                  : search.current?.findNext(query, searchOptions);
+              }
+            }}
+          >
+            <Input
+              size="sm"
+              aria-label={t("Find in terminal output")}
+              placeholder={t("Find in terminal output")}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            <small role="status">
+              {matches &&
+                (matches.index < 0 && matches.count
+                  ? t("{{count}}+ matches", { count: matches.count })
+                  : `${matches.index + 1} / ${matches.count}`)}
+            </small>
+            <TerminalAction
+              label={t("Previous match")}
+              shortcut="Shift+Enter"
+              disabled={!query}
+              onClick={() => search.current?.findPrevious(query, searchOptions)}
+            >
+              <ArrowUp />
+            </TerminalAction>
+            <TerminalAction
+              label={t("Next match")}
+              shortcut="Enter"
+              disabled={!query}
+              onClick={() => search.current?.findNext(query, searchOptions)}
+            >
+              <ArrowDown />
+            </TerminalAction>
+            <TerminalAction
+              label={t("Close search")}
+              shortcut="Escape"
+              onClick={closeSearch}
+            >
+              <X />
+            </TerminalAction>
+          </div>
+        )}
         <div
           ref={element}
           className={styles.emulator}
           aria-label={t("Native terminal output and input")}
         />
-      </div>
-      <small
-        title={t(
-          "Runs on the server as its OS user, outside the agent's environment. Everyone shares the controller's terminal size. Reconnecting won't resend input.",
+        {(feedback || state.message) && (
+          <div className={styles.noticeOverlay}>
+            {feedback && (
+              <div className={styles.noticeRow}>
+                <p className={styles.message} role="status">
+                  {t(feedback)}
+                </p>
+                {feedback.startsWith("Added") && (
+                  <TerminalAction
+                    label={t("Return to chat")}
+                    onClick={returnToChat}
+                  >
+                    <ArrowBendUpLeft />
+                  </TerminalAction>
+                )}
+              </div>
+            )}
+            {state.message && (
+              <p className={styles.message} role="status">
+                {state.serverMessage && `${state.serverMessage} `}
+                {t(state.message)}
+              </p>
+            )}
+          </div>
         )}
-      >
-        {view?.controller && !session?.controls
-          ? t("Server terminal - Someone else has control")
-          : t("Server terminal")}
-      </small>
+      </div>
     </div>
   );
 }

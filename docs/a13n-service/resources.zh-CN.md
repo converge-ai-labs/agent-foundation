@@ -1,6 +1,6 @@
 ---
-title: 资源基础
-description: 选择合适的资源，携带版本更新，并了解运行会固定哪些内容。
+title: 工作空间资源模型与并发控制
+description: 理解 Service 工作空间资源归属、基于 ETag/If-Match 的乐观并发更新、只写凭证安全语义以及运行期版本锁定。
 ---
 
 创建项目笔记 agent 时，先连接 provider 账号，保存该 provider 下的模型，再在 agent 中选择模型。需要业务系统工具时添加连接，需要处理文件时添加环境模板。这些保存的对象就是**工作空间资源**。本页介绍如何识别、修改和停用它们。
@@ -60,7 +60,7 @@ Provider 保存一个配置好的后端账号。按工作需要选择类型：
 1. 打开**工作区设置 → 供应商**，选择类别，添加所需类型的 provider。
 2. 填写配置和凭据。Console 根据 `GET /api/v1/provider-types/{kind}` 构建表单：响应包含配置和凭据的 JSON Schema、凭据要求和设置链接。模型类型还描述 API 和参数；web 类型列出操作；环境类型描述配方和生命周期支持。
 3. 保存 provider，在创建依赖它的模型、连接、模板或记忆时使用其 ID。API 客户端向 `/{kind}-providers` 提交 `type`、`name`、`config` 和该类型要求的凭据。
-4. 支持时先运行 provider 测试，再验证实际流程。`POST …/{provider_id}/test` 需要 `run` 权限，返回 `succeeded`、`failed` 或 `unsupported`。非计费探测不能证明 agent 任务一定成功。
+4. 支持时先运行 provider 测试，再验证实际流程。`POST …/{provider_id}/test` 需要 `run` 权限，返回 `succeeded`、`failed` 或 `unsupported`。连通性探测通过后，建议在真实 Agent 会话中试跑一次任务，以完整验证模型与工具权限。
 
 `unsupported` 表示该类型没有探测功能，应通过运行验证。Web 类型没有探测；环境类型中仅 Docker 支持测试，只 ping 引擎，不创建资源。模型类型使用其声明的连接探测；记忆 provider 会列出一个未被任何记忆使用的命名空间中的一页数据。
 
@@ -83,14 +83,14 @@ Provider 保存一个配置好的后端账号。按工作需要选择类型：
 3. 通过 `PUT /api/v1/egress-credentials/{id}/value` 携带 `If-Match` 和 `{"value": "<新 token>"}` 轮换。响应返回 `202` 和新的 `credential_version`。编辑元数据只增加普通 `version`。
 4. 通过 `POST /api/v1/egress-credentials/{id}/revoke` 携带 `If-Match` 撤销。此操作清空存储的值，并永久标记凭据已撤销。需要继续使用时创建新资源；不提供恢复或硬删除操作。
 
-通过 `GET /api/v1/egress-credentials/{id}/sessions` 查询各 Session 的应用状态，或通过 `GET /api/v1/environments/{id}/credential-sessions` 查询一个环境。分页时保持目标不变，使用 `next_cursor` 继续。`applied` 表示最后确认的版本匹配所记录的原生 Session，不代表已探测连接在线；`pending`、`retry` 表示仍有受跟踪的执行，分别等待同步或重试；`on_next_use` 等待下次 attach；`on_create` 等待创建；`unknown` 表示无法确认当前 Session。只有该 Session 已应用撤销后的凭据版本，才能确认删除完成。
+通过 `GET /api/v1/egress-credentials/{id}/sessions` 查询各 Session 的应用状态，或通过 `GET /api/v1/environments/{id}/credential-sessions` 查询一个环境。分页时保持目标不变，使用 `next_cursor` 继续。`applied` 表示已记录的原生 Session 已同步至最新配置版本；`pending`、`retry` 表示仍有受跟踪的执行，分别等待同步或重试；`on_next_use` 等待下次 attach；`on_create` 等待创建；`unknown` 表示无法确认当前 Session。只有该 Session 已应用撤销后的凭据版本，才能确认删除完成。
 
-`POST /api/v1/egress-credentials/{id}/sync` 需要工作空间 `write` 权限，请求现有持有者重新比较版本后返回 `202`。活跃和已撤销的凭据都可以重试；操作不改变资源版本，不要求 `If-Match`。它不会 attach 空闲 Session，也不代表所有 Session 都已更新。
+`POST /api/v1/egress-credentials/{id}/sync` 需要工作空间 `write` 权限，请求现有持有者重新比较版本后返回 `202`。活跃和已撤销的凭据都可以重试；操作不改变资源版本，不要求 `If-Match`。该操作不会主动唤醒空闲 Session；请检查各环境的同步状态确认更新进度。
 
-`202` 表示 Service 已保存轮换或撤销，不代表所有已有 Envd Session 都已应用，也不会撤销上游服务中的 token。Agent 平台工具和管理 MCP 不提供凭据写操作；MCP 只提供元数据查询。
+`202` 表示 Service 已记录凭证轮换或撤销并开始异步下发；如需彻底吊销第三方平台令牌，请同时在上游服务后台撤销。Agent 平台工具和管理 MCP 不提供凭据写操作；MCP 只提供元数据查询。
 
 为 Agent 选择凭据时，在编辑页打开**环境 → 默认 Session 配置**。设置受控 HTTPS 出网、允许的目标，以及凭据绑定，例如为 `api.github.com` 配置 `GH_TOKEN`。使用目标白名单时，每个注入域名也必须加入允许的目标。**Agent 使用说明预览**展示变量名和命令示例。保存 Agent 后，新建主环境绑定会使用这些默认值；已有会话的环境绑定保留自己的配置。**编辑 Session JSON**可以修改其他 Session 设置，先应用到草稿，再保存 Agent。跨工作空间导入 Agent 时，需要选择目标工作空间中可用的凭据。
 
-对于已有会话，可在环境挂载项中打开 **Session 配置**，查看或修改该绑定的持久配置。保存需要工作空间 `run` 权限，配置用于后续 Run；已接纳的 Run 保留原配置，已有任务仍使用该绑定时，新 Run 不能替换其 Session 配置。发生冲突时会保留草稿；请加载当前版本、对照检查后再明确保存。在 Run 详情中展开**环境与记忆 → 本次 Session 配置**，可查看该 Run 接纳时固定的引用。页面中的当前凭据版本仅供对照，不代表历史请求实际使用的 token 版本。
+对于已有会话，可在环境挂载项中打开 **Session 配置**，查看或修改该绑定的持久配置。保存需要工作空间 `run` 权限，配置用于后续 Run；已接纳的 Run 保留原配置，已有任务仍使用该绑定时，新 Run 不能替换其 Session 配置。发生冲突时会保留草稿；请加载当前版本、对照检查后再明确保存。在 Run 详情中展开**环境与记忆 → 本次 Session 配置**，可查看该 Run 接纳时固定的引用。页面展示的是当前最新生效的凭证版本，历史运行记录则会保留执行当时的快照。
 
 每个应用状态分页都包含全量 `summary` 统计，Console 将其展示在分页明细上方。同一绑定版本即使配置多个变量，也只计一次；选中的凭据全部应用后，才计为已确认。统计还分别显示等待活跃同步、重试、下次使用、创建及状态未确认的数量，不会为统计探测原生连接。

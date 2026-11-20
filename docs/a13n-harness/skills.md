@@ -1,7 +1,7 @@
 ---
 title: Discover and use Skills
 sidebarTitle: Skills
-description: Give an Agent a discoverable procedure, read it through file tools, and choose the Skills exposed to each Run.
+description: Package reusable SKILL.md procedures, scan workspace and organization skill directories, and control per-run skill exposure in Harness.
 ---
 
 A Skill packages instructions and supporting files for a recurring task. `SkillsCapability()` tells the model which Skills are available; file tools let it read the procedure it needs.

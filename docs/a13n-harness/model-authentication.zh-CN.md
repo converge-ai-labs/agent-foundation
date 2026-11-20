@@ -1,7 +1,7 @@
 ---
-title: 模型身份验证与 HTTP 客户端
+title: 模型认证与 HTTP 客户端
 sidebarTitle: 身份验证与 HTTP 客户端
-description: 将订阅凭据接入 Run，协调刷新，并关闭模型 HTTP 客户端。
+description: 集成 Codex、ChatGPT、Grok 与 GitHub Copilot 订阅登录流，协调凭证轮转刷新，并管理自定义模型 HTTP 客户端生命周期。
 ---
 
 已认证的 Model 需要账号来源和明确的客户端生命周期。原生 Provider 处理 API key 认证。订阅集成则从 `a13n_harness.providers.model.oauth` 选择对应流程和凭据来源，再由 [Run 解析器](models.md#model-selection)返回已认证模型。
@@ -163,7 +163,7 @@ def copilot_model(grant: GitHubCopilotCredentials, *, account_id: str, client_id
 
 `issued()` 只在签发时将有效期转换为绝对时间。重新加载已保存时间，不重启有效期时钟。`MemoryCredentialStore` 演示进程内存储；凭据和同一 grant 的协调需在重启后保留时，替换该存储并实现持久的 `CopilotCredentialSource.load()`/`rotate()`。轮换在使用前保存，遵循前文 Grok 的不确定 grant 规则。
 
-显式导入并调用 `discover_copilot_models(credential_source=source)` 读取已认证目录。它返回第一页中声明支持 Chat Completions 的 ID。目录存在和登录成功不代表有推理使用资格。认证失败需要显式决定恢复方式，不会自动登录或切换账号。
+显式导入并调用 `discover_copilot_models(credential_source=source)` 读取已认证目录。它返回第一页中声明支持 Chat Completions 的 ID。登录并拉取模型目录后，建议发送一条测试消息以确认当前账号具备该模型的推理调用权限。认证失败需要显式决定恢复方式，不会自动登录或切换账号。
 
 ## ChatGPT 登录与原生 Model
 
