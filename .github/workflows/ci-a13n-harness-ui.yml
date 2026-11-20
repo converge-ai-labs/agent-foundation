@@ -248,11 +248,11 @@ jobs:
           retention-days: 7
 
   tests:
-    name: UI Python tests (${{ matrix.shard }}/3, Python ${{ matrix.python-version }})
+    name: UI Python tests (${{ matrix.shard }}/2, Python ${{ matrix.python-version }})
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2]
         python-version: ["3.13", "3.14", "3.15"]
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
@@ -291,7 +291,7 @@ jobs:
           PYTEST_ADDOPTS: -v --durations=20 -o faulthandler_timeout=45 --timeout=60 --timeout-method=thread --max-worker-restart=0 --junitxml=test-results/ui.xml -r a
         run: >-
           /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 4
-          --shard ${{ matrix.shard }} 3 --durations .github/ui-test-durations.json
+          --shard ${{ matrix.shard }} 2 --durations .github/ui-test-durations.json
           packages/a13n-harness-ui/tests
 
       - name: Retain UI test reports
@@ -303,17 +303,13 @@ jobs:
           retention-days: 7
 
   frontend:
-    name: Console and shared frontend (${{ matrix.phase }} ${{ matrix.shard }})
+    name: Console and shared frontend (${{ matrix.phase }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - phase: checks
-            shard: 1
           - phase: tests
-            shard: 1
-          - phase: tests
-            shard: 2
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
@@ -350,14 +346,13 @@ jobs:
         if: matrix.phase == 'tests'
         run: >-
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run test
-          --shard=${{ matrix.shard }}/2
           --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
 
       - name: Retain frontend test reports
         if: always() && matrix.phase == 'tests'
         uses: actions/upload-artifact@v4
         with:
-          name: console-shared-${{ matrix.shard }}-${{ github.run_attempt }}
+          name: console-shared-${{ github.run_attempt }}
           # Avoid walking pnpm's node_modules links and uploading each shared report repeatedly.
           path: |
             frontend/apps/*/test-results/*.xml
@@ -369,11 +364,7 @@ jobs:
         run: pnpm --dir frontend --filter '!a13n-harness-ui-webui' --filter '!a13n-docs' --filter '!a13n-site' -r run build
 
   webui:
-    name: WebUI tests (${{ matrix.shard }}/2)
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
+    name: WebUI tests
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
     runs-on: ubuntu-24.04
@@ -420,15 +411,14 @@ jobs:
       - name: Test WebUI
         timeout-minutes: 6
         run: >-
-          /usr/bin/time -p pnpm --dir frontend --filter a13n-harness-ui-webui run test --maxWorkers=2
-          --shard=${{ matrix.shard }}/2
+          /usr/bin/time -p pnpm --dir frontend --filter a13n-harness-ui-webui run test --maxWorkers=4
           --reporter=default --reporter=junit --outputFile=test-results/vitest.xml
 
       - name: Retain WebUI test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: webui-${{ matrix.shard }}-${{ github.run_attempt }}
+          name: webui-${{ github.run_attempt }}
           path: frontend/apps/a13n-harness-ui/test-results/*.xml
           retention-days: 7
 
@@ -555,7 +545,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(github.event_name == 'pull_request' && '[1]' || '[1,2,3,4]') }}
+        shard: ${{ fromJSON(github.event_name == 'pull_request' && '[1]' || '[1,2]') }}
     timeout-minutes: 12
     env:
       PYTEST_ADDOPTS: -v -o faulthandler_timeout=90 --timeout=120 --timeout-method=thread
@@ -612,7 +602,7 @@ jobs:
           PYTEST_ADDOPTS: -v -o faulthandler_timeout=90 --timeout=120 --timeout-method=thread --durations=20 --junitxml=test-results/ui-full.xml
         run: >-
           uv run --locked --no-sync python scripts/run_python_tests.py
-          --workers 4 --shard ${{ matrix.shard }} 4 --durations .github/ui-test-durations.json
+          --workers 4 --shard ${{ matrix.shard }} 2 --durations .github/ui-test-durations.json
           packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
