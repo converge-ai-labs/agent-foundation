@@ -1,6 +1,6 @@
 ---
 title: Agents and Runs
-description: Build an Agent once, run a turn, inspect its outcome, and stream the next turn.
+description: Build reusable ExecutableAgent instances in Python, run or stream turns with fresh RunBindings, steer active execution, and configure recovery layers.
 ---
 
 Build one executable for an Agent's behavior and output contract. Call `run()` when you need the final result, or `stream()` when you need events as work happens. Each call gets a fresh Run context. Passing the previous result's state continues its Thread.
@@ -175,7 +175,7 @@ Use these on an entered stream from trusted application code:
 | `stream.cancel()`                          | Request semantic cancellation                                     |
 | `stream.result`                            | Read the result after its terminal event was delivered            |
 
-`steer()` returns an enqueue ID and uses the native active-run `priority="asap"` queue. A supplied `input_id` is recorded when delivered; `steering_input_ids(state.message_history)` from `a13n_harness.capabilities.steering` finds delivered IDs in exported history. An enqueue receipt alone does not prove durable delivery.
+`steer()` returns an enqueue ID and uses the native active-run `priority="asap"` queue. A supplied `input_id` is recorded when delivered; `steering_input_ids(state.message_history)` from `a13n_harness.capabilities.steering` finds delivered IDs in exported history. Use `steering_input_ids(state.message_history)` on the exported checkpoint to confirm that an enqueued steering message was delivered into history.
 
 Automatic compaction retains accepted initial and steering inputs for replay, including structured and multimodal content. That favors preserving user context over exact-once replay. For interrupted deferred input, pair the checkpoint with `stream.pending_deferred_input`; see [State and resume](state-and-resume.md#recover-an-interrupted-deferred-resume).
 
@@ -312,7 +312,7 @@ executable = HarnessBuilder().build(
 
 Here a failure streak allows three attempts including the first. A complete accepted primary response, including a tool-call response, resets the count and backoff. Partial output and auxiliary requests such as compaction do not. Permanent or unknown errors stop immediately. Keep usage limits to bound the whole Run; the policy default, when enabled without another limit, is five attempts per streak.
 
-With recovery enabled, `retry_output_limit=True` also continues explicit `finish_reason="length"` responses and native output-token-limit failures. Truncation consumes the same failure budget without network backoff. Set `retry_output_limit=False` to fail immediately instead. The selected Model and token limit stay unchanged. A missing finish reason alone does not trigger continuation.
+With recovery enabled, `retry_output_limit=True` also continues explicit `finish_reason="length"` responses and native output-token-limit failures. Truncation consumes the same failure budget without network backoff. Set `retry_output_limit=False` to fail immediately instead. The selected Model and token limit stay unchanged. Continuation triggers specifically on explicit `finish_reason="length"` responses or native output-token-limit errors.
 
 Truncated responses are rejected before ordinary tool execution, including valid calls in a truncated batch. Those calls are discarded without synthetic results. Earlier completed calls and results remain. The default continuation prompt asks for unfinished text to continue, but for structured output or tool calls to be regenerated as a complete new value. If the truncated response contains ordinary function-tool calls, it names those undispatched tools without their arguments and asks for smaller calls or tool-supported split operations. If splitting is unavailable, the model should explain the limitation. Structured-output tools are excluded from this size guidance; the model must regenerate a complete output value. Custom continuation input and prompt factories remain unchanged. `result.output` is the final native validated output; use history or the stream for all visible text segments, rather than expecting concatenation. Exhaustion returns `model_recovery_exhausted` with saved partial state. Harness UI and Service enable this recovery policy for ordinary runs.
 

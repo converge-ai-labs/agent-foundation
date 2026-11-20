@@ -1,6 +1,6 @@
 ---
-title: 在 Host 中嵌入 Harness
-description: 先运行可持久化的对话，再接入当前权限、后台工具和可靠的结果交付。
+title: 在宿主服务中嵌入 Harness
+description: 基于 Harness 架构多租户生产级宿主应用，实现检查点原子发布、Worker 租约恢复、动态权限绑定与实时事件流分发。
 ---
 
 Host 就是调用 Harness 的应用。它选择 Agent，提供当前权限和客户端，保存已接受的状态，并向用户交付结果。先从单进程对话开始，应用需要多个 worker 时再增加协调机制。
@@ -150,7 +150,7 @@ async def run_host(model: Model) -> None:
 
 真正脱离前台等待，要求工具具有可保留的执行所有权和资源作用域，例如支持此能力的 Environment Shell 调用或完整 CodeAct runner。普通 `async def` 自定义工具仍内联执行。CodeAct 的嵌套调用等待实际值，顺序工具的执行屏障持续到工作结束。默认执行模式为 `inline`；`auto` 要求在 Run 准备时已绑定 runtime。
 
-绑定运行时并启用工具执行能力后，Agent 可用 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查询和管理执行。每个 Run 首次列出需要关注的执行，之后只通知变化。完整执行 ID 可用于取回结果、核对命令输出。通过 `ToolExecutionStore` 管理结果留存，通过 `on_completed` 安排通知。如果 Host 负责交付后台完成通知，可设置 `reports_background_completions=True`。持久化记录本身不会将运行中的调用迁移到替代 worker。
+绑定运行时并启用工具执行能力后，Agent 可用 `tool_execution_info`、`tool_execution_result`、`tool_execution_wait` 和 `tool_execution_cancel` 查询和管理执行。每个 Run 首次列出需要关注的执行，之后只通知变化。完整执行 ID 可用于取回结果、核对命令输出。通过 `ToolExecutionStore` 管理结果留存，通过 `on_completed` 安排通知。如果 Host 负责交付后台完成通知，可设置 `reports_background_completions=True`。当 Worker 失联时，新的 Worker 会在租约过期后从最新持久化的检查点恢复该 Run。
 
 向活动流发送新输入时，按交接要求选择：
 
@@ -186,7 +186,7 @@ Model Provider 的 `forward_context_headers` 选项省略时，使用 `A13N_HARN
 
 ### 发起模型调用前检查
 
-如果应用必须逐次批准公开 Model 调用，通过 `RunBindings.model_call_check` 提供 `ModelCallCheck`。其 `check(ModelCall)` 方法正常返回表示允许发出调用，抛出异常表示拒绝。每次 Run 都应提供当前检查权限。实际用量需要另行记录：获准调用不代表 HTTP 请求已发出或已经计费。参阅[用量关联](usage-and-limits.md#usage)。
+如果应用必须逐次批准公开 Model 调用，通过 `RunBindings.model_call_check` 提供 `ModelCallCheck`。其 `check(ModelCall)` 方法正常返回表示允许发出调用，抛出异常表示拒绝。每次 Run 都应提供当前检查权限。请在模型响应返回或流结束后根据实际观测到的 Token 数据记录计费用量。参阅[用量关联](usage-and-limits.md#usage)。
 
 ## 持久化状态的边界
 

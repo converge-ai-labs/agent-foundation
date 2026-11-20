@@ -1,6 +1,6 @@
 ---
-title: 内部平台工具参考
-description: 理解 agent 内部权限、配置差量与外部管理边界。
+title: 内置平台工具权限与边界参考
+description: 了解 Service Agent 如何在调用方委托权限下安全执行平台管理工具，以及配置差量更新与外部治理边界。
 ---
 
 配置 [Agent Composer](agent-composer.md) 或自定义平台工具时使用本页。外部客户端请使用[管理 MCP](mcp.md)。

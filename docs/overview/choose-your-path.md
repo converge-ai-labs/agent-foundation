@@ -1,24 +1,24 @@
 ---
 title: Choose your path
-description: Pick Service, Harness, or Harness UI by where your agents run and who operates them.
+description: Compare Service, Harness, and Harness UI by execution model, persistence, and target audience to pick the right entry point.
 ---
 
-Choose the guide for your first task. You can run an agent inside a Python application, work with one interactively, or use a Service deployment that manages execution for you.
+Agent Foundation provides one core execution engine—**Harness**—and three ways to use it: as an embeddable Python SDK, as an interactive developer workbench (**Harness UI**), or as a self-hosted team platform (**Service**).
 
-| Your goal                              | What you need                                                   | Start here                                                          |
-| -------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Deploy a shared agent platform         | Docker Compose and a model provider account for the local trial | [Service quickstart](../a13n-service/get-started.md)                |
-| Use your team's agents                 | Console URL, an account, and permission to run an agent         | [Use an existing platform](../a13n-service/use-platform.md)         |
-| Call remote agents from an application | Service URL, workspace API key, and a configured agent          | [Connect your application](../a13n-service/connect-application.md)  |
-| Deliver agents in a customer's cloud   | Access to the customer's infrastructure and model accounts      | [Forward deployed engineering](../a13n-service/forward-deployed.md) |
-| Run agents inside your Python process  | Python 3.13+ and uv; the first example uses an offline model    | [Harness quickstart](../a13n-harness/getting-started.md)            |
-| Work interactively in a repository     | Harness UI and a supported model subscription or API key        | [Harness UI setup](../a13n-harness-ui/setup.md)                     |
+Pick the entry point that matches what you want to build or run first:
 
-## Choose where execution lives
+| Your goal                                                    | What you need                                              | Start here                                                          |
+| ------------------------------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------- |
+| **Deploy a shared agent platform for your team**             | Docker Compose and a model provider API key                | [Service quickstart](../a13n-service/get-started.md)                |
+| **Use agents on an existing team deployment**                | Console URL, an account, and workspace `run` permission    | [Use Console](../a13n-service/use-platform.md)                      |
+| **Call managed agents from your application**                | Service URL, workspace API key, and a saved agent          | [Connect your application](../a13n-service/connect-application.md)  |
+| **Deliver a self-hosted agent workflow in a customer cloud** | Customer infrastructure access and approved model accounts | [Forward deployed engineering](../a13n-service/forward-deployed.md) |
+| **Embed agent execution inside your Python application**     | Python 3.13+ and `uv` (starts with an offline model)       | [Harness quickstart](../a13n-harness/getting-started.md)            |
+| **Work interactively with an agent in your repository**      | Harness UI and a model subscription or API key             | [Harness UI setup](../a13n-harness-ui/setup.md)                     |
 
-- **Service:** submit work through Console or an application. Service manages identities, saved conversations, and durable execution in a running deployment.
-- **Harness:** construct and run the agent in your Python process. Supply storage, access policy, and result delivery in your application.
-- **Harness UI:** configure an agent and work with it through the terminal or WebUI. Share the instance only with trusted collaborators: its configuration, conversations, and environment access have no per-user isolation.
+## Compare execution models
+
+All three products run agents with Harness, but they divide responsibility for identity, storage, and process lifecycle differently:
 
 ```mermaid
 flowchart TB
@@ -26,25 +26,32 @@ flowchart TB
     Client["Your application"] -->|"SDK or HTTP API"| Service
     Process["Your Python process"]
     Workbench["Harness UI: terminal or browser"]
-    Service -->|"Managed"| Harness["Harness runs each agent"]
-    Process -->|"Embedded"| Harness
-    Workbench -->|"Interactive"| Harness
+    Service -->|"Managed workers"| Harness["Harness runs each agent"]
+    Process -->|"In-process SDK"| Harness
+    Workbench -->|"Local workbench"| Harness
 
     class Console,Client,Process,Workbench app
     class Service,Harness a13n
 ```
 
-Both Service and Harness UI embed Harness. To call a Service deployment from another application, install a **Service SDK**. To execute agents in that application's own process, install the **Harness library**. Use Console for Service and WebUI for Harness UI.
+| Dimension                     | Service                                                                       | Harness                                                                              | Harness UI                                                                      |
+| ----------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| **Primary audience**          | Platform engineers, team admins, and application teams                        | Python developers building custom agent backends                                     | Individual developers, DIY builders, and trusted small teams                    |
+| **Where agents run**          | Dedicated worker processes leasing runs from PostgreSQL                       | Directly inside your Python application process                                      | Your local machine or connected Environment                                     |
+| **Who owns state & auth**     | Service manages organizations, workspaces, RBAC, credentials, and checkpoints | Your application owns authentication, authorization, and database persistence        | Local SQLite database and YAML configuration shared within the trusted instance |
+| **When a client disconnects** | Workers keep accepted runs executing in the background                        | Your application controls task cancellation and background execution                 | WebUI server keeps active runs going when a browser tab closes                  |
+| **Browser interface**         | **Console** (multi-tenant workspace management and debugging)                 | Your own frontend (or AG-UI via [Stream Protocol](../a13n-stream-protocol/index.md)) | **WebUI** (shared conversations, files, Git changes, and terminals)             |
 
-## Use individual components
+To call a running Service deployment from your product, install a **[Service SDK](../a13n-service/sdks.md)** (Python, TypeScript, Go, or Rust). To execute agents inside your own Python process, install **`a13n-harness`**.
 
-Add a component when the integration needs it:
+## Use standalone building blocks
 
-| Need                                                  | Guide                                               |
-| ----------------------------------------------------- | --------------------------------------------------- |
-| Portable files and commands, with or without an agent | [Environments](../environments/index.md)            |
-| Environment operations through a daemon               | [Envd](../a13n-envd/index.md)                       |
-| AG-UI events from Harness observations                | [Stream Protocol](../a13n-stream-protocol/index.md) |
-| Distribution names, imports, and runnable examples    | [Package catalog](packages.md)                      |
+You can also use Agent Foundation's lower-level packages independently in any Python or Rust system:
 
-Follow a Service conversation in [Core concepts](../a13n-service/core-concepts.md), or use [Operate the Service](../a13n-service/operations.md) to manage a deployment. When choosing a Service client version, match its [supported contract](../a13n-service/sdks.md#keep-version-ownership-clear) to that deployment.
+| Need                                                                                                       | Component & Guide                                   |
+| ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Read files, run shell commands, and manage processes across local directories, Docker, and cloud sandboxes | [Environments](../environments/index.md)            |
+| Enforce OS-level sandboxing, egress domain policies, computer use, and device telemetry over EIP           | [Envd](../a13n-envd/index.md)                       |
+| Translate Harness execution events into typed AG-UI streams with checkpoint replay                         | [Stream Protocol](../a13n-stream-protocol/index.md) |
+| Configure structured JSON and console logging across libraries and executables                             | [Logging](../a13n-logging/index.md)                 |
+| Look up PyPI distribution names, Python import paths, and runnable example applications                    | [Package catalog](packages.md)                      |

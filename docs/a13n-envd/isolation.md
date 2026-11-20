@@ -1,7 +1,7 @@
 ---
 title: Execution boundaries and troubleshooting
 sidebarTitle: Execution boundaries
-description: How Envd applies identity, filesystem, process, and egress policy to a Session, and how to diagnose failures.
+description: Understand how Envd enforces Linux namespaces/Landlock, macOS seatbelt, Windows MXC, and VM isolation boundaries, and diagnose startup probes.
 ---
 
 Choose the execution account, launch defaults and deployment authority before launching Envd. Each Session selects its Sandbox, network mode and command availability within that authority through `session.open.configuration`. Commands, file operations and transfers use the Session's effective grants. Device directory discovery uses launch grants. The Host manages the outer account, container, or VM; Envd prepares and cleans up the Session workers.
@@ -51,7 +51,7 @@ On macOS, keep grant paths stable while workers run. Seatbelt permits parent met
 
 ### Native Windows MXC
 
-Windows restricted Sandbox uses the experimental Microsoft eXecution Container (MXC) Process Security Environment backend, reported as `windows_mxc`. It supports inherit and deny networking. Envd probes native creation, startup-info preparation, and closure with the chosen network capabilities and peer policy. Use a host that passes this probe; a Windows version number alone does not establish PSEC support. WSL uses the Linux backend.
+Windows restricted Sandbox uses the experimental Microsoft eXecution Container (MXC) Process Security Environment backend, reported as `windows_mxc`. It supports inherit and deny networking. Envd probes native creation, startup-info preparation, and closure with the chosen network capabilities and peer policy. Run this probe on the target host to confirm active Windows PSEC support. WSL uses the Linux backend.
 
 The default view includes read-only Windows and Program Files directories, the Envd executable, and private writable HOME/USERPROFILE/TEMP/state. To allow broader reads, set `sandbox.full_disk_read: true`. Writes remain confined to read-write grants and private worker state, but commands can read account-accessible Host configuration and credentials on disk. Choose this option only when that read access is intended. Envd continues to deny its own bootstrap configuration, transport credentials, and broker runtime directory.
 

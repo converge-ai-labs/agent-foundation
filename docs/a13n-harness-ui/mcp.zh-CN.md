@@ -1,6 +1,6 @@
 ---
-title: MCP 服务器
-description: 连接外部工具服务器，为 Agent 选择它，并验证一次工具调用。
+title: 接入 MCP 服务端
+description: 在 Harness UI 中配置本地 stdio 或远程 HTTP/SSE MCP 服务端，管理 OAuth 与令牌凭证，并为不同 Agent 筛选可见工具。
 ---
 
 添加 MCP 工具需要三步：**注册服务器、选择服务器、测试调用**。需要已有 [Agent](agents-and-subagents.md)，以及 Streamable HTTP 端点或已安装的命令行 MCP 服务器。
@@ -156,7 +156,7 @@ Harness UI 在 Host 上启动此程序。选择 Sandbox Environment 不会让外
 
 3. 用该 Agent 启动新对话。让它用小输入调用服务器中一个已知的只读工具。检查工具结果，不要把文字回答当作连接成功的证据。
 
-Agent 的 `mcp_servers: null` 继承根默认值；`[]` 不选择服务器。Project 默认值可以在 Agent 和全局默认值之前，为新 Thread 提供选择。注册服务器或保留连接本身不会选择工具。
+Agent 的 `mcp_servers: null` 继承根默认值；`[]` 不选择服务器。Project 默认值可以在 Agent 和全局默认值之前，为新 Thread 提供选择。注册 MCP 服务端后，请在 Agent 配置中显式勾选需要暴露给模型的工具。
 
 对于已有 TUI 对话，`/resume <id>` 或重启时的 `--resume <id>` 会按当前 Project → Agent → 全局默认值刷新 MCP 列表。这会替换对话专用列表，包括当前默认值为空的情况。WebUI 和无头运行保留已保存的列表，直到显式修改。
 

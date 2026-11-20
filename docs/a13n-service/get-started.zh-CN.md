@@ -1,7 +1,7 @@
 ---
 title: 使用 Docker Compose 自托管 Service
 sidebarTitle: 快速入门
-description: 使用 Docker Compose 启动 Service，并获得第一个 agent 的回复。
+description: 通过 Docker Compose 快速拉起 Service 平台，初始化管理员账号，接入大模型服务并在 Console 中完成首次 Agent 对话。
 ---
 
 本指南从一个空目录开始，带你在 Console 中完成一次 agent 对话。请准备好 Docker、Docker Compose、`curl` 和模型 provider 的 API 密钥。整套服务使用已发布的镜像，无需 Python、Node.js 或源码构建。模型调用使用你的 provider 账号，可能产生费用。

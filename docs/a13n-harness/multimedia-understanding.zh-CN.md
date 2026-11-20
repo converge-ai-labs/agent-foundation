@@ -1,6 +1,6 @@
 ---
-title: 多媒体理解
-description: 读取本地媒体或直接 URL，选择原生输入或分析 Model，并处理返回的文本和用量。
+title: 多模态媒体理解
+description: 在 Harness 中通过模型原生多模态输入或专用分析子 Agent 读取并解析本地图像、音频、视频及远程媒体 URL。
 ---
 
 用 `view` 读取 Environment 中的媒体，用 `read_media_url` 读取直接 HTTP(S) 图像、视频或音频资源。为工具指定明确任务，例如读取标签、按说话人转写、定位事件时间戳或审查 UI。
@@ -13,7 +13,7 @@ Harness 按每种媒体分别选择处理路径：
 | 没有对应声明，但配置了理解 provider | 独立媒体理解 Agent 或自定义 provider 返回的文本 |
 | 两者都不可用                        | `media_understanding_unavailable`               |
 
-声明描述的是 Model 及其 provider 调用路径已经具备的能力，不会让纯文本 Model 获得感知能力。原生请求失败也不会切换为辅助推理。
+该声明用于告知 Harness 哪些模态可直接交由模型原生处理；其他模态则会路由至专用分析 Agent。每种模态均固定遵循其配置的路由路径。
 
 ## 通过 `view` 使用
 

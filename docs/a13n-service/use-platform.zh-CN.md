@@ -1,6 +1,6 @@
 ---
-title: 在 Console 中运行和调试 agent
-description: 在 Console 试用 agent、继续对话，查看配置、执行尝试和用量，调试一次运行。
+title: 在 Console 中运行与调试 Agent
+description: 在 Console 中与工作空间 Agent 对话、从任意回复节点创建分支、审批敏感工具调用，并在 Debug 视图中审查运行轨迹与成本。
 ---
 
 团队已有 Service 时，可以按本指南操作。你需要 Console URL、账号和运行 agent 的权限。接下来会发送请求、在同一线程中追问，并了解如何检查执行或创建分支。自行部署请从[快速入门](get-started.md)开始。Console 是 Service 的应用界面；Harness UI 是独立的工作台。

@@ -1,7 +1,7 @@
 ---
 title: Tracing Harness UI
 sidebarTitle: Tracing
-description: Send a test Run to an OTLP backend, inspect its execution, and choose which content to export.
+description: Export OpenTelemetry traces and metrics from Harness UI to Logfire, Langfuse, or local OTLP collectors to inspect prompts, tool spans, and token usage.
 ---
 
 Use tracing to find where a Run spent time, which Model and tools it used, and whether saving its continuation succeeded. Tracing is off by default. Start with a working [first conversation](setup.md) and an OTLP/HTTP collector, or use the repository's local development workflow below.
@@ -126,7 +126,7 @@ A child's dispatch Link connects valid live trace context. Durable execution lin
 | `a13n.ui.continuation.status`                           | Was a continuation selected for the next Run?                          |
 | Skill summaries on the operation root and `harness.run` | Which Skills were available and read in this Thread?                   |
 
-If an answer is visible but the application operation failed, inspect finalization before retrying the task. The Harness Run can succeed while saving fails. A Skill read records access; it does not establish that the Agent followed the instructions.
+If an answer is visible but the application operation failed, inspect finalization before retrying the task. The Harness Run can succeed while saving fails. The span records that `SKILL.md` was read; inspect subsequent tool calls and output to review how the Agent applied the workflow.
 
 ## Content and limitations
 

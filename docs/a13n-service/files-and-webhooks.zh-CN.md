@@ -1,6 +1,6 @@
 ---
-title: 文件与 webhook
-description: 将本地文件附加到消息，并接收经过验签的生命周期通知。
+title: 文件上传、产出物 (Assets) 与 Webhook
+description: 向 Service 对话线程上传文件附件，下载 Agent 发布的持久化工作空间产出物（Assets），并订阅签名生命周期通知。
 ---
 
 通过资产将文件传入对话，或下载 agent 生成的文件。通过 webhook，在运行或计划状态变化时通知你的应用。

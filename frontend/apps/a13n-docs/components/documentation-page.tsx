@@ -13,7 +13,7 @@ import { getMDXComponents } from "@/components/mdx";
 import { OpenMenu } from "@/components/page-actions";
 import { PageFooter } from "@/components/page-footer";
 import { withPageDocument } from "@/lib/openapi-page";
-import { markdownUrl, sourceUrl } from "@/lib/site";
+import { markdownUrl, site, sourceUrl } from "@/lib/site";
 import { relativeLink } from "@/lib/relative-link";
 import { type Locale, localeUrl } from "@/lib/i18n";
 import { source } from "@/lib/source";
@@ -102,8 +102,16 @@ export function pageMetadata(slug: string[], locale: Locale): Metadata {
     // Next replaces the layout's Open Graph object, so keep its site fields.
     openGraph: {
       ...baseMetadata.openGraph,
+      title: `${page.data.title} | ${site.name}`,
+      description: page.data.description,
+      url: page.url,
       locale: locale === "zh-CN" ? "zh_CN" : "en_US",
       alternateLocale: locale === "zh-CN" ? "en_US" : "zh_CN",
+    },
+    twitter: {
+      card: "summary",
+      title: `${page.data.title} | ${site.name}`,
+      description: page.data.description,
     },
   };
 }

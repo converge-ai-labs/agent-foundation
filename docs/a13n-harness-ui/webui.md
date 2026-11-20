@@ -1,6 +1,6 @@
 ---
 title: Use WebUI
-description: Start a browser conversation, choose its working environment, review files, and collaborate.
+description: Collaborate with agents in the browser using WebUI's conversation workspace, live file explorer, Git diff viewer, integrated terminals, and Sidekick.
 ---
 
 WebUI is the browser workbench for Harness UI. It uses the same App and saved conversations as the TUI. Start with one conversation; add Projects, file review, browser control, and collaboration as your work needs them.
@@ -132,7 +132,7 @@ New Runs look up prices using the selected Model’s configured route. In chat u
 
 ## Voice input
 
-In **Settings → Chats → Dictation**, select **Codex subscription**, then choose a signed-in Codex account or subscription group. Speech recognition and Luna correction are preset; no API key or Model resource is required. Both steps select independently from the chosen group; selecting an individual account pins both steps to it. Login alone does not enable dictation. **Advanced dictation settings** lets you change the correction LLM from the supported Codex models and adjust the context budget (default 2,000 words on each side). You can also select an existing audio-input Model for single-call transcription.
+In **Settings → Chats → Dictation**, select **Codex subscription**, then choose a signed-in Codex account or subscription group. Speech recognition and Luna correction are preset; no API key or Model resource is required. Both steps select independently from the chosen group; selecting an individual account pins both steps to it. After signing in, enable dictation in **Settings → Chats → Voice input**. **Advanced dictation settings** lets you change the correction LLM from the supported Codex models and adjust the context budget (default 2,000 words on each side). You can also select an existing audio-input Model for single-call transcription.
 
 Click the microphone in the composer or an **Add to chat** comment, then click Stop. The backend generates the final text, using the draft, chat title and nearby authored conversation as context. Codex subscription dictation runs ASR followed by text correction; intermediate text is not shown. The final fragment is inserted once at the current input selection without a preview or confirmation step. Nothing is sent automatically. If correction fails, the original transcript is inserted with a warning. After a recognition error, Retry uses the same recording and captured context. Cancel discards it. Microphone capture requires localhost or HTTPS.
 
@@ -175,7 +175,7 @@ Choose **Fast** in **Agent & Model settings**, or **Ultrafast** where the select
 
 The shared composer remembers the choice for later Sends in this conversation. Changing the Agent or effective Model clears it. It does not affect steering, Thinking, or saved Model configuration. The Context / Cost / Cache / Time row displays the active or saved Run's captured **On**, **Off**, **Ultrafast**, or **Default**; a dash means unavailable.
 
-The server exposes supported native speed controls for OpenAI/Codex, direct Anthropic, and Gemini connections. Disabled choices explain their limitation. Provider eligibility and charges determine the outcome; requesting a speed mode does not guarantee faster execution.
+The server exposes supported native speed controls for OpenAI/Codex, direct Anthropic, and Gemini connections. Disabled choices explain their limitation. Speed modes forward the requested service tier to the provider, where actual latency and billing depend on your account tier.
 
 ## Tool executions and immediate steering
 
@@ -201,7 +201,7 @@ Respond in the pending-decision card:
 | External result           | Enter the real result as JSON under **Provide a result**                                     |
 | Several or mixed requests | Complete every item and choose **Submit responses**                                          |
 
-Shell approvals show the risk assessment, reason, command, cwd, and mount; environment-variable values are hidden. Bound Shell arguments cannot be replaced. Deny an unsuitable command with an explanation so the Agent can propose a new one. Server-omitted arguments cannot be approved; a missing risk assessment alone does not block a decision.
+Shell approvals show the risk assessment, reason, command, cwd, and mount; environment-variable values are hidden. Bound Shell arguments cannot be replaced. Deny an unsuitable command with an explanation so the Agent can propose a new one. You can approve or deny a complete tool request even if optional risk-assessment text is absent.
 
 External-result entry does not execute a tool in your browser. Enter `null` explicitly when that is the result; an empty editor is unanswered. Approval authorizes execution, not its success. On lost acknowledgement, inspect the current request before retrying. Stale or competing responses refresh the card.
 
@@ -360,7 +360,7 @@ Use inline conversation links from collaboration tools to inspect other root wor
 
 These limits apply to model tools, not human WebUI access. Workers cannot create roots, control their owner, or access siblings.
 
-An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` selects the first Run's Model; `run_thread` can select another for a later Run. A Run started without a selection, such as a message or background result, keeps the previous Run's Model. `send_thread_message` steers an active target or starts an idle turn. Acceptance is not proof of processing or saved delivery. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
+An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` selects the first Run's Model; `run_thread` can select another for a later Run. A Run started without a selection, such as a message or background result, keeps the previous Run's Model. `send_thread_message` steers an active target or starts an idle turn. Track the returned operation or stream events to confirm when an accepted input has been processed and saved. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
 
 Configure **Settings → Agents → Sidekick** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
 
@@ -451,7 +451,7 @@ Bot publications show **New message from Bot** and a preview of the actual messa
 3. Check **Enabled on this device**, then choose **Send test notification**.
 4. Keep a WebUI page visible to renew device activity, send a task, and check the system alert after leaving WebUI.
 
-The server must stay running and reach the browser's push service. No separate push account or manual VAPID setup is required. Enable each device separately; existing browser permission alone does not enable background delivery after an upgrade. A test confirms push-service acceptance, not screen display.
+The server must stay running and reach the browser's push service. No separate push account or manual VAPID setup is required. After upgrading, enable push notifications on each browser or device where you want background alerts. A test confirms push-service acceptance, not screen display.
 
 System notices cover completion, failure, and requests for input across all root conversations, including unvisited ones; archived roots are excluded. Actual answer/question/error previews can appear on the lock screen. Opted-in devices are eligible for six hours after activity; any visible WebUI page renews this about every minute without requiring focus or typing.
 

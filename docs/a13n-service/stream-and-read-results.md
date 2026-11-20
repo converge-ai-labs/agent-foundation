@@ -1,6 +1,6 @@
 ---
 title: Stream and read results
-description: Associate results with submitted messages, rebuild live output after reconnecting, and read saved history.
+description: Subscribe to live Service session and thread SSE streams, correlate inbox entries with runs, and reconstruct conversation state after reconnecting.
 ---
 
 Use this guide after [submitting work from your application](connect-application.md). Retain the session, thread and inbox entry IDs from the receipt. Read saved run output for a final result; add the session stream when your interface needs progress. A disconnected observer does not cancel execution.

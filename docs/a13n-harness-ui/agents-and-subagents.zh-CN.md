@@ -1,6 +1,6 @@
 ---
-title: Agent 与 subagent
-description: 创建 Agent，在仓库中运行，并添加继承或独立选择 Model 的辅助角色。
+title: 自定义 Agent 与 Markdown 子角色
+description: 通过 YAML 与 Markdown 文件定义专属 Agent 与专职子角色（Subagents），灵活配置系统指令、模型继承策略与工具权限过滤。
 ---
 
 **Agent** 保存 Model 选择、指令、工具和可选的辅助角色。先创建并测试一个 Agent，再根据具体委派任务添加 subagent。

@@ -1,6 +1,6 @@
 ---
-title: Skill 发布参考
-description: 选择共享或隔离软件包发布方式，并处理清理与不确定结果。
+title: Skill 环境分发与清理机制参考
+description: 对比共享只读挂载与隔离环境文件同步两种 Skill 分发模式，理解版本切换与沙箱目录清理机制。
 ---
 
 先[导入并测试工作空间 skill](skills.md#add-a-skill)，再选择发布方式。常规路径使用共享发布，并发 agent 需要不同软件包版本时使用隔离发布。这些规则适用于导入的工作空间 skill，不适用于宿主只读内置 skill。

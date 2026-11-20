@@ -1,6 +1,6 @@
 ---
-title: 嵌入 MCP Apps
-description: 在应用中隔离展示交互式 MCP 工具结果，并执行当前权限检查。
+title: 在业务前端中嵌入交互式 MCP Apps
+description: 将 Service 对话中产生的交互式 MCP App 前端组件安全嵌入自有 Web 应用，具备独立的沙箱域名隔离与运行期权限校验。
 ---
 
 构建需要展示远程 MCP 交互式结果的应用时，使用本页。准备已验证身份的 Service 客户端、兼容的 MCP 服务器和隔离 iframe 桥接。先[配置并测试连接](tools.md#connections)，再打开保存的 App，不重复原工具调用。

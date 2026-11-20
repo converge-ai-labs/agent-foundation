@@ -1,6 +1,6 @@
 ---
-title: Python EIP 客户端
-description: 连接已准备好的 Envd 设备，打开独立会话，并通过 Python 传输文件和读取进程输出。
+title: Python EIP 客户端 (a13n-envd-client)
+description: 在 Python 中使用 a13n-envd-client 连接 Envd 设备，管理 EIP 会话、流式读写文件与进程输出，并调用全量强类型 RPC 方法。
 ---
 
 实现环境 Provider 或其他可信 EIP 集成时，使用 `a13n-envd-client`。它处理设备连接、会话范围和协议操作。agent 应用可从[环境 Provider](../environments/index.md)开始，由其将操作适配给 Harness。
@@ -17,7 +17,7 @@ uv add a13n-envd-client
 
 客户端和原生守护进程使用相同的 Envd 发布版本。升级时一起更新，包括自定义镜像和远程端点中的守护进程。仍保留旧镜像的环境应重新创建。运行源码示例时，使用仓库锁文件和匹配的源码守护进程。
 
-初始化不协商或比较协议版本。跨发布版本的互操作取决于实际 schema 和公布的方法，采用尽力兼容策略，不维护旧协议分支。生成的 Python 命名空间仍为 `eip.v1`，二进制数据帧 profile 仍为 `1`。Harness、Harness UI 和 Service 发布时要求 client `>=0.8.3,<0.9.0`。部署基线为 Envd `0.8.3`，该部署线要求 Envd `0.8.x` 对端。daemon 与 client 必须一起升级。EIP schema 标识保持 `0.5`，该标识不代表跨发布版本兼容保证。
+初始化不协商或比较协议版本。跨发布版本的互操作取决于实际 schema 和公布的方法，采用尽力兼容策略，不维护旧协议分支。生成的 Python 命名空间仍为 `eip.v1`，二进制数据帧 profile 仍为 `1`。Harness、Harness UI 和 Service 发布时要求 client `>=0.8.3,<0.9.0`。部署基线为 Envd `0.8.3`，该部署线要求 Envd `0.8.x` 对端。daemon 与 client 必须一起升级。EIP schema 标识保持 `0.5`；升级时请保持客户端与守护进程处于同一 `0.8.x` 发布线。
 
 ## 连接已有 HTTP 守护进程
 
@@ -230,6 +230,7 @@ reader 检查引用身份、连续偏移量、单调计数器/完成状态、不
 | `file.close_reader`          | `file_close_reader`          | `FileReaderCloseParams`        | `FileReaderCloseResult`        | `active_only`       |
 | `file.commit_writer`         | `file_commit_writer`         | `FileWriterCommitParams`       | `FileWriterCommitResult`       | `terminal_evidence` |
 | `file.copy`                  | `file_copy`                  | `FileCopyParams`               | `FileCopyResult`               | `terminal_evidence` |
+| `file.discover_documents`    | `file_discover_documents`    | `FileDiscoverDocumentsParams`  | `FileDiscoverDocumentsResult`  | `active_only`       |
 | `file.find`                  | `file_find`                  | `FileFindParams`               | `FileFindResult`               | `active_only`       |
 | `file.list`                  | `file_list`                  | `FileListParams`               | `FileListResult`               | `active_only`       |
 | `file.mkdir`                 | `file_mkdir`                 | `FileMkdirParams`              | `FileMkdirResult`              | `terminal_evidence` |
@@ -241,6 +242,7 @@ reader 检查引用身份、连续偏移量、单调计数器/完成状态、不
 | `file.remove`                | `file_remove`                | `FileRemoveParams`             | `FileRemoveResult`             | `terminal_evidence` |
 | `file.search`                | `file_search`                | `FileSearchParams`             | `FileSearchResult`             | `active_only`       |
 | `file.stat`                  | `file_stat`                  | `FileStatParams`               | `FileStatResult`               | `active_only`       |
+| `file.tree`                  | `file_tree`                  | `FileTreeParams`               | `FileTreeResult`               | `active_only`       |
 | `file.write_text`            | `file_write_text`            | `FileWriteTextParams`          | `FileWriteTextResult`          | `terminal_evidence` |
 | `initialize`                 | `initialize`                 | `InitializeParams`             | `InitializeResult`             | `ledger_external`   |
 | `operation.cancel`           | `operation_cancel`           | `OperationCancelParams`        | `OperationCancelResult`        | `active_only`       |

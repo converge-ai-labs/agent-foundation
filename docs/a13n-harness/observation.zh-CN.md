@@ -1,6 +1,6 @@
 ---
-title: 观测
-description: 先在本地捕获 Run 的 span 和指标，再通过 Host 的 OpenTelemetry 管道导出。
+title: OpenTelemetry 可观测性与追踪
+description: 将 Harness 运行的 OpenTelemetry 追踪、Span 与指标导出至 Logfire、Langfuse 或标准 OTLP 采集器，并按需控制敏感内容过滤。
 ---
 
 先用内存 exporter 观测一次离线 Run。确认能看到追踪和时长指标后，再将同一套埋点接入 collector、Logfire 或 Langfuse。Host 负责 provider 配置与导出，Harness 负责为自己构建的 Agent 埋点。

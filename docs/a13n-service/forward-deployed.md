@@ -1,7 +1,7 @@
 ---
 title: Forward deployed engineering (FDE)
 sidebarTitle: Forward deployed engineering
-description: Take a customer task from a self-hosted deployment to a tested agent and an operational handover.
+description: "Deliver an end-to-end self-hosted Service deployment in a customer's cloud: infrastructure setup, model and MCP wiring, tool approval governance, and handover."
 ---
 
 Deliver one customer workflow end to end before expanding the platform. For example, build an agent that reads project notes and proposes follow-up work, then let customer staff test the result and approve any changes to their systems. This guide walks through deployment, integration, acceptance and handover.
@@ -36,7 +36,7 @@ Keep the selected release, configuration location and infrastructure owners in t
 
 ## Use the customer's model accounts
 
-Connect an approved model account in the customer's workspace, save an enabled model, and send a short text request with that model. A successful reply verifies the inference path; a saved provider alone does not.
+Connect an approved model account in the customer's workspace, save an enabled model, and send a short text request with that model. Send a short test prompt with the newly created model to verify the end-to-end inference connection.
 
 | Customer setup                                | Configuration to check                                                                                                                                   |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |

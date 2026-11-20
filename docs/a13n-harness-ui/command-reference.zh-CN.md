@@ -1,6 +1,6 @@
 ---
-title: 命令参考
-description: 查找 shell 或 TUI 命令、所需参数，以及命令会修改的设置。
+title: CLI 与 TUI 命令完整参考
+description: a13n-harness-ui 命令行参数、子命令以及交互式 TUI 斜杠命令（/agent、/model、/steer、/goal、/resume 等）完整速查手册。
 ---
 
 Shell 命令用于启动和管理 Harness UI。斜杠命令用于在 TUI 内控制对话。先按任务找到入口，再查阅具体参数。

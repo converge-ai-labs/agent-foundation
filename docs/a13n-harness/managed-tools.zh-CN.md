@@ -1,7 +1,7 @@
 ---
-title: 受管理工具与调用策略
+title: 托管工具与调用审批策略
 sidebarTitle: 受管理工具与策略
-description: 编写受管理工具，按当前 Run 授权，并按需加入工具权限、风险审查和人工审批。
+description: 编写带资源元数据的托管工具，按 Run 执行 allow/ask/deny 权限策略，并在执行高风险命令前引入模型自动风险审查。
 ---
 
 应用需要根据操作效果、资源和当前 Run 身份决定能否执行时，使用受管理工具。再通过工具权限选择哪些本地调用直接运行、请求审批或接受风险审查。
@@ -123,7 +123,7 @@ permissions = ToolPermissionsCapability(
 
 规则匹配稳定 ID。受管理工具使用 `HarnessToolMetadata.tool_id`；普通工具使用 `tool/<toolset-id>/<original-name>`；本地 MCP 使用 `mcp/<source-id>/<original-name>`。各段采用百分号编码。重命名、ToolSearch 和 CodeAct 都保留身份。自定义命名 wrapper 无法保留身份时，在它之前使用 `ToolIdentityToolset`。
 
-只采用最佳匹配：确切 ID、最长 `.*` 或 `/*` 前缀、`*`，最后是 `default`。可信代码未声明其他默认值时，工具默认 `allow`，不审查。安装审查器或配置风险规则本身不会选择 `review`。没有匹配审查器时，`review` 不增加限制，调用继续。
+只采用最佳匹配：确切 ID、最长 `.*` 或 `/*` 前缀、`*`，最后是 `default`。可信代码未声明其他默认值时，工具默认 `allow`，不审查。配置审查器与风险规则后，请将目标工具的权限模式设为 `review` 以启用自动风险审查。没有匹配审查器时，`review` 不增加限制，调用继续。
 
 显式模式会覆盖原生 `requires_approval=True`。例如，`allow` 跳过声明式审批，`review` 采用审查器策略。要在宽泛覆盖规则下保留某个插件工具的原生声明，为它配置 `inherit`。不添加该 Capability 也会保留原生声明。工具函数、验证器和 wrapper 仍可在运行时抛出 `ApprovalRequired`；自动放行不会设置人工已批准标记。
 

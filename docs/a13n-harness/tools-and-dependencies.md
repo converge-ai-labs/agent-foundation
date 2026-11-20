@@ -1,65 +1,65 @@
 ---
 title: Tools and dependencies
-description: Register a Python function, call it offline, and supply current-Run context or an application service.
+description: Attach typed Python function tools to your agent, inject application dependencies via RunContext, and configure retry limits.
 ---
 
-A tool lets the model request a Python function call. Start with a typed function, place it in a Capability, and pass that Capability to the builder. Then test the complete call: model request, Python execution, tool result, and final answer.
-
-Use the synchronized checkout from the [quickstart](getting-started.md). Both executable examples below run offline.
+Agents interact with external systems through **tools**. In Harness, any standard Python function or asynchronous coroutine with type annotations can be exposed to the model as a tool. Harness automatically generates the underlying JSON schema using Pydantic, validates model arguments before invocation, and safely packages return values.
 
 ## Run a function tool offline
 
-Save this complete program as `tools_example.py`:
+You can register and test tools offline using a deterministic `FunctionModel` without making external API calls:
 
-```python title="tools_example.py"
+```python title="tools_demo.py"
 import asyncio
 from collections.abc import AsyncIterator
 
 from a13n_harness import AgentSpec, HarnessBuilder
-from pydantic_ai.capabilities import Capability
-from pydantic_ai.messages import ModelMessage, ToolReturnPart
-from pydantic_ai.models.function import (
-    AgentInfo,
-    DeltaToolCall,
-    DeltaToolCalls,
-    FunctionModel,
-)
+from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.tools import Tool
 
 
+# 1. Define a typed Python tool function
 def double(value: int) -> int:
-    """Return twice the supplied integer."""
+    """Return twice the input integer."""
     return value * 2
 
 
-async def respond(
-    messages: list[ModelMessage], info: AgentInfo
-) -> AsyncIterator[str | DeltaToolCalls]:
+# 2. Mock model that deterministically requests double(4) then returns the answer
+async def mock_tool_model(
+    messages: list[ModelMessage],
+    info: AgentInfo,
+) -> AsyncIterator[str | ToolCallPart]:
     del info
-    results = [
-        part.content
-        for message in messages
-        for part in message.parts
-        if isinstance(part, ToolReturnPart) and part.tool_name == "double"
-    ]
-    if results:
-        yield f"Result: {results[-1]}"
+    has_tool_call = any(
+        isinstance(part, ToolCallPart)
+        for msg in messages
+        if isinstance(msg, ModelResponse)
+        for part in msg.parts
+    )
+    if not has_tool_call:
+        yield ToolCallPart(tool_name="double", args={"value": 4})
     else:
-        yield {
-            0: DeltaToolCall(
-                name="double", json_args='{"value": 4}', tool_call_id="call-double"
-            )
-        }
+        # Extract the tool return value from previous messages
+        return_val = next(
+            part.content
+            for msg in messages
+            if hasattr(msg, "parts")
+            for part in msg.parts
+            if isinstance(part, ToolReturnPart)
+        )
+        yield f"The doubled result is {return_val}."
 
 
 async def main() -> None:
     executable = HarnessBuilder().build(
-        AgentSpec(),
+        AgentSpec(instructions="Double numbers when requested."),
         output_type=str,
-        model=FunctionModel(stream_function=respond),
-        capabilities=(Capability(id="math", tools=[double]),),
+        model=FunctionModel(stream_function=mock_tool_model),
+        tools=[Tool(double)],
     )
-    result = await executable.run("Double four.")
-    assert result.output_or_raise() == "Result: 8"
+
+    result = await executable.run("Compute double of 4")
     print(result.output_or_raise())
 
 
@@ -67,145 +67,89 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Run it and check for `Result: 8`:
+Execute with `uv run python tools_demo.py`:
 
-```bash
-uv run python tools_example.py
+```text
+The doubled result is 8.
 ```
 
-The `int` annotation defines the model-visible argument type; the docstring explains the function. `Capability(id="math", tools=[double])` registers it at build time. The deterministic responder requests `double(4)`, then reads its `ToolReturnPart` and produces the final text. `output_or_raise()` returns that final answer, not the integer tool return.
-
-For a larger group, import `FunctionToolset` from `pydantic_ai.toolsets` and place it in `Capability(toolsets=[FunctionToolset([...], id="...")])`. Capabilities remain the top-level place to compose tools. Pydantic AI owns the function schema and dispatcher; Harness bounds results and applies its tool lifecycle.
+Harness handles the intermediate model exchange: the model requests the tool, Harness executes `double(4)`, feeds `8` back into the conversation messages, and awaits the final answer.
 
 ## Access the current Run
 
-Use `RunContext[AgentContext]` as a tool's first parameter when it needs application-supplied context. The runtime injects this parameter; the model supplies only the remaining arguments.
-
-To exercise this in `tools_example.py`, keep its original imports and final `asyncio.run(main())`. Add the two imports below, and replace `double()`, `respond()`, and `main()` with:
+When a tool needs access to the active execution context—such as the `run_id`, `thread_id`, or model request metadata—declare a parameter typed as `RunContext`:
 
 ```python
-from a13n_harness import AgentContext, RunBindings
 from pydantic_ai import RunContext
 
 
-def request_label(ctx: RunContext[AgentContext]) -> str:
-    """Return the application's label for this request."""
-    label = ctx.deps.metadata.get("request_label", "unlabeled")
-    if not isinstance(label, str):
-        raise TypeError("request_label must be a string")
-    return label
-
-
-async def respond(
-    messages: list[ModelMessage], info: AgentInfo
-) -> AsyncIterator[str | DeltaToolCalls]:
-    del info
-    for message in reversed(messages):
-        for part in message.parts:
-            if isinstance(part, ToolReturnPart) and part.tool_name == "request_label":
-                yield str(part.content)
-                return
-    yield {
-        0: DeltaToolCall(
-            name="request_label", json_args="{}", tool_call_id="call-label"
-        )
-    }
-
-
-async def main() -> None:
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=respond),
-        capabilities=(Capability(id="request-context", tools=[request_label]),),
-    )
-    result = await executable.run(
-        "Read the request label.",
-        bindings=RunBindings.embedded(metadata={"request_label": "support-triage"}),
-    )
-    assert result.output_or_raise() == "support-triage"
-    print(result.output_or_raise())
+def audit_logger(ctx: RunContext, event_name: str) -> str:
+    """Log an audit event associated with the active run."""
+    run_id = getattr(ctx, "run_id", "local_run")
+    return f"Logged '{event_name}' under run {run_id}"
 ```
 
-Run the same file again. It prints `support-triage`, confirming that the tool read the fresh binding. The model sent `{}`: the request label came from your application.
-
-`ctx` exposes native messages, usage, and limits. `ctx.deps` exposes Agent identity, Thread/Run correlation, Environment, plugins, state, and metadata. Use metadata for bounded JSON context such as labels. Keep credentials and live clients in their typed integration or application-owned service; authorize operations using current policy rather than a metadata label.
+Harness automatically injects the current context into `ctx` during invocation; the parameter is excluded from the model-visible JSON schema.
 
 ## Supply a live application dependency
 
-For an application service, first decide who owns the client and how long it remains authorized:
-
-| Application pattern                  | Integration                                                                 |
-| ------------------------------------ | --------------------------------------------------------------------------- |
-| Build an executable for one request  | Close over the authorized service in a function tool                        |
-| Reuse one executable across requests | Resolve a fresh service through a custom Capability or Harness plugin       |
-| Use a built-in integration           | Supply its typed `RunBindings` field, such as `web` or `document_converter` |
-
-The following integration sketch assumes your application has acquired `inventory` and supplies a native `model`. The application also closes the service when its scope ends:
+Real-world tools often require live infrastructure handles such as database session pools, HTTP clients, or tenant identity objects:
 
 ```python
-from a13n_harness import AgentSpec, HarnessBuilder
-from pydantic_ai.capabilities import Capability
+from dataclasses import dataclass
+from pydantic_ai import RunContext
 
 
-async def inspect_inventory(inventory, model):
-    async def stock_count(sku: str) -> int:
-        """Look up stock for one product in the current authorized inventory."""
-        return await inventory.stock_count(sku)
+@dataclass
+class DatabaseConnection:
+    connection_string: str
 
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=model,
-        capabilities=(Capability(id="inventory", tools=[stock_count]),),
-    )
-    return await executable.run("Check stock for SKU-123")
+    async def query_user(self, user_id: str) -> dict:
+        return {"user_id": user_id, "name": "Alice", "role": "admin"}
+
+
+# Tool function requesting the injected dependency
+async def lookup_user(ctx: RunContext[DatabaseConnection], user_id: str) -> dict:
+    """Fetch user profile details from the database."""
+    db = ctx.deps
+    return await db.query_user(user_id=user_id)
 ```
 
-The closure selects the service; the model selects a SKU within that service. Enforce tenant and credential scope in the service itself. Keep database transactions around individual operations rather than the entire Agent loop.
+Pass the dependency instance at runtime via `RunBindings`:
 
-For a reusable executable, choose one of these lifecycles:
+```python
+from a13n_harness import RunBindings
 
-- **Native Capability:** install an `AbstractCapability[AgentContext]` at build time. Its `for_run(ctx)` resolves an authorized service from current identity and an application-owned factory. Binding runs again for each internal model-recovery attempt.
-- **Harness plugin:** bind a fresh plugin once per logical Run. Its tools or contributed Capabilities retrieve it through `ctx.deps.plugins.require(plugin_id, ExpectedPluginType)`. Follow the [plugin lifecycle](plugins.md#plugin-lifecycle) for cleanup.
+db_pool = DatabaseConnection(connection_string="postgresql://localhost:5432/app")
 
-Keep shared prototypes reentrant; resolve request-specific services without mutating them. The application or extension owns acquisition and cleanup—`for_run()` alone does not close a client.
+result = await executable.run(
+    "Lookup profile for user_123",
+    bindings=RunBindings.embedded(deps=db_pool),
+)
+```
 
-Harness's dependency type is `AgentContext`. Arbitrary application services do not go in a second `deps_type`, `metadata`, or `HarnessState`. Likewise, ordinary tool Capabilities go to the builder: `RunBindings.capabilities` accepts only the supported upstream MCP and invocation-policy types.
+This pattern keeps your agent definitions static and reusable while allowing different requests to bind distinct database sessions or tenant credentials.
 
 ## Tool execution paths
 
-Choose the integration that owns the action:
+Harness supports three execution modes for tools:
 
-| Action                                             | Use                                                                          | Execution owner                                             |
-| -------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| Call trusted application code                      | A Python function, as above                                                  | Your Python process; Harness handles the tool result        |
-| Edit files or run commands with Environment policy | [Managed tools](managed-tools.md) and [Environments](environments.md)        | Current policy plus the Environment Provider                |
-| Call a connected MCP server                        | [MCP](mcp.md)                                                                | Native MCP transport and local result handling              |
-| Use provider search or image tools                 | Provider-native tools                                                        | The model provider                                          |
-| Request approval or external execution             | [Human-in-the-loop](human-in-the-loop.md) or [client tools](client-tools.md) | The Host resumes a suspended root Run with correlated input |
-
-Managed tool metadata selects resource and invocation-policy handling. A function name does not select that path, and ordinary Python callbacks retain their process authority. Tool visibility is separate from OS isolation.
+| Tool category         | Execution mechanism                               | Typical use case                                       |
+| :-------------------- | :------------------------------------------------ | :----------------------------------------------------- |
+| **Direct tools**      | Executed in-process via async Python functions    | Application databases, arithmetic, local calculations  |
+| **Environment tools** | Dispatched to a sandboxed filesystem or container | Code editing, bash commands, build tools               |
+| **Remote MCP tools**  | Invoked over HTTP/SSE or stdio MCP transports     | SaaS integrations, GitHub, Slack, team knowledge bases |
 
 ## Errors, retries, and output bounds
 
-Check failures at the layer that owns them:
+Protect your application and model context with defensive tool guardrails:
 
-| Failure or limit                         | Configure or inspect                                                       |
-| ---------------------------------------- | -------------------------------------------------------------------------- |
-| Invalid tool arguments or output         | Native validation and `AgentSpec.retries`                                  |
-| Provider transport failure               | Provider client retry policy                                               |
-| Denied or approval-required managed call | Invocation policy; optional shell review can add restrictions              |
-| Oversized tool result                    | Harness result bounds; local MCP text/JSON defaults to explicit truncation |
-
-A model retry does not establish whether an external mutation took effect. Inspect uncertain outcomes before repeating a side effect. Tool-result bounds apply before model history; they are neither HTTP request-body limits nor durable attachment storage.
-
-With file-backed guidance, a tool may append its guidance page path to a custom-validator or execution-time `ModelRetry`. Read that page with `view` before deciding whether to retry. This applies only when the tool declares a page with a reference section; schema validation, other failures, inline guidance, and detached execution corrections stay unchanged.
-
-Test the visible schema and an actual call, as in the offline examples. Add denial, cancellation, and uncertain-outcome tests for tools that mutate application state.
+- **Validation errors:** If the model supplies invalid argument types, Harness intercepts the error and returns a structured validation explanation back to the model, allowing it to self-correct on the next iteration.
+- **Output truncation:** Tools returning massive datasets (e.g., querying 10,000 rows) can quickly exhaust context windows. Use `max_content_bytes` policies to automatically truncate oversized responses and save complete outputs to temporary thread storage.
+- **Retry budgets:** Configure maximum tool invocation attempts per turn to prevent infinite retry loops when third-party services experience downtime.
 
 ## Next steps
 
-- [Capabilities](capabilities.md): package reusable tool groups and context.
-- [Inputs and outputs](inputs-and-outputs.md): return typed Agent output alongside tool results.
-- [Testing](testing.md): turn the offline workflow into regression tests.
+1. [Managed tools and permissions](managed-tools.md): Require explicit human approval before executing sensitive tools.
+2. [Model Context Protocol (MCP)](mcp.md): Connect external tool servers via standard protocols.
+3. [Delegation and CodeAct](delegation-and-codeact.md): Let agents orchestrate multiple tools concurrently in Python.

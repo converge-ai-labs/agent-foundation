@@ -1,6 +1,6 @@
 ---
 title: Extend Service with App plugins
-description: Install trusted application packages, enable them per organization, and keep accepted run behavior stable.
+description: Package and install trusted Python App plugins to add custom tools, routes, webhooks, and Prometheus metrics to a Service deployment.
 ---
 
 App plugins add business APIs, organization-scoped background work, Harness factories and packaged Console assets to Service. Operators install trusted Python packages on every serving and worker process. Organization administrators enable each App. Operators can opt in to an initial selection when bootstrapping a deployment.
@@ -168,7 +168,7 @@ For integration tests, reuse `a13n_service.migrations.scratch.scratch_database(d
 
 App plugins use the same process-wide metrics provider and private `/metrics` listener as Service. Use the standard `opentelemetry-api` package; declare `opentelemetry-api>=1.39,<2` as a direct dependency when your App imports it. No `AppDefinition` registration or separate exporter is needed. Operators enable `telemetry.metrics_port` and scrape every control and worker process as described in [monitoring](monitoring.md#metrics).
 
-Create instruments under your App's own prefix. A meter scope alone does not namespace Prometheus series: the Service exporter omits scope labels. This example extends the `/preview` handler from the [Reports example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) to count completed previews and measure their successful handler duration:
+Create instruments under your App's own prefix. Include an explicit plugin prefix in each metric name because the Service Prometheus exporter flattens meter scopes. This example extends the `/preview` handler from the [Reports example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) to count completed previews and measure their successful handler duration:
 
 ```python
 from time import perf_counter

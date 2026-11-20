@@ -1,6 +1,6 @@
 ---
-title: 安装与升级
-description: 安装终端和浏览器工作台、检查命令，并升级已有安装。
+title: 安装与版本升级
+description: 使用 uv tool install 一键安装包含终端 TUI 与浏览器 WebUI 的 Harness UI 工作台，验证命令行环境并平滑升级版本。
 ---
 
 日常使用请选择已发布的安装包。它同时包含终端和浏览器界面，不需要源码检出目录或 Node.js。继续前，先安装 [uv](https://docs.astral.sh/uv/getting-started/installation/)。

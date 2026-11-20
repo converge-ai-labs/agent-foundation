@@ -1,73 +1,78 @@
 ---
 title: Service
 sidebarTitle: 概览
-description: 在 Console 中构建 agent，与团队共享，并从应用中运行。
+description: 支持企业私有化部署的多租户 Agent 运行平台，提供分布式计算 Worker 调度、企业级 RBAC 权限管控与高可靠持久化保障。
 ---
 
-Service 在你的基础设施上运行 agent，管理访问权限、执行过程和对话历史。通过 Service 的浏览器界面 Console 配置 agent，发起对话并测试回复。应用通过 Service SDK 或 HTTP API 调用同一个 agent。回到 Console，可以检查这次运行、工具调用和用量。即使客户端断开，Service 也会继续处理已接受的任务。
+**Service** 是专为平台系统工程师、基础设施运维团队与企业组织量身打造的高韧性私有化 Agent 运行平台。它在分布式基础设施之上统一管理身份认证、多租户工作区隔离、任务持久化调度、长期记忆治理以及周期性定时任务。
 
-Service 自 0.1.0 起进入 beta，可以在实际产品流程中试用。Beta 期间可能有小幅调整；我们会尽量保持现有用法稳定，并在发布说明中注明影响现有用法的变更。
+在简洁直观的 **Console** 网页控制台中，业务人员与工程师可以可视化配置、调试和管理智能体。外部业务系统与微服务则能通过多语言官方 SDK 或标准 HTTP/SSE 接口无缝接入相同的智能体。Service 架构将无状态的控制面（Control）与计算执行节点（Worker）完全解耦：即使用户关闭网页，任务依然会在后台集群中可靠执行直至完成。
 
 ## 从这里开始
 
-根据已有条件选择路径：
+根据您当前的基础设施建设阶段，选择最适合的部署或接入指南：
 
-| 已有条件                    | 指南                                   | 完成后的结果                             |
-| --------------------------- | -------------------------------------- | ---------------------------------------- |
-| Docker 和模型 provider 账号 | [本地部署 Service](get-started.md)     | 可用的 Console 和 agent 的首次回复       |
-| 团队 Service 的访问权限     | [使用 Console](use-platform.md)        | 可以返回并继续的对话                     |
-| 想接入产品的可用 agent      | [连接你的应用](connect-application.md) | 能通过身份验证、提交工作并读取结果的应用 |
+| 实施阶段                      | 推荐路线                                               | 预期交付成果                                                           |
+| :---------------------------- | :----------------------------------------------------- | :--------------------------------------------------------------------- |
+| **本地体验与概念验证（PoC）** | [通过 Docker Compose 部署本地 Service](get-started.md) | 秒级拉起 Console、PostgreSQL 与 Redis，完成首次智能体对话              |
+| **团队业务成员上手**          | [使用 Console 控制台](use-platform.md)                 | 登录现有工作空间，熟悉智能体配置并开启协作对话                         |
+| **外部业务系统接入**          | [连接您的应用程序](connect-application.md)             | 通过 API Key 完成鉴权，发起异步任务并实时消费 SSE 流式输出             |
+| **生产级企业集群落地**        | [通过 Helm 部署至 Kubernetes 集群](operations.md)      | 拥有独立弹性扩缩容的 Control/Worker 集群，对接企业自建数据库与 S3 存储 |
 
 ## 为你的工作构建 agent
 
-先选择模型，写好指令，在 Console 中测试回复。再按任务需要添加资源。
+在 Service 中构建智能体从挑选提示词与模型开始，并根据具体业务场景灵活挂载底层企业资源：
 
-| 按任务需要添加             | 指南                                    |
-| -------------------------- | --------------------------------------- |
-| 协助创建或修改 agent 配置  | [Agent Composer](agent-composer.md)     |
-| 其他模型或 provider 账号   | [模型](models.md)                       |
-| 业务系统操作或 MCP 工具    | [工具与连接](tools.md)                  |
-| 可复用的操作流程和配套文件 | [Skill](skills.md)                      |
-| 文件、命令或桌面           | [环境](environments.md)                 |
-| 在多个对话间共享的知识     | [Memory Space](memory.md#memory-spaces) |
+| 核心能力             | 业务作用                                                     | 配置参考手册                             |
+| :------------------- | :----------------------------------------------------------- | :--------------------------------------- |
+| **自然语言辅助创建** | 通过 AI 对话自动推导配置并生成专属智能体                     | [Agent Composer](agent-composer.md)      |
+| **主流大模型接入**   | 对接 OpenAI、Anthropic、Gemini 或企业私有化 vLLM/Ollama 实例 | [模型管理 Models](models.md)             |
+| **企业工具生态集成** | 挂载远程 Model Context Protocol (MCP) 服务与业务连接器       | [工具与连接 Connections](tools.md)       |
+| **标准操作流程沉淀** | 挂载带版本保护的工程规范与专业操作指引文件                   | [技能 Skills](skills.md)                 |
+| **安全隔离沙箱环境** | 为 Agent 分配隔离的容器运行环境，执行代码审查与桌面自动化    | [执行环境 Environments](environments.md) |
+| **跨会话团队记忆**   | 跨多轮会话长期持久化沉淀团队决策、用户偏好与业务知识         | [记忆空间 Memory](memory.md)             |
 
-Composer 会提出资源变更方案，等待你的批准。Provider 凭据填写在它的[私密配置卡片](agent-composer.md#configure-a-provider)中。
+任何配置调整均会自动产生不可篡改、可审计的 **Revision（版本）**，支持一键无感回滚与灰度发布。
 
 ## 在对话中工作
 
-发送请求、检查回复，再在同一线程中追问。**会话**（session）组织相关线程；**线程**（thread）保存一段对话的历史；每次**运行**（run）使用一个已保存的 agent 修订版本推进历史。
+会话在 Service 底层被严谨地组织为四个分层清晰的概念模型：
 
 ```mermaid
 flowchart TB
-    Agent["选择 agent"] --> Input["发送请求"]
-    Input --> Work["查看回复与工具活动"]
-    Work --> Decision["回答问题或审批"]
-    Decision --> Work
-    Work --> Result["读取结果"]
-    Result --> Continue["继续或创建分支"]
+    Session["Session：项目级会话容器"] --> Main["主 Thread：业务对话线索"]
+    Session --> Task["派生 Task Thread：专业子智能体任务"]
+    Main --> Runs["Runs：单次输入处理请求"]
+    Runs --> Attempts["Attempts：分布式节点执行租约"]
 
-    class Agent,Work a13n
-    class Input,Decision,Continue app
-    class Result success
+    class Session,Main,Task store
+    class Runs,Attempts a13n
 ```
 
-使用 Chat 进行对话，使用 Debug 查看执行细节、配置、用量和费用。返回保存的线程即可继续，也可以创建分支尝试另一种方向。
+- **Session（会话）：** 将属于同一个业务目标的一组协作流程聚合在共享上下文中。
+- **Thread（线程）：** 严格维系有序的消息历史、输入附件与底层工具审计轨迹。
+- **Run（运行）：** 代表针对单次用户输入或恢复指令的完整逻辑调度。
+- **Attempt（执行尝试）：** 分布式 Worker 节点认领的物理计算租约。即便某台 Worker 节点遭遇硬件故障重启，调度器也会自动认领并从上一个检查点无缝恢复。
 
-运行等待输入时，完成所有待处理问题和审批，再选择**提交回应**。API 客户端通过 `/resume` 提交完整批次。[使用 Console](use-platform.md)介绍这些操作，[Agent、线程与运行](agents-and-runs.md)说明它们如何影响执行。
+当智能体需要人工确认时，待处理项会以交互卡片形式展现在 Console 中或通过 API 返回挂起状态。审批完成后批量提交即可继续推进。
 
 ## 连接你的应用
 
-打开 agent 的**接入应用**操作，获取其 ID 和你的 Service URL。按照[连接你的应用](connect-application.md)创建凭据、发送第一条消息、读取实时输出并继续线程。可以使用 [SDK 或远程 CLI](sdks.md)，也可以直接调用 [HTTP API](http.md)。
+外部业务系统可通过标准接口无缝集成 Service 平台能力：
 
-其他集成方式包括：将 MCP 客户端连接到 [Service MCP 端点](mcp.md)，查看和配置工作空间资源；使用 [webhook](files-and-webhooks.md)，将执行事件传递给应用。
+- **官方多语言 SDK：** 支持 Python、TypeScript/Node.js、Go 与 Rust 官方客户端。详见 [SDK 与 CLI](sdks.md)。
+- **实时事件推送：** 客户端可直接监听 `/api/v1/sessions/{id}/stream`，以 SSE 形式实时接收类型化的 AG-UI 事件流。
+- **自动化 Webhook：** 在工作区配置 HTTPS 端点，在任务完成、执行失败或定时调度触发时接收精准事件推送，详见 [Webhooks](webhooks.md)。
+- **平台级 MCP 服务：** 支持各类外部 IDE 或客户端直接连接 Service MCP 接口，可编程地检索与管理工作区资产。
 
 ## 运维共享部署
 
-**组织**管理成员，**工作空间**保存 agent、资源和对话。通过[角色](identity.md#roles)控制谁可以运行 agent、构建资源或管理访问权限。
+Service 专为生产级企业级运维打造：
 
-- [配置](configuration.md)：连接存储、provider 和部署服务。
-- [运维](operations.md)：部署、升级、备份和恢复 Service。
-- [监控](monitoring.md)：调查用量、追踪及失败的请求或运行。
-- [设置参考](configuration-reference.md)和 [API 参考](api-reference/index.md)：查找准确的字段和操作。
+- **多租户 RBAC 鉴权：** 基于[组织与工作区角色](identity.md)实现精细化权限矩阵隔离。
+- **生产配置规范：** 通过[配置指南](configuration.md)灵活接入生产级 PostgreSQL 集群、Redis 缓存、S3 兼容对象存储与企业出网代理。
+- **高可用与运维扩容：** 控制面与计算 Worker 池支持独立横向水平扩容，提供零停机平滑升级与自动化容灾备份，详见[运维指南](operations.md)。
+- **全链路可观测性：** 原生集成 OpenTelemetry，实时审计 Token 消耗、接口延迟与分布式调用链追踪，详见[监控与可观测性](monitoring.md)。
+- **标准化 API 文档：** 在 [API 参考手册](api-reference/index.md)中查阅完整接口端点定义、请求体契约与错误状态码。
 
-Console 和 API 使用同一个源。`a13n-service` 可执行程序支持合并或分别运行 control 与 worker 角色；规划部署规模时请参阅[运维指南](operations.md)。
+Console 网页端资产已完整预编译并打包在官方 Docker 镜像（`ghcr.io/converge-ai-labs/a13n-service`）中，生产部署无需任何 Node.js 运行时依赖。

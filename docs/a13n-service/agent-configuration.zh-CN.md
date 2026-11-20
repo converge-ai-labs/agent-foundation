@@ -1,6 +1,6 @@
 ---
-title: 配置 agent
-description: 保存修订版本、选择工具、配置委派并扩展 agent。
+title: 配置与演进 Agent 修订版本
+description: 在 Service 中管理不可变的 Agent 修订版本（Revisions），配置工具权限与风险审查、挂载子 Agent、启用上下文压缩及应用插件。
 ---
 
 先在 Console 中确认 agent 能回答简短消息。按本页添加工具、审批、委派或插件，保存修订版本并测试行为，再供其他调用者使用。

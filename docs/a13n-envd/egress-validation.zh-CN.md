@@ -1,7 +1,7 @@
 ---
-title: 云端出站网络历史验证
+title: 云平台出站代理与沙箱历史探测记录
 sidebarTitle: 出站网络历史验证
-description: 2026 年 9 月云平台探测的范围与限制，不代表当前 Provider 支持矩阵。
+description: 2026 年 9 月在主流云沙箱环境中运行 Envd 出站代理与内核隔离探测的基准验证记录。
 ---
 
 本记录保留早期测试活动的证据。新部署接纳工作前，按[当前出站网络前置条件与验证](egress.md#verify-a-sandbox-image)执行检查。
@@ -10,7 +10,7 @@ description: 2026 年 9 月云平台探测的范围与限制，不代表当前 P
 
 这份历史记录涵盖截至 **2026-09-22** 完成的探测，五个云平台使用同一个 Linux x86_64 二进制文件。测试使用生成的凭据；provider 凭据保留在会话之外。
 
-**该矩阵早于 2026-09-22 引入的原生身份和 sudo 变更，尚未针对该实现重新运行。** 当前部署采用[受控出站网络的 root 启动者要求](egress.md)。旧的非 root 启动、只读系统树检查和命名 socket 拒绝行为描述的是被测二进制文件。当前行为见[文件、socket 与生命周期](egress.md#files-sockets-and-lifetime)。记录覆盖这些 Envd 沙箱探测，不代表 Provider/Service 集成验证或整个平台的支持保证。
+**该矩阵早于 2026-09-22 引入的原生身份和 sudo 变更，尚未针对该实现重新运行。** 当前部署采用[受控出站网络的 root 启动者要求](egress.md)。旧的非 root 启动、只读系统树检查和命名 socket 拒绝行为描述的是被测二进制文件。当前行为见[文件、socket 与生命周期](egress.md#files-sockets-and-lifetime)。以下记录反映了 2026 年 9 月在各云环境直接运行 Envd 沙箱探测的基准结果。
 
 现有记录未保存完整源码 revision 或镜像 digest，不能据此重建被测二进制。重复测试时同时记录 revision、二进制校验和、镜像 digest 与下列运行时信息。
 

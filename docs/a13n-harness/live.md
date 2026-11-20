@@ -1,6 +1,6 @@
 ---
 title: Live conversations
-description: Open a realtime conversation, handle tools and audio, then close and continue it with portable state.
+description: Run real-time bidirectional audio and text conversations in Harness with live tool execution, approvals, and portable state continuation.
 ---
 
 A Live Run keeps a conversation open while the user speaks, the Model responds, and tools execute. Your application manages input and playback; Harness supplies the Agent's tools, permissions, Context, plugins, and state.

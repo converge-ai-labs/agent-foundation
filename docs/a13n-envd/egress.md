@@ -1,6 +1,6 @@
 ---
 title: Session egress
-description: Give each Session a destination policy, inject HTTPS credentials through the broker, and rotate them while commands keep running.
+description: Enforce per-session outbound domain allowlists in Envd and inject rotated HTTPS credentials through the local egress proxy without exposing secrets.
 ---
 
 Controlled egress lets a Session call approved services while its commands hold credential placeholders instead of real secrets. The Envd broker checks destinations and inserts secrets into allowed HTTPS request headers. Start by preparing a Linux sandbox, then select controlled mode and give each Session its own policy.

@@ -1,7 +1,7 @@
 ---
-title: 跟踪 Harness UI
+title: Harness UI OpenTelemetry 追踪
 sidebarTitle: 追踪
-description: 将测试 Run 发送到 OTLP 后端，检查执行过程，并选择要导出的内容。
+description: 将 Harness UI 的运行轨迹与性能指标通过 OpenTelemetry 导出至 Logfire、Langfuse 或 OTLP 后端，深入分析提示词与工具耗时。
 ---
 
 用追踪查看 Run 的耗时、使用的 Model 和工具，以及续接状态是否保存成功。追踪默认关闭。开始前，先完成一次可用的[首次对话](setup.md)，并准备 OTLP/HTTP collector；也可以使用下方的仓库本地开发流程。

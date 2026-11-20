@@ -1,6 +1,6 @@
 ---
-title: 使用 Host 浏览器
-description: 准备 WebUI Host 上的浏览器自动化，与 Agent 浏览网页，并截图或标注。
+title: 使用宿主机可视化浏览器
+description: 在 Linux 或 macOS 宿主机上启用可视化 Chromium 浏览器自动化，随时接管窗口完成登录操作，并通过截图涂鸦标注向 Agent 传递视觉指令。
 ---
 
 当 Agent 需要操作网站，或你想一起检查网页时，使用 Host 浏览器。先[启动 WebUI](webui.md#start-the-server)。这个浏览器运行在服务器 Host 上，与显示 WebUI 的浏览器分开。

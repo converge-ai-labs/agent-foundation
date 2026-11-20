@@ -1,6 +1,6 @@
 ---
-title: 监控与排障
-description: 从请求追踪到运行，排查队列和投递问题，并检查工作空间用量。
+title: 平台监控、指标采集与故障排查
+description: 从 Service 导出 Prometheus 指标与 OpenTelemetry 追踪，关联 HTTP 请求与 Worker Run，快速定位队列积压与投递异常。
 ---
 
 先明确要回答的问题。请求失败时，沿请求 ID 查日志；运行缓慢时，检查队列和执行尝试；查看成本时，读取工作空间保存的用量。

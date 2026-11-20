@@ -1,7 +1,7 @@
 ---
-title: 发现和使用 Skill
+title: 发现与加载 Skills
 sidebarTitle: Skill
-description: 为 Agent 提供可发现的操作流程，通过文件工具读取，并选择每次 Run 可见的 Skill。
+description: 将可复用操作规程封装为 SKILL.md，扫描工作区与组织级技能目录，并在每次 Run 中精细控制可见的 Skill 集合。
 ---
 
 Skill 将重复任务所需的指令和支持文件放在一个包中。`SkillsCapability()` 告诉模型有哪些 Skill，文件工具让模型按需读取具体流程。

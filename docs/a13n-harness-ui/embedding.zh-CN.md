@@ -1,7 +1,7 @@
 ---
-title: 嵌入 Harness UI App
+title: 在 Python 中嵌入 Harness UI App
 sidebarTitle: 嵌入 Python App
-description: 从 Python 运行已配置的 Agent，检查结果，并基于已保存的 Thread 构建本地界面。
+description: 通过 Python 代码直接实例化并驱动 Harness UI App，在共享配置文件与本地 SQLite 会话库之上构建自定义界面或自动化脚本。
 ---
 
 当 Python 应用需要复用 Harness UI 的配置文件、已保存的 Thread、附件和 Run 控制时，使用 `HarnessUiApp`。
@@ -110,11 +110,11 @@ flowchart TD
 | `continuation` | 是否已保存并选中供下一次 Run 使用的检查点     |
 | `environment`  | Environment 状态发布和清理失败                |
 
-执行、检查点保存和清理可能有不同的结果。仅有完整回答，不代表下一次 Run 能恢复它。回执属于当前进程；重启后使用 Thread ID 和已保存历史，就像上面第二次运行脚本一样。
+执行、检查点保存和清理可能有不同的结果。请确认返回的检查点已成功写入持久化存储，以便下一轮 Run 能够完整恢复对话上下文。回执属于当前进程；重启后使用 Thread ID 和已保存历史，就像上面第二次运行脚本一样。
 
 ### 引导与保留的工具执行
 
-根级和子级 steering 遵循当前全局 `input.steering_mode`：默认 `immediate`，选择 `queued` 则在下一个安全边界交付。接受 steering 表示输入已进入交付队列，不代表 Agent 已经按其执行。
+根级和子级 steering 遵循当前全局 `input.steering_mode`：默认 `immediate`，选择 `queued` 则在下一个安全边界交付。Steering 请求获接受后即进入当前 Run 的优先交付队列，并在下一个模型请求边界注入上下文。
 
 通用工具默认内联执行。设置 `tools.execution.mode: auto` 可开启超时移交。支持进程的顶层 Shell 调用在两种模式下都可在前台等待到期后让出；仅支持前台执行的挂载遵循通用模式。App 提供即时 steering 和保留执行所需的运行时。
 

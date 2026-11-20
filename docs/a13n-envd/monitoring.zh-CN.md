@@ -1,7 +1,7 @@
 ---
-title: Device 监控与指标
+title: Envd 设备指标采集与监控导出
 sidebarTitle: 监控
-description: 采样 Device 资源、检查数据新鲜度，并通过 Prometheus 或 OTLP 导出指标。
+description: 从 Envd 设备实时采集 CPU、内存、磁盘与网络指标，并通过 Prometheus 拉取或 OTLP 推送接入监控大盘。
 ---
 
 本指南用于监控已有 Envd 部署。守护进程启动、身份和传输设置见[守护进程配置](configuration.md)。
@@ -47,7 +47,7 @@ if report.sample is not None:
 | 观测                                                         | 含义                                                                                                                                                                      |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sample.system.cpu_busy_percent`                             | 相邻有效原生采样之间的系统 CPU 忙碌百分比，归一化为 0–100。首次采样或无效计数器增量时缺失。                                                                               |
-| `sample.system.logical_cpu_count`                            | 系统逻辑 CPU 数量，不代表 cgroup 配额或亲和性限制后的有效容量。                                                                                                           |
+| `sample.system.logical_cpu_count`                            | 宿主系统的逻辑 CPU 数量（如需查看容器配额上限，请参考 cgroup 指标）。                                                                                                     |
 | `sample.system.memory_total_bytes`、`memory_available_bytes` | 物理内存容量与可用内存观测，单位为字节。Linux 使用 MemAvailable；Windows 使用原生可用物理内存；macOS 以 free + inactive 页面估计可回收内存，不重复计入 speculative 页面。 |
 | `sample.system.cpu_time_seconds`                             | 可选原生累计 CPU 时间：Linux 提供八种模式，Windows 提供 user/system/idle；macOS 不提供累计秒数。                                                                          |
 | `sample.filesystems.<name>.metrics`                          | 整个文件系统的总量、空闲量、可用字节数，以及可选 inode 计数，不是目录大小。目标不可读时保留名称，metrics 缺失。Windows 使用实际卷容量而非调用账户配额，不提供 inode。     |

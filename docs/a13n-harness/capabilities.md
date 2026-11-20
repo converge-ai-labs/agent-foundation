@@ -1,6 +1,6 @@
 ---
 title: Capabilities
-description: Add reusable Agent behavior, verify it with an offline Model, and bind the services each feature needs.
+description: Compose modular agent features—including file tools, web search, shell review, working state, loop detection, and custom Capabilities—in Harness.
 ---
 
 A Capability adds a feature to an Agent: tools, instructions, context, memory, or lifecycle hooks. Select the feature when building the executable. Supply its current clients and policy when starting a Run.
@@ -261,7 +261,7 @@ agent_spec = AgentSpec(
 )
 ```
 
-Without an explicit review permission or trusted tool default, all tools default to `allow` without review. Installing a reviewer or defining its risk rules alone does not activate it. The single reviewer Agent and common prompt assess the risk level and give an optional reason; runtime policy chooses the action. Shell inputs separate the command from working directory, timing, Environment alias, and environment variable names (never values). Other tools retain their structured schema and arguments. Compact previous reviews and action observations provide context, never authorization or automatic risk reduction.
+Without an explicit review permission or trusted tool default, all tools default to `allow` without review. Activate the reviewer by setting the tool's permission mode to `review` in addition to configuring the reviewer and risk rules. The single reviewer Agent and common prompt assess the risk level and give an optional reason; runtime policy chooses the action. Shell inputs separate the command from working directory, timing, Environment alias, and environment variable names (never values). Other tools retain their structured schema and arguments. Compact previous reviews and action observations provide context, never authorization or automatic risk reduction.
 
 The Harness defaults to `extra_high` triggering `deny`; configure `on_flagged: approval_required` to ask instead. Non-timeout failures follow `on_error` (default `approval_required`, or `deny` or explicit `allow`). A reviewer timeout always denies before dispatch, regardless of error policy or an earlier approval. Hosts separately own human interaction timeouts. See [reviewer configuration](managed-tools.md#configure-or-replace-the-reviewer) for per-tool rules and custom reviewers.
 
@@ -385,7 +385,7 @@ bindings = RunBindings.embedded(
 )
 ```
 
-Add `web` to the executable's `capabilities` tuple and pass `bindings` to each Run. Test with a known query and check the returned URLs. A bound client alone does not add search tools.
+Add `web` to the executable's `capabilities` tuple and pass `bindings` to each Run. Test with a known query and check the returned URLs. Enable the corresponding web search or scrape Capability alongside the bound client to expose those tools to the Model.
 
 With no configured preference, tuple order is the default priority. `backend_priority` moves available named backends first and then retains the remaining bound order. Set `backend="tavily"` to require exactly one Host backend with no fallback. A selected backend that is not bound fails before model dispatch. Use `search.mode="host"` to forbid native search, `search.mode="native"` to forbid Host search, and `search.mode="off"` when `WebCapability` is used only for fetch, scrape, or download. Scrape supports `mode="host"` and `mode="off"` and has its own exact selection or priority.
 

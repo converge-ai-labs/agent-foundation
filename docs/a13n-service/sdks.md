@@ -1,6 +1,6 @@
 ---
 title: Service SDKs and CLI
-description: Choose a Service client and build your first conversation against a running deployment.
+description: Install the official Python, TypeScript, Go, or Rust SDKs and the a13n-service-cli tool to integrate and operate your Service deployment.
 ---
 
 Use a Service SDK from your application, or the remote CLI from a terminal or shell script. Both connect to a running Service through its HTTP API. Service owns agent execution and persistence. To execute an agent inside your own process, use [Harness](../a13n-harness/index.md); for an interactive workbench in your repositories, use [Harness UI](../a13n-harness-ui/index.md).

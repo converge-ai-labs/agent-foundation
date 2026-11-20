@@ -1,6 +1,6 @@
 ---
 title: Tools and extension types
-description: Add tools to an Agent, check that they are active, and choose the right integration type.
+description: Compare Skills, Content Plugins, MCP servers, Connectors, and Python Harness Plugins to pick the right extension mechanism for your workbench.
 ---
 
 To give an Agent a new tool, first identify who provides it. Most built-in features are **Capabilities** selected in the Agent YAML. External servers use **MCP**. The Environment determines where file and shell operations run.
@@ -23,7 +23,7 @@ Use an existing [Agent](agents-and-subagents.md#create-an-agent-from-files). Run
 1. Add the needed entry to the Agent's `capabilities` list. Preserve unrelated entries, and edit an existing entry instead of adding the same Capability twice.
 2. Put that Capability's settings under its own `configuration` mapping.
 3. Run `a13n-harness-ui config validate`. Inspect `capability_warnings` as well as `valid`. An unavailable or invalid ordinary Capability can be skipped while the rest of the configuration remains usable.
-4. Start a new conversation with the Agent and ask it to use the feature. Inspect the actual tool result. Configuration acceptance alone does not test a connection or a Model's tool support.
+4. Start a new conversation with the Agent and ask it to use the feature. Inspect the actual tool result. After validating the configuration, run a test prompt that calls the tool to verify connectivity and Model support.
 
 The installed Capability owns its settings schema. YAML selects the implementation by catalog key; it does not install Python code or import arbitrary modules. Permission and review Capabilities are excluded from the ordinary picker; configure shell review through the root shortcut below. Existing explicitly authored permission policies remain supported.
 

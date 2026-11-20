@@ -1,7 +1,7 @@
 ---
 title: Built-in Provider examples
 sidebarTitle: Built-in examples
-description: Run the local file example, then explore Envd Sessions and Docker target ownership.
+description: Runnable Python scripts demonstrating Direct Local, Local Envd OS sandboxes, and Docker container target management and file/shell execution.
 ---
 
 Run [`examples/environment-provider`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/environment-provider) to see who creates a target, who opens an execution, and what remains after close. Start with Direct Local for an offline file round trip. The other examples add a local daemon, a managed Docker container, or a remote connection. They use Harness for execution and Service for Docker management, without an Agent or model credentials. Cloud backends are covered in [Cloud Providers](cloud-providers.md#cloud-providers).

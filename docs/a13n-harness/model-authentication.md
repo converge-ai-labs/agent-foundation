@@ -1,7 +1,7 @@
 ---
 title: Model authentication and HTTP clients
 sidebarTitle: Authentication and HTTP clients
-description: Connect subscription credentials to a Run, coordinate refresh, and close Model HTTP clients.
+description: Integrate OAuth subscription flows (Codex, ChatGPT, Grok, GitHub Copilot), coordinate credential refresh, and manage custom HTTP client lifecycles.
 ---
 
 An authenticated Model needs both an account source and a client lifetime. Native Providers handle API-key authentication. For subscription integration, choose the matching flow and credential source from `a13n_harness.providers.model.oauth`, then return the authenticated Model from your [Run resolver](models.md#model-selection).
@@ -196,7 +196,7 @@ Call `prepare_chatgpt_login(host_id)` for a user-requested login. Present the fl
 
 The provider loads credentials, adopts newer saved tokens before refresh, and handles expiry refresh plus one authentication retry after a 401. Its lock belongs to one provider instance. Multiple processes can still race on the same grant. A save failure surfaces while rotated credentials remain in provider memory; resolve the storage conflict and begin a new Run.
 
-Harness UI and Service use `providers.model.oauth.chatgpt.ChatGPTAuthorization` to retain public flow attributes and validate pasted callbacks. A valid pending attempt is consumed before exchange. The native flow owns PKCE and token validation. `providers.model.chatgpt.discover_chatgpt_models()` returns account-visible slugs and display names in server order; a manually entered ID is also allowed. Visibility alone does not grant inference access.
+Harness UI and Service use `providers.model.oauth.chatgpt.ChatGPTAuthorization` to retain public flow attributes and validate pasted callbacks. A valid pending attempt is consumed before exchange. The native flow owns PKCE and token validation. `providers.model.chatgpt.discover_chatgpt_models()` returns account-visible slugs and display names in server order; a manually entered ID is also allowed. Send a test prompt to confirm inference entitlement for a discovered model slug.
 
 The native Responses profile forces streaming and `store=false`. Ordinary requests use its stream collector. Native Model rules govern tools, supported settings, and stream completion.
 

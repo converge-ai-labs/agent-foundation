@@ -1,7 +1,7 @@
 ---
-title: 常见配置用法
+title: 常用配置食谱 (Recipes)
 sidebarTitle: 常见用法
-description: 修改 Model、Agent 或工具配置，并检查修改是否已被使用。
+description: 开箱即用的 YAML 配置速查食谱：快速切换默认模型、调整上下文自动压缩阈值、配置 Shell 命令风险审查以及开启持久化文件记忆。
 ---
 
 先让[第一个 Agent 正常工作](setup.md)，再使用这些配置用法。每个用法修改已有设置的一部分。交互式编辑可使用 WebUI 设置；下面的文件示例适合检查、共享和重现配置。

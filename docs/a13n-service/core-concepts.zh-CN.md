@@ -1,6 +1,6 @@
 ---
-title: Service 如何处理对话
-description: 选择 agent、交换消息、处理待办并继续对话。
+title: Service 对话与执行核心概念
+description: 深入理解 Service 工作空间、不可变 Agent 修订版本、会话（Session）、线程（Thread）、运行（Run）与 Worker 执行尝试的协同机制。
 ---
 
 跟随一次 **Service** 对话：给 agent 项目笔记，阅读回复，再回来追问。你需要通过 **Console** 或 SDK 访问一个 Service 部署。嵌入式 Python 执行和交互式工作台的用法见[选择使用方式](../overview/choose-your-path.md)。

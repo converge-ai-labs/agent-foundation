@@ -1,59 +1,67 @@
 ---
 title: Harness UI
 sidebarTitle: 概览
-description: 在终端或浏览器中启动 Agent，再按工作需要调整配置。
+description: 面向开发者与 DIY 玩家的高效终端与浏览器工作台，深度集成代码仓库分析、多智能体协同与模块化能力扩展。
 ---
 
-Harness UI 让你在自己的电脑或连接的 Environment 中与 Agent 一起工作：理解代码库、修改文件、运行检查，或调查问题。你提供模型订阅或 API 密钥，Harness UI 提供对话、工具和配置管理。
+**Harness UI** 是专为个人开发者与 DIY 极客打造的交互式智能体工作台。无论您是偏好在全键盘命令行终端（TUI）中与 Agent 并肩审查 Git 提交并执行构建命令，还是喜欢在具备文件树、代码语法高亮 Diff 和全双工实时语音的现代浏览器（WebUI）中协作，Harness UI 都能为您提供开箱即用、以 Harness 为强劲引擎的高能操作体验。
 
 ## 安装并启动
 
-第一次使用时，按顺序完成这两篇指南：
+仅需两步即可在您的代码仓库中开启协作：
 
-1. [安装 Harness UI](installation.md)。安装包同时包含终端界面和 WebUI。
-2. [设置第一个 Agent](setup.md)。连接 Model、选择执行权限，并发送测试消息。
+1. [安装 Harness UI](installation.md)：安装统一的发行包，开箱即包含命令行终端工具与 WebUI 服务。
+2. [设置首个 Agent](setup.md)：快速连接模型 API 密钥或订阅账号，授予执行权限，即可开启首次对话。
 
-开始前不需要编写 YAML，也不需要创建 Project。第一条消息成功后，按[终端指南](everyday-use.md)或 [WebUI 指南](webui.md)操作文件、继续任务。
+首次使用无需手写复杂的 YAML 配置文件或搭建数据库。一旦首次问答通过，即可立即在终端或浏览器中高效展开工作。
 
 ## 选择工作方式
 
-**终端：** 在要处理的代码库中运行 `a13n-harness-ui`。终端界面使用这个工作目录。[学习对话操作](everyday-use.md)。
+Harness UI 能够无缝融入您习惯的日常开发动线：
 
-**浏览器：** 运行 `a13n-harness-ui webui`，打开打印的登录链接。WebUI 提供对话、文件、Git 变更和终端。[开始浏览器会话](webui.md)。
-
-**语音：** 在 WebUI 中启用 [Live Mode](live-mode.md)，通过语音讨论工作。Live 需要受支持的 Codex 订阅 Model，以及浏览器麦克风权限。
+- **终端命令行（TUI）：** 在任意工程根目录下直接运行 `a13n-harness-ui`。TUI 界面与您的 Shell 深度融为一体，支持极速全键盘操作、交互式决策卡片审批与思考中途实时引导（Steer）。[掌握终端交互指南](everyday-use.md)。
+- **现代浏览器（WebUI）：** 运行 `a13n-harness-ui webui` 并点击控制台输出的链接。获得图文并茂的 Markdown 渲染、折叠式代码目录树、Git 变更 Diff 查看器以及内嵌的多标签终端。[探索 WebUI 使用指南](webui.md)。
+- **全双工语音交互（Live Mode）：** 在 WebUI 中开启基于 WebRTC 的超低延迟实时语音通话，实现一边双眼审查代码 Diff、一边通过自然对话统筹 Agent 推进任务。[了解 Live 实时语音](live-mode.md)。
 
 ## 配置工作台
 
-理解三个资源，就能处理大多数配置任务：
+Harness UI 通过三大核心声明式概念组织您的开发环境：
 
-- **Model** 定义提供方连接和请求设置。
-- **Agent** 选择 Model，并添加指令和工具。
-- **Project** 组织工作目录和创建默认值。
+| 核心概念            | 在工作台中的作用                                     | 配置途径                          |
+| :------------------ | :--------------------------------------------------- | :-------------------------------- |
+| **Model（模型）**   | 定义提供商凭证、上游模型标识符与温度等生成参数       | `models/` 目录或交互式向导        |
+| **Agent（智能体）** | 设定系统角色提示词、默认模型、工具授权与可用子智能体 | `agents/` 目录                    |
+| **Project（项目）** | 圈定工作空间目录范围、工程级本地配置与环境默认绑定   | `.a13n-project.yaml` 或项目根目录 |
 
-要修改配置时，先看[常见配置用法](configuration-recipes.md)。查字段和优先级时，再看[配置参考](configuration.md)。
+查阅[常用配置方案](configuration-recipes.md)获取开箱即用的配置模板，或阅读[配置参考手册](configuration.md)查阅完整的 YAML 参数定义。
 
 ## 配置工作流
 
-第一轮对话成功后，每次添加一项能力：
+随着工程任务的深入，灵活定制与扩展您的专属工作台：
 
-- **调整 Agent 使用的模型：** [连接另一个 Model](models-and-authentication.md)，再[配置 Agent](agents-and-subagents.md)。
-- **选择工作位置：** [选择 Environment 并组织 Project](environments-and-projects.md)。
-- **教授可重复执行的任务：** [添加 Skill](skills-and-content-plugins.md)。
-- **让多个对话记住偏好：** [配置文件记忆](configuration.md#file-memory)，再[查看记忆文件与整理过程](webui.md#observe-memory)。
-- **连接其他工具服务：** [添加 MCP 服务器](mcp.md)；需要交互式结果时使用 [MCP Apps](mcp-apps.md)。
-- **使用提供方工具或媒体输入：** [配置原生工具与 Web 工具](native-and-web-tools.md)。
+- **自由切换大模型：** 通过[模型接入与身份认证](models-and-authentication.md)，随心切换 OpenAI、Anthropic、Gemini 或本地 Ollama 服务。
+- **自定义 Subagent 团队：** 参照[智能体与子智能体](agents-and-subagents.md)，配置专属的审查员、调研员等子角色。
+- **固化标准化工程技能：** 通过 [Skills 与 Content Plugins](skills-and-content-plugins.md)，将团队的开发规范与操作规程沉淀为结构化 Markdown 技能包。
+- **持久化工作备忘录：** 通过[文件记忆配置](configuration.md#file-memory)，让 Agent 跨会话牢记个人偏好与项目架构约定。
+- **挂载外部工具生态：** 借助 [MCP](mcp.md) 协议接入外部生态，并通过 [MCP Apps](mcp-apps.md) 在网页端渲染动态响应式交互控件。
+- **启用原生与网页工具：** 通过[原生与 Web 工具](native-and-web-tools.md)赋予 Agent 桌面自动化操作（Computer Use）与网页检索抓取能力。
 
-知道要完成哪项操作后，可在[命令参考](command-reference.md)中查找终端命令。
+详细的命令行启动参数与斜杠命令清单，请参阅[命令参考大全](command-reference.md)。
 
 ## 共享并继续工作
 
-Agent 工作时保持 Harness UI 运行。关闭浏览器标签页后，活动 Run 会继续。[正常重启 WebUI](running-webui.md#restart-or-update-the-server)时，保存与清理成功后，可自动继续兼容的中断任务。TUI 退出或进程崩溃后，检查最后保存的检查点，再[手动恢复](automation-and-troubleshooting.md#resume-after-exit-or-failure)。再次提交任务前，先检查已保存的结果。
+您的所有会话记录、执行日志与未发送的输入草稿均自动在本地持久化：
 
-只与可信协作者共享 WebUI 实例。他们使用同一组凭据、配置和文件。Host 原生文件访问和终端默认开启；`--no-share-computer` 可关闭这些共享功能，与 Agent 执行权限分别设置。
+- **随时接续历史会话：** 无论关闭浏览器标签还是退出终端，正在运行的任务均不会丢失。在 TUI 中输入 `/resume` 或在 WebUI 侧边栏点选历史线程，即可无缝继续。
+- **优雅的故障自愈：** 遭遇意外断电或终端进程崩溃时，Harness UI 会保护未提交的草稿并保留执行检查点，支持一键安全恢复。
+- **局域网可信共享：** Harness UI 遵循个人与可信团队的高权限工作台定位。在局域网内共享实例时，协作者将共享实例内的凭证、文件与终端权限。
 
-需要受管理的用户、角色，以及跨 worker 的持久执行时，使用 [Service](../a13n-service/index.md)。
+若您的企业需要基于细粒度 RBAC 权限隔离、集中审计与分布式 Worker 集群的企业级平台，请部署 [Service 平台](../a13n-service/index.md)。
 
 ## 基于 Harness UI 构建
 
-要在相同配置和对话存储之上构建其他界面，使用 [Python App](embedding.md) 或 [HTTP API](http-api.md)。要在自己的应用中嵌入 Agent 执行，并自行管理存储和访问策略，从 [Harness](../a13n-harness/getting-started.md) 开始。
+Harness UI 同样向高阶开发者提供了丰富的可编程接入通道：
+
+- **嵌入为 Python 应用：** 通过 [Python App 接口](embedding.md)，直接将完整工作台挂载并打包进自研的桌面客户端或本地微服务中。
+- **通过 HTTP API 自动化：** 借助 [HTTP API](http-api.md)，轻松编写自动化调用脚本、接入编辑器插件或触发 Webhook。
+- **底层裸引擎集成：** 若您仅需纯粹的 Agent 执行逻辑而无需 UI 层，请直接集成底层的 [Harness SDK](../a13n-harness/getting-started.md)。

@@ -1,6 +1,6 @@
 ---
 title: Multimedia understanding
-description: Read local media or direct URLs, select native input or an analysis Model, and handle the resulting text and usage.
+description: Inspect images, audio, video, and media URLs in Harness using native multimodal model inputs or dedicated media-analysis agents.
 ---
 
 Use `view` for media in an Environment and `read_media_url` for a direct HTTP(S) image, video, or audio resource. Give the tool a focused task, such as reading a label, transcribing speakers, locating an event by timestamp, or reviewing a UI.
@@ -13,7 +13,7 @@ Harness chooses a path for each media kind:
 | No matching declaration; understanding provider configured | Text returned by a separate media-understanding Agent or custom provider |
 | Neither available                                          | `media_understanding_unavailable`                                        |
 
-A declaration describes support already present in the Model and its provider path. It does not add perception to a text-only Model. Native request failures do not switch to auxiliary inference.
+A declaration describes support already present in the Model and its provider path. It routes supported media directly to multimodal Models and uses an analysis Agent for text-only Models. Each media route uses its configured path deterministically.
 
 ## Use from `view`
 
@@ -232,7 +232,7 @@ class CustomAudioProvider:
         return await self.analyze(request, usage)
 ```
 
-Bind it with `RunBindings.embedded(file_media_understanding=CustomAudioProvider(your_analyze_function))`. The callback must implement the external analysis and return its available usage through the supplied binding or result receipts, without counting the same work twice. Constructing this adapter alone does not run analysis.
+Bind it with `RunBindings.embedded(file_media_understanding=CustomAudioProvider(your_analyze_function))`. The callback must implement the external analysis and return its available usage through the supplied binding or result receipts, without counting the same work twice. Pass the constructed adapter in `RunBindings.file_media_understanding` so `view` invokes it when inspecting media files.
 
 `supports(kind)` reports availability without resolving credentials or making requests. Older understand-only providers still work for `view`; implement discovery to expose URL fallback. A custom Run provider serves both tools and takes precedence over all environment Model strings. Its failure does not trigger an ambient default retry. Native capability declarations still take precedence for native-supported kinds.
 

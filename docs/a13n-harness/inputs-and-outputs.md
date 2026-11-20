@@ -1,6 +1,6 @@
 ---
 title: Inputs and outputs
-description: Start or resume a Run with text and media, and handle validated outputs and every terminal outcome.
+description: Enforce type-safe Pydantic or JSON Schema outputs, pass multimodal binary inputs, generate prompts after Environment entry, and handle all Run statuses.
 ---
 
 Give your application a typed result it can use directly. Define the output when you build the Agent, pass text or media to a Run, then handle the Run's status before publishing its output.

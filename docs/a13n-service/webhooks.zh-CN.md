@@ -1,6 +1,6 @@
 ---
-title: 接收生命周期 webhook
-description: 配置接收端、验证签名并对生命周期通知去重。
+title: 配置与校验生命周期 Webhooks
+description: 在 Service 工作空间中配置 Webhook 接收端点，校验 HMAC-SHA256 载荷签名，并对 Run 与定时计划事件进行幂等去重处理。
 ---
 
 服务器需要接收生命周期通知且不保持事件流时，使用 webhook。先准备可访问、能验证签名并持久去重的接收端，再由工作空间管理员创建订阅并验证一次投递。
@@ -99,7 +99,7 @@ Service 至少投递一次，不保证顺序。在 `control.webhook_timeout`（�
 
 失败请求按指数退避重试，间隔最多为 2、4、8、… 秒，带 20% 抖动，上限一小时。尝试次数取 `outbox.by_kind.webhook.max_attempts`，未配置时取 `outbox.defaults.max_attempts`（默认 12）。次数耗尽后，投递变为 `dead`。
 
-通过 `GET /api/v1/subscriptions/{subscription_id}/deliveries` 或 Console 的**投递记录**检查结果。记录按从新到旧排列，包含状态（`pending`、`delivered`、`dead`）、尝试次数、最后一次错误和载荷。修复接收端问题后，对符合条件的 dead 投递选择**重新投递**，或调用 `POST /api/v1/subscriptions/{subscription_id}/deliveries/{delivery_id}/redeliver`。重新投递会重置尝试额度，保留原 ID、地址、载荷和密钥。刷新以确认结果；入队表示待投递，不代表已收到。
+通过 `GET /api/v1/subscriptions/{subscription_id}/deliveries` 或 Console 的**投递记录**检查结果。记录按从新到旧排列，包含状态（`pending`、`delivered`、`dead`）、尝试次数、最后一次错误和载荷。修复接收端问题后，对符合条件的 dead 投递选择**重新投递**，或调用 `POST /api/v1/subscriptions/{subscription_id}/deliveries/{delivery_id}/redeliver`。重新投递会重置尝试额度，保留原 ID、地址、载荷和密钥。投递请求入队后会在后台异步发送，你可以刷新投递历史查看目标端点的最终 HTTP 响应状态。
 
 已结束的投递记录默认保留到成功后一天，或变为 dead 后十四天。这些期限由 webhook outbox 策略控制。
 

@@ -1,7 +1,7 @@
 ---
 title: Common configuration recipes
 sidebarTitle: Common recipes
-description: Edit a Model, Agent, or tool configuration and check that the change is in use.
+description: Practical copy-paste YAML recipes for switching default models, tuning context compaction, configuring shell risk review, and enabling file memory.
 ---
 
 Use these recipes after [your first Agent works](setup.md). Each recipe changes one part of that setup. You can use WebUI settings for interactive editing; the file examples below are useful for inspecting, sharing, and reproducing your configuration.

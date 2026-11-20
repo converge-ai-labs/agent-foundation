@@ -1,6 +1,6 @@
 ---
 title: Models
-description: Connect a provider, give an agent a working model, and configure request defaults, media understanding, and prices.
+description: Connect LLM providers in Service, register workspace models, configure reasoning and context defaults, set custom token pricing, and enable media analysis.
 ---
 
 Connect an upstream account once as a **model provider**, then save the **models** agents can use through it. The provider holds credentials and connection settings. Each model holds an upstream ID, calling API, input capabilities, request defaults, and optional prices. Both belong to one [workspace](resources.md#workspaces); an agent selects the model by its stable key.
@@ -132,7 +132,7 @@ To keep a thread on a gateway's chosen backend:
 2. Open the provider's advanced connection settings and set **Session affinity header** to that name (`config.session_affinity_header` through the API).
 3. Continue a thread and check gateway logs for the same thread-derived UUID. Use a child or fork to check that it receives its own value.
 
-Service supplies that UUID on every model path, including reviewers and media understanding. It derives the value from the thread, not the session or run. Clearing request header defaults does not remove it. Leave the affinity header empty to disable it; selecting a preset alone does not configure gateway routing.
+Service supplies that UUID on every model path, including reviewers and media understanding. It derives the value from the thread, not the session or run. Clearing request header defaults does not remove it. Specify the exact affinity header your gateway expects (or leave it empty to disable header injection).
 
 ### Model API availability
 

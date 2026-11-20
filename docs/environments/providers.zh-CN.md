@@ -1,7 +1,7 @@
 ---
-title: Provider 与运行时配置
+title: 本地运行时与容器连接池配置
 sidebarTitle: Provider 与运行时
-description: 准备后端并连接执行，将目标管理与运行时清理分开。
+description: 配置 Local Envd 与 Docker 的宿主本地运行时（Runtime），管理共享守护进程生命周期，并区分连接释放与靶机销毁。
 ---
 
 Provider 配置分为三部分：目标配置描述要使用的目标，账号设置和凭据用于访问后端，运行时持有共享客户端。先[选择后端](index.md#choose-a-backend)，再按下面对应的流程设置。要添加自己的适配器，使用 [Provider 插件](provider-plugins.md)。

@@ -1,6 +1,6 @@
 ---
 title: Embed MCP Apps
-description: Render interactive MCP tool results in your application with current authorization and isolation.
+description: Embed interactive MCP App UI components from Service conversations into your own web application with isolated origins and scoped authorization.
 ---
 
 Use this page if you are building an application that renders interactive results from a remote MCP connection. You need an authenticated Service client, a compatible MCP server and an isolated iframe bridge. First [configure and test the connection](tools.md#connections), then open the saved App without repeating its original tool call.

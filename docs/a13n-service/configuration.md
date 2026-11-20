@@ -1,6 +1,6 @@
 ---
 title: Configure Service
-description: Load deployment settings, connect shared infrastructure, and tune execution and monitoring.
+description: Configure PostgreSQL, Redis, S3 object storage, encryption key rings, outbound network policies, and execution limits in service.toml.
 ---
 
 Configure Service in three steps: connect its shared stores, supply persistent encryption keys, then start the required process roles. Settings load once at startup. Restart every affected process after a change. Use this guide for setup decisions and the [settings reference](configuration-reference.md) for individual fields, bounds and defaults.

@@ -1,6 +1,6 @@
 ---
-title: 配置 Service
-description: 加载部署设置、连接共享基础设施，并调整执行和监控配置。
+title: Service 生产环境配置指南
+description: 通过 service.toml 与环境变量配置 PostgreSQL、Redis、S3 对象存储、加密密钥环、出站网络白名单及 Worker 执行参数。
 ---
 
 配置 Service 分三步：连接共享存储、提供持久加密密钥，再启动所需进程角色。设置只在启动时加载，修改后需重启所有受影响的进程。本指南帮助你选择配置方式；各字段、范围和默认值见[设置参考](configuration-reference.md)。

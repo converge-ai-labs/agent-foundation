@@ -1,14 +1,14 @@
 ---
 title: Embed the Harness UI App
 sidebarTitle: Embed the Python App
-description: Run a configured Agent from Python, inspect its result, and build a local interface around saved Threads.
+description: Import and drive the Harness UI Python App programmatically to build custom frontends or automation scripts over shared configurations and SQLite threads.
 ---
 
 Use `HarnessUiApp` when your Python application needs Harness UI's configuration files, saved Threads, attachments, and Run controls.
 
 Choose [Harness directly](../a13n-harness/hosting.md) if your application will own configuration and persistence. Choose [Service](../a13n-service/index.md) for managed execution that can recover on another worker.
 
-Trusted WebUI integrations can register Connector definitions through `HarnessUiIntegrations(connectors=(definition,))`, passed to `open_harness_ui_app(..., integrations=...)`. [Connectors](connectors.md#develop-a-trusted-connector) explains the SDK, setup lifecycle and event ingress. Connector ownership starts with the WebUI lifecycle; embedding an App alone does not activate its background runtime.
+Trusted WebUI integrations can register Connector definitions through `HarnessUiIntegrations(connectors=(definition,))`, passed to `open_harness_ui_app(..., integrations=...)`. [Connectors](connectors.md#develop-a-trusted-connector) explains the SDK, setup lifecycle and event ingress. Start the WebUI server lifecycle when your integration requires background Connector polling and delivery.
 
 ## Open, submit, and wait
 
@@ -75,7 +75,7 @@ python embedded_chat.py --config /path/to/a13n-harness-ui.yaml --thread THREAD_I
 
 Use the same configuration and data root to reopen the saved conversation. If the first operation suspended for a decision, answer that decision before submitting another prompt; see [pending decisions](#answer-the-complete-pending-set).
 
-Pass loaded settings and the configuration path together. Constructing `HarnessUiSettings()` alone does not load resource files. To create a separate dataset, pass `data_root=Path(...)` to `load_harness_ui_settings()`.
+Pass loaded settings and the configuration path together. Call the configuration loader to load Model, Agent, and Project YAML files alongside `HarnessUiSettings()`. To create a separate dataset, pass `data_root=Path(...)` to `load_harness_ui_settings()`.
 
 The async context manager owns App startup and shutdown. Keep it open for your interface's lifetime. `host_mode="webui"` enables browser-mode collaboration features without starting a listener; [the HTTP adapter](http-api.md) owns the listener. Import APIs from their owning submodules: `a13n_harness_ui` itself exports only the version.
 
@@ -110,7 +110,7 @@ Statuses are `preparing`, `running`, `completed`, `suspended`, `failed`, and `ca
 | `continuation` | Whether a checkpoint was saved and selected for the next Run |
 | `environment`  | Environment-state publication and cleanup failures           |
 
-Execution, checkpoint saving, and cleanup can have different results. A completed answer alone is not proof that the next Run can restore it. Receipts belong to the current process; after a restart, use the Thread ID and saved history, as in the second script invocation above.
+Execution, checkpoint saving, and cleanup can have different results. Verify that the returned checkpoint was persisted to storage so the next Run can restore the conversation. Receipts belong to the current process; after a restart, use the Thread ID and saved history, as in the second script invocation above.
 
 ### Steering and retained tools
 

@@ -1,7 +1,7 @@
 ---
 title: Daemon configuration and transports
 sidebarTitle: Configuration and transports
-description: Connect Envd to a Host, choose execution settings, and collect resource metrics.
+description: Configure Envd stdio, HTTP, and reverse WebSocket carriers, session defaults, command enablement, and system telemetry collection.
 ---
 
 Configure Envd at startup to choose its connection, execution account, filesystem isolation and network mode. The Host owns deployment, credentials and daemon lifetime. Each EIP Session then selects its working directory, Sandbox, egress mode, lifecycle and command availability through `session.open.configuration`, within the deployment authority. Omitted selections inherit launch defaults.

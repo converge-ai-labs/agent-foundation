@@ -1,6 +1,6 @@
 ---
 title: Advanced execution options
-description: Import history, forward business context, and configure tool handoff and steering.
+description: Seed new Service threads with imported message history, pass per-connection MCP caller headers, and customize tool handoff and steering behavior.
 ---
 
 Use these options when your application needs imported history, business context headers, or control over tool handoff and steering. Start with a working [application integration](connect-application.md); preserve the accepted policy and inspect uncertain tool outcomes before retrying.

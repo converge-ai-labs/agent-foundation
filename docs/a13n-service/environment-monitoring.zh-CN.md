@@ -1,6 +1,6 @@
 ---
-title: 监控环境
-description: 查看第一张资源图表、接入历史查询后端，并运维环境采集器。
+title: 沙箱环境资源监控与可视化
+description: 在 Console 中查看沙箱环境的实时 CPU、内存、磁盘与网络图表，并接入 Prometheus 或 VictoriaMetrics 查询历史趋势。
 ---
 
 环境监控独立于 agent 运行，展示 Envd 目标的 CPU、内存、网络和磁盘活动。先用 **Local Cache** 查看图表，无需指标数据库。需要持久历史时，再接入外部后端。Service 自身的健康状态和运行用量见 [Service 监控](monitoring.md)。
@@ -11,7 +11,7 @@ description: 查看第一张资源图表、接入历史查询后端，并运维�
 
 1. 在 Console 中打开环境，在 **监控** 下选择 **配置**。
 2. 将 **指标数据源** 设为 **Local Cache**，再选择 **保存选择**。新建托管 Docker/E2B `envd_http` 环境时，在创建前选择数据源，让 Service 启用 10 秒采样器。
-3. 已有目标未启用采样时，请运维启用 [Envd 采样器](../a13n-envd/configuration.md#system-information-and-resource-monitoring)。选择数据源或启动已有环境不会重新配置其守护进程。
+3. 已有目标未启用采样时，请运维启用 [Envd 采样器](../a13n-envd/configuration.md#system-information-and-resource-monitoring)。环境守护进程在实例创建时读取采集配置；修改数据源后请新建或重建环境实例以应用新配置。
 4. 等待目标产生样本，再选择 **打开仪表盘**。查看最近的时间范围，并在 **查询详情** 中检查新鲜度和实际覆盖范围。执行正常工作负载，观察资源用量变化。
 
 Local Cache 将样本保存在负责采集的 Service 进程内存中。Redis 协调所有权和跨副本查询。进程重启或所有权变化可能丢失历史；需要跨这些事件保留数据时，应使用外部后端。
@@ -28,7 +28,7 @@ curl --fail-with-body --silent --show-error \
   "${A13N_URL%/}/api/v1/environments/$ENVIRONMENT_ID/metrics/query"
 ```
 
-使用 Local Cache 时，检查 `observation.status` 和 `history.series`。新鲜样本和数据点表明采集已生效；保存绑定本身不能证明这一点。图表持续为空时，先检查选中的数据源、目标就绪状态和采样器。使用 pull 数据源时，还要检查 `GET /api/v1/environments/{environment_id}/metrics/collector` 和采集器的目标状态。
+使用 Local Cache 时，检查 `observation.status` 和 `history.series`。保存监控绑定后，可通过观察图表是否出现最新采样点来确认数据采集链路已打通。图表持续为空时，先检查选中的数据源、目标就绪状态和采样器。使用 pull 数据源时，还要检查 `GET /api/v1/environments/{environment_id}/metrics/collector` 和采集器的目标状态。
 
 API 客户端可在创建时设置 `metrics_data_source_id`，或调用 `PUT /api/v1/environments/{environment_id}/metrics-binding`，将环境 ETag 放入 `If-Match`。将数据源 ID 设为 `null` 可解除绑定。为外部目标选择自定义数据源，以及设置自定义身份标签，需要管理员批准。
 

@@ -1,6 +1,6 @@
 ---
-title: 检查运行并改进 agent
-description: 检查用量和 trace 证据，审核发现项后再修改配置。
+title: 审查运行轨迹与持续优化 Agent
+description: 在 Console 中深入分析 Token 消耗、首字延迟（TTFT）与工具调用轨迹，并通过结构化诊断发现（Findings）闭环优化 Agent 配置。
 ---
 
 在 Console 中打开对话，切换到 **Debug**，检查运行状态、保存的配置、执行尝试和用量。这些记录不需要 trace 后端。查看模型和工具 span 或使用 Finding Agent 分析前，运维人员须另行配置 [trace 后端](configuration.md#logs-metrics-and-traces)。先核对证据，再提出改动。

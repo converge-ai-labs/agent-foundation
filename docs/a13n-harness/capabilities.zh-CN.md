@@ -1,6 +1,6 @@
 ---
-title: 能力（Capabilities）
-description: 添加可复用的 Agent 行为，用离线 Model 验证，并绑定各功能需要的服务。
+title: Capabilities 模块化能力组装
+description: 在 Harness 中按需组合文件操作、网页搜索、Shell 审查、工作状态、循环检测及自定义 Capability，构建模块化 Agent。
 ---
 
 Capability 为 Agent 添加一项功能：工具、指令、上下文、记忆或生命周期 hook。构建 executable 时选择功能，启动 Run 时提供当前客户端和策略。

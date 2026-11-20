@@ -1,7 +1,7 @@
 ---
 title: 测试 Harness 应用
 sidebarTitle: 测试
-description: 为输出、保存的历史、流式执行和应用集成建立离线测试。
+description: 使用 FunctionModel、TestModel 与三层环境验证策略，为 Harness Agent 编写高速、确定性的离线单元测试与集成测试。
 ---
 
 先写三个离线测试：返回答案、恢复已保存的 Thread、消费事件流。再为应用实际使用的工具和资源补充测试。确定性的 Model 让测试运行快，也让失败容易复现。

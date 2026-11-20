@@ -1,6 +1,6 @@
 ---
 title: Models
-description: Select a Model for each Run, set context policy, and configure gateway affinity and transport.
+description: Configure model routing, dynamic per-run model resolvers, context budgets, image input policies, and gateway session affinity in Harness.
 ---
 
 A Model connects an Agent to a provider or an offline test implementation. Choose where that Model comes from, then set its request options and local context policy. Harness can resolve the choice afresh for each Run while keeping the conversation in the same Thread.

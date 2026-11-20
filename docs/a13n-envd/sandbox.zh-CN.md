@@ -1,6 +1,6 @@
 ---
-title: 沙箱镜像
-description: 选择镜像、连接 Host，并在更换容器后保留工作目录。
+title: Envd 官方沙箱容器镜像
+description: 运行官方 a13n-envd 沙箱容器镜像（涵盖 standard、slim、desktop 与 VM 变体），配置持久化工作区挂载与非 root 安全隔离。
 ---
 
 开发和浏览器自动化选择标准 `a13n-sandbox` 镜像，Computer Use 选择桌面版，最小 Envd 运行环境选择 slim。

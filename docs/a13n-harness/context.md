@@ -1,6 +1,6 @@
 ---
 title: Context and working state
-description: Supply current context, carry decisions across Runs, and compact a Thread without confusing summary generation with checkpoint storage.
+description: Inject dynamic runtime context, manage persistent working notes and task lists, and automatically compact long conversation histories.
 ---
 
 A useful next turn needs both current information and remembered decisions. Context Capabilities prepare the current model request; working state carries structured facts; compaction replaces long conversation history with a summary. Choose each mechanism for the information it owns.
@@ -49,11 +49,11 @@ class WorkspaceGuide(AbstractModelContextCapability):
         return ModelContextProjection(blocks=(*projection.blocks, block))
 ```
 
-Current-state producers, including independent file bodies, use the same comparison. `A → A → B → A` appends `A, B, A`: returning to A differs from the latest B, so the complete A block is sent again. File context separately tracks selected paths to report removals with an explicit empty selection. Unavailable observation is a different state. The optional `history.contains(block)` query checks any retained same-identity hash; an older match does not establish the current state.
+Current-state producers, including independent file bodies, use the same comparison. `A → A → B → A` appends `A, B, A`: returning to A differs from the latest B, so the complete A block is sent again. File context separately tracks selected paths to report removals with an explicit empty selection. Unavailable observation is a different state. The optional `history.contains(block)` query checks any retained same-identity hash; compare against the latest block when you need to verify current state.
 
 Events, reminders, and incremental deliveries keep their owner-controlled triggers and cursors. Return the event when it occurs, even if an earlier event has identical text; there is no emission flag or framework post-filter. If outer middleware rewrites a block, that middleware owns its final injection decision against committed rendered content.
 
-Checkpoint continuation and forks query the selected retained history. After compaction or handoff removes a block, `matches_latest` becomes false and its producer can supply it again. Exact retry/resume boundaries stay untouched. In Live sessions, the view includes confirmed connection context; pending content does not establish presence, and unknown ordering makes `matches_latest` false without erasing confirmed older hashes.
+Checkpoint continuation and forks query the selected retained history. After compaction or handoff removes a block, `matches_latest` becomes false and its producer can supply it again. Exact retry/resume boundaries stay untouched. In Live sessions, the view includes confirmed connection context; presence is confirmed once the connection acknowledges the content, while `matches_latest` reflects known latest ordering.
 
 ## Run configuration
 

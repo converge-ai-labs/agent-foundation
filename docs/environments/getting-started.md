@@ -1,7 +1,7 @@
 ---
 title: Environments quickstart
 sidebarTitle: Quickstart
-description: Open a local workspace, write a file, read it back, and close the execution.
+description: Open a Direct Local workspace in Python, write and read files through the unified EnvironmentExecution interface, and clean up resources deterministically.
 ---
 
 This example uses Direct Local to operate on a temporary directory. It needs Python 3.13 and `uv`; it uses no model, daemon, Docker installation, or cloud account.

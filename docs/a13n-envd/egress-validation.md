@@ -1,7 +1,7 @@
 ---
 title: Historical cloud egress validation
 sidebarTitle: Historical egress validation
-description: Scope and limits of the September 2026 cloud probes, not a current Provider support matrix.
+description: Reference results from the September 2026 Envd egress proxy and OS sandbox probes across cloud sandbox environments.
 ---
 
 This record preserves the evidence from an earlier test campaign. Use [current egress prerequisites and verification](egress.md#verify-a-sandbox-image) before admitting work on a new deployment.
