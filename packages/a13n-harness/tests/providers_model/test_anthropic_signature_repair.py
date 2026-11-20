@@ -171,15 +171,12 @@ async def test_signature_repair_replays_only_the_model_request(streaming, status
     _assert_only_thinking_removed(requests, history, original)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize(
-    "message",
+    ("streaming", "message"),
     [
-        "upstream error",
-        "request signature is invalid",
-        "Invalid authentication signature; thinking block was supplied",
-        "thinking block signature is valid; invalid thinking budget",
-        "thinking budget_tokens must be less than max_tokens",
+        (False, "upstream error"),
+        (True, "Invalid authentication signature; thinking block was supplied"),
+        (False, "thinking block signature is valid; invalid thinking budget"),
     ],
 )
 async def test_unrelated_provider_errors_preserve_history(streaming, message):

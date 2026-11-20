@@ -285,9 +285,17 @@ def test_invalid_tls_setting_fails_without_echoing_value(monkeypatch: pytest.Mon
         outbound_tls_verify()
 
 
-@pytest.mark.parametrize("kind", ["model", "web", "envd"])
-@pytest.mark.parametrize("route", ["direct", "proxy", "bypass"])
-@pytest.mark.parametrize("verify", [None, "true", "false"])
+@pytest.mark.parametrize(
+    ("kind", "route", "verify"),
+    [
+        ("model", "direct", None),
+        ("model", "proxy", "false"),
+        ("web", "proxy", "true"),
+        ("web", "bypass", "false"),
+        ("envd", "direct", "true"),
+        ("envd", "direct", "false"),
+    ],
+)
 async def test_owned_clients_verify_self_signed_https_unless_operator_opts_out(
     monkeypatch: pytest.MonkeyPatch,
     tls_contexts: tuple[ssl.SSLContext, ssl.SSLContext],

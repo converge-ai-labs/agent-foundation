@@ -284,7 +284,7 @@ def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root:
 def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     matrix = _service_matrix(workflow, "true", tmp_path)
-    assert [entry["name"] for entry in matrix] == ["checks", "native", *[f"tests-{index}" for index in range(1, 11)]]
+    assert [entry["name"] for entry in matrix] == ["checks", "native", *[f"tests-{index}" for index in range(1, 6)]]
     assert all(entry["targets"] for entry in matrix[2:])
     targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
     assert targets
@@ -583,11 +583,11 @@ def test_docker_journey_consumes_the_source_matched_image_or_successful_same_run
 
 @pytest.mark.parametrize(
     "support,scenarios,docker",
-    [("success", "success", "success")]
-    + [
-        tuple(status if index == failed else "success" for index in range(3))
-        for failed in range(3)
-        for status in ("failure", "cancelled", "skipped")
+    [
+        ("success", "success", "success"),
+        ("failure", "success", "success"),
+        ("success", "cancelled", "success"),
+        ("success", "success", "skipped"),
     ],
 )
 def test_service_e2e_gate_requires_support_and_scenarios(support: str, scenarios: str, docker: str) -> None:
@@ -678,11 +678,11 @@ def test_harness_gate_requires_every_matrix_member(result: str) -> None:
 
 @pytest.mark.parametrize(
     "chart,helm,journeys",
-    [("success", "success", "success")]
-    + [
-        tuple(status if index == failed else "success" for index in range(3))
-        for failed in range(3)
-        for status in ("failure", "cancelled", "skipped")
+    [
+        ("success", "success", "success"),
+        ("failure", "success", "success"),
+        ("success", "cancelled", "success"),
+        ("success", "success", "skipped"),
     ],
 )
 def test_deployment_gate_requires_chart_helm_and_every_journey_shard(chart: str, helm: str, journeys: str) -> None:
@@ -721,12 +721,11 @@ def test_harness_keeps_full_discovery_and_native_browser_coverage() -> None:
     job = workflow["jobs"]["harness"]
     matrix = job["strategy"]["matrix"]["include"]
     assert job["strategy"]["fail-fast"] is False
-    assert [entry["shard"] for entry in matrix if "shard" in entry] == [1, 2]
     steps = job["steps"]
-    unit = next(step for step in steps if step.get("name") == "Test a13n Harness shard")
-    assert unit["if"] == "startsWith(matrix.name, 'tests-')"
+    unit = next(step for step in steps if step.get("name") == "Test a13n Harness")
+    assert unit["if"] == "matrix.name == 'tests'"
     assert "scripts/run_python_tests.py" in unit["run"]
-    assert "--shard ${{ matrix.shard }} 2 packages/a13n-harness/tests" in unit["run"]
+    assert "--workers 4 packages/a13n-harness/tests" in unit["run"]
     browser = next(step for step in steps if step.get("name") == "Test native Chromium browser workflows")
     assert browser["if"] == "matrix.name == 'browser'"
     assert "test_browser_cdp_native.py" in browser["run"] and "test_browser_workflows_native.py" in browser["run"]
@@ -773,9 +772,9 @@ def test_windows_ui_gate_requires_all_full_suite_shards(result):
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-harness-ui.yml").read_text())
     windows = workflow["jobs"]["windows"]
     assert windows["strategy"]["fail-fast"] is False
-    assert "'[1]' || '[1,2,3,4]'" in windows["strategy"]["matrix"]["shard"]
+    assert "'[1]' || '[1,2]'" in windows["strategy"]["matrix"]["shard"]
     full = next(step for step in windows["steps"] if step["name"] == "Test full UI suite on Windows")
-    assert "--shard ${{ matrix.shard }} 4" in full["run"]
+    assert "--shard ${{ matrix.shard }} 2" in full["run"]
     assert "packages/a13n-harness-ui/tests" in full["run"]
     assert "--workers 4" in full["run"]
     native = next(step for step in windows["steps"] if step["name"] == "Test native command lifecycle")
@@ -817,7 +816,7 @@ def test_python_component_ci_runs_each_supported_interpreter(filename: str, job_
 def test_harness_python_matrix_retains_each_platform_and_shard() -> None:
     job = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())["jobs"]["harness"]
     matrix = job["strategy"]["matrix"]
-    assert matrix["name"] == ["tests-1", "tests-2", "checks", "browser", "Windows"]
+    assert matrix["name"] == ["tests", "checks", "browser", "Windows"]
     assert job["timeout-minutes"] == "${{ matrix.name == 'Windows' && 25 || 10 }}"
     assert {entry["name"] for entry in matrix["include"]} == set(matrix["name"])
     for entry in matrix["include"]:

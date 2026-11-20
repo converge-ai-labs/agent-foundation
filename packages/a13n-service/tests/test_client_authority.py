@@ -85,29 +85,32 @@ async def test_batch_authority_uses_set_reads_and_does_not_cache_revocation(serv
     assert all(isinstance(result, EnvironmentError) for result in await resolve_many(runtime, batch))
 
 
-@pytest.mark.parametrize("refusal", ["cancelled", "expired", "worker", "thread", "mount", "permissions"])
-async def test_refused_caller_does_not_revoke_its_sibling(service, checks, refusal):
+async def test_refused_caller_does_not_revoke_its_sibling(service, checks):
     first, second = checks
     request = first.request
-    if refusal in {"cancelled", "expired"}:
-        async with transaction(service.runtime.storage) as session:
-            if refusal == "cancelled":
-                run = await session.get_one(RunRow, request.caller.run_id)
-                run.cancel_requested_at = datetime.now(UTC)
-            else:
-                attempt = await session.get_one(AttemptRow, request.caller.attempt_id)
-                attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-    elif refusal == "worker":
-        request = request.model_copy(update={"caller": request.caller.model_copy(update={"worker_id": "wrong"})})
-    elif refusal == "thread":
-        request = request.model_copy(update={"thread_id": second.request.thread_id})
-    elif refusal == "mount":
-        request = request.model_copy(update={"mount_name": "other"})
-    first = Check(
-        request,
-        first.attachment,
-        frozenset({"environment.computer.observe"}) if refusal == "permissions" else first.actions,
-    )
+    for bad in (
+        replace(
+            first,
+            request=request.model_copy(update={"caller": request.caller.model_copy(update={"worker_id": "wrong"})}),
+        ),
+        replace(first, request=request.model_copy(update={"thread_id": second.request.thread_id})),
+        replace(first, request=request.model_copy(update={"mount_name": "other"})),
+        replace(first, actions=frozenset({"environment.computer.observe"})),
+    ):
+        rejected, allowed = await resolve_many(service.runtime, [bad, second])
+        assert isinstance(rejected, EnvironmentError) and rejected.code == "environment_denied"
+        assert not isinstance(allowed, EnvironmentError)
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, request.caller.run_id)
+        run.cancel_requested_at = datetime.now(UTC)
+    rejected, allowed = await resolve_many(service.runtime, [first, second])
+    assert isinstance(rejected, EnvironmentError) and rejected.code == "environment_denied"
+    assert not isinstance(allowed, EnvironmentError)
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, request.caller.run_id)
+        run.cancel_requested_at = None
+        attempt = await session.get_one(AttemptRow, request.caller.attempt_id)
+        attempt.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     rejected, allowed = await resolve_many(service.runtime, [first, second])
     assert isinstance(rejected, EnvironmentError) and rejected.code == "environment_denied"
     assert not isinstance(allowed, EnvironmentError)
@@ -204,43 +207,47 @@ async def test_retained_cleanup_survives_revocation_without_admitting_new_work(s
         assert isinstance(result, EnvironmentError), method
 
 
-@pytest.mark.parametrize(
-    "refusal", ["handle", "start", "worker", "expiry", "credential", "device", "session", "mount", "permission"]
-)
-async def test_retained_cleanup_preserves_original_resource_and_owner_fences(service, retained_check, refusal):
+async def test_retained_cleanup_preserves_original_resource_and_owner_fences(service, retained_check):
     from a13n_envd_client.eip.v1 import SessionDescriptor
     from a13n_service.runs.tables import ToolExecutionRow
 
     check = retained_check
     request = check.request
-    if refusal == "handle":
-        request = request.model_copy(update={"params": {"handle": "proc-other"}})
-    elif refusal == "start":
-        request = request.model_copy(
-            update={"method": "process.resolve_start", "params": {"target_operation_id": "op-other"}}
-        )
-    elif refusal == "worker":
-        request = request.model_copy(update={"caller": request.caller.model_copy(update={"worker_id": "stale-worker"})})
-    elif refusal in {"expiry", "credential"}:
-        async with transaction(service.runtime.storage) as session:
-            if refusal == "expiry":
-                row = await session.get_one(ToolExecutionRow, "exec-original")
-                row.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
-            else:
-                config = await session.get_one(ClientSettingsRow, request.environment_id)
-                config.credential_version += 1
-    elif refusal == "mount":
-        request = request.model_copy(update={"mount_name": "other"})
-    elif refusal == "device":
-        check = replace(check, attachment=Attachment(request.environment_id, "other-device", 1))
-    elif refusal == "session":
-        check = replace(
+    for bad in (
+        replace(check, request=request.model_copy(update={"params": {"handle": "proc-other"}})),
+        replace(
+            check,
+            request=request.model_copy(
+                update={"method": "process.resolve_start", "params": {"target_operation_id": "op-other"}}
+            ),
+        ),
+        replace(
+            check,
+            request=request.model_copy(
+                update={"caller": request.caller.model_copy(update={"worker_id": "stale-worker"})}
+            ),
+        ),
+        replace(check, request=request.model_copy(update={"mount_name": "other"})),
+        replace(check, attachment=Attachment(request.environment_id, "other-device", 1)),
+        replace(
             check,
             descriptor=SessionDescriptor.model_construct(device_id="laptop", session_id="ses-other", generation=1),
-        )
-    else:
-        check = replace(check, actions=frozenset({"environment.computer.observe"}))
-    (result,) = await resolve_many(service.runtime, [replace(check, request=request)])
+        ),
+        replace(check, actions=frozenset({"environment.computer.observe"})),
+    ):
+        (result,) = await resolve_many(service.runtime, [bad])
+        assert isinstance(result, EnvironmentError) and result.code == "environment_denied"
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ToolExecutionRow, "exec-original")
+        row.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    (result,) = await resolve_many(service.runtime, [check])
+    assert isinstance(result, EnvironmentError) and result.code == "environment_denied"
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get_one(ToolExecutionRow, "exec-original")
+        row.lease_expires_at = datetime.now(UTC) + timedelta(seconds=60)
+        config = await session.get_one(ClientSettingsRow, request.environment_id)
+        config.credential_version += 1
+    (result,) = await resolve_many(service.runtime, [check])
     assert isinstance(result, EnvironmentError) and result.code == "environment_denied"
 
 

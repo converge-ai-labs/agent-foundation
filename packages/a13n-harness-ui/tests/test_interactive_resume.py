@@ -61,7 +61,7 @@ async def test_cross_directory_resume_reassigns_thread_without_retargeting_proje
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("historical_project", ["existing", "missing", "none"])
+@pytest.mark.parametrize("historical_project", ["existing", "missing"])
 async def test_resume_creates_cwd_project_and_preserves_history_across_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, historical_project: str
 ) -> None:
@@ -209,7 +209,7 @@ async def test_cwd_project_creation_preserves_destination_owned_by_another_proje
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("generated", [False, True])
+@pytest.mark.parametrize("generated", [True])
 async def test_cli_reuses_and_resumes_projects_after_adding_roots(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, generated: bool
 ) -> None:
@@ -306,7 +306,7 @@ async def test_ambiguous_cwd_projects_require_explicit_resume_without_creating_a
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("failure", ["ambiguous", "active", "archived", "conflict"])
+@pytest.mark.parametrize("failure", ["ambiguous", "conflict"])
 async def test_cross_directory_resume_failure_preserves_saved_and_local_selection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:

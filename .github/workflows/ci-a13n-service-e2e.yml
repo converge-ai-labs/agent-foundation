@@ -178,10 +178,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: memory
-            selection: test_memory
-          - name: recovery
-            selection: test_recovery
+          - name: memory-recovery
+            selection: test_memory or test_recovery
           - name: other
             selection: not (test_memory or test_recovery or docker)
     needs: changes

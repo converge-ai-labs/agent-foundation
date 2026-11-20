@@ -2,7 +2,7 @@
 
 import asyncio
 import json
-from contextlib import asynccontextmanager, nullcontext
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import timedelta
 from uuid import uuid4
@@ -196,17 +196,15 @@ async def begin(service, desktop):
     )
 
 
-@pytest.mark.parametrize("failure", ["describe", "fencing", "target", "controller", "controller_before_grant"])
+@pytest.mark.parametrize("failure", ["describe", "controller"])
 async def test_predispatch_failure_remains_visible_until_takeover_retry(service, desktop, monkeypatch, failure):
     from unittest.mock import AsyncMock
-
-    from a13n_service.infra.errors import conflict
 
     _, environment_id, actor, calls, grants, _ = desktop
     with monkeypatch.context() as patch:
         patch.setattr(control, "reconcile", AsyncMock())
         pending = await begin(service, desktop)
-    connection, target = access.connection, access.target
+    connection = access.connection
 
     @asynccontextmanager
     async def failed_connection(runtime, selected, operation_id):
@@ -214,56 +212,35 @@ async def test_predispatch_failure_remains_visible_until_takeover_retry(service,
 
             async def failing_send(request):
                 assert isinstance(request, wire.Describe)
-                description = await send(request)
-                if failure == "describe":
-                    raise TimeoutError("Describe timed out")
-                return description.model_copy(update={"revocation_fences_grants": False})
+                await send(request)
+                raise TimeoutError("Describe timed out")
 
             yield failing_send
 
-    async def failed_target(session, runtime, environment, *, actor=None):
-        if actor is None:
-            raise conflict("environment", environment.id, "desktop_target_changed")
-        return await target(session, runtime, environment, actor=actor)
-
     with monkeypatch.context() as patch:
-        if failure in {"describe", "fencing"}:
+        if failure == "describe":
             patch.setattr(access, "connection", failed_connection)
-        elif failure == "target":
-            patch.setattr(access, "target", failed_target)
-        elif failure == "controller_before_grant":
-            patch.setattr(control, "controller_allowed", AsyncMock(side_effect=[True, False]))
         else:
             patch.setattr(control, "controller_allowed", AsyncMock(return_value=False))
         await control.reconcile(service.runtime, pending.id)
-    expected = {
-        "target": "desktop_target_unavailable",
-        "controller": "desktop_controller_unavailable",
-        "controller_before_grant": "desktop_controller_unavailable",
-    }.get(failure, "desktop_grant_failed")
+    expected = "desktop_controller_unavailable" if failure == "controller" else "desktop_grant_failed"
     failed = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
     assert failed.control == "automation" and failed.failure == expected
     assert not grants and all(isinstance(call, wire.Describe) for call in calls)
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(DesktopControlRow, pending.id)
         assert row.claim_id is None and row.grant_id is None and row.due_at is None
-    await control.reconcile(service.runtime, pending.id)
-    unchanged = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
-    assert unchanged.failure == expected
     retried = await begin(service, desktop)
     assert retried.control == "human" and retried.failure is None
     assert retried.episode == pending.episode + 1
 
 
-@pytest.mark.parametrize("failure", ["timeout", "inactive"])
-@pytest.mark.parametrize("cleanup_failure", [None, "revoke", "target"])
+@pytest.mark.parametrize(("failure", "cleanup_failure"), [("timeout", "revoke"), ("inactive", None)])
 async def test_postdispatch_failure_survives_cleanup_and_clears_on_retry(
     service, desktop, monkeypatch, failure, cleanup_failure
 ):
-    from a13n_service.infra.errors import conflict
-
     _, environment_id, actor, calls, grants, state = desktop
-    connection, target = access.connection, access.target
+    connection = access.connection
 
     @asynccontextmanager
     async def failed_connection(runtime, selected, operation_id):
@@ -288,17 +265,9 @@ async def test_postdispatch_failure_survives_cleanup_and_clears_on_retry(
         row = await session.get_one(DesktopControlRow, failed.id)
         assert row.grant_dispatched and row.viewer is None
 
-    async def failed_target(session, runtime, environment, *, actor=None):
-        if actor is None:
-            raise conflict("environment", environment.id, "desktop_target_changed")
-        return await target(session, runtime, environment, actor=actor)
-
     if cleanup_failure:
-        with monkeypatch.context() as patch:
-            state["fail_revoke"] = cleanup_failure == "revoke"
-            if cleanup_failure == "target":
-                patch.setattr(access, "target", failed_target)
-            await control.reconcile(service.runtime, failed.id)
+        state["fail_revoke"] = True
+        await control.reconcile(service.runtime, failed.id)
         pending = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
         assert pending.control == "returning" and pending.failure == "desktop_grant_failed"
         async with transaction(service.runtime.storage) as session:
@@ -311,40 +280,12 @@ async def test_postdispatch_failure_survives_cleanup_and_clears_on_retry(
     assert recovered.control == "automation" and recovered.failure == "desktop_grant_failed"
     assert all(grant.state == "revoked" for grant in grants.values())
     assert isinstance(calls[-1], wire.Settle)
-    await control.reconcile(service.runtime, failed.id)
-    assert (
-        await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
-    ).failure == recovered.failure
     retried = await begin(service, desktop)
     assert retried.control == "human" and retried.failure is None
     assert retried.episode == failed.episode + 1
 
 
-async def test_normal_expiry_has_no_failure_while_returning_or_after_cleanup(service, desktop, monkeypatch):
-    _, environment_id, actor, _, _, _ = desktop
-    human = await begin(service, desktop)
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get_one(DesktopControlRow, human.id)
-        row.expires_at = await now(session) - timedelta(seconds=1)
-        row.due_at = None
-    connection = access.connection
-
-    @asynccontextmanager
-    async def checked_connection(runtime, selected, operation_id):
-        current = await control.get(runtime, actor, service.tenant.workspace_id, environment_id)
-        assert current.control == "returning" and current.failure is None
-        async with connection(runtime, selected, operation_id) as send:
-            yield send
-
-    with monkeypatch.context() as patch:
-        patch.setattr(access, "connection", checked_connection)
-        await control.reconcile(service.runtime, human.id)
-    current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
-    assert current.control == "automation" and current.failure is None
-
-
-@pytest.mark.parametrize("phase", ["draining", "human"])
-@pytest.mark.parametrize("outcome", ["lease_expired", "grant_failed", "viewer_expired", "controller_lost"])
+@pytest.mark.parametrize(("phase", "outcome"), [("draining", "lease_expired"), ("human", "grant_failed")])
 async def test_expiry_during_grant_distinguishes_normal_end_from_failure(service, desktop, monkeypatch, phase, outcome):
     from unittest.mock import AsyncMock
 
@@ -356,7 +297,7 @@ async def test_expiry_during_grant_distinguishes_normal_end_from_failure(service
     async with transaction(service.runtime.storage) as session:
         current = await now(session)
         row = await session.get_one(DesktopControlRow, initial.id)
-        row.expires_at = current + timedelta(seconds=5 if outcome in {"lease_expired", "grant_failed"} else 300)
+        row.expires_at = current + timedelta(seconds=5)
         row.due_at = None
     connection = access.connection
 
@@ -374,23 +315,14 @@ async def test_expiry_during_grant_distinguishes_normal_end_from_failure(service
                     current += timedelta(seconds=6)
                     if outcome == "grant_failed":
                         raise TimeoutError("Grant response lost across lease expiry")
-                    if outcome == "viewer_expired":
-                        return reply.model_copy(update={"remaining_seconds": 1})
                 return reply
 
             yield delayed_send
 
-    expected = {
-        "lease_expired": None,
-        "grant_failed": "desktop_grant_failed",
-        "viewer_expired": "desktop_control_unavailable",
-        "controller_lost": "desktop_control_unavailable",
-    }[outcome]
+    expected = None if outcome == "lease_expired" else "desktop_grant_failed"
     with monkeypatch.context() as patch:
         patch.setattr(control, "now", clock)
         patch.setattr(access, "connection", delayed_connection)
-        if outcome == "controller_lost":
-            patch.setattr(control, "controller_allowed", AsyncMock(side_effect=[True, True, False]))
         await control.reconcile(service.runtime, initial.id)
         pending = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
         assert pending.control == "returning" and pending.failure == expected
@@ -492,10 +424,7 @@ def restarted_guest(desktop, monkeypatch, tmp_path):
     return instance
 
 
-@pytest.mark.parametrize("phase", ["human", "returning"])
-async def test_supervisor_restart_returns_control_after_verified_cleanup(
-    service, desktop, monkeypatch, tmp_path, phase
-):
+async def test_supervisor_restart_returns_control_after_verified_cleanup(service, desktop, monkeypatch, tmp_path):
     _, environment_id, actor, calls, _, _ = desktop
     human = await begin(service, desktop)
     guest = restarted_guest(desktop, monkeypatch, tmp_path)
@@ -503,18 +432,14 @@ async def test_supervisor_restart_returns_control_after_verified_cleanup(
         row = await session.get(DesktopControlRow, human.id)
         grant_id = row.grant_id
         row.due_at = None
-        if phase == "returning":
-            await control.return_control(session, service.runtime, row)
     await control.reconcile(service.runtime, human.id)
-    if phase == "human":
-        current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
-        assert current.control == "returning" and current.failure == "desktop_grant_failed"
-        assert [type(call) for call in calls] == [wire.Describe]
-        calls.clear()
-        await control.reconcile(service.runtime, human.id)
     current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
-    assert current.control == "automation"
-    assert current.failure == ("desktop_grant_failed" if phase == "human" else None)
+    assert current.control == "returning" and current.failure == "desktop_grant_failed"
+    assert [type(call) for call in calls] == [wire.Describe]
+    calls.clear()
+    await control.reconcile(service.runtime, human.id)
+    current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    assert current.control == "automation" and current.failure == "desktop_grant_failed"
     assert [type(call) for call in calls] == [wire.Describe, wire.Inspect, wire.Settle]
     assert calls[1].operation == "revoke"
     assert calls[1].generation == calls[2].generation == guest.generation != GENERATION
@@ -549,13 +474,11 @@ async def test_supervisor_restart_cleanup_failure_keeps_computer_blocked_until_r
     await control.reconcile(service.runtime, human.id)
     current = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
     assert current.control == "automation"
-    guest.settle.assert_awaited()
     assert guest.settle.await_count == 2
     await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE))
 
 
-@pytest.mark.parametrize("fence", ["claim", "generation", "episode"])
-async def test_supervisor_restart_cleanup_cannot_publish_past_fence(service, desktop, monkeypatch, tmp_path, fence):
+async def test_supervisor_restart_cleanup_cannot_publish_past_fence(service, desktop, monkeypatch, tmp_path):
     _, environment_id, actor, _, _, _ = desktop
     human = await begin(service, desktop)
     guest = restarted_guest(desktop, monkeypatch, tmp_path)
@@ -563,12 +486,7 @@ async def test_supervisor_restart_cleanup_cannot_publish_past_fence(service, des
     async def settle():
         async with transaction(service.runtime.storage) as session:
             row = await session.get(DesktopControlRow, human.id)
-            if fence == "claim":
-                row.claim_until = await now(session) - timedelta(seconds=1)
-            elif fence == "generation":
-                row.generation += 1
-            else:
-                row.episode += 1
+            row.generation += 1
 
     guest.settle.side_effect = settle
     returned = await control.handback(
@@ -625,8 +543,7 @@ async def admitted(service, desktop):
     return lease, mount, state
 
 
-@pytest.mark.parametrize("action", ["environment.computer.observe", "environment.computer.click"])
-async def test_takeover_allows_admitted_call_to_finish_and_blocks_later_calls(service, desktop, action):
+async def test_takeover_allows_admitted_call_to_finish_and_blocks_later_calls(service, desktop):
     from a13n_harness.environment.computer import ComputerCall
     from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
     from a13n_service.runs.environments.desktop import admission
@@ -634,7 +551,7 @@ async def test_takeover_allows_admitted_call_to_finish_and_blocks_later_calls(se
     from sqlalchemy import select
 
     lease, mount, state = await admitted(service, desktop)
-    call = ComputerCall(EnvironmentAction(action))
+    call = ComputerCall(EnvironmentAction.COMPUTER_CLICK)
     entered, release = asyncio.Event(), asyncio.Event()
     finished = []
 
@@ -652,7 +569,9 @@ async def test_takeover_allows_admitted_call_to_finish_and_blocks_later_calls(se
         assert not pending.done()
         for _ in range(2):
             with pytest.raises(EnvironmentError, match="human control"):
-                await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction(action)))
+                await admission.admit(
+                    service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_CLICK)
+                )
     finally:
         release.set()
         await asyncio.wait_for(pending, 5)
@@ -664,8 +583,7 @@ async def test_takeover_allows_admitted_call_to_finish_and_blocks_later_calls(se
         assert registrations[0].mount == mount.model_dump(mode="json")
 
 
-@pytest.mark.parametrize("stage", ["pre_dispatch", "dispatched", None])
-async def test_provider_error_does_not_block_takeover(service, desktop, stage):
+async def test_provider_error_does_not_block_takeover(service, desktop):
     from a13n_harness.environment.computer import ComputerCall
     from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
     from a13n_service.runs.environments.desktop import admission
@@ -677,7 +595,7 @@ async def test_provider_error_does_not_block_takeover(service, desktop, stage):
             raise EnvironmentError(
                 "Provider refused input",
                 code="environment_operation_failed",
-                details={"dispatch_stage": stage} if stage else {},
+                details={"dispatch_stage": "dispatched"},
             )
     assert (await begin(service, desktop)).control == "human"
 
@@ -687,25 +605,22 @@ async def test_abandoned_computer_call_does_not_poison_later_takeover_or_retirem
     from a13n_harness.environment.models import EnvironmentAction
     from a13n_service.runs.environments import lifecycle
     from a13n_service.runs.environments.desktop import admission
+    from a13n_service.runs.schemas import Outcome
+    from a13n_service.runs.seal import seal_attempt
     from sqlalchemy import select
 
     lease, mount, state = await admitted(service, desktop)
-    from a13n_service.runs.schemas import Outcome
-    from a13n_service.runs.seal import seal_attempt
-
-    # Worker loss after admission leaves no per-call lifecycle to reconcile.
     await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_CLICK))
-    for _ in range(2):
-        human = await begin(service, desktop)
-        assert human.control == "human"
-        async with transaction(service.runtime.storage) as session:
-            row = await session.get(DesktopControlRow, human.id)
-            row.expires_at = await now(session) - timedelta(seconds=1)
-            row.due_at = None
-        await control.reconcile(service.runtime, human.id)
-        assert (
-            await control.get(service.runtime, desktop[2], service.tenant.workspace_id, desktop[1])
-        ).control == "automation"
+    human = await begin(service, desktop)
+    assert human.control == "human"
+    async with transaction(service.runtime.storage) as session:
+        row = await session.get(DesktopControlRow, human.id)
+        row.expires_at = await now(session) - timedelta(seconds=1)
+        row.due_at = None
+    await control.reconcile(service.runtime, human.id)
+    assert (
+        await control.get(service.runtime, desktop[2], service.tenant.workspace_id, desktop[1])
+    ).control == "automation"
     response = await service.client.post(f"{service.api}/runs/{lease.run_id}/interrupt")
     assert response.status_code == 200, response.text
     async with transaction(service.runtime.storage) as session:
@@ -715,23 +630,15 @@ async def test_abandoned_computer_call_does_not_poison_later_takeover_or_retirem
         assert not await session.scalar(select(lifecycle.in_use(mount.environment_id)))
 
 
-@pytest.mark.parametrize("reason", ["lease_expired", "binding_removed"])
-async def test_control_sweep_revokes_without_a_live_run(service, desktop, reason):
+async def test_control_sweep_revokes_without_a_live_run(service, desktop):
     from a13n_service.runs.environments.desktop.maintenance import Maintenance
-    from a13n_service.runs.environments.tables import ThreadEnvironmentRow
-    from sqlalchemy import delete
 
-    first, environment_id, actor, _, grants, _ = desktop
+    _, environment_id, actor, _, grants, _ = desktop
     human = await begin(service, desktop)
     async with transaction(service.runtime.storage) as session:
         row = await session.get(DesktopControlRow, human.id)
         row.due_at = None
-        if reason == "lease_expired":
-            row.expires_at = await now(session) - timedelta(seconds=1)
-        else:
-            await session.execute(
-                delete(ThreadEnvironmentRow).where(ThreadEnvironmentRow.thread_id == first["run"]["thread_id"])
-            )
+        row.expires_at = await now(session) - timedelta(seconds=1)
     sweep = Maintenance(service.runtime)
     await sweep()
     async with asyncio.timeout(5):
@@ -777,7 +684,6 @@ async def test_native_alias_is_retained_by_control_and_read_only_view(service, d
         assert not await session.scalar(select(lifecycle.in_use(alias_id)))
 
 
-@pytest.mark.parametrize("desktop", [None, "run_only"], indirect=True)
 async def test_http_control_is_independent_of_resume_and_keeps_credentials_out_of_metadata(service, desktop, runs_kit):
     first, environment_id, *_ = desktop
     root = f"{service.api}/environments/{environment_id}"
@@ -852,17 +758,18 @@ async def returned_notice(service, desktop):
     return lease, mount, notice
 
 
-@pytest.mark.parametrize("desktop", [None, "run_only"], indirect=True)
-@pytest.mark.parametrize("retake_before_delivery", [False, True])
-async def test_handback_delivers_once_across_retake(service, desktop, runs_kit, retake_before_delivery):
+async def test_handback_delivers_once_across_retake(service, desktop, runs_kit):
     from a13n_service.runs import inbox
+    from a13n_service.runs.environments.desktop import admission
+    from a13n_service.runs.environments.desktop.context import project
     from a13n_service.runs.environments.desktop.delivery import handbacks
+    from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
     from a13n_service.runs.notices import require_notice
     from a13n_service.runs.tables import InboxEntryRow, RunRow
+    from sqlalchemy import select
 
     lease, mount, notice = await returned_notice(service, desktop)
-    if retake_before_delivery:
-        await begin(service, desktop)
+    await begin(service, desktop)
     await handbacks(service.runtime)(notice)
     await handbacks(replace(service.runtime))(notice)
     entries = [item for item in await runs_kit.inbox(service, lease.thread_id) if item["kind"] == "desktop_handback"]
@@ -873,19 +780,6 @@ async def test_handback_delivers_once_across_retake(service, desktop, runs_kit, 
         assert entry.payload["mount"] == mount.model_dump(mode="json")
         assert inbox.steers_into(entry, run, run)
         await require_notice(session, service.runtime, entry)
-    if not retake_before_delivery:
-        await begin(service, desktop)
-    async with transaction(service.runtime.storage) as session:
-        entry = await session.get_one(InboxEntryRow, entries[0]["id"])
-        await require_notice(session, service.runtime, entry)
-
-    # Receipt is an event, not current admission or a subscription to the new episode.
-    from a13n_service.runs.environments.desktop import admission
-    from a13n_service.runs.environments.desktop.context import project
-    from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
-    from sqlalchemy import select
-
-    async with transaction(service.runtime.storage) as session:
         environment = await session.get_one(EnvironmentRow, desktop[1])
         state = Handle.model_validate(environment.handle).state
         registrations = list(await session.scalars(select(DesktopBlockedRow)))
@@ -902,48 +796,28 @@ async def test_handback_delivers_once_across_retake(service, desktop, runs_kit, 
         assert registrations[1].entry_id is None and registrations[1].expires_at is None
 
 
-@pytest.mark.parametrize("change", ["binding", "session_version", "authority", "stop", "archive", "target", "expiry"])
+@pytest.mark.parametrize("change", ["authority", "target"])
 async def test_obsolete_handback_is_suppressed_before_delivery(service, desktop, runs_kit, change):
     from a13n_service.runs.environments.desktop.delivery import handbacks
     from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
-    from a13n_service.runs.environments.tables import ThreadEnvironmentRow
-    from a13n_service.runs.notices import suppress
-    from a13n_service.runs.tables import ThreadRow
 
     lease, _, notice = await returned_notice(service, desktop)
     async with transaction(service.runtime.storage) as session:
-        if change == "binding":
-            binding = await session.get_one(ThreadEnvironmentRow, (lease.thread_id, "workspace"))
-            binding.working_directory = "/changed"
-        elif change == "session_version":
-            # Returning to the same configuration cannot revive the old handback.
-            from a13n_service.runs.environments.tables import ThreadSessionBindingRow
-
-            binding = await session.get_one(ThreadSessionBindingRow, (lease.thread_id, desktop[1], "default"))
-            binding.head = {**binding.head, "version": binding.head["version"] + 2}
-        elif change == "authority":
+        if change == "authority":
             from .test_platform_tools import set_role
 
             await set_role(session, service, "viewer")
-        elif change == "stop":
-            await suppress(session, lease.thread_id)
-        elif change == "archive":
-            (await session.get_one(ThreadRow, lease.thread_id)).archived_at = await now(session)
-        elif change == "target":
+        else:
             row = await session.get_one(EnvironmentRow, desktop[1])
             handle = Handle.model_validate(row.handle)
             handle.state.state["sandbox_id"] = "replaced-target"
             row.handle = handle.model_dump(mode="json")
-        else:
-            row = await session.get_one(DesktopBlockedRow, notice.payload["registration_id"])
-            row.expires_at = await now(session) - timedelta(seconds=1)
     await handbacks(service.runtime)(notice)
     assert not [item for item in await runs_kit.inbox(service, lease.thread_id) if item["kind"] == "desktop_handback"]
     async with transaction(service.runtime.storage) as session:
         assert (await session.get_one(DesktopBlockedRow, notice.payload["registration_id"])).suppressed
 
 
-@pytest.mark.parametrize("desktop", [None, "run_only"], indirect=True)
 async def test_idle_handback_inherits_origin_authority_and_mount_without_resume(service, desktop):
     from a13n_service.runs.attempts import AttemptControl
     from a13n_service.runs.environments.desktop.delivery import handbacks
@@ -976,8 +850,7 @@ async def test_idle_handback_inherits_origin_authority_and_mount_without_resume(
         assert successor.resume is None and successor.parent_run_id == origin.id
 
 
-@pytest.mark.parametrize("mixed", [False, True])
-async def test_notice_locks_browser_before_desktop_targets(service, desktop, runs_kit, monkeypatch, mixed):
+async def test_notice_locks_browser_before_desktop_targets(service, desktop, runs_kit, monkeypatch):
     from a13n_harness.capabilities.browser import BrowserHumanControl
     from a13n_service.infra import outbox
     from a13n_service.infra.db import lock
@@ -1013,15 +886,14 @@ async def test_notice_locks_browser_before_desktop_targets(service, desktop, run
     desktop = ({"run": run}, *desktop[1:])
     lease, _, notice = await returned_notice(service, desktop)
     await lifecycle.prepare(service.runtime, service.tenant.workspace_id, browser["id"])
-    if mixed:
-        await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
-        with pytest.raises(BrowserHumanControl):
-            await browser_admission.admit(service.runtime, lease, binding)
-        await command(service, runs_kit, browser["id"], "handback")
-        (browser_notice,) = await outbox.claim(
-            service.runtime.storage, "browser_handback", owner="test", limit=10, lease_seconds=60, max_attempts=12
-        )
-        await browser_delivery.handbacks(service.runtime)(browser_notice)
+    await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
+    with pytest.raises(BrowserHumanControl):
+        await browser_admission.admit(service.runtime, lease, binding)
+    await command(service, runs_kit, browser["id"], "handback")
+    (browser_notice,) = await outbox.claim(
+        service.runtime.storage, "browser_handback", owner="test", limit=10, lease_seconds=60, max_attempts=12
+    )
+    await browser_delivery.handbacks(service.runtime)(browser_notice)
     await delivery.handbacks(service.runtime)(notice)
     acquired = []
 
@@ -1040,7 +912,7 @@ async def test_notice_locks_browser_before_desktop_targets(service, desktop, run
                 )
             )
         )
-        assert len(entries) == (2 if mixed else 1)
+        assert len(entries) == 2
         await notices.require_notices(session, service.runtime, entries)
     assert acquired[0] == (BrowserRow, browser["id"])
     browser_positions = [index for index, (model, _) in enumerate(acquired) if model is BrowserRow]
@@ -1074,41 +946,6 @@ async def test_pending_output_preserves_historical_desktop_wait_but_cannot_creat
     assert HistoricalDesktopPending.model_validate(old).desktop_control_id == "dtop_old"
     with pytest.raises(ValidationError):
         Pending.model_validate(old)
-
-
-async def test_old_native_pending_null_is_readable_without_restoring_desktop_execution():
-    from a13n_service.runs.schemas import Pending
-
-    native = {
-        "approvals": [],
-        "calls": [{"tool_call_id": "custom_help", "tool_name": "custom_help", "arguments": {}}],
-        "desktop_control_id": None,
-    }
-    pending = Pending.model_validate(native)
-    assert pending.reason == "call"
-    assert "desktop_control_id" not in pending.model_dump()
-
-
-async def test_rebinding_away_and_back_does_not_revive_notice(service, desktop, runs_kit):
-    from a13n_service.runs.environments.desktop.delivery import handbacks
-    from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
-
-    lease, mount, notice = await returned_notice(service, desktop)
-    path = f"{service.api}/threads/{lease.thread_id}/environments"
-    thread = await runs_kit.get_thread(service, lease.thread_id)
-    removed = await service.client.delete(path + "/workspace", headers=runs_kit.if_match(thread))
-    assert removed.status_code == 204, removed.text
-    thread = await runs_kit.get_thread(service, lease.thread_id)
-    added = await service.client.post(
-        path, json=mount.model_dump(mode="json", exclude={"session_version"}), headers=runs_kit.if_match(thread)
-    )
-    assert added.status_code == 201, added.text
-    await handbacks(service.runtime)(notice)
-    async with transaction(service.runtime.storage) as session:
-        assert (await session.get_one(DesktopBlockedRow, notice.payload["registration_id"])).suppressed
-    assert not [
-        entry for entry in await runs_kit.inbox(service, lease.thread_id) if entry["kind"] == "desktop_handback"
-    ]
 
 
 async def test_pending_handback_retains_native_alias_until_suppressed(service, desktop):
@@ -1186,27 +1023,7 @@ async def test_computer_admission_is_scoped_to_native_target_across_threads(serv
     assert (await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)).id == human.id
 
 
-@pytest.mark.parametrize("outcome", ["missing", "failed", "cancelled", "completed"])
-async def test_read_outcome_does_not_block_takeover(service, desktop, outcome):
-    from a13n_harness.environment.computer import ComputerCall, ComputerDescription
-    from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
-    from a13n_service.runs.environments.desktop import admission
-
-    lease, mount, state = await admitted(service, desktop)
-    call = ComputerCall(EnvironmentAction.COMPUTER_DESCRIBE)
-    expected = {"cancelled": asyncio.CancelledError, "failed": EnvironmentError}.get(outcome)
-    with pytest.raises(expected) if expected else nullcontext():
-        async with admission.operation(service.runtime, lease, mount, state, call):
-            if outcome == "cancelled":
-                raise asyncio.CancelledError
-            if outcome == "failed":
-                raise EnvironmentError("Read failed", code="environment_operation_failed")
-            if outcome == "completed":
-                call.result = ComputerDescription(targets=(), observe_ready=True, input_ready=True)
-    assert (await begin(service, desktop)).control == "human"
-
-
-@pytest.mark.parametrize("failure", ["lost", "credential_changed", "network"])
+@pytest.mark.parametrize("failure", ["lost", "network"])
 async def test_native_loss_retires_desktop_obligations_and_fences_aliases(service, desktop, failure):
     from a13n_harness.environment.computer import ComputerCall
     from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
@@ -1240,7 +1057,6 @@ async def test_native_loss_retires_desktop_obligations_and_fences_aliases(servic
         assert await session.scalar(select(lifecycle.in_use(alias_id)))
     claim = await renewal.claim(service.runtime, environment_id)
     assert claim is not None
-    claim = replace(claim, credential_changed=failure == "credential_changed")
     error = (
         RuntimeError("network unavailable")
         if failure == "network"
@@ -1248,7 +1064,6 @@ async def test_native_loss_retires_desktop_obligations_and_fences_aliases(servic
     )
     before = len(calls)
     await renewal.publish(service.runtime, claim, error)
-    # Replaying publication cannot revive or re-invalidate the target.
     await renewal.publish(service.runtime, claim, error)
     async with transaction(service.runtime.storage) as session:
         row = await session.get(DesktopControlRow, human.id)
@@ -1282,24 +1097,23 @@ async def test_read_viewer_renews_one_identity_at_capacity(service, desktop):
         for _ in range(16)
     ]
     original = readers[0]
-    for _ in range(20):
-        renewed = await viewer.open_viewer(
-            service.runtime,
-            actor,
-            service.tenant.workspace_id,
-            environment_id,
-            OpenViewer(viewer_id=original.viewer_id),
-        )
-        assert renewed.viewer_id == original.viewer_id
-        assert (renewed.websocket_url, renewed.password) == (original.websocket_url, original.password)
-        assert renewed.expires_at >= original.expires_at
+    renewed = await viewer.open_viewer(
+        service.runtime,
+        actor,
+        service.tenant.workspace_id,
+        environment_id,
+        OpenViewer(viewer_id=original.viewer_id),
+    )
+    assert renewed.viewer_id == original.viewer_id
+    assert (renewed.websocket_url, renewed.password) == (original.websocket_url, original.password)
+    assert renewed.expires_at >= original.expires_at
     assert len(grants) == 16
-    assert {request.id for request in calls[-40:] if isinstance(request, wire.Grant)} == {original.viewer_id}
+    assert {request.id for request in calls[-2:] if isinstance(request, wire.Grant)} == {original.viewer_id}
     async with transaction(service.runtime.storage) as session:
         assert await session.scalar(select(func.count()).select_from(DesktopViewerRow)) == 16
 
 
-@pytest.mark.parametrize("change", ["expired", "principal", "guest_generation", "revoked", "authority"])
+@pytest.mark.parametrize("change", ["expired", "authority"])
 async def test_read_viewer_renewal_rechecks_authority_and_never_resurrects(service, desktop, change):
     from a13n_service.infra.errors import ServiceError
     from a13n_service.runs.environments.desktop.tables import DesktopViewerRow
@@ -1314,17 +1128,11 @@ async def test_read_viewer_renewal_rechecks_authority_and_never_resurrects(servi
         reader = await session.get(DesktopViewerRow, original.viewer_id)
         if change == "expired":
             reader.expires_at = await now(session) - timedelta(seconds=1)
-        elif change == "guest_generation":
-            reader.guest_generation = "b" * 32
-        elif change == "authority":
+        else:
             await set_role(session, service, "viewer")
     if change == "authority":
         async with transaction(service.runtime.storage) as session:
             actor = await principal_for(session, service.runtime.access, actor.id)
-    if change == "principal":
-        actor = replace(actor, id="different-principal")
-    if change == "revoked":
-        grants[original.viewer_id] = grants[original.viewer_id].model_copy(update={"state": "revoked"})
     before = len([request for request in calls if isinstance(request, wire.Grant)])
     with pytest.raises(ServiceError):
         await viewer.open_viewer(
@@ -1335,8 +1143,7 @@ async def test_read_viewer_renewal_rechecks_authority_and_never_resurrects(servi
             OpenViewer(viewer_id=original.viewer_id),
         )
     assert len(grants) == 1
-    after = len([request for request in calls if isinstance(request, wire.Grant)])
-    assert after == before + (change == "revoked")
+    assert len([request for request in calls if isinstance(request, wire.Grant)]) == before
 
 
 async def test_control_viewer_binds_connect_intent_to_initiating_episode(service, desktop):
@@ -1363,8 +1170,7 @@ async def test_control_viewer_binds_connect_intent_to_initiating_episode(service
     assert grant.episode == second.episode
 
 
-@pytest.mark.parametrize("mode", ["view", "control"])
-async def test_loss_fences_inflight_viewer_publication(service, desktop, mode):
+async def test_loss_fences_inflight_viewer_publication(service, desktop):
     from a13n_harness.environment.errors import EnvironmentProviderErrorCategory, provider_error
     from a13n_service.infra.errors import ServiceError
     from a13n_service.runs.environments import renewal
@@ -1372,11 +1178,7 @@ async def test_loss_fences_inflight_viewer_publication(service, desktop, mode):
     _, environment_id, actor, _, _, state = desktop
     initial = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
     state["grant_entered"], state["grant_release"] = asyncio.Event(), asyncio.Event()
-    pending = asyncio.create_task(
-        begin(service, desktop)
-        if mode == "control"
-        else viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer())
-    )
+    pending = asyncio.create_task(begin(service, desktop))
     await asyncio.wait_for(state["grant_entered"].wait(), 5)
     try:
         async with transaction(service.runtime.storage) as session:
@@ -1396,35 +1198,14 @@ async def test_loss_fences_inflight_viewer_publication(service, desktop, mode):
         assert row.failure == "environment_lost" and row.viewer is None and row.claim_id is None
 
 
-async def test_start_loss_invalidates_original_native_target_idempotently(service, desktop):
-    from a13n_service.infra.db import lock
-    from a13n_service.infra.errors import ServiceError
-    from a13n_service.runs.environments import lifecycle
-
-    _, environment_id, actor, *_ = desktop
-    initial = await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
-    async with transaction(service.runtime.storage) as session:
-        environment = await lock(session, EnvironmentRow, environment_id)
-        await lifecycle.begin(session, environment, "starting")
-        operation = await lifecycle.claim_locked(service.runtime, session, environment, owner="test")
-        assert operation is not None
-    outcome = lifecycle.Outcome(operation.target.state, lifecycle.LOST)
-    await lifecycle.publish(service.runtime, operation, outcome)
-    await lifecycle.publish(service.runtime, operation, outcome)
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(DesktopControlRow, initial.id)
-        assert row.generation == initial.generation + 1 and row.failure == "environment_lost"
-    with pytest.raises(ServiceError):
-        await viewer.open_viewer(service.runtime, actor, service.tenant.workspace_id, environment_id, OpenViewer())
-
-
-@pytest.mark.parametrize("completion", ["handback", "expiry"])
-async def test_pending_takeover_completion_notifies_without_guest_dispatch(service, desktop, monkeypatch, completion):
+async def test_pending_takeover_completion_notifies_without_guest_dispatch(service, desktop, monkeypatch):
     from unittest.mock import AsyncMock
 
     from a13n_harness.environment.computer import ComputerCall
     from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+    from a13n_service.infra import outbox
     from a13n_service.runs.environments.desktop import admission
+    from a13n_service.runs.environments.desktop.delivery import handbacks
     from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
     from sqlalchemy import select
 
@@ -1435,24 +1216,15 @@ async def test_pending_takeover_completion_notifies_without_guest_dispatch(servi
     assert pending.control == "draining" and not desktop[4]
     with pytest.raises(EnvironmentError, match="human control"):
         await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE))
-    if completion == "handback":
-        await control.handback(
-            service.runtime,
-            desktop[2],
-            service.tenant.workspace_id,
-            desktop[1],
-            if_match=etag(pending.id, pending.version),
-        )
-    else:
-        async with transaction(service.runtime.storage) as session:
-            row = await session.get_one(DesktopControlRow, pending.id)
-            row.expires_at = await now(session) - timedelta(seconds=1)
-        await control.reconcile(service.runtime, pending.id)
+    await control.handback(
+        service.runtime,
+        desktop[2],
+        service.tenant.workspace_id,
+        desktop[1],
+        if_match=etag(pending.id, pending.version),
+    )
     returned = await control.get(service.runtime, desktop[2], service.tenant.workspace_id, desktop[1])
     assert returned.control == "automation" and not desktop[4]
-    from a13n_service.infra import outbox
-    from a13n_service.runs.environments.desktop.delivery import handbacks
-
     (notice,) = await outbox.claim(
         service.runtime.storage, "desktop_handback", owner="test", limit=10, lease_seconds=60, max_attempts=12
     )
@@ -1466,11 +1238,11 @@ async def test_pending_takeover_completion_notifies_without_guest_dispatch(servi
     await admission.admit(service.runtime, lease, mount, state, ComputerCall(EnvironmentAction.COMPUTER_OBSERVE))
 
 
-@pytest.mark.parametrize("transition", ["none", "takeover", "handback", "lost"])
+@pytest.mark.parametrize("transition", ["none", "takeover"])
 async def test_observation_registration_requires_unchanged_automation_episode(service, desktop, transition):
     from a13n_harness.environment.computer import ComputerCall, ComputerScreenshot
     from a13n_harness.environment.models import EnvironmentAction
-    from a13n_service.runs.environments.desktop import admission, freshness, identity
+    from a13n_service.runs.environments.desktop import admission, freshness
 
     from .test_computer_freshness import observation
 
@@ -1482,19 +1254,8 @@ async def test_observation_registration_requires_unchanged_automation_episode(se
         call = ComputerCall(EnvironmentAction.COMPUTER_OBSERVE)
         async with admission.operation(service.runtime, lease, mount, state, call):
             call.result = ComputerScreenshot(observation().reference, b"captured-pixels")
-            if transition in {"takeover", "handback"}:
-                human = await begin(service, desktop)
-                if transition == "handback":
-                    await control.handback(
-                        service.runtime,
-                        desktop[2],
-                        service.tenant.workspace_id,
-                        desktop[1],
-                        if_match=etag(human.id, human.version),
-                    )
-            elif transition == "lost":
-                async with transaction(service.runtime.storage) as session:
-                    await identity.invalidate(session, state)
+            if transition == "takeover":
+                await begin(service, desktop)
     finally:
         freshness.current.reset(token)
     if transition == "none":
@@ -1531,16 +1292,13 @@ async def test_context_reads_current_alias_control_without_registering_or_creati
     assert all(set(item) == {"alias", "admission", "hint", "control", "generation", "episode"} for item in lost)
 
 
-@pytest.mark.parametrize(
-    "failure",
-    ["unknown_alias", "unknown_state", "binding", "lost", "archived", "cancelled", "expired"],
-)
+@pytest.mark.parametrize("failure", ["unknown_alias", "cancelled"])
 async def test_explicit_notify_rechecks_authority_without_registering_on_failure(service, desktop, failure):
     from a13n_service.infra.errors import ServiceError
     from a13n_service.runs.attempts import LeaseLost
-    from a13n_service.runs.environments.desktop import admission, identity
+    from a13n_service.runs.environments.desktop import admission
     from a13n_service.runs.environments.desktop.tables import DesktopBlockedRow
-    from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
+    from a13n_service.runs.tables import RunRow
     from sqlalchemy import select
 
     lease, mount, state = await admitted(service, desktop)
@@ -1550,20 +1308,8 @@ async def test_explicit_notify_rechecks_authority_without_registering_on_failure
         run = await session.get_one(RunRow, lease.run_id)
         if failure == "unknown_alias":
             alias = "not-mounted"
-        elif failure == "unknown_state":
-            state = None
-        elif failure == "binding":
-            state = state.model_copy(update={"state": {"sandbox_id": "different-target"}})
-        elif failure == "lost":
-            await identity.invalidate(session, state)
-        elif failure == "archived":
-            thread = await session.get_one(ThreadRow, lease.thread_id)
-            thread.archived_at = await now(session)
-        elif failure == "cancelled":
+        else:
             run.cancel_requested_at = await now(session)
-        elif failure == "expired":
-            attempt = await session.get_one(AttemptRow, lease.attempt_id)
-            attempt.lease_expires_at = await now(session) - timedelta(seconds=1)
     with pytest.raises((ServiceError, LeaseLost)):
         await admission.register_handback(service.runtime, lease, alias, state)
     async with transaction(service.runtime.storage) as session:

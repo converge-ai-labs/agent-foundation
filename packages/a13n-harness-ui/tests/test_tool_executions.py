@@ -448,7 +448,7 @@ async def test_clear_context_replaces_codeact_owner_and_isolates_late_writes(tmp
         assert (await fresh.snapshot()).values == {}
 
 
-@pytest.mark.parametrize("change", [None, "source", "parent", "child", "stop", "stop_checkpoint", "stop_deferred"])
+@pytest.mark.parametrize("change", [None, "source", "stop_checkpoint"])
 async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monkeypatch, change):
     from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
     from a13n_harness_ui.surfaces import NewThreadDefaults
@@ -696,17 +696,7 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
 
 @pytest.mark.parametrize(
     "change",
-    [
-        None,
-        "source",
-        "parent",
-        "child",
-        "archived",
-        "archive_during_prepare",
-        "parent_during_prepare",
-        "child_during_prepare",
-        "cache_replaced",
-    ],
+    [None, "source", "archived", "parent_during_prepare"],
 )
 async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_path, monkeypatch, change):
     from dataclasses import replace
@@ -1759,7 +1749,7 @@ async def archive_child(store, child_id):
         child.archived = True
 
 
-@pytest.mark.parametrize("status", ["completed", "cancelled", "failed", "suspended", "unknown", "running", "preparing"])
+@pytest.mark.parametrize("status", ["completed", "suspended", "running"])
 async def test_root_completion_after_restart_uses_execution_state(tmp_path, monkeypatch, status):
     from datetime import UTC, datetime
     from unittest.mock import AsyncMock

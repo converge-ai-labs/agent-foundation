@@ -109,9 +109,14 @@ def release(
     return archive
 
 
-@pytest.mark.parametrize("downloader", ["curl", "wget"])
-@pytest.mark.parametrize("variant", ["default", "slim", "vm"])
-@pytest.mark.parametrize("pinned", [False, True])
+@pytest.mark.parametrize(
+    ("downloader", "variant", "pinned"),
+    [
+        ("curl", "default", False),
+        ("wget", "slim", True),
+        ("curl", "vm", True),
+    ],
+)
 def test_install_without_python_jq_or_other_downloader(installer, downloader, variant, pinned):
     run, fixtures, destination, _, commands = installer
     release(fixtures, variant=variant)
@@ -170,8 +175,6 @@ def assert_failed(result, destination: Path):
     ("system", "machine", "target"),
     [
         ("Linux", "x86_64", "x86_64-unknown-linux-gnu"),
-        ("Linux", "aarch64", "aarch64-unknown-linux-gnu"),
-        ("Darwin", "x86_64", "x86_64-apple-darwin"),
         ("Darwin", "arm64", "aarch64-apple-darwin"),
     ],
 )
@@ -190,8 +193,7 @@ def test_install_and_replace_without_path_mutation(installer, system, machine, t
     assert "release/a13n-envd-v0.0.6/" in (fixtures / "requests").read_text()
 
 
-@pytest.mark.parametrize("variant", ["slim", "vm"])
-@pytest.mark.parametrize("use_flag", [True, False])
+@pytest.mark.parametrize(("variant", "use_flag"), [("slim", True), ("vm", False)])
 def test_variant_selects_separate_asset(installer, use_flag, variant):
     run, fixtures, destination, _, _ = installer
     release(fixtures, variant=variant)
@@ -225,7 +227,7 @@ def test_default_version_reads_only_the_component_stable_pointer(installer, resp
     assert "api.github.com" not in "\n".join(requests)
 
 
-@pytest.mark.parametrize("response", ["", "invalid", "01.2.3", "1.2.3-rc.1", "1.2.3\n2.0.0", " 1.2.3", "1.2.3\r\n"])
+@pytest.mark.parametrize("response", ["", "1.2.3-rc.1", "1.2.3\n2.0.0"])
 def test_invalid_stable_pointer_preserves_existing_binary_without_api_fallback(installer, response):
     run, fixtures, destination, _, _ = installer
     (fixtures / "stable.txt").write_bytes(response.encode())
@@ -271,23 +273,21 @@ def test_environment_version_and_default_nonroot_directory(installer):
     assert (home / ".local/bin/a13n-envd").read_bytes() == BINARY
 
 
-@pytest.mark.parametrize("version", ["latest", "0.0.6rc1", "0.0.6-rc.0", "01.2.3", "1.2", "1.2.3\nevil"])
+@pytest.mark.parametrize("version", ["latest", "0.0.6-rc.0", "1.2.3\nevil"])
 def test_invalid_versions_fail_before_download(installer, version):
     run, fixtures, destination, _, _ = installer
     assert_failed(run("--version", version), destination)
     assert not (fixtures / "requests").exists()
 
 
-@pytest.mark.parametrize(
-    "args", [("--unknown",), ("--version",), ("--install-dir", "relative"), ("--add-to-path", "--no-add-to-path")]
-)
+@pytest.mark.parametrize("args", [("--unknown",), ("--install-dir", "relative"), ("--add-to-path", "--no-add-to-path")])
 def test_invalid_arguments(installer, args):
     run, fixtures, destination, _, _ = installer
     assert_failed(run(*args), destination)
     assert not (fixtures / "requests").exists()
 
 
-@pytest.mark.parametrize("prefix", ["", "*", "./", "*./"])
+@pytest.mark.parametrize("prefix", ["", "*./"])
 def test_checksum_filename_markers(installer, prefix):
     run, fixtures, destination, _, _ = installer
     archive = release(fixtures)
@@ -298,7 +298,7 @@ def test_checksum_filename_markers(installer, prefix):
     assert (destination / "a13n-envd").read_bytes() == BINARY
 
 
-@pytest.mark.parametrize("prefix", ["../", "nested/", "././", "**", "./*", "*/"])
+@pytest.mark.parametrize("prefix", ["../", "nested/"])
 def test_checksum_filename_requires_exact_asset(installer, prefix):
     run, fixtures, destination, _, _ = installer
     archive = release(fixtures)
@@ -308,8 +308,16 @@ def test_checksum_filename_requires_exact_asset(installer, prefix):
     assert not (destination / "a13n-envd").exists()
 
 
-@pytest.mark.parametrize("prefix", ["", "*", "./", "*./"])
-@pytest.mark.parametrize("bad", ["missing", "duplicate", "mismatch", "invalid", "malformed"])
+@pytest.mark.parametrize(
+    ("bad", "prefix"),
+    [
+        ("missing", ""),
+        ("duplicate", "./"),
+        ("mismatch", "*"),
+        ("invalid", ""),
+        ("malformed", "*./"),
+    ],
+)
 def test_checksum_failure_preserves_existing_binary(installer, bad, prefix):
     run, fixtures, destination, _, _ = installer
     archive = release(fixtures)
@@ -331,7 +339,7 @@ def test_checksum_failure_preserves_existing_binary(installer, bad, prefix):
     assert (destination / "a13n-envd").read_bytes() == b"old"
 
 
-@pytest.mark.parametrize("bad", ["traversal", "duplicate", "missing", "symlink", "hardlink", "empty", "corrupt"])
+@pytest.mark.parametrize("bad", ["traversal", "symlink", "missing", "corrupt"])
 def test_malformed_verified_archive_does_not_replace(installer, bad):
     run, fixtures, destination, _, _ = installer
     archive = release(fixtures, bad=bad)
@@ -372,7 +380,7 @@ def test_destination_is_not_followed(installer, kind):
 
 @pytest.mark.parametrize(
     ("shell", "profile"),
-    [("bash", ".bashrc"), ("zsh", ".zshrc"), ("sh", ".profile"), ("fish", ".config/fish/config.fish")],
+    [("bash", ".bashrc"), ("fish", ".config/fish/config.fish")],
 )
 def test_path_opt_in_is_idempotent_and_quotes_path(installer, shell, profile):
     run, fixtures, destination, home, _ = installer

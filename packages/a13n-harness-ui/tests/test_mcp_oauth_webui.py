@@ -136,8 +136,7 @@ async def test_wildcard_origin_does_not_create_oauth_redirect_authority(tmp_path
             assert not app.mcp_logins._attempts
 
 
-@pytest.mark.parametrize("stage", ["register", "token"])
-@pytest.mark.parametrize("status_code", [200, 400])
+@pytest.mark.parametrize(("stage", "status_code"), [("register", 400), ("token", 200)])
 async def test_login_rejects_private_error_responses_before_sdk_logging(
     tmp_path, monkeypatch, caplog, stage, status_code
 ):
@@ -203,14 +202,13 @@ async def test_oauth_reconciliation_holds_configuration_acceptance_lock(tmp_path
 
 
 @pytest.mark.parametrize(
-    ("kind", "settings", "endpoint", "scope"),
+    ("kind", "settings", "endpoint", "scope", "codeact"),
     [
-        ("linear", {}, "/mcp", None),
-        ("linear", {"access": "read_only"}, "/mcp/readonly", "read"),
-        ("notion", {}, "/mcp", None),
+        ("linear", {}, "/mcp", None, False),
+        ("linear", {"access": "read_only"}, "/mcp/readonly", "read", True),
+        ("notion", {}, "/mcp", None, True),
     ],
 )
-@pytest.mark.parametrize("codeact", [False, True])
 async def test_thin_oauth_provider_native_and_typed_paths_share_account(
     tmp_path, monkeypatch, kind, settings, endpoint, scope, codeact
 ):

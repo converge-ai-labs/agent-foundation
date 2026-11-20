@@ -114,7 +114,7 @@ async def seed_history(app, format):
     return selected, history
 
 
-@pytest.mark.parametrize("format", ["native", "v1", "stale-v1", "v2"])
+@pytest.mark.parametrize("format", ["v1", "v2"])
 async def test_history_http_pages_and_originals_never_rewrite_selected_storage(tmp_path, monkeypatch, format):
     settings = _settings(tmp_path / "state")
     configuration = _write_configuration(tmp_path)

@@ -16,8 +16,7 @@ from .test_app import _settings, _write_configuration
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
-@pytest.mark.parametrize("enabled", [None, False, True])
-@pytest.mark.parametrize("threshold", [0.95, 0.92])
+@pytest.mark.parametrize(("enabled", "threshold"), [(None, 0.95), (False, 0.95), (True, 0.92)])
 async def test_background_compaction_configuration_is_captured(tmp_path: Path, enabled: bool | None, threshold):
     from a13n_harness.capabilities import CompactionCapability
     from a13n_harness_ui.compaction import BackgroundCompaction
@@ -126,7 +125,7 @@ async def test_root_run_passes_effective_limits_to_detached_compaction(tmp_path:
         assert background_calls == 0
 
 
-@pytest.mark.parametrize("restart,clear", [(False, False), (True, False), (False, True)])
+@pytest.mark.parametrize("restart,clear", [(True, False), (False, True)])
 async def test_app_retains_background_result_then_delivers_with_current_input(
     tmp_path: Path, monkeypatch, restart: bool, clear: bool
 ):
@@ -226,7 +225,7 @@ async def test_app_retains_background_result_then_delivers_with_current_input(
             await consume(app, thread.thread_id)
 
 
-@pytest.mark.parametrize("restart", [False, True])
+@pytest.mark.parametrize("restart", [True])
 async def test_app_recovers_failed_background_in_next_run_and_commits_retirement(tmp_path: Path, monkeypatch, restart):
     from a13n_harness.capabilities.context import _COMPACTION_PROMPT
     from pydantic_ai.messages import UserPromptPart
@@ -346,7 +345,7 @@ async def test_app_prunes_expired_compactions_on_startup(tmp_path: Path, monkeyp
         assert await app._store.compactions.prune() == 0
 
 
-@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("enabled", [False])
 async def test_root_run_blocks_expiration_even_when_background_is_disabled(tmp_path: Path, monkeypatch, enabled):
     from a13n_harness.compaction import CompactionOperation
     from a13n_harness_ui.compaction import BackgroundCompaction

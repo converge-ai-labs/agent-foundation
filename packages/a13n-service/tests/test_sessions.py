@@ -58,18 +58,15 @@ async def test_session_environment_recreation_setting(service):
     assert (await service.client.get(path)).json()["items"][0]["auto_recreate_lost_environment"] is True
 
 
-@pytest.mark.parametrize(
-    "identity",
-    [
+async def test_invalid_identity_is_rejected_without_creating_a_session(service) -> None:
+    for identity in (
         {"title": " "},
         {"title": "x" * 257},
         {"origin": {**ORIGIN, "url": "https://github.com/acme/widgets/pull/42"}},
         {"origin": {**ORIGIN, "application": " "}},
-    ],
-)
-async def test_invalid_identity_is_rejected_without_creating_a_session(service, identity) -> None:
-    response = await service.client.post(f"{service.api}/sessions", json=identity)
-    assert response.status_code == 400, response.text
+    ):
+        response = await service.client.post(f"{service.api}/sessions", json=identity)
+        assert response.status_code == 400, (identity, response.text)
     assert (await service.client.get(f"{service.api}/sessions")).json()["items"] == []
 
 

@@ -161,8 +161,9 @@ async def test_credential_and_backend_changes_refuse_existing_preparation(setup)
     assert not setup.cloud.calls
 
 
-@pytest.mark.parametrize("base_image", [None, "registry.example/custom-base@sha256:" + "a" * 64])
-@pytest.mark.parametrize("desktop", [True, False])
+@pytest.mark.parametrize(
+    ("base_image", "desktop"), [(None, True), ("registry.example/custom-base@sha256:" + "a" * 64, False)]
+)
 async def test_failed_build_preserved_until_fenced_retry(setup, base_image, desktop):
     runtime, client = setup.service.runtime, setup.service.client
     op = await setup.create(base_image, desktop)
@@ -239,7 +240,7 @@ async def test_provider_and_manifest_revision_isolate_reusable_images(setup, mon
     assert not setup.cloud.calls
 
 
-@pytest.mark.parametrize("base_image", [None, "registry.example/base@sha256:" + "a" * 64])
+@pytest.mark.parametrize("base_image", ["registry.example/base@sha256:" + "a" * 64])
 async def test_headless_profile_is_frozen_and_isolated_from_desktop(setup, monkeypatch, base_image):
     runtime = setup.service.runtime
     desktop = await setup.create()

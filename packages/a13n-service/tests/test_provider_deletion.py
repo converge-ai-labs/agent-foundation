@@ -17,45 +17,42 @@ from .test_providers import add_workspace, create, etag, principal
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize(
-    ("kind", "body"),
-    [
+async def test_delete_unused_provider(service: SimpleNamespace) -> None:
+    for kind, body in (
         ("model", {"type": "openai", "name": "Unused", "credential": {"api_key": "secret"}}),
         ("web", {"type": "duckduckgo", "name": "Unused"}),
         ("connector", {"type": "composio", "name": "Unused", "credential": {"api_key": "secret"}}),
         ("memory", {"type": "mem0", "name": "Unused", "credential": {"api_key": "secret"}}),
-    ],
-)
-async def test_delete_unused_provider(service: SimpleNamespace, kind: str, body: dict) -> None:
-    if kind == "memory":
-        async with transaction(service.runtime.storage) as session:
-            row = MemoryProviderRow(
-                id="memprov_unused",
-                organization_id=service.tenant.organization_id,
-                workspace_id=service.tenant.workspace_id,
-                type="external",
-                name="Unused",
-                config={},
-                credential=None,
+    ):
+        if kind == "memory":
+            async with transaction(service.runtime.storage) as session:
+                row = MemoryProviderRow(
+                    id="memprov_unused",
+                    organization_id=service.tenant.organization_id,
+                    workspace_id=service.tenant.workspace_id,
+                    type="external",
+                    name="Unused",
+                    config={},
+                    credential=None,
+                )
+                session.add(row)
+                await session.flush()
+                provider = {"id": row.id, "version": row.version}
+        else:
+            provider = await create(service, kind, body)
+        path = f"{service.api}/{kind}-providers/{provider['id']}"
+        assert (await service.client.delete(path)).status_code == 428
+        assert (await service.client.delete(path, headers={"if-match": '"stale:1"'})).status_code == 412
+        response = await service.client.delete(path, headers={"if-match": etag(provider)})
+        assert response.status_code == 204, response.text
+        assert (await service.client.get(path)).status_code == 404
+        async with short_session(service.runtime.storage) as session:
+            assert await session.scalar(
+                select(AuditEventRow.id).where(
+                    AuditEventRow.target_id == provider["id"],
+                    AuditEventRow.action == f"{kind}_provider.delete",
+                )
             )
-            session.add(row)
-            await session.flush()
-            provider = {"id": row.id, "version": row.version}
-    else:
-        provider = await create(service, kind, body)
-    path = f"{service.api}/{kind}-providers/{provider['id']}"
-    assert (await service.client.delete(path)).status_code == 428
-    assert (await service.client.delete(path, headers={"if-match": '"stale:1"'})).status_code == 412
-    response = await service.client.delete(path, headers={"if-match": etag(provider)})
-    assert response.status_code == 204, response.text
-    assert (await service.client.get(path)).status_code == 404
-    async with short_session(service.runtime.storage) as session:
-        assert await session.scalar(
-            select(AuditEventRow.id).where(
-                AuditEventRow.target_id == provider["id"],
-                AuditEventRow.action == f"{kind}_provider.delete",
-            )
-        )
 
 
 async def test_model_reference_and_workspace_permissions(service: SimpleNamespace) -> None:

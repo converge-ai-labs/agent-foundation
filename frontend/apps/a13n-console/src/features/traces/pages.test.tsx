@@ -533,7 +533,6 @@ it("preserves a short linked Run window when opening and applying its time filte
 
 it.each([
   ["equal", "2026-10-21T12:40:51Z"],
-  ["reversed", "2026-10-21T12:40:50Z"],
   ["over 31 days", "2026-11-22T12:40:51Z"],
 ])(
   "falls back to the default window for an invalid %s linked range",

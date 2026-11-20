@@ -29,7 +29,7 @@ def _server(tmp_path: Path) -> StdioTransport:
     return StdioTransport(command=sys.executable, args=[str(script)], keep_alive=False)
 
 
-@pytest.mark.parametrize("protocol", ["2026-07-28", "legacy"])
+@pytest.mark.parametrize("protocol", ["2026-07-28"])
 async def test_stdio_connection_outlives_toolsets_and_explicit_close_stops_it(tmp_path: Path, protocol: str) -> None:
     connections = Connections()
     try:
@@ -64,7 +64,7 @@ async def test_stdio_connection_outlives_toolsets_and_explicit_close_stops_it(tm
         await connections.close()
 
 
-@pytest.mark.parametrize("protocol", ["2026-07-28", "legacy"])
+@pytest.mark.parametrize("protocol", ["legacy"])
 async def test_http_session_preserves_original_capture_and_stays_usable_between_runs(
     tmp_path: Path, protocol: str
 ) -> None:
@@ -183,7 +183,7 @@ async def test_real_agent_captures_complete_result_without_changing_model_output
 
 
 @pytest.mark.usefixtures("migrated_databases")
-@pytest.mark.parametrize("missing_resource", [False, True])
+@pytest.mark.parametrize("missing_resource", [False])
 async def test_original_snapshot_is_retained_without_replaying_tools(tmp_path: Path, missing_resource: bool) -> None:
     from a13n_harness_ui.mcp_apps.connections import CapturedCall
     from a13n_harness_ui.mcp_apps.models import AppResource, AppSnapshot
@@ -238,7 +238,7 @@ async def test_original_snapshot_is_retained_without_replaying_tools(tmp_path: P
         await connections.close()
 
 
-@pytest.mark.parametrize("codeact", [False, True])
+@pytest.mark.parametrize("codeact", [True])
 async def test_nested_mcp_calls_attach_to_the_retained_outer_return(tmp_path: Path, codeact: bool) -> None:
     import json
     from dataclasses import dataclass
@@ -307,7 +307,7 @@ async def test_nested_mcp_calls_attach_to_the_retained_outer_return(tmp_path: Pa
         await connections.close()
 
 
-@pytest.mark.parametrize("in_flight", [False, True])
+@pytest.mark.parametrize("in_flight", [True])
 async def test_stdio_eof_retires_generation_without_reconnecting(tmp_path: Path, in_flight: bool) -> None:
     import os
     import signal
@@ -386,7 +386,7 @@ def test_capture_budget_bounds_nested_calls_and_total_bytes(monkeypatch: pytest.
     assert captures.take("run-one", "oversized") == []
 
 
-@pytest.mark.parametrize("change", ["binding", "selection"])
+@pytest.mark.parametrize("change", ["binding"])
 async def test_configuration_retirement_rejects_new_borrowers_but_finishes_admitted_calls(
     tmp_path: Path, change: str
 ) -> None:

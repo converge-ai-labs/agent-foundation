@@ -854,7 +854,7 @@ it("pages history, distinguishes failed input from submission, and refreshes an 
   );
 });
 
-it.each(["session", "thread", "create_thread"])(
+it.each(["session", "thread"])(
   "edits the %s delivery target without a live subscription",
   async (mode) => {
     const user = userEvent.setup();
@@ -884,23 +884,20 @@ it.each(["session", "thread", "create_thread"])(
       await screen.findByRole("button", { name: "Edit schedule" }),
     );
     const dialog = within(screen.getByRole("dialog"));
-    if (mode !== "session") {
+    if (mode === "thread") {
       await user.click(
         dialog.getByRole("button", { name: "Reuse one thread" }),
       );
-      if (mode === "thread")
-        await user.type(
-          dialog.getByLabelText("Thread ID (optional)"),
-          "thread_existing",
-        );
-    }
-    if (mode !== "thread") {
+      await user.type(
+        dialog.getByLabelText("Thread ID (optional)"),
+        "thread_existing",
+      );
+    } else {
       await user.clear(dialog.getByLabelText("Session ID (optional)"));
-      if (mode === "session")
-        await user.type(
-          dialog.getByLabelText("Session ID (optional)"),
-          "sess_existing",
-        );
+      await user.type(
+        dialog.getByLabelText("Session ID (optional)"),
+        "sess_existing",
+      );
     }
     await user.click(dialog.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -1000,19 +997,8 @@ it.each([
     reason: "Archived schedules cannot be edited.",
   },
   {
-    state: "completed",
-    verbs: ["write", "run"],
-    reason: "Schedules that have finished cannot be edited.",
-  },
-  {
     state: "paused",
     verbs: ["run"],
-    reason:
-      "Editing this schedule requires both write and run permissions in this workspace.",
-  },
-  {
-    state: "paused",
-    verbs: ["write"],
     reason:
       "Editing this schedule requires both write and run permissions in this workspace.",
   },

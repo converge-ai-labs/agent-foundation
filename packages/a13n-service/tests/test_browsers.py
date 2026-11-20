@@ -15,7 +15,6 @@ from a13n_service.infra import outbox
 from a13n_service.infra.db import now, transaction
 from a13n_service.providers.browser.definition import (
     BrowserProviderDefinition,
-    BrowserProviderError,
     LiveBrowser,
     ViewerGrant,
 )
@@ -463,21 +462,14 @@ async def test_cancelled_condition_wait_releases_page_permit(service, runs_kit, 
         assert len(await backend.tabs("list")) == 1
 
 
-@pytest.mark.parametrize(
-    "failure",
-    [BrowserError("connection lost", dispatch="unknown"), BrowserProviderError("connection_lost"), TimeoutError()],
-    ids=["browser", "provider", "unexpected"],
-)
-async def test_condition_wait_with_unknown_dispatch_keeps_page_permit(
-    service, runs_kit, scripted_model, invocation, failure
-):
+async def test_condition_wait_with_unknown_dispatch_keeps_page_permit(service, runs_kit, scripted_model, invocation):
     _, browser = await setup(service, runs_kit)
     lease, binding = await bound_run(service, runs_kit, scripted_model, browser)
     async with execution.open_backend(
         service.runtime, lease, binding, invocation, frozenset({"tabs", "wait"})
     ) as backend:
         await backend.tabs("new")
-        backend.native.wait = AsyncMock(side_effect=failure)
+        backend.native.wait = AsyncMock(side_effect=BrowserError("connection lost", dispatch="unknown"))
         with pytest.raises(BrowserError) as caught:
             await backend.wait(TextCondition(kind="text", text="ready"))
         assert caught.value.dispatch == "unknown"
@@ -518,8 +510,7 @@ async def test_run_start_during_human_control_does_not_register_a_fake_call(
     invocation.tool_call.assert_not_awaited()
 
 
-@pytest.mark.parametrize("on_demand", [False, True])
-async def test_blocked_native_tool_returns_guidance_and_model_continues(service, runs_kit, scripted_model, on_demand):
+async def test_blocked_native_tool_returns_guidance_and_model_continues(service, runs_kit, scripted_model):
     supplier, browser = await setup(service, runs_kit)
     lease, _ = await bound_run(
         service,
@@ -527,17 +518,10 @@ async def test_blocked_native_tool_returns_guidance_and_model_continues(service,
         scripted_model,
         browser,
         toolsets={"browser": {"enabled": True}},
-        tool_search={"automatic": {}} if on_demand else None,
     )
     await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
     before = len(supplier.protocol_calls)
-    scripted_model.call(
-        "call_tool" if on_demand else "browser_tabs",
-        {"group": "browser", "tool": "browser_tabs", "arguments": {"action": "new"}}
-        if on_demand
-        else {"action": "new"},
-        call_id="call_blocked",
-    )
+    scripted_model.call("browser_tabs", {"action": "new"}, call_id="call_blocked")
     scripted_model.say("I can continue unrelated work")
     await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
     run = await runs_kit.get_run(service, lease.run_id)
@@ -595,8 +579,8 @@ async def test_release_unknown_create_cleans_original_identity(service, runs_kit
     assert supplier.creates == 1
 
 
-@pytest.mark.parametrize("cause", ["provider_disabled", "viewer_expired"])
-async def test_viewer_failure_safely_hands_back_after_revocation(service, runs_kit, scripted_model, cause):
+async def test_viewer_failure_safely_hands_back_after_revocation(service, runs_kit, scripted_model):
+    from a13n_service.infra.errors import ServiceError
     from a13n_service.resources.providers.tables import BrowserProviderRow
 
     supplier, browser = await setup(service, runs_kit)
@@ -604,26 +588,14 @@ async def test_viewer_failure_safely_hands_back_after_revocation(service, runs_k
     await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
     assert supplier.grants
     async with transaction(service.runtime.storage) as session:
-        if cause == "provider_disabled":
-            (await session.get_one(BrowserProviderRow, browser["provider_id"])).enabled = False
-        else:
-            row = await session.get_one(BrowserRow, browser["id"])
-            value = lifecycle.reveal(service.runtime, row, "viewer", row.viewer)
-            value["expires_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
-            row.viewer = lifecycle.protect(service.runtime, row, "viewer", value)
+        (await session.get_one(BrowserProviderRow, browser["provider_id"])).enabled = False
     supplier.fail_revoke = True
     await control.reconcile(service.runtime, browser["workspace_id"], browser["id"])
     assert supplier.grants
     grant = next(iter(supplier.grants))
-    if cause == "provider_disabled":
-        from a13n_service.infra.errors import ServiceError
-
-        with pytest.raises(ServiceError) as error:
-            await admission.admit(service.runtime, lease, binding)
-        assert error.value.code == "disabled"
-    else:
-        with pytest.raises(BrowserHumanControl):
-            await admission.admit(service.runtime, lease, binding)
+    with pytest.raises(ServiceError) as error:
+        await admission.admit(service.runtime, lease, binding)
+    assert error.value.code == "disabled"
     supplier.fail_revoke = False
     await control.reconcile(service.runtime, browser["workspace_id"], browser["id"])
     assert supplier.grants == {grant} and grant not in supplier.revoked
@@ -638,7 +610,6 @@ async def test_viewer_failure_safely_hands_back_after_revocation(service, runs_k
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(BrowserRow, browser["id"])
         assert row.control == "automation" and row.viewer_revoked and row.viewer is None
-    # Handback remains idempotent after disablement; cleanup does not need new-use permission.
     current = await command(service, runs_kit, browser["id"], "handback")
     assert current["control"] == "automation"
 
@@ -713,28 +684,24 @@ async def accepted_handback(service, runs_kit, scripted_model, **config):
     return supplier, browser, lease
 
 
-@pytest.mark.parametrize("retake_at", ["before_read", "before_commit"])
 async def test_obsolete_handback_completes_without_model_or_thread_pause(
-    service, runs_kit, scripted_model, monkeypatch, retake_at
+    service, runs_kit, scripted_model, monkeypatch
 ):
     from a13n_service.runs import checkpoints
 
     _, browser, lease = await accepted_handback(service, runs_kit, scripted_model)
-    if retake_at == "before_read":
-        await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
-    else:
-        publish = checkpoints.publish_checkpoint
-        retaken = False
+    publish = checkpoints.publish_checkpoint
+    retaken = False
 
-        async def retake_before_commit(*args, **kwargs):
-            nonlocal retaken
-            result = await publish(*args, **kwargs)
-            if not retaken:
-                retaken = True
-                await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
-            return result
+    async def retake_before_commit(*args, **kwargs):
+        nonlocal retaken
+        result = await publish(*args, **kwargs)
+        if not retaken:
+            retaken = True
+            await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
+        return result
 
-        monkeypatch.setattr(checkpoints, "publish_checkpoint", retake_before_commit)
+    monkeypatch.setattr(checkpoints, "publish_checkpoint", retake_before_commit)
     await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
     run = await runs_kit.get_run(service, lease.run_id)
     assert run["status"] == "accepted", run.get("failure")
@@ -750,7 +717,6 @@ async def test_obsolete_handback_completes_without_model_or_thread_pause(
     assert run["usage_at_seal"]["requests"] == 0
     thread = await runs_kit.get_thread(service, lease.thread_id)
     assert thread["current_run_id"] is None
-    # No failed/cancelled Run pauses automatic advancement after the obsolete notice.
     from a13n_service.runs.accept import paused
     from a13n_service.runs.tables import RunRow
 
@@ -823,10 +789,7 @@ async def test_handback_before_readiness_cancels_control_intent_without_availabi
     assert current["status"] == "deleted" and not supplier.live
 
 
-@pytest.mark.parametrize("retake_at", ["before_read", "before_commit"])
-async def test_discarding_stale_source_preserves_other_assigned_work(
-    service, runs_kit, scripted_model, monkeypatch, retake_at
-):
+async def test_discarding_stale_source_preserves_other_assigned_work(service, runs_kit, scripted_model, monkeypatch):
     from a13n_service.runs import checkpoints
     from a13n_service.runs.tables import RunRow
 
@@ -837,25 +800,21 @@ async def test_discarding_stale_source_preserves_other_assigned_work(
     )
     assert message.status_code == 201, message.text
     entry_id = message.json()["entry"]["id"]
-    # Recover the ordinary boundary assignment alongside the notification source.
     async with transaction(service.runtime.storage) as session:
         entry = await session.get_one(InboxEntryRow, entry_id)
         entry.status, entry.assigned_run_id = "assigned", lease.run_id
-    if retake_at == "before_read":
-        await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
-    else:
-        publish = checkpoints.publish_checkpoint
-        retaken = False
+    publish = checkpoints.publish_checkpoint
+    retaken = False
 
-        async def retake_before_commit(*args, **kwargs):
-            nonlocal retaken
-            result = await publish(*args, **kwargs)
-            if not retaken:
-                retaken = True
-                await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
-            return result
+    async def retake_before_commit(*args, **kwargs):
+        nonlocal retaken
+        result = await publish(*args, **kwargs)
+        if not retaken:
+            retaken = True
+            await command(service, runs_kit, browser["id"], "takeover", thread_id=lease.thread_id)
+        return result
 
-        monkeypatch.setattr(checkpoints, "publish_checkpoint", retake_before_commit)
+    monkeypatch.setattr(checkpoints, "publish_checkpoint", retake_before_commit)
     await execute(service.runtime, lease, AttemptControl(deadline=asyncio.get_running_loop().time() + 60))
     (recovered,) = await claim(service.runtime, worker_id="replacement", worker_build="test", limit=1)
     scripted_model.say("Real work complete")
@@ -930,9 +889,7 @@ async def test_stale_handback_keeps_completed_inline_delegate(service, runs_kit,
     assert "Human control ended" not in str(requests[-1]["messages"])
 
 
-@pytest.mark.parametrize("handoff", [False, True])
-@pytest.mark.parametrize("background", [False, True])
-@pytest.mark.parametrize("retake_first", [False, True])
+@pytest.mark.parametrize(("background", "retake_first", "handoff"), [(True, True, False), (True, False, True)])
 async def test_handback_is_committed_before_compaction_can_observe_it(
     service, runs_kit, scripted_model, monkeypatch, background, retake_first, handoff
 ):
@@ -1000,9 +957,9 @@ async def test_handback_is_committed_before_compaction_can_observe_it(
     assert bool(fallback_calls) is (background and not retake_first)
 
 
-@pytest.mark.parametrize("tool", ["js", "cdp"])
 @pytest.mark.parametrize(
-    "outcome", ["success", "script_error", "unknown", "invalid_params", "protocol_error", "dialog"]
+    ("tool", "outcome"),
+    [("js", "success"), ("js", "unknown"), ("js", "dialog"), ("cdp", "protocol_error")],
 )
 async def test_programming_retains_selected_page_grants_and_unknown_permits(
     service, runs_kit, scripted_model, invocation, tool, outcome

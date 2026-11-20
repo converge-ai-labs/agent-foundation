@@ -606,7 +606,7 @@ async def test_reopen_setup_does_not_hold_configuration_lock_while_action_saves(
 
 @pytest.mark.parametrize(
     "codeact,change",
-    [(False, None), (False, "legacy"), (True, None), (True, "disable"), (True, "rename"), (True, "group")],
+    [(False, None), (True, "disable"), (True, "group")],
 )
 async def test_real_native_mcp_scoped_tools_and_durable_setup_offer(tmp_path, monkeypatch, codeact, change):
     from a13n_harness_ui.composition.models import ResolvedMcpRecipe

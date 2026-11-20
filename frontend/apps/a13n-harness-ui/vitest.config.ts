@@ -2,8 +2,8 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // Local measurements favor threads; preserve the existing CI pool.
-    pool: process.env.CI ? "forks" : "threads",
+    // Threads share one process; forks re-load every dependency per worker.
+    pool: "threads",
     // Bound concurrent jsdom initialization so focus/readiness checks retain
     // their normal deadlines; also leave capacity for real Python App fixtures.
     maxWorkers: 4,

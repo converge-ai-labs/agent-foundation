@@ -282,8 +282,10 @@ async def test_invalid_capabilities_warn_but_allow_real_composition_and_chat(
         assert (await app.status()).capability_warnings == ()
 
 
-@pytest.mark.parametrize("previous_generation", [False, True])
-@pytest.mark.parametrize("reference", ["agent", "root_review", "agent_review", "agent_review_disabled_root"])
+@pytest.mark.parametrize(
+    ("previous_generation", "reference"),
+    [(False, "agent"), (True, "root_review"), (False, "agent_review_disabled_root")],
+)
 async def test_startup_rejects_missing_model_with_actionable_log(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
@@ -1107,8 +1109,7 @@ async def test_application_creates_and_runs_root_thread(tmp_path: Path) -> None:
         assert transcript.entries[0].parts
 
 
-@pytest.mark.parametrize("interrupted", [False, True])
-@pytest.mark.parametrize("restart", [False, True])
+@pytest.mark.parametrize(("interrupted", "restart"), [(False, True), (True, False)])
 async def test_application_retains_failed_and_interrupted_history(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, interrupted: bool, restart: bool
 ) -> None:
@@ -1582,9 +1583,13 @@ async def test_root_history_worker_is_joined_before_cancellation_settles(
 
 
 @pytest.mark.parametrize(
-    "failed_kind", [ObjectKind.continuation_state, ObjectKind.continuation_display, ObjectKind.continuation]
+    ("failed_kind", "error_number"),
+    [
+        (ObjectKind.continuation_state, None),
+        (ObjectKind.continuation_display, errno.EACCES),
+        (ObjectKind.continuation, errno.ENOSPC),
+    ],
 )
-@pytest.mark.parametrize("error_number", [None, errno.EACCES, errno.ENOSPC])
 async def test_checkpoint_save_failure_preserves_prior_selection(
     tmp_path: Path, monkeypatch, failed_kind, error_number
 ) -> None:

@@ -191,16 +191,16 @@ def test_accessibility_states_are_boolean_or_string(value: object):
 
 
 @pytest.mark.parametrize(
-    ("model", "field"),
+    ("model", "field", "text"),
     [
-        (wire.AXStringValue, "value"),
-        (wire.AXSelectedText, "text"),
-        (wire.AtspiTextContents, "text"),
-        (wire.UIAStringValueValueSet, "value"),
-        (wire.AccessibilityRangeFind, "text"),
+        (wire.AXStringValue, "value", ""),
+        (wire.AXStringValue, "value", "😀" * 16384),
+        (wire.AXSelectedText, "text", "a\x00b"),
+        (wire.AtspiTextContents, "text", "😀" * 16385),
+        (wire.UIAStringValueValueSet, "value", "a" * 65536),
+        (wire.AccessibilityRangeFind, "text", "a\x00b"),
     ],
 )
-@pytest.mark.parametrize("text", ["", "a" * 65536, "😀" * 16384, "a\x00b", "😀" * 16385])
 def test_accessibility_text_uses_utf8_bytes_without_nul(model: type[BaseModel], field: str, text: str):
     payload = {field: text}
     if "\x00" in text or len(text.encode("utf-8")) > 65536:

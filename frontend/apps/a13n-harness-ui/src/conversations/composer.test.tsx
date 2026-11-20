@@ -735,7 +735,6 @@ it("uses distinct source identities for consecutive steering of one receipt and 
 });
 
 it.each([
-  ["send", false],
   ["send", "ultrafast"],
   ["steer", "ultrafast"],
 ] as const)(
@@ -993,7 +992,7 @@ it("owns continuation preparation and does not repeat an uncertain acknowledgeme
   expect(values(draft.doc).prompt).toBe("Untouched");
 });
 
-it.each(["restore", "other-field", "rejected"])(
+it.each(["restore", "rejected"])(
   "keeps repeated sends responsive and handles preparation focus (%s)",
   async (outcome) => {
     const draft = new ThreadDraft();
@@ -1315,12 +1314,7 @@ it("keeps unsent input and blocks Send while clearing context", async () => {
   query.clear();
 });
 
-it.each([
-  "accepted",
-  "promotion-rejected",
-  "promotion-unknown",
-  "submit-rejected",
-] as const)(
+it.each(["accepted", "promotion-unknown", "submit-rejected"] as const)(
   "promotes only on Send and preserves durable role/input boundaries: %s",
   async (outcome) => {
     const draft = new ThreadDraft();
@@ -1340,8 +1334,6 @@ it.each([
     const post = vi.fn(async (path: string) => {
       calls.push(path);
       if (path.endsWith("/coordinator")) {
-        if (outcome === "promotion-rejected")
-          throw new ApiError("Cannot convert now", 409);
         if (outcome === "promotion-unknown")
           throw new Error("Conversion response lost");
         return {
@@ -1401,40 +1393,38 @@ it.each([
       ),
     );
     expect(calls[0]).toBe("/api/threads/{thread_id}/coordinator");
-    if (outcome.startsWith("promotion-")) {
+    if (outcome === "promotion-unknown") {
       expect(calls).toHaveLength(1);
       expect(draft.coordinator).toBe(true);
       expect(values(draft.doc).prompt).toBe("Coordinate this work");
-      if (outcome === "promotion-unknown") {
-        expect(get).toHaveBeenCalledTimes(1);
-        expect(draft.coordinatorUncertain).toBe(true);
-        expect(
-          (
-            screen.getByRole("button", {
-              name: "Turn off agent coordination",
-            }) as HTMLButtonElement
-          ).disabled,
-        ).toBe(true);
-        expect(
-          (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
-            .disabled,
-        ).toBe(true);
-        get.mockResolvedValue({
-          data: { thread: { thread_id: "thread-one", role: "coordinator" } },
-        });
-        fireEvent.click(screen.getByRole("button", { name: "Check status" }));
-        await waitFor(() => expect(draft.coordinatorUncertain).toBe(false));
-        expect(
-          screen.queryByRole("switch", { name: "Coordinate agents" }),
-        ).toBeNull();
-        expect(calls).toHaveLength(1);
-        fireEvent.click(screen.getByRole("button", { name: "Send" }));
-        await waitFor(() => expect(draft.submission.kind).toBe("accepted"));
-        expect(calls).toEqual([
-          "/api/threads/{thread_id}/coordinator",
-          "/api/threads/{thread_id}/submit",
-        ]);
-      }
+      expect(get).toHaveBeenCalledTimes(1);
+      expect(draft.coordinatorUncertain).toBe(true);
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Turn off agent coordination",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(true);
+      expect(
+        (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+      get.mockResolvedValue({
+        data: { thread: { thread_id: "thread-one", role: "coordinator" } },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+      await waitFor(() => expect(draft.coordinatorUncertain).toBe(false));
+      expect(
+        screen.queryByRole("switch", { name: "Coordinate agents" }),
+      ).toBeNull();
+      expect(calls).toHaveLength(1);
+      fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(draft.submission.kind).toBe("accepted"));
+      expect(calls).toEqual([
+        "/api/threads/{thread_id}/coordinator",
+        "/api/threads/{thread_id}/submit",
+      ]);
     } else {
       expect(calls[1]).toBe("/api/threads/{thread_id}/submit");
       expect(

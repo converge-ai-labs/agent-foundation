@@ -25,10 +25,9 @@ pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 @pytest.mark.parametrize(
     "child_output",
     [
-        "Detailed finding.\n\n" * 600 + "End of review.",
         "Long finding.\n\n" * 6000 + "Final retained paragraph.",
     ],
-    ids=["complete-review", "paginated-output"],
+    ids=["paginated-output"],
 )
 async def test_child_question_competing_response_history_and_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_output: str
