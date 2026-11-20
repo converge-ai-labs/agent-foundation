@@ -20,15 +20,15 @@ from a13n_service.runs.accept import Source, start_run
 from a13n_service.runs.attachments import asset_fields
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Pending, Resume, Returned, RunView, canonical_json
+from a13n_service.runs.schemas import Pending, Resume, Returned, RunView, canonical_json, require_output_size
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.threads import get_run, get_thread, require_open
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import Principal
 
 
-def normalize(pending: Pending, request: Resume) -> Resume:
-    """Validate exact category coverage and normalize built-in question values; never infer decisions."""
+def normalize(pending: Pending, request: Resume, *, output_bytes: int) -> Resume:
+    """Validate receipt coverage and values before admitting a successor."""
     for category, items, results in (
         ("approvals", pending.approvals, request.approvals),
         ("calls", pending.calls, request.calls),
@@ -55,7 +55,11 @@ def normalize(pending: Pending, request: Resume) -> Resume:
     calls = dict(request.calls)
     for item in pending.calls:
         result = calls[item.tool_call_id]
-        if not item.terminal and item.tool_name == "ask_user_question" and isinstance(result, Returned):
+        if not isinstance(result, Returned):
+            continue
+        if item.terminal:
+            require_output_size(result.value, output_bytes)
+        elif item.tool_name == "ask_user_question":
             try:
                 value = validate_user_question_result(item.arguments, result.value)
             except ValueError as error:
@@ -101,7 +105,9 @@ async def resume(
                 if found := await _replay(session, scope.workspace_id, actor, request_key, digest):
                     return await run_view(session, found), False
                 raise conflict("run", waiting.id, "not_idle_waiting_head")
-            answers = normalize(Pending.model_validate(waiting.pending), request)
+            answers = normalize(
+                Pending.model_validate(waiting.pending), request, output_bytes=runtime.settings.worker.output_bytes
+            )
             if answers.input is not None:
                 await require_usable(session, scope.workspace_id, asset_fields(answers.input))
             source = await Source.inherited(
