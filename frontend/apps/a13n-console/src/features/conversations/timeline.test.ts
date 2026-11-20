@@ -124,6 +124,20 @@ it("treats later user text as guidance and never the Run input", () => {
   ).toBe(false);
 });
 
+it.each([{ speech: true }, { messageId: "run-abc:speech:6" }])(
+  "displays the first spoken transcript as guidance (%o)",
+  (speech) => {
+    const { entries } = timeline(
+      message("speech", "user", { text: "Read it back.", ...speech }),
+      text("reply", "assistant", "Okay."),
+    );
+    expect(entries[0]).toMatchObject({
+      kind: "guidance",
+      text: "Read it back.",
+    });
+  },
+);
+
 it("reads guidance before the request that read it", () => {
   const { entries } = timeline(
     text("input", "user", "Which colour is the banner?"),

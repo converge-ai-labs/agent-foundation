@@ -30,6 +30,7 @@ from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.schema import model_schema
 from a13n_service.providers.browser.definition import BrowserProviderDefinition
 from a13n_service.providers.environment.definition import EnvironmentManagementDefinition
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.providers.registry import ProviderKind, RegisteredProvider, Registry, web_operations
 from a13n_service.resources.providers.probe import probe, supports_probe
 from a13n_service.resources.providers.schemas import (
@@ -473,6 +474,11 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
         described.default_model_api = apis[0]
         described.model_api_labels = {api: MODEL_APIS[api].display_name for api in apis}
         described.settings_schemas = {api: dict(registry.model_settings[api]) for api in apis}
+        for api, protocol in PROTOCOLS.items():
+            if protocol.provider == definition.type:
+                described.model_apis.append(api)
+                described.model_api_labels[api] = protocol.label
+                described.settings_schemas[api] = {"type": "object", "properties": {}, "additionalProperties": False}
         described.catalog_providers = list(definition.catalog_providers)
     elif isinstance(definition, WebProviderDefinition):
         described.operations = list(web_operations(definition))

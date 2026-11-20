@@ -25,9 +25,13 @@ from a13n_stream_protocol.display import (
 from a13n_stream_protocol.display import (
     DisplayFold as SemanticDisplayFold,
 )
+from a13n_stream_protocol.fragments import fragment_custom_event
+from a13n_stream_protocol.realtime import transcript_event
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic_ai.messages import PartStartEvent, RealtimeTurnCompleteEvent, SpeechPart
 
 from a13n_service.runs.contents import ContentObject
+from a13n_service.runs.realtime_transcript import LiveTranscripts
 from a13n_service.runs.search import SearchState
 
 # Re-export existing Service imports while keeping the semantic contract shared.
@@ -100,6 +104,7 @@ class DisplayFold(SemanticDisplayFold):
         page_items: int,
         page_bytes: int,
         memory_ids: Mapping[str, str] | None = None,
+        group_live_user_speech: bool = False,
     ):
         super().__init__(
             run_id,
@@ -117,8 +122,30 @@ class DisplayFold(SemanticDisplayFold):
         self.page_items, self.page_bytes = page_items, page_bytes
         self.paged: set[str] = set()
         self.sizes: dict[str, int] = {}
+        self.revisable_speech: int | None = None
+        self.live_transcripts = LiveTranscripts(group_user_speech=True) if group_live_user_speech else None
 
     def events(self, source: HarnessStreamEvent[Any]) -> list[dict[str, Any]]:
+        if isinstance(source, HarnessEvent):
+            event = source.event
+            if isinstance(event, RealtimeTurnCompleteEvent):
+                self.revisable_speech = None
+            elif (
+                self.revisable_speech is None
+                and isinstance(event, PartStartEvent)
+                and isinstance(event.part, SpeechPart)
+                and (event.part.speaker == "assistant" or self.live_transcripts is not None)
+            ):
+                # Native speech can be revised or grouped until the exchange settles.
+                self.revisable_speech = self.next
+            if self.live_transcripts is not None and source.run_id == (self.observer.run_id or source.run_id):
+                update = self.live_transcripts.observe(source)
+                if update is not None and update["role"] == "user":
+                    frames = fragment_custom_event(
+                        transcript_event(source, update),
+                        identity=f"{source.thread_id}:{source.run_id}:{source.sequence}:0",
+                    )
+                    return [frame.model_dump(mode="json", by_alias=True) for frame in frames]
         if isinstance(source, HarnessEvent) and isinstance(source.event, HarnessExtensionEvent):
             event = source.event
             if (
@@ -143,6 +170,7 @@ class DisplayFold(SemanticDisplayFold):
 
     def interrupt(self, open_calls: Collection[str] = ()) -> None:
         """Host terminal/retry policy, separate from pure checkpoint capture."""
+        self.revisable_speech = None
         kept = {item_id(self.run_id, "tool_call", call) for call in open_calls}
         for key, item in self.items.items():
             if item.state == "in_progress" and key not in kept:
@@ -160,6 +188,8 @@ class DisplayFold(SemanticDisplayFold):
         pages: list[Page] = []
         start, size = 0, 0
         for end, item in enumerate(items, 1):
+            if self.revisable_speech is not None and item.ordinal >= self.revisable_speech:
+                break
             if item.state == "in_progress" or (
                 self.arguments is not None
                 and item.id == self.arguments.key

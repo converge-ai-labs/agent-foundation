@@ -148,7 +148,8 @@ async def test_live_closes_with_one_terminal_result_and_portable_speech() -> Non
         AgentDefinition(output_type=str, agent=AgentSpec(instructions="Work carefully."))
     )
     model = _Model()
-    live = executable.live(model=model)
+    assert executable.live == executable.realtime
+    live = executable.realtime(model=model)
     assert not model.opened
     async with live:
         assert model.opened
@@ -178,7 +179,7 @@ async def test_live_closes_with_one_terminal_result_and_portable_speech() -> Non
 async def test_live_cancel_is_distinct_from_close() -> None:
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
-    async with executable.live(model=model) as live:
+    async with executable.realtime(model=model) as live:
         live.cancel()
         events = [event async for event in live]
     assert model.closed
@@ -189,7 +190,7 @@ async def test_live_cancel_is_distinct_from_close() -> None:
 async def test_live_usage_limit_result_includes_settled_usage() -> None:
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
-    async with executable.live(model=model, usage_limits=UsageLimits(output_tokens_limit=1)) as live:
+    async with executable.realtime(model=model, usage_limits=UsageLimits(output_tokens_limit=1)) as live:
         await model.connection.events.put(OutputTranscript("Welcome", is_final=True))
         await model.connection.events.put(SessionUsage(RequestUsage(input_tokens=3, output_tokens=2)))
         await model.connection.events.put(ResponseDone())
@@ -212,7 +213,7 @@ async def test_live_usage_limit_result_includes_settled_usage() -> None:
 async def test_live_early_exit_closes_without_terminal_receipt() -> None:
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
-    async with executable.live(model=model) as live:
+    async with executable.realtime(model=model) as live:
         await live.send("Keep this input", respond=False)
     assert model.closed
     assert live.result is None
@@ -267,7 +268,7 @@ async def test_live_tool_result_preserves_content_and_refreshes_context_before_s
         )
     )
     model = _Model()
-    async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
+    async with executable.realtime(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
         consume = asyncio.create_task(_collect(live))
         assert isinstance(model.messages[-1], ModelRequest)
         assert "Live context 1" in (model.messages[-1].instructions or "")
@@ -323,7 +324,7 @@ async def test_live_approval_resolves_inline_without_executing_denied_tool(appro
     )
     model = _Model()
     projection = _ContextProjection()
-    async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
+    async with executable.realtime(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
         consume = asyncio.create_task(_collect(live))
         call = asyncio.create_task(_call(model, "change", '{"value": 21}'))
         await waiting.wait()
@@ -363,7 +364,7 @@ async def test_live_cancellation_unwinds_waiting_approval() -> None:
         )
     )
     model = _Model()
-    async with executable.live(model=model) as live:
+    async with executable.realtime(model=model) as live:
         consume = asyncio.create_task(_collect(live))
         await model.connection.events.put(ToolCall("call-1", tool_name="change", args="{}"))
         await waiting.wait()
@@ -387,7 +388,7 @@ async def test_live_codeact_directory_and_stored_state_survive_new_run() -> None
         )
     )
     model = _Model()
-    async with executable.live(model=model) as first:
+    async with executable.realtime(model=model) as first:
         consume = asyncio.create_task(_collect(first))
         assert isinstance(model.messages[-1], ModelRequest)
         assert "double" in (model.messages[-1].instructions or "")
@@ -401,7 +402,7 @@ async def test_live_codeact_directory_and_stored_state_survive_new_run() -> None
         await consume
     state = HarnessState.model_validate_json((await first.export_state()).model_dump_json())
     resumed_model = _Model()
-    async with executable.live(model=resumed_model, previous_state=state) as second:
+    async with executable.realtime(model=resumed_model, previous_state=state) as second:
         consume = asyncio.create_task(_collect(second))
         assert second.thread_id == first.thread_id and second.run_id != first.run_id
         assert second.context is not first.context
@@ -418,7 +419,7 @@ async def test_live_audio_playback_is_separate_from_semantic_events(retention: s
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
     observed = []
-    async with executable.live(
+    async with executable.realtime(
         model=model, audio_retention=retention, bindings=RunBindings.embedded(producer_observer=observed.append)
     ) as live:
         audio = asyncio.create_task(_collect(live.stream_audio()))
@@ -464,7 +465,7 @@ async def test_live_connect_failure_closes_and_retains_checkpoint() -> None:
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
     model.connect_error = RuntimeError("connection rejected")
-    live = executable.live(model=model)
+    live = executable.realtime(model=model)
     with pytest.raises(RuntimeError, match="connection rejected"):
         async with live:
             raise AssertionError("connection must not succeed")
@@ -496,7 +497,7 @@ async def test_live_external_result_refreshes_context_before_send() -> None:
         )
     )
     model = _Model()
-    async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
+    async with executable.realtime(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
         consume = asyncio.create_task(_collect(live))
         result = await _call(model, "lookup")
         assert "external answer" in result.output
@@ -538,7 +539,7 @@ async def test_live_external_retry_preserves_native_control_signal(retry: RetryP
         )
     )
     model = _Model()
-    async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
+    async with executable.realtime(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
         consume = asyncio.create_task(_collect(live))
         result = await _call(model, "lookup")
         assert result.output == '{"error":"Try a different query"}'
@@ -572,7 +573,7 @@ async def test_live_missing_approval_handler_fails_tool_without_executing_it() -
         )
     )
     model = _Model()
-    async with executable.live(model=model) as live:
+    async with executable.realtime(model=model) as live:
         consume = asyncio.create_task(_collect(live))
         result = await _call(model, "change")
         assert "requires approval" in result.output and "cannot be completed" in result.output
@@ -584,7 +585,7 @@ async def test_live_missing_approval_handler_fails_tool_without_executing_it() -
 async def test_live_active_export_includes_sent_input_without_waiting_for_provider() -> None:
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
-    async with executable.live(model=model) as live:
+    async with executable.realtime(model=model) as live:
         await live.send("Keep this active input", respond=False)
         state = await live.export_state()
         assert "Keep this active input" in state.model_dump_json()
@@ -595,7 +596,7 @@ async def test_live_failed_connection_close_has_no_success_receipt() -> None:
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
     model.close_error = RuntimeError("close failed")
-    live = executable.live(model=model)
+    live = executable.realtime(model=model)
     with pytest.raises(RuntimeError, match="close failed"):
         async with live:
             await live.send("Keep input after close failure", respond=False)
@@ -608,7 +609,7 @@ async def test_live_failed_connection_close_has_no_success_receipt() -> None:
 async def test_live_interrupt_truncates_before_cancel_without_ending_run() -> None:
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
-    async with executable.live(model=model) as live:
+    async with executable.realtime(model=model) as live:
         await live.interrupt(played_ms=120)
         truncate = await model.connection.sent.get()
         assert isinstance(truncate, TruncateOutput) and truncate.audio_end_ms == 120
@@ -622,7 +623,7 @@ async def test_live_interrupt_truncates_before_cancel_without_ending_run() -> No
 async def test_live_fatal_provider_error_keeps_checkpoint_without_success() -> None:
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
-    live = executable.live(model=model)
+    live = executable.realtime(model=model)
     with pytest.raises(RealtimeError, match="provider failed"):
         async with live:
             await live.send("Retain before failure", respond=False)
@@ -660,7 +661,7 @@ async def test_live_active_export_does_not_consume_usage_limit_failure() -> None
     model = _Model()
     async with (
         asyncio.timeout(5),
-        executable.live(model=model, usage_limits=UsageLimits(cost_limit=Decimal("0.1"))) as live,
+        executable.realtime(model=model, usage_limits=UsageLimits(cost_limit=Decimal("0.1"))) as live,
     ):
         consume = asyncio.create_task(_collect(live))
         await model.connection.events.put(OutputTranscript("Answer", is_final=True))
@@ -700,7 +701,7 @@ async def test_live_reports_usage_while_active_without_double_counting_or_baseli
     model = _Model()
     reporter = _Reporter()
     baseline = RunUsage(input_tokens=100, requests=2)
-    async with executable.live(
+    async with executable.realtime(
         model=model, usage=baseline, bindings=RunBindings.embedded(usage_reporter=reporter)
     ) as live:
         await model.connection.events.put(OutputTranscript("One", is_final=True))
@@ -724,7 +725,7 @@ async def test_live_reports_usage_while_active_without_double_counting_or_baseli
 async def test_live_session_only_usage_is_exposed_without_fabricating_response_records() -> None:
     executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec()))
     model = _Model()
-    async with executable.live(model=model) as live:
+    async with executable.realtime(model=model) as live:
         await model.connection.events.put(
             SessionUsage(RequestUsage(details={"input_transcription_tokens": 7}), response_scoped=False)
         )
@@ -762,7 +763,7 @@ async def test_live_permission_deny_prevents_tool_execution() -> None:
         )
     )
     model = _Model()
-    async with executable.live(model=model) as live:
+    async with executable.realtime(model=model) as live:
         consume = asyncio.create_task(_collect(live))
         result = await _call(model, "change")
         assert "denied" in result.output.lower()
@@ -788,7 +789,7 @@ async def test_live_plugin_cleanup_failure_withholds_terminal_result() -> None:
         AgentDefinition(output_type=str, agent=AgentSpec(), plugins=(_CleanupFailurePlugin(),))
     )
     model = _Model()
-    live = executable.live(model=model)
+    live = executable.realtime(model=model)
     events = []
     with pytest.raises(RunCleanupError) as failure:
         async with live:
@@ -815,7 +816,7 @@ async def test_live_snapshot_delivery_uses_confirmed_connection_context(repeat) 
     )
     model = _Model()
     delivered = asyncio.Queue()
-    async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
+    async with executable.realtime(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
 
         async def consume():
             async for event in live:

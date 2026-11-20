@@ -3364,6 +3364,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/realtime": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Realtime Availability
+     * @description Report browser realtime input for the selected Agent and Thread.
+     */
+    get: operations["realtime_availability"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs": {
     parameters: {
       query?: never;
@@ -7018,6 +7038,8 @@ export interface components {
       characteristics: components["schemas"]["HarnessModelCharacteristics-Output"];
       /** Identity */
       identity: string;
+      /** Model Api */
+      model_api?: string | null;
       /** Name */
       name: string;
       pricing: components["schemas"]["ModelPricingEntry-Output"] | null;
@@ -12935,6 +12957,26 @@ export interface components {
     };
     /** @enum {string} */
     ReadView: "detailed" | "compact";
+    /** RealtimeAvailability */
+    RealtimeAvailability: {
+      /**
+       * Accepts Text
+       * @default false
+       */
+      accepts_text?: boolean;
+      /**
+       * Can Start
+       * @default false
+       */
+      can_start?: boolean;
+      /**
+       * Realtime
+       * @default false
+       */
+      realtime?: boolean;
+      /** Reason */
+      reason?: string | null;
+    };
     /** RecipeOverrides */
     RecipeOverrides: {
       /** Volume Mounts */
@@ -23755,6 +23797,35 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ProviderTypePage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  realtime_availability: {
+    parameters: {
+      query: {
+        agent_id: string;
+        agent_revision_id?: string | null;
+        thread_id?: string | null;
+      };
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RealtimeAvailability"];
         };
       };
       400: components["responses"]["Error"];

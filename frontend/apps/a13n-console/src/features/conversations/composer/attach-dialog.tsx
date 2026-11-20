@@ -48,6 +48,7 @@ export function AttachDialog({
           type="button"
           variant="ghost"
           size="icon-sm"
+          disabled={disabled}
           aria-label={t("Attach file or URL")}
         >
           <PaperclipIcon size={16} />

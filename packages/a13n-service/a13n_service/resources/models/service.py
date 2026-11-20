@@ -25,6 +25,7 @@ from a13n_service.infra.errors import disabled, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import KEY_MAX_LENGTH, new_object_id
 from a13n_service.providers.model_settings import check_request_headers, effective_settings
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.models.schemas import (
     Model,
@@ -273,6 +274,12 @@ def model_settings(
 ) -> ModelSettings:
     """Compose and check the settings of one live Model/Provider, without revealing any secrets."""
     definition = registry.get("model", provider.type)
+    if (protocol := PROTOCOLS.get(config.model_api)) is not None:
+        if protocol.provider != definition.type:
+            raise invalid("config.model_api", f"{config.model_api} requires a {protocol.provider} provider")
+        if config.defaults() or settings:
+            raise invalid(field, "Realtime models currently use their provider defaults")
+        return {}
     _check_api(definition, config)
     effective = registry.check_model_settings(
         config.model_api, effective_settings(config.model_api, config.defaults(), settings), field=field

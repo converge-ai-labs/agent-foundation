@@ -25,6 +25,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `server.request_timeout`   | `A13N_SERVER__REQUEST_TIMEOUT`   | 数值          | maximum=60; exclusiveMinimum=0; default=10      |
 | `server.readiness_timeout` | `A13N_SERVER__READINESS_TIMEOUT` | 数值          | maximum=30; exclusiveMinimum=0; default=2       |
 | `server.shutdown_timeout`  | `A13N_SERVER__SHUTDOWN_TIMEOUT`  | 整数          | minimum=1; maximum=300; default=15              |
+| `server.realtime_preview`  | `A13N_SERVER__REALTIME_PREVIEW`  | 布尔值        | default=false                                   |
 | `server.tls_certificate`   | `A13N_SERVER__TLS_CERTIFICATE`   | 字符串或 null | format="path"; default=null                     |
 | `server.tls_key`           | `A13N_SERVER__TLS_KEY`           | 字符串或 null | format="path"; default=null                     |
 

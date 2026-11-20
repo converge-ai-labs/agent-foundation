@@ -8,6 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
+import { RealtimeComposer } from "../realtime";
 import { Composer } from "./composer";
 
 vi.mock("../../../auth/context", () => ({
@@ -98,4 +99,32 @@ it("retains message and attachment drafts when closing the attachment dialog", a
     type: "url",
     url: "https://example.com/report.pdf",
   });
+});
+
+it("replaces the realtime send arrow with the voice action only while the draft is empty", () => {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <RealtimeComposer
+        agentId="agent"
+        availability={{ realtime: true, can_start: true, accepts_text: true }}
+        onFinished={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+  const input = screen.getByRole("textbox", { name: "Message" });
+  expect(input).toBeInstanceOf(HTMLTextAreaElement);
+  const voice = screen.getByRole("button", { name: "Start voice chat" });
+  expect(voice.closest("form")).toBe(input.closest("form"));
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+
+  fireEvent.change(input, { target: { value: "Typed input" } });
+  const send = screen.getByRole("button", { name: "Send" });
+  expect(send.className).toBe(voice.className);
+  expect((send as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Start voice chat" })).toBeNull();
+
+  fireEvent.change(input, { target: { value: "" } });
+  expect(
+    screen.getByRole("button", { name: "Start voice chat" }).className,
+  ).toBe(send.className);
 });

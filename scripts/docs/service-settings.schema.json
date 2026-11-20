@@ -2338,6 +2338,11 @@
           "title": "Shutdown Timeout",
           "type": "integer"
         },
+        "realtime_preview": {
+          "default": false,
+          "title": "Realtime Preview",
+          "type": "boolean"
+        },
         "tls_certificate": {
           "anyOf": [
             {

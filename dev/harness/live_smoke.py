@@ -41,7 +41,7 @@ async def main(model_name: str) -> None:
         )
     )
     terminals = 0
-    async with asyncio.timeout(60), executable.live(model=OpenAIRealtimeModel(model_name)) as live:
+    async with asyncio.timeout(60), executable.realtime(model=OpenAIRealtimeModel(model_name)) as live:
         async with asyncio.TaskGroup() as tasks:
             audio = tasks.create_task(drain_audio(live))
             await live.send("Use double to calculate twice 21, then say the answer.", respond=True)

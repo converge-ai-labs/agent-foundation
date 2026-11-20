@@ -2,7 +2,7 @@
 
 ## Design Position
 
-`a13n_harness.models.codex_live` provides a reusable subscription-authenticated voice-session factory inside Harness. It owns Codex WebRTC bootstrap, the server-side control connection, and typed client-delegation events. The embedding Host owns the media peer, Agent execution, persistence, and presentation. This factory is separate from native request Models and `ExecutableAgent.live()`; it does not introduce another Agent loop.
+`a13n_harness.models.codex_live` provides a reusable subscription-authenticated voice-session factory inside Harness. It owns Codex WebRTC bootstrap, the server-side control connection, and typed client-delegation events. The embedding Host owns the media peer, Agent execution, persistence, and presentation. This factory is separate from native request Models and `ExecutableAgent.realtime()`; it does not introduce another Agent loop.
 
 ## Authentication and Connection
 

@@ -25,6 +25,7 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `server.request_timeout`   | `A13N_SERVER__REQUEST_TIMEOUT`   | number          | maximum=60; exclusiveMinimum=0; default=10      |
 | `server.readiness_timeout` | `A13N_SERVER__READINESS_TIMEOUT` | number          | maximum=30; exclusiveMinimum=0; default=2       |
 | `server.shutdown_timeout`  | `A13N_SERVER__SHUTDOWN_TIMEOUT`  | integer         | minimum=1; maximum=300; default=15              |
+| `server.realtime_preview`  | `A13N_SERVER__REALTIME_PREVIEW`  | boolean         | default=false                                   |
 | `server.tls_certificate`   | `A13N_SERVER__TLS_CERTIFICATE`   | string or null  | format="path"; default=null                     |
 | `server.tls_key`           | `A13N_SERVER__TLS_KEY`           | string or null  | format="path"; default=null                     |
 

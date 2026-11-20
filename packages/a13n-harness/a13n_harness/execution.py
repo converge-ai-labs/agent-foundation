@@ -301,7 +301,7 @@ class ExecutableAgent[OutputT]:
             usage_limits=usage_limits,
         )
 
-    def live(
+    def realtime(
         self,
         *,
         model: RealtimeModel,
@@ -329,3 +329,6 @@ class ExecutableAgent[OutputT]:
             usage=usage,
             usage_limits=usage_limits,
         )
+
+    # Compatibility alias for callers of the original public entry point.
+    live = realtime

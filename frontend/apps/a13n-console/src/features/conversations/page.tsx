@@ -59,6 +59,7 @@ import { SessionMemoryControl } from "./composer/session-memory";
 import { PreviewFileContext } from "./files/selection";
 import type { FileReference } from "./files/assets";
 import styles from "./conversations.module.css";
+import { RealtimeComposer, useRealtimeAvailability } from "./realtime";
 
 const FilesPanel = lazy(() => import("./files/panel"));
 
@@ -193,6 +194,11 @@ export function NewConversation() {
     selected?.preset_kind === "composer" ? selected.id : undefined,
     options.revision || selected?.default_revision_id,
   );
+  const revisionId = options.build().agent_revision_id;
+  const realtime = useRealtimeAvailability({
+    agentId: selected?.id,
+    revisionId,
+  });
   return (
     <div className={styles.startPage}>
       <div className={styles.startColumn}>
@@ -229,87 +235,112 @@ export function NewConversation() {
             },
           ]}
         />
-        <Composer
-          initial={
-            message ? { content: [{ type: "text", text: message }] } : undefined
-          }
-          disabled={!can("run") || !selected}
-          submitDisabled={memory !== null && !validSpaceSelection(memory)}
-          agentName={selected?.name}
-          options={
-            <>
-              <RunOptions
-                options={options}
-                showAgent={false}
-                agentId={agentId}
-                defaultEnvironment={defaultEnvironment}
-              />
-              {can("run") && (
-                <SessionMemoryControl
-                  value={memory}
-                  onChange={setMemory}
-                  locked={memoryLocked}
-                />
-              )}
-            </>
-          }
-          submit={async (payload) => {
-            const { environment, ...choice } = options.build();
-            if (!selected) return;
-            if (
-              !choice.agent_revision_id &&
-              prepared.current.agentId !== agentId
-            ) {
-              if (
-                await prepareConversationAgent(
-                  client,
-                  workspace.id,
-                  selected,
-                  can("write"),
-                )
-              ) {
-                void cache.invalidateQueries({
-                  queryKey: ["agents", workspace.id],
-                });
-                void cache.invalidateQueries({
-                  queryKey: ["agent-picker", workspace.id],
-                });
-              }
-              prepared.current.agentId = agentId;
+        {realtime?.realtime ? (
+          <RealtimeComposer
+            key={agentId}
+            agentId={agentId}
+            agentName={selected?.name}
+            revisionId={revisionId}
+            initial={
+              message
+                ? { content: [{ type: "text", text: message }] }
+                : undefined
             }
-            const body = {
-              ...choice,
-              agent_id: agentId,
-              payload,
-              session_id: (await consoleSession()).id,
-              environments: environment
-                ? [await primaryMount(environment)]
-                : [],
-            };
-            const { thread, run } = data(
-              await client.workspace(workspace.id).POST("/api/v1/threads", {
-                params: {
-                  header: commandHeaders(idempotency.forBody(body)),
-                },
-                body,
-              }),
-            );
-            void invalidateConversation(cache, workspace.id, {
-              sessionId: thread.session_id,
-              threadId: thread.id,
-              runId: run?.id,
-            });
-            navigate(
-              run
-                ? runPath(basePath, {
-                    session_id: run.session_id,
-                    thread_id: run.thread_id,
-                    run_id: run.id,
-                  }) + "?follow=latest"
-                : `${basePath}/sessions/${thread.session_id}/threads/${thread.id}`,
-            );
-          }}
-        />
+            availability={realtime}
+            onFinished={(run) => {
+              void invalidateConversation(cache, workspace.id, {
+                sessionId: run.session_id,
+                threadId: run.thread_id,
+                runId: run.run_id,
+              });
+              navigate(runPath(basePath, run) + "?follow=latest");
+            }}
+          />
+        ) : (
+          <Composer
+            initial={
+              message
+                ? { content: [{ type: "text", text: message }] }
+                : undefined
+            }
+            disabled={!can("run") || !selected}
+            submitDisabled={memory !== null && !validSpaceSelection(memory)}
+            agentName={selected?.name}
+            options={
+              <>
+                <RunOptions
+                  options={options}
+                  showAgent={false}
+                  agentId={agentId}
+                  defaultEnvironment={defaultEnvironment}
+                />
+                {can("run") && (
+                  <SessionMemoryControl
+                    value={memory}
+                    onChange={setMemory}
+                    locked={memoryLocked}
+                  />
+                )}
+              </>
+            }
+            submit={async (payload) => {
+              const { environment, ...choice } = options.build();
+              if (!selected) return;
+              if (
+                !choice.agent_revision_id &&
+                prepared.current.agentId !== agentId
+              ) {
+                if (
+                  await prepareConversationAgent(
+                    client,
+                    workspace.id,
+                    selected,
+                    can("write"),
+                  )
+                ) {
+                  void cache.invalidateQueries({
+                    queryKey: ["agents", workspace.id],
+                  });
+                  void cache.invalidateQueries({
+                    queryKey: ["agent-picker", workspace.id],
+                  });
+                }
+                prepared.current.agentId = agentId;
+              }
+              const body = {
+                ...choice,
+                agent_id: agentId,
+                payload,
+                session_id: (await consoleSession()).id,
+                environments: environment
+                  ? [await primaryMount(environment)]
+                  : [],
+              };
+              const { thread, run } = data(
+                await client.workspace(workspace.id).POST("/api/v1/threads", {
+                  params: {
+                    header: commandHeaders(idempotency.forBody(body)),
+                  },
+                  body,
+                }),
+              );
+              void invalidateConversation(cache, workspace.id, {
+                sessionId: thread.session_id,
+                threadId: thread.id,
+                runId: run?.id,
+              });
+              navigate(
+                run
+                  ? runPath(basePath, {
+                      session_id: run.session_id,
+                      thread_id: run.thread_id,
+                      run_id: run.id,
+                    }) + "?follow=latest"
+                  : `${basePath}/sessions/${thread.session_id}/threads/${thread.id}`,
+              );
+            }}
+          />
+        )}
       </div>
     </div>
   );

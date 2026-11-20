@@ -25,6 +25,7 @@ import anyio
 from a13n_harness import (
     AgentContext,
     DeferredToolResume,
+    ExecutableAgent,
     HarnessError,
     HarnessEvent,
     HarnessExtensionEvent,
@@ -47,6 +48,7 @@ from a13n_harness.environment.errors import EnvironmentProviderError, Environmen
 from a13n_harness.environment.models import EnvironmentInvocationError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
+from a13n_harness.live import HarnessLiveStream
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.recovery import normalize_interrupted_history
 from a13n_harness.state import encode_messages
@@ -56,6 +58,7 @@ from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 from pydantic_ai.messages import ModelMessage, TextContent, UserContent
 from pydantic_ai.models import Model, ModelResolutionContext
+from pydantic_ai.realtime import RealtimeModelSettings
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,6 +68,7 @@ from a13n_service.app_sdk.hooks import EnvironmentHookAbort
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.resources.agents import stored
 from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, definitions, inbox, inputs, placement
@@ -79,6 +83,7 @@ from a13n_service.runs.attempts import (
     LeaseLost,
     authorize_execution,
     lock_thread_lease,
+    prove,
 )
 from a13n_service.runs.boundaries import Boundaries, InputBoundary, Staged
 from a13n_service.runs.calls import CallCheck
@@ -99,6 +104,8 @@ from a13n_service.runs.inputs import Offered
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.notices import KINDS as NOTICE_KINDS
 from a13n_service.runs.notices import StaleNotice, require_notices
+from a13n_service.runs.realtime import LABEL, Channel
+from a13n_service.runs.realtime_transcript import LiveTranscripts
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
     EnvironmentMount,
@@ -165,6 +172,8 @@ class _Plan:
     committed: Committed | None
     seq: int
     obsolete_notice: bool = False
+    realtime_id: str | None = None
+    realtime_audio: bool = True
 
 
 async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> None:
@@ -180,7 +189,18 @@ async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> No
         else:
             await seal_attempt(runtime, lease, outcome)
         return
-    await _Attempt(runtime, lease, control, plan).run()
+    channel = (runtime.realtime_channels or {}).get(plan.realtime_id or "")
+    try:
+        await _Attempt(runtime, lease, control, plan).run()
+    finally:
+        if channel is not None:
+            try:
+                async with short_session(runtime.storage) as session:
+                    row = await session.get(RunRow, lease.run_id)
+                    if row is not None and row.status == "failed" and not channel.outgoing.full():
+                        channel.outgoing.put_nowait({"type": "error", "message": "The realtime run failed"})
+            finally:
+                channel.finished.set()
 
 
 # Provider failures that a later attempt may not repeat; the others need a changed mount or configuration.
@@ -417,6 +437,8 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         committed=committed,
         seq=own.seq if own is not None else 0,
         obsolete_notice=obsolete_notice,
+        realtime_id=options.labels.get(LABEL),
+        realtime_audio=options.labels.get("realtime-audio") != "no",
     )
 
 
@@ -537,6 +559,7 @@ class _Attempt:
             page_items=worker.page_items,
             page_bytes=worker.page_bytes,
             memory_ids={memory.mount.name: memory.mount.memory_id for memory in plan.host.memories},
+            group_live_user_speech=plan.agent.model.config.model_api == "openai.live",
         )
         if plan.tail.position.attempt != lease.number:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))
@@ -786,6 +809,10 @@ class _Attempt:
                 producer_observer=output.observe,
                 environment=host.environment,
             )
+            if root.model.config.model_api in PROTOCOLS:
+                return await self._realtime(executable, bindings, output)
+            if self.plan.realtime_id is not None:
+                raise ServiceError("conflict", "The Agent's primary model no longer uses a realtime API")
             start = partial(
                 executable.stream,
                 input_factory=self._assigned_input
@@ -819,6 +846,104 @@ class _Attempt:
         if stream.result is None:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
         return stream.result, stream.post_run
+
+    async def _realtime(
+        self, executable: ExecutableAgent, bindings: RunBindings, output: Coalescer
+    ) -> HarnessRunResult:
+        channel = (self.runtime.realtime_channels or {}).get(self.plan.realtime_id or "")
+        if (
+            channel is None
+            or channel.attached
+            or channel.closed.is_set()
+            or channel.principal_id != self.plan.principal.id
+            or channel.workspace_id != self.lease.workspace_id
+        ):
+            raise ServiceError("unavailable", "The realtime connection is no longer available")
+        if self.plan.resume is not None or self.lease.number != 1:
+            raise ServiceError("conflict", "Start a new browser connection to continue this realtime Thread")
+        if self.runtime.admission is not None or self.plan.limit is not None:
+            raise ServiceError("unavailable", "Realtime preview requires a deployment without per-call reservations")
+        channel.attached = True
+        await prove(self.runtime.storage, self.lease)
+        model_api = self.plan.agent.model.config.model_api
+        transcripts = LiveTranscripts(group_user_speech=model_api == "openai.live")
+        settings: RealtimeModelSettings = {}
+        if not self.plan.realtime_audio and model_api == "openai.live":
+            settings = {"openai_live_idle_audio": True}  # type: ignore[typeddict-unknown-key]
+        elif self.plan.realtime_audio and model_api == "openai.realtime":
+            settings = {"turn_detection": {"silence_duration_ms": 850}}
+        async with (
+            asyncio.timeout(300),
+            agent.open_realtime(
+                self.runtime,
+                self.plan.agent,
+                executable,
+                bindings=replace(bindings, model_call_check=None),
+                previous_state=self.plan.state,
+                model_settings=settings,
+            ) as stream,
+            self.boundaries.process(partial(self._boundary, stream=stream, output=output)),
+            asyncio.TaskGroup() as tasks,
+        ):
+            await claim.start(self.runtime, self.lease, harness_run_id=stream.run_id)
+            self.offers.requested = True
+            await channel.outgoing.put({"type": "ready", "audio_hz": 24000, "accepts_text": True})
+            receive = tasks.create_task(self._realtime_input(stream, channel, output))
+            audio = tasks.create_task(self._realtime_audio(stream, channel))
+            stop = tasks.create_task(self._close_realtime(stream, channel))
+            try:
+                async for item in stream:
+                    await self._observe(item, output)
+                    if isinstance(item, HarnessEvent) and item.run_id == stream.run_id and not channel.closed.is_set():
+                        if (transcript := transcripts.observe(item)) is not None:
+                            await channel.outgoing.put(
+                                {
+                                    "type": "transcript",
+                                    "message_id": transcript["message_id"],
+                                    "role": transcript["role"],
+                                    "text": transcript["text"],
+                                    "final": transcript["final"],
+                                }
+                            )
+            finally:
+                receive.cancel()
+                stop.cancel()
+                if channel.closed.is_set():
+                    audio.cancel()
+        if stream.result is None:
+            raise ServiceError("unavailable", "The realtime run ended before it completed")
+        return stream.result
+
+    async def _realtime_input(self, stream: HarnessLiveStream, channel: Channel, output: Coalescer) -> None:
+        while True:
+            payload = await channel.incoming.get()
+            if isinstance(payload, bytes):
+                if self.plan.realtime_audio:
+                    await stream.send_audio(payload)
+            else:
+                output.realtime_input(payload)
+                await stream.send(payload, respond=True)
+
+    async def _realtime_audio(self, stream: HarnessLiveStream, channel: Channel) -> None:
+        async for chunk in stream.stream_audio():
+            if not channel.closed.is_set():
+                await channel.outgoing.put(chunk)
+
+    async def _close_realtime(self, stream: HarnessLiveStream, channel: Channel) -> None:
+        stopped = asyncio.create_task(self.control.stopped.wait())
+        handoff = asyncio.create_task(self.control.handoff.wait())
+        closed = asyncio.create_task(channel.closed.wait())
+        signals = (stopped, handoff, closed)
+        try:
+            await asyncio.wait(signals, return_when=asyncio.FIRST_COMPLETED)
+            if self.control.stopped.is_set():
+                stream.cancel()
+            else:
+                await stream.close()
+        finally:
+            for signal in signals:
+                signal.cancel()
+            await asyncio.gather(*signals, return_exceptions=True)
 
     async def _prepare_environments(self) -> bool:
         """Prepare instances in Service before entering Harness; stop or handoff interrupts the wait."""
@@ -867,7 +992,9 @@ class _Attempt:
             await self.boundaries.drain()
             output.observe(item)
 
-    async def _boundary(self, staged: Staged, *, stream: HarnessRunStream, output: Coalescer) -> None:
+    async def _boundary(
+        self, staged: Staged, *, stream: HarnessRunStream | HarnessLiveStream, output: Coalescer
+    ) -> None:
         if staged.at in {"input", "model"}:
             self.offers.requested = True
         steers = await self._commit(
@@ -884,7 +1011,8 @@ class _Attempt:
             stream.cancel()
             return
         # A tool boundary waits for the acknowledgement, so steers pending there join the request after the tools.
-        await self._offer(stream, steers)
+        if not isinstance(stream, HarnessLiveStream):
+            await self._offer(stream, steers)
 
     async def _commit(
         self,

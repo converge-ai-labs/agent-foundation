@@ -83,6 +83,7 @@ export function RunDock({
   onSubmissionChange,
   pendingRunId,
   level = "chat",
+  realtime = false,
 }: {
   run: Schema["RunView"];
   thread: Schema["ThreadView"];
@@ -96,6 +97,7 @@ export function RunDock({
   /** A receipt can update the Thread before the route transition commits. */
   pendingRunId?: string;
   level?: ViewLevel;
+  realtime?: boolean;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -233,7 +235,7 @@ export function RunDock({
           </div>
         ) : (
           <>
-            {interactive && !waiting && (
+            {interactive && !waiting && !realtime && (
               <Composer
                 key={resubmit ? "resubmit" : "message"}
                 initial={resubmit?.payload}

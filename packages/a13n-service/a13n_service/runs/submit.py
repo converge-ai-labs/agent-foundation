@@ -19,10 +19,12 @@ from a13n_service.execution_policy import matches
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid
 from a13n_service.infra.http import IdempotencyKey
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.assets.service import require_usable
 from a13n_service.resources.connections.service import validate_caller_headers
+from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs import checkpoints, definitions
 from a13n_service.runs.accept import (
     Source,
@@ -39,6 +41,7 @@ from a13n_service.runs.environments.schemas import MountCreate
 from a13n_service.runs.inbox import Request, append_message, check_replay, find_request
 from a13n_service.runs.memories.mounts import mount_memories, shared_memory_mounts
 from a13n_service.runs.memories.session_memory import configure
+from a13n_service.runs.realtime import LABEL
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
@@ -111,6 +114,17 @@ async def validate_message(
             message.options.overrides,
             authority=authority,
         )
+    if runtime.realtime_channels is not None or LABEL in options.labels:
+        effective = stored.require_effective(revision.config, overrides, revision_id=revision.definition_id)
+        selected = await resolve_model(session, principal, scope, effective.model, authority=authority)
+        channel = (runtime.realtime_channels or {}).get(options.labels.get(LABEL, ""))
+        if selected.config.model_api in PROTOCOLS:
+            if channel is None or channel.principal_id != principal.id or channel.workspace_id != scope.workspace_id:
+                raise invalid("model", "This model requires a realtime conversation")
+            if thread.current_run_id is not None:
+                raise conflict("thread", thread.id, "run_in_progress")
+        elif LABEL in options.labels:
+            raise invalid("model", "The Agent's primary model does not use a realtime API")
     if initial_environments:
         # Acceptance can share-lock another existing primary. Lock it together with the initial mounts
         # so another Thread taking exclusive locks in ID order (desktop handback) cannot deadlock.

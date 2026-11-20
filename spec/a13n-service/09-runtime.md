@@ -188,6 +188,16 @@ The process reads `a13n-service` release metadata from PyPI and published securi
 
 `GET /api/v1/organizations/{organization_id}/update-notices` requires `admin` at the named organization. Every organization sees the same process-local observations through this scoped endpoint. It returns `current_version`, `latest_stable` (version, release URL and `is_newer`, or `null`), and `advisories` (advisory ID, plain-text summary, severity, GitHub URL, and upstream revision timestamp when available). Reads do not trigger a refresh. Disabled and not-yet-checked snapshots contain the current version, a null release and an empty advisory list. This operational view is excluded from MCP.
 
+### Realtime preview
+
+`server.realtime_preview` enables browser realtime conversations in a single `all` process. `GET /api/v1/realtime` resolves the selected Agent and Thread and describes whether the caller can start. The Agent selects one model by key. The model's calling API selects OpenAI Realtime, OpenAI GPT-Live, or xAI Realtime.
+
+The WebSocket under the selected Workspace requires an authenticated browser session and an allowed Origin. A connection creates one ordinary accepted Run. The Worker claims it and owns execution and the fenced checkpoint. Binary messages carry mono PCM16 at 24 kHz. Text messages carry controls or user input. The Worker forwards transcript and audio to the browser, saves conversation history, and seals the Run on a clean close. Audio bytes stay in the transport and the checkpoint keeps transcription.
+
+A WebSocket `transcript` frame contains `message_id`, `role`, `text`, and `final`. Each update carries the current full text for that spoken part, so the client replaces the previous text at the same ID. The Run stream applies the same updates to a single display item. GPT-Live can finalize the user's current speech part when its reply begins, so Service combines user speech parts within the same realtime exchange into one transcript item.
+
+A preview connection is process-local and lasts at most five minutes. Continuations open a fresh connection using the Thread's saved history. A lost attempt requires a new connection. Configure the preview on a single process without a distribution per-call admission policy. Ordinary Run transport owns the separate request-response APIs.
+
 ## HTTP ingress and escaping failures
 
 Every HTTP request body is read completely before routing, JSON parsing or database work. A body larger than `server.request_bytes` is refused with `payload_too_large` (413, `details.limit`), and a body that has not arrived within `server.request_timeout` with `request_timeout` (408); both responses close the connection. A client that disconnects while sending gets no response.

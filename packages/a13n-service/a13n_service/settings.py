@@ -85,6 +85,8 @@ class Server(Section):
     request_timeout: float = Field(default=10, gt=0, le=60)
     readiness_timeout: float = Field(default=2, gt=0, le=30)
     shutdown_timeout: int = Field(default=15, ge=1, le=300)
+    # The browser bridge requires one all-role Service process.
+    realtime_preview: bool = False
     tls_certificate: Path | None = None
     tls_key: Path | None = None
 

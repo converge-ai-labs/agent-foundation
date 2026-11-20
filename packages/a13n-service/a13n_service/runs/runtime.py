@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from a13n_service.runs.environments.clients.sessions import Sessions
     from a13n_service.runs.environments.contexts import Contexts
     from a13n_service.runs.environments.monitoring.proxy import Proxy
+    from a13n_service.runs.realtime import Channel
     from a13n_service.runs.tool_executions.owner import Executions
 
 
@@ -80,6 +81,7 @@ class Runtime:
     has_environment_subscribers: bool = False
     # The backend trace queries read; None when tracing is off.
     traces: TraceProvider | None = None
+    realtime_channels: dict[str, Channel] | None = field(default=None, repr=False)
 
     @cached_property
     def post_run_tasks(self) -> set[asyncio.Task[None]]:

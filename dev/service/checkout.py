@@ -105,6 +105,7 @@ class Checkout:
                 "host": "127.0.0.1",
                 "port": ports.service,
                 "public_url": self.console_url,
+                "realtime_preview": True,
                 # Platform tools also run during seeding, before the Console proxy starts.
                 "control_url": self.service_url,
             },

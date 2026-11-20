@@ -796,7 +796,7 @@ async def test_provider_types_describe_each_registered_definition(service) -> No
     models = await types("model")
     openai = models["openai"]
     assert openai["supports_test"] is True
-    assert openai["model_apis"] == ["openai.responses", "openai.chat_completions"]
+    assert openai["model_apis"] == ["openai.responses", "openai.chat_completions", "openai.realtime", "openai.live"]
     assert openai["default_model_api"] == "openai.responses"
     assert openai["credential_schema"]["properties"]["api_key"]
     assert openai["authentication"]["mode"] == "required"

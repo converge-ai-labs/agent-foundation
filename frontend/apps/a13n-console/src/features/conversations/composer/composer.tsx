@@ -34,7 +34,10 @@ export function Composer({
   disabled = false,
   submitDisabled = false,
   agentName,
+  textInput = true,
+  attachmentsEnabled = true,
   options,
+  emptyAction,
   stop,
   stopping = false,
 }: {
@@ -48,8 +51,17 @@ export function Composer({
   /** Block sending while keeping configuration controls available for correction. */
   submitDisabled?: boolean;
   agentName?: string;
+  textInput?: boolean;
+  attachmentsEnabled?: boolean;
   /** Option chips shown beside the attachment control. */
   options?: ReactNode;
+  /** Replaces the send arrow when there is no draft. */
+  emptyAction?: {
+    label: string;
+    icon: ReactNode;
+    onClick: () => void;
+    disabled?: boolean;
+  };
   /** Interrupts the active run; the empty-draft send button becomes Stop. */
   stop?: () => void;
   stopping?: boolean;
@@ -71,7 +83,7 @@ export function Composer({
     input.style.height = `${Math.min(input.scrollHeight, 240)}px`;
     // A message that still fits has nothing to scroll, whatever the rounding.
     input.style.overflowY = input.scrollHeight > 240 ? "auto" : "hidden";
-  }, [text]);
+  }, [text, textInput]);
   const [attachments, setAttachments] = useState<Attachment[]>(
     initial?.content.flatMap((part): Attachment[] =>
       part.type === "asset"
@@ -155,55 +167,66 @@ export function Composer({
   }
   const busy = mutation.isPending || upload.isPending;
   const action = label ?? t("Send");
-  const empty = !text.trim() && !attachments.length && !structured.trim();
+  const empty =
+    (!textInput || !text.trim()) && !attachments.length && !structured.trim();
   // A run in flight and nothing to say: the one round button stops it instead.
   const stopMode = !!stop && empty;
+  const alternate = empty && !stopMode ? emptyAction : undefined;
   return (
     <form
       ref={form}
       className={styles.composer}
       onSubmit={(event) => {
         event.preventDefault();
-        if (!disabled && !submitDisabled && !busy) mutation.mutate();
+        if (
+          !disabled &&
+          !submitDisabled &&
+          !busy &&
+          !alternate &&
+          (textInput || !empty)
+        )
+          mutation.mutate();
       }}
     >
       <fieldset disabled={disabled || busy} className={styles.fields}>
-        <Textarea
-          ref={messageInput}
-          rows={1}
-          unstyled
-          className={styles.messageInput}
-          aria-label={t("Message")}
-          aria-keyshortcuts="Meta+Enter Control+Enter"
-          placeholder={
-            placeholder ??
-            (agentName
-              ? t("Message {{agent}}…", { agent: agentName })
-              : t("Message your agent…"))
-          }
-          value={text}
-          onChange={(event) => {
-            setText(event.target.value);
-            changed();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Escape" && stopMode) {
-              event.preventDefault();
-              stop?.();
-              return;
+        {textInput && (
+          <Textarea
+            ref={messageInput}
+            rows={1}
+            unstyled
+            className={styles.messageInput}
+            aria-label={t("Message")}
+            aria-keyshortcuts="Meta+Enter Control+Enter"
+            placeholder={
+              placeholder ??
+              (agentName
+                ? t("Message {{agent}}…", { agent: agentName })
+                : t("Message your agent…"))
             }
-            if (
-              event.key !== "Enter" ||
-              !(event.metaKey || event.ctrlKey) ||
-              event.shiftKey ||
-              event.altKey ||
-              event.nativeEvent.isComposing
-            )
-              return;
-            event.preventDefault();
-            if (!busy && !disabled) event.currentTarget.form?.requestSubmit();
-          }}
-        />
+            value={text}
+            onChange={(event) => {
+              setText(event.target.value);
+              changed();
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && stopMode) {
+                event.preventDefault();
+                stop?.();
+                return;
+              }
+              if (
+                event.key !== "Enter" ||
+                !(event.metaKey || event.ctrlKey) ||
+                event.shiftKey ||
+                event.altKey ||
+                event.nativeEvent.isComposing
+              )
+                return;
+              event.preventDefault();
+              if (!busy && !disabled) event.currentTarget.form?.requestSubmit();
+            }}
+          />
+        )}
         {!!attachments.length && (
           <div className={styles.attachments}>
             {attachments.map((attachment, index) => (
@@ -233,7 +256,7 @@ export function Composer({
         )}
         <div className={styles.tools}>
           <AttachDialog
-            disabled={disabled || busy}
+            disabled={disabled || busy || !attachmentsEnabled}
             structured={structured}
             onStructuredChange={(value) => {
               setStructured(value);
@@ -255,38 +278,55 @@ export function Composer({
           {options}
         </div>
       </fieldset>
-      <div className={styles.send}>
-        <span className={styles.hint}>
-          {stopMode ? t("Esc stops") : t("⌘ / Ctrl + Enter to send")}
-        </span>
-        {stopMode ? (
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="default"
-            className={styles.sendButton}
-            aria-label={t("Stop")}
-            title={t("Stop")}
-            loading={stopping}
-            onClick={stop}
-          >
-            <SquareIcon size={12} weight="fill" />
-          </Button>
-        ) : (
-          <Button
-            type="submit"
-            size="icon-sm"
-            variant="default"
-            className={styles.sendButton}
-            aria-label={action}
-            title={action}
-            disabled={empty || disabled || submitDisabled || busy}
-            loading={mutation.isPending}
-          >
-            <ArrowUpIcon size={15} />
-          </Button>
-        )}
-      </div>
+      {(textInput || stopMode || alternate) && (
+        <div className={styles.send}>
+          {!alternate && (
+            <span className={styles.hint}>
+              {stopMode ? t("Esc stops") : t("⌘ / Ctrl + Enter to send")}
+            </span>
+          )}
+          {stopMode ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="default"
+              className={styles.sendButton}
+              aria-label={t("Stop")}
+              title={t("Stop")}
+              loading={stopping}
+              onClick={stop}
+            >
+              <SquareIcon size={12} weight="fill" />
+            </Button>
+          ) : alternate ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="default"
+              className={styles.sendButton}
+              aria-label={alternate.label}
+              title={alternate.label}
+              disabled={disabled || busy || alternate.disabled}
+              onClick={alternate.onClick}
+            >
+              {alternate.icon}
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              size="icon-sm"
+              variant="default"
+              className={styles.sendButton}
+              aria-label={action}
+              title={action}
+              disabled={empty || disabled || submitDisabled || busy}
+              loading={mutation.isPending}
+            >
+              <ArrowUpIcon size={15} />
+            </Button>
+          )}
+        </div>
+      )}
       <ErrorNotice error={mutation.error} />
       <ErrorNotice
         error={upload.error}

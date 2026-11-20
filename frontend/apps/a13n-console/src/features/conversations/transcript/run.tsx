@@ -12,6 +12,7 @@ import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { SessionBodyLoading, SessionError } from "../session-feedback";
 import { useRun, useSession } from "../queries";
 import { runResubmission, type Resubmission } from "../resubmit";
+import { RealtimeComposer, useRealtimeAvailability } from "../realtime";
 import { BranchOrigin } from "../thread-branches";
 import { RunNavigator } from "./debug/run-navigator";
 import { DebugPendingRun } from "./debug/run-section";
@@ -256,7 +257,12 @@ function RunBody({
   error: unknown;
 }) {
   const { t } = useTranslation();
-  const { can } = useWorkspace();
+  const { can, basePath } = useWorkspace();
+  const navigate = useNavigate();
+  const realtime = useRealtimeAvailability(
+    { agentId: run.agent_id, threadId: thread.id },
+    !!thread.current_run_id,
+  );
   const interactive = useInteractiveThread(thread);
   const transcript = useRef<HTMLDivElement>(null);
   const scroll = useTranscriptScroll(transcript, level, inspectionId);
@@ -343,6 +349,20 @@ function RunBody({
         </div>
       </div>
       <ThreadDock thread={thread} hidden={replacing}>
+        {interactive && realtime?.realtime && (
+          <RealtimeComposer
+            agentId={run.agent_id}
+            agentName={agentName}
+            threadId={thread.id}
+            displayedRunId={run.id}
+            availability={realtime}
+            onFinished={(receipt) => {
+              navigate(runPath(basePath, receipt) + "?follow=latest", {
+                state: { continuedFrom: run.id },
+              });
+            }}
+          />
+        )}
         <div inert={switching} className={styles.dockRun}>
           {interactive && can("run") && <McpInputs threadId={thread.id} />}
 
@@ -352,6 +372,7 @@ function RunBody({
             thread={thread}
             level={level}
             agentName={agentName}
+            realtime={realtime?.realtime}
             resubmit={resubmit}
             pendingRunId={submitting?.runId}
             onResubmitted={() => setResubmit(null)}

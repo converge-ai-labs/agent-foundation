@@ -491,6 +491,7 @@ function contentEntry(
   if (item.kind !== "text_message") return null;
   if (item.role === "assistant") return { kind: "reply", ...base };
   if (item.role !== "user") return null;
+  if (item.speech) return { kind: "guidance", ...base };
   const leading = first();
   return item.steeringSource || item.inputSource === "steering" || !leading
     ? { kind: "guidance", ...base }

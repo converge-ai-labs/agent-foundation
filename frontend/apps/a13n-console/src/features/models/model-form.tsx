@@ -148,7 +148,12 @@ export function useModelDraft({
       catalog_ref: item.ref,
       model_name: channels.includes(item.ref.provider) ? item.ref.model : "",
       model_api: channels.includes(item.ref.provider)
-        ? callingApi
+        ? (item.model_api ??
+          (["openai.realtime", "openai.live", "xai.realtime"].includes(
+            callingApi,
+          )
+            ? (definition?.default_model_api ?? "")
+            : callingApi))
         : "openai.chat_completions",
       name: current.name && nameEdited ? current.name : item.name,
       characteristics: characteristicsDefaults(item.characteristics),
