@@ -137,7 +137,7 @@ subagents:
     default_model: model-primary
 ```
 
-`allowed_models` 与 `default_model` 同时作为 Agent 创建独立会话（`create_thread`）、创建 Coordinator Worker（`create_worker`）以及委派已声明子角色（`delegate`）时的共享模型白名单与默认模型。当 `subagents.dynamic.enabled` 设为 `true` 时，根会话还会额外获得 `spawn_subagent(name, prompt, model=None, thinking=None)` 工具：
+Agent 创建独立会话或 Coordinator Worker 时从 `allowed_models` 选择模型。对于内置和已声明的子智能体，Harness UI 会先解析其实际模型（包括从父会话输入框继承的选择），再将符合允许列表的子智能体提供给 Agent。如果均不符合，本次 Run 就没有 `delegate` 工具。启用 `subagents.dynamic.enabled` 后，根会话还会获得 `spawn_subagent(name, prompt, model=None, thinking=None)`：
 
 - `name` 为该动态子角色指定角色标签，用于状态栏与历史记录展示。
 - `prompt` 作为子角色的首条任务输入（配合内置的固定子级指引与全局 `AGENTS.md` 上下文运行，不携带父级 Agent 的角色指令或完整对话历史）。

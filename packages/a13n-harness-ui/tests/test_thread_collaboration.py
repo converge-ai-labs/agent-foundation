@@ -401,7 +401,8 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
                     assert "compact coordination note" in info.instructions
                     assert "Before summarize, reconcile tasks and notes" in info.instructions
                     assert "no background polling" in info.instructions
-                    assert "Create a separate Thread only" not in info.instructions
+                    names = {tool.name for tool in info.function_tools}
+                    assert "create_worker" in names and "create_thread" not in names
                 if step == 0:
                     assert "Which format should I use?" in str(messages)
                     await worker_idle.wait()

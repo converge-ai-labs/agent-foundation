@@ -591,9 +591,15 @@ export function ResourceFields({
                 <SettingsSection title={t("Agent creation")}>
                   <ModelSelectionField
                     label={t("Allowed models")}
-                    description={t(
-                      "The agent can choose from these. Choose at least one.",
-                    )}
+                    description={
+                      allowedModels.length
+                        ? t(
+                            "Agents can use these models for new chats, workers, and subagents.",
+                          )
+                        : t(
+                            "With no models selected, agents cannot create chats or workers, or delegate to subagents.",
+                          )
+                    }
                     models={selectors.data?.models ?? []}
                     value={allowedModels}
                     onChange={(value) => {

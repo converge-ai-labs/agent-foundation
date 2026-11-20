@@ -92,7 +92,7 @@ def _catalog() -> HarnessUiExtensionCatalog:
     return HarnessUiExtensionCatalog(host_plugin_factories=(_MemoryFactory(),))
 
 
-def _write_source(tmp_path: Path) -> Path:
+def _write_source(tmp_path: Path, *, allowed_models: tuple[str, ...] = ("model-primary",)) -> Path:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     root = tmp_path / "a13n-harness-ui.yaml"
@@ -103,6 +103,8 @@ def _write_source(tmp_path: Path) -> Path:
         "  agent: agent-assistant\n"
         "  harness_plugins: [plugin-memory]\n"
         "  mcp_servers: [mcp-docs]\n"
+        "subagents:\n"
+        f"  dynamic: {{allowed_models: [{', '.join(allowed_models)}]}}\n"
     )
     files = {
         "models/primary.yaml": """
@@ -1824,7 +1826,7 @@ async def test_image_input_policy_is_captured_per_model_and_reconstructed(tmp_pa
     from a13n_harness import ImageInputPolicy
     from a13n_harness_ui.composition.models import ResolvedRunComposition
 
-    root = _write_source(tmp_path)
+    root = _write_source(tmp_path, allowed_models=("model-primary", "model-child"))
     path = tmp_path / "models/primary.yaml"
     document = yaml.safe_load(path.read_text())
     document["model_characteristics"] = {"image_input": policy}

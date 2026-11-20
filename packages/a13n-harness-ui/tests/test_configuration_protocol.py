@@ -302,9 +302,11 @@ async def test_creation_model_settings_save_applies_to_future_webui_runs_and_sur
     document = yaml.safe_load(root.read_text())
     started, release = Event(), Event()
     seen = []
+    toolsets = []
 
     async def model(messages, info):
         seen.append(info.instructions or "")
+        toolsets.append({tool.name for tool in info.function_tools})
         if len(seen) == 1:
             started.set()
             await release.wait()
@@ -323,7 +325,8 @@ async def test_creation_model_settings_save_applies_to_future_webui_runs_and_sur
             first = (await api.post(prefix + "/submit", json={"parts": ["Inspect settings"]})).json()["receipt_id"]
             with fail_after(10):
                 await started.wait()
-            assert "Agent creation models: none configured" in seen[0]
+            assert "No models are allowed for new agents" in seen[0]
+            assert {"create_thread", "create_worker", "spawn_subagent", "delegate"}.isdisjoint(toolsets[0])
             captured = (await api.get(prefix + "/configuration")).json()["captured"]
             assert "webui_sidekick" not in captured
             invalid = {**document, "subagents": {"dynamic": {"allowed_models": ["model-missing"]}}}
@@ -341,11 +344,12 @@ async def test_creation_model_settings_save_applies_to_future_webui_runs_and_sur
             release.set()
             assert (await settled(api, first))["status"] == "completed"
             assert (
-                "Agent creation models: none configured" in seen[1]
+                "No models are allowed for new agents" in seen[1]
             )  # Later requests in the same Run retain captured instructions.
             second = (await api.post(prefix + "/submit", json={"parts": ["Inspect again"]})).json()["receipt_id"]
             assert (await settled(api, second))["status"] == "completed"
             assert "Agent creation models: model-primary" in seen[2]
+            assert "create_thread" not in toolsets[1] and "create_thread" in toolsets[2]
             assert (await api.get("/api/threads")).json()["total"] == 1  # Settings never create work.
     async with listener_with_app(tmp_path, configuration_path=root) as (http, _, _app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:

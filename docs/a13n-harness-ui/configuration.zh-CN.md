@@ -353,7 +353,7 @@ webui:
 
 ### WebUI 子智能体
 
-在 **Settings → Agents → Agent creation** 中配置 `subagents.dynamic.allowed_models` 与 `subagents.dynamic.default_model`，统一管控 Agent 在发起新任务时可选用的模型。创建独立会话（`create_thread`）、创建 Coordinator Worker（`create_worker`）、动态创建子角色（`spawn_subagent`）以及委派已声明子角色（`delegate`）均共享这一模型白名单与默认设置。
+在 **Settings → Agents → Agent creation** 设置可用模型和默认模型。创建独立会话（`create_thread`）、Coordinator Worker（`create_worker`）或动态子智能体（`spawn_subagent`）时可以显式选用模型，也可以使用默认模型。已声明的子智能体使用自己配置或继承的模型，只有该模型在允许列表中才会出现在 `delegate` 名单里。
 
 在 **Settings → Agents → Subagents** 中，`subagents.dynamic.enabled` 用于控制根会话是否开放 `spawn_subagent` 工具，`subagents.max_concurrent`（默认 `8`）则限制单个根会话内同时运行的子级任务数量。详见 [Agent 协作](webui.md#agent-collaboration)与[动态 subagent](agents-and-subagents.md#dynamic-subagents-and-result-delivery)。
 

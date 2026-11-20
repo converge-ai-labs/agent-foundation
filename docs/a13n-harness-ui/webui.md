@@ -366,7 +366,7 @@ Agents select a creation tool based on where the work belongs:
 
 | Tool                                                                                                | Where the work lives                                     | Who can call it                                           |
 | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
-| `create_thread(prompt, title=None, agent_id=None, project_id="current", model=None, thinking=None)` | A new independent root chat with its own history         | Ordinary roots, Coordinators, and Bot                     |
+| `create_thread(prompt, title=None, agent_id=None, project_id="current", model=None, thinking=None)` | A new independent root chat with its own history         | Ordinary roots and Bot                                    |
 | `create_worker(prompt, title=None, agent_id=None, model=None, thinking=None)`                       | A managed worker chat owned by the calling Coordinator   | Coordinators only (stays in the Coordinator's Project)    |
 | `spawn_subagent(name, prompt, model=None, thinking=None)`                                           | A child execution inside the current conversation's tree | Root conversations with dynamic subagent creation enabled |
 
@@ -377,7 +377,7 @@ In `create_thread`, `project_id="current"` keeps the caller's Project, `None` cr
 Open **Settings → Agents → Agent creation** (configured under `subagents.dynamic.allowed_models` and `subagents.dynamic.default_model` in `a13n-harness-ui.yaml`) to choose which Models agents may use when creating work:
 
 - `create_thread`, `create_worker`, and `spawn_subagent` all validate an explicit `model` argument against `allowed_models` and fall back to `default_model` when `model` is omitted (`default_model` is required at config load only when `subagents.dynamic.enabled` is `true`; when `default_model` is unset, calling `create_thread` or `create_worker` without an explicit `model` fails at runtime).
-- Declared and built-in subagents (`delegate`) also verify that their configured or inherited Model appears in `allowed_models`.
+- `delegate` lists only declared and built-in subagents whose effective model is allowed, including models inherited from the composer. If none qualify, the tool is hidden.
 - For a newly created root chat or worker, the selected Model is saved as that Thread's default Model for future turns.
 
 ### Message an existing conversation

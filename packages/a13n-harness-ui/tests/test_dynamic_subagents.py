@@ -13,7 +13,7 @@ from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.subagent_tools import guidance
-from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus
+from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus, RunModelOverrides
 from anyio import Event, fail_after, sleep
 from pydantic import ValidationError
 from pydantic_ai.messages import ModelRequest, SystemPromptPart, ToolReturnPart
@@ -126,23 +126,32 @@ async def test_dynamic_tool_is_absent_when_disabled(tmp_path, monkeypatch):
         ).status is RootOperationStatus.completed
 
 
-async def test_declared_child_must_use_an_allowed_model(tmp_path, monkeypatch):
+@pytest.mark.parametrize("allowed", [[], ["model-main"]])
+async def test_delegate_roster_uses_effective_child_models(tmp_path, monkeypatch, allowed):
     async def model(messages, info):
-        results = returned(messages)
-        if not results:
-            args = {"subagent_name": "explorer", "prompt": "Inspect"}
-            yield {0: DeltaToolCall(name="delegate", json_args=json.dumps(args))}
-        else:
-            assert "creation_model_not_allowed" in str(results[-1].content)
-            yield "done"
+        tools = {tool.name for tool in info.function_tools}
+        assert ("delegate" in tools) == bool(allowed)
+        assert ("agent-reviewer:" in info.instructions) == bool(allowed)
+        assert "explorer:" not in info.instructions
+        yield "done"
 
-    async with await open_app(tmp_path, monkeypatch, model, dynamic={"allowed_models": []}) as app:
+    context = await open_app(tmp_path, monkeypatch, model, dynamic={"allowed_models": allowed})
+    alternative = yaml.safe_load((tmp_path / "models/main.yaml").read_text())
+    alternative["id"] = "model-alt"
+    (tmp_path / "models/alt.yaml").write_text(yaml.safe_dump(alternative))
+    parent_path = tmp_path / "agents/main.yaml"
+    parent = yaml.safe_load(parent_path.read_text())
+    (tmp_path / "agents/reviewer.yaml").write_text(yaml.safe_dump({**parent, "id": "agent-reviewer"}))
+    parent_path.write_text(yaml.safe_dump({**parent, "subagents": [{"agent": "agent-reviewer"}]}))
+    async with context as app:
         thread = await new_thread(app)
-        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
+        # The built-in explorer inherits this composer override. The reviewer keeps model-main.
+        receipt = await app.submit_thread(
+            thread_id=thread.thread_id, prompt="start", model_overrides=RunModelOverrides(model_id="model-alt")
+        )
         assert (
             await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
         ).status is RootOperationStatus.completed
-        assert not (await app.query_child_executions(parent_thread_id=thread.thread_id)).executions
 
 
 async def test_spawn_without_model_uses_the_default_model(tmp_path, monkeypatch):

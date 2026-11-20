@@ -359,6 +359,7 @@ class AgentReconstructor:
                 subagent_capability=subagent_capability,
                 root_capabilities=(*root_capabilities, ToolExecutionCapability(composition.tool_execution)),
                 root=True,
+                allowed_child_models=composition.subagents.dynamic.allowed_models,
                 path_layout=path_layout,
                 model_recipes=model_recipes,
                 native_default_tools=(
@@ -489,6 +490,7 @@ class AgentReconstructor:
         subagent_capability: SubagentCapability | None,
         root_capabilities: tuple[AbstractCapability[Any], ...],
         root: bool,
+        allowed_child_models: tuple[str, ...],
         path_layout: EnvironmentPathLayout,
         model_recipes: dict[str, ResolvedModelRecipe],
         native_default_tools: bool,
@@ -560,9 +562,13 @@ class AgentReconstructor:
                 if tool_search is not None
                 else frozenset()
             )
+            # These tools depend on the Run's role and eligible creation models.
+            controls |= {"delegate", "spawn_subagent"}
             if root:
                 controls |= frozenset(
                     {
+                        "create_thread",
+                        "create_worker",
                         "discover_connector_tools",
                         "describe_connector_tool",
                         "call_connector_tool",
@@ -625,12 +631,14 @@ class AgentReconstructor:
                     subagent_capability=subagent_capability,
                     root_capabilities=(),
                     root=False,
+                    allowed_child_models=allowed_child_models,
                     path_layout=path_layout,
                     model_recipes=model_recipes,
                     native_default_tools=native_default_tools,
                 ),
             )
             for item in node.children
+            if item.definition.model.model_id in allowed_child_models
         )
         return AgentDefinition(
             agent=AgentSpec(

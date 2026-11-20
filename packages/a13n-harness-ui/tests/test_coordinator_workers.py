@@ -37,13 +37,12 @@ async def test_creation_owns_only_new_lead_workers_and_retains_failed_admission(
         )
         ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=lead.thread_id))
         managed = await tools.create_worker(ctx, prompt="Work")
-        independent = await tools.create_thread(ctx, prompt="Independent task")
-        outside = await tools.create_thread(ctx, prompt="Outside", project_id="project-other")
-        assert outside["error"]["code"] == "coordinator_worker_project_locked"
+        denied = await tools.create_thread(ctx, prompt="Independent task")
+        assert denied["error"]["code"] == "coordinator_worker_required"
         ordinary_tools = ThreadCollaborationCapability(controller=controller(app), source_thread_id=ordinary.thread_id)
-        refused = await ordinary_tools.create_worker(
-            SimpleNamespace(deps=SimpleNamespace(thread_id=ordinary.thread_id)), prompt="Work"
-        )
+        ordinary_ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=ordinary.thread_id))
+        independent = await ordinary_tools.create_thread(ordinary_ctx, prompt="Independent task")
+        refused = await ordinary_tools.create_worker(ordinary_ctx, prompt="Work")
         assert refused["error"]["code"] == "coordinator_required"
         assert not managed["ok"] and not independent["ok"]
         worker = observed[0]
@@ -121,7 +120,6 @@ async def test_worker_identity_is_captured_each_run_without_inheriting_lead_role
             assert f"managed worker of Coordinator {lead.thread_id}" in instructions
             assert "When a user messages you directly" in instructions
             assert "Do not create another root" in instructions
-            assert "Create a separate Thread only" not in instructions
         with pytest.raises(ThreadError, match="Ask your Coordinator"):
             await controller(app).create_thread(
                 source_thread_id=worker.thread_id, prompt="Nested", title=None, agent_id=None

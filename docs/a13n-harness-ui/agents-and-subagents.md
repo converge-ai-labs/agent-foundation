@@ -137,7 +137,7 @@ subagents:
     default_model: model-primary
 ```
 
-`allowed_models` and `default_model` also govern model selection when an Agent creates an independent chat (`create_thread`), creates a Coordinator worker (`create_worker`), or delegates to a declared subagent (`delegate`). When `subagents.dynamic.enabled` is `true`, root Runs additionally expose `spawn_subagent(name, prompt, model=None, thinking=None)`:
+When creating a chat or Coordinator worker, the agent chooses from `allowed_models`. For built-in and declared helpers, Harness UI resolves each model first, including any selection inherited from the parent chat’s composer. The agent sees only eligible helpers. If none qualify, the Run has no `delegate` tool. When `subagents.dynamic.enabled` is true, root Runs also expose `spawn_subagent(name, prompt, model=None, thinking=None)`:
 
 - `name` labels the helper's role for status displays and transcripts.
 - `prompt` is delivered as the helper's first task input, paired with the package-owned child guidance and global `AGENTS.md` context (the helper starts with a clean history and without parent Agent role instructions).

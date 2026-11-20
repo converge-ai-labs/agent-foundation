@@ -80,6 +80,8 @@ a13n-harness-ui config validate
 
 首次设置会将所选的聊天模型自动加入允许列表并设为默认创建模型（`subagents.dynamic.allowed_models` 与 `subagents.dynamic.default_model`）。你随时可以在 **Settings → Agents → Agent creation** 中扩展可用模型并调整默认模型，该配置由独立会话、Coordinator Worker 与子智能体共同使用。
 
+**从旧版升级。** 已有安装请在 **Settings → Agents → Agent creation** 检查可用模型。列表为空时，普通会话和 Bot 看不到 `create_thread`，Coordinator 看不到 `create_worker`，内置或已声明的子智能体也不会出现在 `delegate` 名单中。要启用 `spawn_subagent`，还需选择默认模型并打开动态创建开关。如果原先通过 `webui.sidekick` 指定模型，请在此重新选择，然后删除旧配置项。如果配置中仍有该字段，加载时会在日志中提示。
+
 ## 添加其他连接或 Agent
 
 第一个 Agent 正常工作后，可在 shell 中使用以下任一命令：

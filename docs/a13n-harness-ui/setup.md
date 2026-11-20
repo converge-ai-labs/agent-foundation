@@ -80,6 +80,8 @@ a13n-harness-ui config validate
 
 Initial setup seeds your selected chat Model as both the first allowed Model and the default Model for agent creation (`subagents.dynamic.allowed_models` and `subagents.dynamic.default_model`). You can expand or change these shared choices anytime under **Settings → Agents → Agent creation** for independent chats, Coordinator workers, and subagents.
 
+**Upgrading an existing installation.** Check **Settings → Agents → Agent creation**. With an empty list, ordinary chats and Bot lose `create_thread`, Coordinators lose `create_worker`, and built-in and declared helpers are unavailable through `delegate`. To enable `spawn_subagent`, also select a default model and turn on dynamic creation. If you previously selected a model through `webui.sidekick`, select it here and remove the obsolete setting. The configuration loader logs the old field name when present.
+
 ## Add another connection or Agent
 
 Once the first Agent works, use either command from your shell:

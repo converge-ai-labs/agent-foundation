@@ -168,7 +168,6 @@ async def test_coordinator_instructions_follow_role_not_optional_settings(tmp_pa
         worker = await app.create_thread(coordinator_thread_id=lead.thread_id)
         for thread, expected in (
             (lead, "coordinator"),
-            (lead, "coordinator"),
             (ordinary, "ordinary"),
             (worker, "worker"),
         ):
@@ -181,7 +180,7 @@ async def test_coordinator_instructions_follow_role_not_optional_settings(tmp_pa
             coordinator = expected == "coordinator"
             tools = capability.get_toolset().tools
             assert ("create_worker" in tools) == coordinator
-            assert ("create_thread" in tools) == (expected != "worker")
+            assert ("create_thread" in tools) == (expected == "ordinary")
             assert {"run_thread", "steer_thread"}.isdisjoint(tools)
             for clause in (
                 "You are a Coordinator",
@@ -194,10 +193,10 @@ async def test_coordinator_instructions_follow_role_not_optional_settings(tmp_pa
             ):
                 assert (clause in instructions) == coordinator
             if coordinator:
-                assert "Create a separate Thread only" not in instructions
-                assert "authorized Project work when useful" not in instructions
+                assert "using create_worker when available" in instructions
             elif expected == "ordinary":
-                assert "Open an independent chat" in instructions
+                assert "finish it and report back" in instructions
+                assert "project_id" in tools["create_thread"].function_schema.json_schema["properties"]
             elif expected == "worker":
                 assert "You are a managed worker" in instructions
                 assert "Do not create another root" in instructions

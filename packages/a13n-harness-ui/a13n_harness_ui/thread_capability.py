@@ -199,9 +199,11 @@ class ThreadToolController:
                 "Ask your Coordinator to create another worker; use subagents for bounded work within your task.",
                 code="coordinator_worker_creation_scoped",
             )
+        if is_coordinator and not worker:
+            raise ThreadError("Use create_worker to start work in your Project.", code="coordinator_worker_required")
         if is_coordinator and project_id not in ("current", configuration.project_id):
             raise ThreadError(
-                "A Coordinator starts chats only in its own Project.", code="coordinator_worker_project_locked"
+                "A Coordinator creates workers only in its own Project.", code="coordinator_worker_project_locked"
             )
         recipe = await self._configurations.creation_model(source_composition, model_id, thinking)
         if agent_id is None and source_composition is not None and source_composition.root.source_kind == "agent":
@@ -437,12 +439,16 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             )
         if self.composition is not None and self.composition.coordinator_thread_id is None:
             policy = self.composition.subagents.dynamic
-            instructions += (
-                f"\nAgent creation models: {', '.join(policy.allowed_models) or 'none configured'}. "
-                f"Default: {policy.default_model or 'none'}. "
-                "Use subagents for bounded tasks in this conversation. Open an independent chat "
-                "only for work that needs a separate conversation."
-            )
+            if policy.allowed_models:
+                instructions += f"\nAgent creation models: {', '.join(policy.allowed_models)}. "
+                instructions += f"Default: {policy.default_model}." if policy.default_model else "Specify a model."
+                if not is_coordinator:
+                    instructions += (
+                        " Open an independent chat only for work that needs a separate conversation."
+                        " When carrying out another chat's task, finish it and report back."
+                    )
+            else:
+                instructions += "\nNo models are allowed for new agents. Use existing chats for collaboration."
         if self._notes_available and self.source_thread_id != BOT_THREAD_ID:
             instructions += (
                 "\nBot Notes are Agent-managed Markdown handoffs. When the projected Bot collaboration status is enabled, "
@@ -511,19 +517,20 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             ],
             id="a13n-a13n-harness-ui-thread-tools",
         )
-        if self.composition is None or self.composition.coordinator_thread_id is None:
-            creators: list[Callable[..., Awaitable[dict[str, Any]]]] = [self.create_thread]
-            if self.composition is not None and self.composition.role == "coordinator":
-                creators.append(self.create_worker)
-            for create in creators:
-                self._toolset.add_tool(
-                    _tool(
-                        create,
-                        name=create.__name__,
-                        effects={"read", "write", "external_communication"},
-                        idempotency="none",
-                    )
+        if (
+            self.composition is not None
+            and self.composition.coordinator_thread_id is None
+            and self.composition.subagents.dynamic.allowed_models
+        ):
+            create = self.create_worker if self.composition.role == "coordinator" else self.create_thread
+            self._toolset.add_tool(
+                _tool(
+                    create,
+                    name=create.__name__,
+                    effects={"read", "write", "external_communication"},
+                    idempotency="none",
                 )
+            )
         if self.source_thread_id == BOT_THREAD_ID and self.controller.bot is not None:
             self._toolset.add_tool(
                 _tool(
@@ -821,7 +828,10 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         model: str | None = None,
         thinking: ThinkingSelection | None = None,
     ) -> dict[str, Any]:
-        """Open an independent chat and submit its first prompt. Return the chat ID and admission receipt."""
+        """Start an independent chat. Use project_id="current" for this Project, null for no Project, or a Project ID.
+
+        If prompt admission fails with a thread_id, inspect or message that chat instead of creating another.
+        """
         return await self._create_chat(ctx, prompt, title, agent_id, project_id, model, thinking, worker=False)
 
     async def create_worker(
@@ -833,7 +843,10 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         model: str | None = None,
         thinking: ThinkingSelection | None = None,
     ) -> dict[str, Any]:
-        """Start an owned worker in this Coordinator's Project. Return the chat ID and admission receipt."""
+        """Start an owned worker in this Coordinator's Project and submit its first prompt.
+
+        If prompt admission fails with a thread_id, inspect or message that worker instead of creating another.
+        """
         return await self._create_chat(ctx, prompt, title, agent_id, "current", model, thinking, worker=True)
 
     async def _create_chat(

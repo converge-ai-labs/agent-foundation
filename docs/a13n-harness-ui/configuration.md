@@ -353,7 +353,7 @@ This controls request-address admission, not CORS. Authentication and same-origi
 
 ### WebUI subagents
 
-In **Settings → Agents → Agent creation**, configure `subagents.dynamic.allowed_models` and `subagents.dynamic.default_model` to control which Models an Agent may select when starting new work. Independent chats (`create_thread`), Coordinator workers (`create_worker`), dynamic subagents (`spawn_subagent`), and declared subagents (`delegate`) all share this allowed-model list and default.
+In **Settings → Agents → Agent creation**, choose the allowed models and an optional default. Independent chats (`create_thread`), Coordinator workers (`create_worker`), and dynamic subagents (`spawn_subagent`) use the default when the agent omits the model. Declared subagents keep their configured or inherited model and appear in the `delegate` roster only when that model is allowed.
 
 Under **Settings → Agents → Subagents**, `subagents.dynamic.enabled` controls whether root conversations can call `spawn_subagent`, and `subagents.max_concurrent` (default `8`) bounds the number of simultaneously running child executions in one conversation. See [Agent collaboration](webui.md#agent-collaboration) and [Dynamic subagents](agents-and-subagents.md#dynamic-subagents-and-result-delivery).
 

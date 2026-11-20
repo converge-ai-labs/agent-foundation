@@ -534,12 +534,15 @@ it("keeps invalid custom Heartbeat intervals out of the YAML draft", async () =>
 it("edits shared creation models and subagent controls through the root document", async () => {
   renderFields('schema_version: "1"\n');
   const user = userEvent.setup();
-  expect(screen.getByRole("group", { name: "Allowed models" })).toBeTruthy();
+  const emptyNotice =
+    "With no models selected, agents cannot create chats or workers, or delegate to subagents.";
+  expect(screen.getByText(emptyNotice)).toBeTruthy();
   await user.click(
     screen.getByRole("switch", { name: "Let the agent create subagents" }),
   );
   expect(screen.queryByRole("combobox", { name: "Default model" })).toBeNull();
   await user.click(screen.getByRole("checkbox", { name: "Alternate" }));
+  expect(screen.queryByText(emptyNotice)).toBeNull();
   expect(
     screen.getByRole("combobox", { name: "Default model" }).textContent,
   ).toContain("Choose a model");
