@@ -4092,7 +4092,7 @@ async def open_harness_ui_app(
             mcp_logins = McpLogins(mcp_oauth) if host_mode == "webui" else None
             if mcp_logins is not None:
                 resources.push_async_callback(mcp_logins.close)
-            compositions = RunCompositionService(store, resolver, oauth=mcp_oauth)
+            compositions = RunCompositionService(store, resolver, configurations, oauth=mcp_oauth)
             candidate_error: HarnessUiError | None = configuration_error
             candidate: LoadedHarnessUiConfiguration | None = None
             if configuration_path is not None and configuration_path.exists():

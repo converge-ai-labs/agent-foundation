@@ -236,6 +236,10 @@ class ResolvedRunComposition(CompositionModel):
     connectors: tuple[ConnectorCapture, ...] = Field(default=(), exclude_if=lambda value: not value)
     root: ResolvedAgentNode
     environment_profile: ResolvedEnvironmentProfile
+    # Local Envd admission adds Thread grants to environment_profile. Retain the input for new children.
+    base_environment_profile: ResolvedEnvironmentProfile | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     environment_bindings: tuple[ResolvedEnvironmentBinding, ...] = Field(default=(), max_length=64)
     default_environment: str | None = Field(default=None, min_length=1, max_length=63)
     session_versions: dict[str, int] = Field(default_factory=dict)

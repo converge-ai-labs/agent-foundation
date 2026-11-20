@@ -25,6 +25,65 @@ async def release_during_shutdown(app, release, receipt_id=None):
     release.set()
 
 
+async def test_restored_parent_delegates_using_the_captured_child_definition(tmp_path, monkeypatch):
+    import yaml
+    from a13n_harness_ui.composition import ResolvedRunComposition, resolver
+
+    root = _write_configuration(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    config = yaml.safe_load(agent_path.read_text())
+    config["subagents"] = [{"agent": "agent-worker"}]
+    agent_path.write_text(yaml.safe_dump(config))
+    (tmp_path / "agents/worker.yaml").write_text(
+        yaml.safe_dump({**config, "id": "agent-worker", "name": "Worker", "subagents": []})
+    )
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
+    started, release = Event(), Event()
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        if "delegate" not in {tool.name for tool in info.function_tools}:
+            return ModelResponse(parts=[TextPart("Child finished")])
+        calls += 1
+        if calls == 1:
+            started.set()
+            await release.wait()
+            return ModelResponse(parts=[ToolCallPart("store", {"key": "ready", "value": True})])
+        if calls == 2:
+            return ModelResponse(parts=[ToolCallPart("delegate", {"subagent_name": "agent-worker", "prompt": "Work"})])
+        return ModelResponse(parts=[TextPart("Parent finished")])
+
+    install_model(monkeypatch, model)
+    monkeypatch.setattr(resolver, "PACKAGE_SYSTEM_PROMPT", "Old package prompt")
+    async with (
+        create_task_group() as group,
+        open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app,
+    ):
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Delegate after restart")
+        with fail_after(10):
+            await started.wait()
+        group.start_soon(release_during_shutdown, app, release, receipt.receipt_id)
+    async with open_local_store(settings.storage) as store:
+        batch = await store.restarts.get()
+        assert batch is not None and batch.state == "ready" and len(batch.items) == 1
+        parent = await store.objects.read_model(batch.items[0].composition, ResolvedRunComposition)
+        expected = parent.root.children[0].definition
+        assert expected.system_prompt == ("Old package prompt",)
+
+    monkeypatch.setattr(resolver, "PACKAGE_SYSTEM_PROMPT", "New package prompt")
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        with fail_after(10):
+            while (await app.get_thread(thread.thread_id)).thread.completion is None:
+                await sleep(0.01)
+        heads, _ = await app._store.child_executions.list_for_parent(thread.thread_id)
+        assert len(heads) == 1 and heads[0].segment_index == 0
+        child = await app._store.objects.read_model(heads[0].run_composition, ResolvedRunComposition)
+        assert child.root == expected
+        assert child.generation_digest == parent.generation_digest
+
+
 def test_update_instructions_belong_only_to_the_restored_run():
     from unittest.mock import Mock
 

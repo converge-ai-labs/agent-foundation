@@ -24,6 +24,49 @@ from .test_device_runtime import TOKEN, daemon, device_path, requires_envd, reso
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_new_child_admits_only_its_own_local_envd_grants(tmp_path, legacy):
+    from a13n_harness.providers.environment.local_envd.configuration import local_envd_path
+    from a13n_harness_ui.composition import ThreadCompositionSelection
+    from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProfileConfiguration
+
+    path = _source(tmp_path, ("explorer",))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        operator = app._subagent_operator
+        source = await operator._configurations.current()
+        assert source is not None
+        parent_thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
+        stored = await app._store.threads.get(parent_thread.thread_id)
+        assert stored is not None
+        selection = ThreadCompositionSelection.from_thread(stored)
+        from dataclasses import replace
+
+        selection = replace(selection, environment_profile_id="environment-sandbox")
+        parent = (await operator._compositions.publish(source, selection)).value
+        parent = await operator._environments.admit(parent)
+        if legacy:
+            assert parent.base_environment_profile is not None
+            parent = parent.model_copy(update={"base_environment_profile": None})
+        child_thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
+        child = await operator._compositions.derive_child(
+            parent=parent,
+            root=parent.root.children[0].definition,
+            thread_id=child_thread.thread_id,
+        )
+        assert not child.session_versions
+        child = await operator._environments.admit(child)
+        assert child.session_versions == {"local": 1}
+        child_session = LocalEnvdProfileConfiguration.model_validate(child.environment_profile.provider_configuration)
+        parent_files = settings.storage.data_root / "threads" / parent_thread.thread_id
+        child_files = settings.storage.data_root / "threads" / child_thread.thread_id
+        grants = child_session.session.session.sandbox.model_dump()["grants"]
+        paths = {grant["path"] for grant in grants}
+        assert {local_envd_path(child_files / name) for name in ("attachments", "tmp")} <= paths
+        assert not paths & {local_envd_path(parent_files / name) for name in ("attachments", "tmp")}
+        assert child_session.session.session.working_directory == local_envd_path(child_files / "tmp")
+
+
 @pytest.fixture
 async def delegation_app(tmp_path, monkeypatch, request):
     monkeypatch.setenv("DEVICE_TOKEN", TOKEN)
