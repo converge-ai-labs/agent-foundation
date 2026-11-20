@@ -1,6 +1,6 @@
 # a13n Console
 
-The private React and TypeScript web application for Agent Foundation Service. Console uses the shared `a13n-ui` design system and its private Service client. The display language follows the browser by default, with English as the fallback. Users can choose English or Simplified Chinese in personal Preferences.
+The private React and TypeScript web application for Agent Foundation Service. Console uses the shared `a13n-ui` design system and its private Service client. The display language follows the browser by default, with English as the fallback. Users can choose English, Simplified Chinese or Hindi in personal Preferences. Within Hindi text, the product terms Agent, Run, Thread, Session and Skill remain in English.
 
 [Console design](../../../spec/frontend/console-design-guidelines.md) owns presentation; the [shared compositions catalog](src/shared/README.md) describes implementation APIs.
 

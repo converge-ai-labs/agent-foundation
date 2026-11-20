@@ -36,6 +36,23 @@ it("restores explicit choices and can return to browser language", () => {
   expect(setItem).toHaveBeenCalledWith("a13n-console-language", "system");
 });
 
+it("resolves Hindi browser languages and restores an explicit Hindi choice", () => {
+  const getItem = vi.fn().mockReturnValue(null);
+  vi.stubGlobal("localStorage", { getItem });
+  vi.stubGlobal("navigator", { languages: ["hi-IN", "en-US"] });
+  expect(readLanguage()).toBe("hi");
+  vi.stubGlobal("navigator", { languages: [], language: "hi" });
+  expect(readLanguage()).toBe("hi");
+  // Hiligaynon shares the prefix but is a different language.
+  vi.stubGlobal("navigator", { languages: ["hil-PH"], language: "hil-PH" });
+  expect(readLanguage()).toBe("en");
+
+  vi.stubGlobal("navigator", { languages: ["zh-CN"] });
+  getItem.mockReturnValue("hi");
+  expect(readLanguagePreference()).toBe("hi");
+  expect(readLanguage()).toBe("hi");
+});
+
 it("keeps working when storage is unavailable", () => {
   vi.stubGlobal("navigator", { languages: ["zh-CN"] });
   vi.stubGlobal("localStorage", {

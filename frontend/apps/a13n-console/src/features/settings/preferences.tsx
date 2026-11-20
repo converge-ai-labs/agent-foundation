@@ -48,7 +48,13 @@ export function LanguageSettings() {
   const { t, i18n } = useTranslation();
   const [language, setLanguage] = useState(readLanguagePreference);
   const changeLanguage = (value: string) => {
-    if (value !== "system" && value !== "en" && value !== "zh-CN") return;
+    if (
+      value !== "system" &&
+      value !== "en" &&
+      value !== "zh-CN" &&
+      value !== "hi"
+    )
+      return;
     setLanguage(value);
     saveLanguage(value);
     void i18n.changeLanguage(resolveLanguage(value));
@@ -68,6 +74,7 @@ export function LanguageSettings() {
                 { value: "system", label: t("System") },
                 { value: "en", label: "English" },
                 { value: "zh-CN", label: "简体中文" },
+                { value: "hi", label: "हिन्दी" },
               ]}
             />
           </div>
