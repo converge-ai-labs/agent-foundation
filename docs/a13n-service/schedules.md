@@ -79,8 +79,6 @@ Submit `POST /api/v1/schedules` with an idempotency key:
 }
 ```
 
-For `target.mode: "new_thread"`, add `environments: [{"name": "workspace", "environment_id": "env_example"}]` and `browser_binding: {"browser_id": "brw_example"}` inside `invocation` to reuse existing resources in each fresh thread. Service checks access at dispatch and records the actual selections in the first Run. The Browser defaults to thread-scoped tab access: fresh threads share the profile and sign-in state, while each thread sees its own tabs. For `target.mode: "thread"`, configure the resources on the target thread and leave both initial fields unset.
-
 The response returns the schedule ID and its current ETag:
 
 ```json
@@ -112,6 +110,21 @@ Common schedule management endpoints:
 | **Pause schedule**       | `POST /api/v1/schedules/{id}/pause`                  |
 | **Archive schedule**     | `DELETE /api/v1/schedules/{id}`                      |
 | **List occurrences**     | `GET /api/v1/schedules/{id}/occurrences`             |
+
+### Reuse an environment and browser across firings
+
+Reuse the same workspace files and browser sign-in while keeping each firing's conversation history separate. Set `target.mode` to `new_thread`, then merge these fields into `invocation` in the creation request. Replace the example IDs with existing resources in the same workspace. You can select either resource on its own.
+
+```json
+{
+  "environments": [{"name": "workspace", "environment_id": "env_0123456789abcdef01234567"}],
+  "browser_binding": {"browser_id": "browser_0123456789abcdef01234567"}
+}
+```
+
+Dispatch once manually and open the occurrence's first Run. Check `environment_mounts` and `browser_binding` for the selected resource IDs. Service rechecks resource status and access at dispatch. If a resource was released or access was revoked, check the failure reason on the occurrence.
+
+By default, threads share the browser profile and sign-in state, and each thread manages its own tabs. For `target.mode: "thread"`, bind the resources on the target thread and omit these two initial fields.
 
 ## Observe live state and load history
 

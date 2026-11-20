@@ -79,8 +79,6 @@ Service 调度引擎严格执行**重叠防重入保护（Overlap prevention）*
 }
 ```
 
-当 `target.mode` 为 `"new_thread"` 时，可在 `invocation` 中加入 `environments: [{"name": "workspace", "environment_id": "env_example"}]` 和 `browser_binding: {"browser_id": "brw_example"}`，让每次触发创建的新 thread 复用现有资源。Service 在下发时检查访问权限，并在首个 Run 中记录实际使用的资源。浏览器默认按 thread 隔离标签页：各 thread 共用浏览器配置和登录状态，但只看到各自的标签页。当 `target.mode` 为 `"thread"` 时，请在目标 thread 上配置资源，不要设置这两个初始字段。
-
 接口返回生成的计划对象及其唯一 ID 和当前版本 ETag：
 
 ```json
@@ -112,6 +110,21 @@ curl -X POST "$A13N_URL/api/v1/schedules/sched_abc123/dispatch" \
 | **暂停计划**         | `POST /api/v1/schedules/{id}/pause`               |
 | **归档计划**         | `DELETE /api/v1/schedules/{id}`                   |
 | **分页查询触发历史** | `GET /api/v1/schedules/{id}/occurrences`          |
+
+### 在每次触发时复用环境和浏览器
+
+让每次触发都使用相同的工作文件和浏览器登录状态，同时保留独立的对话历史。将 `target.mode` 设为 `new_thread`，再把下面两个字段合并到创建请求的 `invocation` 对象中。用同一工作空间内已有的资源 ID 替换示例值。可以只选其中一种资源。
+
+```json
+{
+  "environments": [{"name": "workspace", "environment_id": "env_0123456789abcdef01234567"}],
+  "browser_binding": {"browser_id": "browser_0123456789abcdef01234567"}
+}
+```
+
+手动触发一次，打开该次触发的首个 Run，查看 `environment_mounts` 和 `browser_binding`。Service 在下发时重新检查资源权限和状态。若资源已被释放或权限已撤销，查看触发记录中的失败原因。
+
+浏览器默认按 thread 隔离标签页：各 thread 共用浏览器配置和登录状态，各自管理自己的标签页。如果计划使用 `target.mode: "thread"` 复用同一对话，请直接在目标 thread 上绑定资源，并省略这两个初始字段。
 
 ## 订阅状态和加载历史
 

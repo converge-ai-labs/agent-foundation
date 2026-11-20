@@ -124,19 +124,20 @@ Use [authenticated HTTP requests](http.md) within one workspace. Creating, bindi
 1. Read `GET /api/v1/provider-types/browser` for available types and schemas, then create an account through `POST /api/v1/browser-providers`.
 2. Send `POST /api/v1/browsers` with the account's `provider_id`, a `name` and a `recipe`. The default reserves a browser ID; allocation waits until preparation.
 3. Enable the agent revision's `browser` toolset.
-4. Read the thread's current ETag, then send the following body to `PUT /api/v1/threads/{thread_id}/browser` with that ETag in `If-Match`. Replace `brw_example` with the returned browser ID.
+
+To create a thread with browser access on its first Run, send the object below as `browser_binding` in `POST /api/v1/threads`. Replace the example ID with the browser ID returned above. You can include initial `environments` in the same request. Check `browser_binding` on the Run in the response to verify the selection.
 
 ```json
 {
-  "browser_id": "brw_example",
+  "browser_id": "browser_0123456789abcdef01234567",
   "tab_access": "thread",
   "preparation": "first_use"
 }
 ```
 
-Submit the run after binding. Binding changes affect future runs; accepted runs keep their captured binding. Child and forked threads need their own explicit binding.
+For an existing thread, send the same object to `PUT /api/v1/threads/{thread_id}/browser` with the current thread ETag in `If-Match`. Binding changes affect future runs; accepted runs keep their captured binding. Child and forked threads need their own explicit binding.
 
-To give a new thread’s first Run access to the browser, put the same object in `browser_binding` in your `POST /api/v1/threads` request. Service applies it alongside any initial `environments` before accepting the first Run. Use `invocation.browser_binding` for a [fresh-thread schedule](schedules.md#use-the-http-api).
+For a [fresh-thread schedule](schedules.md#reuse-an-environment-and-browser-across-firings), use `invocation.browser_binding`.
 
 Read the desired binding with `GET /api/v1/threads/{thread_id}/browser`. To detach it, send JSON `null` to the PUT endpoint with a fresh thread ETag. Detachment does not release the browser or close its tabs.
 
