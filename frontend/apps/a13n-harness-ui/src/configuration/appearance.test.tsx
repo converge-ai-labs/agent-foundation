@@ -49,10 +49,16 @@ it("edits independent sizes, resets them, and reports persistence failure", asyn
   await userEvent.click(await screen.findByRole("option", { name: "Dark" }));
   expect(document.documentElement.classList.contains("dark")).toBe(true);
   expect(screen.getByRole("status").textContent).toContain("this page only");
+  await userEvent.click(
+    screen.getByRole("combobox", { name: "Terminal theme" }),
+  );
+  await userEvent.click(await screen.findByRole("option", { name: "Light" }));
+  expect(store.getSnapshot().terminalDark).toBe(false);
   act(() => store.setSize("navigation", 16));
   await userEvent.click(
     screen.getByRole("button", { name: "Reset appearance" }),
   );
   expect(store.getSnapshot().appearance.sizes.navigation).toBe(13);
+  expect(store.getSnapshot().appearance.terminalTheme).toBe("system");
   expect(document.documentElement.classList.contains("dark")).toBe(false);
 });

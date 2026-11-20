@@ -1394,11 +1394,40 @@ def create_webui(
 
                 async def output() -> None:
                     position = cursor
+                    first_frame = True
+                    last_epoch = session.control_epoch
+                    last_state = session.state
+                    last_controller = session.controller
+                    last_participants = len(session.participants)
                     while True:
+                        if not first_frame and session.state == "running":
+                            steps = 5 if session.has_incomplete_frame(position) else 1
+                            for _ in range(steps):
+                                if (
+                                    session.state != last_state
+                                    or session.control_epoch != last_epoch
+                                    or session.controller != last_controller
+                                    or len(session.participants) != last_participants
+                                    or session.end - position >= 131072
+                                ):
+                                    break
+                                try:
+                                    await asyncio.wait_for(session.changed.wait(), 0.002)
+                                except TimeoutError:
+                                    if not session.has_incomplete_frame(position):
+                                        break
+                                else:
+                                    if not session.has_incomplete_frame(position) and steps == 1:
+                                        break
+                        first_frame = False
                         changed = session.changed
                         frame = session.frame(participant, position)
                         await delivery.send(frame)
                         position = frame.end
+                        last_epoch = frame.terminal.control_epoch
+                        last_state = frame.terminal.state
+                        last_controller = frame.terminal.controller
+                        last_participants = len(frame.terminal.participants)
                         if frame.terminal.state == "closed":
                             await delivery.close()
                             group.cancel_scope.cancel()

@@ -11,6 +11,7 @@ export type Theme = "light" | "dark" | "system";
 export type Appearance = {
   version: 1;
   theme: Theme;
+  terminalTheme: Theme;
   sizes: Record<SizeRegion, number>;
 };
 export const regions = Object.keys(sizeRules) as SizeRegion[];
@@ -18,6 +19,7 @@ export function defaultAppearance(): Appearance {
   return {
     version: 1,
     theme: "light",
+    terminalTheme: "system",
     sizes: Object.fromEntries(
       regions.map((key) => [key, sizeRules[key].default]),
     ) as Appearance["sizes"],
@@ -31,6 +33,9 @@ export function validSize(region: SizeRegion, value: unknown): value is number {
     value >= min &&
     value <= max
   );
+}
+function isTheme(value: unknown): value is Theme {
+  return value === "light" || value === "dark" || value === "system";
 }
 export function parseAppearance(raw: string | null): Appearance {
   const result = defaultAppearance();
@@ -48,13 +53,9 @@ export function parseAppearance(raw: string | null): Appearance {
     value.version !== 1
   )
     return result;
-  if (
-    "theme" in value &&
-    (value.theme === "light" ||
-      value.theme === "dark" ||
-      value.theme === "system")
-  )
-    result.theme = value.theme;
+  if ("theme" in value && isTheme(value.theme)) result.theme = value.theme;
+  if ("terminalTheme" in value && isTheme(value.terminalTheme))
+    result.terminalTheme = value.terminalTheme;
   if ("sizes" in value && value.sizes && typeof value.sizes === "object") {
     for (const region of regions) {
       const size = (value.sizes as Record<string, unknown>)[region];

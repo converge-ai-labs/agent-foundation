@@ -9,7 +9,12 @@ import {
 
 export const APPEARANCE_KEY = "a13n-harness-ui.appearance";
 export const LEGACY_THEME_KEY = "a13n-harness-ui.theme";
-type Snapshot = { appearance: Appearance; dark: boolean; saveFailed: boolean };
+type Snapshot = {
+  appearance: Appearance;
+  dark: boolean;
+  terminalDark: boolean;
+  saveFailed: boolean;
+};
 const variables: Record<SizeRegion, string> = {
   navigation: "--harness-nav-font",
   interface: "--a13n-text-body",
@@ -41,9 +46,11 @@ export class AppearanceStore {
     } catch {
       /* Defaults remain usable when storage is unavailable. */
     }
+    const dark = this.resolveDark(appearance.theme);
     this.snapshot = {
       appearance,
-      dark: this.resolveDark(appearance.theme),
+      dark,
+      terminalDark: this.resolveTerminalDark(appearance, dark),
       saveFailed: false,
     };
     if (migrate) this.persist();
@@ -62,6 +69,13 @@ export class AppearanceStore {
         !!this.host.matchMedia?.("(prefers-color-scheme: dark)").matches)
     );
   }
+  private resolveTerminalDark(appearance: Appearance, appDark: boolean) {
+    return appearance.terminalTheme === "dark"
+      ? true
+      : appearance.terminalTheme === "light"
+        ? false
+        : appDark;
+  }
   private paint() {
     const root = this.host.document.documentElement;
     root.classList.toggle("dark", this.snapshot.dark);
@@ -77,9 +91,11 @@ export class AppearanceStore {
     this.listeners.forEach((listener) => listener());
   }
   private systemChanged = () => {
+    const dark = this.resolveDark(this.snapshot.appearance.theme);
     this.snapshot = {
       ...this.snapshot,
-      dark: this.resolveDark(this.snapshot.appearance.theme),
+      dark,
+      terminalDark: this.resolveTerminalDark(this.snapshot.appearance, dark),
     };
     this.notify();
   };
@@ -96,9 +112,11 @@ export class AppearanceStore {
     if (event.storageArea && event.storageArea !== this.host.localStorage)
       return;
     const appearance = parseAppearance(event.newValue);
+    const dark = this.resolveDark(appearance.theme);
     this.snapshot = {
       appearance,
-      dark: this.resolveDark(appearance.theme),
+      dark,
+      terminalDark: this.resolveTerminalDark(appearance, dark),
       saveFailed: false,
     };
     this.listenToSystem();
@@ -110,9 +128,11 @@ export class AppearanceStore {
       this.host.addEventListener("storage", this.storageChanged);
       this.listenToSystem();
     }
+    const dark = this.resolveDark(this.snapshot.appearance.theme);
     this.snapshot = {
       ...this.snapshot,
-      dark: this.resolveDark(this.snapshot.appearance.theme),
+      dark,
+      terminalDark: this.resolveTerminalDark(this.snapshot.appearance, dark),
     };
     this.paint();
     return this.stop;
@@ -143,10 +163,12 @@ export class AppearanceStore {
     this.snapshot = { ...this.snapshot, saveFailed };
   }
   private update(appearance: Appearance) {
+    const dark = this.resolveDark(appearance.theme);
     this.snapshot = {
       ...this.snapshot,
       appearance,
-      dark: this.resolveDark(appearance.theme),
+      dark,
+      terminalDark: this.resolveTerminalDark(appearance, dark),
     };
     this.listenToSystem();
     this.notify();
@@ -155,6 +177,8 @@ export class AppearanceStore {
   }
   setTheme = (theme: Theme) =>
     this.update({ ...this.snapshot.appearance, theme });
+  setTerminalTheme = (terminalTheme: Theme) =>
+    this.update({ ...this.snapshot.appearance, terminalTheme });
   setSize = (region: SizeRegion, size: number) => {
     if (!validSize(region, size)) return;
     this.update({

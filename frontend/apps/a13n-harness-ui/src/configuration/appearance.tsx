@@ -99,7 +99,7 @@ function SizeControl({ region }: { region: SizeRegion }) {
 }
 export function AppearanceSettings() {
   const { t } = useTranslation();
-  const { appearance, store, saveFailed } = useAppearance();
+  const { appearance, terminalDark, store, saveFailed } = useAppearance();
   return (
     <div className={styles.page}>
       <SettingsSection title={t("Theme")}>
@@ -111,6 +111,16 @@ export function AppearanceSettings() {
             { value: "light", label: t("Light") },
             { value: "dark", label: t("Dark") },
             { value: "system", label: t("System") },
+          ]}
+        />
+        <SettingsChoice
+          label={t("Terminal theme")}
+          value={appearance.terminalTheme}
+          onValueChange={(value) => store.setTerminalTheme(value as Theme)}
+          options={[
+            { value: "system", label: t("Follow theme") },
+            { value: "light", label: t("Light") },
+            { value: "dark", label: t("Dark") },
           ]}
         />
       </SettingsSection>
@@ -155,7 +165,10 @@ export function AppearanceSettings() {
                 <code>{'const greeting = "Hello, 世界";'}</code>
               </pre>
             </div>
-            <div className={styles.previewTerminal}>
+            <div
+              className={styles.previewTerminal}
+              data-terminal-theme={terminalDark ? "dark" : "light"}
+            >
               <span aria-hidden="true">$ </span>echo "Hello, 世界"
             </div>
             <div className={styles.previewComposer}>

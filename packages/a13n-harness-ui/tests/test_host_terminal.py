@@ -215,3 +215,42 @@ async def test_terminal_requires_an_existing_absolute_directory(cwd: str) -> Non
     assert failure.value.code == "host_terminal_cwd_invalid"
     assert terminals.list() == ()
     await terminals.close()
+
+
+async def test_incomplete_frame_detection_for_tui_redraws_and_split_utf8(tmp_path: Path) -> None:
+    terminals = HostTerminal(enabled=True)
+    try:
+        created = await terminals.create(TerminalCreate(cwd=str(tmp_path)))
+        session = terminals.get(created.terminal_id)
+        base = session.end
+
+        # Unclosed DEC 2026 synchronized output block is detected until closed.
+        session.output.extend(b"\x1b[?2026h\x1b[2Jredrawing")
+        session.end = base + 21
+        assert session.has_incomplete_frame(base)
+        session.output.extend(b"done\x1b[?2026l")
+        session.end += 12
+        assert not session.has_incomplete_frame(base)
+
+        # Unclosed hidden-cursor redraw block is detected until cursor is restored.
+        cursor = session.end
+        session.output.extend(b"\x1b[?25lstatus line")
+        session.end += 17
+        assert session.has_incomplete_frame(cursor)
+        session.output.extend(b"\x1b[?25h")
+        session.end += 6
+        assert not session.has_incomplete_frame(cursor)
+
+        # Bare erase or incomplete UTF-8 / CSI tail is detected until content follows.
+        cursor = session.end
+        session.output.extend(b"\x1b[2J")
+        session.end += 4
+        assert session.has_incomplete_frame(cursor)
+        session.output.extend("界".encode()[:1])
+        session.end += 1
+        assert session.has_incomplete_frame(cursor)
+        session.output.extend("界".encode()[1:])
+        session.end += 2
+        assert not session.has_incomplete_frame(cursor)
+    finally:
+        await terminals.close()
