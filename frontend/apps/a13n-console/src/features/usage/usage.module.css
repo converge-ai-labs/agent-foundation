@@ -238,20 +238,15 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
-.sessionScope {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-bottom: 16px;
-}
-.sessionScope strong {
+.sessionAgent {
   font-weight: 500;
   overflow-wrap: anywhere;
 }
-.sessionScope span {
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-xs);
+.sessionPanel {
+  container-type: inline-size;
+}
+.sessionPanel .breakdown {
+  margin-top: 0;
 }
 .identity span {
   font-size: var(--a13n-text-xs);

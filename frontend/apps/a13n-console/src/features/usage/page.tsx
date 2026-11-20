@@ -1,6 +1,5 @@
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SegmentedControl } from "a13n-ui";
-import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -17,6 +16,7 @@ import { exactCost, formatCost } from "../../shared/cost";
 import { MemberPicker } from "./member-picker";
 import { Breakdown, type UsageGroup } from "./breakdown";
 import { UsageChart } from "./chart";
+import { SessionUsageSheet } from "./session-usage-sheet";
 import { compactNumber, duration, percent, presetWindow } from "./values";
 import styles from "./usage.module.css";
 
@@ -229,13 +229,11 @@ function UsageBrowser() {
       )}
       <section
         className={styles.breakdown}
-        data-group={agent ? "sessions" : group}
+        data-group={group}
         aria-labelledby="usage-breakdown-title"
       >
         <div className={styles.sectionHeading}>
-          <h2 id="usage-breakdown-title">
-            {t(agent ? "Session usage" : "Usage breakdown")}
-          </h2>
+          <h2 id="usage-breakdown-title">{t("Usage breakdown")}</h2>
           <SegmentedControl
             label={t("Group usage by")}
             value={group}
@@ -257,20 +255,6 @@ function UsageBrowser() {
             ]}
           />
         </div>
-        {agent && (
-          <div className={styles.sessionScope}>
-            <Button variant="ghost" size="sm" onClick={() => setAgent(null)}>
-              <ArrowLeftIcon aria-hidden="true" size={14} />
-              {t("Back to agents")}
-            </Button>
-            <strong>{agent.name}</strong>
-            <span>
-              {t(
-                "Sessions for this agent in the selected period, sorted by spend (highest first).",
-              )}
-            </span>
-          </div>
-        )}
         {group === "members" && (
           <p className={styles.memberHint}>
             {t(
@@ -279,11 +263,9 @@ function UsageBrowser() {
           </p>
         )}
         <Breakdown
-          key={`${agent?.agent_id ?? group}:${principalId ?? "all"}`}
+          key={`${group}:${principalId ?? "all"}`}
           window={window}
-          {...(agent
-            ? { group: "sessions", agentId: agent.agent_id }
-            : { group })}
+          group={group}
           onAgentSelect={setAgent}
           principalId={principalId}
           onMemberSelect={(value) => {
@@ -292,6 +274,14 @@ function UsageBrowser() {
           }}
         />
       </section>
+      {agent && (
+        <SessionUsageSheet
+          agent={agent}
+          window={window}
+          member={member}
+          onClose={() => setAgent(null)}
+        />
+      )}
       <p className={styles.footnote}>
         {t(
           "Usage is grouped by ingestion time. Runs are counted by start time; average time includes only sealed runs. Costs are in USD. Cached tokens are included in input tokens.",
