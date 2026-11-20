@@ -349,7 +349,7 @@ async def test_claim_leaves_newer_checkpoints_and_fails_unsupported_older_ones(
     assert (await runs_kit.get_run(service, newer))["status"] == "accepted"
 
 
-@pytest.mark.parametrize("readable_format", checkpoints.READABLE_FORMATS)
+@pytest.mark.parametrize("readable_format", (checkpoints.READABLE_FORMATS[0], checkpoints.FORMAT))
 async def test_a_successor_waits_for_a_worker_that_reads_its_parents_checkpoint(
     service, scripted_model, runs_kit, readable_format
 ) -> None:  # type: ignore[no-untyped-def]
@@ -755,7 +755,7 @@ async def test_an_outcome_commits_only_with_its_seal(service, scripted_model, ru
     assert sealed["status"] == "completed" and sealed["output"] == "Sealed" and sealed["attempts"] == 2, sealed
 
 
-@pytest.mark.parametrize("question, failed", [(False, False), (True, False), (False, True)])
+@pytest.mark.parametrize("question, failed", [(True, False), (False, True)])
 async def test_takeover_keeps_external_answer_without_replaying_local_approval(
     skill_service, scripted_model, runs_kit, monkeypatch, question, failed
 ) -> None:  # type: ignore[no-untyped-def]

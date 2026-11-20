@@ -230,34 +230,37 @@ async def test_summary_of_unused_credential_is_zero(prepared):
     assert p.device.opens == p.device.attaches == 0
 
 
-@pytest.mark.parametrize(
-    "change,expected",
-    [
+async def test_summary_and_rows_share_native_identity_and_legacy_defaults(prepared):
+    p = prepared
+    cases = [
         ({"session": None}, "on_create"),
         ({"session_version": None}, "on_create"),
         ({"version": 2**31}, "unknown"),
         ({"session_status": "retired"}, "unknown"),
         ({"session_status": None}, "applied"),
-    ],
-)
-async def test_summary_and_rows_share_native_identity_and_legacy_defaults(prepared, change, expected):
-    p = prepared
+    ]
     async with p.borrower.borrow(p.device, **p.options):
         async with transaction(p.service.runtime.storage) as db:
             binding = await db.get_one(ThreadSessionBindingRow, (p.lease.thread_id, p.mount.environment_id, "default"))
-            head = {**binding.head}
-            if "session_status" in change:
-                head["session"] = {**head["session"]}
-                if change["session_status"] is None:
-                    head["session"].pop("status")
+            baseline = {**binding.head}
+        for change, expected in cases:
+            async with transaction(p.service.runtime.storage) as db:
+                binding = await db.get_one(
+                    ThreadSessionBindingRow, (p.lease.thread_id, p.mount.environment_id, "default")
+                )
+                head = {**baseline}
+                if "session_status" in change:
+                    head["session"] = {**head["session"]}
+                    if change["session_status"] is None:
+                        head["session"].pop("status")
+                    else:
+                        head["session"]["status"] = change["session_status"]
                 else:
-                    head["session"]["status"] = change["session_status"]
-            else:
-                head.update(change)
-            binding.head = head
-        result = await page(p)
-        assert result["items"][0]["status"] == expected
-        assert result["summary"][expected] == 1 and sum(result["summary"].values()) == 1
+                    head.update(change)
+                binding.head = head
+            result = await page(p)
+            assert result["items"][0]["status"] == expected
+            assert result["summary"][expected] == 1 and sum(result["summary"].values()) == 1
 
 
 async def test_query_scope_and_manual_retry_authority(prepared):

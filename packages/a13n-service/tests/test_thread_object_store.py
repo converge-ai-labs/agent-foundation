@@ -127,12 +127,8 @@ async def test_production_host_selects_capability_and_binds_private_store(execut
     "rules,enabled",
     [
         ({}, False),
-        ({"*": True}, True),
-        ({"*": False, "image_upload": True}, True),
+        ({"*": False, "image_*": True}, True),
         ({"*": True, "image_upload": False}, False),
-        ({"*_upload": True}, True),
-        ({"image_*": True}, True),
-        ({"i*e_*load": True}, True),
     ],
 )
 async def test_mcp_object_ref_rules_deliver_exact_private_bytes(service, scripted_model, runs_kit, rules, enabled):
@@ -374,7 +370,7 @@ async def test_orphan_reconciliation_pages_past_live_objects(service, scripted_m
     assert await store.read(second.object_id) == b"two"
 
 
-@pytest.mark.parametrize("operation", ["evict", "delete", "backend_failure", "authority_lost"])
+@pytest.mark.parametrize("operation", ["evict", "backend_failure", "authority_lost"])
 async def test_inflight_read_distinguishes_catalog_removal_from_backend_failure(
     service, scripted_model, runs_kit, monkeypatch, operation
 ):

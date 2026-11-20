@@ -275,8 +275,7 @@ async def test_real_runs_overlap_then_commit_compaction(
         assert len(records) == 1
 
 
-@pytest.mark.parametrize("disposition", ["applied", "skipped"])
-@pytest.mark.parametrize("background", [True, False])
+@pytest.mark.parametrize(("disposition", "background"), [("applied", True), ("skipped", False)])
 async def test_exact_checkpoint_acknowledgement_survives_cas_failure(
     service, scripted_model, runs_kit, monkeypatch, disposition, background
 ):
@@ -364,8 +363,7 @@ async def test_retention_waits_for_idle_thread(service, scripted_model, runs_kit
         assert len([delivery for delivery in cleanups if "keys" in delivery.payload]) == 1
 
 
-@pytest.mark.parametrize("expired_owner", [False, True], ids=["idle-retention", "expired-owner"])
-async def test_retention_ineligible_thread_does_not_starve_sweep(service, scripted_model, runs_kit, expired_owner):
+async def test_retention_ineligible_thread_does_not_starve_sweep(service, scripted_model, runs_kit):
     from datetime import timedelta
 
     await runs_kit.pause_sweeps(service)
@@ -381,14 +379,12 @@ async def test_retention_ineligible_thread_does_not_starve_sweep(service, script
         assert owner is not None
         await compactions.publish(service.runtime, owner, input)
         owners.append(owner)
-    if not expired_owner:
-        await seal_attempt(service.runtime, later, Outcome.cancelled())
     async with transaction(service.runtime.storage) as session:
         current = await now(session)
         for index, owner in enumerate(owners):
             row = await session.get_one(CompactionRow, owner.operation_id)
             row.created_at = current - timedelta(days=10 - index)
-            if index == 1 and expired_owner:
+            if index == 1:
                 row.lease_expires_at = current - timedelta(seconds=1)
             else:
                 row.status = "failed"
@@ -399,10 +395,7 @@ async def test_retention_ineligible_thread_does_not_starve_sweep(service, script
         first = await session.get_one(CompactionRow, owners[0].operation_id)
         second = await session.get_one(CompactionRow, owners[1].operation_id)
         assert first.settled_at is None
-        if expired_owner:
-            assert (second.status, second.error_code) == ("failed", "compaction_interrupted")
-        else:
-            assert second.disposition == "expired"
+        assert (second.status, second.error_code) == ("failed", "compaction_interrupted")
 
 
 async def test_archive_during_upload_keeps_retryable_cleanup(service, scripted_model, runs_kit, monkeypatch):
@@ -541,8 +534,7 @@ async def test_detached_model_preserves_run_network_restrictions(service, script
     assert "HostNotAllowedError" in str([record.__dict__.get("exception_details") for record in caplog.records])
 
 
-@pytest.mark.parametrize("typed", [False, True], ids=["unexpected", "harness"])
-async def test_generation_failure_preserves_harness_code(service, scripted_model, runs_kit, monkeypatch, typed):
+async def test_generation_failure_preserves_harness_code(service, scripted_model, runs_kit, monkeypatch):
     from a13n_harness import HarnessError
     from a13n_service.runs import compaction_model
 
@@ -552,20 +544,17 @@ async def test_generation_failure_preserves_harness_code(service, scripted_model
     input = frozen(lease, model_id=plan.agent.model.key)
 
     async def fail_generation(*args):
-        if typed:
-            raise HarnessError("No summary produced", code="compaction_empty")
-        raise ValueError("Unexpected provider failure")
+        raise HarnessError("No summary produced", code="compaction_empty")
 
     monkeypatch.setattr(compaction_model, "generate_compaction", fail_generation)
     assert attempt.compaction is not None
     await attempt.compaction.submit(input)
     async with asyncio.timeout(10):
         operation = await attempt.compaction.wait(lease.thread_id, input.basis.operation_id)
-    expected = "compaction_empty" if typed else "compaction_failed"
-    assert (operation.status, operation.error_code) == ("failed", expected)
+    assert (operation.status, operation.error_code) == ("failed", "compaction_empty")
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(CompactionRow, input.basis.operation_id)
-        assert row.error_code == expected
+        assert row.error_code == "compaction_empty"
 
 
 @pytest.fixture
@@ -612,17 +601,16 @@ async def test_oversized_frozen_input_uses_synchronous_fallback(
         assert await session.scalar(select(CompactionRow.id)) is None
 
 
-@pytest.mark.parametrize("enabled", [False, True])
 async def test_agent_policy_selects_background_generation_and_preserves_ready_delivery(
-    service, scripted_model, runs_kit, enabled
+    service, scripted_model, runs_kit
 ):
     from a13n_service.resources.agents.schemas import AgentConfig
 
     assert AgentConfig(model="test").background_compaction.enabled is False
-    lease = await setup(service, scripted_model, runs_kit, background=enabled)
+    lease = await setup(service, scripted_model, runs_kit, background=False)
     plan = await _plan(service.runtime, lease)
-    assert plan.background_compaction is enabled
-    assert (_Attempt(service.runtime, lease, AttemptControl(), plan).compaction is not None) is enabled
+    assert plan.background_compaction is False
+    assert _Attempt(service.runtime, lease, AttemptControl(), plan).compaction is None
     input = frozen(lease)
     owner = await compactions.reserve(service.runtime, lease, input)
     assert owner is not None

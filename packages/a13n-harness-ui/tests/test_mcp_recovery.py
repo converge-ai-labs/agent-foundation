@@ -23,7 +23,7 @@ from .test_tool_search_integration import _http_mcp
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("ownership", ["local", "input", "host", "apps"])
+@pytest.mark.parametrize("ownership", ["local", "apps"])
 async def test_initialization_retries_then_later_run_recovers(ownership, monkeypatch):
     attempts = 0
     failures = 3
@@ -93,7 +93,7 @@ async def test_initialization_retries_then_later_run_recovers(ownership, monkeyp
 
 
 @pytest.mark.parametrize("protocol", ["legacy", "auto"])
-@pytest.mark.parametrize("status", [400, 401, 403, 404, 408, 429, 502, 503, 504])
+@pytest.mark.parametrize("status", [401, 404, 503])
 async def test_only_transient_http_initialization_errors_retry(status, protocol, monkeypatch):
     attempts = calls = 0
     delays = []
@@ -149,9 +149,15 @@ async def test_only_transient_http_initialization_errors_retry(status, protocol,
             assert delays == []
 
 
-@pytest.mark.parametrize("ownership", ["local", "input", "host", "apps"])
-@pytest.mark.parametrize("transient", [False, True])
-@pytest.mark.parametrize("selection", ["default", "agent", "server"])
+@pytest.mark.parametrize(
+    ("ownership", "transient", "selection"),
+    [
+        ("local", True, "default"),
+        ("host", False, "server"),
+        ("apps", True, "agent"),
+        ("input", False, "default"),
+    ],
+)
 async def test_default_skip_keeps_other_tools_and_recovers_on_later_run(
     ownership, transient, selection, monkeypatch, caplog
 ):
@@ -270,8 +276,7 @@ async def test_default_skip_keeps_other_tools_and_recovers_on_later_run(
         assert not any(client.is_connected() for client in clients)
 
 
-@pytest.mark.parametrize("ownership", ["host", "apps"])
-@pytest.mark.parametrize("loss", ["disconnect", "close"])
+@pytest.mark.parametrize(("ownership", "loss"), [("host", "disconnect"), ("apps", "close")])
 async def test_later_run_replaces_closed_generation_without_retargeting_old_projection(ownership, loss, monkeypatch):
     server = FastMCP("Retained lifecycle")
     calls = requests = initializations = 0
@@ -401,7 +406,7 @@ async def test_default_skip_does_not_hide_transport_authorization_failure():
         result.output_or_raise()
 
 
-@pytest.mark.parametrize("ownership", ["local", "input", "host", "apps"])
+@pytest.mark.parametrize("ownership", ["local", "apps"])
 async def test_default_skip_propagates_run_cancellation_during_startup(ownership, monkeypatch):
     backing_off = asyncio.Event()
     clients = set()

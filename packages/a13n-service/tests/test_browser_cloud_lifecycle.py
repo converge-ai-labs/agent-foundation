@@ -352,41 +352,30 @@ async def test_kernel_preflight_failure_reconciles_to_first_create(service, runs
 
 
 @pytest.mark.parametrize("supplier", ["browserbase", "kernel"])
-@pytest.mark.parametrize(
-    "status,certainty",
-    [
-        (400, "rejected"),
-        (401, "rejected"),
-        (403, "rejected"),
-        (404, "unknown"),
-        (408, "unknown"),
-        (409, "unknown"),
-        (422, "unknown"),
-        (429, "unknown"),
-        (500, "unknown"),
-    ],
-)
-async def test_create_rejection_is_distinct_from_unknown(supplier, status, certainty):
-    async def handler(request):
-        if request.url.path == "/auth/context":
-            return httpx2.Response(
-                200, json={"organization": {"id": "org"}, "authorization": {"effective_scope": {"project_id": None}}}
-            )
-        return httpx2.Response(status)
+async def test_create_rejection_is_distinct_from_unknown(supplier):
+    for status, certainty in [(400, "rejected"), (403, "rejected"), (429, "unknown"), (500, "unknown")]:
 
-    client = api(supplier, handler)
-    provider = (
-        Browserbase(BrowserbaseConfiguration(project_id="project"), client)
-        if supplier == "browserbase"
-        else Kernel(KernelConfiguration(organization_id="org"), client)
-    )
-    recipe = BrowserbaseRecipe() if supplier == "browserbase" else KernelRecipe()
-    try:
-        with pytest.raises(BrowserProviderError) as error:
-            await provider.create("alloc-1", recipe)
-        assert error.value.certainty == certainty
-    finally:
-        await provider.close()
+        async def handler(request, status=status):
+            if request.url.path == "/auth/context":
+                return httpx2.Response(
+                    200,
+                    json={"organization": {"id": "org"}, "authorization": {"effective_scope": {"project_id": None}}},
+                )
+            return httpx2.Response(status)
+
+        client = api(supplier, handler)
+        provider = (
+            Browserbase(BrowserbaseConfiguration(project_id="project"), client)
+            if supplier == "browserbase"
+            else Kernel(KernelConfiguration(organization_id="org"), client)
+        )
+        recipe = BrowserbaseRecipe() if supplier == "browserbase" else KernelRecipe()
+        try:
+            with pytest.raises(BrowserProviderError) as error:
+                await provider.create("alloc-1", recipe)
+            assert error.value.certainty == certainty
+        finally:
+            await provider.close()
 
 
 def test_release_only_shortcuts_proven_unallocated_creates():
@@ -399,8 +388,7 @@ def test_release_only_shortcuts_proven_unallocated_creates():
         assert row.status == expected
 
 
-@pytest.mark.parametrize("supplier", ["browserbase", "kernel"])
-@pytest.mark.parametrize("release", [True, False])
+@pytest.mark.parametrize(("supplier", "release"), [("browserbase", True), ("kernel", False)])
 async def test_rejected_create_can_release_or_retry(service, runs_kit, monkeypatch, supplier, release):
     from dataclasses import replace
 

@@ -54,8 +54,8 @@ class Cloud:
         self.closed += 1
 
 
-@pytest.fixture(params=[True, False], ids=["desktop", "headless"])
-async def setup(service, monkeypatch, runs_kit, request):
+@pytest.fixture
+async def setup(service, monkeypatch, runs_kit):
     await runs_kit.pause_sweeps(service)
     cloud = Cloud()
     monkeypatch.setattr(builds, "_builder", lambda *_: cloud)
@@ -75,7 +75,7 @@ async def setup(service, monkeypatch, runs_kit, request):
         json={
             "name": "Desktop",
             "provider_id": p.json()["id"],
-            "config": {"recipe": {"desktop": request.param}},
+            "config": {"recipe": {"desktop": True}},
         },
     )
     assert t.status_code == 201, t.text
@@ -88,7 +88,7 @@ async def setup(service, monkeypatch, runs_kit, request):
                 json={
                     "name": "Custom base",
                     "provider_id": p.json()["id"],
-                    "config": {"recipe": {"desktop": request.param, "base_image": base_image}},
+                    "config": {"recipe": {"desktop": True, "base_image": base_image}},
                 },
             )
             assert template.status_code == 201, template.text

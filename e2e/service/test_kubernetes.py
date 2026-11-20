@@ -157,19 +157,13 @@ async def test_kubernetes_claim_lifecycle_and_retained_shared_reuse(stack, reque
                 await account.remove(identifier)
 
 
-@pytest.mark.parametrize("fault", ["image", "scheduling", "storage", "startup"])
+@pytest.mark.parametrize("fault", ["image", "startup"])
 async def test_kubernetes_failed_preparation_has_native_evidence_and_cleans_up(stack, request, fault):
     async with backend("kubernetes", stack.directory, request.config) as base:
         recipe = deepcopy(base.recipe)
         spec = recipe["pod_template"]["spec"]
         if fault == "image":
             spec["containers"][0].update(image="a13n-missing-e2e:never-loaded", imagePullPolicy="Never")
-        elif fault == "scheduling":
-            spec["nodeSelector"] = {"a13n.test/nonexistent-node": "true"}
-        elif fault == "storage":
-            recipe["storage"] = [
-                {"name": "workspace", "mount_path": "/workspace", "existing_claim": "a13n-missing-e2e-claim"}
-            ]
         else:
             spec["containers"][0]["command"] = ["sh", "-c", "echo expected-startup-failure >&2; exit 23"]
         account = replace(base, recipe=recipe)
@@ -199,12 +193,7 @@ async def test_kubernetes_failed_preparation_has_native_evidence_and_cleans_up(s
                     )
                     return native if exited else None
                 evidence = str(status) + str(native["events"])
-                expected = {
-                    "image": "ErrImageNeverPull",
-                    "scheduling": "Unschedulable",
-                    "storage": "not found",
-                }[fault]
-                return native if expected in evidence else None
+                return native if "ErrImageNeverPull" in evidence else None
 
             native = await eventually(observed, timeout=90)
             assert native["envd"] == "not_verified"

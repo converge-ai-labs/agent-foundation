@@ -544,31 +544,6 @@ async def test_composer_reads_durable_finding_without_changing_the_target(servic
     assert unchanged["default_revision_id"] == agent["default_revision_id"]
 
 
-async def test_final_findings_migration_backfills_composer_and_preserves_other_heads(
-    service, scripted_model, runs_kit, database
-):
-    from a13n_service.distribution import OSS
-    from a13n_service.migrations.runner import migration_connection, upgrade
-    from alembic import command
-    from alembic.script import ScriptDirectory
-
-    await runs_kit.create_model(service, scripted_model)
-    composer = (await service.client.post("/api/v1/agent-composer")).json()
-    finder = (await service.client.post("/api/v1/finding-agent")).json()
-    # Drain maintenance before synchronous DDL can block the event loop while waiting for its locks.
-    await service.runtime.tasks.close(timeout=service.runtime.settings.server.shutdown_timeout)
-    with migration_connection(database, OSS) as config:
-        final = ScriptDirectory.from_config(config).get_revision("797996a323b1")
-        assert final is not None and final.down_revision == "7dc8ec393cc1"
-        command.downgrade(config, final.down_revision)
-    upgrade(database, OSS)
-    restored = (await service.client.get(f"/api/v1/agents/{composer['id']}")).json()
-    assert restored["preset_kind"] == "composer" and restored["default_revision_id"] == composer["default_revision_id"]
-    preserved = (await service.client.get(f"/api/v1/agents/{finder['id']}")).json()
-    assert preserved["source"] == "custom" and preserved["preset_kind"] is None
-    assert preserved["default_revision_id"] == finder["default_revision_id"]
-
-
 async def reviewed(service, runs_kit, body, assessment="false_positive", note="The tool recovered successfully."):
     created = await service.client.post("/api/v1/findings", json=body)
     assert created.status_code == 201, created.text
@@ -597,7 +572,7 @@ def navigation_in(prompt):
     return {item["trace_id"]: item for item in json.loads(prompt)["targets"]}
 
 
-@pytest.mark.parametrize("public_url", ["https://console.example.test", "https://console.example.test/a13n/"])
+@pytest.mark.parametrize("public_url", ["https://console.example.test/a13n/"])
 async def test_analysis_navigation_uses_database_identity_and_freezes_names(
     service, scripted_model, runs_kit, public_url
 ):

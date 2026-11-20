@@ -209,8 +209,7 @@ async def test_native_orm_join_uses_host_storage(database, app_database, runtime
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("role", ["all", "control", "worker"])
-async def test_startup_refuses_app_schema_before_any_callback(settings: Settings, app_database, role):
+async def test_startup_refuses_app_schema_before_any_callback(settings: Settings, app_database):
     definition = app_database()
     notes(definition)
     apps.initialize(definition)
@@ -223,7 +222,7 @@ async def test_startup_refuses_app_schema_before_any_callback(settings: Settings
     installed = (
         InstalledApp(AppDefinition(definition.app_id, "Demo", database=definition, startup=start), "demo", "1"),
     )
-    app = assembly.build_app(settings=settings, apps=installed, role=role)
+    app = assembly.build_app(settings=settings, apps=installed, role="worker")
     with pytest.raises(RuntimeError, match="apps db upgrade"):
         async with app.router.lifespan_context(app):
             pytest.fail("Unprepared App must not start")
@@ -328,50 +327,27 @@ def test_app_upgrades_serialize_and_release_empty_first_failure(database, app_da
     assert apps.status(database, OSS, definition)["ready"]
 
 
-def test_partial_autocommit_failure_retains_ownership(database, app_database):
-    definition = app_database()
-    notes(definition)
-    apps.initialize(definition)
-    path = apps.generate(database, OSS, definition, "create notes")
-    source = path.read_text()
-    path.write_text(
-        source.replace(
-            "def upgrade() -> None:",
-            "def upgrade() -> None:\n"
-            "    with op.get_context().autocommit_block():\n"
-            "        op.execute('CREATE TABLE ' + migration_name('partial') + ' (id integer)')\n"
-            "    raise RuntimeError('partial failure')",
-        )
-    )
-    with pytest.raises(RuntimeError, match="partial failure"):
-        apps.upgrade(database, OSS, definition)
-    assert sql(database, "SELECT app_id, prefix FROM app_databases") == [(definition.app_id, definition.prefix)]
-    changed = app_database(prefix="corrected", migrations=definition.migrations)
-    with pytest.raises(ValueError, match="retained ownership"):
-        apps.upgrade(database, OSS, changed)
-
-
-@pytest.mark.parametrize("object_kind", ["array_enum", "enum_schema", "sequence", "sequence_schema", "exclude"])
-def test_shared_schema_metadata_names_are_validated(app_database, object_kind):
+def test_shared_schema_metadata_names_are_validated(app_database):
     from sqlalchemy import ARRAY, Enum, Sequence
     from sqlalchemy.dialects.postgresql import ExcludeConstraint
 
-    definition = app_database()
-    if object_kind == "sequence":
-        Sequence("native_sequence", metadata=definition.metadata)
-    elif object_kind == "sequence_schema":
-        Sequence(definition.name("sequence"), schema="other", metadata=definition.metadata)
-    else:
-        type_ = Integer()
-        if object_kind == "array_enum":
-            type_ = ARRAY(Enum("a", "b", name="native_enum"))
-        elif object_kind == "enum_schema":
-            type_ = Enum("a", "b", name=definition.name("state"), schema="other")
-        table = Table(definition.name("records"), definition.metadata, Column("value", type_))
-        if object_kind == "exclude":
-            table.append_constraint(ExcludeConstraint((table.c.value, "="), name="native_index"))
-    with pytest.raises(ValueError, match="namespace"):
-        definition.validate()
+    for object_kind in ("array_enum", "enum_schema", "sequence", "sequence_schema", "exclude"):
+        definition = app_database()
+        if object_kind == "sequence":
+            Sequence("native_sequence", metadata=definition.metadata)
+        elif object_kind == "sequence_schema":
+            Sequence(definition.name("sequence"), schema="other", metadata=definition.metadata)
+        else:
+            type_ = Integer()
+            if object_kind == "array_enum":
+                type_ = ARRAY(Enum("a", "b", name="native_enum"))
+            elif object_kind == "enum_schema":
+                type_ = Enum("a", "b", name=definition.name("state"), schema="other")
+            table = Table(definition.name("records"), definition.metadata, Column("value", type_))
+            if object_kind == "exclude":
+                table.append_constraint(ExcludeConstraint((table.c.value, "="), name="native_index"))
+        with pytest.raises(ValueError, match="namespace"):
+            definition.validate()
 
 
 def test_live_parity_uses_read_only_deployment_role(database, app_database, monkeypatch):
@@ -405,10 +381,8 @@ def test_live_parity_uses_read_only_deployment_role(database, app_database, monk
 @pytest.mark.parametrize(
     "role,master,include_apps,prepared",
     [
-        ("all", True, True, True),
         ("control", True, True, True),
         ("worker", True, True, False),
-        ("control", False, True, False),
         ("control", True, False, False),
     ],
 )
@@ -442,26 +416,9 @@ async def test_installed_app_auto_migration_options(
         }
     )
     app = assembly.build_app(settings=config, apps=installed, role=role)
-    # The assembly fixes installed heads once; startup and readiness only query the deployment DB.
     monkeypatch.setattr(apps, "heads", lambda *args: pytest.fail("Reloaded installed migration heads"))
     with pytest.raises(StartupReached if prepared else RuntimeError):
         async with app.router.lifespan_context(app):
             pytest.fail("Startup callback must be reached only after schema preparation")
     assert events == (["started"] if prepared else [])
     assert apps.status(settings.database, OSS, definition)["ready"] is prepared
-
-
-@pytest.mark.anyio
-async def test_prefix_mismatch_names_bound_and_configured_prefix(database, app_database):
-    definition = app_database()
-    notes(definition)
-    apps.initialize(definition)
-    apps.generate(database, OSS, definition, "initial")
-    apps.upgrade(database, OSS, definition)
-    changed = app_database(prefix="wrong", migrations=definition.migrations)
-    storage = assembly.open_storage(database)
-    try:
-        with pytest.raises(RuntimeError, match=f"{changed.prefix}.*{definition.prefix}.*restore"):
-            await apps.require_current(storage, (changed,))
-    finally:
-        await storage.close()

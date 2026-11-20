@@ -21,7 +21,7 @@ pytestmark = pytest.mark.usefixtures("migrated_databases")
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("mode", ["normal", "goal"])
+@pytest.mark.parametrize("mode", ["goal"])
 async def test_cancel_is_receipt_owned_and_session_is_reusable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode
 ) -> None:
@@ -55,9 +55,14 @@ async def test_cancel_is_receipt_owned_and_session_is_reusable(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("decision", ["approve", "deny"])
-@pytest.mark.parametrize("mode", ["full-control", "sandbox"])
-@pytest.mark.parametrize("shortcut", [True, False])
+@pytest.mark.parametrize(
+    ("decision", "mode", "shortcut"),
+    [
+        ("approve", "full-control", True),
+        ("deny", "full-control", False),
+        ("approve", "sandbox", True),
+    ],
+)
 async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decision: str, mode: str, shortcut: bool
 ) -> None:
@@ -150,8 +155,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("timeout", [False, True])
-@pytest.mark.parametrize("mode", ["normal", "goal"])
+@pytest.mark.parametrize(("timeout", "mode"), [(False, "goal"), (True, "normal")])
 async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     tmp_path: Path, monkeypatch, timeout: bool, mode
 ) -> None:

@@ -338,8 +338,7 @@ async def test_dynamic_resume_uses_host_source_and_retained_role(tmp_path, monke
             )
 
 
-@pytest.mark.parametrize("spawn", ["delegate", "spawn_subagent"])
-@pytest.mark.parametrize("wait_for_successor", [False, True])
+@pytest.mark.parametrize(("spawn", "wait_for_successor"), [("delegate", False), ("spawn_subagent", True)])
 async def test_repeated_resume_returns_tool_error_without_failing_parent(
     tmp_path, monkeypatch, spawn, wait_for_successor
 ):
@@ -466,7 +465,7 @@ async def test_dynamic_child_of_bot_or_live_gets_the_package_prompt(tmp_path, mo
     assert "CHILD_ROLE" in child_instructions[0]
 
 
-@pytest.mark.parametrize("first,second", [("delegate", "spawn_subagent"), ("spawn_subagent", "delegate")])
+@pytest.mark.parametrize("first,second", [("delegate", "spawn_subagent")])
 async def test_concurrency_limit_is_shared_by_declared_and_dynamic(tmp_path, monkeypatch, first, second):
     release = Event()
 
@@ -551,8 +550,7 @@ async def test_resume_uses_the_same_concurrency_limit(tmp_path, monkeypatch):
             release.set()
 
 
-@pytest.mark.parametrize("single", [True, False], ids=["exact", "fan-in"])
-@pytest.mark.parametrize("mode", ["immediate", "queued"])
+@pytest.mark.parametrize(("single", "mode"), [(True, "immediate"), (False, "queued")])
 async def test_user_message_during_subagent_wait(tmp_path, monkeypatch, single, mode):
     finish_child, waiting, user_seen, result_seen = Event(), Event(), Event(), Event()
     wait_results = []

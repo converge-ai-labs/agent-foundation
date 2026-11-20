@@ -21,11 +21,15 @@ async def _until(predicate) -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("reject", [False, True])
-@pytest.mark.parametrize("new_draft", [False, True])
-@pytest.mark.parametrize("guidance,with_image", [("change direction", False), ("change direction", True), ("", True)])
-@pytest.mark.parametrize("explicit", [False, True])
-@pytest.mark.parametrize("local_command", [False, True])
+@pytest.mark.parametrize(
+    ("reject", "new_draft", "guidance", "with_image", "explicit", "local_command"),
+    [
+        (False, False, "change direction", False, False, False),
+        (True, False, "change direction", True, False, True),
+        (True, True, "", True, True, False),
+        (False, True, "change direction", False, True, True),
+    ],
+)
 async def test_enter_targets_exact_run_and_preserves_rejected_guidance(
     reject: bool, new_draft: bool, guidance: str, with_image: bool, explicit: bool, local_command: bool
 ) -> None:

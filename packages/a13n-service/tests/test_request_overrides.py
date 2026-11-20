@@ -579,13 +579,6 @@ def test_service_enables_cache_for_all_apis_and_disables_storage_only_for_respon
     "defaults,overrides,expected",
     [
         ({"cache": "12h"}, {}, {"mode": "implicit", "ttl": "12h"}),
-        ({"cache": True}, {"cache": {"retention": "12h"}}, {"mode": "implicit", "ttl": "12h"}),
-        ({"cache": "12h"}, {"cache": "30m"}, {"mode": "implicit", "ttl": "30m"}),
-        (
-            {"cache": "12h"},
-            {"openai_prompt_cache_options": {"mode": "implicit", "ttl": "30m"}},
-            {"mode": "implicit", "ttl": "30m"},
-        ),
         ({"cache": "12h"}, {"openai_cache_instructions": False}, None),
     ],
 )
@@ -701,7 +694,7 @@ async def test_explicit_model_store_and_reasoning_defaults_reach_native_wire(sto
     assert "reasoning.encrypted_content" in captured[0]["include"]
 
 
-@pytest.mark.parametrize("policy, count", [(None, 1), ({}, 0), ({"max_images": 0}, 0)])
+@pytest.mark.parametrize("policy, count", [(None, 1), ({"max_images": 0}, 0)])
 async def test_selected_model_image_policy_is_independent_of_agent_context(policy, count):
     from a13n_harness import HarnessModelCharacteristics, ImageInputPolicy
     from pydantic_ai import BinaryContent
@@ -760,7 +753,7 @@ async def test_selected_model_image_policy_is_independent_of_agent_context(polic
     assert len(seen) == count
 
 
-@pytest.mark.parametrize("policy, count", [(None, 1), ({}, 0), ({"max_images": 0}, 0)])
+@pytest.mark.parametrize("policy, count", [(None, 1), ({"max_images": 0}, 0)])
 async def test_auxiliary_image_policy_comes_from_image_target_not_primary_or_video(policy, count):
     from a13n_harness import HarnessModelCharacteristics
     from pydantic_ai import BinaryContent

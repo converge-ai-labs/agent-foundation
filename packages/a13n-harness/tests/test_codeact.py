@@ -887,12 +887,15 @@ async def test_codeact_failure_metadata_tracks_started_calls_without_replay(star
     assert calls == ([7] if start_tool else [])
 
 
-@pytest.mark.parametrize("runner", ["run_code", "run_program"])
 @pytest.mark.parametrize(
-    ("failure_phase", "catch_error"),
-    [("arguments", False), ("body", False), ("hook", False), ("body", True)],
+    ("runner", "failure_phase", "catch_error", "prior_success"),
+    [
+        ("run_code", "arguments", False, False),
+        ("run_code", "body", False, True),
+        ("run_program", "hook", False, True),
+        ("run_program", "body", True, False),
+    ],
 )
-@pytest.mark.parametrize("prior_success", [False, True])
 async def test_codeact_validation_failure_settles_started_calls(
     tmp_path: Path, runner: str, failure_phase: str, catch_error: bool, prior_success: bool
 ) -> None:

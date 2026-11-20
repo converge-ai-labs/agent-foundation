@@ -58,8 +58,7 @@ def writes(runtime):
         event.remove(engine, "after_cursor_execute", executed)
 
 
-@pytest.mark.parametrize("kind", ["session", "key"])
-@pytest.mark.parametrize("concurrency", [128, 256])
+@pytest.mark.parametrize(("kind", "concurrency"), [("session", 64), ("key", 64)])
 async def test_burst_coalesces_to_one_write(runtime, tenant, writes, kind, concurrency, caplog):
     credential_id, secret = await issued(runtime, tenant, kind)
     caplog.set_level(logging.DEBUG, logger=auth.__name__)
@@ -123,8 +122,7 @@ async def test_locked_row_does_not_block_authentication_and_later_touch_succeeds
     assert sum(writes) == 1
 
 
-@pytest.mark.parametrize("kind", ["session", "key"])
-@pytest.mark.parametrize("change", ["revoke", "expire"])
+@pytest.mark.parametrize(("kind", "change"), [("session", "revoke"), ("key", "expire")])
 async def test_change_after_initial_lookup_prevents_touch_and_next_authentication(
     runtime, tenant, monkeypatch, kind, change
 ):

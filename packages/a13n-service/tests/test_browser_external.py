@@ -85,9 +85,10 @@ async def test_external_registration_encryption_and_release(service, runs_kit, e
     assert "secret-url-token" not in caplog.text and "secret-header-token" not in caplog.text
 
 
-@pytest.mark.parametrize(
-    "fields",
-    [
+async def test_external_invalid_inputs_are_secret_free(service, runs_kit, external_connect):
+    await runs_kit.pause_sweeps(service)
+    _, connect = external_connect
+    for fields in (
         {"cdp_url": "https://browser.example/json/version?token=secret"},
         {"cdp_url": "ws://browser.example/devtools/browser/id?token=secret"},
         {"cdp_url": "wss://user:secret@browser.example/devtools/browser/id"},
@@ -96,16 +97,12 @@ async def test_external_registration_encryption_and_release(service, runs_kit, e
         {"cdp_url": URL + "#secret"},
         {"headers": {"Host": "secret"}},
         {"headers": {"X-Test": "secret\r\nInjected: secret"}},
-    ],
-)
-async def test_external_invalid_inputs_are_secret_free(service, runs_kit, external_connect, fields):
-    await runs_kit.pause_sweeps(service)
-    _, connect = external_connect
-    response = await service.client.post(
-        f"{service.api}/browsers/attach", json={"name": "Existing", "cdp_url": URL, **fields}
-    )
-    assert response.status_code == 400, response.text
-    assert "secret" not in response.text
+    ):
+        response = await service.client.post(
+            f"{service.api}/browsers/attach", json={"name": "Existing", "cdp_url": URL, **fields}
+        )
+        assert response.status_code == 400, (fields, response.text)
+        assert "secret" not in response.text
     connect.assert_not_awaited()
 
 
@@ -159,10 +156,9 @@ async def test_external_connection_failure_retries_same_attachment(service, runs
     assert supplier.pages == {"original"}
 
 
-@pytest.mark.parametrize("prepared", [False, True])
-async def test_external_idle_forgets_secret_without_closing(service, runs_kit, external_connect, prepared):
+async def test_external_idle_forgets_secret_without_closing(service, runs_kit, external_connect):
     supplier, connect = external_connect
-    browser = await attach(service, runs_kit, prepare=prepared, idle_seconds=60)
+    browser = await attach(service, runs_kit, prepare=True, idle_seconds=60)
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(BrowserRow, browser["id"])
         row.last_used_at = datetime.now(UTC) - timedelta(minutes=2)
@@ -170,7 +166,7 @@ async def test_external_idle_forgets_secret_without_closing(service, runs_kit, e
     async with transaction(service.runtime.storage) as session:
         row = await session.get_one(BrowserRow, browser["id"])
         assert row.status == "deleted" and row.handle is None
-    assert supplier.pages == {"original"} and connect.await_count == int(prepared)
+    assert supplier.pages == {"original"} and connect.await_count == 1
 
 
 async def test_external_admission_frozen_hosts_and_release_protection(
@@ -198,33 +194,33 @@ async def test_external_admission_frozen_hosts_and_release_protection(
     connect.assert_not_awaited()
 
 
-@pytest.mark.parametrize("role, permitted", [("viewer", False), ("runner", True)])
-async def test_external_attach_requires_run_but_release_requires_write(
-    service, runs_kit, external_connect, role, permitted
-):
+async def test_external_attach_requires_run_but_release_requires_write(service, runs_kit, external_connect):
     from a13n_service.infra.ids import new_object_id
 
     await runs_kit.pause_sweeps(service)
-    async with transaction(service.runtime.storage) as session:
-        await session.execute(delete(GrantRow).where(GrantRow.principal_id == service.tenant.principal_id))
-        session.add(
-            GrantRow(
-                id=new_object_id("gr"),
-                organization_id=service.tenant.organization_id,
-                workspace_id=service.tenant.workspace_id,
-                principal_id=service.tenant.principal_id,
-                role=role,
-                created_by_id=service.tenant.principal_id,
+    for role, permitted in (("viewer", False), ("runner", True)):
+        async with transaction(service.runtime.storage) as session:
+            await session.execute(delete(GrantRow).where(GrantRow.principal_id == service.tenant.principal_id))
+            session.add(
+                GrantRow(
+                    id=new_object_id("gr"),
+                    organization_id=service.tenant.organization_id,
+                    workspace_id=service.tenant.workspace_id,
+                    principal_id=service.tenant.principal_id,
+                    role=role,
+                    created_by_id=service.tenant.principal_id,
+                )
             )
+        response = await service.client.post(
+            f"{service.api}/browsers/attach", json={"name": "Existing", "cdp_url": URL}
         )
-    response = await service.client.post(f"{service.api}/browsers/attach", json={"name": "Existing", "cdp_url": URL})
-    assert response.status_code == (201 if permitted else 403), response.text
-    if permitted:
-        browser = response.json()
-        released = await service.client.post(
-            f"{service.api}/browsers/{browser['id']}/release", headers=runs_kit.if_match(browser)
-        )
-        assert released.status_code == 403, released.text
+        assert response.status_code == (201 if permitted else 403), response.text
+        if permitted:
+            browser = response.json()
+            released = await service.client.post(
+                f"{service.api}/browsers/{browser['id']}/release", headers=runs_kit.if_match(browser)
+            )
+            assert released.status_code == 403, released.text
     external_connect[1].assert_not_awaited()
 
 

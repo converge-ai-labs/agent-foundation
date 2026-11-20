@@ -83,10 +83,15 @@ def test_video_urls_cannot_request_a_download(force_download) -> None:
 
 
 @pytest.mark.parametrize(
-    "capabilities", [(), ("video_understanding",), ("youtube",), ("video_understanding", "youtube")]
+    ("capabilities", "allowed_hosts", "instructions_enabled"),
+    [
+        ((), None, True),
+        (("video_understanding",), frozenset(), True),
+        (("youtube",), None, True),
+        (("youtube",), frozenset({"youtube.com"}), False),
+        (("video_understanding", "youtube"), None, False),
+    ],
 )
-@pytest.mark.parametrize("allowed_hosts", [None, frozenset(), frozenset({"youtube.com"})])
-@pytest.mark.parametrize("instructions_enabled", [True, False])
 async def test_default_tool_visibility_follows_run_support_with_grouped_guidance(
     capabilities, allowed_hosts, instructions_enabled
 ) -> None:

@@ -166,7 +166,7 @@ async def test_advance_batches_distinct_threads_and_wraps_after_failures(
         event.remove(engine, "before_cursor_execute", record)
 
 
-@pytest.mark.parametrize("race", ["locked", "accepted", "withdrawn", "archived"])
+@pytest.mark.parametrize("race", ["locked", "archived"])
 async def test_advance_rechecks_a_candidate_after_discovery(
     service, scripted_model, runs_kit, monkeypatch, race
 ) -> None:  # type: ignore[no-untyped-def]

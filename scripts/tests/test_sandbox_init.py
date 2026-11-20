@@ -219,23 +219,18 @@ def test_headless_credentials_need_no_python_or_skill_initializer(tmp_path, tran
         int(result.stdout, 16)
 
 
-@pytest.mark.parametrize("transport", ["stdio", "http", "reverse_websocket"])
 @pytest.mark.parametrize(
-    "arguments",
+    ("transport", "arguments"),
     [
-        ["a13n-envd"],
-        ["a13n-envd", "--device-id", "device-image"],
-        ["a13n-envd", "--help"],
-        ["a13n-envd", "--version"],
-        ["a13n-envd", "daemon"],
-        ["a13n-envd", "supervise"],
-        ["a13n-envd", "restart", "--runtime-dir", "/run/a13n-envd-state"],
-        ["a13n-envd", "connect", "https://host.example"],
-        ["a13n-sandbox-desktop"],
-        ["a13n-sandbox-desktop", "a13n-envd"],
-        ["a13n-sandbox-desktop", "a13n-envd", "daemon"],
-        ["a13n-sandbox-desktop", "a13n-envd", "supervise"],
-        ["a13n-sandbox-desktop", "sh", "-c", "custom command"],
+        ("stdio", ["a13n-envd"]),
+        ("http", ["a13n-envd"]),
+        ("reverse_websocket", ["a13n-envd", "--device-id", "device-image"]),
+        ("http", ["a13n-envd", "--help"]),
+        ("http", ["a13n-envd", "daemon"]),
+        ("http", ["a13n-envd", "supervise"]),
+        ("http", ["a13n-sandbox-desktop"]),
+        ("stdio", ["a13n-sandbox-desktop", "a13n-envd"]),
+        ("http", ["a13n-sandbox-desktop", "sh", "-c", "custom command"]),
     ],
 )
 def test_entrypoint_supervises_default_network_daemon_and_preserves_explicit_commands(

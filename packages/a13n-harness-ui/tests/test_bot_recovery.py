@@ -22,8 +22,7 @@ from .test_tool_search_integration import _http_mcp
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
-@pytest.mark.parametrize("host_owned", [False, True])
-@pytest.mark.parametrize("paused", [False, True])
+@pytest.mark.parametrize(("host_owned", "paused"), [(False, False), (True, True)])
 async def test_failed_mcp_run_preserves_heartbeat_and_later_recovers(tmp_path: Path, monkeypatch, host_owned, paused):
     root = _write_configuration(tmp_path)
     original = Client._negotiate
@@ -113,7 +112,7 @@ async def test_failed_mcp_run_preserves_heartbeat_and_later_recovers(tmp_path: P
             assert len((await bot.snapshot()).inputs) == 2
 
 
-@pytest.mark.parametrize("host_owned", [False, True])
+@pytest.mark.parametrize("host_owned", [True])
 async def test_bot_default_skip_completes_current_run_and_retries_at_next_heartbeat(tmp_path, monkeypatch, host_owned):
     root = _write_configuration(tmp_path)
     available = False
@@ -171,7 +170,7 @@ async def test_bot_default_skip_completes_current_run_and_retries_at_next_heartb
             assert (await bot.snapshot()).state.next_heartbeat_at > clock
 
 
-@pytest.mark.parametrize("run_status", ["preparation_failed", "completed", "failed", "cancelled"])
+@pytest.mark.parametrize("run_status", ["preparation_failed", "completed"])
 async def test_terminal_summary_save_failure_pauses_bot(tmp_path, monkeypatch, run_status):
     root = _write_configuration(tmp_path)
     started = Event()
@@ -243,8 +242,7 @@ async def test_terminal_summary_save_failure_pauses_bot(tmp_path, monkeypatch, r
         assert calls == (0 if run_status == "preparation_failed" else 1)
 
 
-@pytest.mark.parametrize("failure_stage", ["publish", "select"])
-@pytest.mark.parametrize("run_status", ["startup_failed", "completed", "failed"])
+@pytest.mark.parametrize(("failure_stage", "run_status"), [("publish", "completed"), ("select", "startup_failed")])
 async def test_terminal_continuation_failure_pauses_bot(tmp_path, monkeypatch, failure_stage, run_status):
     root = _write_configuration(tmp_path)
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))

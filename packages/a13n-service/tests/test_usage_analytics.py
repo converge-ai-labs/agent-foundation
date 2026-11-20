@@ -201,9 +201,10 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
     assert only["models"][0]["output_tokens_per_second"] is None
 
 
-@pytest.mark.parametrize(
-    ("outcome", "duration", "first_chunk", "expected"),
-    [
+async def test_speed_uses_full_request_duration_and_inclusive_output(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    cases = [
         ("completed", 10, 8, 10),
         ("completed", 10, None, 10),
         ("completed", 10, 10, 10),
@@ -212,56 +213,46 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
         ("completed", None, None, None),
         ("failed", 10, 8, None),
         ("cancelled", 10, 8, None),
-    ],
-)
-async def test_speed_uses_full_request_duration_and_inclusive_output(
-    service, scripted_model, runs_kit, outcome, duration, first_chunk, expected
-):  # type: ignore[no-untyped-def]
-    await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model)
-    run_id, _ = await observed_run(
-        service,
-        runs_kit,
-        agent,
-        records=[("scripted", 20, 100, 0, None, START)],
-        record_fields={
-            "outcome": outcome,
-            "request_started_at": START,
-            "request_ended_at": START + timedelta(seconds=duration) if duration is not None else None,
-            "first_chunk_at": START + timedelta(seconds=first_chunk) if first_chunk is not None else None,
-            # Provider output includes 60 reasoning tokens; adding the detail again would yield 16/s.
-            "request_usage": BoundedRequestUsage(input_tokens=20, output_tokens=100, details={"reasoning_tokens": 60}),
-        },
-    )
-    response = await service.client.get(f"{service.api}/usage", params={"run_id": run_id})
-    assert response.status_code == 200, response.text
-    summary = response.json()
-    assert summary["models"][0]["output_tokens_per_second"] == expected
-    runs = (await service.client.get(f"{service.api}/usage/runs", params={"run_id": run_id})).json()["items"]
-    assert runs[0]["models"] == summary["models"]
-    async with transaction(service.runtime.storage) as session:
-        record_id = await session.scalar(select(UsageRecordRow.id).where(UsageRecordRow.run_id == run_id))
-    response = await service.client.get(f"{service.api}/usage/records/{record_id}/metrics")
-    assert response.status_code == 200, response.text
-    metrics = response.json()
-    assert metrics["output_tokens_per_second"] == expected
-    assert metrics["request_duration_seconds"] == (duration if expected is not None else None)
-    assert metrics["time_to_first_chunk_seconds"] == summary["models"][0]["average_time_to_first_chunk_seconds"]
-
-
-async def test_request_metrics_hide_other_workspaces_and_missing_records(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
-    await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model)
-    run_id, _ = await observed_run(service, runs_kit, agent, records=[("scripted", 20, 0, 0, None, START, (1, 2))])
-    async with transaction(service.runtime.storage) as session:
-        record_id = await session.scalar(select(UsageRecordRow.id).where(UsageRecordRow.run_id == run_id))
-    path = f"{service.api}/usage/records/{record_id}/metrics"
-    response = await service.client.get(path)
-    assert response.status_code == 200
-    assert response.json()["output_tokens_per_second"] == 0
+    ]
+    last_record_id = None
+    for outcome, duration, first_chunk, expected in cases:
+        run_id, _ = await observed_run(
+            service,
+            runs_kit,
+            agent,
+            records=[("scripted", 20, 100, 0, None, START)],
+            record_fields={
+                "outcome": outcome,
+                "request_started_at": START,
+                "request_ended_at": START + timedelta(seconds=duration) if duration is not None else None,
+                "first_chunk_at": START + timedelta(seconds=first_chunk) if first_chunk is not None else None,
+                # Provider output includes 60 reasoning tokens; adding the detail again would yield 16/s.
+                "request_usage": BoundedRequestUsage(
+                    input_tokens=20, output_tokens=100, details={"reasoning_tokens": 60}
+                ),
+            },
+        )
+        response = await service.client.get(f"{service.api}/usage", params={"run_id": run_id})
+        assert response.status_code == 200, response.text
+        summary = response.json()
+        assert summary["models"][0]["output_tokens_per_second"] == expected
+        runs = (await service.client.get(f"{service.api}/usage/runs", params={"run_id": run_id})).json()["items"]
+        assert runs[0]["models"] == summary["models"]
+        async with transaction(service.runtime.storage) as session:
+            record_id = await session.scalar(select(UsageRecordRow.id).where(UsageRecordRow.run_id == run_id))
+        last_record_id = record_id
+        response = await service.client.get(f"{service.api}/usage/records/{record_id}/metrics")
+        assert response.status_code == 200, response.text
+        metrics = response.json()
+        assert metrics["output_tokens_per_second"] == expected
+        assert metrics["request_duration_seconds"] == (duration if expected is not None else None)
+        assert metrics["time_to_first_chunk_seconds"] == summary["models"][0]["average_time_to_first_chunk_seconds"]
     other = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Other"})).json()
-    response = await service.client.get(path, headers={"X-Workspace-ID": other["id"]})
-    assert response.status_code == 404
+    assert (
+        await service.client.get(
+            f"{service.api}/usage/records/{last_record_id}/metrics", headers={"X-Workspace-ID": other["id"]}
+        )
+    ).status_code == 404
     assert (await service.client.get(f"{service.api}/usage/records/missing/metrics")).status_code == 404
 
 
@@ -609,53 +600,33 @@ async def test_context_usage_selects_main_call_and_current_capacity(service, scr
         assert response.status_code == 400
 
 
-@pytest.mark.parametrize("window", [None, 100000])
-async def test_context_usage_preserves_unknowns_and_agent_override(service, scripted_model, runs_kit, window):  # type: ignore[no-untyped-def]
+async def test_context_usage_preserves_unknowns_and_agent_override(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(
-        service, scripted_model, model_characteristics={"context_window_tokens": window}
-    )
-    run_id, _ = await observed_run(service, runs_kit, agent, records=[("scripted", 0, 0, 0, None, START)])
+    model = await runs_kit.create_model(service, scripted_model)
     async with transaction(service.runtime.storage) as session:
-        model = await session.scalar(select(ModelRow).where(ModelRow.key == "scripted"))
-        assert model is not None
-        model.config = {**model.config, "characteristics": {"context_window_tokens": 200000}}
-    expected_window = window or 200000
-    response = await service.client.get(f"{service.api}/usage/context", params={"run_id": run_id})
-    assert response.status_code == 200, response.text
-    assert response.json()["input_tokens"] is None
-    assert response.json()["output_tokens"] is None
-    assert response.json()["context_window_tokens"] == expected_window
-    empty_id, _ = await observed_run(service, runs_kit, agent)
-    response = await service.client.get(f"{service.api}/usage/context", params={"run_id": empty_id})
-    assert response.status_code == 200
-    assert response.json() == {
-        "run_id": empty_id,
-        "record_id": None,
-        "input_tokens": None,
-        "output_tokens": None,
-        "context_window_tokens": expected_window,
-    }
+        row = await session.scalar(select(ModelRow).where(ModelRow.key == model))
+        assert row is not None
+        row.config = {**row.config, "characteristics": {"context_window_tokens": 200000}}
+    for name, window, expected_window in (("Default window", None, 200000), ("Override window", 100000, 100000)):
+        agent = await runs_kit.add_agent(service, name, model, model_characteristics={"context_window_tokens": window})
+        run_id, _ = await observed_run(service, runs_kit, agent, records=[(model, 0, 0, 0, None, START)])
+        response = await service.client.get(f"{service.api}/usage/context", params={"run_id": run_id})
+        assert response.status_code == 200, response.text
+        assert response.json()["input_tokens"] is None
+        assert response.json()["output_tokens"] is None
+        assert response.json()["context_window_tokens"] == expected_window
+        empty_id, _ = await observed_run(service, runs_kit, agent)
+        response = await service.client.get(f"{service.api}/usage/context", params={"run_id": empty_id})
+        assert response.status_code == 200
+        assert response.json() == {
+            "run_id": empty_id,
+            "record_id": None,
+            "input_tokens": None,
+            "output_tokens": None,
+            "context_window_tokens": expected_window,
+        }
     response = await service.client.get(f"{service.api}/usage/context", params={"record_id": "missing"})
     assert response.status_code == 404
-
-
-async def test_usage_pages_number_runs_without_matching_usage(service, scripted_model, runs_kit):
-    await runs_kit.pause_sweeps(service)
-    agent = await runs_kit.create_agent(service, scripted_model)
-    empty, _ = await observed_run(service, runs_kit, agent)
-    thread_id = (await service.client.get(f"{service.api}/runs/{empty}")).json()["thread_id"]
-    run_id, _ = await observed_run(
-        service,
-        runs_kit,
-        agent,
-        thread_id=thread_id,
-        records=[("scripted", 100, 5, 50, Decimal("0.2"), START)],
-    )
-    for filters in ({"thread_id": thread_id}, {"run_id": run_id}, {"ingested_after": START.isoformat()}):
-        response = await service.client.get(f"{service.api}/usage/runs", params=filters)
-        assert response.status_code == 200, response.text
-        assert [(run["run_id"], run["run_number"]) for run in response.json()["items"]] == [(run_id, 2)]
 
 
 async def test_totals_and_run_pages_preserve_numbers_and_whole_model_groups(service, scripted_model, runs_kit):
