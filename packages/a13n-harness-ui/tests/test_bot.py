@@ -27,6 +27,9 @@ async def deliver_tick(bot, *, now):
     inputs = await bot._store.bot.inputs()
     if inputs and inputs[-1].state == "admitted":
         await consumed_store(bot._store, inputs[-1].input_id)
+    # Settlement also updates the Bot state after saving the completed input.
+    async with bot._settlement_lock:
+        pass
 
 
 async def consumed_store(store, input_id):

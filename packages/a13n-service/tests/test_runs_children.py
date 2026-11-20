@@ -154,7 +154,7 @@ async def test_parent_and_child_can_steer_each_other_without_waiting_for_complet
         (child_lease,) = await claim(service.runtime, worker_id="child", worker_build="test", limit=1)
         operator = ChildRuns(service.runtime, parent_lease, parent_control, {})
         context = SubagentOperatorContext(parent_lease.thread_id, parent_lease.run_id, "coordinator", {})
-        parent_locked, send_locked, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
+        parent_locked, send_started, release = asyncio.Event(), asyncio.Event(), asyncio.Event()
         original_lock = subagents_module.lock_thread
 
         async def gated_child_lock(session, thread_id):
@@ -166,10 +166,11 @@ async def test_parent_and_child_can_steer_each_other_without_waiting_for_complet
         from a13n_service.runs import child_messages as messages_module
 
         async def observed_parent_lock(session, thread_id):
-            thread = await original_lock(session, thread_id)
             if thread_id == parent_lease.thread_id:
-                send_locked.set()
-            return thread
+                # A worker checkpoint can hold this Thread while waiting for the Run
+                # locked by steer. Release steer when send reaches the lock, not after it acquires it.
+                send_started.set()
+            return await original_lock(session, thread_id)
 
         monkeypatch.setattr(subagents_module, "lock_thread", gated_child_lock)
         monkeypatch.setattr(messages_module, "lock_thread", observed_parent_lock)
@@ -184,7 +185,7 @@ async def test_parent_and_child_can_steer_each_other_without_waiting_for_complet
             )
             await parent_locked.wait()
             sending = tasks.create_task(send(service.runtime, child_lease, "call_send", "Which plan should I use?"))
-            await send_locked.wait()
+            await send_started.wait()
             release.set()
         steer, receipt = steering.result(), sending.result()
         assert steer.accepted
