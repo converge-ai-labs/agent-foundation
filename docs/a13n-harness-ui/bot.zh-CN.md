@@ -52,7 +52,7 @@ Bot 通过 `bot/HEARTBEAT.md` 管理周期检查。每次 heartbeat 都会提醒
 
 后台工具或异步子智能体在 Bot 运行期间完成时，Host 会把完成通知发给当前 Run。如果 Bot 已空闲，不会被唤醒，结果会保留到下一次获准运行时查询。
 
-Bot 可使用 `create_project` 创建普通 Project 配置，并通过 `create_thread` 按共享的创建模型设置启动工作。Project 创建、Thread 创建、Run 接受和任务完成是独立结果。内置指令要求 Bot 检查保存的结果后再报告成功。
+Bot 可调用 `create_project` 创建标准 Project 配置，并通过 `create_thread` 按照共享的 Agent 创建模型策略（**Settings → Agents → Agent creation**）拉起独立工作会话。Bot 会分别跟踪 Project 创建、Thread 创建、Run 准入与最终任务完成状态，并在核实已保存的执行结果后再汇报任务完成。
 
 启用 memory 时，Bot 通过现有 memory tools 使用全局记忆，以及根 YAML 同级 `memory/bot/` 下专属的 `bot` scope。`MEMORY.md` 保持为简洁的工作区地图，主题文件保存持久的 Project 理解、来源引用和不确定之处。Heartbeat 分批检查相关、有变化或尚不了解的 Project，不另建项目档案数据库或记忆提取链路。
 

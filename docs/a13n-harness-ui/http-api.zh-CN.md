@@ -290,9 +290,9 @@ Transcript 分页附带相交的 `turns` 和 `boundary_entries`，用于显示�
 
 通过 `POST /api/threads/{thread_id}/coordinator` 将已有普通根提升为 Coordinator。该 Thread 必须属于已接受的 Project、未归档、无活跃操作且没有待处理决策。提升保留身份、历史、标题和设置；对符合条件的 Coordinator 重复调用是幂等的。Worker 和子级不能提升，也没有降级或收养 worker 的 API。
 
-向该路由 PATCH `{"auto_followup":false}` 可暂停自动生命周期通知，true 则启用。这一设置采用最后写入生效。Coordinator 和 worker 永久保留所属 Project。恢复已归档 Coordinator 使用普通的带版本元数据 API。
+向该路由 PATCH `{"auto_followup":false}` 可暂停自动生命周期通知，设为 `true` 则重新启用（采用最后写入生效策略）。Coordinator 和 Worker 永久保留所属 Project。如需恢复已归档的 Coordinator，可调用常规的带版本元数据 API。
 
-通过 `POST /api/threads` 创建 worker，指定 `coordinator_thread_id`，并在 `defaults` 中选择所有者所属的可用 Project。所有者必须未归档。所有权永久保存，且与 `coordinator:true` 互斥；人工创建使用提供的默认值。创建不启动 Run。启用后续处理时，首次人工提交会安排尽力发送的所有者通知。客户端提供 `thread_id` 后，可以核对结果不确定的创建，而不另建 worker。
+通过 `POST /api/threads` 创建 Worker 时，需传入 `coordinator_thread_id`，并在 `defaults` 中指定所属 Coordinator 的可用 Project（所有者必须处于未归档状态）。从属关系一经创建永久生效，且与 `coordinator:true` 互斥；人工创建直接使用请求中传入的 `defaults`。创建操作本身不会启动 Run；当自动跟进开启时，首次人工提交消息会向所属 Coordinator 发送一条通知。客户端可通过显式传入 `thread_id` 在网络响应不确定时安全核对创建结果，避免重复创建 Worker。
 
 从 Thread 摘要读取 `role`（`ordinary`、`coordinator` 或 `worker`）、`coordinator_thread_id` 和 `auto_followup`。用 `coordinator_thread_id` 筛选 worker，或以 `independent_only=true` 排除 worker。游标绑定这些过滤条件。未过滤的人工搜索包含所有根；一个 Project 可以有多个 Coordinator。旧 Project lead 绑定迁移一次并保留 ID/历史；禁用的绑定转为关闭后续处理的 Coordinator。
 

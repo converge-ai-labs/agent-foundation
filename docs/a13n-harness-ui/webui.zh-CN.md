@@ -340,7 +340,7 @@ Terminal 与 Files、Changes 和 Browser 共用资源标签栏。在 Side by sid
 
 Coordinator 默认把实质性的调查、实现和测试委派给 worker，自己侧重与你交流、规划、协调和审查结果。简单问题、轻量检查和审查仍在 Coordinator 对话中完成。紧密关联的工作可以持续交给同一个 worker；委派不要求并行执行。如果你要求 Coordinator 亲自执行，它会遵循你的选择，不委派，也不要求你再次确认这一选择。这是 Agent 指令，不是工具权限限制。
 
-每个 Project 可有多个 Coordinator。角色永久保留，包括之后发送失败的情况。已有对话空闲、未归档、绑定 Project 且无待决策时可用 **Make Coordinator**。转换保留 URL/历史/设置。Worker 不能升级，旧对话 不会被收编。
+每个 Project 可有多个 Coordinator。角色永久保留，包括之后发送失败的情况。已有对话空闲、未归档、绑定 Project 且无待决策时可用 **Make Coordinator**。转换保留 URL/历史/设置。Worker 不能升级，已有对话不会被收编。
 
 Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name** 固定 owner 和 Project。创建前移除此标签可变为独立草稿，不丢文字、附件或选择；创建后固定。创建结果不确定时先检查再重试。Worker 位于 owner 下，搜索标为 **Coordinator worker**。
 
@@ -350,21 +350,44 @@ Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name**
 
 ## Agent 协作
 
-通过协作工具的内联对话链接检查其他根工作。Agent 会收到 Thread ID 和捕获的 Project/根目录；新根收到任务和回信地址，不继承请求方完整历史。
+WebUI 中的 Agent 可以查看关联会话、拉起独立会话或受管 Worker，以及在当前对话内委派子任务。当 Agent 创建新的根会话时，目标会话会收到任务提示词与回信地址（`send_thread_message`），同时保持自身独立的对话历史。
 
-| 根角色      | Agent 协作范围                                            |
-| ----------- | --------------------------------------------------------- |
-| 普通根      | 其他根，不含托管 worker                                   |
-| Coordinator | 自己的 worker；新根保持在其 Project                       |
-| Worker      | 查看自己/owner、向 owner 发消息、用 Subagent 做任务内委派 |
+| 根会话角色  | Agent 可用的协作范围                                                      |
+| ----------- | ------------------------------------------------------------------------- |
+| 普通根会话  | 列出、查看、创建并向其他非 Worker 根会话（含 Coordinator）发送消息        |
+| Coordinator | 在所属 Project 内创建、列出、查看并向自己管理的 Worker 发送消息           |
+| Worker      | 查看自身与所属 Coordinator、向 Coordinator 汇报消息，并使用 Subagent 委派 |
 
-限制应用于模型工具，不限制人类 WebUI 访问。Worker 不能创建根、控制 owner 或访问兄弟 worker。
+上述范围仅约束模型侧的协作工具调用；你在 WebUI 界面中仍可直接浏览和打开任意会话。
 
-使用 `create_thread` 开独立会话，`create_worker` 创建有归属的 worker，`spawn_subagent` 在当前会话中委派任务。
+### 选择合适的创建工具
 
-在 **Settings → Agents** 选择可用模型和默认模型。智能体创建独立 chat、Coordinator worker 或动态 subagent 时共用这些选择。
+Agent 根据任务归属选择对应的创建工具：
 
-使用 `send_thread_message` 给已有会话发消息。如果会话正在运行，消息会送入当前 Run；如果会话空闲，消息会启动新的 Run。跟踪返回的操作或查看流式事件，可以确认消息是否已处理并保存。投递状态不明确时，先查看目标会话再重试。
+| 工具签名                                                                                            | 任务运行位置                              | 允许调用的角色                            |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------- |
+| `create_thread(prompt, title=None, agent_id=None, project_id="current", model=None, thinking=None)` | 拥有独立历史的新建根会话                  | 普通根会话、Coordinator 与 Bot            |
+| `create_worker(prompt, title=None, agent_id=None, model=None, thinking=None)`                       | 归属于当前 Coordinator 的受管 Worker 会话 | 仅限 Coordinator（固定在相同 Project 内） |
+| `spawn_subagent(name, prompt, model=None, thinking=None)`                                           | 当前会话树内的异步子 Agent 执行           | 已开启按需动态创建子智能体的根会话        |
+
+在 `create_thread` 中，`project_id="current"` 会沿用调用方所在的 Project，`None` 会创建无 Project 的独立会话，传入具体 Project ID 则可跨项目创建会话。若会话记录已创建但首条消息准入失败，工具会返回已创建的 Thread ID，方便 Agent 先检查或补发消息，避免重复创建会话。
+
+### 跨会话与子智能体共享的模型选择
+
+在 **Settings → Agents → Agent creation**（对应 `a13n-harness-ui.yaml` 中的 `subagents.dynamic.allowed_models` 与 `subagents.dynamic.default_model`）中，统一配置允许 Agent 在创建任务时选用的模型：
+
+- `create_thread`、`create_worker` 与 `spawn_subagent` 均会校验显式传入的 `model` 是否位于 `allowed_models` 白名单内；省略 `model` 时自动采用 `default_model`。
+- 已声明或内置的 Subagent（通过 `delegate` 调用）同样要求其自身配置或继承的 Model 包含在 `allowed_models` 中。
+- 对于新建的独立根会话或 Worker，所选 Model 会持久保存为该 Thread 后续轮次的默认模型。
+
+### 向已有会话发送消息
+
+Agent 可调用 `send_thread_message(thread_id, message, kind="task")` 向协作范围内的已有根会话发送后续指令或进展汇报：
+
+- **目标会话正在运行（`mode="steer"`）：** 将消息作为即时引导（Steering）注入当前活跃的 Run。
+- **目标会话处于空闲（`mode="run"`）：** 在目标会话未归档且无待处理人工决策时，沿用目标会话已保存的默认 Model 启动一轮新 Run。
+
+WebUI 会在跨会话消息顶部展示来源图标与可展开的 **From thread** 溯源链接，使 Agent 之间的协作消息与你的手动输入一目了然。你可以通过返回的操作回执或流式事件确认消息已处理并落盘；若投递结果不确定，请先通过 `get_thread` 检查目标会话状态再决定是否重试。
 
 ## 创建对话副本
 

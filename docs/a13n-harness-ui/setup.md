@@ -78,7 +78,7 @@ a13n-harness-ui config validate
 
 `config path` locates the selected configuration and data paths. The root YAML holds defaults; sibling `models/` and `agents/` directories hold the Model and Agent resources. `config validate` checks the files and references. It does not send a model request, so keep the response test above as a separate check.
 
-Initial setup uses the selected chat model as the first allowed model and the default for agent creation. In **Settings → Agents**, choose the allowed models and default model for agent creation. Independent chats, Coordinator workers and dynamic subagents share these choices.
+Initial setup seeds your selected chat Model as both the first allowed Model and the default Model for agent creation (`subagents.dynamic.allowed_models` and `subagents.dynamic.default_model`). You can expand or change these shared choices anytime under **Settings → Agents → Agent creation** for independent chats, Coordinator workers, and subagents.
 
 ## Add another connection or Agent
 

@@ -78,7 +78,7 @@ a13n-harness-ui config validate
 
 `config path` 显示所选配置和数据路径。根 YAML 保存默认值；同级 `models/` 和 `agents/` 目录保存 Model 与 Agent 资源。`config validate` 检查文件和引用，不发送模型请求，因此仍需单独进行上面的回复测试。
 
-首次设置会将选定的聊天模型加入可用列表，并设为默认创建模型。在 **Settings → Agents** 选择可用模型和默认模型。智能体创建独立 chat、Coordinator worker 或动态 subagent 时共用这些选择。
+首次设置会将所选的聊天模型自动加入允许列表并设为默认创建模型（`subagents.dynamic.allowed_models` 与 `subagents.dynamic.default_model`）。你随时可以在 **Settings → Agents → Agent creation** 中扩展可用模型并调整默认模型，该配置由独立会话、Coordinator Worker 与子智能体共同使用。
 
 ## 添加其他连接或 Agent
 

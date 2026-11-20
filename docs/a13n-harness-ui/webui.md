@@ -350,21 +350,44 @@ Automatic follow-up attempts delivery on first direct worker assignment and when
 
 ## Agent collaboration
 
-Use inline conversation links from collaboration tools to inspect other root work. Agents receive their Thread ID and captured Project/roots; a newly created root receives the task and return address, not the requester's full conversation history.
+Agents in WebUI can inspect related conversations, spin up independent or managed chats, and delegate bounded tasks within the current chat. When an Agent creates a new root conversation, the target receives the task prompt and a return address (`send_thread_message`) while keeping its own clean conversation history.
 
-| Root role     | Agent's collaboration scope                                                  |
-| ------------- | ---------------------------------------------------------------------------- |
-| Ordinary root | Other roots, excluding managed workers                                       |
-| Coordinator   | Its owned workers; new roots stay in its Project                             |
-| Worker        | Inspect itself/owner, message owner, use Subagents for task-local delegation |
+| Root role     | Collaboration scope available to the Agent                                                           |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| Ordinary root | List, inspect, create, and message other non-worker roots (including Coordinators)                   |
+| Coordinator   | Create, list, inspect, and message its owned workers inside the same Project                         |
+| Worker        | Inspect itself and its owning Coordinator, message its Coordinator, and use Subagents for local work |
 
-These limits apply to model tools, not human WebUI access. Workers cannot create roots, control their owner, or access siblings.
+These scope rules govern model-facing collaboration tools; you can still browse and open any conversation directly in WebUI.
 
-Use `create_thread` for an independent conversation, `create_worker` for an owned worker, and `spawn_subagent` for a bounded task in the current chat.
+### Choose the right creation tool
 
-In **Settings → Agents**, choose the allowed models and default model for agent creation. Independent chats, Coordinator workers and dynamic subagents share these choices.
+Agents select a creation tool based on where the work belongs:
 
-Use `send_thread_message` to continue an existing chat. It steers the active Run or starts a Run in an idle chat. Follow the returned operation or stream events to confirm that the message was processed and saved. If delivery is uncertain, check the target chat before retrying.
+| Tool                                                                                                | Where the work lives                                     | Who can call it                                           |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
+| `create_thread(prompt, title=None, agent_id=None, project_id="current", model=None, thinking=None)` | A new independent root chat with its own history         | Ordinary roots, Coordinators, and Bot                     |
+| `create_worker(prompt, title=None, agent_id=None, model=None, thinking=None)`                       | A managed worker chat owned by the calling Coordinator   | Coordinators only (stays in the Coordinator's Project)    |
+| `spawn_subagent(name, prompt, model=None, thinking=None)`                                           | A child execution inside the current conversation's tree | Root conversations with dynamic subagent creation enabled |
+
+In `create_thread`, `project_id="current"` keeps the caller's Project, `None` creates a projectless chat, and an explicit Project ID targets that Project. If prompt admission fails after the Thread record is created, the tool returns the new Thread ID so the Agent can inspect or message it rather than creating a duplicate chat.
+
+### Shared model selection for agent creation
+
+Open **Settings → Agents → Agent creation** (configured under `subagents.dynamic.allowed_models` and `subagents.dynamic.default_model` in `a13n-harness-ui.yaml`) to choose which Models agents may use when creating work:
+
+- `create_thread`, `create_worker`, and `spawn_subagent` all validate an explicit `model` argument against `allowed_models` and fall back to `default_model` when `model` is omitted.
+- Declared and built-in subagents (`delegate`) also verify that their configured or inherited Model appears in `allowed_models`.
+- For a newly created root chat or worker, the selected Model is saved as that Thread's default Model for future turns.
+
+### Message an existing conversation
+
+Agents call `send_thread_message(thread_id, message, kind="task")` to send follow-up instructions or reports to an existing root chat within their scope:
+
+- **Active target (`mode="steer"`):** delivers the message into the target's currently running turn as immediate steering.
+- **Idle target (`mode="run"`):** starts a new Run on the target chat using that target's saved default Model (provided the chat is unarchived and has no unresolved human decisions).
+
+WebUI displays cross-conversation messages with a source icon and an expandable **From thread** link identifying the sender Thread, keeping agent-to-agent messages visually distinct from your own prompts. Follow the returned operation receipt or stream events to confirm processing, and inspect the target chat with `get_thread` before retrying an uncertain delivery.
 
 ## Fork a conversation
 

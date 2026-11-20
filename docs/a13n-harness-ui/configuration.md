@@ -148,8 +148,8 @@ The file-only `configuration` mount exposes the selected YAML's directory. It re
 | `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`                          |
 | `subagents.max_concurrent`                | `8`         | Positive running-child limit per conversation, shared by all subagent kinds and resume |
 | `subagents.dynamic.enabled`               | `false`     | Expose task-specific `spawn_subagent` to root Agents                                   |
-| `subagents.dynamic.allowed_models`        | `[]`        | Unique configured Model IDs allowed for explicit spawn Model choices                   |
-| `subagents.dynamic.default_model`         | unset       | Allowed Model used when a spawn omits `model`; required when dynamic creation is on    |
+| `subagents.dynamic.allowed_models`        | `[]`        | Unique configured Model IDs permitted for agent-created chats, workers, and subagents  |
+| `subagents.dynamic.default_model`         | unset       | Allowed Model used when agent creation omits `model`; required when creation is on     |
 
 Normal setup includes all three built-in children. Advanced setup offers all or none; edit the list for a subset. Definitions remain package-owned, with no copied Markdown files. Inspect inclusion with `a13n-harness-ui config subagents`. See [child inheritance and conflicts](agents-and-subagents.md#built-in-subagents).
 
@@ -353,7 +353,9 @@ This controls request-address admission, not CORS. Authentication and same-origi
 
 ### WebUI subagents
 
-In **Settings → Agents**, choose the allowed models and default model for agent creation. Independent chats, Coordinator workers and dynamic subagents share these choices. The subagent switch and concurrency limit apply only to subagents.
+In **Settings → Agents → Agent creation**, configure `subagents.dynamic.allowed_models` and `subagents.dynamic.default_model` to control which Models an Agent may select when starting new work. Independent chats (`create_thread`), Coordinator workers (`create_worker`), dynamic subagents (`spawn_subagent`), and declared subagents (`delegate`) all share this allowed-model list and default.
+
+Under **Settings → Agents → Subagents**, `subagents.dynamic.enabled` controls whether root conversations can call `spawn_subagent`, and `subagents.max_concurrent` (default `8`) bounds the number of simultaneously running child executions in one conversation. See [Agent collaboration](webui.md#agent-collaboration) and [Dynamic subagents](agents-and-subagents.md#dynamic-subagents-and-result-delivery).
 
 ### MCP lifetime and protocol
 

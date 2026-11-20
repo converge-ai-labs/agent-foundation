@@ -107,13 +107,13 @@ The package ships three helpers. Choose the ones you want in the **root YAML**, 
    a13n-harness-ui config validate
    ```
 
-3. In **Settings → Agents → Agent creation**, allow the helper’s configured or inherited model.
+3. In **Settings → Agents → Agent creation** (or `subagents.dynamic.allowed_models` in `a13n-harness-ui.yaml`), allow the helper's configured or inherited Model.
 
 4. Start a new conversation with `agent-coder`. Ask it to delegate a narrow repository question to `explorer`. Use `/subagents` to inspect the child execution and its result.
 
-Normal setup selects all three roles. Omit `include`, or set it to `[]`, to disable automatic inclusion. `setup --advanced` offers all or none; edit the list to select a subset.
+Normal setup selects all three roles and seeds your initial chat Model in `allowed_models` and `default_model`. Omit `include`, or set it to `[]`, to disable automatic inclusion. `setup --advanced` offers all or none; edit the list to select a subset.
 
-Built-ins inherit the parent's Model, Capabilities, and visible tools. Their role instructions do not make a helper read-only. Use the explicit filter in the next recipe to restrict file tools.
+Built-ins inherit the parent's Model, Capabilities, and visible tools. To restrict a helper to read-only file operations, apply the explicit tool filter shown in the next section.
 
 The selected helpers are appended after the root Agent's authored children, in list order. They are leaves; inclusion does not recursively attach them to every child Agent. To attach just one package role to a particular Agent, add this entry to that Agent's roster:
 
@@ -126,7 +126,7 @@ An explicit reference to the same built-in ID is deduplicated. A different child
 
 ## Dynamic subagents and result delivery
 
-To let the main Agent create task-specific helpers, merge this section into the root YAML. Replace `model-primary` with a configured Model ID:
+To let the main Agent create task-specific helpers on the fly, merge this section into the root YAML. Replace `model-primary` with a configured Model ID:
 
 ```yaml
 subagents:
@@ -137,7 +137,14 @@ subagents:
     default_model: model-primary
 ```
 
-Dynamic creation is off when `enabled` is missing or false. The main Agent receives `spawn_subagent(name, prompt, model=None, thinking=None)`; its description lists `allowed_models`. Explicit choices must be in `allowed_models`. An omitted `model` uses `default_model`, which must also be in `allowed_models`. Enabling dynamic creation requires both settings; helpers never inherit the main Agent's Model, and a configuration that is enabled without them fails to load. Thinking must be supported by the selected Model. Each helper inherits tools and Environment, receives global guidance and fixed child guidance and the task as its first input, and starts without parent Agent instructions or conversation history. Dynamic helpers cannot delegate or spawn further children.
+`allowed_models` and `default_model` also govern model selection when an Agent creates an independent chat (`create_thread`), creates a Coordinator worker (`create_worker`), or delegates to a declared subagent (`delegate`). When `subagents.dynamic.enabled` is `true`, root Runs additionally expose `spawn_subagent(name, prompt, model=None, thinking=None)`:
+
+- `name` labels the helper's role for status displays and transcripts.
+- `prompt` is delivered as the helper's first task input, paired with the package-owned child guidance and global `AGENTS.md` context (the helper starts with a clean history and without parent Agent role instructions).
+- `model` selects an entry from `allowed_models`, or falls back to `default_model` when omitted (both `allowed_models` and `default_model` are required when dynamic creation is enabled).
+- `thinking` sets a reasoning effort supported by the selected Model.
+
+Each dynamic helper inherits the parent's tools and Environment and operates as a leaf child without nested delegation or spawning.
 
 The running-child limit applies to dynamic, configured and built-in helpers, including resumed segments. The Agent receives a clear error at the limit and can wait for existing work. Use `subagent_info`, `wait_subagent`, `steer_subagent`, `resume_subagent` and cancellation with the returned execution ID.
 

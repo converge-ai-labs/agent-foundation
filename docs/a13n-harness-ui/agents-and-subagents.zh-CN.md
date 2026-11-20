@@ -107,13 +107,13 @@ defaults:
    a13n-harness-ui config validate
    ```
 
-3. 在 **设置 → 智能体 → 创建智能体** 中选择允许子智能体使用的模型。
+3. 在 **Settings → Agents → Agent creation**（或 `a13n-harness-ui.yaml` 的 `subagents.dynamic.allowed_models`）中，将该子角色配置或继承的 Model 加入允许列表。
 
 4. 用 `agent-coder` 启动新对话。让它将一个范围较小的仓库问题委派给 `explorer`。用 `/subagents` 查看子级执行及结果。
 
-常规设置会选择全部三个角色。省略 `include` 或将其设为 `[]`，可关闭自动包含。`setup --advanced` 提供全选或不选；选择部分角色时编辑列表。
+常规初始设置会默认启用全部三个内置角色，并将你的初始聊天模型写入 `allowed_models` 与 `default_model`。省略 `include` 或将其设为 `[]` 可关闭自动包含。`setup --advanced` 提供全选或不选；如需只保留部分角色，直接编辑该列表即可。
 
-内置角色继承父级的 Model、Capability 和可见工具。角色指令不会使辅助角色自动变成只读。需要限制文件工具时，使用下一节的显式过滤器。
+内置角色继承父级的 Model、Capability 和可见工具。如需将某个辅助角色限制为只读文件访问，请按下一节的方法配置显式工具过滤列表。
 
 所选角色按列表顺序追加在根 Agent 自己声明的子级之后。它们是叶节点；自动包含不会递归附加到每个子 Agent。要只为某个 Agent 添加一个包内角色，在该 Agent 的角色清单中加入：
 
@@ -126,7 +126,7 @@ subagents:
 
 ## 动态 subagent 与结果投递
 
-要允许主 Agent 按任务创建辅助角色，将以下片段合并到根 YAML。把 `model-primary` 换成已配置的 Model ID：
+要允许主 Agent 按任务动态创建专职辅助角色，将以下片段合并到根 YAML。把 `model-primary` 换成已配置的 Model ID：
 
 ```yaml
 subagents:
@@ -137,7 +137,14 @@ subagents:
     default_model: model-primary
 ```
 
-省略 `enabled` 或设为 false 时，动态创建关闭。主 Agent 获得 `spawn_subagent(name, prompt, model=None, thinking=None)`，工具说明会列出 `allowed_models`。显式选择必须属于 `allowed_models`。省略 `model` 时使用 `default_model`，它也必须属于 `allowed_models`。启用动态创建时两项都必须设置；辅助角色不会继承主 Agent 的 Model，启用但缺少这两项的配置无法加载。思考级别必须受所选 Model 支持。辅助角色继承工具和 Environment，接收全局指引、固定子级指引，并将任务作为首条输入，不接收父 Agent 指令或对话历史。动态子级不能继续委派或创建子级。
+`allowed_models` 与 `default_model` 同时作为 Agent 创建独立会话（`create_thread`）、创建 Coordinator Worker（`create_worker`）以及委派已声明子角色（`delegate`）时的共享模型白名单与默认模型。当 `subagents.dynamic.enabled` 设为 `true` 时，根会话还会额外获得 `spawn_subagent(name, prompt, model=None, thinking=None)` 工具：
+
+- `name` 为该动态子角色指定角色标签，用于状态栏与历史记录展示。
+- `prompt` 作为子角色的首条任务输入（配合内置的固定子级指引与全局 `AGENTS.md` 上下文运行，不携带父级 Agent 的角色指令或完整对话历史）。
+- `model` 必须选自 `allowed_models`，省略时自动使用 `default_model`（开启 `enabled: true` 时这两项均为必填）。
+- `thinking` 用于指定所选 Model 支持的思考深度（Reasoning effort）。
+
+每个动态子角色都会继承父级的工具集与 Environment，并作为叶节点运行（不再向下嵌套委派或创建子级）。
 
 运行数量上限由动态、配置及内置辅助角色共用，也约束恢复执行。达到上限时，Agent 会收到明确错误，可以等待现有工作结束。通过返回的执行 ID 使用 `subagent_info`、`wait_subagent`、`steer_subagent`、`resume_subagent` 以及取消操作。
 
