@@ -97,7 +97,7 @@ The replacement migration copies every old `project_lead` binding to `coordinato
 
 ## Thread Default Model Storage
 
-The nullable `thread_configuration.default_model_id` column belongs to the mutable configuration head and participates in its existing expected-version mutation. An additive migration leaves existing rows null; it does not infer defaults from Sidekick settings, Project preferences, or historical Runs. Reopening the App preserves non-null defaults. Run compositions and continuation objects retain their existing schemas and captured effective Models.
+The nullable `thread_configuration.default_model_id` column belongs to the mutable configuration head and participates in its existing expected-version mutation. An additive migration leaves existing rows null; it does not infer defaults from Project preferences, or historical Runs. Reopening the App preserves non-null defaults. Run compositions and continuation objects retain their existing schemas and captured effective Models.
 
 ## Bot Publication Pagination
 

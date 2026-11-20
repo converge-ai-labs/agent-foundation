@@ -172,15 +172,6 @@ it("preserves Bot access inheritance and independent true/false overrides", asyn
   });
 });
 
-it("shows Sidekick defaults for legacy null without rewriting source on load", async () => {
-  const initial = 'schema_version: "1"\nwebui:\n  sidekick: null\n';
-  renderFields(initial);
-  expect(screen.queryByRole("switch", { name: "Sidekick" })).toBeNull();
-  expect(screen.getByRole("combobox", { name: "Sidekick agent" })).toBeTruthy();
-  expect(screen.getByRole("combobox", { name: "Sidekick model" })).toBeTruthy();
-  expect(screen.getByTestId("source").textContent).toBe(initial);
-});
-
 it("selects saved key metadata without rewriting model settings or dropping an unresolved reference on load", async () => {
   const initial =
     'schema_version: "1"\nkind: model\nid: model-one\nname: Model\nroute: openai-responses:custom-model\nauthentication: {kind: api_key, credential_ref: key-missing}\nsettings: {temperature: 0.3}\n';
@@ -540,18 +531,10 @@ it("keeps invalid custom Heartbeat intervals out of the YAML draft", async () =>
   ).toBe(150);
 });
 
-it("edits separate Sidekick and Subagents groups through the root document", async () => {
+it("edits shared creation models and subagent controls through the root document", async () => {
   renderFields('schema_version: "1"\n');
   const user = userEvent.setup();
-  expect(screen.getByRole("button", { name: "About Sidekick" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "About subagents" })).toBeTruthy();
-  expect(
-    screen.queryByRole("group", { name: "Models for created subagents" }),
-  ).toBeNull();
-  await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
-  await user.click(await screen.findByRole("option", { name: "Coordinator" }));
-  await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
-  await user.click(await screen.findByRole("option", { name: "Alternate" }));
+  expect(screen.getByRole("group", { name: "Allowed models" })).toBeTruthy();
   await user.click(
     screen.getByRole("switch", { name: "Let the agent create subagents" }),
   );
@@ -572,9 +555,6 @@ it("edits separate Sidekick and Subagents groups through the root document", asy
   fireEvent.change(limit, { target: { value: "4" } });
   expect(parse(screen.getByTestId("source").textContent!)).toEqual({
     schema_version: "1",
-    webui: {
-      sidekick: { agent: "agent-coordinator", model: "model-alternate" },
-    },
     subagents: {
       dynamic: {
         enabled: true,

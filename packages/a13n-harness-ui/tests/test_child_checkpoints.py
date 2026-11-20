@@ -38,7 +38,7 @@ async def child_app(tmp_path, monkeypatch, child_model):
         parent = await new_thread(app)
 
         async def submit(name="spawn_subagent", **arguments):
-            arguments = arguments or {"name": "worker", "instructions": "CHILD_ROLE", "prompt": "task-zero"}
+            arguments = arguments or {"name": "worker", "prompt": "task-zero"}
             actions.append((name, arguments))
             receipt = await app.submit_thread(thread_id=parent.thread_id, prompt="Parent request")
             result = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)

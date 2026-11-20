@@ -289,7 +289,7 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
 async def test_explicit_null_project_overrides_default_and_collaboration_inherits_it(tmp_path: Path) -> None:
     from a13n_harness_ui.thread_capability import ThreadToolController
 
-    path = _write_configuration(tmp_path)
+    path = _write_configuration(tmp_path, allow_agent_creation=True)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
         inherited = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-assistant"))
         assert inherited.configuration.project_id == "project-main"

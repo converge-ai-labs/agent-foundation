@@ -78,7 +78,7 @@ a13n-harness-ui config validate
 
 `config path` 显示所选配置和数据路径。根 YAML 保存默认值；同级 `models/` 和 `agents/` 目录保存 Model 与 Agent 资源。`config validate` 检查文件和引用，不发送模型请求，因此仍需单独进行上面的回复测试。
 
-新配置的设置向导用 `webui.sidekick: {}` 初始化 [WebUI Sidekick](configuration.md#webui-sidekick) 默认值。Sidekick 在 WebUI 中始终可用；在 **设置 → Agents → Sidekick** 配置 Agent/Model 默认值。已有选择保留，旧的 null 采用继承默认值，保存偏好不会启动工作。
+首次设置会将选定的聊天模型加入可用列表，并设为默认创建模型。在 **Settings → Agents** 选择可用模型和默认模型。智能体创建独立 chat、Coordinator worker 或动态 subagent 时共用这些选择。
 
 ## 添加其他连接或 Agent
 

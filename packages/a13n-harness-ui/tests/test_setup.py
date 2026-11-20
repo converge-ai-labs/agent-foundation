@@ -39,7 +39,7 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
     root = yaml.safe_load(preview.files[path.name])
     assert root["schema_version"] == "1"
     assert root["background_compaction"] == {"enabled": True, "blocking_threshold": 0.95}
-    assert root["webui"] == {"sidekick": {}}
+    assert root["subagents"]["dynamic"] == {"allowed_models": ["model-codex"], "default_model": "model-codex"}
     assert root["tools"] == {
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
@@ -67,8 +67,6 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
     assert organizer.status(source).attempts == 0
     assert yaml.safe_load(path.read_text())["tools"] == root["tools"]
     assert source.document.tools.enable_codeact is True
-    assert yaml.safe_load(path.read_text())["webui"] == {"sidekick": {}}
-    assert source.document.webui.sidekick is not None
     assert len(source.agents) == 1
     assert source.projects["project-local"].name == tmp_path.name
     assert yaml.safe_load(preview.files["projects/project-local.yaml"])["name"] == tmp_path.name
@@ -142,13 +140,13 @@ async def test_setup_materializes_missing_tool_defaults_and_preserves_authored_v
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "webui",
-    [{}, {"sidekick": None}, {"sidekick": {}}, {"sidekick": {"agent": "agent-codex", "model": "model-codex"}}],
+    [{}, {"allowed_origins": ["http://localhost:8080"]}],
 )
-async def test_setup_materializes_sidekick_and_preserves_explicit_choices(tmp_path: Path, webui: dict) -> None:
+async def test_setup_preserves_authored_webui_settings(tmp_path: Path, webui: dict) -> None:
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump({"schema_version": "1", "webui": webui}))
     original = path.read_bytes()
-    expected = {"sidekick": {}, **webui}
+    expected = webui
     selection = _selection(tmp_path)
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     assert yaml.safe_load(preview.files[path.name])["webui"] == expected

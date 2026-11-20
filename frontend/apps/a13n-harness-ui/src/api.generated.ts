@@ -4294,7 +4294,6 @@ export interface components {
             project_id: string | null;
             /** Project Roots */
             project_roots: string[];
-            webui_sidekick?: components["schemas"]["SidekickConfiguration"] | null;
             /**
              * Memory Enabled
              * @default false
@@ -7941,16 +7940,6 @@ export interface components {
             /** Revoked At */
             revoked_at?: string | null;
         };
-        /**
-         * SidekickConfiguration
-         * @description Instruction-guided collaboration; omitted Agent inherits the calling Agent.
-         */
-        SidekickConfiguration: {
-            agent?: components["schemas"]["ResourceId"] | null;
-            model?: components["schemas"]["ResourceId"] | null;
-        } & {
-            [key: string]: components["schemas"]["JsonValue"];
-        };
         /** SkillCatalogItemView */
         SkillCatalogItemView: {
             /** Item Id */
@@ -8662,11 +8651,6 @@ export interface components {
         /** ThreadSelectorCatalog */
         ThreadSelectorCatalog: {
             dictation?: components["schemas"]["DictationConfiguration"] | null;
-            /**
-             * Sidekick Enabled
-             * @default false
-             */
-            sidekick_enabled?: boolean;
             /** Media Understanding */
             media_understanding?: {
                 [key: string]: string;

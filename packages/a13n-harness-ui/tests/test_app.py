@@ -93,11 +93,16 @@ def _settings(root: Path, *, shutdown_timeout_seconds: float = 1.0) -> HarnessUi
     )
 
 
-def _write_configuration(tmp_path: Path, *, instructions: str = "Help the user.") -> Path:
+def _write_configuration(
+    tmp_path: Path, *, instructions: str = "Help the user.", allow_agent_creation: bool = False
+) -> Path:
     workspace = tmp_path / "workspace"
     workspace.mkdir(exist_ok=True)
     root = tmp_path / "a13n-harness-ui.yaml"
     root.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: agent-assistant\n')
+    if allow_agent_creation:
+        with root.open("a") as config:
+            config.write("subagents: {dynamic: {allowed_models: [model-primary], default_model: model-primary}}\n")
     resources = {
         "models/primary.yaml": """
 schema_version: "1"
@@ -2141,7 +2146,8 @@ async def test_thread_collaboration_tools_are_only_exposed_by_webui_roots(tmp_pa
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="inspect tools")
         operation = await app.wait_root_operation(receipt.receipt_id)
         assert operation.status is RootOperationStatus.completed
-    expected = {"list_threads", "get_thread", "run_thread", "create_thread", "steer_thread"}
+    expected = {"list_threads", "get_thread", "create_thread", "send_thread_message"}
+    assert {"run_thread", "steer_thread", "create_worker"}.isdisjoint(tools[0])
     assert bool(expected & tools[0]) is (host_mode == "webui")
     if host_mode == "webui":
         assert expected <= tools[0]
@@ -2150,7 +2156,7 @@ async def test_thread_collaboration_tools_are_only_exposed_by_webui_roots(tmp_pa
 async def test_webui_create_thread_preserves_project_and_returns_before_completion(tmp_path: Path) -> None:
     from a13n_harness_ui.thread_capability import ThreadToolController
 
-    root = _write_configuration(tmp_path)
+    root = _write_configuration(tmp_path, allow_agent_creation=True)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
         app._root_runs._executor._agents = _CompletedReconstructor()
         source = await app.create_thread(title="Source")
@@ -2171,7 +2177,9 @@ async def test_webui_create_thread_preserves_project_and_returns_before_completi
             )
         assert result["ok"] is True
         created = await app.get_thread(result["thread_id"])
-        assert created.thread.configuration == source.configuration
+        assert created.thread.configuration == source.configuration.model_copy(
+            update={"default_model_id": "model-primary"}
+        )
         assert result["receipt"]["thread_id"] == created.thread.thread_id
         assert created.thread.thread_id != source.thread_id
         assert (await app.list_threads()).total == 2
@@ -2181,7 +2189,7 @@ async def test_webui_create_reports_created_identity_when_admission_fails(tmp_pa
     from a13n_harness_ui.errors import HarnessUiError
     from a13n_harness_ui.thread_capability import ThreadToolController
 
-    root = _write_configuration(tmp_path)
+    root = _write_configuration(tmp_path, allow_agent_creation=True)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
         source = await app.create_thread()
 

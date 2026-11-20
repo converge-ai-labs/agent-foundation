@@ -335,7 +335,7 @@ async def preview_setup(
                 if resource["id"] == (selection.new_agent_id or selection.default_agent):
                     resource["model"] = connection_model
                     files[name] = yaml.safe_dump(resource, sort_keys=False, allow_unicode=True)
-    live_model = selection.existing_model_id or connection_model
+    selected_model_id = selection.existing_model_id or connection_model
     live_authentication = (
         selected_model[1].get("authentication")
         if selected_model is not None
@@ -346,11 +346,11 @@ async def preview_setup(
     if (
         "live" not in root
         and selection.enable_live
-        and live_model is not None
+        and selected_model_id is not None
         and isinstance(live_authentication, dict)
         and live_authentication.get("kind") == "codex_subscription"
     ):
-        root["live"] = {"enabled": True, "model": live_model, "voice": "cove", "files_enabled": True}
+        root["live"] = {"enabled": True, "model": selected_model_id, "voice": "cove", "files_enabled": True}
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     if seed_review:
         authentication = (
@@ -393,9 +393,6 @@ async def preview_setup(
                 organize.setdefault("enabled", True)
                 organize.setdefault("instructions", "")
                 organize.setdefault("model", None)
-        webui = root.setdefault("webui", {})
-        if isinstance(webui, dict):
-            webui.setdefault("sidekick", {})
         tools = root.setdefault("tools", {})
         if isinstance(tools, dict):
             for name, value in ToolsConfiguration().model_dump(mode="json").items():
@@ -415,6 +412,11 @@ async def preview_setup(
             **({"project": selection.project} if selection.project is not None else {}),
             "environment_profile": selection.environment_profile,
         }
+        if path.name not in baseline and selected_model_id is not None:
+            root.setdefault("subagents", {})["dynamic"] = {
+                "allowed_models": [selected_model_id],
+                "default_model": selected_model_id,
+            }
         if selection.include_default_subagents is not None:
             subagents = root.setdefault("subagents", {})
             if not isinstance(subagents, dict):

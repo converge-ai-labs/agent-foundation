@@ -340,15 +340,15 @@ Guests cannot configure the instance, answer approvals, manage links, or use nat
 
 The Coordinator delegates substantive investigation, implementation, and testing to workers by default. It focuses on communication with you, planning, coordination, and review of results. Simple questions, lightweight checks, and review stay in the Coordinator conversation. Tightly coupled work can stay with one worker; delegation does not require parallel execution. If you ask the Coordinator to do the work itself, it follows your choice without delegating or asking you to confirm that choice again. This is an Agent instruction, not a restriction on its tools.
 
-Each Project can have several Coordinators. The role is permanent, including if sending subsequently fails. An existing conversation can use **Make Coordinator** when idle, unarchived, Project-bound, and free of pending decisions. Conversion keeps its URL/history/settings. Workers cannot be promoted; old conversations and Sidekicks are not adopted.
+Each Project can have several Coordinators. The role is permanent, including if sending subsequently fails. An existing conversation can use **Make Coordinator** when idle, unarchived, Project-bound, and free of pending decisions. Conversion keeps its URL/history/settings. Workers cannot be promoted; existing conversations are not adopted.
 
 A worker is a root conversation with human controls, not a Subagent. **Managed by · name** fixes its owner and Project. Before creation, remove that label to make an independent draft without losing text, attachments, or choices. After creation it stays fixed; uncertain creation must be inspected before retrying. Workers appear under their owner, and search labels them **Coordinator worker**.
 
-Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use Sidekick defaults, while manual workers use composer choices. Sidekick defaults do not control Coordinator identity or automatic follow-up.
+Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use the shared creation model selection. Manual workers use composer choices.
 
 Automatic follow-up attempts delivery on first direct worker assignment and when owned work finishes, fails, is cancelled, or waits for input. The Coordinator inspects saved results before accepting completion. Notifications have no retry/restart replay. Closing the browser leaves work running; stopping the Coordinator neither stops workers nor pauses later notifications. Decision deadlines still apply.
 
-## Agent collaboration and Sidekick
+## Agent collaboration
 
 Use inline conversation links from collaboration tools to inspect other root work. Agents receive their Thread ID and captured Project/roots; a newly created root receives the task and return address, not the requester's full conversation history.
 
@@ -360,9 +360,9 @@ Use inline conversation links from collaboration tools to inspect other root wor
 
 These limits apply to model tools, not human WebUI access. Workers cannot create roots, control their owner, or access siblings.
 
-An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` selects the first Run's Model; `run_thread` can select another for a later Run. A Run started without a selection, such as a message or background result, keeps the previous Run's Model. `send_thread_message` steers an active target or starts an idle turn. Acceptance is not proof of processing or saved delivery. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
+Use `create_thread` for an independent conversation, `create_worker` for an owned worker, and `spawn_subagent` for a bounded task in the current chat.
 
-Configure **Settings → Agents → Sidekick** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
+In **Settings → Agents**, choose the allowed models and default model for agent creation. Independent chats, Coordinator workers and dynamic subagents share these choices. Use `send_thread_message` to continue an existing chat.
 
 ## Fork a conversation
 
@@ -410,7 +410,7 @@ For later changes:
 | **Accounts & API keys** | Server credentials                                                          |
 | **Connections**         | MCP, reusable agent plugins, conversation connection defaults               |
 | **Environments**        | Local defaults, Devices, profiles/extensions, runtime preparation           |
-| **General**             | Live, Memory, Sidekick, notifications, setup/diagnostics                    |
+| **General**             | Live, Memory, notifications, setup/diagnostics                              |
 | **Configuration files** | Inspect or edit the underlying files                                        |
 
 Forms/YAML share one draft. **Save changes** validates and replaces the complete file. Tab navigation preserves unsaved edits; reload does not. Detected external changes retain your dirty draft, while file saves remain last-write-wins. Hidden MCP source text means a replacement also replaces unseen fields and all resources in that file. Active Runs keep captured configuration. Follow [configuration recipes](configuration-recipes.md) for complete file-based setups.

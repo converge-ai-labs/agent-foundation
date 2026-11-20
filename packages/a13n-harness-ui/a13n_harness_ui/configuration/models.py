@@ -40,6 +40,7 @@ from a13n_harness_ui.environment_bindings import (
     validate_environment_selection,
 )
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
+from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_apps.origins import origin
 from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit, ObjectStoreSettings
 from a13n_harness_ui.subagents import BuiltinSubagentName
@@ -179,6 +180,14 @@ class DynamicSubagentsConfiguration(ConfigurationModel):
     allowed_models: tuple[ResourceId, ...] = ()
     default_model: ResourceId | None = None
 
+    def select_model(self, model: str | None) -> str:
+        selected = self.default_model if model is None else model
+        if selected is None or selected not in self.allowed_models:
+            raise ConfigurationError(
+                "Choose a model from the allowed models in Settings > Agents.", code="creation_model_not_allowed"
+            )
+        return selected
+
     @field_validator("allowed_models")
     @classmethod
     def _unique_models(cls, value: tuple[ResourceId, ...]) -> tuple[ResourceId, ...]:
@@ -243,13 +252,6 @@ class SecurityConfiguration(ConfigurationModel):
     shell_review: ShellReviewConfiguration = Field(default_factory=ShellReviewConfiguration)
 
 
-class SidekickConfiguration(ConfigurationModel):
-    """Instruction-guided collaboration; omitted Agent inherits the calling Agent."""
-
-    agent: ResourceId | None = None
-    model: ResourceId | None = None
-
-
 class McpAppsSandboxConfiguration(ConfigurationModel):
     bind: str = "127.0.0.1"
     port: int = Field(default=0, ge=0, le=65535)
@@ -291,13 +293,7 @@ class BotConfiguration(ConfigurationModel):
 
 class WebUiConfiguration(ConfigurationModel):
     allowed_origins: tuple[str, ...] = ()
-    sidekick: SidekickConfiguration = Field(default_factory=SidekickConfiguration)
     bot: BotConfiguration = Field(default_factory=BotConfiguration)
-
-    @field_validator("sidekick", mode="before")
-    @classmethod
-    def _always_available_sidekick(cls, value: object) -> object:
-        return {} if value is None else value
 
     mcp_apps: McpAppsConfiguration = Field(default_factory=McpAppsConfiguration)
 
@@ -1142,11 +1138,6 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
             _require_reference(dictation.codex.group, self.subscription_groups, "dictation.codex.group")
             if self.subscription_groups[dictation.codex.group].provider != "codex":
                 raise ValueError("dictation.codex.group requires a Codex subscription group")
-        sidekick = self.document.webui.sidekick
-        _require_reference(sidekick.agent, self.agents, "webui.sidekick.agent")
-        _require_reference(sidekick.model, self.models, "webui.sidekick.model")
-        if sidekick.agent is not None and sidekick.model is None and self.agents[sidekick.agent].model is None:
-            raise ValueError("Sidekick requires an Agent Model or a webui.sidekick.model override")
         if (
             defaults.environment_profile is not None
             and built_in_environment_profile(defaults.environment_profile) is None

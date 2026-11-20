@@ -19,7 +19,7 @@ pytestmark = pytest.mark.anyio
 def coordinator_configuration(tmp_path: Path) -> Path:
     root = configuration(tmp_path)
     document = yaml.safe_load(root.read_text())
-    document["webui"] = {"sidekick": {"agent": "agent-worker", "model": "model-secondary"}}
+    document["webui"] = {}
     root.write_text(yaml.safe_dump(document))
     return root
 
@@ -97,9 +97,7 @@ async def test_promotion_preserves_conversation_and_allows_multiple_coordinators
         assert (await app.get_thread(other.thread_id)).thread.auto_followup is True
 
 
-async def test_promotion_never_adopts_previous_sidekicks_and_worker_is_terminal_role(
-    tmp_path: Path, monkeypatch
-) -> None:
+async def test_promotion_never_adopts_previous_chats_and_worker_is_terminal_role(tmp_path: Path, monkeypatch) -> None:
     root = coordinator_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         ordinary = await app.create_thread()
@@ -108,14 +106,14 @@ async def test_promotion_never_adopts_previous_sidekicks_and_worker_is_terminal_
             raise ThreadError("Admission rejected", code="test_rejected")
 
         monkeypatch.setattr(app._root_runs, "submit_prompt", reject)
-        sidekick = await controller(app).create_thread(
+        other_chat = await controller(app).create_thread(
             source_thread_id=ordinary.thread_id, prompt="Before", title=None, agent_id=None
         )
         await app.promote_coordinator(ordinary.thread_id)
         worker = await controller(app).create_thread(
-            source_thread_id=ordinary.thread_id, prompt="After", title=None, agent_id=None
+            source_thread_id=ordinary.thread_id, worker=True, prompt="After", title=None, agent_id=None
         )
-        assert (await app.get_thread(sidekick["thread_id"])).thread.role == "ordinary"
+        assert (await app.get_thread(other_chat["thread_id"])).thread.role == "ordinary"
         assert (await app.get_thread(worker["thread_id"])).thread.coordinator_thread_id == ordinary.thread_id
         with pytest.raises(StoreConflictError, match="independent"):
             await app.promote_coordinator(worker["thread_id"])
@@ -158,18 +156,11 @@ async def test_archive_and_project_constraints_do_not_change_roles(tmp_path: Pat
             await app.promote_coordinator(projectless.thread_id)
 
 
-@pytest.mark.parametrize("sidekick_enabled", [False, True])
 @pytest.mark.parametrize("auto_followup", [False, True])
-async def test_coordinator_instructions_follow_role_not_optional_settings(
-    tmp_path: Path, sidekick_enabled: bool, auto_followup: bool
-) -> None:
+async def test_coordinator_instructions_follow_role_not_optional_settings(tmp_path: Path, auto_followup: bool) -> None:
     from a13n_harness_ui.thread_capability import ThreadCollaborationCapability
 
     root = coordinator_configuration(tmp_path)
-    if not sidekick_enabled:
-        document = yaml.safe_load(root.read_text())
-        document["webui"]["sidekick"] = None
-        root.write_text(yaml.safe_dump(document))
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         lead = await create_coordinator(app)
         await app.set_auto_followup(lead.thread_id, auto_followup)
@@ -188,6 +179,10 @@ async def test_coordinator_instructions_follow_role_not_optional_settings(
             )
             instructions = capability.get_instructions()
             coordinator = expected == "coordinator"
+            tools = capability.get_toolset().tools
+            assert ("create_worker" in tools) == coordinator
+            assert ("create_thread" in tools) == (expected != "worker")
+            assert {"run_thread", "steer_thread"}.isdisjoint(tools)
             for clause in (
                 "You are a Coordinator",
                 "Delegate substantive investigation, implementation, and testing to your owned worker Threads by default",
@@ -201,8 +196,8 @@ async def test_coordinator_instructions_follow_role_not_optional_settings(
             if coordinator:
                 assert "Create a separate Thread only" not in instructions
                 assert "authorized Project work when useful" not in instructions
-            elif expected == "ordinary" and sidekick_enabled:
-                assert "Create a separate Thread only" in instructions
+            elif expected == "ordinary":
+                assert "Open an independent chat" in instructions
             elif expected == "worker":
                 assert "You are a managed worker" in instructions
                 assert "Do not create another root" in instructions

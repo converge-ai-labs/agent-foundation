@@ -14,6 +14,7 @@ from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProjectAdapter
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
+from a13n_harness_ui.model_thinking import ThinkingSelection, apply_thinking
 from a13n_harness_ui.storage import LocalStore, ObjectKind, ObjectRef, ResourceIndexEntry, Thread
 from a13n_harness_ui.surfaces import RunModelOverrides
 
@@ -44,6 +45,20 @@ class CompositionAcceptanceService:
         self.capability_warnings: tuple[str, ...] = ()
         self._cached: tuple[ObjectRef, LoadedHarnessUiConfiguration] | None = None
         self._cache_lock = Lock()
+
+    async def creation_model(
+        self, composition: ResolvedRunComposition | None, model: str | None, thinking: ThinkingSelection | None
+    ) -> ResolvedModelRecipe:
+        source = await self.load(composition.generation_digest) if composition is not None else await self.current()
+        if source is None:
+            raise CompositionError("No configuration has been accepted.", code="configuration_missing")
+        policy = source.document.subagents.dynamic if composition is None else composition.subagents.dynamic
+        selected = policy.select_model(model)
+        recipe = self._resolver.model_recipe(source.models[selected], source)
+        if thinking is None:
+            return recipe
+        settings = apply_thinking(recipe.route, recipe.settings, thinking)
+        return recipe.model_copy(update={"settings": settings, "thinking_override": thinking})
 
     def validate(self, source: LoadedHarnessUiConfiguration) -> None:
         """Validate one complete candidate without publishing or selecting it."""
@@ -130,9 +145,6 @@ class RunCompositionService:
         self._configurations = configurations
         self._oauth = oauth
         self.connector_capture: Callable[[], Awaitable[tuple[ConnectorCapture, ...]]] | None = None
-
-    def resolve_model(self, source: LoadedHarnessUiConfiguration, model_id: str) -> ResolvedModelRecipe:
-        return self._resolver.model_recipe(source.models[model_id], source)
 
     async def publish_memory(self, source: LoadedHarnessUiConfiguration, thread: Thread) -> PublishedRunComposition:
         value = self._resolver.resolve_memory(source, thread)

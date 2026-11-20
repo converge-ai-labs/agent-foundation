@@ -31,7 +31,17 @@ def no_real_model_requests(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _source(tmp_path: Path, include: tuple[str, ...]) -> Path:
     path = tmp_path / "a13n-harness-ui.yaml"
-    path.write_text(yaml.safe_dump({"schema_version": "1", "subagents": {"include": list(include)}}))
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1",
+                "subagents": {
+                    "include": list(include),
+                    "dynamic": {"allowed_models": ["model-main"], "default_model": "model-main"},
+                },
+            }
+        )
+    )
     resources = {
         "models/main.yaml": {
             "kind": "model",
@@ -312,6 +322,9 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
     model = yaml.safe_load((tmp_path / "models/main.yaml").read_text())
     model.update(id="model-worker", route="openai:gpt-4.1")
     (tmp_path / "models/worker.yaml").write_text(yaml.safe_dump(model))
+    document = yaml.safe_load(path.read_text())
+    document["subagents"]["dynamic"] = {"allowed_models": ["model-main", "model-worker"]}
+    path.write_text(yaml.safe_dump(document))
     calls = 0
     child_models = []
     memory_restores = []

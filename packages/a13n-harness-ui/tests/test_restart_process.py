@@ -243,7 +243,7 @@ def test_sigkill_does_not_replay_uncertain_tools_or_explicit_stop(tmp_path, mode
 def test_sigkill_recovers_the_root_without_restarting_its_active_child(tmp_path):
     import yaml
 
-    _write_configuration(tmp_path)
+    _write_configuration(tmp_path, allow_agent_creation=True)
     parent_path = tmp_path / "agents/assistant.yaml"
     parent = yaml.safe_load(parent_path.read_text())
     parent["subagents"] = [{"agent": "agent-worker"}]

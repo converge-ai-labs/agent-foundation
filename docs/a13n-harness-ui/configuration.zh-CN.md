@@ -353,22 +353,7 @@ webui:
 
 ### WebUI 子智能体
 
-在 **Settings → Agents → 子智能体** 中允许智能体创建辅助角色、选择可用 Model 并设置同一对话共享的运行上限（默认 8）。Model 列表为空时仅允许继承主智能体的 Model；显式选择必须在列表中。最终结果自动返回。独立的 **Sidekick** 分组用于开启单独对话；问号提示说明两者区别。
-
-### WebUI Sidekick
-
-**Settings → Agents → Sidekick** 控制独立工作的默认选择。Sidekick 在 WebUI 中始终可用。省略设置、`sidekick: {}` 和旧的 `sidekick: null` 都采用继承的默认值。为新 Sidekick Thread 选择默认 Model：
-
-```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
-webui:
-  sidekick:
-    agent: null
-    model: model-worker
-```
-
-使用已保存 ID。null/省略 `agent` 继承调用方；null/省略 `model` 跟随该 Agent 的 Model。配置的 Model 成为新 Thread 的持久默认值，供后续输入使用。显式 `create_thread(model_id=...)` 或 Run 选择器只覆盖对应 Run。
-
-保存后影响新的 WebUI 根 Run。保存不启动工作、不改变已有 Thread，也不改变 `defaults.agent`、TUI Run 或委派子级。设置向导保留已配置的 Agent/Model 选择。Sidekick 不再提供关闭开关；工具可见性和角色范围仍然有效。见[协作与交付](webui.md#agent-collaboration-and-sidekick)。
+在 **Settings → Agents** 选择可用模型和默认模型。智能体创建独立 chat、Coordinator worker 或动态 subagent 时共用这些选择。 子智能体开关和并发上限仅控制子智能体。
 
 ### MCP 生命周期与协议
 

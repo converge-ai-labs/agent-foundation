@@ -468,7 +468,7 @@ async def test_real_root_child_and_resume_keep_recipes_but_refresh_credentials(
             name, arguments = (
                 ("delegate", {"subagent_name": "explorer", "prompt": "initial task"})
                 if child_kind == "declared"
-                else ("spawn_subagent", {"name": "worker", "instructions": "CHILD_ROLE", "prompt": "initial task"})
+                else ("spawn_subagent", {"name": "worker", "prompt": "initial task"})
             )
             yield tool(name, arguments)
         elif count == 3:

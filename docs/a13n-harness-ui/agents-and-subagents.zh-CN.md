@@ -107,7 +107,9 @@ defaults:
    a13n-harness-ui config validate
    ```
 
-3. 用 `agent-coder` 启动新对话。让它将一个范围较小的仓库问题委派给 `explorer`。用 `/subagents` 查看子级执行及结果。
+3. 在 **设置 → 智能体 → 创建智能体** 中选择允许子智能体使用的模型。
+
+4. 用 `agent-coder` 启动新对话。让它将一个范围较小的仓库问题委派给 `explorer`。用 `/subagents` 查看子级执行及结果。
 
 常规设置会选择全部三个角色。省略 `include` 或将其设为 `[]`，可关闭自动包含。`setup --advanced` 提供全选或不选；选择部分角色时编辑列表。
 
@@ -135,7 +137,7 @@ subagents:
     default_model: model-primary
 ```
 
-省略 `enabled` 或设为 false 时，动态创建关闭。主 Agent 获得 `spawn_subagent(name, instructions, prompt, model=None, thinking=None)`，工具说明会列出 `allowed_models`。显式选择必须属于 `allowed_models`。省略 `model` 时使用 `default_model`，它也必须属于 `allowed_models`。启用动态创建时两项都必须设置；辅助角色不会继承主 Agent 的 Model，启用但缺少这两项的配置无法加载。思考级别必须受所选 Model 支持。辅助角色继承工具和 Environment，接收全局指引、固定子级指引和自身角色指令，不接收父 Agent 指令或对话历史。动态子级不能继续委派或创建子级。
+省略 `enabled` 或设为 false 时，动态创建关闭。主 Agent 获得 `spawn_subagent(name, prompt, model=None, thinking=None)`，工具说明会列出 `allowed_models`。显式选择必须属于 `allowed_models`。省略 `model` 时使用 `default_model`，它也必须属于 `allowed_models`。启用动态创建时两项都必须设置；辅助角色不会继承主 Agent 的 Model，启用但缺少这两项的配置无法加载。思考级别必须受所选 Model 支持。辅助角色继承工具和 Environment，接收全局指引、固定子级指引，并将任务作为首条输入，不接收父 Agent 指令或对话历史。动态子级不能继续委派或创建子级。
 
 运行数量上限由动态、配置及内置辅助角色共用，也约束恢复执行。达到上限时，Agent 会收到明确错误，可以等待现有工作结束。通过返回的执行 ID 使用 `subagent_info`、`wait_subagent`、`steer_subagent`、`resume_subagent` 以及取消操作。
 

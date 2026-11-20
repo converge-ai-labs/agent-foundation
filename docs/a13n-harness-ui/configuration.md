@@ -353,22 +353,7 @@ This controls request-address admission, not CORS. Authentication and same-origi
 
 ### WebUI subagents
 
-In **Settings → Agents → Subagents**, enable agent-created helpers, choose their allowed Models and set the shared per-chat running limit (default 8). An empty Model list permits only the inherited main Agent Model; explicit choices must be listed. Final results return automatically. The separate **Sidekick** group opens independent chats. Use the question-mark help icons to compare them.
-
-### WebUI Sidekick
-
-**Settings → Agents → Sidekick** controls defaults for independent work. Sidekick is always available in WebUI. Omitted settings, `sidekick: {}`, and legacy `sidekick: null` all use inherited defaults. To choose a default Model for new Sidekick Threads:
-
-```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
-webui:
-  sidekick:
-    agent: null
-    model: model-worker
-```
-
-Use saved IDs. Null/omitted `agent` inherits the caller; null/omitted `model` follows that Agent's Model. A configured Model becomes the new Thread's saved default for follow-ups. Explicit `create_thread(model_id=...)` or a Run picker overrides only that Run.
-
-Save to affect new WebUI root Runs. Saving starts no work, changes no existing Thread, and does not change `defaults.agent`, TUI Runs, or delegated children. Setup preserves authored Agent/Model choices. There is no Sidekick disable switch; tool visibility and role scope still apply. See [collaboration and delivery](webui.md#agent-collaboration-and-sidekick).
+In **Settings → Agents**, choose the allowed models and default model for agent creation. Independent chats, Coordinator workers and dynamic subagents share these choices. The subagent switch and concurrency limit apply only to subagents.
 
 ### MCP lifetime and protocol
 

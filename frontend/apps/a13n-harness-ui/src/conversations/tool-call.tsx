@@ -685,6 +685,7 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
           )}
           {[
             "create_thread",
+            "create_worker",
             "run_thread",
             "send_thread_message",
             "steer_thread",

@@ -17,7 +17,10 @@ pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 def _write_configuration(tmp_path: Path, **kwargs) -> Path:
     root = _base_configuration(tmp_path, **kwargs)
-    root.write_text(root.read_text() + "webui:\n  bot:\n    enabled: true\n")
+    root.write_text(
+        root.read_text()
+        + "subagents: {dynamic: {allowed_models: [model-primary], default_model: model-primary}}\nwebui:\n  bot:\n    enabled: true\n"
+    )
     return root
 
 
@@ -190,7 +193,7 @@ async def test_bot_rejects_ordinary_nonhuman_wakes_and_terminal_has_no_bot(tmp_p
         assert error.value.code == "bot_unavailable"
 
 
-async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heartbeat(
+async def test_native_bot_observes_saved_thread_result_and_follows_up_on_heartbeat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import json
@@ -267,7 +270,7 @@ async def test_native_bot_observes_saved_sidekick_result_and_follows_up_on_heart
             while await app._root_runs.active(target_id) is not None:
                 await sleep(0.01)
         before = await bot.snapshot()
-        assert len(before.inputs) == 1  # Sidekick completion did not wake Bot.
+        assert len(before.inputs) == 1  # Independent Thread completion did not wake Bot.
         await deliver_tick(bot, now=datetime.now(UTC) + timedelta(hours=1))
         after = await bot.snapshot()
         assert after.inputs[-1].state == "completed", after.inputs[-1].error

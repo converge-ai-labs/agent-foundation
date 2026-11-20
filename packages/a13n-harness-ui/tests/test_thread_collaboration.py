@@ -39,6 +39,11 @@ def configuration(tmp_path: Path) -> Path:
         f"schema_version: '1'\nkind: project\nid: project-other\nname: Other\nroots:\n  - path: {workspace}\n"
         "defaults: {agent: agent-worker, mcp_servers: []}\n"
     )
+    document = yaml.safe_load(root.read_text())
+    document["subagents"] = {
+        "dynamic": {"allowed_models": ["model-primary", "model-secondary"], "default_model": "model-secondary"}
+    }
+    root.write_text(yaml.safe_dump(document))
     return root
 
 
@@ -120,11 +125,9 @@ async def test_invalid_model_override_has_no_creation_or_admission_effect(tmp_pa
         target = await app.create_thread()
         capability = ThreadCollaborationCapability(controller=controller(app), source_thread_id=source.thread_id)
         ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id))
-        created = await capability.create_thread(ctx, prompt="Work", model_id=model_id)
-        assert created["ok"] is False and created["error"]["code"] == "thread_create_failed"
+        created = await capability.create_thread(ctx, prompt="Work", model=model_id)
+        assert created["ok"] is False and created["error"]["code"] == "creation_model_not_allowed"
         assert (await app.list_threads()).total == 2
-        started = await capability.run_thread(ctx, thread_id=target.thread_id, prompt="Work", model_id=model_id)
-        assert started["ok"] is False and started["error"]["code"] == "thread_run_failed"
         assert await app._root_runs.active(target.thread_id) is None
 
 
@@ -190,9 +193,6 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = configuration(tmp_path)
-    document = yaml.safe_load(root.read_text())
-    document["webui"] = {"sidekick": None}  # Legacy null uses inherited Sidekick defaults.
-    root.write_text(yaml.safe_dump(document))
     origin_id = ""
     origin_idle, reported = Event(), Event()
     steps: dict[str, int] = {}
@@ -317,164 +317,42 @@ async def test_real_model_tools_discover_delegate_cross_project_and_report_to_id
         assert (
             next(part for part in parts if (part.text or "").startswith("Task from Thread")).metadata.display is False
         )
-    assert any("Sidekick is enabled" in text for text in instructions)
+    assert any("Agent creation models:" in text for text in instructions)
 
 
-@pytest.mark.parametrize(
-    "sidekick", [{"agent": "agent-missing"}, {"agent": "model-primary"}, {"model": "model-missing"}]
-)
-async def test_invalid_sidekick_configuration_is_rejected(tmp_path: Path, sidekick) -> None:
+async def test_creation_defaults_survive_restart_and_legacy_run_snapshots(tmp_path):
     root = configuration(tmp_path)
-    document = yaml.safe_load(root.read_text())
-    document["webui"] = {"sidekick": sidekick}
-    root.write_text(yaml.safe_dump(document))
-    with pytest.raises(ConfigurationError):
-        await load_harness_ui_configuration(root)
-
-
-@pytest.mark.parametrize(
-    "sidekick, expected_agent, expected_model",
-    [
-        (None, "agent-assistant", "model-primary"),
-        ({}, "agent-assistant", "model-primary"),
-        ({"agent": "agent-worker"}, "agent-worker", "model-secondary"),
-        ({"model": "model-secondary"}, "agent-assistant", "model-secondary"),
-        ({"agent": "agent-worker", "model": "model-primary"}, "agent-worker", "model-primary"),
-    ],
-)
-async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sidekick, expected_agent, expected_model
-) -> None:
-    root = configuration(tmp_path)
-    document = yaml.safe_load(root.read_text())
-    if sidekick is not None:
-        document["webui"] = {"sidekick": sidekick}
-        root.write_text(yaml.safe_dump(document))
-    sidekick = sidekick or {}
-    instructions = []
-
-    async def resolve(self, context, model_id):
-        async def model(messages, info):
-            instructions.append(info.instructions or "")
-            yield "Completed"
-
-        return FunctionModel(stream_function=model)
-
-    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
-    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+    settings = _settings(tmp_path / "data")
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
         source = await app.create_thread()
-        first = await app.submit_thread(thread_id=source.thread_id, prompt="Inspect preference")
-        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
-        original = await app.inspect_operation_configuration(first.receipt_id)
-        assert original.agent.model_id == "model-primary"
-        assert original.webui_sidekick.agent == sidekick.get("agent")
-        assert original.webui_sidekick.model == sidekick.get("model")
-        assert f"Your current Thread: {source.thread_id}" in instructions[0]
-        assert "Your captured Project: project-main" in instructions[0]
-        assert "Answer its questions through that same tool" in instructions[0]
-        assert "Use subagents for parallel research, exploration, and other bounded tasks" in instructions[0]
-        assert "keep that work in the current Thread rather than creating a Sidekick as a fallback" in instructions[0]
-        assert (
-            "Create a separate Thread only for coordination work that needs human attention, decisions, or follow-up "
-            "in its own conversation" in instructions[0]
-        )
-        assert "For useful independent work, prefer create_thread" not in instructions[0]
-        assert f"Agent {expected_agent!r}" in instructions[0]
-        assert "Host applies the captured Sidekick defaults" in instructions[0]
-        reference = await app._root_runs.composition_reference(first.receipt_id)
-        composition = await app._store.objects.read_model(reference, ResolvedRunComposition)
-        historical = ResolvedRunComposition.model_validate_json(composition.model_dump_json(exclude={"webui_sidekick"}))
-        assert historical.webui_sidekick is None  # Missing fields in old captures must not enable Sidekick.
-        if "model" in sidekick:
-            assert f"model_id={sidekick['model']!r}" in instructions[0]
-        result = await controller(app).create_thread(
+        run = await app._root_runs._executor.capture(thread_id=source.thread_id, prompt="Work")
+        old = run.published.value.model_dump(mode="json")
+        old["webui_sidekick"] = {"agent": "old-agent", "model": "old-model"}
+        assert ResolvedRunComposition.model_validate(old) == run.published.value
+        created = await controller(app).create_thread(
             source_thread_id=source.thread_id,
-            prompt="Independent work",
+            prompt="First task",
             title=None,
             agent_id=None,
-            source_composition=composition,
+            model_id="model-primary",
+            source_composition=run.published.value,
         )
-        receipt = result["receipt"]["receipt_id"]
-        assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
-        captured = await app.inspect_operation_configuration(receipt)
-        assert captured.agent.source_id == expected_agent
-        assert captured.agent.model_id == expected_model
-        saved = (await app.get_thread(result["thread_id"])).thread.configuration
-        assert saved.default_model_id == sidekick.get("model")
-        # Host defaults are persistent; explicit overrides never change the saved default.
-        again = await controller(app).run_thread(
-            source_thread_id=source.thread_id, thread_id=result["thread_id"], prompt="Follow-up"
+        await app.wait_root_operation(created["receipt"]["receipt_id"])
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        target = (await app.get_thread(created["thread_id"])).thread
+        assert target.configuration.default_model_id == "model-primary" and target.role == "ordinary"
+        sent = await controller(app).send_thread_message(
+            source_thread_id=source.thread_id, thread_id=target.thread_id, message="Follow up"
         )
-        assert (await app.wait_root_operation(again["receipt_id"])).status is RootOperationStatus.completed
-        following = await app.inspect_operation_configuration(again["receipt_id"])
-        assert following.agent.model_id == expected_model
-        message = await controller(app).send_thread_message(
-            source_thread_id=source.thread_id, thread_id=result["thread_id"], message="Continue via message"
-        )
-        receipt = message["receipt"]["receipt_id"]
-        assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
-        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == expected_model
-        inspected = await controller(app).get_thread(
-            source_thread_id=source.thread_id, thread_id=result["thread_id"], history_cursor=None, history_limit=1
-        )
-        assert inspected["configuration"]["next_model_id"] == expected_model
-        assert inspected["configuration"]["captured"]["agent"]["model_id"] == expected_model
-        override = "model-secondary" if expected_model == "model-primary" else "model-primary"
-        explicit = await controller(app).run_thread(
-            source_thread_id=source.thread_id,
-            thread_id=result["thread_id"],
-            prompt="One-off override",
-            model_id=override,
-        )
-        assert (await app.wait_root_operation(explicit["receipt_id"])).status is RootOperationStatus.completed
-        assert (await app.inspect_operation_configuration(explicit["receipt_id"])).agent.model_id == override
-        assert (await app.inspect_thread_configuration(result["thread_id"])).next_model_id == expected_model
-        # Explicit creation Agent and Model win independently; the configured default remains durable.
-        explicit_create = await controller(app).create_thread(
-            source_thread_id=source.thread_id,
-            prompt="Explicit choices",
-            title=None,
-            agent_id="agent-assistant",
-            model_id=override,
-            source_composition=composition,
-        )
-        explicit_receipt = explicit_create["receipt"]["receipt_id"]
-        assert (await app.wait_root_operation(explicit_receipt)).status is RootOperationStatus.completed
-        explicit_capture = await app.inspect_operation_configuration(explicit_receipt)
-        assert explicit_capture.agent.source_id == "agent-assistant"
-        assert explicit_capture.agent.model_id == override
-        assert (
-            await app.get_thread(explicit_create["thread_id"])
-        ).thread.configuration.default_model_id == sidekick.get("model")
-    # Disabling Sidekick and reopening the App must not rewrite existing Threads.
-    document["webui"] = {"sidekick": None}
-    root.write_text(yaml.safe_dump(document))
-    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
-        resumed = await controller(app).send_thread_message(
-            source_thread_id=source.thread_id, thread_id=result["thread_id"], message="After restart"
-        )
-        receipt = resumed["receipt"]["receipt_id"]
-        assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
-        # A message selects no Model, so it keeps the last explicit override rather than the saved default.
-        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == override
-        assert (await app.inspect_thread_configuration(result["thread_id"])).next_model_id == expected_model
-        ordinary = await controller(app).send_thread_message(
-            source_thread_id=result["thread_id"], thread_id=source.thread_id, message="Return report"
-        )
-        receipt = ordinary["receipt"]["receipt_id"]
+        receipt = sent["receipt"]["receipt_id"]
         assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
         assert (await app.inspect_operation_configuration(receipt)).agent.model_id == "model-primary"
 
 
-@pytest.mark.parametrize("configured", [False, True])
-async def test_terminal_does_not_receive_sidekick_instructions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, configured: bool
-) -> None:
+async def test_terminal_does_not_receive_creation_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = configuration(tmp_path)
-    if configured:
-        document = yaml.safe_load(root.read_text())
-        document["webui"] = {"sidekick": {"model": "model-secondary"}}
-        root.write_text(yaml.safe_dump(document))
     seen = []
 
     async def resolve(self, context, model_id):
@@ -489,7 +367,7 @@ async def test_terminal_does_not_receive_sidekick_instructions(
         thread = await app.create_thread()
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Work locally")
         assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
-    assert "Sidekick is enabled" not in (seen[0].instructions or "")
+    assert "Agent creation models:" not in (seen[0].instructions or "")
     assert "list_agents" not in {tool.name for tool in seen[0].function_tools}
 
 
@@ -498,10 +376,6 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, coordinator: bool
 ) -> None:
     root = configuration(tmp_path)
-    if coordinator:
-        document = yaml.safe_load(root.read_text())
-        document["webui"] = {"sidekick": {"agent": "agent-worker", "model": "model-secondary"}}
-        root.write_text(yaml.safe_dump(document))
     requester_id = ""
     worker_id = ""
     worker_idle, requester_idle = Event(), Event()
@@ -574,6 +448,7 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
         admission = await app._root_runs._executor.capture(thread_id=requester_id, prompt="Coordinate")
         with fail_after(15):
             worker = await controller(app).create_thread(
+                worker=coordinator,
                 source_thread_id=requester_id,
                 prompt="Prepare a report",
                 title=None,
@@ -606,16 +481,12 @@ async def test_requester_identity_uses_run_capture_not_future_thread_selections(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, project_id: str | None
 ) -> None:
     root = configuration(tmp_path)
-    captured = SimpleNamespace(
-        project_id=project_id,
-        project_roots=("/captured/root",),
-        root=SimpleNamespace(capabilities=(), tools=None),
-        webui_sidekick=None,
-        role="ordinary",
-        coordinator_thread_id=None,
-    )
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
         source = await app.create_thread()
+        actual = await app._root_runs._executor.capture(thread_id=source.thread_id, prompt="Prepare")
+        captured = actual.published.value.model_copy(
+            update={"project_id": project_id, "project_roots": ("/captured/root",)}
+        )
         prompts = []
 
         async def submit(**kwargs):
@@ -668,16 +539,17 @@ async def test_follow_up_input_preserves_attribution_through_execution_and_histo
         tools = controller(app)
         with fail_after(15):
             if delivery == "run":
-                receipt = await tools.run_thread(
-                    source_thread_id=source.thread_id, thread_id=target.thread_id, prompt="Focus here"
+                receipt = await tools.send_thread_message(
+                    source_thread_id=source.thread_id, thread_id=target.thread_id, message="Focus here"
                 )
-                receipt_id = receipt["receipt_id"]
+                receipt_id = receipt["receipt"]["receipt_id"]
             else:
                 receipt = await app.submit_thread(thread_id=target.thread_id, prompt="Start work")
                 receipt_id = receipt.receipt_id
                 await started.wait()
-                send = tools.send_thread_message if delivery == "send" else tools.steer_thread
-                result = await send(source_thread_id=source.thread_id, thread_id=target.thread_id, message="Focus here")
+                result = await tools.send_thread_message(
+                    source_thread_id=source.thread_id, thread_id=target.thread_id, message="Focus here"
+                )
                 assert result["accepted"] is True
                 assert result["receipt_id"] == receipt_id
                 release.set()
@@ -696,16 +568,14 @@ async def test_follow_up_input_preserves_attribution_through_execution_and_histo
         assert any(part.text == "Applied the feedback" for part in parts)
 
 
-@pytest.mark.parametrize("action", ["run", "steer"])
-async def test_hidden_context_does_not_admit_empty_cross_thread_input(tmp_path: Path, action: str) -> None:
+async def test_hidden_context_does_not_admit_empty_cross_thread_input(tmp_path: Path) -> None:
     root = configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
         source = await app.create_thread()
         target = await app.create_thread()
-        tools = controller(app)
-        with pytest.raises(ThreadError, match="non-empty"):
-            if action == "run":
-                await tools.run_thread(source_thread_id=source.thread_id, thread_id=target.thread_id, prompt=" \n")
-            else:
-                await tools.steer_thread(source_thread_id=source.thread_id, thread_id=target.thread_id, message=" \n")
+        capability = ThreadCollaborationCapability(controller=controller(app), source_thread_id=source.thread_id)
+        result = await capability.send_thread_message(
+            SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id)), target.thread_id, " "
+        )
+        assert result["error"]["code"] == "thread_message_empty"
         assert await app._root_runs.active(target.thread_id) is None

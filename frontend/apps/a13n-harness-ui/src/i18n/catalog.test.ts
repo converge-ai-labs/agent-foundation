@@ -77,7 +77,7 @@ const untranslatedExceptions: Record<string, string[]> = {
   "configuration/envd-fields.tsx": ["envd"],
   "i18n/language.tsx": ["English"],
   "shell/debug.tsx": ["undefined"],
-  "configuration/fields.tsx": ["Sidekick"],
+  "configuration/fields.tsx": ["Agent creation"],
   "configuration/project-folders.tsx": ["/path/to/project"],
   "conversations/composer.tsx": ["- HEAD"],
   "conversations/markdown-block.tsx": ["mermaid", "text"],

@@ -51,7 +51,7 @@ async def test_default_model_override_patch_clear_and_restart(tmp_path, monkeypa
                     expected_version=1, patch=ThreadConfigurationPatch(default_model_id=None)
                 ),
             )
-        # Ordinary generic creation inherits a sticky default without Sidekick.
+        # Model-created chats persist the configured creation default.
         copied = await controller(app).create_thread(
             source_thread_id=thread.thread_id,
             prompt="Copy selections",

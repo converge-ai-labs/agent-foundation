@@ -101,6 +101,7 @@ from a13n_harness_ui.composition import (
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentRunService
 from a13n_harness_ui.errors import (
+    ConfigurationError,
     EnvironmentLifecycleError,
     HarnessUiError,
     RunCoordinationError,
@@ -112,7 +113,7 @@ from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.models import AppReference
 from a13n_harness_ui.mcp_apps.snapshots import METADATA_KEY, AppSnapshots
 from a13n_harness_ui.model_runtime import SubscriptionSource
-from a13n_harness_ui.model_thinking import ThinkingSelection, apply_thinking, summarize_thinking
+from a13n_harness_ui.model_thinking import ThinkingSelection, summarize_thinking
 from a13n_harness_ui.observation import (
     UiObservation,
     finish_operation,
@@ -490,6 +491,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
         del tool_call
         scope = await self._require_parent(plan.parent)
         edge = _require_edge(scope.composition.root, request.subagent_name)
+        policy = scope.composition.subagents.dynamic
+        try:
+            policy.select_model(edge.definition.model.model_id)
+        except ConfigurationError as exc:
+            raise _SubagentRequestError(str(exc), code=exc.code) from exc
         if (
             request.subagent_name != plan.child.declaration.name
             or plan.child.definition.definition_id != _definition_id(edge.definition)
@@ -617,26 +623,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
         context: SubagentOperatorContext,
         *,
         name: str,
-        instructions: str,
         prompt: str,
         model: str | None = None,
         thinking: ThinkingSelection | None = None,
     ) -> AsyncExecutionView:
         scope = await self._require_parent(context)
-        policy = scope.composition.subagents.dynamic
-        model = model or policy.default_model
-        if model not in policy.allowed_models:
-            raise _SubagentRequestError(
-                "model must be in subagents.dynamic.allowed_models.", code="subagent_model_not_allowed"
-            )
-        source = await self._configurations.load(scope.composition.generation_digest)
-        recipe = self._compositions.resolve_model(source, model)
-        if thinking is not None:
-            try:
-                settings = apply_thinking(recipe.route, recipe.settings, thinking)
-            except HarnessUiError as exc:
-                raise _SubagentRequestError(str(exc), code="subagent_thinking_invalid") from exc
-            recipe = recipe.model_copy(update={"settings": settings, "thinking_override": thinking})
+        try:
+            recipe = await self._configurations.creation_model(scope.composition, model, thinking)
+        except HarnessUiError as exc:
+            raise _SubagentRequestError(str(exc), code=exc.code) from exc
         state = HarnessState.new()
         root = scope.composition.root.model_copy(
             update={
@@ -646,7 +641,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 # Bot and Live carry their coordinator role in the system prompt.
                 # A dynamic child gets only the role-neutral package prompt.
                 "system_prompt": (PACKAGE_SYSTEM_PROMPT,),
-                "instructions": (instructions,),
+                "instructions": (),
                 "model": recipe,
                 "children": (),
                 "tools": None

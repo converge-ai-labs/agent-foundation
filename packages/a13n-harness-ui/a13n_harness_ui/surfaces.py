@@ -845,7 +845,6 @@ class ModelSummary(SurfaceModel):
 
 class ThreadSelectorCatalog(SurfaceModel):
     dictation: DictationConfiguration | None = None
-    sidekick_enabled: bool = False
     media_understanding: dict[NativeInputMediaKind, str] = Field(default_factory=dict)
     media_understanding_environment: tuple[NativeInputMediaKind, ...] = ()
     agents: tuple[AgentSummary, ...]
