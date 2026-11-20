@@ -375,6 +375,7 @@ class HarnessAguiObserver:
                                 ),
                                 "args": entry.target_call.args,
                                 "tool_metadata": deferred.metadata.get(entry.target_call.tool_call_id),
+                                **({"terminal": True} if entry.terminal else {}),
                             },
                         )
                         for reason, calls in (("approval", deferred.approvals), ("external", deferred.calls))

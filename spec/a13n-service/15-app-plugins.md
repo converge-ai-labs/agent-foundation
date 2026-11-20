@@ -74,6 +74,8 @@ Before opening execution resources, after closing its planning SQL session, a wo
 
 Composition passes enabled flags into Harness sources before construction, binding and contributions. Each inline node retains local instance IDs and selections. A required dependency on an unavailable contribution fails through the Harness graph contract; no automatic activation occurs.
 
+An installed Harness factory can export named native output handlers. A Run exposes one only when its [output contract](04-resources.md#run-output) explicitly selects the enabled, configured plugin instance and exported key. Missing or disabled references fail rather than falling back to a different output. The handler is trusted installed code; a request cannot supply code or select an arbitrary function.
+
 A new resume successor can encounter an unfinished target from an App now disabled. Harness validates the restored exact deferred target against its current dispatcher before effects and reports `deferred_surface_mismatch`; Service preserves that failure code. Disabling never re-enables a historical target or erases recorded results.
 
 ## Packaged browser assets

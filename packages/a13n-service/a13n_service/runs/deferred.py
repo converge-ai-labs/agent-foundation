@@ -28,7 +28,7 @@ def load(value: JsonValue) -> DeferredToolRequests:
 def pending(requests: DeferredToolRequests) -> Pending:
     """Expose existing approval details; keep other native metadata in the checkpoint."""
 
-    def project(part: ToolCallPart, *, approval: bool = False) -> PendingCall:
+    def project(part: ToolCallPart, *, approval: bool = False, terminal: bool = False) -> PendingCall:
         metadata = requests.metadata.get(part.tool_call_id, {})
         presentation = metadata.get(APPROVAL_PRESENTATION_KEY) if approval else None
         return PendingCall.model_validate(
@@ -37,12 +37,13 @@ def pending(requests: DeferredToolRequests) -> Pending:
                 "tool_name": part.tool_name if approval else client_tool_name(part, metadata),
                 "arguments": part.args_as_dict(),
                 "presentation": presentation,
+                "terminal": terminal,
             }
         )
 
     return Pending(
         approvals=tuple(project(entry.target_call, approval=True) for entry in requests.approvals),
-        calls=tuple(project(entry.target_call) for entry in requests.calls),
+        calls=tuple(project(entry.target_call, terminal=entry.terminal) for entry in requests.calls),
     )
 
 

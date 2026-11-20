@@ -7,9 +7,10 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import ClassVar, cast
+from typing import Any, ClassVar, cast
 
 from pydantic import BaseModel, JsonValue
+from pydantic_ai.output import ToolOutput
 
 from a13n_harness.errors import PluginError
 from a13n_harness.plugin_configuration import (
@@ -93,6 +94,10 @@ class HarnessPluginFactory(ABC):
         if self.configuration_model is None:
             raise NotImplementedError("Declare configuration_model or implement validate_configuration")
         return self.configuration_model.model_validate(dict(configuration))
+
+    def output_tools(self, context: HarnessPluginFactoryContext) -> Mapping[str, ToolOutput[Any]]:
+        """Declare opt-in terminal handlers for a configured instance without opening resources."""
+        return {}
 
     @abstractmethod
     def create_plugin(

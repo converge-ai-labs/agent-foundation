@@ -39,6 +39,20 @@ description: 保存修订版本、选择工具、配置委派并扩展 agent。
 
 保存时按工作空间校验引用。省略的 skill 和子 agent 修订版本 ID 会固定到当前默认版本。模型、连接、provider 和模板仍是实时资源，使用时重新解析。`lazy_environment` 默认为 true，首次使用时准备实例。设为 false 会在 Harness 开始前准备实例；执行连接仍在首次使用时打开。
 
+## 输出约定
+
+在 Agent 修订版中设置 `config.output_spec`，让多个 Run 共用同一份约定：
+
+```json
+{
+  "config": {
+    "output_spec": {"alternatives": ["text", "builtin.finish_silently"]}
+  }
+}
+```
+
+上例只展示输出设置，创建修订版时还需传入其余 Agent 配置。也可以把同一个对象放在 `options.overrides.output_spec` 中，[仅替换本次 Run 的输出约定](execution-options.md#choose-how-a-run-can-finish)。不传覆盖值时，Run 继承 Agent 修订版的约定；Agent 未设置时默认输出文本。现有的单 schema 和命名 `variants` 写法仍然可用。
+
 ## 上下文压缩
 
 对话增长时，Service 将较早的上下文压缩为摘要，默认同步执行。要在后台生成摘要，打开**高级设置 → 上下文压缩**，启用**启用后台压缩**，再保存修订版本：

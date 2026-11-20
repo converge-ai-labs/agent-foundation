@@ -48,10 +48,14 @@ def normalize(pending: Pending, request: Resume) -> Resume:
                     "unexpected": unexpected,
                 },
             )
+    if request.input is not None and any(item.terminal for item in pending.calls):
+        raise ServiceError(
+            "invalid_argument", "Send new input separately from a terminal tool result", {"field": "input"}
+        )
     calls = dict(request.calls)
     for item in pending.calls:
         result = calls[item.tool_call_id]
-        if item.tool_name == "ask_user_question" and isinstance(result, Returned):
+        if not item.terminal and item.tool_name == "ask_user_question" and isinstance(result, Returned):
             try:
                 value = validate_user_question_result(item.arguments, result.value)
             except ValueError as error:

@@ -24,6 +24,7 @@ from a13n_harness._json import dump_json_bytes, require_finite_json
 from a13n_harness.errors import RunError
 from a13n_harness.state import HarnessState
 from a13n_harness.tools._output import _render_tool_return
+from a13n_harness.tools.client_output import CLIENT_OUTPUT_PREFIX
 
 MAX_DEFERRED_ITEMS = 128
 MAX_DEFERRED_METADATA_BYTES = 64 * 1024
@@ -38,6 +39,10 @@ class DeferredToolCall:
     target_identity: str
 
     @property
+    def terminal(self) -> bool:
+        return self.target_identity.startswith(CLIENT_OUTPUT_PREFIX)
+
+    @property
     def forwarded(self) -> bool:
         return self.model_call.tool_call_id != self.target_call.tool_call_id
 
@@ -49,6 +54,12 @@ class DeferredToolRequests:
     calls: list[DeferredToolCall] = field(default_factory=list)
     approvals: list[DeferredToolCall] = field(default_factory=list)
     metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if any(item.terminal for item in (*self.calls, *self.approvals)) and (
+            len(self.calls) != 1 or self.approvals or self.calls[0].forwarded
+        ):
+            raise ValueError("A terminal output must be the only call in its deferred batch")
 
     def target_requests(self) -> NativeDeferredToolRequests:
         """Project actual targets for native handlers and approval observations."""
@@ -238,12 +249,16 @@ def preflight_deferred_resume(
     from a13n_harness.tools.client import client_tool_name
 
     try:
-        pending_calls = {item.target_call.tool_call_id: item.target_call for item in detached.requests.calls}
+        pending_calls = {item.target_call.tool_call_id: item for item in detached.requests.calls}
         for call_id, call_result in tuple(detached.results.calls.items()):
-            request = pending_calls[call_id]
+            entry = pending_calls[call_id]
             if isinstance(call_result, ToolFailed):
                 require_finite_json(call_result.message)
                 continue
+            if entry.terminal:
+                require_finite_json(call_result)
+                continue
+            request = entry.target_call
             if client_tool_name(request, detached.requests.metadata.get(call_id, {})) == "ask_user_question":
                 from a13n_harness.toolsets.interaction import validate_user_question_result
 

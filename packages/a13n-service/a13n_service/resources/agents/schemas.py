@@ -162,6 +162,24 @@ class OutputVariant(_Schemas):
     resources: dict[BoundedKey, JsonObject] = Field(default_factory=dict, max_length=128)
 
 
+class StructuredOutputAlternative(OutputVariant):
+    kind: Literal["structured"]
+
+
+class ClientOutputAlternative(OutputVariant):
+    kind: Literal["client_tool"]
+
+
+type OutputReference = Annotated[
+    str,
+    StringConstraints(
+        max_length=128, pattern=r"^(text|builtin\.[A-Za-z0-9_.-]+|[A-Za-z_][A-Za-z0-9_.:-]*:[A-Za-z0-9_.-]+)$"
+    ),
+]
+type OutputDefinition = Annotated[StructuredOutputAlternative | ClientOutputAlternative, Field(discriminator="kind")]
+type OutputAlternative = OutputReference | OutputDefinition
+
+
 class OutputSpec(_Schemas):
     """Plain text without a schema, one structured output, or at least two named variants.
 
@@ -174,8 +192,22 @@ class OutputSpec(_Schemas):
     resources: dict[BoundedKey, JsonObject] = Field(default_factory=dict, max_length=128)
     variants: tuple[OutputVariant, ...] | None = Field(default=None, min_length=2, max_length=32)
 
+    alternatives: tuple[OutputAlternative, ...] | None = Field(
+        default=None, min_length=1, max_length=32, exclude_if=lambda value: value is None
+    )
+
     @model_validator(mode="after")
     def one_shape(self) -> Self:
+        if self.alternatives is not None:
+            if self.model_fields_set - {"alternatives"} and (
+                self.name is not None
+                or self.description is not None
+                or self.schema_ is not None
+                or self.variants is not None
+                or self.resources
+            ):
+                raise ValueError("Alternatives cannot be combined with another output shape")
+            return self
         if self.variants is None:
             if self.schema_ is None and self.resources:
                 raise ValueError("Resources require a schema")

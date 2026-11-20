@@ -44,6 +44,8 @@ from a13n_harness.environment.errors import EnvironmentProviderError, Environmen
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
+from a13n_harness.recovery import normalize_interrupted_history
+from a13n_harness.state import encode_messages
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
@@ -421,6 +423,9 @@ def _initial(
     if pending is None:
         return state, None
     if fork:
+        if any(call.terminal for call in pending.calls):
+            messages, _ = normalize_interrupted_history(state.message_history, close_pending_tools=True)
+            return state.model_copy(update={"message_history_json": encode_messages(messages)}), None
         answers = deferred.fork_results(pending)
     if answers is None:
         raise ValueError("A waiting parent requires explicit resume results")
@@ -821,8 +826,8 @@ class _Attempt:
         deferred: JsonValue,
         rejected: list[StaleNotice],
     ) -> list[Offered]:
-        """Commit a checkpoint and what follows it in one fenced transaction: a completed or waiting outcome seals
-        the run; otherwise a bounded batch of compatible pending steers is assigned to it, and returned.
+        """Commit a checkpoint and what follows it in one fenced transaction: an outcome seals the run;
+        otherwise a bounded batch of compatible pending steers is assigned to it, and returned.
         The caller freezes the matching display before entering this persistence path."""
         snapshot = self.fold.pending(snapshot)
         if near_deadline(self.runtime, self.control):
@@ -924,7 +929,7 @@ class _Attempt:
         self.contents.retire([item.id for page in snapshot.pages for item in page.items])
         self.offers.consumed(consumed)
         self.usage.ingested(usage)
-        if outcome is not None:
+        if outcome is not None and outcome.status in {"completed", "waiting"}:
             await advance(self.runtime, self.lease.thread_id)
         return steers
 
@@ -1041,11 +1046,19 @@ class _Attempt:
         self.usage.add(result.usage_records)
         if result.status == "failed":
             assert result.failure is not None
-            await self._record_usage()
             failed = Outcome.failed(
                 result.failure.code, _harness_failure_message(result.failure.message, result.failure.details)
             )
-            await self._seal_interrupted(self._refusal() or failed)
+            refusal = self._refusal()
+            if refusal is None and result.failure.code == "client_output_failed" and result.state is not None:
+                # A rejected receipt is a recorded outcome, not an uncertain tool execution.
+                self.fold.interrupt(open_tool_calls(result.all_messages()))
+                await self._commit(
+                    result.state, cursors=self.cursors.snapshot(), snapshot=self._snapshot(), outcome=failed
+                )
+            else:
+                await self._record_usage()
+                await self._seal_interrupted(refusal or failed)
             return
         if result.status == "cancelled":
             await self._record_usage()

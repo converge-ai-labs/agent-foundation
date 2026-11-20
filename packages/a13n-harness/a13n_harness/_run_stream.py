@@ -16,6 +16,7 @@ from a13n_logging import get_logger
 from anyio import CancelScope
 from opentelemetry.trace import StatusCode
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic_ai import ToolFailed
 from pydantic_ai.agent import AgentRunEvents
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.exceptions import (
@@ -34,6 +35,7 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    OutputToolResultEvent,
     SystemPromptPart,
     ToolCallPart,
     ToolReturnPart,
@@ -126,10 +128,15 @@ from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import _default_usage_limits
 from a13n_harness.state import AgentContextState, HarnessState
 from a13n_harness.storage import RunStorage
+from a13n_harness.tools.client_output import ClientOutputRequested, client_output_identities
 from a13n_harness.tools.deferred import (
     DeferredInputState,
+    DeferredToolCall,
     DeferredToolResume,
     preflight_deferred_resume,
+)
+from a13n_harness.tools.deferred import (
+    DeferredToolRequests as HarnessDeferredToolRequests,
 )
 from a13n_harness.usage import RunUsageLedger, RunUsageSummary, UsageRecord, UsageSnapshot
 
@@ -1243,7 +1250,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         return result
 
     async def _normalize_interrupted_history(
-        self, messages: Sequence[ModelMessage], *, response_tracker: InterruptedResponseTracker | None
+        self,
+        messages: Sequence[ModelMessage],
+        *,
+        response_tracker: InterruptedResponseTracker | None,
+        close_tool_calls: bool = True,
     ) -> tuple[tuple[ModelMessage, ...], int]:
         self._deferred_input.reconcile(messages)
         executions = self.context._tool_executions
@@ -1267,7 +1278,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         return normalize_interrupted_history(
             messages,
             response_tracker=response_tracker,
-            close_tool_calls=remaining is None,
+            close_tool_calls=close_tool_calls and remaining is None,
         )
 
     async def _prepare_history(self, current_input: SemanticRunInput) -> None:
@@ -1334,6 +1345,46 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             raise PluginError("Plugin middleware supplied an invalid input.", code="plugin_input_invalid") from exc
 
         await self._prepare_history(current_input)
+        resume = self._deferred_resume
+        terminal = next((call for call in resume.requests.calls if call.terminal), None) if resume else None
+        if terminal is not None:
+            assert resume is not None
+            if terminal.target_identity not in client_output_identities(self._executable.definition.output_type):
+                yield await self._failed_candidate(
+                    code="deferred_surface_mismatch",
+                    message="The client output tool no longer matches the accepted call.",
+                )
+                return
+            value = resume.results.calls[terminal.target_call.tool_call_id]
+            failed = isinstance(value, ToolFailed)
+            part = ToolReturnPart(
+                terminal.model_call.tool_name,
+                str(value) if failed else value,
+                tool_call_id=terminal.model_call.tool_call_id,
+                outcome="failed" if failed else "success",
+            )
+            messages = (*self._initial_history, ModelRequest(parts=[part]))
+            self._latest_messages, _ = normalize_interrupted_history(messages, close_pending_tools=True)
+            self._deferred_input.reconcile(self._latest_messages)
+            event = OutputToolResultEvent(part)
+            self._emitter.observe(event)
+            yield self._adapt_event(event)
+            if failed:
+                yield await self._failed_candidate(code="client_output_failed", message=str(value))
+            else:
+                yield self._record_inner_candidate(
+                    HarnessRunResult(
+                        thread_id=self.thread_id,
+                        run_id=self.run_id,
+                        status="completed",
+                        output=cast(OutputT, value),
+                        state=await self.context.export_state(self._latest_messages),
+                        usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
+                        _messages=self._latest_messages,
+                        _new_message_index=min(self._new_message_index, len(self._latest_messages)),
+                    )
+                )
+            return
         restored_inputs = await exchange.context._steering.prepare(
             restore_retained=self._deferred_resume is not None,
         )
@@ -1481,6 +1532,42 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         yield await self._failed_candidate(
                             code="usage_limit_exceeded",
                             message="Run usage limit exceeded.",
+                        )
+                        return
+                    except ClientOutputRequested as request:
+                        messages, _ = await self._normalize_interrupted_history(
+                            tuple(events.all_messages()),
+                            response_tracker=response_tracker,
+                            close_tool_calls=False,
+                        )
+                        self._latest_messages = messages
+                        if not self.context.deferred_tools_supported:
+                            yield await self._failed_candidate(
+                                code="deferred_tools_unsupported",
+                                message="This Host does not support deferred tool requests for this Run.",
+                            )
+                            return
+                        yield self._record_inner_candidate(
+                            HarnessRunResult(
+                                thread_id=self.thread_id,
+                                run_id=self.run_id,
+                                status="suspended",
+                                output=None,
+                                state=await self.context.export_state(messages),
+                                suspend_reason="deferred",
+                                deferred=HarnessDeferredToolRequests(
+                                    calls=[
+                                        DeferredToolCall(
+                                            request.call,
+                                            request.call,
+                                            request.identity,
+                                        )
+                                    ]
+                                ),
+                                usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
+                                _messages=messages,
+                                _new_message_index=min(self._new_message_index, len(messages)),
+                            )
                         )
                         return
                     except Exception as error:
