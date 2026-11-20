@@ -234,6 +234,7 @@ async def test_media_native_first_with_configured_auxiliary_in_root_and_child(
     root = yaml.safe_load(path.read_text())
     root["defaults"] = {"agent": "agent-main", "project": "project-test"}
     root["tools"] = {"enable_codeact": False}
+    root["subagents"] = {"dynamic": {"allowed_models": ["model-text"]}}
     path.write_text(yaml.safe_dump(root))
     (tmp_path / "projects").mkdir()
     (tmp_path / "projects/test.yaml").write_text(

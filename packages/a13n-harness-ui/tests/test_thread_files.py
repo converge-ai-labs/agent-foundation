@@ -486,7 +486,7 @@ async def test_root_and_child_tool_results_use_their_own_thread_scratch(
     from .test_app import _write_configuration
 
     monkeypatch.setattr(NativeProjectAdapter, "preserves_host_paths", property(lambda self: canonical_paths))
-    path = _write_configuration(tmp_path)
+    path = _write_configuration(tmp_path, allow_agent_creation=True)
     if not with_project:
         path.write_text(path.read_text().replace("  project: project-main\n", ""))
     agent_path = tmp_path / "agents/assistant.yaml"
