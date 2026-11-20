@@ -376,7 +376,7 @@ In `create_thread`, `project_id="current"` keeps the caller's Project, `None` cr
 
 Open **Settings → Agents → Agent creation** (configured under `subagents.dynamic.allowed_models` and `subagents.dynamic.default_model` in `a13n-harness-ui.yaml`) to choose which Models agents may use when creating work:
 
-- `create_thread`, `create_worker`, and `spawn_subagent` all validate an explicit `model` argument against `allowed_models` and fall back to `default_model` when `model` is omitted.
+- `create_thread`, `create_worker`, and `spawn_subagent` all validate an explicit `model` argument against `allowed_models` and fall back to `default_model` when `model` is omitted (`default_model` is required at config load only when `subagents.dynamic.enabled` is `true`; when `default_model` is unset, calling `create_thread` or `create_worker` without an explicit `model` fails at runtime).
 - Declared and built-in subagents (`delegate`) also verify that their configured or inherited Model appears in `allowed_models`.
 - For a newly created root chat or worker, the selected Model is saved as that Thread's default Model for future turns.
 

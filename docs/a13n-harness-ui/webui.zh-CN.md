@@ -376,7 +376,7 @@ Agent 根据任务归属选择对应的创建工具：
 
 在 **Settings → Agents → Agent creation**（对应 `a13n-harness-ui.yaml` 中的 `subagents.dynamic.allowed_models` 与 `subagents.dynamic.default_model`）中，统一配置允许 Agent 在创建任务时选用的模型：
 
-- `create_thread`、`create_worker` 与 `spawn_subagent` 均会校验显式传入的 `model` 是否位于 `allowed_models` 白名单内；省略 `model` 时自动采用 `default_model`。
+- `create_thread`、`create_worker` 与 `spawn_subagent` 均会校验显式传入的 `model` 是否位于 `allowed_models` 白名单内；省略 `model` 时自动采用 `default_model`（`default_model` 仅在 `subagents.dynamic.enabled` 为 `true` 时于配置加载阶段强制必填；当 `default_model` 未设置时，不传 `model` 调用 `create_thread` 或 `create_worker` 会在运行时失败）。
 - 已声明或内置的 Subagent（通过 `delegate` 调用）同样要求其自身配置或继承的 Model 包含在 `allowed_models` 中。
 - 对于新建的独立根会话或 Worker，所选 Model 会持久保存为该 Thread 后续轮次的默认模型。
 
