@@ -39,6 +39,7 @@ from a13n_service.usage.schemas import (
     AgentUsagePage,
     BreakdownQuery,
     DailyUsage,
+    FilteredModelUsageQuery,
     MemberUsage,
     MemberUsagePage,
     ModelMetrics,
@@ -76,20 +77,20 @@ def _model_totals() -> Select:
     ).where(UsageRecordRow.record["kind"].astext == "model")
 
 
-def _model_query(workspace_id: str, window: UsageWindow) -> Select:
+def _model_query(workspace_id: str, window: UsageWindow, *, run_labels: dict[str, str] | None = None) -> Select:
     statement = _model_totals().where(
         UsageRecordRow.workspace_id == workspace_id,
         UsageRecordRow.ingested_at >= window.start,
         UsageRecordRow.ingested_at < window.end,
     )
 
-    if window.principal_id is not None:
-        statement = statement.where(
-            select(RunRow.id)
-            .where(RunRow.id == UsageRecordRow.run_id, RunRow.principal_id == window.principal_id)
-            .correlate(UsageRecordRow)
-            .exists()
-        )
+    if window.principal_id is not None or run_labels:
+        run = select(RunRow.id).where(RunRow.id == UsageRecordRow.run_id)
+        if window.principal_id is not None:
+            run = run.where(RunRow.principal_id == window.principal_id)
+        if run_labels:
+            run = run.where(RunRow.options["labels"].contains(run_labels))
+        statement = statement.where(run.correlate(UsageRecordRow).exists())
     return statement
 
 
@@ -251,6 +252,8 @@ async def _page(
         owner = cursors.query_owner(owner, query.principal_id)
     if isinstance(query, SessionUsageQuery):
         owner = cursors.query_owner(owner, query.agent_id)
+    if isinstance(query, FilteredModelUsageQuery) and query.run_labels:
+        owner = cursors.query_owner(owner, sorted(query.run_labels.items()))
     if query.cursor is not None:
         position = cursors.decode(query.cursor, kind, owner)
         try:
@@ -373,12 +376,30 @@ async def sessions(storage: Storage, actor: Principal, workspace_id: str, query:
 
 
 async def models(storage: Storage, actor: Principal, workspace_id: str, query: BreakdownQuery) -> ModelUsagePage:
+    return await _models(storage, actor, workspace_id, query)
+
+
+async def filtered_models(
+    storage: Storage, actor: Principal, workspace_id: str, query: FilteredModelUsageQuery
+) -> ModelUsagePage:
+    """Query model consumption with exact acceptance-time Run label filters."""
+    return await _models(storage, actor, workspace_id, query, run_labels=query.run_labels)
+
+
+async def _models(
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    query: BreakdownQuery,
+    *,
+    run_labels: dict[str, str] | None = None,
+) -> ModelUsagePage:
     async with short_session(storage) as session:
         scope = await workspace_scope(
             session, actor, workspace_id, "admin" if query.principal_id is not None else "read"
         )
         usage = (
-            _model_query(scope.workspace_id, query)
+            _model_query(scope.workspace_id, query, run_labels=run_labels)
             .add_columns(UsageRecordRow.model_id)
             .group_by(UsageRecordRow.model_id)
             .subquery()

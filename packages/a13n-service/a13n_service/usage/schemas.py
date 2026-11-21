@@ -9,6 +9,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validato
 
 from a13n_service.infra.http import PageLimit
 from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.labels import Labels
 
 
 class UsageWindow(BaseModel):
@@ -50,6 +51,12 @@ class OverviewQuery(UsageWindow):
 class BreakdownQuery(UsageWindow):
     limit: PageLimit = 50
     cursor: str | None = Field(default=None, max_length=2048)
+
+
+class FilteredModelUsageQuery(BreakdownQuery):
+    """In-process model breakdown filtered by labels frozen at Run acceptance."""
+
+    run_labels: Labels = Field(default_factory=dict)
 
 
 class SessionUsageQuery(BreakdownQuery):
