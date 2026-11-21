@@ -59,6 +59,19 @@ class FilteredModelUsageQuery(BreakdownQuery):
     run_labels: Labels = Field(default_factory=dict)
 
 
+class AppModelUsageQuery(FilteredModelUsageQuery):
+    """Model usage for an execution identity resolved from an authorized App resource."""
+
+    principal_id: ObjectId | None = Field(description="Execution identity from the authorized App resource.")
+
+    @field_validator("principal_id")
+    @classmethod
+    def require_principal(cls, value: str | None) -> str:
+        if value is None:
+            raise ValueError("An App resource's execution principal is required")
+        return value
+
+
 class SessionUsageQuery(BreakdownQuery):
     agent_id: ObjectId
 

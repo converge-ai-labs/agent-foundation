@@ -32,11 +32,12 @@ from a13n_service.resources.models.tables import ModelRow
 from a13n_service.runs.tables import RunRow, SessionRow, UsageRecordRow
 from a13n_service.runs.usage import model_cost
 from a13n_service.tenancy.access import workspace_scope
-from a13n_service.tenancy.authorize import Principal
+from a13n_service.tenancy.authorize import Principal, Verb
 from a13n_service.tenancy.tables import PrincipalRow
 from a13n_service.usage.schemas import (
     AgentUsage,
     AgentUsagePage,
+    AppModelUsageQuery,
     BreakdownQuery,
     DailyUsage,
     FilteredModelUsageQuery,
@@ -376,8 +377,8 @@ async def sessions(storage: Storage, actor: Principal, workspace_id: str, query:
 
 
 async def models(storage: Storage, actor: Principal, workspace_id: str, query: BreakdownQuery) -> ModelUsagePage:
-    labels = query.run_labels if isinstance(query, FilteredModelUsageQuery) else None
-    return await _models(storage, actor, workspace_id, query, run_labels=labels)
+    verb = "admin" if query.principal_id is not None else "read"
+    return await _models(storage, actor, workspace_id, query, verb)
 
 
 async def filtered_models(
@@ -387,18 +388,27 @@ async def filtered_models(
     return await models(storage, actor, workspace_id, query)
 
 
+async def app_models(
+    storage: Storage, actor: Principal, workspace_id: str, query: AppModelUsageQuery
+) -> ModelUsagePage:
+    """Read usage for an App resource after the App authorizes access to it.
+
+    Resolve the required execution principal from the resource's stored binding;
+    never forward a request-supplied principal. Service checks Workspace read access.
+    """
+    return await _models(storage, actor, workspace_id, query, "read")
+
+
 async def _models(
     storage: Storage,
     actor: Principal,
     workspace_id: str,
     query: BreakdownQuery,
-    *,
-    run_labels: dict[str, str] | None = None,
+    verb: Verb,
 ) -> ModelUsagePage:
+    run_labels = query.run_labels if isinstance(query, FilteredModelUsageQuery) else None
     async with short_session(storage) as session:
-        scope = await workspace_scope(
-            session, actor, workspace_id, "admin" if query.principal_id is not None else "read"
-        )
+        scope = await workspace_scope(session, actor, workspace_id, verb)
         usage = (
             _model_query(scope.workspace_id, query, run_labels=run_labels)
             .add_columns(UsageRecordRow.model_id)
