@@ -9,7 +9,12 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
-from a13n_harness_ui.thread_capability import RemoteProjectRoot, ThreadToolController, thread_tool_failure
+from a13n_harness_ui.thread_capability import (
+    RemoteProjectRoot,
+    ThreadToolController,
+    create_project_from_roots,
+    thread_tool_failure,
+)
 
 _PageLimit = Annotated[int, Field(ge=1, le=100)]
 _ReadOnly = ToolAnnotations(read_only_hint=True)
@@ -59,7 +64,8 @@ def build_management_mcp(controller: Callable[[], ThreadToolController]) -> Star
         Default is workspace with local roots, otherwise remote-1; default_environment overrides it.
         """
         try:
-            return await controller().create_project(
+            return await create_project_from_roots(
+                controller().create_project,
                 roots=roots,
                 name=name,
                 remote_roots=remote_roots,

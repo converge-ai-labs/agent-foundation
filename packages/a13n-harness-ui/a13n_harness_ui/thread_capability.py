@@ -75,6 +75,52 @@ class ProjectMemoryReader(Protocol):
     async def __call__(self, *, project_id: str, path: str = "", offset: int = 0) -> dict[str, Any]: ...
 
 
+async def create_project_from_roots(
+    publish: ProjectCreator | None,
+    *,
+    roots: Annotated[list[str], Field(max_length=64)] | None = None,
+    name: Annotated[str, Field(min_length=1, max_length=256)] | None = None,
+    remote_roots: Annotated[list[RemoteProjectRoot], Field(max_length=64)] | None = None,
+    default_environment: str | None = None,
+    environment_profile_id: str | None = None,
+) -> dict[str, Any]:
+    if publish is None:
+        raise ThreadError("Project creation is unavailable.", code="configuration_unavailable")
+    try:
+        local = tuple(ProjectRoot(path=path) for path in roots or ())
+        remote = tuple(
+            EnvironmentBindingSelection(
+                device_id=root.device_id,
+                working_directory=root.working_directory,
+                alias=f"remote-{index}",
+            )
+            for index, root in enumerate(remote_roots or (), start=1)
+        )
+        if not local and not remote:
+            raise ThreadError("A Project requires at least one working directory.", code="project_roots_required")
+        first = Path(local[0].path) if local else PurePosixPath(remote[0].working_directory)
+        selected_default = default_environment
+        if selected_default is None and remote:
+            selected_default = "workspace" if local else "remote-1"
+        defaults = ProjectDefaults(
+            environment_profile=environment_profile_id,
+            environment_bindings=remote or None,
+            default_environment=selected_default,
+        )
+        project = ProjectResource(
+            schema_version="1",
+            kind="project",
+            id=f"project-{uuid4()}",
+            name=name if name is not None else first.name or str(first),
+            roots=local,
+            defaults=defaults,
+        )
+        value = await publish(project=project)
+        return {"status": "created", "project": value.model_dump(mode="json")}
+    except (HarnessUiError, ValidationError) as exc:
+        return thread_tool_failure(exc, "project_creation_failed")
+
+
 class ThreadToolController:
     """Narrow detached command/query boundary consumed by the root Capability."""
 
@@ -100,7 +146,7 @@ class ThreadToolController:
         self._inspect_configuration = inspect_configuration
         self._voice = voice
         self.bot = bot
-        self._create_project = create_project
+        self.create_project = create_project
         self.read_project_memory = read_project_memory
 
     async def resources(
@@ -125,50 +171,6 @@ class ThreadToolController:
                 "defaults": project.defaults.model_dump(mode="json", include=set(type(project.defaults).model_fields)),
             },
         }
-
-    async def create_project(
-        self,
-        roots: Annotated[list[str], Field(max_length=64)] | None = None,
-        name: Annotated[str, Field(min_length=1, max_length=256)] | None = None,
-        remote_roots: Annotated[list[RemoteProjectRoot], Field(max_length=64)] | None = None,
-        default_environment: str | None = None,
-        environment_profile_id: str | None = None,
-    ) -> dict[str, Any]:
-        if self._create_project is None:
-            raise ThreadError("Project creation is unavailable.", code="configuration_unavailable")
-        try:
-            local = tuple(ProjectRoot(path=path) for path in roots or ())
-            remote = tuple(
-                EnvironmentBindingSelection(
-                    device_id=root.device_id,
-                    working_directory=root.working_directory,
-                    alias=f"remote-{index}",
-                )
-                for index, root in enumerate(remote_roots or (), start=1)
-            )
-            if not local and not remote:
-                raise ThreadError("A Project requires at least one working directory.", code="project_roots_required")
-            first = Path(local[0].path) if local else PurePosixPath(remote[0].working_directory)
-            selected_default = default_environment
-            if selected_default is None and remote:
-                selected_default = "workspace" if local else "remote-1"
-            defaults = ProjectDefaults(
-                environment_profile=environment_profile_id,
-                environment_bindings=remote or None,
-                default_environment=selected_default,
-            )
-            project = ProjectResource(
-                schema_version="1",
-                kind="project",
-                id=f"project-{uuid4()}",
-                name=name if name is not None else first.name or str(first),
-                roots=local,
-                defaults=defaults,
-            )
-            value = await self._create_project(project=project)
-            return {"status": "created", "project": value.model_dump(mode="json")}
-        except (HarnessUiError, ValidationError) as exc:
-            return thread_tool_failure(exc, "project_creation_failed")
 
     async def list_threads(
         self,
@@ -791,7 +793,8 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         Discover Projects first; inspect before retrying uncertain creation. Creates no Thread or Run.
         """
         self._require_bot(ctx)
-        return await self.controller.create_project(
+        return await create_project_from_roots(
+            self.controller.create_project,
             roots=roots,
             name=name,
             remote_roots=remote_roots,
