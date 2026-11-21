@@ -4,10 +4,11 @@ import {
   render as renderUI,
   screen,
   within,
+  waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SettingsLayout } from "../features/settings/layout";
 import type { LoadedApp } from "../app-plugins/types";
@@ -474,5 +475,69 @@ it("opens a multi-page App in the mobile drawer and closes it after selection", 
   await user.click(screen.getByRole("button", { name: "Open navigation" }));
   await user.click(screen.getByRole("button", { name: "Sample" }));
   await user.click(screen.getByRole("link", { name: "Second" }));
-  expect(screen.queryByRole("link", { name: "Second" })).toBeNull();
+  await waitFor(() =>
+    expect(screen.queryByRole("link", { name: "Second" })).toBeNull(),
+  );
+});
+
+it("reopens the active App when navigating back to a deep link", async () => {
+  function History() {
+    const navigate = useNavigate();
+    return (
+      <>
+        <button onClick={() => navigate("/workspace/ws_design/agents")}>
+          Away
+        </button>
+        <button onClick={() => navigate(-1)}>Back</button>
+      </>
+    );
+  }
+  access.apps = [
+    {
+      app: {
+        app_id: "sample",
+        name: "Sample",
+        distribution: "sample",
+        enabled: true,
+        factory_keys: [],
+        frontend: null,
+        version: "1",
+      },
+      contribution: {
+        bridge: 1,
+        pages: [
+          { id: "one", label: "First", component: () => null },
+          { id: "two", label: "Second", component: () => null },
+        ],
+      },
+    },
+  ];
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter
+        initialEntries={["/workspace/ws_design/apps/sample/two/detail"]}
+      >
+        <Routes>
+          <Route path="/workspace/:workspaceId" element={<Shell />}>
+            <Route path="*" element={<History />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await user.click(screen.getByRole("button", { name: "Sample" }));
+  expect(
+    screen
+      .getByRole("button", { name: "Sample" })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  await user.click(screen.getByRole("button", { name: "Away" }));
+  await user.click(screen.getByRole("button", { name: "Back" }));
+  expect(
+    screen
+      .getByRole("button", { name: "Sample" })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  expect(screen.getByRole("link", { name: "Second" })).toBeTruthy();
 });

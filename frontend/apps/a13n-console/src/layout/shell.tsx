@@ -364,6 +364,7 @@ function AppNavigation({
   expandSidebar: () => void;
 }) {
   const [choice, setChoice] = useState<{ path: string; open: boolean }>();
+  useEffect(() => setChoice(undefined), [pathname]);
   const disclosure = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef(false);
   useEffect(() => {
