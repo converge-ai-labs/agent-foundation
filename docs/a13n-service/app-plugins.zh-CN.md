@@ -276,6 +276,8 @@ export default contribution;
 
 页面位于 `/workspace/{workspaceId}/apps/{appId}/{pageId}/*`。页面 ID 以字母开头，使用小写字母、数字和连字符。可选的 `description` 和 `permission` 字段用于描述页面，并控制其在 Console 中的显示和路由访问。业务端点仍自行执行授权。标签和描述可以是字符串，也可以是包含 `en` 和可选 `zh-CN` 的对象。`settings` 条目使用相同字段，并添加 `scope: "workspace"` 或 `"organization"`；Host 中的设置 key 为 `app.{appId}.{sectionId}`。
 
+权限过滤后，如果有多个页面可见，Console 会将它们分组显示在 App 名称下。可通过 `navigation: { label: { en: "Reports", "zh-CN": "报告" }, icon: "chart" }` 自定义分组。支持的图标 key 为 `puzzle`、`robot`、`chart`、`calendar` 和 `lightning`，默认为 `puzzle`。只有一个可见页面时直接显示链接；没有可见页面时不显示导航项。
+
 App 还可以提供 `workspaceHome: Component` 来替换 workspace 首页。核心 agent 路由仍然可用。如果多个已启用 App 都声明首页，Console 会显示错误和指向 agents 的链接。组织管理员可以在设置中启用或禁用 App；成功修改后，活动注册表随即更新。刷新 Console 会获取当前目录。
 
 ### 构建入口

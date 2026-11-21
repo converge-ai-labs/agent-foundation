@@ -117,5 +117,11 @@ export { useAuth } from "../auth/context";
 export { useAccess, useWorkspace } from "../layout/workspace";
 export { useAppearance } from "../layout/appearance";
 export { useApp } from "./context";
-export type { AppContribution, AppPage, AppSettings, AppText } from "./types";
+export type {
+  AppContribution,
+  AppNavigationIcon,
+  AppPage,
+  AppSettings,
+  AppText,
+} from "./types";
 export const bridgeVersion = 1;

@@ -23,6 +23,10 @@ import {
 } from "a13n-ui";
 import {
   CaretDownIcon,
+  RobotIcon,
+  ChartBarIcon,
+  CalendarIcon,
+  LightningIcon,
   KeyIcon,
   PuzzlePieceIcon,
   type Icon as PhosphorIcon,
@@ -30,12 +34,23 @@ import {
   SidebarSimpleIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Suspense, useState, type CSSProperties } from "react";
+import {
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { Loading } from "../shared/feedback";
 import { useAppPlugins } from "../app-plugins/registry";
-import { appText } from "../app-plugins/types";
+import {
+  appText,
+  type AppNavigationIcon,
+  type LoadedApp,
+  type AppPage,
+} from "../app-plugins/types";
 import { SessionRouteLoading } from "../features/conversations/session-feedback";
 import { routeSkeleton } from "./navigation";
 import { AccountMenu } from "./account-menu";
@@ -127,11 +142,15 @@ function WorkspaceNavigation({
   const { t, i18n } = useTranslation();
   const { basePath, can } = useWorkspace();
   const { apps } = useAppPlugins();
-  const pages = apps.flatMap(({ app, contribution }) =>
-    (contribution?.pages ?? [])
-      .filter((page) => !page.permission || can(page.permission))
-      .map((page) => ({ app, page })),
-  );
+  const visibleApps = apps
+    .map(({ app, contribution }) => ({
+      app,
+      contribution,
+      pages: (contribution?.pages ?? []).filter(
+        (page) => !page.permission || can(page.permission),
+      ),
+    }))
+    .filter(({ pages }) => pages.length > 0);
 
   const { pathname } = useLocation();
   const { setOpenMobile, isMobile } = useSidebar();
@@ -258,27 +277,24 @@ function WorkspaceNavigation({
                 </SidebarMenu>
               </SidebarGroup>
             ))}
-            {pages.length > 0 && (
+            {visibleApps.length > 0 && (
               <SidebarGroup>
                 {!rail && <SidebarGroupLabel>{t("Apps")}</SidebarGroupLabel>}
                 <SidebarMenu>
-                  {pages.map(({ app, page }) => {
-                    const to = `${base}/apps/${app.app_id}/${page.id}`;
-                    return (
-                      <SidebarMenuItem key={to}>
-                        <NavigationRow
-                          to={to}
-                          label={appText(page.label, i18n.language)}
-                          icon={PuzzlePieceIcon}
-                          active={
-                            pathname === to || pathname.startsWith(`${to}/`)
-                          }
-                          rail={rail}
-                          onNavigate={close}
-                        />
-                      </SidebarMenuItem>
-                    );
-                  })}
+                  {visibleApps.map(({ app, contribution, pages }) => (
+                    <AppNavigation
+                      key={app.app_id}
+                      app={app}
+                      contribution={contribution}
+                      pages={pages}
+                      base={base}
+                      pathname={pathname}
+                      rail={rail}
+                      language={i18n.language}
+                      onNavigate={close}
+                      expandSidebar={() => onCollapsedChange(false)}
+                    />
+                  ))}
                 </SidebarMenu>
               </SidebarGroup>
             )}
@@ -315,6 +331,125 @@ function WorkspaceNavigation({
         <PageOutlet />
       </SidebarInset>
     </>
+  );
+}
+
+const appIcons: Record<AppNavigationIcon, PhosphorIcon> = {
+  puzzle: PuzzlePieceIcon,
+  robot: RobotIcon,
+  chart: ChartBarIcon,
+  calendar: CalendarIcon,
+  lightning: LightningIcon,
+};
+
+function AppNavigation({
+  app,
+  contribution,
+  pages,
+  base,
+  pathname,
+  rail,
+  language,
+  onNavigate,
+  expandSidebar,
+}: {
+  app: LoadedApp["app"];
+  contribution: LoadedApp["contribution"];
+  pages: readonly AppPage[];
+  base: string;
+  pathname: string;
+  rail: boolean;
+  language: string;
+  onNavigate: () => void;
+  expandSidebar: () => void;
+}) {
+  const [choice, setChoice] = useState<{ path: string; open: boolean }>();
+  useEffect(() => setChoice(undefined), [pathname]);
+  const disclosure = useRef<HTMLButtonElement>(null);
+  const restoreFocus = useRef(false);
+  useEffect(() => {
+    if (!rail && restoreFocus.current) {
+      disclosure.current?.focus();
+      restoreFocus.current = false;
+    }
+  }, [rail]);
+  const path = (page: AppPage) => `${base}/apps/${app.app_id}/${page.id}`;
+  const isActive = (page: AppPage) =>
+    pathname === path(page) || pathname.startsWith(`${path(page)}/`);
+  const active = pages.some(isActive);
+  const open = choice?.path === pathname ? choice.open : active;
+  const Icon = appIcons[contribution?.navigation?.icon ?? "puzzle"];
+  const label = contribution?.navigation?.label
+    ? appText(contribution.navigation.label, language)
+    : app.name;
+  if (pages.length === 1)
+    return (
+      <SidebarMenuItem>
+        <NavigationRow
+          to={path(pages[0])}
+          label={appText(pages[0].label, language)}
+          icon={Icon}
+          active={active}
+          rail={rail}
+          onNavigate={onNavigate}
+        />
+      </SidebarMenuItem>
+    );
+  const toggle = () => {
+    setChoice({ path: pathname, open: rail || !open });
+    if (rail) {
+      restoreFocus.current = true;
+      expandSidebar();
+    }
+  };
+  return (
+    <SidebarMenuItem>
+      {rail ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <SidebarMenuButton
+                isActive={active}
+                className="justify-center"
+                aria-label={label}
+                aria-expanded={false}
+                onClick={toggle}
+              />
+            }
+          >
+            <Icon weight={active ? "duotone" : "regular"} />
+          </TooltipTrigger>
+          <TooltipPopup side="right">{label}</TooltipPopup>
+        </Tooltip>
+      ) : (
+        <SidebarMenuButton
+          ref={disclosure}
+          isActive={active && !open}
+          className={styles.navigationRow}
+          aria-expanded={open}
+          onClick={toggle}
+        >
+          <Icon weight={active ? "duotone" : "regular"} />
+          <span className="min-w-0 truncate">{label}</span>
+          <CaretDownIcon className={open ? "size-3" : "size-3 -rotate-90"} />
+        </SidebarMenuButton>
+      )}
+      {!rail && open && (
+        <SidebarMenuSub className="mt-0.5 gap-0.5 border-0 py-0">
+          {pages.map((page) => (
+            <SidebarMenuSubItem key={page.id}>
+              <SidebarMenuSubButton
+                className="pl-4"
+                isActive={isActive(page)}
+                render={<NavLink to={path(page)} onClick={onNavigate} />}
+              >
+                {appText(page.label, language)}
+              </SidebarMenuSubButton>
+            </SidebarMenuSubItem>
+          ))}
+        </SidebarMenuSub>
+      )}
+    </SidebarMenuItem>
   );
 }
 
