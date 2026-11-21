@@ -595,7 +595,8 @@ def create_webui(
             allowed_origins = frozenset(source.document.webui.allowed_origins) if source is not None else frozenset()
             owner = opened
             try:
-                yield
+                async with mcp_app.lifespan(mcp_app):
+                    yield
             finally:
                 owner = None
                 allowed_origins = frozenset()
@@ -606,6 +607,10 @@ def create_webui(
         if owner is None:
             raise HarnessUiError("The WebUI server is not ready.", code="app_not_ready")
         return owner
+
+    from a13n_harness_ui.management_mcp import build_management_mcp
+
+    mcp_app = build_management_mcp(lambda: app().thread_tools())
 
     server = FastAPI(
         title="Harness UI", version=API_VERSION, lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
@@ -622,6 +627,7 @@ def create_webui(
         file_transfers=file_transfers,
     )
     server.add_middleware(RequestLog)
+    server.mount("/api/automation", mcp_app)
     register_voice_routes(server, lambda: app().voice(), api_key)
     from a13n_harness_ui.connectors.api import register_connector_routes
 

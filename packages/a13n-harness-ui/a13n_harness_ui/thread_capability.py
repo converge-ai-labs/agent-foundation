@@ -100,7 +100,7 @@ class ThreadToolController:
         self._inspect_configuration = inspect_configuration
         self._voice = voice
         self.bot = bot
-        self.create_project = create_project
+        self._create_project = create_project
         self.read_project_memory = read_project_memory
 
     async def resources(
@@ -126,19 +126,63 @@ class ThreadToolController:
             },
         }
 
+    async def create_project(
+        self,
+        roots: Annotated[list[str], Field(max_length=64)] | None = None,
+        name: Annotated[str, Field(min_length=1, max_length=256)] | None = None,
+        remote_roots: Annotated[list[RemoteProjectRoot], Field(max_length=64)] | None = None,
+        default_environment: str | None = None,
+        environment_profile_id: str | None = None,
+    ) -> dict[str, Any]:
+        if self._create_project is None:
+            raise ThreadError("Project creation is unavailable.", code="configuration_unavailable")
+        try:
+            local = tuple(ProjectRoot(path=path) for path in roots or ())
+            remote = tuple(
+                EnvironmentBindingSelection(
+                    device_id=root.device_id,
+                    working_directory=root.working_directory,
+                    alias=f"remote-{index}",
+                )
+                for index, root in enumerate(remote_roots or (), start=1)
+            )
+            if not local and not remote:
+                raise ThreadError("A Project requires at least one working directory.", code="project_roots_required")
+            first = Path(local[0].path) if local else PurePosixPath(remote[0].working_directory)
+            selected_default = default_environment
+            if selected_default is None and remote:
+                selected_default = "workspace" if local else "remote-1"
+            defaults = ProjectDefaults(
+                environment_profile=environment_profile_id,
+                environment_bindings=remote or None,
+                default_environment=selected_default,
+            )
+            project = ProjectResource(
+                schema_version="1",
+                kind="project",
+                id=f"project-{uuid4()}",
+                name=name if name is not None else first.name or str(first),
+                roots=local,
+                defaults=defaults,
+            )
+            value = await self._create_project(project=project)
+            return {"status": "created", "project": value.model_dump(mode="json")}
+        except (HarnessUiError, ValidationError) as exc:
+            return thread_tool_failure(exc, "project_creation_failed")
+
     async def list_threads(
         self,
         *,
-        source_thread_id: str,
+        source_thread_id: str | None,
         query: str | None,
         cursor: str | None,
         limit: int,
         project_id: str | None = None,
         include_archived: bool = False,
     ) -> dict[str, Any]:
-        source = await self._projections.get_thread(source_thread_id)
-        owner = source.coordinator_thread_id
-        coordinator_id = source_thread_id if source.role == "coordinator" else None
+        source = await self._projections.get_thread(source_thread_id) if source_thread_id is not None else None
+        owner = source.coordinator_thread_id if source is not None else None
+        coordinator_id = source_thread_id if source is not None and source.role == "coordinator" else None
         page = await self._projections.list_threads(
             query=query,
             cursor=cursor,
@@ -146,20 +190,23 @@ class ThreadToolController:
             project_id=project_id,
             include_archived=include_archived,
             coordinator_thread_id=coordinator_id,
-            independent_only=source.role == "ordinary",
-            visible_thread_ids=(source_thread_id, owner) if owner is not None else None,
+            independent_only=source is not None and source.role == "ordinary",
+            visible_thread_ids=(source_thread_id, owner)
+            if source_thread_id is not None and owner is not None
+            else None,
         )
         return page.model_dump(mode="json")
 
     async def get_thread(
         self,
         *,
-        source_thread_id: str,
+        source_thread_id: str | None,
         thread_id: str,
         history_cursor: str | None,
         history_limit: int,
     ) -> dict[str, Any]:
-        await self._require_target(source_thread_id, thread_id)
+        if source_thread_id is not None:
+            await self._require_target(source_thread_id, thread_id)
         detail = await self._projections.detail(thread_id)
         transcript = await self._projections.transcript(
             thread_id=thread_id,
@@ -193,7 +240,7 @@ class ThreadToolController:
     async def create_thread(
         self,
         *,
-        source_thread_id: str,
+        source_thread_id: str | None,
         prompt: str,
         title: str | None,
         agent_id: str | None,
@@ -202,6 +249,11 @@ class ThreadToolController:
         source_composition: ResolvedRunComposition | None = None,
     ) -> dict[str, Any]:
         model_overrides = RunModelOverrides(model_id=model_id) if model_id is not None else None
+        if source_thread_id is None:
+            created = await self._create_thread(
+                defaults=NewThreadDefaults(project_id=project_id, agent_id=agent_id), title=title
+            )
+            return await self._admit_created_thread(created.thread_id, prompt, model_overrides)
         source = await self._projections.detail(source_thread_id)
         configuration = source.thread.configuration
         is_coordinator = await self._threads.is_coordinator(source_thread_id)
@@ -268,17 +320,24 @@ class ThreadToolController:
                 "If its answer is required, explain the blocker and finish this turn; its reply can start another Run. "
                 "Existing tool approvals still apply; ordinary messages cannot grant a denied approval."
             )
+        return await self._admit_created_thread(
+            created.thread_id, _thread_input(source.thread, prompt, context=context), model_overrides
+        )
+
+    async def _admit_created_thread(
+        self, thread_id: str, prompt: RunInputValue, model_overrides: RunModelOverrides | None
+    ) -> dict[str, Any]:
         try:
             receipt = await self._root_runs.submit_prompt(
-                thread_id=created.thread_id,
-                prompt=_thread_input(source.thread, prompt, context=context),
+                thread_id=thread_id,
+                prompt=prompt,
                 model_overrides=model_overrides,
                 touch=True,
             )
         except HarnessUiError as exc:
             # Creation and run admission are separate durable effects. Never hide the created identity.
-            return {**_failure(exc, "thread_run_failed"), "thread_id": created.thread_id}
-        return {"ok": True, "thread_id": created.thread_id, "receipt": receipt.model_dump(mode="json")}
+            return {**thread_tool_failure(exc, "thread_run_failed"), "thread_id": thread_id}
+        return {"ok": True, "thread_id": thread_id, "receipt": receipt.model_dump(mode="json")}
 
     async def notify_worker_admitted(self, admission: RootRunAdmission, operation: RootOperationView) -> None:
         if admission.thread.continuation is None and admission.published.value.coordinator_thread_id is not None:
@@ -343,8 +402,12 @@ class ThreadToolController:
             raise ThreadError("This Thread is not accessible from your conversation.", code="thread_access_denied")
 
     async def send_thread_message(
-        self, *, source_thread_id: str, thread_id: str, message: str, kind: Literal["task", "report"] = "task"
+        self, *, source_thread_id: str | None, thread_id: str, message: str, kind: Literal["task", "report"] = "task"
     ) -> dict[str, Any]:
+        if source_thread_id is None:
+            if thread_id == BOT_THREAD_ID:
+                raise ThreadError("Send Bot messages through Bot chat.", code="bot_chat_required")
+            return await self._run_or_steer(thread_id=thread_id, prompt=message)
         if thread_id in {"bot", BOT_THREAD_ID}:
             if not message.strip() or len(message) > 16384:
                 raise ThreadError(
@@ -408,8 +471,8 @@ class ThreadToolController:
             raise ThreadError(
                 "Resolve this Thread's pending decisions before sending a message.", code="thread_deferred_pending"
             )
-        # Admission serializes concurrent sends. If another operation wins, report its conflict without retrying.
-        receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt)
+        # Check again at admission in case an active Run suspended after the projection was read.
+        receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt, reject_deferred=True)
         return {"ok": True, "mode": "run", "receipt": receipt.model_dump(mode="json")}
 
     async def steer_thread(self, *, source_thread_id: str, thread_id: str, message: str) -> dict[str, Any]:
@@ -634,7 +697,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 await self.controller.bot.notes.read(caller=self.source_thread_id, thread_id=self.source_thread_id)
             ).model_dump(mode="json")
         except HarnessUiError as exc:
-            return _failure(exc, "bot_note_failed")
+            return thread_tool_failure(exc, "bot_note_failed")
 
     async def write_bot_note(self, ctx: RunContext[AgentContext], content: str) -> dict[str, Any]:
         """Replace your Markdown handoff (16 KiB UTF-8). Empty clears; identical content is a no-op.
@@ -650,7 +713,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 )
             ).model_dump(mode="json")
         except HarnessUiError as exc:
-            return _failure(exc, "bot_note_failed")
+            return thread_tool_failure(exc, "bot_note_failed")
 
     async def clear_bot_note(self, ctx: RunContext[AgentContext]) -> dict[str, Any]:
         """Clear your Bot Note. A later write creates it again."""
@@ -665,7 +728,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 mode="json"
             )
         except HarnessUiError as exc:
-            return _failure(exc, "bot_note_failed")
+            return thread_tool_failure(exc, "bot_note_failed")
 
     async def write_thread_bot_note(
         self, ctx: RunContext[AgentContext], thread_id: str, content: str
@@ -683,7 +746,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 )
             ).model_dump(mode="json")
         except HarnessUiError as exc:
-            return _failure(exc, "bot_note_failed")
+            return thread_tool_failure(exc, "bot_note_failed")
 
     async def clear_thread_bot_note(self, ctx: RunContext[AgentContext], thread_id: str) -> dict[str, Any]:
         """Clear any ordinary root's Bot Note after its follow-up is handled."""
@@ -704,7 +767,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         try:
             return await self.controller.bot.notes.list(caller=self.source_thread_id, limit=limit, offset=offset)
         except HarnessUiError as exc:
-            return _failure(exc, "bot_note_failed")
+            return thread_tool_failure(exc, "bot_note_failed")
 
     def _require_bot(self, ctx: RunContext[AgentContext]) -> None:
         self._require_context(ctx)
@@ -728,41 +791,13 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         Discover Projects first; inspect before retrying uncertain creation. Creates no Thread or Run.
         """
         self._require_bot(ctx)
-        if self.controller.create_project is None:
-            raise ThreadError("Project creation is unavailable.", code="configuration_unavailable")
-        try:
-            local = tuple(ProjectRoot(path=path) for path in roots or ())
-            remote = tuple(
-                EnvironmentBindingSelection(
-                    device_id=root.device_id,
-                    working_directory=root.working_directory,
-                    alias=f"remote-{index}",
-                )
-                for index, root in enumerate(remote_roots or (), start=1)
-            )
-            if not local and not remote:
-                raise ThreadError("A Project requires at least one working directory.", code="project_roots_required")
-            first = Path(local[0].path) if local else PurePosixPath(remote[0].working_directory)
-            selected_default = default_environment
-            if selected_default is None and remote:
-                selected_default = "workspace" if local else "remote-1"
-            defaults = ProjectDefaults(
-                environment_profile=environment_profile_id,
-                environment_bindings=remote or None,
-                default_environment=selected_default,
-            )
-            project = ProjectResource(
-                schema_version="1",
-                kind="project",
-                id=f"project-{uuid4()}",
-                name=name if name is not None else first.name or str(first),
-                roots=local,
-                defaults=defaults,
-            )
-            value = await self.controller.create_project(project=project)
-            return {"status": "created", "project": value.model_dump(mode="json")}
-        except (HarnessUiError, ValidationError) as exc:
-            return _failure(exc, "project_creation_failed")
+        return await self.controller.create_project(
+            roots=roots,
+            name=name,
+            remote_roots=remote_roots,
+            default_environment=default_environment,
+            environment_profile_id=environment_profile_id,
+        )
 
     async def read_project_memory(
         self, ctx: RunContext[AgentContext], project_id: str, path: str = "", offset: int = Field(default=0, ge=0)
@@ -778,7 +813,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         try:
             return await self.controller.read_project_memory(project_id=project_id, path=path, offset=offset)
         except HarnessUiError as exc:
-            return _failure(exc, "memory_read_failed")
+            return thread_tool_failure(exc, "memory_read_failed")
 
     async def publish_bot_message(
         self, ctx: RunContext[AgentContext], text: str = Field(min_length=1, max_length=65536)
@@ -792,7 +827,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             message = await self.controller.bot.publish(message_id=f"message-{ctx.tool_call_id}", text=text)
             return message.model_dump(mode="json")
         except HarnessUiError as exc:
-            return _failure(exc, "bot_publish_failed")
+            return thread_tool_failure(exc, "bot_publish_failed")
 
     async def list_threads(
         self,
@@ -822,7 +857,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 ),
             }
         except (HarnessUiError, ValueError) as exc:
-            return _failure(exc, "thread_list_failed")
+            return thread_tool_failure(exc, "thread_list_failed")
 
     async def get_thread(
         self,
@@ -875,7 +910,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             )
             return bounded
         except (HarnessUiError, ValueError) as exc:
-            return _failure(exc, "thread_get_failed")
+            return thread_tool_failure(exc, "thread_get_failed")
 
     async def run_thread(
         self,
@@ -897,7 +932,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             )
             return {"ok": True, "receipt": receipt}
         except (HarnessUiError, ValueError) as exc:
-            return _failure(exc, "thread_run_failed")
+            return thread_tool_failure(exc, "thread_run_failed")
 
     async def create_thread(
         self,
@@ -939,7 +974,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 source_composition=self.composition,
             )
         except (HarnessUiError, ValueError) as exc:
-            return _failure(exc, "thread_create_failed")
+            return thread_tool_failure(exc, "thread_create_failed")
 
     async def steer_thread(
         self,
@@ -959,7 +994,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             )
             return {"ok": result["accepted"], **result}
         except HarnessUiError as exc:
-            return _failure(exc, "thread_steer_failed")
+            return thread_tool_failure(exc, "thread_steer_failed")
 
     async def list_projects(
         self,
@@ -978,7 +1013,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         try:
             return {"ok": True, **await self.controller.get_project(project_id)}
         except HarnessUiError as exc:
-            return _failure(exc, "project_get_failed")
+            return thread_tool_failure(exc, "project_get_failed")
 
     async def list_agents(
         self,
@@ -1008,7 +1043,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         try:
             return {"ok": True, **await self.controller.resources(kind=kind, query=query, cursor=cursor, limit=limit)}
         except HarnessUiError as exc:
-            return _failure(exc, "resource_list_failed")
+            return thread_tool_failure(exc, "resource_list_failed")
 
     async def send_thread_message(
         self,
@@ -1036,7 +1071,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 source_thread_id=self.source_thread_id, thread_id=thread_id, message=message, kind=kind
             )
         except HarnessUiError as exc:
-            return _failure(exc, "thread_message_failed")
+            return thread_tool_failure(exc, "thread_message_failed")
 
     def _require_context(self, ctx: RunContext[AgentContext]) -> None:
         if ctx.deps.thread_id != self.source_thread_id:
@@ -1111,7 +1146,7 @@ def _bounded(value: str) -> str:
     return value[: _MAX_OUTPUT_CHARS - 23] + "\n...[output truncated]"
 
 
-def _failure(exc: Exception, fallback_code: str) -> dict[str, Any]:
+def thread_tool_failure(exc: Exception, fallback_code: str) -> dict[str, Any]:
     if isinstance(exc, HarnessUiError):
         return _failure_code(exc.code, str(exc))
     return _failure_code(fallback_code, str(exc))
