@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
-from a13n_harness_ui.errors import CompositionError
+from a13n_harness_ui.errors import CompositionError, ConfigurationError
 from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProjectAdapter
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.model_thinking import ThinkingSelection, apply_thinking
@@ -47,13 +47,26 @@ class CompositionAcceptanceService:
         self._cache_lock = Lock()
 
     async def creation_model(
-        self, composition: ResolvedRunComposition | None, model: str | None, thinking: ThinkingSelection | None
+        self,
+        composition: ResolvedRunComposition | None,
+        model: str | None,
+        thinking: ThinkingSelection | None,
+        *,
+        current_generation: bool = False,
     ) -> ResolvedModelRecipe:
-        source = await self.load(composition.generation_digest) if composition is not None else await self.current()
+        source = (
+            await self.current()
+            if composition is None or current_generation
+            else await self.load(composition.generation_digest)
+        )
         if source is None:
             raise CompositionError("No configuration has been accepted.", code="configuration_missing")
         policy = source.document.subagents.dynamic if composition is None else composition.subagents.dynamic
         selected = policy.select_model(model)
+        if selected not in source.models:
+            raise ConfigurationError(
+                f"The selected creation model {selected!r} is no longer configured.", code="creation_model_missing"
+            )
         recipe = self._resolver.model_recipe(source.models[selected], source)
         if thinking is None:
             return recipe

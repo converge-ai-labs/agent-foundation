@@ -152,6 +152,23 @@ async def test_rejects_obsolete_question_tool_settings(tmp_path: Path, setting: 
     assert invalid.value.code == "settings_invalid"
 
 
+@pytest.mark.parametrize("tool_name", ["run_thread", "steer_thread"])
+async def test_rejects_obsolete_thread_tool_selectors_in_agent_tools(tmp_path: Path, tool_name: str) -> None:
+    config = _write_source_tree(
+        tmp_path,
+        resources={
+            "agents/assistant.yaml": (
+                f'schema_version: "1"\nkind: agent\nid: agent-assistant\nname: Assistant\ntools:\n  - {tool_name}\n'
+            )
+        },
+    )
+    with pytest.raises(ConfigurationError) as invalid:
+        await load_harness_ui_configuration(config)
+    assert invalid.value.code == "configuration_resource_invalid"
+    assert "send_thread_message" in str(invalid.value.__cause__)
+    assert tool_name in str(invalid.value.__cause__)
+
+
 @pytest.mark.parametrize("version", ["2", "3"])
 async def test_rejects_unsupported_root_schema_version(tmp_path: Path, version: str) -> None:
     config = _write_source_tree(tmp_path, root=f'schema_version: "{version}"\n')

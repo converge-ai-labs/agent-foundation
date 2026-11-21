@@ -540,6 +540,11 @@ it("edits shared creation models and subagent controls through the root document
   await user.click(
     screen.getByRole("switch", { name: "Let the agent create subagents" }),
   );
+  expect(
+    screen.getByText(
+      "Choose at least one allowed model and a default model in Agent creation above.",
+    ),
+  ).toBeTruthy();
   expect(screen.queryByRole("combobox", { name: "Default model" })).toBeNull();
   await user.click(screen.getByRole("checkbox", { name: "Alternate" }));
   expect(screen.queryByText(emptyNotice)).toBeNull();
@@ -576,6 +581,20 @@ it("edits shared creation models and subagent controls through the root document
   await user.click(
     screen.getByRole("switch", { name: "Let the agent create subagents" }),
   );
+  expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
+    dynamic: { allowed_models: ["model-primary"] },
+  });
+  // When dynamic subagents are disabled, Default model can be set and cleared back to None.
+  await user.click(screen.getByRole("combobox", { name: "Default model" }));
+  await user.click(await screen.findByRole("option", { name: "Primary" }));
+  expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
+    dynamic: {
+      allowed_models: ["model-primary"],
+      default_model: "model-primary",
+    },
+  });
+  await user.click(screen.getByRole("combobox", { name: "Default model" }));
+  await user.click(await screen.findByRole("option", { name: "None" }));
   expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
     dynamic: { allowed_models: ["model-primary"] },
   });

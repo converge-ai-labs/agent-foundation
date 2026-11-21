@@ -930,6 +930,12 @@ class AgentResource(ConfigurationModel):
         for values in (self.harness_plugins, self.mcp_servers, self.tools):
             if values is not None and len(values) != len(set(values)):
                 raise ValueError("Agent selections must be unique and ordered")
+        if self.tools is not None and (obsolete := tuple(t for t in self.tools if t in {"run_thread", "steer_thread"})):
+            names = ", ".join(obsolete)
+            raise ValueError(
+                f"Obsolete tool selector(s) in Agent.tools ({names}) must be removed; "
+                "add send_thread_message only if both idle-start and active-steer behavior are desired"
+            )
         # NativeTool registers one tool per entry; different native tools compose.
         capability_names = tuple(item.capability for item in self.capabilities if item.capability != "NativeTool")
         if len(capability_names) != len(set(capability_names)):

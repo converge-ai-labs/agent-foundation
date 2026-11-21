@@ -351,6 +351,77 @@ async def test_creation_defaults_survive_restart_and_legacy_run_snapshots(tmp_pa
         assert (await app.inspect_operation_configuration(receipt)).agent.model_id == "model-primary"
 
 
+async def test_create_thread_validates_thinking_against_current_generation_before_creation(tmp_path: Path) -> None:
+    root = configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        source = await app.create_thread()
+        captured = await app._root_runs._executor.capture(thread_id=source.thread_id, prompt="Start")
+        # Edit the allowed creation Model route to one without reasoning support while the creator Run is captured.
+        secondary = tmp_path / "models/secondary.yaml"
+        updated = yaml.safe_load(secondary.read_text())
+        updated["route"] = "openai:gpt-4o"
+        secondary.write_text(yaml.safe_dump(updated))
+        await app.reload_configuration()
+        capability = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=source.thread_id, composition=captured.published.value
+        )
+        ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id))
+        result = await capability.create_thread(ctx, prompt="Work", model="model-secondary", thinking="high")
+        assert result["ok"] is False
+        assert result["error"]["code"] == "thinking_selection_invalid"
+        # Validation must fail before allocating an orphan Thread.
+        assert (await app.list_threads()).total == 1
+
+
+async def test_cross_project_create_uses_target_project_default_agent_and_current_inherits_captured(
+    tmp_path: Path,
+) -> None:
+    from a13n_harness_ui.surfaces import ThreadConfigurationMutationInput, ThreadConfigurationPatch
+
+    root = configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        source = await app.create_thread()
+        captured = await app._root_runs._executor.capture(thread_id=source.thread_id, prompt="Start")
+        tools = controller(app)
+        # Explicit destination Project without agent_id resolves that Project's default Agent.
+        other = await tools.create_thread(
+            source_thread_id=source.thread_id,
+            prompt="Other project task",
+            title=None,
+            agent_id=None,
+            project_id="project-other",
+            source_composition=captured.published.value,
+        )
+        assert other["ok"] is True
+        other_thread = (await app.get_thread(other["thread_id"])).thread
+        assert other_thread.configuration.project_id == "project-other"
+        assert other_thread.configuration.agent_source.id == "agent-worker"
+        assert (await app.wait_root_operation(other["receipt"]["receipt_id"])).status is RootOperationStatus.completed
+        # With project_id="current", editing source's sticky agent mid-Run still inherits the captured Agent & roots.
+        await app.patch_thread_configuration(
+            thread_id=source.thread_id,
+            mutation=ThreadConfigurationMutationInput(
+                expected_version=1, patch=ThreadConfigurationPatch(agent_id="agent-worker")
+            ),
+        )
+        same = await tools.create_thread(
+            source_thread_id=source.thread_id,
+            prompt="Same project task",
+            title=None,
+            agent_id=None,
+            project_id="current",
+            source_composition=captured.published.value,
+        )
+        assert same["ok"] is True
+        same_thread = (await app.get_thread(same["thread_id"])).thread
+        assert same_thread.configuration.project_id == "project-main"
+        assert same_thread.configuration.agent_source.id == "agent-assistant"
+        assert same_thread.configuration.local_roots == source.configuration.local_roots
+        assert (await app.wait_root_operation(same["receipt"]["receipt_id"])).status is RootOperationStatus.completed
+
+
 async def test_terminal_does_not_receive_creation_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = configuration(tmp_path)
     seen = []

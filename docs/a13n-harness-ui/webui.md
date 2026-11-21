@@ -370,7 +370,7 @@ Agents select a creation tool based on where the work belongs:
 | `create_worker(prompt, title=None, agent_id=None, model=None, thinking=None)`                       | A managed worker chat owned by the calling Coordinator   | Coordinators only (stays in the Coordinator's Project)    |
 | `spawn_subagent(name, prompt, model=None, thinking=None)`                                           | A child execution inside the current conversation's tree | Root conversations with dynamic subagent creation enabled |
 
-In `create_thread`, `project_id="current"` keeps the caller's Project, `None` creates a projectless chat, and an explicit Project ID targets that Project. If prompt admission fails after the Thread record is created, the tool returns the new Thread ID so the Agent can inspect or message it rather than creating a duplicate chat.
+In `create_thread`, `project_id="current"` keeps the caller's Project and inherited Agent/environment selections, `None` creates a projectless chat, and an explicit Project ID targets that Project (resolving the target Project's default Agent, then the global default Agent, when `agent_id` is omitted). If prompt admission fails after the Thread record is created, the tool returns the new Thread ID so the Agent can inspect or message it rather than creating a duplicate chat.
 
 ### Shared model selection for agent creation
 
@@ -384,10 +384,10 @@ Open **Settings → Agents → Agent creation** (configured under `subagents.dyn
 
 Agents call `send_thread_message(thread_id, message, kind="task")` to send follow-up instructions or reports to an existing root chat within their scope:
 
-- **Active target (`mode="steer"`):** delivers the message into the target's currently running turn as immediate steering.
-- **Idle target (`mode="run"`):** starts a new Run on the target chat using that target's saved default Model (provided the chat is unarchived and has no unresolved human decisions).
+- **Active target (`mode="steer"`):** attempts best-effort enqueue on the target's current receipt without forcing immediate steering or falling back to starting a new Run. Acceptance confirms the enqueue only, not processing or persistence.
+- **Idle target (`mode="run"`):** starts a new Run on the target chat (provided the chat is unarchived and has no unresolved human decisions), reusing the target's previous Run model selection when available or otherwise its saved default Model.
 
-WebUI displays cross-conversation messages with a source icon and an expandable **From thread** link identifying the sender Thread, keeping agent-to-agent messages visually distinct from your own prompts. Follow the returned operation receipt or stream events to confirm processing, and inspect the target chat with `get_thread` before retrying an uncertain delivery.
+WebUI displays cross-conversation messages with a source icon and an expandable **From thread** link identifying the sender Thread, keeping agent-to-agent messages visually distinct from your own prompts. Check the target chat's saved history and results (for example, with `get_thread`) to verify what was processed, and inspect its state before retrying an uncertain delivery.
 
 ## Fork a conversation
 

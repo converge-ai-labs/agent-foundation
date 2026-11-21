@@ -661,7 +661,9 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
   const selection = [
     ["Project", args.project_id === null ? t("No project") : args.project_id],
     ["Agent", args.agent_id],
+    ["Model", args.model],
     ["Model override", args.model_id],
+    ["Thinking", args.thinking],
   ].filter(([, value]) => typeof value === "string");
   return (
     <>

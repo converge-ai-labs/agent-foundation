@@ -305,7 +305,11 @@ class AgentReconstructor:
         from a13n_harness_ui.subagent_tools import SubagentTools, guidance
 
         dynamic = not subagent and composition.subagents.dynamic.enabled
-        has_children = bool(composition.root.children) or dynamic
+        allowed_child_models = composition.subagents.dynamic.allowed_models
+        eligible_children = tuple(
+            item for item in composition.root.children if item.definition.model.model_id in allowed_child_models
+        )
+        has_children = bool(eligible_children) or dynamic
         subagent_capability = None
         if has_children:
             if subagent_operator is None:
@@ -544,7 +548,10 @@ class AgentReconstructor:
             if node.tool_search is not None and node.tool_search.enabled
             else None
         )
-        if subagent_capability is not None and (root or node.children):
+        eligible_children = tuple(
+            item for item in node.children if item.definition.model.model_id in allowed_child_models
+        )
+        if subagent_capability is not None and (root or eligible_children):
             capabilities.append(subagent_capability)
         if node.tools is not None:
             # Controls are derived presentation, not authority for every member.
@@ -563,7 +570,15 @@ class AgentReconstructor:
                 else frozenset()
             )
             # These tools depend on the Run's role and eligible creation models.
-            controls |= {"delegate", "spawn_subagent"}
+            controls |= {
+                "delegate",
+                "spawn_subagent",
+                "subagent_info",
+                "wait_subagent",
+                "steer_subagent",
+                "cancel_subagent",
+                "resume_subagent",
+            }
             if root:
                 controls |= frozenset(
                     {
@@ -637,8 +652,7 @@ class AgentReconstructor:
                     native_default_tools=native_default_tools,
                 ),
             )
-            for item in node.children
-            if item.definition.model.model_id in allowed_child_models
+            for item in eligible_children
         )
         return AgentDefinition(
             agent=AgentSpec(

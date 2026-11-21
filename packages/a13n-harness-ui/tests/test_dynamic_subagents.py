@@ -128,10 +128,25 @@ async def test_dynamic_tool_is_absent_when_disabled(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("allowed", [[], ["model-main"]])
 async def test_delegate_roster_uses_effective_child_models(tmp_path, monkeypatch, allowed):
+    control_tools = {
+        "delegate",
+        "subagent_info",
+        "wait_subagent",
+        "steer_subagent",
+        "cancel_subagent",
+        "resume_subagent",
+    }
+
     async def model(messages, info):
         tools = {tool.name for tool in info.function_tools}
-        assert ("delegate" in tools) == bool(allowed)
-        assert ("agent-reviewer:" in info.instructions) == bool(allowed)
+        if allowed:
+            assert control_tools <= tools
+            assert "agent-reviewer:" in info.instructions
+            assert guidance("parent") in info.instructions
+        else:
+            assert control_tools.isdisjoint(tools)
+            assert "agent-reviewer:" not in info.instructions
+            assert guidance("parent") not in info.instructions
         assert "explorer:" not in info.instructions
         yield "done"
 
@@ -152,6 +167,43 @@ async def test_delegate_roster_uses_effective_child_models(tmp_path, monkeypatch
         assert (
             await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
         ).status is RootOperationStatus.completed
+
+
+async def test_operator_spawn_rejects_when_dynamic_subagents_are_disabled(tmp_path, monkeypatch):
+    from a13n_harness.capabilities import SubagentOperatorContext
+    from pydantic_ai.exceptions import ToolFailed
+
+    app_ref: list = []
+    seen_error: list[str] = []
+
+    async def model(messages, info):
+        app = app_ref[0]
+        with pytest.raises(ToolFailed, match="disabled") as exc:
+            await app._subagent_operator.spawn(
+                SubagentOperatorContext(
+                    parent_thread_id=thread_ref[0],
+                    parent_run_id=next(iter(app._subagent_operator._parents))[1],
+                    parent_agent_instance_id=next(
+                        iter(app._subagent_operator._parents.values())
+                    ).instance.agent_instance_id,
+                    host_refs={"thread_id": thread_ref[0]},
+                ),
+                name="reviewer",
+                prompt="Check",
+            )
+        seen_error.append(str(exc.value))
+        yield "done"
+
+    thread_ref: list[str] = []
+    async with await open_app(tmp_path, monkeypatch, model, enabled=False) as app:
+        app_ref.append(app)
+        thread = await new_thread(app)
+        thread_ref.append(thread.thread_id)
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
+        assert (
+            await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        ).status is RootOperationStatus.completed
+    assert seen_error
 
 
 async def test_spawn_without_model_uses_the_default_model(tmp_path, monkeypatch):

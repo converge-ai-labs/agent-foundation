@@ -628,6 +628,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
         thinking: ThinkingSelection | None = None,
     ) -> AsyncExecutionView:
         scope = await self._require_parent(context)
+        if not scope.composition.subagents.dynamic.enabled:
+            raise _SubagentRequestError(
+                "Dynamic subagent creation is disabled in Settings > Agents.",
+                code="dynamic_subagents_disabled",
+            )
         try:
             recipe = await self._configurations.creation_model(scope.composition, model, thinking)
         except HarnessUiError as exc:

@@ -155,6 +155,8 @@ export function ResourceFields({
   const allowedModels =
     strings(["subagents", "dynamic", "allowed_models"]) ?? [];
   const defaultModelPath = ["subagents", "dynamic", "default_model"];
+  const dynamicSubagentsEnabled =
+    get(["subagents", "dynamic", "enabled"]) === true;
   const list = (
     label: string,
     path: string[],
@@ -594,7 +596,7 @@ export function ResourceFields({
                     description={
                       allowedModels.length
                         ? t(
-                            "Agents can use these models for new chats, workers, and subagents.",
+                            "Agents can use these models for new chats, workers, and declared or dynamic subagents.",
                           )
                         : t(
                             "With no models selected, agents cannot create chats or workers, or delegate to subagents.",
@@ -628,10 +630,17 @@ export function ResourceFields({
                       value={text(defaultModelPath)}
                       placeholder={t("Choose a model")}
                       loading={selectors.isPending || sources.isPending}
-                      onValueChange={(value) => set(defaultModelPath, value)}
-                      options={models.filter((model) =>
-                        allowedModels.includes(model.value),
-                      )}
+                      onValueChange={(value) =>
+                        set(defaultModelPath, value || undefined)
+                      }
+                      options={[
+                        ...(dynamicSubagentsEnabled
+                          ? []
+                          : [{ value: "", label: t("None") }]),
+                        ...models.filter((model) =>
+                          allowedModels.includes(model.value),
+                        ),
+                      ]}
                     />
                   )}
                 </SettingsSection>
@@ -650,12 +659,17 @@ export function ResourceFields({
                   <SettingsRow
                     label={t("Let the agent create subagents")}
                     controlId="dynamic-subagents-enabled"
+                    description={
+                      dynamicSubagentsEnabled && !text(defaultModelPath)
+                        ? t(
+                            "Choose at least one allowed model and a default model in Agent creation above.",
+                          )
+                        : undefined
+                    }
                   >
                     <Switch
                       id="dynamic-subagents-enabled"
-                      checked={
-                        get(["subagents", "dynamic", "enabled"]) === true
-                      }
+                      checked={dynamicSubagentsEnabled}
                       onCheckedChange={(enabled) =>
                         set(
                           ["subagents", "dynamic", "enabled"],

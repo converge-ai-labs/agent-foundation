@@ -205,14 +205,18 @@ class ThreadToolController:
             raise ThreadError(
                 "A Coordinator creates workers only in its own Project.", code="coordinator_worker_project_locked"
             )
-        recipe = await self._configurations.creation_model(source_composition, model_id, thinking)
-        if agent_id is None and source_composition is not None and source_composition.root.source_kind == "agent":
-            if project_id != "current" or configuration.agent_source.id != source_composition.root.source_id:
-                agent_id = source_composition.root.source_id
+        recipe = await self._configurations.creation_model(
+            source_composition, model_id, thinking, current_generation=True
+        )
         if project_id == "current" and agent_id is None and configuration.agent_source.kind == "agent":
+            inherited_agent = (
+                source_composition.root.source_id
+                if source_composition is not None and source_composition.root.source_kind == "agent"
+                else configuration.agent_source.id
+            )
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id,
-                agent_id=configuration.agent_source.id,
+                agent_id=inherited_agent,
                 default_model_id=recipe.model_id,
                 local_roots=configuration.local_roots,
                 environment_profile_id=configuration.environment_profile_id,
@@ -255,7 +259,7 @@ class ThreadToolController:
             receipt = await self._root_runs.submit_prompt(
                 thread_id=created.thread_id,
                 prompt=_thread_input(source.thread, prompt, context=context),
-                model_overrides=RunModelOverrides(model_id=recipe.model_id, thinking=thinking),
+                model_overrides=RunModelOverrides(thinking=thinking) if thinking is not None else None,
                 touch=True,
             )
         except HarnessUiError as exc:

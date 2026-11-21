@@ -370,7 +370,7 @@ Agent 根据任务归属选择对应的创建工具：
 | `create_worker(prompt, title=None, agent_id=None, model=None, thinking=None)`                       | 归属于当前 Coordinator 的受管 Worker 会话 | 仅限 Coordinator（固定在相同 Project 内） |
 | `spawn_subagent(name, prompt, model=None, thinking=None)`                                           | 当前会话树内的异步子 Agent 执行           | 已开启按需动态创建子智能体的根会话        |
 
-在 `create_thread` 中，`project_id="current"` 会沿用调用方所在的 Project，`None` 会创建无 Project 的独立会话，传入具体 Project ID 则可跨项目创建会话。若会话记录已创建但首条消息准入失败，工具会返回已创建的 Thread ID，方便 Agent 先检查或补发消息，避免重复创建会话。
+在 `create_thread` 中，`project_id="current"` 会沿用调用方所在的 Project 及其 Agent/环境选择，`None` 会创建无 Project 的独立会话，传入具体 Project ID 则可跨项目创建会话（省略 `agent_id` 时优先使用目标 Project 的默认 Agent，其次回落到全局默认 Agent）。若会话记录已创建但首条消息准入失败，工具会返回已创建的 Thread ID，方便 Agent 先检查或补发消息，避免重复创建会话。
 
 ### 跨会话与子智能体共享的模型选择
 
@@ -384,10 +384,10 @@ Agent 根据任务归属选择对应的创建工具：
 
 Agent 可调用 `send_thread_message(thread_id, message, kind="task")` 向协作范围内的已有根会话发送后续指令或进展汇报：
 
-- **目标会话正在运行（`mode="steer"`）：** 将消息作为即时引导（Steering）注入当前活跃的 Run。
-- **目标会话处于空闲（`mode="run"`）：** 在目标会话未归档且无待处理人工决策时，沿用目标会话已保存的默认 Model 启动一轮新 Run。
+- **目标会话正在运行（`mode="steer"`）：** 尽力将消息入队到目标当前的活跃回执中，不会强制立即打断执行，也不会在被拒时回落为启动新 Run。返回结果仅确认已接收，不证明已处理或已持久化。
+- **目标会话处于空闲（`mode="run"`）：** 在目标会话未归档且无待处理人工决策时启动一轮新 Run，优先沿用目标上一轮 Run 的模型选择，无上一轮覆盖时使用其已保存的默认 Model。
 
-WebUI 会在跨会话消息顶部展示来源图标与可展开的 **From thread** 溯源链接，使 Agent 之间的协作消息与你的手动输入一目了然。你可以通过返回的操作回执或流式事件确认消息已处理并落盘；若投递结果不确定，请先通过 `get_thread` 检查目标会话状态再决定是否重试。
+WebUI 会在跨会话消息顶部展示来源图标与可展开的 **From thread** 溯源链接，使 Agent 之间的协作消息与你的手动输入一目了然。请通过目标会话的历史记录与结果（例如 `get_thread`）核实消息是否已处理；若投递结果不确定，请先检查目标会话状态再决定是否重试。
 
 ## 创建对话副本
 
