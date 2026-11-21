@@ -199,11 +199,12 @@ Every HTTP response, a 500 or an ingress refusal included, carries exactly one S
 
 ## Redis
 
-Redis accelerates work and coordinates ephemeral observations; it grants no domain authority. PostgreSQL decides durable work ownership and state, and every use of Redis stays correct, only slower or less live, when Redis is unreachable or has lost data. Every call is bounded by `redis.timeout`.
+Redis accelerates work and coordinates ephemeral observations; it grants no domain authority. PostgreSQL decides durable work ownership and state. Redis loss affects each use as listed below, including skipped rate limits and lost hints; every call is bounded by `redis.timeout`. Each deployment uses its own Redis logical database. Deployments sharing a Redis server select different databases; where only database 0 is supported, each deployment uses a dedicated instance.
 
 | Use                                                                                         | When Redis fails                                                                                                         |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | the claim wake marker `a13n:wake`                                                           | workers find due runs by the periodic scan ([Worker claim wakeups](#worker-claim-wakeups))                               |
+| App Run seal hints ([15](15-app-plugins.md#dispatch-boundary))                              | hints may be lost; each App reconciles durable state with its own organization sweep                                     |
 | rate-limit counters (fixed windows per hashed identity)                                     | the limit is not enforced and each skipped check is logged                                                               |
 | session streams ([07](07-facts-and-delivery.md#the-session-stream))                         | provisional output is lost and readers are told; committed display and run state are unaffected                          |
 | connection tool and connector catalog caches (`providers.discovery_ttl`)                    | results are fetched again from the provider ([04](04-resources.md))                                                      |

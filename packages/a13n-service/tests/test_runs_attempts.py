@@ -13,6 +13,7 @@ import pytest
 from a13n_harness.usage import USAGE_CAPABILITY_ID, ModelUsageRecord
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.outbox import OutboxRow
 from a13n_service.runs import checkpoints
 from a13n_service.runs import execute as execute_module
 from a13n_service.runs import seal as seal_module
@@ -425,6 +426,11 @@ async def test_a_stale_attempt_changes_nothing_after_a_takeover(service, scripte
     # This test drives expiry and takeover; a concurrent sweep can make claim skip the locked run.
     await runs_kit.pause_sweeps(service)
     runtime = service.runtime
+    subscription = await service.client.post(
+        f"{service.api}/subscriptions",
+        json={"name": "Acceptance", "url": "http://127.0.0.1:9/hook", "kinds": ["run.accepted"]},
+    )
+    assert subscription.status_code == 201, subscription.text
     agent = await runs_kit.create_agent(service, scripted_model)
     run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
     (stale,) = await claim(runtime, worker_id="worker-stale", worker_build="test", limit=1)
@@ -434,6 +440,18 @@ async def test_a_stale_attempt_changes_nothing_after_a_takeover(service, scripte
         )
     await LeaseExpirer(runtime, batch=10)()
     async with transaction(runtime.storage) as session:
+        rows = (
+            await session.scalars(select(OutboxRow).where(OutboxRow.subscription_id == subscription.json()["id"]))
+        ).all()
+        payloads = [row.payload for row in rows]
+        assert len(payloads) == 2
+        assert {payload["run"]["id"] for payload in payloads} == {run_id}
+        assert len({payload["id"] for payload in payloads}) == 2
+        initial, recovered = sorted(payloads, key=lambda payload: payload["attempt"] is not None)
+        assert initial["type"] == recovered["type"] == "run.accepted"
+        assert initial["attempt"] is None
+        assert recovered["attempt"]["id"] == stale.attempt_id
+        assert (recovered["attempt"]["number"], recovered["attempt"]["status"]) == (1, "failed")
         await session.execute(update(RunRow).where(RunRow.id == run_id).values(available_at=RunRow.created_at))
     (current,) = await claim(runtime, worker_id="worker-current", worker_build="test", limit=1)
 

@@ -48,7 +48,7 @@ Choose `kinds` for the events your application needs:
 
 `filter` supports `agent_id`, `session_id`, `thread_id` and `schedule_id`. Every supplied identity must be present and match. A schedule filter also matches runs and attempts through their schedule origin. A schedule-only event cannot match a thread filter.
 
-For schedules, distinguish [scheduling from execution completion](schedules.md#read-the-result). Creating a paused schedule emits no event; enabled creation emits `schedule.enabled`. Retries and unchanged commands do not duplicate transition notices. Historical events are not replayed or backfilled.
+For schedules, distinguish [scheduling from execution completion](schedules.md#read-the-result). Creating a paused schedule emits no event; enabled creation emits `schedule.enabled`. Retrying an unchanged schedule command does not duplicate its transition notice. Historical events are not replayed or backfilled.
 
 `PATCH /api/v1/subscriptions/{id}` changes the name, URL, kinds, filter, `enabled` or `signing_secret`; `DELETE` removes the subscription. Both require its current `If-Match`. A workspace supports up to `control.subscriptions` subscriptions, 32 by default.
 
@@ -69,7 +69,9 @@ Every notification is a JSON `POST`. A run event has this shape; IDs below are p
 }
 ```
 
-Use the event to identify the transition, then fetch the run through the API when you need its current state or result. Attempt events populate `attempt` with `id`, `number`, `status`, `start_reason`, `yield_reason` and `failure`.
+Use the event to identify the transition, then fetch the run through the API with workspace read authority when you need its state, acceptance options or result. Attempt events populate `attempt` with `id`, `number`, `status`, `start_reason`, `yield_reason` and `failure`. A failed attempt that is retried returns the same Run to `accepted`, producing a new `run.accepted` delivery with its own ID and the failed attempt. Do not deduplicate these distinct transitions by Run ID and kind.
+
+A waiting Run is sealed and remains waiting in its historical record. Resuming it creates a successor Run with a new ID; fetch the current Thread and its latest Run before acting on a waiting notification.
 
 Schedule events use `schedule` in place of `run` and `attempt`, with `id`, `session_id`, `agent_id`, `name`, `state`, `pause_reason` and `version`. Occurrence events use `occurrence`, a compact history record with identities, status/reason and completion fields, without the input snapshot. Completion includes `execution_outcome`, `completion_run_id` and `completed_at`. All families share `id`, `type`, `occurred_at` and `workspace_id`; scheduled runs carry `run.schedule_origin: {schedule_id, occurrence_id}`.
 
@@ -95,7 +97,7 @@ Call it before processing the event. Map `WebhookVerificationError` to a `4xx` r
 
 ### Delivery and retries
 
-Service delivers at least once, without ordering guarantees. Any `2xx` within `control.webhook_timeout` (10 seconds by default) marks a delivery successful. Redirects are not followed. A timeout can occur after your receiver has accepted the event, so retries must use the same deduplication path.
+Service stages matching deliveries durably with the transition and retries failures within a finite budget. Delivery is unordered and can be duplicated; a delivery can become `dead` without reaching the receiver. Any `2xx` within `control.webhook_timeout` (10 seconds by default) marks a delivery successful. Redirects are not followed. A timeout can occur after your receiver has accepted the event, so retries must use the same deduplication path.
 
 Failed requests retry with exponential backoff of up to 2, 4, 8, … seconds, with 20% jitter and a one-hour cap. The attempt budget comes from `outbox.by_kind.webhook.max_attempts`, falling back to `outbox.defaults.max_attempts` (12 by default). Exhausted deliveries become `dead`.
 

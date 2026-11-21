@@ -48,7 +48,7 @@ curl -sS -X POST "$A13N_URL/api/v1/subscriptions" \
 
 `filter` 支持 `agent_id`、`session_id`、`thread_id` 和 `schedule_id`。提供的每个身份字段都必须存在且匹配。计划筛选条件也会通过计划来源匹配运行和执行尝试。仅包含计划的事件不能匹配线程条件。
 
-对于计划，需要区分[调度结束与执行完成](schedules.md#read-the-result)。创建暂停状态的计划不发事件；启用状态创建发送 `schedule.enabled`。重试和无状态变化的命令不重复生成通知。历史事件不补发，历史记录不补齐。
+对于计划，需要区分[调度结束与执行完成](schedules.md#read-the-result)。创建暂停状态的计划不发事件；启用状态创建发送 `schedule.enabled`。重试未改变状态的计划命令不会重复生成状态变化通知。历史事件不补发，历史记录不补齐。
 
 `PATCH /api/v1/subscriptions/{id}` 修改名称、URL、kinds、filter、`enabled` 或 `signing_secret`；`DELETE` 删除订阅。两者都要求当前 `If-Match`。每个工作空间最多支持 `control.subscriptions` 个订阅，默认 32 个。
 
@@ -69,7 +69,9 @@ curl -sS -X POST "$A13N_URL/api/v1/subscriptions" \
 }
 ```
 
-事件用于识别这次状态变化；需要当前状态或结果时，再通过 API 读取运行。执行尝试事件会填充 `attempt`，包含 `id`、`number`、`status`、`start_reason`、`yield_reason` 和 `failure`。
+事件用于识别这次状态变化；需要运行状态、接受时的选项或结果时，使用具有工作空间读取权限的凭据通过 API 查询。执行尝试事件会填充 `attempt`，包含 `id`、`number`、`status`、`start_reason`、`yield_reason` 和 `failure`。失败的执行尝试需要重试时，同一个 Run 会回到 `accepted`，产生新的 `run.accepted` 投递，其中包含失败的执行尝试和新的投递 ID。不要用 Run ID 和事件类型对这些不同的状态变化去重。
+
+等待中的 Run 已封存，其历史记录会保持 waiting 状态。恢复操作会创建一个具有新 ID 的后继 Run；根据等待通知执行操作前，请查询 Thread 当前的最新 Run。
 
 计划事件用 `schedule` 替代 `run` 和 `attempt`，包含 `id`、`session_id`、`agent_id`、`name`、`state`、`pause_reason` 和 `version`。触发记录事件使用 `occurrence`，即包含身份、状态/原因和完成字段的紧凑历史记录，不含输入快照。完成字段包括 `execution_outcome`、`completion_run_id` 和 `completed_at`。所有类别共有 `id`、`type`、`occurred_at` 和 `workspace_id`；计划触发的运行带有 `run.schedule_origin: {schedule_id, occurrence_id}`。
 
@@ -95,7 +97,7 @@ def verify_event(secret: str, headers: dict[str, str], body: bytes) -> dict:
 
 ### 投递与重试
 
-Service 至少投递一次，不保证顺序。在 `control.webhook_timeout`（默认 10 秒）内返回任意 `2xx` 即标记投递成功，不跟随重定向。超时可能发生在接收端已接受事件之后，因此重试必须经过相同的去重逻辑。
+Service 在状态变化的事务中持久暂存匹配的投递，并在有限的尝试次数内重试失败请求。投递可能乱序或重复，也可能在到达接收端之前进入 `dead`。在 `control.webhook_timeout`（默认 10 秒）内返回任意 `2xx` 即标记投递成功，不跟随重定向。超时可能发生在接收端已接受事件之后，因此重试必须经过相同的去重逻辑。
 
 失败请求按指数退避重试，间隔最多为 2、4、8、… 秒，带 20% 抖动，上限一小时。尝试次数取 `outbox.by_kind.webhook.max_attempts`，未配置时取 `outbox.defaults.max_attempts`（默认 12）。次数耗尽后，投递变为 `dead`。
 
