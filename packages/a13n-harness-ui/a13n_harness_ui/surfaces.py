@@ -43,6 +43,7 @@ class RunModelOverrides(ModelControlSelection):
 
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     service_tier: Literal["auto", "default", "flex", "priority"] | None = None
+    carry_forward: bool = Field(default=True, exclude=True)
 
     @model_validator(mode="after")
     def _exclusive_speed_override(self) -> Self:

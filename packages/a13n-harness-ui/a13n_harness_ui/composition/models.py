@@ -226,7 +226,7 @@ class ResolvedRunComposition(CompositionModel):
 
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None
-    # The Run's explicit Model selection. Admissions without one reuse it.
+    # The explicit Model selection that a later admission may inherit. The effective Model lives on root.
     model_overrides: RunModelOverrides | None = Field(default=None, exclude_if=lambda value: value is None)
     media_understanding: dict[NativeInputMediaKind, ResolvedModelRecipe] = Field(
         default_factory=dict, exclude_if=lambda value: not value

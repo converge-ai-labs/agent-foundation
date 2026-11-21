@@ -105,6 +105,34 @@ async def test_mcp_manages_projects_and_threads_on_the_webui_listener(tmp_path: 
             assert created_thread["ok"] and created_thread["thread"]["thread"]["configuration"]["project_id"] is None
 
 
+async def test_mcp_creation_model_applies_only_to_the_first_run(tmp_path: Path) -> None:
+    configuration = _write_configuration(tmp_path, allow_agent_creation=True)
+    (tmp_path / "models/secondary.yaml").write_text(
+        "schema_version: '1'\nkind: model\nid: model-secondary\nname: Secondary\nroute: openai:gpt-5\n"
+        "authentication: {kind: api_key, env: OPENAI_API_KEY}\n"
+    )
+    async with listener_with_app(tmp_path, sharing=False, configuration_path=configuration) as (url, _, app):
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        async with Client(StreamableHttpTransport(url + _PATH, headers=_AUTH)) as mcp:
+
+            async def completed_model(tool_result):
+                result = tool_result.structured_content
+                assert result is not None and result["ok"]
+                receipt_id = result["receipt"]["receipt_id"]
+                operation = await app.wait_root_operation(receipt_id, timeout_seconds=5)
+                assert operation.status is RootOperationStatus.completed
+                return (await app.inspect_operation_configuration(receipt_id)).agent.model_id
+
+            # The owner can select a configured Model outside the in-Run creation allowlist.
+            created = await mcp.call_tool("create_thread", {"prompt": "First", "model_id": "model-secondary"})
+            assert await completed_model(created) == "model-secondary"
+            thread_id = created.structured_content["thread_id"]
+            assert (await app.get_thread(thread_id)).thread.configuration.default_model_id is None
+
+            followup = await mcp.call_tool("send_thread_message", {"thread_id": thread_id, "message": "Next"})
+            assert await completed_model(followup) == "model-primary"
+
+
 async def test_mcp_send_rejects_decisions_even_after_a_stale_detail_read(tmp_path: Path, monkeypatch) -> None:
     configuration = _write_configuration(tmp_path)
     async with listener_with_app(tmp_path, sharing=False, configuration_path=configuration) as (url, _, app):
