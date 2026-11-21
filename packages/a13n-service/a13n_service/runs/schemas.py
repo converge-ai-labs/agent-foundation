@@ -299,6 +299,7 @@ class NewThread(Message):
     mcp_headers: McpHeaders = Field(default_factory=dict)
     execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     environments: InitialMounts = ()
+    browser_binding: BrowserBinding | None = Field(default=None, exclude_if=lambda value: value is None)
     # Mounted with the checks of `POST .../threads/{thread}/memories` before the first run is accepted.
     memories: MemoryMounts = ()
 

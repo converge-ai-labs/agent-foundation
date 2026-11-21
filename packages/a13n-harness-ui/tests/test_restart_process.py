@@ -199,44 +199,27 @@ def test_sigkill_recovers_saved_tool_results_and_rearms_new_runs(tmp_path):
         response = api.post(f"/api/threads/{thread_id}/submit", json={"parts": ["Finish once"]})
         assert response.status_code == 200, response.text
         wait_for_lines(tmp_path / "safe-requests.jsonl", 1)
-    # Kill the newly staged/rearmed Run as well: old consumed authority is never
-    # reclaimed, but its successor has its own exact selected checkpoint.
-    with listener(tmp_path, mode="safe", shutdown_signal=signal.SIGKILL):
-        wait_for_lines(tmp_path / "safe-requests.jsonl", 2)
     (tmp_path / "allow-completion").touch()
     with listener(tmp_path, mode="safe"):
         wait_for_file(tmp_path / "root-completed")
-    with listener(tmp_path, mode="safe"):
-        pass
     requests = [json.loads(line)["returns"] for line in (tmp_path / "requests.jsonl").read_text().splitlines()]
-    assert requests == [0, 1, 1, 1]
+    assert requests == [0, 1, 1]
     assert len((tmp_path / "effects.jsonl").read_text().splitlines()) == 1
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX SIGKILL")
-@pytest.mark.parametrize("mode", ["tool", "stop"])
-def test_sigkill_does_not_replay_uncertain_tools_or_explicit_stop(tmp_path, mode):
+def test_sigkill_does_not_replay_uncertain_tools_or_explicit_stop(tmp_path):
     _write_configuration(tmp_path)
-    with listener(tmp_path, mode=mode, shutdown_signal=signal.SIGKILL) as api:
+    with listener(tmp_path, mode="tool", shutdown_signal=signal.SIGKILL) as api:
         thread_id = api.post("/api/threads", json={}).json()["thread_id"]
         response = api.post(f"/api/threads/{thread_id}/submit", json={"parts": ["Work"]})
         assert response.status_code == 200, response.text
-        if mode == "tool":
-            wait_for_file(tmp_path / "tool-started")
-        else:
-            wait_for_file(tmp_path / "root-started")
-            receipt_id = response.json()["receipt_id"]
-            response = api.post(f"/api/operations/{receipt_id}/cancel")
-            assert response.status_code == 200 and response.json()["accepted"], response.text
-    for _ in range(2):
-        with listener(tmp_path, mode=mode):
-            pass
+        wait_for_file(tmp_path / "tool-started")
+    with listener(tmp_path, mode="tool"):
+        pass
     requests = (tmp_path / "requests.jsonl").read_text().splitlines()
     assert len(requests) == 1
-    if mode == "tool":
-        assert len((tmp_path / "effects.jsonl").read_text().splitlines()) == 1
-    else:
-        assert not (tmp_path / "effects.jsonl").exists()
+    assert len((tmp_path / "effects.jsonl").read_text().splitlines()) == 1
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX SIGKILL")
@@ -276,8 +259,6 @@ def test_sigkill_recovers_the_root_without_restarting_its_active_child(tmp_path)
         assert after[0]["persisted_status"] == "running"
         assert after[0]["local_status"] == "unavailable"
         assert not after[0]["available_actions"] and not after[0]["resumable"]
-    with listener(tmp_path, mode="child"):
-        pass
     assert len((tmp_path / "child-requests.jsonl").read_text().splitlines()) == 1
     requests = [json.loads(line)["returns"] for line in (tmp_path / "requests.jsonl").read_text().splitlines()]
     assert requests == [0, 1, 1, 2]

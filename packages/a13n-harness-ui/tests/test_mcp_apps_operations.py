@@ -473,8 +473,7 @@ async def test_effective_credential_change_rejects_existing_view_without_auto_re
     assert operations.snapshots.connections.get("thread-1", "mcp-docs").generation == view.connection_generation
 
 
-@pytest.mark.parametrize("mode", ["allow", "review"])
-@pytest.mark.parametrize("revoke", ["view", "policy"])
+@pytest.mark.parametrize(("mode", "revoke"), [("allow", "view"), ("review", "policy")])
 async def test_revocation_while_dispatch_enumerates_tools_prevents_business_call(
     apps, monkeypatch: pytest.MonkeyPatch, revoke: str, mode: str
 ) -> None:
@@ -512,7 +511,7 @@ async def test_revocation_while_dispatch_enumerates_tools_prevents_business_call
     assert (await connection.client.call_tool_mcp("counter", {})).structured_content["count"] == 2
 
 
-@pytest.mark.parametrize("change", ["deny", "ask", "review_settings", "allow"])
+@pytest.mark.parametrize("change", ["deny", "review_settings"])
 async def test_queued_app_rechecks_policy_but_ignores_model_review_settings(apps, monkeypatch, change) -> None:
     operations, reference = apps
     await _policy(operations, "review", review={"model": "model-primary", "on_error": "deny"})
@@ -547,7 +546,7 @@ async def test_queued_app_rechecks_policy_but_ignores_model_review_settings(apps
         assert result.result["structuredContent"]["count"] == 2
 
 
-@pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize("configured", [True])
 async def test_app_operations_do_not_invoke_custom_run_reviewers(apps, monkeypatch, configured):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock

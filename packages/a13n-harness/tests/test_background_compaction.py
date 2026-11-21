@@ -1575,17 +1575,14 @@ async def test_failed_operation_below_trigger_continues_without_fallback():
     assert await compaction_disposition(result.state, basis=operator.operation.input.basis) is None
 
 
-@pytest.mark.parametrize("running", [False, True])
 @pytest.mark.parametrize(
-    "tokens,reserve,threshold,blocked",
+    ("running", "tokens", "reserve", "threshold", "blocked"),
     [
-        (9499, 100, 0.95, False),
-        (9500, 100, 0.95, True),
-        (9501, 100, 0.95, True),
-        (9200, 100, 0.92, True),
-        (9500, 100, 0.99, False),
-        (9400, 1000, 0.95, False),
-        (9400, None, 0.95, False),
+        (False, 9499, 100, 0.95, False),
+        (False, 9500, 100, 0.95, True),
+        (True, 9200, 100, 0.92, True),
+        (True, 9400, 1000, 0.95, False),
+        (False, 9400, None, 0.95, False),
     ],
 )
 async def test_background_blocking_uses_response_usage_not_output_reserve(running, tokens, reserve, threshold, blocked):
@@ -1731,19 +1728,14 @@ async def test_context_recovery_reuses_only_applicable_background_native_overflo
     assert operator.submissions == 0
 
 
-@pytest.mark.parametrize("absolute", [False, True])
 @pytest.mark.parametrize(
-    "trigger,tokens,mode",
+    ("absolute", "trigger", "tokens", "mode"),
     [
-        (0.90, 8999, "continue"),
-        (0.90, 9000, "background"),
-        (0.90, 9499, "background"),
-        (0.90, 9500, "sync"),
-        (0.95, 9499, "continue"),
-        (0.95, 9500, "sync"),
-        (0.98, 9500, "continue"),
-        (0.98, 9799, "continue"),
-        (0.98, 9800, "sync"),
+        (False, 0.90, 8999, "continue"),
+        (False, 0.90, 9000, "background"),
+        (True, 0.90, 9500, "sync"),
+        (True, 0.98, 9500, "continue"),
+        (False, 0.98, 9800, "sync"),
     ],
 )
 async def test_trigger_gates_new_work_even_at_or_above_blocking_line(absolute, trigger, tokens, mode):

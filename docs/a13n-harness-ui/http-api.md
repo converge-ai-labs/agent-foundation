@@ -48,6 +48,12 @@ A successful status response includes `api_version: "1"`, build information, App
 
 Owner API requests use an `Authorization` header. The listener also validates `Host` and same-origin `Origin` headers. Keep keys out of query strings and logs. `--dangerous-skip-permissions` disables listener authentication, so it is unsuitable as an authentication solution. Instance-key clients share workbench authority; scoped guest access is described under [sharing](#subscription-accounts-and-sharing).
 
+## Manage Projects and Threads over MCP
+
+Connect a Streamable HTTP MCP client to the WebUI address with `/api/automation/mcp` appended. Set the client's `Authorization` header to `Bearer <instance-key>` using the same key you enter in WebUI. Configure the key through the client's secret handling. A scoped share link does not grant MCP access.
+
+Use `list_projects`, `get_project`, and `create_project` to discover or create Projects. Use `list_threads` to find conversations, `create_thread` with `prompt` and an optional `project_id` to start one, and `send_thread_message` with `thread_id` and `message` to continue it. A message starts a Run when the Thread is idle or steers its active Run. Use `get_thread` with `thread_id` to check progress and read the saved result; a receipt alone confirms admission. If creation returns a `thread_id` with an admission error, keep that ID and inspect the Thread before retrying.
+
 ## Create a Thread and submit input
 
 Save this as `conversation.sh`. It requires Bash, curl, jq, the two environment variables above, and usable configured defaults. The script creates one Thread, submits once, polls its receipt, and reads saved history. The prompt still runs with the selected Agent's actual permissions.

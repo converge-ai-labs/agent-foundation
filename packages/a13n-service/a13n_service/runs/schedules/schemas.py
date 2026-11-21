@@ -10,9 +10,11 @@ from a13n_service.infra.ids import ObjectId
 from a13n_service.infra.labels import Labels
 from a13n_service.infra.reads import UnavailableConfiguration
 from a13n_service.resources.memories.schemas import MemoryMounts
+from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.schedules.calendar import Calendar
 from a13n_service.runs.schemas import (
     EntryStatus,
+    InitialMounts,
     JsonPart,
     MessagePayload,
     RunOptions,
@@ -61,6 +63,8 @@ class ScheduleInvocation(_Model):
     payload: MessagePayload
     options: RunOptions = Field(default_factory=RunOptions)
     memories: MemoryMounts = ()
+    environments: InitialMounts = Field(default=(), exclude_if=lambda value: not value)
+    browser_binding: BrowserBinding | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("payload")
     @classmethod

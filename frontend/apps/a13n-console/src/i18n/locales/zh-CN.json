@@ -4500,5 +4500,6 @@
   "a13n will stop using this connection and cancel any authorization in progress. Its settings will be kept. The result reports whether authorization was also removed from the provider.": "a13n 将停止使用此连接，并取消正在进行的授权。连接配置会保留，操作结果将说明是否同时撤销了供应商侧的授权。",
   "This connection remains usable while you complete the new authorization. Starting again replaces the previous request.": "完成新授权期间，此连接仍可使用。重新发起授权会替换之前的请求。",
   "Complete authorization on the provider's page. Starting again replaces the previous request.": "请在供应商页面完成授权。重新发起授权会替换之前的请求。",
-  "Authorize": "授权"
+  "Authorize": "授权",
+  "Sessions for this agent in the selected period, sorted by spend (highest first).": "当前时间范围内该 Agent 的会话用量，按费用从高到低排列。"
 }

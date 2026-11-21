@@ -558,9 +558,17 @@ async def test_declarative_permissions_gate_native_tools_without_host_type_regis
     assert result.status == "completed" and not effects
 
 
-@pytest.mark.parametrize("mode", [None, "inherit", "allow", "ask", "deny", "review"])
-@pytest.mark.parametrize("permissions_first", [False, True])
-@pytest.mark.parametrize("dynamic", [False, True])
+@pytest.mark.parametrize(
+    ("mode", "permissions_first", "dynamic"),
+    [
+        (None, False, False),
+        ("inherit", True, True),
+        ("allow", False, True),
+        ("ask", True, False),
+        ("deny", False, False),
+        ("review", True, True),
+    ],
+)
 async def test_capability_overrides_native_approval_declarations(mode, permissions_first, dynamic) -> None:
     from dataclasses import replace
 

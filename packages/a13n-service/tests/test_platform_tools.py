@@ -154,38 +154,45 @@ async def test_run_provider_test_discovery_and_group_scope(service, scripted_mod
         assert (await http.post("/api/v1/model-providers/mp_hidden/test")).status_code == 403
 
 
-@pytest.mark.parametrize("change", ["cancel", "expire", "revoke", "tamper", "disable", "archive"])
-async def test_run_token_fails_closed_after_execution_or_authority_changes(service, scripted_model, runs_kit, change):
+async def test_run_token_fails_closed_after_execution_or_authority_changes(service, scripted_model, runs_kit):
     lease, _, _ = await lease_for(service, scripted_model, runs_kit)
     token = await issue(service.runtime, lease, frozenset({"agents"}))
     credential = await authenticate_token(service, token)
     async with client(service, {"secret": token}) as http:
         assert (await rpc(http, "tools/list")).status_code == 200
-        async with transaction(service.runtime.storage) as session:
-            if change == "cancel":
-                run = await session.get_one(RunRow, lease.run_id)
-                run.cancel_requested_at = run.created_at
-            elif change == "expire":
-                await session.execute(
-                    update(AttemptRow)
-                    .where(AttemptRow.id == lease.attempt_id)
-                    .values(lease_expires_at=AttemptRow.created_at)
-                )
-            elif change == "revoke":
-                await set_role(session, service, "viewer")
-            elif change == "disable":
-                principal = await session.get_one(PrincipalRow, service.tenant.principal_id)
-                principal.status = "disabled"
-            elif change == "archive":
-                workspace = await session.get_one(WorkspaceRow, service.tenant.workspace_id)
-                workspace.archived_at = await now(session)
-            else:
-                http.headers["authorization"] = "Bearer " + token[:-12] + "AAAAAAAAAAAA"
+        tampered = "Bearer " + token[:-12] + "AAAAAAAAAAAA"
+        original_auth = http.headers["authorization"]
+        http.headers["authorization"] = tampered
         assert (await rpc(http, "tools/list")).status_code == 401
-    if change != "tamper":
-        async with transaction(service.runtime.storage) as session:
-            with pytest.raises(ServiceError):
-                await reauthenticate(session, service.runtime.access, credential)
+        http.headers["authorization"] = original_auth
+        for change in ("cancel", "revoke", "disable", "archive", "expire"):
+            async with transaction(service.runtime.storage) as session:
+                run = await session.get_one(RunRow, lease.run_id)
+                attempt = await session.get_one(AttemptRow, lease.attempt_id)
+                if change == "cancel":
+                    run.cancel_requested_at = run.created_at
+                elif change == "expire":
+                    attempt.lease_expires_at = attempt.created_at
+                elif change == "revoke":
+                    await set_role(session, service, "viewer")
+                elif change == "disable":
+                    (await session.get_one(PrincipalRow, service.tenant.principal_id)).status = "disabled"
+                elif change == "archive":
+                    (await session.get_one(WorkspaceRow, service.tenant.workspace_id)).archived_at = await now(session)
+            assert (await rpc(http, "tools/list")).status_code == 401, change
+            async with transaction(service.runtime.storage) as session:
+                with pytest.raises(ServiceError):
+                    await reauthenticate(session, service.runtime.access, credential)
+            if change != "expire":
+                async with transaction(service.runtime.storage) as session:
+                    if change == "cancel":
+                        (await session.get_one(RunRow, lease.run_id)).cancel_requested_at = None
+                    elif change == "revoke":
+                        await set_role(session, service, "admin")
+                    elif change == "disable":
+                        (await session.get_one(PrincipalRow, service.tenant.principal_id)).status = "active"
+                    elif change == "archive":
+                        (await session.get_one(WorkspaceRow, service.tenant.workspace_id)).archived_at = None
 
 
 async def test_recovered_attempt_issues_new_credentials_and_rejects_old_worker(service, scripted_model, runs_kit):

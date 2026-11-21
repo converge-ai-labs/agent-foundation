@@ -75,50 +75,49 @@ async def test_initialization_timeout_does_not_publish_online_and_releases_conne
         assert await pool.presence(identity) is None
 
 
-@pytest.mark.parametrize("recovering", [False, True])
-async def test_temporary_connection_rejection_remains_retryable(service, monkeypatch, recovering):
+async def test_temporary_connection_rejection_remains_retryable(service, monkeypatch):
     created = (await register(service)).json()
     pool = service.runtime.client_connections
-    if recovering:
-        monkeypatch.setattr(pool, "recovering", True)
-    else:
-        monkeypatch.setattr(pool, "config", pool.config.model_copy(update={"max_connections": 0}))
+    original_config = pool.config
     async with listening(service.app) as endpoint:
-        with pytest.raises(InvalidStatus) as failed:
-            async with connect(
-                endpoint.replace("http://", "ws://") + created["connection_path"],
-                subprotocols=["eip.v1"],
-                additional_headers={"authorization": f"Bearer {created['token']}", "x-forwarded-proto": "https"},
-            ):
-                pytest.fail("Unavailable Control accepted a connection")
-        assert failed.value.response.status_code == 503
-        assert failed.value.response.headers["Retry-After"] == "1"
+        url = endpoint.replace("http://", "ws://") + created["connection_path"]
+        headers = {"authorization": f"Bearer {created['token']}", "x-forwarded-proto": "https"}
+        for recovering in (False, True):
+            monkeypatch.setattr(pool, "recovering", recovering)
+            monkeypatch.setattr(
+                pool,
+                "config",
+                original_config if recovering else original_config.model_copy(update={"max_connections": 0}),
+            )
+            with pytest.raises(InvalidStatus) as failed:
+                async with connect(url, subprotocols=["eip.v1"], additional_headers=headers):
+                    pytest.fail("Unavailable Control accepted a connection")
+            assert failed.value.response.status_code == 503
+            assert failed.value.response.headers["Retry-After"] == "1"
     assert not pool.entries
 
 
-@pytest.mark.parametrize(
-    "invalid", ["missing-token", "wrong-token", "origin", "query-token", "plaintext", "subprotocol"]
-)
-async def test_execution_carrier_rejects_browser_and_unbound_authentication(service, invalid):
+async def test_execution_carrier_rejects_browser_and_unbound_authentication(service):
     created = (await register(service)).json()
-    headers = {"authorization": f"Bearer {created['token']}", "x-forwarded-proto": "https"}
-    protocols = ["eip.v1"]
-    suffix = ""
-    if invalid == "missing-token":
-        headers.pop("authorization")
-    elif invalid == "wrong-token":
-        headers["authorization"] = "Bearer wrong"
-    elif invalid == "origin":
-        headers["origin"] = "https://example.com"
-    elif invalid == "query-token":
-        suffix = "?token=test-token"
-    elif invalid == "plaintext":
-        headers.pop("x-forwarded-proto")
-    else:
-        protocols = []
     async with listening(service.app) as endpoint:
-        url = endpoint.replace("http://", "ws://") + created["connection_path"] + suffix
-        with pytest.raises(InvalidStatus):
-            async with connect(url, subprotocols=protocols, additional_headers=headers):
-                pytest.fail("Invalid connection was upgraded")
+        base_url = endpoint.replace("http://", "ws://") + created["connection_path"]
+        for invalid in ("missing-token", "wrong-token", "origin", "query-token", "plaintext", "subprotocol"):
+            headers = {"authorization": f"Bearer {created['token']}", "x-forwarded-proto": "https"}
+            protocols = ["eip.v1"]
+            suffix = ""
+            if invalid == "missing-token":
+                headers.pop("authorization")
+            elif invalid == "wrong-token":
+                headers["authorization"] = "Bearer wrong"
+            elif invalid == "origin":
+                headers["origin"] = "https://example.com"
+            elif invalid == "query-token":
+                suffix = "?token=test-token"
+            elif invalid == "plaintext":
+                headers.pop("x-forwarded-proto")
+            else:
+                protocols = []
+            with pytest.raises(InvalidStatus):
+                async with connect(base_url + suffix, subprotocols=protocols, additional_headers=headers):
+                    pytest.fail(f"Invalid connection ({invalid}) was upgraded")
     assert not service.runtime.client_connections.entries

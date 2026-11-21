@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 
 import yaml
@@ -9,8 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from .contracts import MemoryStoreError
 
-_FENCE = "---\n"
-_CLOSING = "\n---\n"
+# Fences accept LF and CRLF. The closing fence can also end the file.
+_OPENING = re.compile(r"---\r?\n")
+_CLOSING = re.compile(r"\n---(?:\r?\n|\Z)")
 
 
 class FileFormat(BaseModel):
@@ -60,16 +62,16 @@ def describe(text: str, fmt: FileFormat) -> str | None:
     if len(text.encode()) > fmt.max_file_bytes:
         raise MemoryStoreError("too_large", f"A memory file has at most {fmt.max_file_bytes} bytes.")
     body = text
-    if text.startswith(_FENCE):
-        end = text.find(_CLOSING, len(_FENCE) - 1)
-        if end < 0 or len(text[: end + len(_CLOSING)].encode()) > fmt.frontmatter_bytes:
+    if opening := _OPENING.match(text):
+        closing = _CLOSING.search(text, opening.end() - 1)
+        if closing is None or len(text[: closing.end()].encode()) > fmt.frontmatter_bytes:
             raise MemoryStoreError(
                 "invalid_file", f"Frontmatter is closed by a '---' line within {fmt.frontmatter_bytes} bytes."
             )
-        description = _frontmatter_description(text[len(_FENCE) : end], fmt)
+        description = _frontmatter_description(text[opening.end() : closing.start()], fmt)
         if description is not None:
             return description
-        body = text[end + len(_CLOSING) :]
+        body = text[closing.end() :]
     line = next((line.strip() for line in body.splitlines() if line.strip()), None)
     return line[: fmt.description_chars] if line else None
 

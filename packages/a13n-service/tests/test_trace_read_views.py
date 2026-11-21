@@ -167,17 +167,17 @@ async def test_individual_span_preserves_full_redacted_content_and_scopes_before
     assert forbidden.status_code in {403, 404} and len(backend.queries) == 1
 
 
-@pytest.mark.parametrize("mismatch", ["id", "trace_id", "workspace", "missing"])
-async def test_individual_span_does_not_trust_backend_selection(service, mismatch) -> None:  # type: ignore[no-untyped-def]
+async def test_individual_span_does_not_trust_backend_selection(service) -> None:  # type: ignore[no-untyped-def]
     own = correlation_attributes(service.tenant.organization_id, service.tenant.workspace_id)
-    value = span(1, own)
-    if mismatch == "workspace":
-        value = value.model_copy(
-            update={"attributes": correlation_attributes(service.tenant.organization_id, "ws_other")}
-        )
-    elif mismatch != "missing":
-        value = value.model_copy(update={mismatch: "f" * (16 if mismatch == "id" else 32)})
-    backend = Backend([] if mismatch == "missing" else [value])
-    service.app.state.runtime = replace(service.runtime, traces=backend)
-    response = await service.client.get(service.api + f"/traces/{TRACE}/spans/{1:016x}")
-    assert response.status_code == 404, response.text
+    for mismatch in ("id", "trace_id", "workspace", "missing"):
+        value = span(1, own)
+        if mismatch == "workspace":
+            value = value.model_copy(
+                update={"attributes": correlation_attributes(service.tenant.organization_id, "ws_other")}
+            )
+        elif mismatch != "missing":
+            value = value.model_copy(update={mismatch: "f" * (16 if mismatch == "id" else 32)})
+        backend = Backend([] if mismatch == "missing" else [value])
+        service.app.state.runtime = replace(service.runtime, traces=backend)
+        response = await service.client.get(service.api + f"/traces/{TRACE}/spans/{1:016x}")
+        assert response.status_code == 404, (mismatch, response.text)

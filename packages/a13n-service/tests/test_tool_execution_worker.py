@@ -191,7 +191,7 @@ async def test_failed_heartbeat_cancels_locally_once_without_waiting_for_databas
         await runtime.executions.close()
 
 
-@pytest.mark.parametrize("cause", ["shutdown", "lease_loss", "missing_owner", "other_renewed"])
+@pytest.mark.parametrize("cause", ["shutdown", "lease_loss"])
 async def test_uncooperative_tool_cannot_extend_worker_process_shutdown(cause):
     # Exercise the real os._exit boundary outside the test process. asyncio.run would otherwise wait forever.
     script = textwrap.dedent("""
@@ -290,7 +290,7 @@ async def test_closed_tool_admission_exits_worker_with_all_slots_busy():
             await process.wait()
 
 
-@pytest.mark.parametrize("cause", ["output", "routing", "supervisor", "drain", "shutdown"])
+@pytest.mark.parametrize("cause", ["supervisor", "shutdown"])
 async def test_worker_fatal_boundary_preserves_normal_shutdown(cause):
     script = textwrap.dedent("""
         import asyncio

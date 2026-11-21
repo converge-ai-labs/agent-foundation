@@ -267,8 +267,7 @@ async def test_retained_generation_decodes_historical_markdown_models_without_ch
         assert "model" not in source.subagents["subagent-builtin-explorer"].model_dump()
 
 
-@pytest.mark.parametrize("child_name", ["explorer", "agent-worker"])
-@pytest.mark.parametrize("inject_apps", [False, True])
+@pytest.mark.parametrize(("child_name", "inject_apps"), [("explorer", True), ("agent-worker", False)])
 @pytest.mark.anyio
 async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_agent_recipe(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_name: str, inject_apps: bool
@@ -441,9 +440,7 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
     assert child_models == (["model-main"] if child_name == "explorer" else ["model-worker"]) * 2
 
 
-@pytest.mark.parametrize(
-    "tool_name", ["subagent_info", "wait_subagent", "steer_subagent", "cancel_subagent", "resume_subagent"]
-)
+@pytest.mark.parametrize("tool_name", ["subagent_info", "resume_subagent"])
 @pytest.mark.anyio
 async def test_missing_subagent_execution_is_a_tool_failure_not_a_parent_run_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tool_name: str

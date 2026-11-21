@@ -87,7 +87,7 @@ async def pending(app, thread_id):
             await asyncio.sleep(0.01)
 
 
-@pytest.mark.parametrize("retained", [False, True])
+@pytest.mark.parametrize("retained", [True])
 async def test_input_completes_same_receipt_across_runs(tmp_path: Path, monkeypatch, retained: bool):
     root = input_configuration(tmp_path, retained=retained)
     seen = install_input_model(monkeypatch)

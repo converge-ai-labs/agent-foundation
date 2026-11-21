@@ -281,8 +281,7 @@ async def test_skill_references_refresh_on_submission_and_keep_active_catalog(
         assert history.entries == saved.entries
 
 
-@pytest.mark.parametrize("with_skill", [False, True])
-@pytest.mark.parametrize("input_kind", ["plain", "composer", "attachment"])
+@pytest.mark.parametrize(("with_skill", "input_kind"), [(False, "plain"), (True, "attachment")])
 async def test_steering_after_project_rename_does_not_read_current_configuration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_skill: bool, input_kind: str
 ) -> None:

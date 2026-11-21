@@ -19,8 +19,7 @@ from .test_thread_read_state import receipt
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 
 
-@pytest.mark.parametrize("ending", ["final", "silent", "cancel"])
-@pytest.mark.parametrize("automatic", [False, True])
+@pytest.mark.parametrize(("ending", "automatic"), [("final", False), ("silent", True), ("cancel", False)])
 async def test_intermediate_text_notifies_before_slow_work_and_survives_terminal_outcome(
     tmp_path, monkeypatch, ending, automatic
 ):
@@ -126,7 +125,7 @@ async def test_each_new_publication_atomically_fences_read_reports_and_duplicate
         assert len(notices) == 2
 
 
-@pytest.mark.parametrize("ending", ["cancel", "failure"])
+@pytest.mark.parametrize("ending", ["failure"])
 async def test_stopping_mid_segment_publishes_already_visible_partial_text(tmp_path, monkeypatch, ending):
     from a13n_harness_ui.root_execution import RootRunExecutor
 

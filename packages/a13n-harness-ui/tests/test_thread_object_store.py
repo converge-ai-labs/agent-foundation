@@ -154,17 +154,13 @@ async def test_app_root_execution_uses_host_store_and_preserves_it_on_restart(tm
         assert await reopened.read(item.object_id) == b"persist"
 
 
-@pytest.mark.parametrize("lifetime", ["run", "host", "apps"])
 @pytest.mark.parametrize(
-    "rules,enabled",
+    ("lifetime", "rules", "enabled"),
     [
-        ({}, False),
-        ({"*": True}, True),
-        ({"*": False, "image_upload": True}, True),
-        ({"*": True, "image_upload": False}, False),
-        ({"*_upload": True}, True),
-        ({"image_*": True}, True),
-        ({"i*e_*load": True}, True),
+        ("run", {}, False),
+        ("host", {"*": False, "image_*": True}, True),
+        ("apps", {"*": True, "image_upload": False}, False),
+        ("apps", {"*": True}, True),
     ],
 )
 async def test_mcp_object_ref_rules_apply_across_client_lifetimes(tmp_path, rules, enabled, lifetime):

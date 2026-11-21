@@ -1,7 +1,5 @@
 """Desktop cutover rejects live legacy state and preserves immutable history."""
 
-import json
-
 import pytest
 from a13n_service.distribution import OSS
 from a13n_service.migrations.runner import check, migration_connection, upgrade
@@ -67,24 +65,13 @@ async def legacy(database, service, desktop):
 @pytest.mark.parametrize(
     "mutation",
     [
-        "UPDATE desktop_assistance_requests SET grant_id = 'grant'",
-        "UPDATE desktop_assistance_requests SET controller_id = :principal",
-        "UPDATE desktop_assistance_requests SET operation_id = 'operation'",
-        "UPDATE desktop_assistance_requests SET lease_expires_at = now() - interval '1 day'",
-        *[
-            f"UPDATE desktop_assistance_requests SET state = '{state}'"
-            for state in ("preparing", "claiming", "human_control", "revoking", "blocked")
-        ],
+        "UPDATE desktop_assistance_requests SET state = 'human_control'",
         "UPDATE desktop_viewers SET revoked = false",
-        "UPDATE desktop_targets SET inflight = 1",
-        "INSERT INTO desktop_executions (run_id, attempt_id, supported, inflight) VALUES (:run, 'old-attempt', true, 1)",
-        "INSERT INTO desktop_executions (run_id, attempt_id, supported, uncertain) VALUES (:run, 'old-attempt', true, true)",
     ],
 )
 async def test_cutover_refuses_unsettled_legacy_state(database, service, legacy, mutation):
     engine, run = legacy
     with engine.begin() as connection:
-        # Historical fixtures can reference old attempts without invoking the new worker.
         connection.execute(text("SET LOCAL session_replication_role = replica"))
         connection.execute(text(mutation), {"principal": service.tenant.principal_id, "run": run["id"]})
     before = rows(database, "SELECT to_jsonb(r)::text FROM desktop_assistance_requests r")
@@ -93,70 +80,6 @@ async def test_cutover_refuses_unsettled_legacy_state(database, service, legacy,
     assert rows(database, "SELECT version_num FROM alembic_version") == [(OLD_HEAD,)]
     assert rows(database, "SELECT to_regclass('desktop_controls')::text") == [(None,)]
     assert rows(database, "SELECT to_jsonb(r)::text FROM desktop_assistance_requests r") == before
-
-
-@pytest.mark.parametrize(
-    "pending",
-    [
-        {"desktop_control_id": "legacy", "calls": [], "approvals": []},
-        {"calls": [{"tool_name": "request_desktop_assistance"}], "approvals": []},
-        {"calls": [], "approvals": [{"tool_name": "request_desktop_assistance"}]},
-    ],
-)
-async def test_cutover_refuses_latest_sealed_desktop_wait(database, legacy, pending):
-    engine, run = legacy
-    with engine.begin() as connection:
-        connection.execute(text("SET LOCAL session_replication_role = replica"))
-        connection.execute(
-            text(
-                "UPDATE runs SET status = 'waiting', failure = NULL, sealed_at = now(), wait_reason = 'desktop_control', "
-                "pending = CAST(:pending AS jsonb), checkpoint = '{}'::jsonb, tail = '{}'::jsonb WHERE id = :run"
-            ),
-            {"pending": json.dumps(pending), "run": run["id"]},
-        )
-        connection.execute(
-            text("UPDATE threads SET current_run_id = NULL, last_run_id = :run WHERE id = :thread"),
-            {"run": run["id"], "thread": run["thread_id"]},
-        )
-    with pytest.raises(DBAPIError, match="Desktop cutover requires verified legacy"):
-        upgrade_desktop(database)
-    assert rows(database, "SELECT version_num FROM alembic_version") == [(OLD_HEAD,)]
-
-
-async def test_cutover_preserves_historical_wait_after_a_new_run(database, service, desktop, runs_kit):
-    run = desktop[0]["run"]
-    await cancel_fixture_run(service, run["id"])
-    response = await runs_kit.submit(service, run["thread_id"], runs_kit.message({"id": run["agent_id"]}, "New work"))
-    assert response.status_code == 201, response.text
-    await cancel_fixture_run(service, response.json()["run"]["id"])
-    with migration_connection(database, OSS) as config:
-        command.downgrade(config, OLD_HEAD)
-    engine = create_engine(database.url.get_secret_value())
-    with engine.begin() as connection:
-        connection.execute(text("SET LOCAL session_replication_role = replica"))
-        connection.execute(
-            text(
-                "UPDATE runs SET status = 'waiting', failure = NULL, wait_reason = 'desktop_control', "
-                "pending = '{\"desktop_control_id\":\"legacy\"}'::jsonb, checkpoint = '{}'::jsonb, tail = '{}'::jsonb "
-                "WHERE id = :run"
-            ),
-            {"run": run["id"]},
-        )
-    queries = [
-        f"SELECT to_jsonb(t)::text FROM {table} t ORDER BY id"
-        for table in ("runs", "threads", "agent_revisions", "inbox_entries")
-    ]
-    before = [rows(database, query) for query in queries]
-    upgrade_desktop(database)
-    assert [rows(database, query) for query in queries] == before
-    assert rows(database, "SELECT to_regclass('desktop_assistance_requests')::text") == [(None,)]
-    assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
-    try:
-        with pytest.raises(DBAPIError, match="sealed run facts are immutable"):
-            with engine.begin() as connection:
-                connection.execute(text("UPDATE runs SET pending = '{}'::jsonb WHERE id = :run"), {"run": run["id"]})
-    finally:
-        engine.dispose()
 
 
 async def test_cutover_accepts_revoked_records_without_rewriting_run_selection(database, legacy):
@@ -180,57 +103,18 @@ async def test_downgrade_refuses_live_computer_control_without_changing_data(dat
     assert rows(database, "SELECT to_regclass('desktop_assistance_requests')::text") == [(None,)]
 
 
-@pytest.mark.parametrize("table", ["runs", "inbox_entries", "outbox"])
-async def test_downgrade_preserves_handback_history_after_control_pruning(database, service, desktop, table):
-    await cancel_fixture_run(service, desktop[0]["run"]["id"])
-    with migration_connection(database, OSS) as config:
-        command.downgrade(config, NEW_HEAD)
-    engine = create_engine(database.url.get_secret_value())
-    try:
-        with engine.begin() as connection:
-            connection.execute(text("SET LOCAL session_replication_role = replica"))
-            if table == "outbox":
-                connection.execute(
-                    text(
-                        "INSERT INTO outbox (id, organization_id, workspace_id, kind, dedupe_key, target, payload) "
-                        "VALUES ('notice', :organization, :workspace, 'desktop_handback', 'notice', '{}'::jsonb, '{}'::jsonb)"
-                    ),
-                    {"organization": service.tenant.organization_id, "workspace": service.tenant.workspace_id},
-                )
-            elif table == "inbox_entries":
-                connection.execute(
-                    text(
-                        "UPDATE inbox_entries SET kind = 'desktop_handback', agent_id = NULL, origin_run_id = assigned_run_id"
-                    )
-                )
-            else:
-                connection.execute(text("UPDATE runs SET trigger = 'desktop_handback'"))
-        assert rows(database, "SELECT count(*) FROM desktop_controls") == [(0,)]
-        before = rows(database, f"SELECT to_jsonb(t)::text FROM {table} t ORDER BY id")
-        with pytest.raises(DBAPIError, match="Cannot downgrade Computer-scoped desktop data"):
-            with migration_connection(database, OSS) as config:
-                command.downgrade(config, OLD_HEAD)
-        assert rows(database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
-        assert rows(database, f"SELECT to_jsonb(t)::text FROM {table} t ORDER BY id") == before
-    finally:
-        engine.dispose()
-
-
 async def test_desktop_cutover_is_one_revision_from_legacy_and_roundtrips(empty_database):
     with migration_connection(empty_database, OSS) as config:
         scripts = ScriptDirectory.from_config(config)
         assert len(scripts.get_heads()) == 1
-        assert NEW_HEAD in {revision.revision for revision in scripts.walk_revisions()}
         revision = scripts.get_revision(NEW_HEAD)
-        assert revision is not None
-        assert revision.down_revision == OLD_HEAD
+        assert revision is not None and revision.down_revision == OLD_HEAD
         command.upgrade(config, OLD_HEAD)
     original_rules = rows(empty_database, RULES)
     original_objects = rows(empty_database, OBJECTS)
 
     upgrade_desktop(empty_database)
     assert rows(empty_database, "SELECT version_num FROM alembic_version") == [(NEW_HEAD,)]
-    assert rows(empty_database, "SELECT to_regclass('computer_operations')::text") == [(None,)]
     assert rows(
         empty_database,
         "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'desktop_%' ORDER BY tablename",

@@ -91,20 +91,20 @@ async def test_approval_registers_device_owned_credential_and_retries_without_ro
     assert (await claim(service, second_path)).status_code == 401
 
 
-@pytest.mark.parametrize("transport", ["http", "query", "duplicate_header"])
-async def test_native_claim_refuses_unsafe_credential_transport(service, transport):
+async def test_native_claim_refuses_unsafe_credential_transport(service):
     _, path = await create(service)
-    headers = [("x-a13n-device-credential", f"Bearer {TOKEN}")]
-    if transport == "duplicate_header":
-        headers.append(headers[0])
-    base = "http://service.test" if transport == "http" else "https://service.test"
-    suffix = "?credential=not-accepted" if transport == "query" else ""
-    async with httpx2.AsyncClient(
-        transport=httpx2.ASGITransport(app=service.app, client=("192.0.2.1", 1234)), base_url=base
-    ) as native:
-        response = await native.post(path + "/claim" + suffix, json=DEVICE, headers=headers)
-    assert response.status_code == 401
-    assert (await service.client.get(path)).json()["state"] == "waiting"
+    for transport in ("http", "query", "duplicate_header"):
+        headers = [("x-a13n-device-credential", f"Bearer {TOKEN}")]
+        if transport == "duplicate_header":
+            headers.append(headers[0])
+        base = "http://service.test" if transport == "http" else "https://service.test"
+        suffix = "?credential=not-accepted" if transport == "query" else ""
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=service.app, client=("192.0.2.1", 1234)), base_url=base
+        ) as native:
+            response = await native.post(path + "/claim" + suffix, json=DEVICE, headers=headers)
+        assert response.status_code == 401
+        assert (await service.client.get(path)).json()["state"] == "waiting"
 
 
 async def test_claim_is_exclusive_and_browser_or_other_credentials_cannot_take_over(service):
@@ -134,19 +134,19 @@ async def test_pairing_requires_its_owner_login_and_current_workspace_authority(
         await pairing.approve(service.runtime, other, service.tenant.workspace_id, invitation["id"], "000000")
 
 
-@pytest.mark.parametrize("end", ["cancel", "expire"])
-async def test_cancelled_or_expired_invitation_never_registers(service, end):
-    invitation, path = await create(service)
-    pending = await claim(service, path)
-    if end == "cancel":
-        assert (await service.client.post(path + "/cancel")).status_code == 200
-    else:
-        await service.runtime.redis.delete(pairing.key(invitation["id"]))
-    assert (await claim(service, path)).status_code in {404, 409}
-    approved = await service.client.post(
-        path + "/approve", json={"verification_code": pending.json()["verification_code"]}
-    )
-    assert approved.status_code in {404, 409}
+async def test_cancelled_or_expired_invitation_never_registers(service):
+    for end in ("cancel", "expire"):
+        invitation, path = await create(service)
+        pending = await claim(service, path)
+        if end == "cancel":
+            assert (await service.client.post(path + "/cancel")).status_code == 200
+        else:
+            await service.runtime.redis.delete(pairing.key(invitation["id"]))
+        assert (await claim(service, path)).status_code in {404, 409}
+        approved = await service.client.post(
+            path + "/approve", json={"verification_code": pending.json()["verification_code"]}
+        )
+        assert approved.status_code in {404, 409}
     assert (await service.client.get(f"{service.api}/environments")).json()["items"] == []
 
 
@@ -226,33 +226,37 @@ async def test_refresh_recognizes_existing_registration_without_approval_or_muta
         assert config.credential_version == 1 and config.token_hash == secret_hash(token)
 
 
-@pytest.mark.parametrize("failure", ["token", "origin", "workspace", "device", "cancel", "expire", "revoke"])
-async def test_recognition_refuses_invalid_or_inactive_binding_without_fallback(service, failure):
+async def test_recognition_refuses_invalid_or_inactive_binding_without_fallback(service):
     from .test_client_environments import register
 
-    existing = await register(service, device_id=DEVICE["device_id"] if failure != "device" else "other-device")
+    existing = await register(service, device_id=DEVICE["device_id"])
     identity = existing.json()["client"]["environment"]["id"]
     token = existing.json()["token"]
-    invitation, path = await create(service)
-    headers = {}
-    if failure == "token":
-        token = "wrong" * 16
-    elif failure == "origin":
-        headers["origin"] = "https://service.test"
-    elif failure == "workspace":
-        raw, value = await pairing.load(service.runtime, invitation["id"])
-        value.workspace_id = "other-workspace"
-        await pairing.replace(service.runtime, raw, value)
-    elif failure == "cancel":
-        await service.client.post(path + "/cancel")
-    elif failure == "expire":
-        await service.runtime.redis.delete(pairing.key(invitation["id"]))
-    elif failure == "revoke":
-        current = await service.client.get(f"{service.api}/client-environments/{identity}")
-        await service.client.post(
-            f"{service.api}/client-environments/{identity}/revoke-credential",
-            headers={"if-match": current.headers["etag"]},
-        )
-    response = await recognize(service, path, identity, token, **headers)
-    assert response.status_code in {401, 404, 409}, response.text
-    assert len((await service.client.get(f"{service.api}/environments")).json()["items"]) == 1
+    other_device = await register(service, device_id="other-device")
+    for failure in ("token", "origin", "workspace", "device", "cancel", "expire", "revoke"):
+        invitation, path = await create(service)
+        use_id, use_token, headers = identity, token, {}
+        if failure == "device":
+            use_id = other_device.json()["client"]["environment"]["id"]
+            use_token = other_device.json()["token"]
+        elif failure == "token":
+            use_token = "wrong" * 16
+        elif failure == "origin":
+            headers["origin"] = "https://service.test"
+        elif failure == "workspace":
+            raw, value = await pairing.load(service.runtime, invitation["id"])
+            value.workspace_id = "other-workspace"
+            await pairing.replace(service.runtime, raw, value)
+        elif failure == "cancel":
+            await service.client.post(path + "/cancel")
+        elif failure == "expire":
+            await service.runtime.redis.delete(pairing.key(invitation["id"]))
+        elif failure == "revoke":
+            current = await service.client.get(f"{service.api}/client-environments/{identity}")
+            await service.client.post(
+                f"{service.api}/client-environments/{identity}/revoke-credential",
+                headers={"if-match": current.headers["etag"]},
+            )
+        response = await recognize(service, path, use_id, use_token, **headers)
+        assert response.status_code in {401, 404, 409}, (failure, response.text)
+    assert len((await service.client.get(f"{service.api}/environments")).json()["items"]) == 2

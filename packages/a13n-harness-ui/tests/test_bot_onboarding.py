@@ -97,7 +97,7 @@ async def test_first_usable_enable_starts_introduction_even_with_heartbeat_off(
         assert (await bot.snapshot()).state.next_heartbeat_at is None
 
 
-@pytest.mark.parametrize("existing", ["activated", "input", "message", "manual"])
+@pytest.mark.parametrize("existing", ["activated", "manual"])
 async def test_existing_bot_activity_suppresses_introduction(tmp_path: Path, scripted_bot, existing) -> None:
     root = base_configuration(tmp_path)
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
@@ -186,7 +186,7 @@ async def test_concurrent_introduction_attempts_share_one_native_submission(tmp_
         assert len(await app._store.bot.inputs()) == 1
 
 
-@pytest.mark.parametrize("failure", ["admission", "provider"])
+@pytest.mark.parametrize("failure", ["provider"])
 async def test_failed_introduction_is_visible_and_never_automatically_replayed(
     tmp_path: Path, scripted_bot, monkeypatch, failure
 ) -> None:

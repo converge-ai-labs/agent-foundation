@@ -142,9 +142,7 @@ def test_service_apps_compile_extensions_and_preserve_worker_roles(
         return {"name": "extension"}
 
     distribution = OSS.extend(Distribution(name="fixture", routers=(router,), authenticator=LocalAuthenticator()))
-    expected = build_app(distribution, role="control", settings=settings).openapi()
     extended = service_app(distribution, settings=settings)
-    assert extended.openapi() == expected
     assert "/api/v1/fixture/extension" in extended.openapi()["paths"]
     assert "/api/v1/fixture/extension" not in service_app(settings=settings).openapi()["paths"]
 

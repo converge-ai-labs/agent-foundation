@@ -204,6 +204,37 @@ async def binding(runtime: Runtime, actor: Principal, workspace_id: str, thread_
         return BrowserBinding.model_validate(row) if row else None
 
 
+async def _binding_target(
+    session: AsyncSession,
+    actor: Principal,
+    scope: WorkspaceScope,
+    selected: BrowserBinding,
+    *,
+    authority: ExecutionAuthority | None = None,
+) -> BrowserRow:
+    row = await lifecycle.find(session, scope.workspace_id, selected.browser_id, lock=True)
+    lifecycle.usable(row)
+    await lifecycle.authorize_use(session, actor, row, scope, authority=authority)
+    return row
+
+
+async def bind_initial(
+    session: AsyncSession,
+    actor: Principal,
+    thread: ThreadRow,
+    selected: BrowserBinding,
+    *,
+    authority: ExecutionAuthority,
+) -> None:
+    """Install the desired binding before submitting the new Thread's first input."""
+    scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
+    row = await _binding_target(session, actor, scope, selected, authority=authority)
+    if row.expires_at is not None and row.expires_at <= await now(session):
+        raise conflict("browser", row.id, "browser_expired")
+    session.add(ThreadBrowserRow(thread_id=thread.id, workspace_id=thread.workspace_id, **selected.model_dump()))
+    await session.flush()
+
+
 async def bind(
     runtime: Runtime,
     actor: Principal,
@@ -220,9 +251,7 @@ async def bind(
         require_match(if_match, thread.id, thread.version)
         previous = await session.get(ThreadBrowserRow, thread_id)
         if body is not None:
-            row = await lifecycle.find(session, workspace_id, body.browser_id, lock=True)
-            lifecycle.usable(row)
-            await lifecycle.authorize_use(session, actor, row, scope)
+            await _binding_target(session, actor, scope, body)
         if previous is not None:
             await session.delete(previous)
             await session.flush()
@@ -253,10 +282,8 @@ async def freeze(
         selected = BrowserBinding.model_validate(row) if row else None
     if selected is None:
         return None
-    browser = await lifecycle.find(session, thread.workspace_id, selected.browser_id, lock=True)
-    lifecycle.usable(browser)
-    await lifecycle.authorize_use(
-        session, actor, browser, WorkspaceScope(thread.organization_id, thread.workspace_id), authority=authority
+    browser = await _binding_target(
+        session, actor, WorkspaceScope(thread.organization_id, thread.workspace_id), selected, authority=authority
     )
     browser.last_used_at = await now(session)
     return selected.model_dump(mode="json")

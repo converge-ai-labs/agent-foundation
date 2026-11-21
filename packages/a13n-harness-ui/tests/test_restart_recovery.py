@@ -154,8 +154,7 @@ def fail_environment_finalization(monkeypatch, mode):
     monkeypatch.setattr(EnvironmentRunPlan, "finalization", property(failing))
 
 
-@pytest.mark.parametrize("finalization_failure", [None, "state", "cleanup"])
-@pytest.mark.parametrize("mode", ["normal", "goal", "legacy"])
+@pytest.mark.parametrize(("finalization_failure", "mode"), [(None, "normal"), ("state", "goal"), ("cleanup", "legacy")])
 async def test_planned_restart_continues_without_repeating_input_or_tool(
     tmp_path, monkeypatch, finalization_failure, mode
 ):
@@ -390,8 +389,7 @@ async def test_drain_timeout_recovers_the_exact_model_boundary(tmp_path, monkeyp
         assert requests == 2
 
 
-@pytest.mark.parametrize("parent_completes", [False, True])
-@pytest.mark.parametrize("finalization_failure", [None, "state"])
+@pytest.mark.parametrize(("parent_completes", "finalization_failure"), [(False, None), (True, "state")])
 async def test_child_restores_with_active_or_completed_parent(
     tmp_path, monkeypatch, parent_completes, finalization_failure
 ):

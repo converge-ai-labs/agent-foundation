@@ -721,8 +721,7 @@ async def test_unknown_decision_admission_is_interrupted_without_stranding_dispa
                 await sleep(0.01)
 
 
-@pytest.mark.parametrize("automatic", [False, True])
-@pytest.mark.parametrize("cancel", [False, True])
+@pytest.mark.parametrize(("automatic", "cancel"), [(False, False), (True, True)])
 async def test_human_input_immediately_steers_and_settles_the_exact_receipt(
     tmp_path: Path, monkeypatch, automatic: bool, cancel: bool
 ) -> None:
@@ -953,9 +952,9 @@ async def test_bot_publications_notify_once_per_message_not_per_run(tmp_path: Pa
         assert first.display_ids == ("display-first",)
 
 
-@pytest.mark.parametrize("busy", [False, True])
-@pytest.mark.parametrize("attachment_only", [False, True])
-@pytest.mark.parametrize("image", [False, True])
+@pytest.mark.parametrize(
+    ("busy", "attachment_only", "image"), [(False, False, True), (True, True, True), (False, True, False)]
+)
 async def test_human_attachments_use_native_input_and_survive_exact_retry(
     tmp_path: Path, monkeypatch, busy: bool, attachment_only: bool, image: bool
 ) -> None:

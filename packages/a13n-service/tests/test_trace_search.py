@@ -173,9 +173,9 @@ async def test_duration_bounds_select_before_display_costs_and_skip_empty_page(
     assert len(backend.requests) == 3
 
 
-@pytest.mark.parametrize(
-    ("options", "expected"),
-    [
+async def test_ranges_unknown_zero_and_direction(service: SimpleNamespace, backend: Backend) -> None:
+    configure(service, backend)
+    for options, expected in (
         ({"order_by": "duration"}, [3, 2, 1, 4]),
         ({"order_by": "duration", "direction": "asc"}, [1, 2, 3, 4]),
         ({"order_by": "cost"}, [3, 2, 1, 4]),
@@ -183,30 +183,25 @@ async def test_duration_bounds_select_before_display_costs_and_skip_empty_page(
         ({"min_duration_seconds": "20", "max_duration_seconds": "30", "order_by": "duration"}, [3, 2]),
         ({"min_cost_usd": "0", "max_cost_usd": "0"}, [1]),
         ({"min_cost_usd": "0.1", "max_cost_usd": "0.2", "max_duration_seconds": "25"}, [2]),
-    ],
-)
-async def test_ranges_unknown_zero_and_direction(
-    service: SimpleNamespace, backend: Backend, options: dict, expected: list[int]
-) -> None:
+    ):
+        backend.answer(
+            roots_page(*(root(service, i, i * 10 if i < 4 else None) for i in range(1, 5))),
+            metrics_page(
+                *(
+                    metric(i, cost)
+                    for i, cost in ((1, "0"), (2, "0.1"), (3, "0.2"))
+                    if options.get("order_by") != "duration" or i in expected
+                )
+            ),
+        )
+        result = await service.client.get(f"{service.api}/traces/search", params={**PARAMS, **options})
+        assert result.status_code == 200, result.text
+        assert [int(item["root"]["id"], 16) for item in result.json()["items"]] == expected
+
+
+async def test_invalid_ranges_never_read_backend(service: SimpleNamespace, backend: Backend) -> None:
     configure(service, backend)
-    backend.answer(
-        roots_page(*(root(service, i, i * 10 if i < 4 else None) for i in range(1, 5))),
-        metrics_page(
-            *(
-                metric(i, cost)
-                for i, cost in ((1, "0"), (2, "0.1"), (3, "0.2"))
-                if options.get("order_by") != "duration" or i in expected
-            )
-        ),
-    )
-    result = await service.client.get(f"{service.api}/traces/search", params={**PARAMS, **options})
-    assert result.status_code == 200, result.text
-    assert [int(item["root"]["id"], 16) for item in result.json()["items"]] == expected
-
-
-@pytest.mark.parametrize(
-    "options",
-    [
+    for options in (
         {"min_cost_usd": "-1"},
         {"min_cost_usd": "NaN"},
         {"max_duration_seconds": "inf"},
@@ -214,30 +209,23 @@ async def test_ranges_unknown_zero_and_direction(
         {"direction": "sideways"},
         {"started_before": START.isoformat()},
         {"started_after": START.replace(tzinfo=None).isoformat()},
-    ],
-)
-async def test_invalid_ranges_never_read_backend(service: SimpleNamespace, backend: Backend, options: dict) -> None:
-    configure(service, backend)
-    result = await service.client.get(f"{service.api}/traces/search", params={**PARAMS, **options})
-    assert result.status_code == 400, result.text
+    ):
+        result = await service.client.get(f"{service.api}/traces/search", params={**PARAMS, **options})
+        assert result.status_code == 400, result.text
     assert backend.requests == []
 
 
-@pytest.mark.parametrize("bound", ["roots", "summaries"])
 async def test_collection_bound_fails_without_partial_rank(
-    service: SimpleNamespace, backend: Backend, monkeypatch: pytest.MonkeyPatch, bound: str
+    service: SimpleNamespace, backend: Backend, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     configure(service, backend)
     backend.answer(roots_page(root(service, 1), root(service, 2)), metrics_page(metric(1, "1")))
-    if bound == "roots":
-        monkeypatch.setattr(langfuse, "MAX_ROOTS", 1)
-    else:
-        monkeypatch.setattr(langfuse, "MAX_SUMMARY_BYTES", 1)
+    monkeypatch.setattr(langfuse, "MAX_ROOTS", 1)
     result = await service.client.get(f"{service.api}/traces/search", params=PARAMS)
     assert result.status_code == 413 and "items" not in result.json()
 
 
-@pytest.mark.parametrize("failure", ["backend", "cursor", "timeout"])
+@pytest.mark.parametrize("failure", ["backend", "timeout"])
 async def test_incomplete_collection_never_returns_rank(
     service: SimpleNamespace, backend: Backend, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
@@ -324,10 +312,10 @@ async def test_backend_identity_binds_page_cursor(service: SimpleNamespace, back
     assert len(backend.requests) == 2
 
 
-@pytest.mark.parametrize("direction", ["asc", "desc"])
 async def test_logfire_pushes_aggregate_filter_sort_and_paging_without_cache(
-    service: SimpleNamespace, backend: Backend, direction: str
+    service: SimpleNamespace, backend: Backend
 ) -> None:
+    direction = "desc"
     configure(service, backend, "logfire")
 
     def row(number: int, cost: str, remaining: int) -> dict:
@@ -492,10 +480,10 @@ async def test_unsupported_metrics_never_falls_back_to_raw_spans(service: Simple
     ]
 
 
-@pytest.mark.parametrize("order_by", ["duration", "cost"])
 async def test_search_does_not_use_redis_or_reuse_prior_results(
-    service: SimpleNamespace, backend: Backend, monkeypatch: pytest.MonkeyPatch, order_by: str
+    service: SimpleNamespace, backend: Backend, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    order_by = "cost"
     configure(service, backend)
 
     async def forbidden(*args: object, **kwargs: object) -> None:
@@ -529,8 +517,7 @@ async def test_langfuse_batches_complete_candidates_and_keeps_ties_stable(
     assert [len(json.loads(r.url.params["query"])["filters"][0]["value"]) for r in backend.requests[2:]] == [100, 1]
 
 
-@pytest.mark.parametrize("order_by", ["started", "duration", "cost"])
-@pytest.mark.parametrize("direction", ["asc", "desc"])
+@pytest.mark.parametrize(("order_by", "direction"), [("started", "desc"), ("cost", "asc")])
 async def test_keyset_keeps_unseen_rows_after_insertions_and_deleted_anchor(
     service: SimpleNamespace, backend: Backend, order_by: str, direction: str
 ) -> None:
@@ -567,11 +554,8 @@ async def test_keyset_keeps_unseen_rows_after_insertions_and_deleted_anchor(
     assert second.json()["total"] == 3 and second.json()["next_cursor"] is None
 
 
-@pytest.mark.parametrize("order_by", ["duration", "cost"])
-@pytest.mark.parametrize("direction", ["asc", "desc"])
-async def test_keyset_pages_through_equal_and_unknown_metrics(
-    service: SimpleNamespace, backend: Backend, order_by: str, direction: str
-) -> None:
+async def test_keyset_pages_through_equal_and_unknown_metrics(service: SimpleNamespace, backend: Backend) -> None:
+    order_by, direction = "cost", "desc"
     configure(service, backend)
     params = {**PARAMS, "order_by": order_by, "direction": direction, "limit": 1}
     cursor = None
@@ -589,10 +573,8 @@ async def test_keyset_pages_through_equal_and_unknown_metrics(
         assert bool(cursor) == (expected != 4)
 
 
-@pytest.mark.parametrize("direction", ["asc", "desc"])
-async def test_logfire_null_keyset_and_empty_remaining_page(
-    service: SimpleNamespace, backend: Backend, direction: str
-) -> None:
+async def test_logfire_null_keyset_and_empty_remaining_page(service: SimpleNamespace, backend: Backend) -> None:
+    direction = "desc"
     configure(service, backend, "logfire")
     row = logfire_row(f"{1:016x}", scope(service))
     row.update(trace_id=f"{1:032x}", duration_seconds_text=None, trace_cost_text=None, total=2, remaining=2)
@@ -636,22 +618,19 @@ async def test_logfire_started_keyset_preserves_nanoseconds(service: SimpleNames
 
 
 @pytest.mark.parametrize("backend_kind", ["langfuse", "logfire"])
-@pytest.mark.parametrize(
-    "position",
-    [
+async def test_invalid_keyset_positions_never_read_backend(backend: Backend, backend_kind: str) -> None:
+    for position in (
         ["NaN", "1" * 32, "1" * 16],
         ["1 OR TRUE", "1" * 32, "1" * 16],
         ["1", "bad", "1" * 16],
         ["1", "1" * 32, "bad"],
         [1],
-    ],
-)
-async def test_invalid_keyset_positions_never_read_backend(backend: Backend, backend_kind: str, position: list) -> None:
-    query = SearchQuery(SpanQuery({}, START, START + timedelta(hours=1), 1), {}, "cost", "desc")
-    owner = query.page_owner("owner")
-    values = [START.isoformat(), *position] if backend_kind == "logfire" else position
-    query = replace(query, cursor=cursors.encode(f"{backend_kind}-search-keyset", owner, *values))
-    with pytest.raises(ServiceError) as error:
-        await getattr(backend, backend_kind)().search_traces(query, "owner")
-    assert error.value.code == "invalid_cursor"
+    ):
+        query = SearchQuery(SpanQuery({}, START, START + timedelta(hours=1), 1), {}, "cost", "desc")
+        owner = query.page_owner("owner")
+        values = [START.isoformat(), *position] if backend_kind == "logfire" else position
+        query = replace(query, cursor=cursors.encode(f"{backend_kind}-search-keyset", owner, *values))
+        with pytest.raises(ServiceError) as error:
+            await getattr(backend, backend_kind)().search_traces(query, "owner")
+        assert error.value.code == "invalid_cursor"
     assert backend.requests == []

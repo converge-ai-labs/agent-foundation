@@ -4500,5 +4500,6 @@
   "a13n will stop using this connection and cancel any authorization in progress. Its settings will be kept. The result reports whether authorization was also removed from the provider.": "a13n will stop using this connection and cancel any authorization in progress. Its settings will be kept. The result reports whether authorization was also removed from the provider.",
   "This connection remains usable while you complete the new authorization. Starting again replaces the previous request.": "This connection remains usable while you complete the new authorization. Starting again replaces the previous request.",
   "Complete authorization on the provider's page. Starting again replaces the previous request.": "Complete authorization on the provider's page. Starting again replaces the previous request.",
-  "Authorize": "Authorize"
+  "Authorize": "Authorize",
+  "Sessions for this agent in the selected period, sorted by spend (highest first).": "Sessions for this agent in the selected period, sorted by spend (highest first)."
 }

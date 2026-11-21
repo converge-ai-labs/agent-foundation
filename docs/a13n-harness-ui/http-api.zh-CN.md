@@ -48,6 +48,12 @@ description: 通过 Harness UI 提供的 HTTP API 与 SSE 事件流，以编程�
 
 所有者 API 请求使用 `Authorization` 请求头。监听器还校验 `Host` 和同源 `Origin`。不要把密钥放进查询参数或日志。`--dangerous-skip-permissions` 会关闭监听器认证，不能用来解决认证配置问题。实例密钥客户端共享工作台权限；受限访客访问见[分享](#subscription-accounts-and-sharing)。
 
+## 通过 MCP 管理 Project 和 Thread
+
+在支持 Streamable HTTP 的 MCP 客户端中，把 WebUI 地址加上 `/api/automation/mcp` 作为服务端点。将 `Authorization` 请求头设为 `Bearer <instance-key>`，使用你登录 WebUI 时的同一个实例密钥。请通过客户端的密钥管理功能配置该值。范围分享链接不授予 MCP 访问权。
+
+用 `list_projects`、`get_project` 和 `create_project` 查找或创建 Project。用 `list_threads` 查找对话；启动新对话时，调用 `create_thread` 并传入 `prompt`，按需指定 `project_id`；继续已有对话时，调用 `send_thread_message` 并传入 `thread_id` 和 `message`。Thread 空闲时消息会启动一个 Run；运行中则尝试将消息送入当前 Run。用 `get_thread` 和 `thread_id` 查进度、读已保存的结果；回执只代表受理。如果创建返回了 `thread_id` 但 Run 未获受理，请保留这个 ID，先检查 Thread 再重试。
+
 ## 创建 Thread 并提交输入
 
 将以下代码保存为 `conversation.sh`。它需要 Bash、curl、jq、上面两个环境变量，以及可用的默认配置。脚本创建一个 Thread，只提交一次，轮询回执，然后读取保存的历史。提示词仍按所选 Agent 的实际权限运行。

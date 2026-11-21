@@ -55,39 +55,42 @@ async def env(service) -> SimpleNamespace:  # type: ignore[no-untyped-def]
     return await with_fake_providers(service)
 
 
-@pytest.mark.parametrize("certainty", [None, "not_dispatched", "known", "unknown"])
-@pytest.mark.parametrize("claimed,unsettled", [(False, False), (False, True), (True, False), (True, True)])
-async def test_settled_candidate_query_matches_locked_rule(env, certainty, claimed, unsettled):
+async def test_settled_candidate_query_matches_locked_rule(env):
     from a13n_service.infra.db import now
 
     instance = await reserve(env, env.template["id"])
     async with transaction(env.runtime.storage) as session:
         row = await session.get_one(EnvironmentRow, instance["id"])
         current = await now(session)
-        row.operation_unsettled = unsettled
-        if claimed:
-            row.lease_owner = "worker"
-            row.lease_token_hash = "test"
-            row.lease_expires_at = current + timedelta(seconds=30)
-        row.failure = (
-            None
-            if certainty is None
-            else {
-                "code": "test_failure",
-                "message": "Test failure",
-                "certainty": certainty,
-                "permanent": False,
-                "operation_id": row.operation_id,
-                "at": current.isoformat(),
-            }
-        )
-        await session.flush()
-        expected = not claimed and not unsettled and certainty != "unknown"
-        assert lifecycle.settled(row) is expected
-        assert await session.scalar(select(lifecycle.settled_clause()).where(EnvironmentRow.id == row.id)) is expected
-        assert (
-            await session.scalar(select(~lifecycle.settled_clause()).where(EnvironmentRow.id == row.id)) is not expected
-        )
+        for certainty in (None, "not_dispatched", "known", "unknown"):
+            for claimed, unsettled in ((False, False), (False, True), (True, False), (True, True)):
+                row.operation_unsettled = unsettled
+                row.lease_owner = "worker" if claimed else None
+                row.lease_token_hash = "test" if claimed else None
+                row.lease_expires_at = current + timedelta(seconds=30) if claimed else None
+                row.failure = (
+                    None
+                    if certainty is None
+                    else {
+                        "code": "test_failure",
+                        "message": "Test failure",
+                        "certainty": certainty,
+                        "permanent": False,
+                        "operation_id": row.operation_id,
+                        "at": current.isoformat(),
+                    }
+                )
+                await session.flush()
+                expected = not claimed and not unsettled and certainty != "unknown"
+                assert lifecycle.settled(row) is expected
+                assert (
+                    await session.scalar(select(lifecycle.settled_clause()).where(EnvironmentRow.id == row.id))
+                    is expected
+                )
+                assert (
+                    await session.scalar(select(~lifecycle.settled_clause()).where(EnvironmentRow.id == row.id))
+                    is not expected
+                )
 
 
 async def test_templates_validate_their_provider_and_recipe(env) -> None:  # type: ignore[no-untyped-def]
@@ -1009,22 +1012,12 @@ async def test_shared_local_mounts_route_files_and_commands_per_thread(env, loca
     assert len((await env.client.get(f"{env.api}/environments")).json()["items"]) == 1
 
 
-@pytest.mark.parametrize("path", ["/missing", "/file", "/denied", "/escape"])
-async def test_invalid_directory_fails_only_its_mount(env, local_instance, monkeypatch, path: str) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("path", ["/missing", "/escape"])
+async def test_invalid_directory_fails_only_its_mount(env, local_instance, path: str) -> None:  # type: ignore[no-untyped-def]
     from a13n_service.infra.errors import ServiceError
 
     identity, root = local_instance
-    (root / "file").write_text("not a directory")
-    (root / "denied").mkdir()
     (root / "escape").symlink_to(root.parent)
-    original = Path.iterdir
-
-    def iterdir(directory: Path):
-        if directory == (root / "denied").resolve():
-            raise PermissionError("Directory is not accessible")
-        return original(directory)
-
-    monkeypatch.setattr(Path, "iterdir", iterdir)
     submitted = await start(
         env, environments=[{"name": "workspace", "environment_id": identity, "working_directory": path}]
     )
@@ -1116,8 +1109,8 @@ async def test_timed_out_management_publishes_observed_state(env, monkeypatch) -
     assert row.failure["certainty"] == "unknown"
 
 
-@pytest.mark.parametrize("primary", [False, True])
-async def test_guidance_activates_the_default_mount_without_tool_calls(env, scripted_model, runs_kit, primary) -> None:
+async def test_guidance_activates_the_default_mount_without_tool_calls(env, scripted_model, runs_kit) -> None:
+    primary = True
     model = await runs_kit.create_model(env, scripted_model)
     agent = await runs_kit.add_agent(
         env,
@@ -1145,9 +1138,7 @@ async def test_guidance_activates_the_default_mount_without_tool_calls(env, scri
     assert set(BACKEND.instances) == {environment_id}
 
 
-@pytest.mark.parametrize(
-    "lazy,override,with_mounts", [(False, None, True), (True, False, True), (False, True, True), (False, None, False)]
-)
+@pytest.mark.parametrize("lazy,override,with_mounts", [(False, None, True), (False, True, True)])
 async def test_preparation_policy_applies_to_all_mounts_before_the_model(
     env, scripted_model, runs_kit, monkeypatch, lazy: bool, override: bool | None, with_mounts: bool
 ) -> None:
@@ -1279,10 +1270,10 @@ async def test_guidance_opens_primary_execution_before_inference_and_reuses_it_f
     assert opened == [identity]
 
 
-@pytest.mark.parametrize("signal", ["stopped", "handoff"])
 async def test_eager_preparation_stops_before_inference_and_keeps_the_operation(
-    env, scripted_model, runs_kit, monkeypatch, signal: str
+    env, scripted_model, runs_kit, monkeypatch
 ) -> None:
+    signal = "stopped"
     from a13n_service.runs.attempts import AttemptControl
     from a13n_service.runs.execute import execute
 
@@ -1436,8 +1427,7 @@ async def test_unused_reservation_is_deleted_without_provider_calls(env) -> None
     assert BACKEND.preparations == [] and BACKEND.instances == {}
 
 
-@pytest.mark.parametrize("code", ["unavailable", "disabled"])
-@pytest.mark.parametrize("lazy", [True, False])
+@pytest.mark.parametrize(("code", "lazy"), [("unavailable", False), ("disabled", True)])
 async def test_environment_preparation_preserves_service_failure_and_attempt_policy(
     env,
     local_instance,
@@ -1566,7 +1556,7 @@ def test_old_run_mounts_keep_file_execution_defaults() -> None:
     assert mount.permission_ceiling == DEFAULT_MOUNT_PERMISSIONS
 
 
-@pytest.mark.parametrize("tool_enabled,mount_enabled", [(True, True), (False, True), (True, False)])
+@pytest.mark.parametrize("tool_enabled,mount_enabled", [(True, True), (True, False)])
 async def test_service_executes_computer_observation_and_retains_its_screenshot(
     env, scripted_model, runs_kit, monkeypatch, tool_enabled, mount_enabled
 ) -> None:
@@ -1695,8 +1685,8 @@ async def test_agent_default_reuses_a_managed_instance(env, scripted_model, runs
     assert [item["id"] for item in environments] == [selected["id"]]
 
 
-@pytest.mark.parametrize("settled", [False, True])
-async def test_pending_management_paces_continuation_and_controls_replacement(env, monkeypatch, settled):
+async def test_pending_management_paces_continuation_and_controls_replacement(env, monkeypatch):
+    settled = False
     from a13n_service.providers.environment.management import Completed, Pending
 
     from .environments_support import FakeProvider

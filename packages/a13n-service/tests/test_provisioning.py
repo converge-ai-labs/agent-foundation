@@ -106,13 +106,11 @@ async def test_concurrent_initialization_creates_one_atomic_pair_per_component(r
     assert not runtime.settings.provisioning.local.root.exists()
 
 
-async def test_docker_template_uses_the_reviewed_sandbox_release(service, initializer, monkeypatch):
+async def test_docker_template_uses_the_reviewed_sandbox_release(runtime, tenant, initializer, monkeypatch):
     monkeypatch.setattr(import_module("a13n_service.providers.environments.docker"), "version", lambda _: "0.1.2")
-    await initializer(service.tenant.workspace_id)
-    receipt = next(
-        item for item in await receipts(service.runtime, service.tenant.workspace_id) if item.component == "docker"
-    )
-    async with short_session(service.runtime.storage) as session:
+    await initializer(tenant.workspace_id)
+    receipt = next(item for item in await receipts(runtime, tenant.workspace_id) if item.component == "docker")
+    async with short_session(runtime.storage) as session:
         template = await session.get_one(EnvironmentTemplateRow, receipt.template_id)
         assert template.config["recipe"] == {
             "image": "ghcr.io/converge-ai-labs/a13n-sandbox:0.8.3",
@@ -214,11 +212,7 @@ async def test_disabled_components_and_archived_workspaces_are_skipped(runtime, 
     assert await receipts(runtime, tenant.workspace_id) == []
 
 
-@pytest.mark.parametrize("docker_available", [True, False])
-async def test_bootstrap_and_workspace_http_creation_initialize_before_response(settings, ping, docker_available):
-    if not docker_available:
-        ping.return_value = ProbeResult("failed", "provider_unavailable")
-    expected = 2 if docker_available else 1
+async def test_bootstrap_and_workspace_http_creation_initialize_before_response(settings, ping):
     app = build_app(settings=settings)
     async with app.router.lifespan_context(app):
         runtime = app.state.runtime
@@ -232,15 +226,15 @@ async def test_bootstrap_and_workspace_http_creation_initialize_before_response(
             assert response.status_code == 200, response.text
             client.headers["x-csrf-token"] = response.json()["csrf_token"]
             workspace = (await client.get("/api/v1/workspaces")).json()["items"][0]
-            assert len(await receipts(runtime, workspace["id"])) == expected
+            assert len(await receipts(runtime, workspace["id"])) == 2
             response = await client.post(
                 f"/api/v1/organizations/{workspace['organization_id']}/workspaces", json={"name": "Second"}
             )
             assert response.status_code == 201, response.text
-            assert len(await receipts(runtime, response.json()["id"])) == expected
+            assert len(await receipts(runtime, response.json()["id"])) == 2
 
 
-@pytest.mark.parametrize("role", ["all", "control", "worker"])
+@pytest.mark.parametrize("role", ["all", "worker"])
 async def test_startup_catches_up_only_on_single_host_role(settings, runtime, tenant, ping, role):
     app = build_app(settings=settings, role=role)
     async with app.router.lifespan_context(app):

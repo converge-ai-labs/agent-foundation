@@ -198,6 +198,8 @@ class Source:
     request_digest: str | None = None
     # A continuation keeps its Run-only primary rather than repeating fresh allocation.
     environment_mount: EnvironmentMount | None = None
+    # New resource selections commit only with their first accepted Run.
+    atomic_initial_acceptance: bool = False
 
     @classmethod
     def message(
@@ -397,6 +399,22 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         latest = await session.get_one(RunRow, thread.last_run_id)
         context = stored.require(RunOptions, latest.options, kind="run", id=latest.id).context
         options = options.model_copy(update={"context": context or RequestContext()})
+    # Browser locks precede Environment locks, including those taken for primary selection.
+    from a13n_service.runs.browsers.service import freeze as freeze_browser
+
+    browser_binding = await freeze_browser(
+        session,
+        principal,
+        thread,
+        source.authority,
+        inherited=(
+            await _run(session, source.entry.origin_run_id)
+            if source.trigger == "browser_handback" and source.entry is not None
+            else parent
+            if source.trigger == "resume"
+            else None
+        ),
+    )
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
     primary_override: EnvironmentMount | MountCreate | None = source.environment_mount
     if options.environment is not None and primary_override is None:
@@ -437,21 +455,6 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
                 limit=runtime.settings.environments.managed_count,
                 session_configuration=revision.config.default_session_configuration,
             )
-    from a13n_service.runs.browsers.service import freeze as freeze_browser
-
-    browser_binding = await freeze_browser(
-        session,
-        principal,
-        thread,
-        source.authority,
-        inherited=(
-            await _run(session, source.entry.origin_run_id)
-            if source.trigger == "browser_handback" and source.entry is not None
-            else parent
-            if source.trigger == "resume"
-            else None
-        ),
-    )
     mounts = await freeze_mounts(
         session,
         thread,
@@ -612,8 +615,8 @@ async def accept(
     """Start the thread's next run from its eligible queued source, if any. Rejected entries fail in place.
 
     `explicit` is the source of the entry the caller just appended, already loaded and checked. A transient
-    refusal (`unavailable`) is not the entry's fault: it aborts the transaction, so a retry of the caller's
-    operation or the advance sweep can still start the entry.
+    refusal (`unavailable`) aborts the transaction so the caller or sweep can retry. A first Entry submitted with
+    atomic initial resources also aborts on acceptance refusal so the caller can roll back the new Thread.
     """
     last = await _run(session, thread.last_run_id)
     if not eligible(thread, last):
@@ -631,7 +634,9 @@ async def accept(
                 async with session.begin_nested():
                     return await start_run(session, runtime, thread, source)
         except ServiceError as error:
-            if error.code == "unavailable":
+            if error.code == "unavailable" or (
+                explicit is not None and entry is explicit.entry and explicit.atomic_initial_acceptance
+            ):
                 raise
             source = Failure.of(error)
         inbox.fail(entry, source, at=await now(session))

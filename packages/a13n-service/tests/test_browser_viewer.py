@@ -36,29 +36,41 @@ async def human_browser(service, runs_kit, scripted_model, monkeypatch, url="ws:
     return result, lease
 
 
-@pytest.mark.parametrize("refusal", ["token", "episode", "generation", "returning", "expiry", "provider", "controller"])
-async def test_viewer_rechecks_current_grant(service, runs_kit, scripted_model, monkeypatch, refusal):
+async def test_viewer_rechecks_current_grant(service, runs_kit, scripted_model, monkeypatch):
     browser, lease = await human_browser(service, runs_kit, scripted_model, monkeypatch)
     assert (await viewer.authorize(service.runtime, browser["id"], "fixture-token")).password == "fixture-password"
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(BrowserRow, browser["id"])
-        assert row is not None
-        if refusal == "episode":
-            row.episode += 1
-        elif refusal == "generation":
-            row.generation += 1
-        elif refusal == "returning":
-            row.control = "returning"
-        elif refusal == "expiry":
-            row.control_expires_at = await now(session) - timedelta(seconds=1)
-        elif refusal == "provider":
-            provider = await session.get(BrowserProviderRow, row.provider_id)
-            provider.enabled = False
-        elif refusal == "controller":
-            thread = await session.get(ThreadRow, lease.thread_id)
-            thread.archived_at = await now(session)
     with pytest.raises(ServiceError, match="unavailable"):
-        await viewer.authorize(service.runtime, browser["id"], "wrong" if refusal == "token" else "fixture-token")
+        await viewer.authorize(service.runtime, browser["id"], "wrong")
+    for refusal in ("episode", "generation", "returning", "expiry", "provider", "controller"):
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get(BrowserRow, browser["id"])
+            assert row is not None
+            saved = (row.episode, row.generation, row.control, row.control_expires_at)
+            if refusal == "episode":
+                row.episode += 1
+            elif refusal == "generation":
+                row.generation += 1
+            elif refusal == "returning":
+                row.control = "returning"
+            elif refusal == "expiry":
+                row.control_expires_at = await now(session) - timedelta(seconds=1)
+            elif refusal == "provider":
+                provider = await session.get(BrowserProviderRow, row.provider_id)
+                provider.enabled = False
+            elif refusal == "controller":
+                thread = await session.get(ThreadRow, lease.thread_id)
+                thread.archived_at = await now(session)
+        with pytest.raises(ServiceError, match="unavailable"):
+            await viewer.authorize(service.runtime, browser["id"], "fixture-token")
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get(BrowserRow, browser["id"])
+            row.episode, row.generation, row.control, row.control_expires_at = saved
+            if refusal == "provider":
+                provider = await session.get(BrowserProviderRow, row.provider_id)
+                provider.enabled = True
+            elif refusal == "controller":
+                thread = await session.get(ThreadRow, lease.thread_id)
+                thread.archived_at = None
 
 
 async def test_viewer_relay_and_public_credentials(service, runs_kit, scripted_model, monkeypatch):

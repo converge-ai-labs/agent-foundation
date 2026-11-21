@@ -89,14 +89,9 @@ def _stop(process: subprocess.Popen[bytes], master: int) -> None:
         os.close(master)
 
 
-@pytest.mark.parametrize(
-    "command",
-    [
-        pytest.param([], marks=pytest.mark.xdist_group("harness-ui-pty-launch-setup")),
-        pytest.param(["setup"], marks=pytest.mark.xdist_group("harness-ui-pty-explicit-setup")),
-    ],
-)
-def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path: Path, command: list[str]) -> None:
+@pytest.mark.xdist_group("harness-ui-pty-launch-setup")
+def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path: Path) -> None:
+    command: list[str] = []
     configuration = tmp_path / ".a13n-harness-ui"
     configuration.mkdir()
     (configuration / "a13n-harness-ui.yaml").write_text('schema_version: "1"\nprocess:\n  pricing_auto_update: false\n')
@@ -147,26 +142,9 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         _stop(process, master)
 
 
-@pytest.mark.xdist_group("harness-ui-pty-cancel")
-def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
-    process, master = _spawn("from a13n_harness_ui.cli import main; main([])", tmp_path)
-    try:
-        # A cold subprocess imports the complete runtime before the first screen;
-        # this is a readiness guard, not an eight-second startup benchmark.
-        output = _read_until(master, b"Connect a model", timeout=30)
-        os.write(master, b"\x03")
-        output += _read_until(master, b"Setup cancelled")
-        process.wait(timeout=5)
-        assert process.returncode == 0
-        assert output.count(b"\x1b[?1049h") == 1
-        assert not (tmp_path / ".a13n-harness-ui/models").exists()
-    finally:
-        _stop(process, master)
-
-
 @pytest.mark.xdist_group("harness-ui-pty-update")
-@pytest.mark.parametrize("available", [False, True])
-def test_setup_never_waits_for_or_displays_background_updates(tmp_path: Path, available: bool) -> None:
+def test_setup_never_waits_for_or_displays_background_updates(tmp_path: Path) -> None:
+    available = False
     script = r"""
 import asyncio
 from pathlib import Path

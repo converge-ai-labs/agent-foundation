@@ -167,7 +167,10 @@ async def process(runtime: Runtime, schedule_id: str) -> None:
                     actor,
                     scope,
                     thread,
-                    Message(delivery="next_run", **invocation.model_dump(exclude={"memories"})),
+                    Message(
+                        delivery="next_run",
+                        **invocation.model_dump(exclude={"memories", "environments", "browser_binding"}),
+                    ),
                     None,
                     authority=authority,
                     schedule_occurrence_id=item.id,
