@@ -28,7 +28,7 @@ from a13n_service.runs.backlog import report_backlog
 from a13n_service.runs.claim import claim
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.seal import stop
-from a13n_service.runs.tables import RunRow, ThreadRow
+from a13n_service.runs.tables import InboxEntryRow, RunRow, ThreadRow
 from a13n_service.settings import Settings
 from opentelemetry import metrics
 from opentelemetry.sdk.metrics import MeterProvider
@@ -585,24 +585,25 @@ async def test_caught_item_failures_do_not_turn_a_completed_scan_into_a_successf
     assert measured(reader, "a13n.sweep.stale_after", {"sweep": name}) == pytest.approx(3.03)
 
 
-async def test_partial_backlog_scan_does_not_refresh_or_replace_cached_snapshot(service, reader, monkeypatch):
+async def test_partial_backlog_scan_does_not_refresh_or_replace_cached_snapshot(runtime, reader, monkeypatch):
     from a13n_service.runs import backlog
 
-    await report_backlog(service.runtime.storage)
+    # Drive the scan directly without starting the application's background reporter.
+    snapshot = await report_backlog(runtime.storage)
     before = measured(reader, "a13n.backlog.updated", {"queue": "runs"})
-    size = measured(reader, "a13n.backlog.size", {"queue": "runs"})
-    calls = 0
+    size = snapshot["runs"][0]
+    due = backlog._due
 
-    async def fail_second(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        if calls == 2:
+    async def fail_inbox(session, available_at, *args, **kwargs):
+        if available_at is RunRow.available_at:
+            return size + 1, None
+        if available_at is InboxEntryRow.created_at:
             raise ConnectionError("snapshot interrupted")
-        return 42, None
+        return await due(session, available_at, *args, **kwargs)
 
-    monkeypatch.setattr(backlog, "_due", fail_second)
-    with pytest.raises(ConnectionError):
-        await report_backlog(service.runtime.storage)
+    monkeypatch.setattr(backlog, "_due", fail_inbox)
+    with pytest.raises(ConnectionError, match="snapshot interrupted"):
+        await report_backlog(runtime.storage)
     assert measured(reader, "a13n.backlog.updated", {"queue": "runs"}) == before
     assert measured(reader, "a13n.backlog.size", {"queue": "runs"}) == size
     assert measured(reader, "a13n.backlog.limit", {"queue": "runs"}) == 10000
