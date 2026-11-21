@@ -16,10 +16,8 @@ from a13n_service.runs.tables import RunRow
 PUBLISH_DROPS = meter.create_counter("a13n.run_seal.publish.dropped", unit="{hint}")
 
 
-def channel(runtime: Runtime) -> str:
-    """Pub/Sub ignores Redis SELECT; route hints by the configured logical database."""
-    db = runtime.redis.connection_pool.connection_kwargs.get("db", 0)
-    return f"a13n:run-seals:v1:db:{db}"
+STREAM_KEY = "a13n:run-seals:v1"
+GROUP = "a13n-app-seals"
 
 
 class RunSealEvent(BaseModel):
@@ -38,7 +36,7 @@ class RunSealEvent(BaseModel):
 async def _publish(runtime: Runtime, event: RunSealEvent) -> None:
     # A lost hint is recovered by the App's sweep; settlement never waits on App code.
     async with asyncio.timeout(min(runtime.settings.redis.timeout, 0.5)):
-        await runtime.redis.publish(channel(runtime), event.model_dump_json())
+        await runtime.redis.xadd(STREAM_KEY, {"data": event.model_dump_json()}, maxlen=10000, approximate=True)
 
 
 async def _handoff(runtime: Runtime, event: RunSealEvent) -> None:
@@ -54,6 +52,7 @@ async def _handoff(runtime: Runtime, event: RunSealEvent) -> None:
 async def publish_after_commit(session: AsyncSession, runtime: Runtime, run: RunRow, status: Sealed) -> None:
     if not any(app.has_run_seal_subscribers for app in runtime.apps.apps):
         return
+    options = await session.scalar(select(RunRow.options).where(RunRow.id == run.id))
     event = RunSealEvent(
         organization_id=run.organization_id,
         workspace_id=run.workspace_id,
@@ -62,6 +61,6 @@ async def publish_after_commit(session: AsyncSession, runtime: Runtime, run: Run
         run_id=run.id,
         principal_id=run.principal_id,
         status=status,
-        labels=dict((await session.scalar(select(RunRow.labels).where(RunRow.id == run.id))) or {}),
+        labels=dict((options or {}).get("labels") or {}),
     )
     after_commit(session, partial(_handoff, runtime, event))

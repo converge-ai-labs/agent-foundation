@@ -8,9 +8,14 @@ import pytest
 from a13n_service.app_definitions import AppDefinition, InstalledApp, RunSealSubscription
 from a13n_service.app_plugins import AppCatalog
 from a13n_service.infra.db import transaction
-from a13n_service.runs.seal_events import RunSealEvent, channel, publish_after_commit
+from a13n_service.runs.seal_events import GROUP, STREAM_KEY, RunSealEvent, publish_after_commit
 
 pytestmark = pytest.mark.anyio
+
+
+async def reset_group(runtime):
+    await runtime.redis.delete(STREAM_KEY)
+    await runtime.redis.xgroup_create(STREAM_KEY, GROUP, id="$", mkstream=True)
 
 
 async def test_seal_hints_commit_rollback_and_no_subscribers(service):
@@ -28,28 +33,24 @@ async def test_seal_hints_commit_rollback_and_no_subscribers(service):
         principal_id="prn_test",
         labels={},
     )
-    async with runtime.redis.pubsub() as listener:
-        await listener.subscribe(channel(runtime))
-        await listener.get_message(timeout=1)
-        with pytest.raises(ValueError):
-            async with transaction(runtime.storage) as session:
-                await publish_after_commit(session, runtime, run, "completed")
-                raise ValueError("rollback")
-        assert await listener.get_message(ignore_subscribe_messages=True, timeout=0.1) is None
-        async with transaction(runtime.storage) as session:
-            await publish_after_commit(session, replace(runtime, apps=AppCatalog()), run, "completed")
-        assert await listener.get_message(ignore_subscribe_messages=True, timeout=0.1) is None
+    await runtime.redis.delete(STREAM_KEY)
+    with pytest.raises(ValueError):
         async with transaction(runtime.storage) as session:
             await publish_after_commit(session, runtime, run, "completed")
-        async with asyncio.timeout(2):
-            while True:
-                message = await listener.get_message(ignore_subscribe_messages=True, timeout=0.1)
-                if message:
-                    break
-        event = RunSealEvent.model_validate_json(message["data"])
-        assert event.run_id == run.id
-        assert event.status == "completed"
-        assert event.labels == run.labels
+            raise ValueError("rollback")
+    assert await runtime.redis.xlen(STREAM_KEY) == 0
+    async with transaction(runtime.storage) as session:
+        await publish_after_commit(session, replace(runtime, apps=AppCatalog()), run, "completed")
+    assert await runtime.redis.xlen(STREAM_KEY) == 0
+    async with transaction(runtime.storage) as session:
+        await publish_after_commit(session, runtime, run, "completed")
+    async with asyncio.timeout(2):
+        while not (entries := await runtime.redis.xrange(STREAM_KEY)):
+            await asyncio.sleep(0.01)
+    event = RunSealEvent.model_validate_json(entries[0][1]["data"])
+    assert event.run_id == run.id
+    assert event.status == "completed"
+    assert event.labels == {}
 
 
 async def test_seal_publish_handoff_is_nonblocking_and_bounded(service, monkeypatch):
@@ -96,6 +97,7 @@ async def test_subscription_admits_current_enabled_organization_and_status(servi
     async with transaction(service.runtime.storage) as session:
         session.add(OrganizationRow(id=organization_id, name="Seals", settings={}))
     runtime = replace(service.runtime, apps=AppCatalog((app.manifest,)))
+    await reset_group(runtime)
     task = asyncio.create_task(app_run_seals(runtime, (app,)))
     event = RunSealEvent(
         organization_id=organization_id,
@@ -108,19 +110,16 @@ async def test_subscription_admits_current_enabled_organization_and_status(servi
         labels={},
     )
     try:
-        async with asyncio.timeout(3):
-            while (await runtime.redis.pubsub_numsub(channel(runtime)))[0][1] == 0:
-                await asyncio.sleep(0.01)
-        await runtime.redis.publish(channel(runtime), event.model_dump_json())
+        await runtime.redis.xadd(STREAM_KEY, {"data": event.model_dump_json()})
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(calls.get(), 0.15)
         async with transaction(runtime.storage) as session:
             organization = await session.get_one(OrganizationRow, organization_id)
             organization.settings = {"app_plugins": {"enabled": ["test.seals"]}}
-        await runtime.redis.publish(channel(runtime), event.model_copy(update={"status": "waiting"}).model_dump_json())
+        await runtime.redis.xadd(STREAM_KEY, {"data": event.model_copy(update={"status": "waiting"}).model_dump_json()})
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(calls.get(), 0.15)
-        await runtime.redis.publish(channel(runtime), event.model_dump_json())
+        await runtime.redis.xadd(STREAM_KEY, {"data": event.model_dump_json()})
         assert await asyncio.wait_for(calls.get(), 2) == "completed"
     finally:
         task.cancel()
@@ -217,23 +216,32 @@ async def test_worker_seal_reaches_control_listener(service, scripted_model, run
     async with transaction(control.storage) as session:
         organization = await session.get_one(OrganizationRow, service.tenant.organization_id)
         organization.settings = {**organization.settings, "app_plugins": {"enabled": ["test.seals"]}}
-    listener = asyncio.create_task(app_run_seals(control, (app,)))
+    await reset_group(control)
+    listeners = [asyncio.create_task(app_run_seals(control, (app,))) for _ in range(2)]
     try:
         async with asyncio.timeout(3):
-            while (await control.redis.pubsub_numsub(channel(control)))[0][1] == 0:
+            while len(await control.redis.xinfo_consumers(STREAM_KEY, GROUP)) < 2:
                 await asyncio.sleep(0.01)
         await runs_kit.pause_sweeps(service)
         agent = await runs_kit.create_agent(service, scripted_model)
-        first = await runs_kit.start_thread(service, agent, "first")
+        first = await runs_kit.start_thread(service, agent, "first", options={"labels": {"source": "accepted"}})
+        from a13n_service.runs.tables import RunRow
+
+        async with transaction(control.storage) as session:
+            run = await session.get_one(RunRow, first["run"]["id"])
+            run.labels = {"source": "edited"}
         scripted_model.say("Done")
         await (await runs_kit.attempt(service, runtime=worker))
         event = await asyncio.wait_for(received.get(), 3)
         assert event.run_id == first["run"]["id"]
         assert event.status == "completed"
+        assert event.labels == {"source": "accepted"}
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(received.get(), 0.3)
     finally:
-        listener.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await listener
+        for listener in listeners:
+            listener.cancel()
+        await asyncio.gather(*listeners, return_exceptions=True)
 
 
 async def test_callback_timeout_and_waiting_opt_in_do_not_stop_listener(service):
@@ -259,6 +267,7 @@ async def test_callback_timeout_and_waiting_opt_in_do_not_stop_listener(service)
         session.add(
             OrganizationRow(id="org_timeout", name="Timeout", settings={"app_plugins": {"enabled": [app.app_id]}})
         )
+    await reset_group(runtime)
     task = asyncio.create_task(app_run_seals(runtime, (app,)))
     event = RunSealEvent(
         organization_id="org_timeout",
@@ -271,13 +280,12 @@ async def test_callback_timeout_and_waiting_opt_in_do_not_stop_listener(service)
         labels={},
     )
     try:
-        async with asyncio.timeout(3):
-            while (await runtime.redis.pubsub_numsub(channel(runtime)))[0][1] == 0:
-                await asyncio.sleep(0.01)
-        await runtime.redis.publish(channel(runtime), event.model_dump_json())
+        await runtime.redis.xadd(STREAM_KEY, {"data": event.model_dump_json()})
         await asyncio.wait_for(timed_out.wait(), 2)
         for status in ("failed", "cancelled"):
-            await runtime.redis.publish(channel(runtime), event.model_copy(update={"status": status}).model_dump_json())
+            await runtime.redis.xadd(
+                STREAM_KEY, {"data": event.model_copy(update={"status": status}).model_dump_json()}
+            )
         assert {await asyncio.wait_for(calls.get(), 2), await asyncio.wait_for(calls.get(), 2)} == {
             "failed",
             "cancelled",
@@ -286,30 +294,6 @@ async def test_callback_timeout_and_waiting_opt_in_do_not_stop_listener(service)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-
-
-async def test_pubsub_channels_are_scoped_to_resolved_redis_database(service):
-    from redis.asyncio import ConnectionPool, Redis
-
-    original = service.runtime.redis
-    kwargs = dict(original.connection_pool.connection_kwargs)
-    kwargs["db"] = (int(kwargs.get("db", 0)) + 1) % 16
-    other = Redis(connection_pool=ConnectionPool(**kwargs))
-    other_runtime = replace(service.runtime, redis=other)
-    try:
-        assert channel(service.runtime) != channel(other_runtime)
-        async with other.pubsub() as listener:
-            await listener.subscribe(channel(other_runtime))
-            await listener.get_message(timeout=1)
-            await original.publish(channel(service.runtime), "not for the other database")
-            assert await listener.get_message(ignore_subscribe_messages=True, timeout=0.1) is None
-            await original.publish(channel(other_runtime), "same channel crosses databases")
-            assert (await listener.get_message(ignore_subscribe_messages=True, timeout=1))[
-                "data"
-            ] == "same channel crosses databases"
-    finally:
-        await other.aclose()
-        await other.connection_pool.disconnect()
 
 
 async def test_app_submission_serializes_same_key_and_checks_live_authority(service, scripted_model, runs_kit):
@@ -437,11 +421,9 @@ async def test_slow_app_cannot_exhaust_another_apps_delivery_slots(service):
                 id="org_capacity", name="Capacity", settings={"app_plugins": {"enabled": ["test.slow", "test.fast"]}}
             )
         )
+    await reset_group(runtime)
     task = asyncio.create_task(app_run_seals(runtime, apps))
     try:
-        async with asyncio.timeout(3):
-            while (await runtime.redis.pubsub_numsub(channel(runtime)))[0][1] == 0:
-                await asyncio.sleep(0.01)
         for i in range(32):
             event = RunSealEvent(
                 organization_id="org_capacity",
@@ -453,15 +435,73 @@ async def test_slow_app_cannot_exhaust_another_apps_delivery_slots(service):
                 status="completed",
                 labels={},
             )
-            await runtime.redis.publish(channel(runtime), event.model_dump_json())
+            await runtime.redis.xadd(STREAM_KEY, {"data": event.model_dump_json()})
         for _ in range(32):
             await asyncio.wait_for(slow_started.get(), 3)
             await asyncio.wait_for(fast_received.get(), 3)
-        await runtime.redis.publish(channel(runtime), event.model_copy(update={"run_id": "last"}).model_dump_json())
+        await runtime.redis.xadd(STREAM_KEY, {"data": event.model_copy(update={"run_id": "last"}).model_dump_json()})
         assert await asyncio.wait_for(fast_received.get(), 3) == "last"
         assert slow_started.empty()
     finally:
         release.set()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
+async def test_stream_buffer_and_group_recreation_after_eviction(service):
+    from a13n_service.app_plugin_runtime import app_run_seals
+    from a13n_service.tenancy.tables import OrganizationRow
+    from redis.exceptions import ResponseError
+
+    received = asyncio.Queue()
+
+    async def callback(runtime, event):
+        await received.put(event.run_id)
+
+    app = InstalledApp(AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback),)), "test", "1")
+    runtime = replace(service.runtime, apps=AppCatalog((app.manifest,)))
+    async with transaction(runtime.storage) as session:
+        session.add(
+            OrganizationRow(id="org_buffer", name="Buffer", settings={"app_plugins": {"enabled": [app.app_id]}})
+        )
+    await reset_group(runtime)
+    event = RunSealEvent(
+        organization_id="org_buffer",
+        workspace_id="w",
+        session_id="s",
+        thread_id="t",
+        run_id="buffered",
+        principal_id="p",
+        status="completed",
+        labels={},
+    )
+    # Retained after group creation, even with no control process reading.
+    await runtime.redis.xadd(STREAM_KEY, {"data": event.model_dump_json()})
+    task = asyncio.create_task(app_run_seals(runtime, (app,)))
+    try:
+        assert await asyncio.wait_for(received.get(), 3) == "buffered"
+        # Wait beyond the configured block on the actual Service client; it must keep reading.
+        await asyncio.sleep(1.3)
+        await runtime.redis.xadd(
+            STREAM_KEY, {"data": event.model_copy(update={"run_id": "after-idle"}).model_dump_json()}
+        )
+        assert await asyncio.wait_for(received.get(), 3) == "after-idle"
+        await runtime.redis.delete(STREAM_KEY)
+        async with asyncio.timeout(5):
+            while True:
+                try:
+                    groups = await runtime.redis.xinfo_groups(STREAM_KEY)
+                    if any(group["name"] == GROUP for group in groups):
+                        break
+                except ResponseError:
+                    pass
+                await asyncio.sleep(0.05)
+        await runtime.redis.xadd(
+            STREAM_KEY, {"data": event.model_copy(update={"run_id": "recreated"}).model_dump_json()}
+        )
+        assert await asyncio.wait_for(received.get(), 3) == "recreated"
+    finally:
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task

@@ -274,7 +274,8 @@ async def prepare_app_submission(
 ) -> AppSubmission:
     """Lock current App actor authority before taking the target Thread acceptance lock.
 
-    Taking the Thread lock first reverses the lock order and can deadlock with workspace administration.
+    This takes the organization FOR NO KEY UPDATE lock. Call it before acquiring any App row or Thread
+    acceptance lock (organization → App → Thread), and keep the enclosing transaction short.
     """
     if not session.info.get("a13n.transaction") or not session.in_transaction() or session.in_nested_transaction():
         raise RuntimeError("App submission requires the outer Service transaction")

@@ -6,6 +6,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from importlib.resources import as_file, files
 from pathlib import Path
+from typing import Any
+from uuid import uuid4
 
 from anyio.to_thread import run_sync
 from fastapi import APIRouter, Request
@@ -154,14 +156,16 @@ async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> Non
     """Receive lossy cross-role hints; drop excess work and rely on App reconciliation."""
     from a13n_logging import exception_details, get_logger
     from pydantic import ValidationError
-    from redis.exceptions import RedisError
+    from redis.exceptions import RedisError, ResponseError
 
-    from a13n_service.runs.seal_events import RunSealEvent, channel
+    from a13n_service.runs.seal_events import GROUP, STREAM_KEY, RunSealEvent
 
     logger = get_logger(__name__)
     subscriptions = [(app.app_id, sub) for app in apps for sub in app.definition.run_seals]
     if not subscriptions:
         return
+    consumer = f"control-{uuid4().hex[:12]}"
+    block_ms = min(1000, max(1, int(runtime.settings.redis.timeout * 500)))
     running: set[asyncio.Task[None]] = set()
     app_running: dict[str, set[asyncio.Task[None]]] = {app_id: set() for app_id, _ in subscriptions}
 
@@ -186,28 +190,33 @@ async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> Non
     try:
         while True:
             try:
-                async with runtime.redis.pubsub() as listener:
-                    await listener.subscribe(channel(runtime))
-                    while True:
-                        message = await listener.get_message(ignore_subscribe_messages=True, timeout=1)
-                        if not message:
-                            continue
-                        try:
-                            event = RunSealEvent.model_validate_json(message["data"])
-                        except (ValidationError, ValueError, TypeError):
-                            continue
-                        for app_id, subscription in subscriptions:
-                            if event.status not in subscription.statuses:
+                try:
+                    await runtime.redis.xgroup_create(STREAM_KEY, GROUP, id="$", mkstream=True)
+                except ResponseError as error:
+                    if not str(error).startswith("BUSYGROUP"):
+                        raise
+                while True:
+                    batches: Any = await runtime.redis.xreadgroup(
+                        GROUP, consumer, {STREAM_KEY: ">"}, count=32, block=block_ms, noack=True
+                    )
+                    for _, entries in batches:
+                        for _, fields in entries:
+                            try:
+                                event = RunSealEvent.model_validate_json(fields["data"])
+                            except (KeyError, ValidationError, ValueError, TypeError):
                                 continue
-                            active = app_running[app_id]
-                            if len(active) >= 32:
-                                SEAL_DROPS.add(1, {"stage": "delivery", "app_id": app_id})
-                                continue
-                            task = asyncio.create_task(deliver(app_id, subscription, event))
-                            running.add(task)
-                            active.add(task)
-                            task.add_done_callback(running.discard)
-                            task.add_done_callback(active.discard)
+                            for app_id, subscription in subscriptions:
+                                if event.status not in subscription.statuses:
+                                    continue
+                                active = app_running[app_id]
+                                if len(active) >= 32:
+                                    SEAL_DROPS.add(1, {"stage": "delivery", "app_id": app_id})
+                                    continue
+                                task = asyncio.create_task(deliver(app_id, subscription, event))
+                                running.add(task)
+                                active.add(task)
+                                task.add_done_callback(running.discard)
+                                task.add_done_callback(active.discard)
             except RedisError as error:
                 logger.warning(
                     "App Run seal subscription disconnected", extra={"exception_details": exception_details(error)}
@@ -217,3 +226,8 @@ async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> Non
         for task in running:
             task.cancel()
         await asyncio.gather(*running, return_exceptions=True)
+        try:
+            async with asyncio.timeout(min(runtime.settings.redis.timeout, 0.5)):
+                await runtime.redis.xgroup_delconsumer(STREAM_KEY, GROUP, consumer)
+        except (RedisError, TimeoutError):
+            pass

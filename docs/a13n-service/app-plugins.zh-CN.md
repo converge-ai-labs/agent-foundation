@@ -88,9 +88,9 @@ def definition() -> AppDefinition:
 
 ## 响应 Run 封口并提交 Inbox 消息
 
-在 `AppDefinition(run_seals=(...,))` 中声明 `RunSealSubscription(callback, timeout=5)`。异步回调接收 Runtime 和 `RunSealEvent`，后者包含组织、工作区、Session、Thread、Run 和 principal ID、状态以及封口时的标签。默认选择 completed、failed 和 cancelled；需要 waiting 时，在 `statuses` 中显式加入。Service 只在提交后发布提示，并在回调前检查 App 当前是否启用。提示可能丢失或重复，每个 control 副本都会收到；保留组织 sweep，并确保业务操作幂等。发布和回调并发有上限；通过 `a13n_app_run_seal_dropped_total` 和 `a13n_run_seal_publish_dropped_total` 可以发现容量不足造成的丢弃。
+在 `AppDefinition(run_seals=(...,))` 中声明 `RunSealSubscription(callback, timeout=5)`。异步回调接收 Runtime 和 `RunSealEvent`，后者包含组织、工作区、Session、Thread、Run 和 principal ID、状态以及接受 Run 时固定的 options 标签。默认选择 completed、failed 和 cancelled；需要 waiting 时，在 `statuses` 中显式加入。Service 只在提交后发布提示，并在回调前检查 App 当前是否启用。有界 Redis Stream 的 consumer group 使用 NOACK 将每条保留的提示交给一个 control 副本。创建组之前发布、读取前被裁剪或接收后丢失的提示不会重试；提示也可能重复。保留组织 sweep，并确保业务操作幂等。发布和回调并发有上限；通过 `a13n_app_run_seal_dropped_total` 和 `a13n_run_seal_publish_dropped_total` 可以发现容量不足造成的丢弃。
 
-为自动操作配置 service account principal。也可以使用用户 principal，Service 会检查其当前权限。事件中的 principal 属于原始 Run，并不是操作授权。准备提交时会持有组织锁直到事务结束，同一组织内的 App 提交因此会串行；尤其在大量并发跟进时，应保持事务短小。调用 `runs.submit.submit_app_message(runtime, principal_id, workspace_id, thread_id, message, request_key=...)`，Service 会按当前权限和工作区范围提交。需要与 App 数据原子提交时，使用 `infra.db.transaction`，在获取 Thread acceptance lock 之前调用 `prepare_app_submission(session, runtime, workspace_id, principal_id)`，再将返回值传给 `submit_message_in_transaction`。该准入结果只属于当前事务。自动跟进时，在 Thread 锁内检查预期的最近 Run、空闲且未暂停的状态，以及原生 Inbox 是否已有待处理输入，再提交消息。事务提交后回执才持久化；普通输入不会回答等待中的请求，也不保证送达指定的活动 Run。这些 API 不应用 Run 的委托权限上限，不能用于 Run 委托操作。
+为自动操作配置 service account principal。也可以使用用户 principal，Service 会检查其当前权限。事件中的 principal 属于原始 Run，并不是操作授权。准备提交时会持有组织锁直到事务结束，同一组织内的 App 提交因此会串行；尤其在大量并发跟进时，应保持事务短小。调用 `runs.submit.submit_app_message(runtime, principal_id, workspace_id, thread_id, message, request_key=...)`，Service 会按当前权限和工作区范围提交。需要与 App 数据原子提交时，使用 `infra.db.transaction`，在获取任何 App 行锁或 Thread acceptance lock 之前调用 `prepare_app_submission(session, runtime, workspace_id, principal_id)`（锁顺序为组织 → App → Thread），再将返回值传给 `submit_message_in_transaction`。该准入结果只属于当前事务。自动跟进时，在 Thread 锁内检查预期的最近 Run、空闲且未暂停的状态，以及原生 Inbox 是否已有待处理输入，再提交消息。事务提交后回执才持久化；普通输入不会回答等待中的请求，也不保证送达指定的活动 Run。这些 API 不应用 Run 的委托权限上限，不能用于 Run 委托操作。
 
 ## 持久化业务数据
 
