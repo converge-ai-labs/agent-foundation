@@ -1,6 +1,7 @@
 """App assembly adapters over the existing runtime, exit stack, HTTP router and sweep scheduler."""
 
 import asyncio
+import time
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
@@ -25,6 +26,8 @@ from a13n_service.tenancy.app_plugins import AppRoute, policy
 from a13n_service.tenancy.tables import OrganizationRow
 
 SEAL_DROPS = meter.create_counter("a13n.app.run_seal.dropped", unit="{hint}")
+STALE_CONSUMER_IDLE_MS = 300_000
+_MAX_PRUNE_PER_PASS = 100
 
 
 def app_routers(apps: tuple[InstalledApp, ...]) -> tuple[APIRouter, ...]:
@@ -152,6 +155,24 @@ def app_sweeps(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> list[Sweep]:
     ]
 
 
+async def _prune_stale_consumers(runtime: Runtime, current: str) -> None:
+    """Drop dead control consumer metadata left behind after ungraceful exits."""
+    from a13n_service.runs.seal_events import GROUP, STREAM_KEY
+
+    threshold = STALE_CONSUMER_IDLE_MS
+    consumers: Any = await runtime.redis.xinfo_consumers(STREAM_KEY, GROUP)
+    deleted = 0
+    for info in consumers:
+        if deleted >= _MAX_PRUNE_PER_PASS:
+            break
+        name = info.get("name")
+        idle = info.get("idle")
+        pending = info.get("pending", 0)
+        if isinstance(name, str) and name != current and isinstance(idle, int) and idle >= threshold and pending == 0:
+            await runtime.redis.xgroup_delconsumer(STREAM_KEY, GROUP, name)
+            deleted += 1
+
+
 async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> None:
     """Receive lossy cross-role hints; drop excess work and rely on App reconciliation."""
     from a13n_logging import exception_details, get_logger
@@ -195,10 +216,15 @@ async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> Non
                 except ResponseError as error:
                     if not str(error).startswith("BUSYGROUP"):
                         raise
+                await _prune_stale_consumers(runtime, consumer)
+                next_prune = time.monotonic() + STALE_CONSUMER_IDLE_MS / 1000
                 while True:
                     batches: Any = await runtime.redis.xreadgroup(
                         GROUP, consumer, {STREAM_KEY: ">"}, count=32, block=block_ms, noack=True
                     )
+                    if time.monotonic() >= next_prune:
+                        await _prune_stale_consumers(runtime, consumer)
+                        next_prune = time.monotonic() + STALE_CONSUMER_IDLE_MS / 1000
                     for _, entries in batches:
                         for _, fields in entries:
                             try:
