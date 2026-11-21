@@ -10,12 +10,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import replace
 
 from a13n_harness.configuration import RunConfiguration
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import matches
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid
+from a13n_service.infra.http import IdempotencyKey
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.assets.service import require_usable
@@ -215,19 +217,78 @@ async def _lookup(
     return scope, request, await find_request(session, scope.workspace_id, actor.id, request.key)
 
 
+_MESSAGE_KEY = TypeAdapter(IdempotencyKey)
+
+
+def _message_key(request_key: str) -> None:
+    try:
+        _MESSAGE_KEY.validate_python(request_key)
+    except ValidationError as error:
+        raise invalid("request_key", "must be 1-512 printable ASCII characters without spaces") from error
+
+
+async def _create_message(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    scope: WorkspaceScope,
+    thread_id: str,
+    message: Message,
+    request: Request,
+) -> tuple[ThreadRow, Source]:
+    thread = await get_thread(session, scope.workspace_id, thread_id, lock="acceptance")
+    require_open(thread)
+    source = await prepare_message(
+        session, runtime, actor, scope, thread, message, request, authority=execution_authority(actor, scope)
+    )
+    return thread, source
+
+
 async def submit_message(
     runtime: Runtime, actor: Principal, workspace_id: str, thread_id: str, message: Message, *, request_key: str
 ) -> tuple[Submitted, bool]:
+    """Submit as the principal's current grants, not a fenced Run's delegation.
+
+    Do not call this as a delegated operation from an active Run: it does not apply that Run's authority ceiling.
+    The receipt reports current disposition, not execution completion.
+    """
+    _message_key(request_key)
+
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
-        thread = await get_thread(session, scope.workspace_id, thread_id, lock="acceptance")
-        require_open(thread)
-        return thread, await prepare_message(
-            session, runtime, actor, scope, thread, message, request, authority=execution_authority(actor, scope)
-        )
+        return await _create_message(session, runtime, actor, scope, thread_id, message, request)
 
     return await _submit(
         runtime, actor, workspace_id, lambda _: Request.of(request_key, "message", thread_id, message), create
     )
+
+
+async def submit_message_in_transaction(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    workspace_id: str,
+    thread_id: str,
+    message: Message,
+    *,
+    request_key: str,
+) -> tuple[Submitted, bool]:
+    """Submit in a caller-owned transaction; abort and retry the whole transaction on contention.
+
+    Like submit_message, this uses current principal grants, not a fenced Run's delegation;
+    it must not be used as a delegated operation from an active Run.
+    Use the Service transaction helper so post-commit wakeups run. The receipt is committed only
+    if the caller commits. Concurrent same-key arbitration may raise; retrying after rollback replays it.
+    """
+    _message_key(request_key)
+    scope, request, found = await _lookup(
+        session, actor, workspace_id, lambda _: Request.of(request_key, "message", thread_id, message)
+    )
+    if found is not None:
+        return await _replay(session, found, request), False
+    thread, source = await _create_message(session, runtime, actor, scope, thread_id, message, request)
+    await accept(session, runtime, thread, explicit=source)
+    assert source.entry is not None
+    return await receipt(session, thread, source.entry), True
 
 
 async def prepare_thread(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from functools import cached_property, partial
 from typing import TYPE_CHECKING
@@ -68,6 +69,10 @@ class Runtime:
     apps: AppCatalog = field(default_factory=AppCatalog)
     # The backend trace queries read; None when tracing is off.
     traces: TraceProvider | None = None
+
+    @cached_property
+    def seal_publish_tasks(self) -> set[asyncio.Task[None]]:
+        return set()
 
     @cached_property
     def mailbox(self) -> Mailbox:

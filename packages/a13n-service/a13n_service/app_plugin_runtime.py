@@ -145,3 +145,64 @@ def app_sweeps(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> list[Sweep]:
         for app in apps
         for sweep in app.definition.sweeps
     ]
+
+
+async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> None:
+    """Receive lossy cross-role hints; drop excess work and rely on App reconciliation."""
+    from a13n_logging import exception_details, get_logger
+    from pydantic import ValidationError
+    from redis.exceptions import RedisError
+
+    from a13n_service.runs.seal_events import RunSealEvent, channel
+
+    logger = get_logger(__name__)
+    subscriptions = [(app.app_id, sub) for app in apps for sub in app.definition.run_seals]
+    if not subscriptions:
+        return
+    running: set[asyncio.Task[None]] = set()
+
+    async def deliver(app_id: str, subscription: object, event: RunSealEvent) -> None:
+        from a13n_service.app_definitions import RunSealSubscription
+
+        assert isinstance(subscription, RunSealSubscription)
+        try:
+            admission = runtime.settings.database.connect_timeout + runtime.settings.database.statement_timeout
+            async with asyncio.timeout(admission + subscription.timeout):
+                async with short_session(runtime.storage) as session:
+                    organization = await session.get(OrganizationRow, event.organization_id)
+                    enabled = organization is not None and app_id in policy(organization.settings).enabled
+                if enabled:
+                    async with asyncio.timeout(subscription.timeout):
+                        await subscription.run(runtime, event)
+        except Exception as error:
+            logger.warning(
+                "App Run seal callback failed", extra={"app_id": app_id, "exception_details": exception_details(error)}
+            )
+
+    try:
+        while True:
+            try:
+                async with runtime.redis.pubsub() as listener:
+                    await listener.subscribe(channel(runtime))
+                    while True:
+                        message = await listener.get_message(ignore_subscribe_messages=True, timeout=1)
+                        if not message:
+                            continue
+                        try:
+                            event = RunSealEvent.model_validate_json(message["data"])
+                        except (ValidationError, ValueError, TypeError):
+                            continue
+                        for app_id, subscription in subscriptions:
+                            if event.status in subscription.statuses and len(running) < 32:
+                                task = asyncio.create_task(deliver(app_id, subscription, event))
+                                running.add(task)
+                                task.add_done_callback(running.discard)
+            except RedisError as error:
+                logger.warning(
+                    "App Run seal subscription disconnected", extra={"exception_details": exception_details(error)}
+                )
+                await asyncio.sleep(1)
+    finally:
+        for task in running:
+            task.cancel()
+        await asyncio.gather(*running, return_exceptions=True)

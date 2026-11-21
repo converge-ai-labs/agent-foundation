@@ -27,7 +27,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_service.api_access import CredentialAccess
 from a13n_service.app_definitions import InstalledApp, app_databases, discover_apps
-from a13n_service.app_plugin_runtime import app_routers, app_sweeps, open_assets
+from a13n_service.app_plugin_runtime import app_routers, app_run_seals, app_sweeps, open_assets
 from a13n_service.app_plugin_runtime import router as app_assets_router
 from a13n_service.app_plugins import AppCatalog
 from a13n_service.distribution import OSS, Distribution
@@ -425,6 +425,8 @@ def build_app(
                     sweeps = [*[factory(runtime) for factory in distribution.sweeps], *app_sweeps(runtime, apps)]
                     require_unique(sweeps)
                     runtime.tasks.start(run_sweeps(sweeps), name="control-sweeps", service=True)
+                    if any(app.definition.run_seals for app in apps):
+                        runtime.tasks.start(app_run_seals(runtime, apps), name="app-run-seals", service=True)
                 if executes:
                     runtime.tasks.start(Worker(runtime, execute).run(), name="worker", service=True)
                 app.state.started = True
