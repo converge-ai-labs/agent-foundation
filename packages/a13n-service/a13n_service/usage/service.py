@@ -376,14 +376,15 @@ async def sessions(storage: Storage, actor: Principal, workspace_id: str, query:
 
 
 async def models(storage: Storage, actor: Principal, workspace_id: str, query: BreakdownQuery) -> ModelUsagePage:
-    return await _models(storage, actor, workspace_id, query)
+    labels = query.run_labels if isinstance(query, FilteredModelUsageQuery) else None
+    return await _models(storage, actor, workspace_id, query, run_labels=labels)
 
 
 async def filtered_models(
     storage: Storage, actor: Principal, workspace_id: str, query: FilteredModelUsageQuery
 ) -> ModelUsagePage:
     """Query model consumption with exact acceptance-time Run label filters."""
-    return await _models(storage, actor, workspace_id, query, run_labels=query.run_labels)
+    return await models(storage, actor, workspace_id, query)
 
 
 async def _models(

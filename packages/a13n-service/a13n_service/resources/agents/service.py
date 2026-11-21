@@ -255,7 +255,11 @@ async def publish_revision(
     registry: Registry,
     plugins: HarnessPluginFactoryCatalog,
 ) -> AgentRevision:
-    """Publish in the caller's transaction, enforcing the native revision boundary."""
+    """Publish under native authorization in the caller's transaction.
+
+    The caller commits or rolls back and must end the transaction without external I/O or long waits;
+    the Agent head lock is held until then. Exceptions must abort the caller's transaction.
+    """
     scope = await workspace_scope(session, actor, workspace_id, "write")
     head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
     preset_edits.require_editable(head, if_match)

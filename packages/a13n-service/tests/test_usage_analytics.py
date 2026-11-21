@@ -943,7 +943,7 @@ async def test_stacked_overview_ranks_window_and_preserves_daily_totals(service,
 async def test_in_process_model_usage_filters_acceptance_labels(service, scripted_model, runs_kit):
     from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
     from a13n_service.usage.schemas import FilteredModelUsageQuery
-    from a13n_service.usage.service import filtered_models
+    from a13n_service.usage.service import filtered_models, models
 
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -971,6 +971,7 @@ async def test_in_process_model_usage_filters_acceptance_labels(service, scripte
         run_labels={"claw": "one", "extra": "yes"},
     )
     page = await filtered_models(service.runtime.storage, actor, tenant.workspace_id, query)
+    assert await models(service.runtime.storage, actor, tenant.workspace_id, query) == page
     assert len(page.items) == 2
     scripted = next(item for item in page.items if item.model == "scripted")
     assert scripted.usage.input_tokens == 100
