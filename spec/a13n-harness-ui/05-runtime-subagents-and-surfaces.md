@@ -583,6 +583,12 @@ The foreground listener reports startup, readiness, API response outcomes and sh
 
 On normal listener shutdown, realtime WebSocket delivery ends before connection draining, so an attached browser does not hold shutdown until the transport timeout. This delivery stop neither closes storage early nor separately cancels a Run. The existing ASGI lifespan remains the sole App owner and performs the [App lifetime](#app-lifetime) cleanup after transport draining. Closing one browser connection has no effect on App lifetime. A finished transport drain is not a hard deadline for trusted Python cleanup.
 
+### Inbound Management MCP
+
+WebUI serves stateless Streamable HTTP at `/api/automation/mcp` on its existing listener. It shares the listener's instance-key, Host and Origin checks and explicit authentication bypass. Scoped guest grants do not authorize this endpoint. It runs inside the same App lifetime and exposes seven tools: `list_projects`, `get_project`, `create_project`, `list_threads`, `get_thread`, `create_thread`, and `send_thread_message`.
+
+These tools use existing Project resource publication and Thread management operations. The MCP caller has instance authority and no source Thread. Thread discovery lists root Threads; inspection takes an explicit Thread ID and returns status, configuration and paginated saved history. A new Thread uses the selected Project and Agent defaults; a null or omitted `project_id` creates a projectless Thread. `model_id` overrides only the first Run. `create_thread` returns the created Thread ID even if Run admission fails after creation. `send_thread_message` submits to an idle Thread or steers its active Run; a rejected steer does not submit a replacement Run. A receipt confirms admission, and `get_thread` reports saved output and activity. Reconcile an uncertain write before retrying it.
+
 ### HTTP Adapter Contract
 
 `DELETE /api/threads/{thread_id}?expected_version=<metadata_version>` calls `HarnessUiApp.delete_thread` under instance-owner authority. It returns the deleted root and descendant Thread IDs as a JSON array after the storage transaction commits. [Permanent Thread deletion](03-local-storage-and-recovery.md#permanent-thread-deletion) owns scope and retention. Stale metadata, active execution, or remaining Coordinator workers produce a conflict without deleting the family. Scoped guests cannot delete. Success publishes a summary invalidation; transport loss requires reconciliation rather than an automatic retry.

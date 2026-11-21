@@ -506,6 +506,7 @@ class HarnessUiApp:
         self._memory_organizer = memory_organizer
         self._voice: VoiceController | None = None
         self._bot: BotController | None = None
+        self._thread_tools: ThreadToolController | None = None
         self._connectors: Connectors | None = None
         self._web_push = web_push
         self._store = store
@@ -592,6 +593,12 @@ class HarnessUiApp:
     async def delete_connector(self, connector_id: str, *, expected_version: int) -> None:
         async with self._operation():
             await self.connectors().delete(connector_id, expected_version=expected_version)
+
+    def thread_tools(self) -> ThreadToolController:
+        self._require_ready()
+        if self._thread_tools is None:
+            raise HarnessUiError("Thread tools are available only in WebUI.", code="thread_tools_unavailable")
+        return self._thread_tools
 
     def bot(self) -> BotController:
         if self._bot is None:
@@ -4525,6 +4532,7 @@ async def open_harness_ui_app(
                     create_project=app.create_project,
                     read_project_memory=app.read_project_memory,
                 )
+                app._thread_tools = thread_tools
                 root_executor.set_root_capability_factory(
                     lambda composition: CombinedCapability(
                         [

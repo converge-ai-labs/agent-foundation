@@ -16,7 +16,7 @@ dependencies = [
     "a13n-stream-protocol",
     "a13n-logging",
     "ag-ui-protocol>=1.0.0,<2",
-    "fastmcp-slim[client]>=4.0,<5",
+    "fastmcp-slim[client,server]>=4.0,<5",
     "filelock>=3.18,<4",
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
@@ -68,7 +68,7 @@ a13n-harness-ui = "a13n_harness_ui.cli:main"
 
 [dependency-groups]
 test = [
-    # MCP integration fixtures run real servers; the runtime only needs the client.
+    # MCP integration fixtures use the full FastMCP distribution.
     "fastmcp>=4.0,<5",
     "pyright>=1.1,<2",
     "pytest>=9,<10",
