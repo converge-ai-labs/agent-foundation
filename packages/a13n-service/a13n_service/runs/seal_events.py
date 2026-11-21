@@ -8,9 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import after_commit
+from a13n_service.infra.telemetry import meter
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Sealed
 from a13n_service.runs.tables import RunRow
+
+PUBLISH_DROPS = meter.create_counter("a13n.run_seal.publish.dropped", unit="{hint}")
 
 
 def channel(runtime: Runtime) -> str:
@@ -41,6 +44,7 @@ async def _publish(runtime: Runtime, event: RunSealEvent) -> None:
 async def _handoff(runtime: Runtime, event: RunSealEvent) -> None:
     pending = runtime.seal_publish_tasks
     if runtime.tasks.stopping or len(pending) >= 32:
+        PUBLISH_DROPS.add(1)
         return
     task = runtime.tasks.start(_publish(runtime, event), name="run-seal-publish")
     pending.add(task)

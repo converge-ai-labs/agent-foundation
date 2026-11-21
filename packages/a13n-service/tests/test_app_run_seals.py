@@ -129,46 +129,41 @@ async def test_subscription_admits_current_enabled_organization_and_status(servi
 
 
 async def test_native_inbox_transaction_rollback_and_replay(service, scripted_model, runs_kit):
-    from a13n_service.infra.errors import ServiceError
     from a13n_service.runs.schemas import Message
-    from a13n_service.runs.submit import submit_message, submit_message_in_transaction
-    from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
+    from a13n_service.runs.submit import prepare_app_submission, submit_app_message, submit_message_in_transaction
 
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
     thread_id = (await runs_kit.start_thread(service, agent, "first"))["thread"]["id"]
     tenant = service.tenant
-    actor = Principal(tenant.principal_id, "user", (Grant(tenant.organization_id, None, BUILT_IN_ROLES["admin"]),))
     message = Message.model_validate(runs_kit.message(agent, "next", delivery="next_run"))
     with pytest.raises(ValueError):
         async with transaction(service.runtime.storage) as session:
+            admission = await prepare_app_submission(session, service.runtime, tenant.workspace_id, tenant.principal_id)
             _, created = await submit_message_in_transaction(
-                session, service.runtime, actor, tenant.workspace_id, thread_id, message, request_key="app:test"
+                session, service.runtime, admission, tenant.workspace_id, thread_id, message, request_key="app:test"
             )
             assert created
             raise ValueError("rollback")
     assert len(await runs_kit.inbox(service, thread_id)) == 1
-    result, created = await submit_message(
-        service.runtime, actor, tenant.workspace_id, thread_id, message, request_key="app:test"
+    result, created = await submit_app_message(
+        service.runtime, tenant.principal_id, tenant.workspace_id, thread_id, message, request_key="app:test"
     )
     assert created
     async with transaction(service.runtime.storage) as session:
+        admission = await prepare_app_submission(session, service.runtime, tenant.workspace_id, tenant.principal_id)
         replay, created = await submit_message_in_transaction(
-            session, service.runtime, actor, tenant.workspace_id, thread_id, message, request_key="app:test"
+            session, service.runtime, admission, tenant.workspace_id, thread_id, message, request_key="app:test"
         )
         assert not created and replay.entry.id == result.entry.id
-    viewer = Principal(tenant.principal_id, "user", (Grant(tenant.organization_id, None, BUILT_IN_ROLES["viewer"]),))
-    with pytest.raises(ServiceError):
-        await submit_message(service.runtime, viewer, tenant.workspace_id, thread_id, message, request_key="app:test")
 
 
 async def test_followup_guard_and_submit_share_thread_lock(service, scripted_model, runs_kit):
     from a13n_service.runs.inbox import pending_entries
     from a13n_service.runs.schemas import Message
-    from a13n_service.runs.submit import submit_message_in_transaction
+    from a13n_service.runs.submit import prepare_app_submission, submit_message_in_transaction
     from a13n_service.runs.tables import RunRow
     from a13n_service.runs.threads import get_thread
-    from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
 
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
@@ -177,11 +172,11 @@ async def test_followup_guard_and_submit_share_thread_lock(service, scripted_mod
     scripted_model.say("Done")
     await (await runs_kit.attempt(service))
     tenant = service.tenant
-    actor = Principal(tenant.principal_id, "user", (Grant(tenant.organization_id, None, BUILT_IN_ROLES["admin"]),))
     message = Message.model_validate(runs_kit.message(agent, "follow up", delivery="next_run"))
 
     async def followup():
         async with transaction(service.runtime.storage) as session:
+            admission = await prepare_app_submission(session, service.runtime, tenant.workspace_id, tenant.principal_id)
             thread = await get_thread(session, tenant.workspace_id, thread_id, lock="acceptance")
             last = await session.get_one(RunRow, run_id)
             if (
@@ -193,7 +188,7 @@ async def test_followup_guard_and_submit_share_thread_lock(service, scripted_mod
             ):
                 return False
             _, created = await submit_message_in_transaction(
-                session, service.runtime, actor, tenant.workspace_id, thread_id, message, request_key="followup"
+                session, service.runtime, admission, tenant.workspace_id, thread_id, message, request_key="followup"
             )
             return created
 
@@ -315,3 +310,158 @@ async def test_pubsub_channels_are_scoped_to_resolved_redis_database(service):
     finally:
         await other.aclose()
         await other.connection_pool.disconnect()
+
+
+async def test_app_submission_serializes_same_key_and_checks_live_authority(service, scripted_model, runs_kit):
+    from a13n_service.infra.db import short_session
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.schemas import Message
+    from a13n_service.runs.submit import prepare_app_submission, submit_message_in_transaction
+    from a13n_service.tenancy.tables import GrantRow, PrincipalRow
+    from sqlalchemy import delete
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    thread_id = (await runs_kit.start_thread(service, agent, "first"))["thread"]["id"]
+    tenant = service.tenant
+    message = Message.model_validate(runs_kit.message(agent, "next", delivery="next_run"))
+    ready, release = asyncio.Event(), asyncio.Event()
+
+    async def submit(hold=False):
+        async with transaction(service.runtime.storage) as session:
+            admission = await prepare_app_submission(session, service.runtime, tenant.workspace_id, tenant.principal_id)
+            result = await submit_message_in_transaction(
+                session, service.runtime, admission, tenant.workspace_id, thread_id, message, request_key="same-key"
+            )
+            if hold:
+                ready.set()
+                await release.wait()
+            return result
+
+    first = asyncio.create_task(submit(True))
+    await asyncio.wait_for(ready.wait(), 2)
+    second = asyncio.create_task(submit())
+    await asyncio.sleep(0.1)
+    assert not second.done()
+    release.set()
+    (one, created), (two, replayed) = await asyncio.gather(first, second)
+    assert created and not replayed and one.entry.id == two.entry.id
+    async with transaction(service.runtime.storage) as session:
+        admission = await prepare_app_submission(session, service.runtime, tenant.workspace_id, tenant.principal_id)
+        with pytest.raises(ServiceError) as mismatch:
+            await submit_message_in_transaction(
+                session,
+                service.runtime,
+                admission,
+                tenant.workspace_id,
+                thread_id,
+                Message.model_validate(runs_kit.message(agent, "different")),
+                request_key="same-key",
+            )
+        assert mismatch.value.details.get("reason") == "idempotency_key_reused"
+    async with short_session(service.runtime.storage) as session:
+        async with session.begin():
+            with pytest.raises(RuntimeError):
+                await prepare_app_submission(session, service.runtime, tenant.workspace_id, tenant.principal_id)
+    async with transaction(service.runtime.storage) as session:
+        await session.execute(delete(GrantRow).where(GrantRow.principal_id == tenant.principal_id))
+    async with transaction(service.runtime.storage) as session:
+        with pytest.raises(ServiceError):
+            await prepare_app_submission(session, service.runtime, tenant.workspace_id, tenant.principal_id)
+    async with transaction(service.runtime.storage) as session:
+        principal = await session.get_one(PrincipalRow, tenant.principal_id)
+        principal.status = "disabled"
+    async with transaction(service.runtime.storage) as session:
+        with pytest.raises(ServiceError):
+            await prepare_app_submission(session, service.runtime, tenant.workspace_id, tenant.principal_id)
+
+
+async def test_app_admission_cannot_escape_its_transaction(service, scripted_model, runs_kit):
+    from a13n_service.infra.db import short_session
+    from a13n_service.runs.schemas import Message
+    from a13n_service.runs.submit import prepare_app_submission, submit_message_in_transaction
+
+    agent = await runs_kit.create_agent(service, scripted_model)
+    first = await runs_kit.start_thread(service, agent, "first")
+    tenant = service.tenant
+    message = Message.model_validate(runs_kit.message(agent, "next"))
+    async with transaction(service.runtime.storage) as original:
+        admission = await prepare_app_submission(original, service.runtime, tenant.workspace_id, tenant.principal_id)
+        async with short_session(service.runtime.storage) as other:
+            async with other.begin():
+                with pytest.raises(RuntimeError):
+                    await submit_message_in_transaction(
+                        other,
+                        service.runtime,
+                        admission,
+                        tenant.workspace_id,
+                        first["thread"]["id"],
+                        message,
+                        request_key="wrong",
+                    )
+    with pytest.raises(RuntimeError):
+        await submit_message_in_transaction(
+            original,
+            service.runtime,
+            admission,
+            tenant.workspace_id,
+            first["thread"]["id"],
+            message,
+            request_key="expired",
+        )
+
+
+async def test_slow_app_cannot_exhaust_another_apps_delivery_slots(service):
+    from a13n_service.app_plugin_runtime import app_run_seals
+    from a13n_service.tenancy.tables import OrganizationRow
+
+    slow_started = asyncio.Queue()
+    fast_received = asyncio.Queue()
+    release = asyncio.Event()
+
+    async def slow(runtime, event):
+        await slow_started.put(event.run_id)
+        await release.wait()
+
+    async def fast(runtime, event):
+        await fast_received.put(event.run_id)
+
+    apps = (
+        InstalledApp(AppDefinition("test.slow", "Slow", run_seals=(RunSealSubscription(slow),)), "slow", "1"),
+        InstalledApp(AppDefinition("test.fast", "Fast", run_seals=(RunSealSubscription(fast),)), "fast", "1"),
+    )
+    runtime = replace(service.runtime, apps=AppCatalog(tuple(app.manifest for app in apps)))
+    async with transaction(runtime.storage) as session:
+        session.add(
+            OrganizationRow(
+                id="org_capacity", name="Capacity", settings={"app_plugins": {"enabled": ["test.slow", "test.fast"]}}
+            )
+        )
+    task = asyncio.create_task(app_run_seals(runtime, apps))
+    try:
+        async with asyncio.timeout(3):
+            while (await runtime.redis.pubsub_numsub(channel(runtime)))[0][1] == 0:
+                await asyncio.sleep(0.01)
+        for i in range(32):
+            event = RunSealEvent(
+                organization_id="org_capacity",
+                workspace_id="w",
+                session_id="s",
+                thread_id="t",
+                run_id=f"r{i}",
+                principal_id="p",
+                status="completed",
+                labels={},
+            )
+            await runtime.redis.publish(channel(runtime), event.model_dump_json())
+        for _ in range(32):
+            await asyncio.wait_for(slow_started.get(), 3)
+            await asyncio.wait_for(fast_received.get(), 3)
+        await runtime.redis.publish(channel(runtime), event.model_copy(update={"run_id": "last"}).model_dump_json())
+        assert await asyncio.wait_for(fast_received.get(), 3) == "last"
+        assert slow_started.empty()
+    finally:
+        release.set()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task

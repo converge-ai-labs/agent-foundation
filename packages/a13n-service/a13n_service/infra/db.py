@@ -160,8 +160,12 @@ async def short_session(storage: Storage) -> AsyncGenerator[AsyncSession]:
 async def transaction(storage: Storage) -> AsyncGenerator[AsyncSession]:
     """Commit on normal exit; callbacks registered with `after_commit` run only after that commit succeeded."""
     async with short_session(storage) as session:
-        async with session.begin():
-            yield session
+        session.info["a13n.transaction"] = True
+        try:
+            async with session.begin():
+                yield session
+        finally:
+            session.info.pop("a13n.transaction", None)
         callbacks = session.info.pop(_AFTER_COMMIT, ())
     for callback in callbacks:
         try:

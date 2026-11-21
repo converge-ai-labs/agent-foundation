@@ -17,9 +17,12 @@ from a13n_service.app_plugins import AppCatalog, AppManifest
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import not_found
 from a13n_service.infra.sweeps import Sweep
+from a13n_service.infra.telemetry import meter
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.app_plugins import AppRoute, policy
 from a13n_service.tenancy.tables import OrganizationRow
+
+SEAL_DROPS = meter.create_counter("a13n.app.run_seal.dropped", unit="{hint}")
 
 
 def app_routers(apps: tuple[InstalledApp, ...]) -> tuple[APIRouter, ...]:
@@ -160,6 +163,7 @@ async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> Non
     if not subscriptions:
         return
     running: set[asyncio.Task[None]] = set()
+    app_running: dict[str, set[asyncio.Task[None]]] = {app_id: set() for app_id, _ in subscriptions}
 
     async def deliver(app_id: str, subscription: object, event: RunSealEvent) -> None:
         from a13n_service.app_definitions import RunSealSubscription
@@ -193,10 +197,17 @@ async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> Non
                         except (ValidationError, ValueError, TypeError):
                             continue
                         for app_id, subscription in subscriptions:
-                            if event.status in subscription.statuses and len(running) < 32:
-                                task = asyncio.create_task(deliver(app_id, subscription, event))
-                                running.add(task)
-                                task.add_done_callback(running.discard)
+                            if event.status not in subscription.statuses:
+                                continue
+                            active = app_running[app_id]
+                            if len(active) >= 32:
+                                SEAL_DROPS.add(1, {"stage": "delivery", "app_id": app_id})
+                                continue
+                            task = asyncio.create_task(deliver(app_id, subscription, event))
+                            running.add(task)
+                            active.add(task)
+                            task.add_done_callback(running.discard)
+                            task.add_done_callback(active.discard)
             except RedisError as error:
                 logger.warning(
                     "App Run seal subscription disconnected", extra={"exception_details": exception_details(error)}
