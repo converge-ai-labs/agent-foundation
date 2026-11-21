@@ -1,4 +1,4 @@
-"""Single-send RPC behavior over real Redis; no PostgreSQL or device is needed."""
+"""Client RPC timeout handling and single-send behavior over Redis."""
 
 import asyncio
 from contextlib import asynccontextmanager
@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+from a13n_envd_client.errors import EIPRequestTimeoutError
 from a13n_harness.environment.models import EnvironmentError
 from a13n_service.runs.environments.clients.routing import (
     Failure,
@@ -40,8 +41,8 @@ def request(method="process.start", *, seconds=3, environment_id="env_client", e
 
 
 @asynccontextmanager
-async def routers(redis_url, dispatch, *, max_requests=4, response_margin_seconds=0.1):
-    config = ClientEnvironments(max_requests=max_requests, response_margin_seconds=response_margin_seconds)
+async def routers(redis_url, dispatch, *, max_requests=4):
+    config = ClientEnvironments(max_requests=max_requests, response_margin_seconds=0.1)
     worker, control = [Routing(RedisSettings(url=SecretStr(redis_url)), config) for _ in range(2)]
     ready = asyncio.Event()
     serving = asyncio.create_task(
@@ -129,23 +130,43 @@ async def test_cleanup_reaches_control_while_ordinary_capacity_is_full(redis_url
             await waiting
 
 
-async def test_control_timeout_does_not_dispatch_a_kill_or_repeat_start(redis_url):
+async def test_control_dispatch_timeout_cancels_wait_without_another_dispatch(monkeypatch):
+    control = Routing(RedisSettings(), ClientEnvironments())
+    publish = AsyncMock()
+    monkeypatch.setattr(control, "_publish", publish)
     seen, cancelled = [], asyncio.Event()
 
     async def dispatch(call):
-        seen.append(call.method)
+        seen.append(call)
         try:
             await asyncio.Event().wait()
         finally:
             cancelled.set()
 
-    # Keep the control timeout short while allowing the failure reply to cross Redis under CI load.
-    response_margin = ClientEnvironments().response_margin_seconds
-    async with routers(redis_url, dispatch, response_margin_seconds=response_margin) as (worker, _, _):
-        response = await worker.call(request("process.wait", seconds=0.5 + response_margin))
+    call = request("process.wait", seconds=0.5 + control.config.response_margin_seconds)
+    try:
+        await control._reply(call, dispatch)
+    finally:
+        await control.close()
+
+    assert cancelled.is_set() and seen == [call]
+    publish.assert_awaited_once()
+    (response,) = publish.await_args.args
+    assert response.id == call.id
+    assert isinstance(response.outcome, Failure)
+    assert not response.outcome.pre_dispatch
+
+
+@pytest.mark.parametrize("dispatched", [False, True], ids=["before-native-dispatch", "after-native-dispatch"])
+async def test_native_timeout_reply_preserves_dispatch_certainty_over_redis(redis_url, dispatched):
+    dispatch = AsyncMock(side_effect=EIPRequestTimeoutError("Native response timed out", dispatched=dispatched))
+    async with routers(redis_url, dispatch) as (worker, _, _):
+        call = request("process.wait")
+        response = await worker.call(call)
+        dispatch.assert_awaited_once_with(call)
+        assert response.id == call.id
         assert isinstance(response.outcome, Failure)
-        assert not response.outcome.pre_dispatch
-        assert cancelled.is_set() and seen == ["process.wait"]
+        assert response.outcome.pre_dispatch is not dispatched
 
 
 async def test_interrupted_reply_subscription_ends_without_replaying_the_command(redis_url, monkeypatch):
