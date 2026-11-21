@@ -272,7 +272,10 @@ class AppSubmission:
 async def prepare_app_submission(
     session: AsyncSession, runtime: Runtime, workspace_id: str, principal_id: str
 ) -> AppSubmission:
-    """Lock current App actor authority before taking the target Thread acceptance lock."""
+    """Lock current App actor authority before taking the target Thread acceptance lock.
+
+    Taking the Thread lock first reverses the lock order and can deadlock with workspace administration.
+    """
     if not session.info.get("a13n.transaction") or not session.in_transaction() or session.in_nested_transaction():
         raise RuntimeError("App submission requires the outer Service transaction")
     workspace = await session.get(WorkspaceRow, workspace_id)
