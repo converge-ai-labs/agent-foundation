@@ -11,7 +11,7 @@ The Service produces three kinds of output, with different owners:
 | Resumable run state      | Checkpoint state, display and saved content objects                                                      | Object bytes selected by run pointers and pages    |
 | Observations and notices | The session stream, lifecycle webhooks, identity mail, trace queries                                     | Derived; never decides execution                   |
 
-PostgreSQL owns lifecycle, execution authority, inbox disposition, the pointers that select each run's committed state and display tail, and the catalog of its display pages. Objects hold immutable bytes. Redis carries provisional live output and worker wakeups; it never advances execution history or decides that a run is finished. The outbox delivers what a transaction committed, at least once.
+PostgreSQL owns lifecycle, execution authority, inbox disposition, the pointers that select each run's committed state and display tail, and the catalog of its display pages. Objects hold immutable bytes. Redis carries provisional live output, worker wakeups and App Run seal hints; it never advances execution history or decides that a run is finished. The outbox durably stages delivery with its transaction and retries within a finite budget; deliveries can be duplicated or become dead.
 
 ## Immutable facts
 
@@ -299,7 +299,7 @@ outbox   (obx_)
   UNIQUE (kind, dedupe_key)
 ```
 
-The outbox is durable at-least-once delivery of what a transaction committed. The seven kinds are closed by the CHECK; it is not a general job system. Only account mail has no organization. `target` and `payload` hold everything delivery needs; `subscription_id` is diagnostic provenance, not a foreign key.
+The outbox durably stages delivery with the originating transaction and makes bounded retry attempts; a delivery can be duplicated or become dead. The seven kinds are closed by the CHECK; it is not a general job system. Only account mail has no organization. `target` and `payload` hold everything delivery needs; `subscription_id` is diagnostic provenance, not a foreign key.
 
 `tool_result` delivers one bounded completion hint for a retained invocation. Its origin suppression, inbox capacity, deduplication and result-retention rules are owned by [retained tool executions](05-runs.md#results-and-delivery). The result payload stays in its immutable object and late usage follows the existing original-attempt attribution.
 
@@ -345,7 +345,7 @@ A [subscription](04-resources.md#subscriptions) selects lifecycle kinds and opti
 | Seal of an accepted run (interrupt, archive or a parent's cancel) | `run.cancelled`                                                                            |
 | Recovery or handoff                                               | `run.accepted`, `run_attempt.{failed \| yielded}`                                          |
 
-Staging matches the workspace's enabled subscriptions in ID order, up to `control.subscriptions` of them (more are logged and skipped), and inserts one outbox row per matching subscription and kind. A claim batch selects subscriptions in one read, with kind and identity filters and the cap applied separately to each Run. The subscription read at that point is the selection point for all transitions in the batch: a later edit or deletion affects later transitions, never staged deliveries. The row ID is the delivery ID. The row copies the URL and the signing secret, re-encrypted for that row; a secret that cannot be decrypted stages the delivery dead with `signing_secret_unavailable`, so it never fails the transition.
+Staging matches the workspace's enabled subscriptions in ID order, up to `control.subscriptions` of them (more are logged and skipped), and inserts one outbox row per matching subscription and kind. A claim batch selects subscriptions in one read, with kind and identity filters and the cap applied separately to each Run. The subscription read at that point is the selection point for all transitions in the batch: a later edit or deletion affects later transitions, never staged deliveries. The row ID is the delivery ID, unique per subscription and kind rather than a shared transition ID. A failed attempt that is retried returns the same Run to accepted and stages a new `run.accepted` delivery with the failed attempt; deduplicating by Run ID and kind would collapse distinct transitions. A waiting Run is sealed, and resume creates a successor with a new Run ID; consumers check the Thread's current wait before acting on a waiting notification. The row copies the URL and the signing secret, re-encrypted for that row; a secret that cannot be decrypted stages the delivery dead with `signing_secret_unavailable`, so it never fails the transition.
 
 The payload describes the transition, never secrets:
 

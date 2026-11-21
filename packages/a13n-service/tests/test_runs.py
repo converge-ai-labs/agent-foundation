@@ -10,6 +10,7 @@ import pytest
 from a13n_harness import state as state_module
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError
+from a13n_service.infra.outbox import OutboxRow
 from a13n_service.runs import checkpoints
 from a13n_service.runs.admission import CallContext
 from a13n_service.runs.execute import _Attempt
@@ -113,6 +114,51 @@ async def test_a_client_tool_waits_and_resume_answers_it(
     assert tool_results and "42" in tool_results[0]["content"]
     # Only the initial model boundary has an inbox input; deferred answers are tracked separately.
     assert await checkpoint_history_decodes() == [1, 0, 0, 0]
+
+
+async def test_successive_waits_have_distinct_runs_and_reject_stale_resume(executing, scripted_model, runs_kit):
+    subscription = await executing.client.post(
+        f"{executing.api}/subscriptions",
+        json={"name": "Waiting", "url": "http://127.0.0.1:9/hook", "kinds": ["run.waiting"]},
+    )
+    assert subscription.status_code == 201, subscription.text
+    lookup = {
+        "name": "lookup",
+        "description": "Look a value up",
+        "parameters_json_schema": {"type": "object", "properties": {"q": {"type": "string"}}},
+    }
+    agent = await runs_kit.create_agent(executing, scripted_model, client_tools=[lookup])
+    scripted_model.call("lookup", {"q": "first"}, call_id="call_first")
+    submitted = await runs_kit.start_thread(executing, agent, "look it up")
+    first = await runs_kit.sealed(executing, submitted["run"]["id"])
+    assert first["status"] == "waiting"
+
+    scripted_model.call("lookup", {"q": "second"}, call_id="call_second")
+    answer = {"approvals": {}, "calls": {"call_first": {"status": "returned", "value": "first result"}}}
+    resumed = await executing.client.post(
+        f"{executing.api}/runs/{first['id']}/resume", json=answer, headers={"idempotency-key": "first-resume"}
+    )
+    assert resumed.status_code == 201, resumed.text
+    second = await runs_kit.sealed(executing, resumed.json()["id"])
+    assert second["status"] == "waiting" and second["id"] != first["id"]
+    assert second["parent_run_id"] == first["id"]
+    assert second["pending"]["calls"][0]["tool_call_id"] == "call_second"
+    stale = await executing.client.post(
+        f"{executing.api}/runs/{first['id']}/resume", json=answer, headers={"idempotency-key": "stale-resume"}
+    )
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["error"]["details"]["reason"] == "not_idle_waiting_head"
+    assert (await runs_kit.get_run(executing, first["id"]))["status"] == "waiting"
+
+    async with transaction(executing.runtime.storage) as session:
+        thread = await session.get_one(ThreadRow, first["thread_id"])
+        assert thread.last_run_id == second["id"] and thread.current_run_id is None
+        rows = (
+            await session.scalars(select(OutboxRow).where(OutboxRow.subscription_id == subscription.json()["id"]))
+        ).all()
+        payloads = [row.payload for row in rows]
+    assert {payload["run"]["id"] for payload in payloads} == {first["id"], second["id"]}
+    assert len(payloads) == len({payload["id"] for payload in payloads}) == 2
 
 
 async def test_failed_checkpoint_keeps_input_for_recovery(service, scripted_model, runs_kit, monkeypatch):
