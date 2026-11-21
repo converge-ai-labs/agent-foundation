@@ -77,3 +77,24 @@ it("rejects incompatible bridges, invalid routes and duplicate local identities"
     }),
   ).toThrow(/duplicate/);
 });
+
+it("validates optional App navigation metadata", () => {
+  expect(
+    validateContribution({
+      bridge: 1,
+      navigation: { label: { en: "Reports", "zh-CN": "报告" }, icon: "robot" },
+    }).navigation?.icon,
+  ).toBe("robot");
+  expect(() =>
+    validateContribution({
+      bridge: 1,
+      navigation: { icon: "unknown" },
+    } as never),
+  ).toThrow("Unsupported App navigation icon");
+  expect(() =>
+    validateContribution({
+      bridge: 1,
+      navigation: { label: { en: 2 } },
+    } as never),
+  ).toThrow("Invalid App navigation label");
+});

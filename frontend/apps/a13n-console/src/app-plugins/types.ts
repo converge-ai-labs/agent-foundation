@@ -14,9 +14,12 @@ export interface AppPage {
 export interface AppSettings extends AppPage {
   scope: "workspace" | "organization";
 }
+export type AppNavigationIcon =
+  "puzzle" | "robot" | "chart" | "calendar" | "lightning";
 /** The default export of a prebuilt module importing @a13n/console. */
 export interface AppContribution {
   bridge: 1;
+  navigation?: { label?: AppText; icon?: AppNavigationIcon };
   pages?: readonly AppPage[];
   settings?: readonly AppSettings[];
   /** Owns only the workspace index; Agents and core routes remain addressable. */
@@ -53,6 +56,18 @@ function isAppText(value: unknown): value is AppText {
 export function validateContribution(value: AppContribution): AppContribution {
   if (!value || value.bridge !== 1)
     throw new Error("This App requires an unsupported Console bridge.");
+  if (
+    value.navigation?.label !== undefined &&
+    !isAppText(value.navigation.label)
+  )
+    throw new Error("Invalid App navigation label.");
+  if (
+    value.navigation?.icon !== undefined &&
+    !["puzzle", "robot", "chart", "calendar", "lightning"].includes(
+      value.navigation.icon,
+    )
+  )
+    throw new Error("Unsupported App navigation icon.");
   for (const entries of [value.pages ?? [], value.settings ?? []]) {
     const ids = new Set<string>();
     for (const entry of entries) {

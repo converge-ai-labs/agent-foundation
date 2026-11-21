@@ -274,6 +274,8 @@ In organization settings, the host selects the remembered accessible workspace, 
 
 Pages appear under `/workspace/{workspaceId}/apps/{appId}/{pageId}/*`. Page IDs use lowercase letters, digits and hyphens, starting with a letter. Optional `description` and `permission` fields describe a page and control its Console visibility and route access. Business endpoints still enforce their own authorization. Labels and descriptions accept a string or an object with `en` and optional `zh-CN`. A `settings` entry uses the same fields and adds `scope: "workspace"` or `"organization"`; its host settings key is `app.{appId}.{sectionId}`.
 
+When permission filtering leaves multiple visible pages, Console groups them under the App name. Set `navigation: { label: { en: "Reports", "zh-CN": "报告" }, icon: "chart" }` to customize that group. Supported icon keys are `puzzle`, `robot`, `chart`, `calendar`, and `lightning`; the default is `puzzle`. One visible page remains a direct link, and an App with no visible pages has no navigation entry.
+
 An App can also provide `workspaceHome: Component` to replace the workspace index. Core agent routes remain available. If multiple enabled Apps claim the index, Console shows an error with a link to agents. Organization administrators can enable or disable an App in settings; successful changes update the active registry. Refreshing Console fetches the current catalog.
 
 ### Build the entry

@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SettingsLayout } from "../features/settings/layout";
+import type { LoadedApp } from "../app-plugins/types";
 import { Shell } from "./shell";
 import { AppearanceProvider } from "./appearance";
 
@@ -23,7 +24,14 @@ vi.mock("../auth/context", () => ({
     logout: vi.fn(),
   }),
 }));
-const access = vi.hoisted(() => ({ organizationAdmin: false }));
+const access = vi.hoisted(() => ({
+  organizationAdmin: false,
+  denied: "",
+  apps: [] as LoadedApp[],
+}));
+vi.mock("../app-plugins/registry", () => ({
+  useAppPlugins: () => ({ apps: access.apps }),
+}));
 vi.mock("./workspace", () => {
   const useAccess = () => ({
     basePath: "/workspace/ws_design",
@@ -31,14 +39,14 @@ vi.mock("./workspace", () => {
     organization: { key: "acme", name: "Organization" },
     workspaces: [{ id: "ws_design", name: "Design" }],
     organizationCan: () => access.organizationAdmin,
-    can: () => true,
+    can: (permission: string) => permission !== access.denied,
   });
   return { useWorkspace: useAccess, useAccess };
 });
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string) => key,
-    i18n: { resolvedLanguage: "en" },
+    i18n: { resolvedLanguage: "en", language: "en" },
   }),
 }));
 beforeEach(() =>
@@ -60,6 +68,9 @@ afterEach(() => {
   localStorage.removeItem("a13n-console-theme");
   document.documentElement.classList.remove("dark");
   access.organizationAdmin = false;
+  access.denied = "";
+  access.apps = [];
+  localStorage.removeItem("a13n-console-sidebar");
   vi.unstubAllGlobals();
 });
 
@@ -312,4 +323,156 @@ it("collapses the settings navigation after selecting a section", async () => {
   await user.click(screen.getByRole("link", { name: "Security" }));
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(screen.getByText("Security form")).toBeTruthy();
+});
+
+it("groups permitted App pages, opens deep links and restores rail focus", async () => {
+  const user = userEvent.setup();
+  access.apps = [
+    {
+      app: {
+        app_id: "sample",
+        name: "Sample",
+        distribution: "sample",
+        enabled: true,
+        factory_keys: [],
+        frontend: null,
+        version: "1",
+      },
+      contribution: {
+        bridge: 1,
+        navigation: { label: { en: "My App" }, icon: "robot" },
+        pages: [
+          { id: "one", label: "First", component: () => null },
+          {
+            id: "two",
+            label: "Second",
+            component: () => null,
+            permission: "admin",
+          },
+        ],
+      },
+    },
+  ];
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter
+        initialEntries={["/workspace/ws_design/apps/sample/two/detail"]}
+      >
+        <Routes>
+          <Route path="/workspace/:workspaceId" element={<Shell />}>
+            <Route path="*" element={<div>Page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const group = screen.getByRole("button", { name: "My App" });
+  expect(group.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    screen.getByRole("link", { name: "Second" }).getAttribute("href"),
+  ).toBe("/workspace/ws_design/apps/sample/two");
+  await user.click(group);
+  expect(screen.queryByRole("link", { name: "Second" })).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Collapse navigation" }));
+  const rail = screen.getByRole("button", { name: "My App" });
+  await user.click(rail);
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "My App" }),
+  );
+  expect(screen.getByRole("link", { name: "First" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Second" })).toBeTruthy();
+});
+
+it("renders a direct App link when permissions leave one page", () => {
+  access.denied = "admin";
+  access.apps = [
+    {
+      app: {
+        app_id: "sample",
+        name: "Sample",
+        distribution: "sample",
+        enabled: true,
+        factory_keys: [],
+        frontend: null,
+        version: "1",
+      },
+      contribution: {
+        bridge: 1,
+        pages: [
+          { id: "one", label: "First", component: () => null },
+          {
+            id: "two",
+            label: "Second",
+            component: () => null,
+            permission: "admin",
+          },
+        ],
+      },
+    },
+  ];
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/workspace/ws_design/agents"]}>
+        <Routes>
+          <Route path="/workspace/:workspaceId" element={<Shell />}>
+            <Route path="*" element={<div>Page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(screen.getByRole("link", { name: "First" }).getAttribute("href")).toBe(
+    "/workspace/ws_design/apps/sample/one",
+  );
+  expect(screen.queryByRole("button", { name: "Sample" })).toBeNull();
+  expect(screen.queryByText("Second")).toBeNull();
+});
+
+it("opens a multi-page App in the mobile drawer and closes it after selection", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query.includes("1024"),
+    media: query,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent: () => true,
+  }));
+  access.apps = [
+    {
+      app: {
+        app_id: "sample",
+        name: "Sample",
+        distribution: "sample",
+        enabled: true,
+        factory_keys: [],
+        frontend: null,
+        version: "1",
+      },
+      contribution: {
+        bridge: 1,
+        pages: [
+          { id: "one", label: "First", component: () => null },
+          { id: "two", label: "Second", component: () => null },
+        ],
+      },
+    },
+  ];
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={["/workspace/ws_design/agents"]}>
+        <Routes>
+          <Route path="/workspace/:workspaceId" element={<Shell />}>
+            <Route path="*" element={<div>Page</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await user.click(screen.getByRole("button", { name: "Open navigation" }));
+  await user.click(screen.getByRole("button", { name: "Sample" }));
+  await user.click(screen.getByRole("link", { name: "Second" }));
+  expect(screen.queryByRole("link", { name: "Second" })).toBeNull();
 });
