@@ -505,3 +505,41 @@ async def test_stream_buffer_and_group_recreation_after_eviction(service):
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
+
+
+async def test_stale_consumers_are_pruned_without_removing_active_consumers(service, monkeypatch):
+    from a13n_service import app_plugin_runtime
+
+    async def callback(runtime, event):
+        pass
+
+    app = InstalledApp(AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback),)), "test", "1")
+    runtime = replace(service.runtime, apps=AppCatalog((app.manifest,)))
+    await reset_group(runtime)
+    monkeypatch.setattr(app_plugin_runtime, "STALE_CONSUMER_IDLE_MS", 120)
+
+    # Register a dead consumer (noack -> pending=0) and let it age past the idle threshold.
+    await runtime.redis.xreadgroup(GROUP, "control-dead-startup", {STREAM_KEY: ">"}, count=1, noack=True)
+    await asyncio.sleep(0.18)
+
+    task = asyncio.create_task(app_plugin_runtime.app_run_seals(runtime, (app,)))
+    try:
+        async with asyncio.timeout(3):
+            while True:
+                names = {info["name"] for info in await runtime.redis.xinfo_consumers(STREAM_KEY, GROUP)}
+                if "control-dead-startup" not in names and any(name.startswith("control-") for name in names):
+                    break
+                await asyncio.sleep(0.05)
+
+        # Simulate another peer crashing after startup; periodic pruning removes it while keeping live consumer.
+        await runtime.redis.xreadgroup(GROUP, "control-dead-runtime", {STREAM_KEY: ">"}, count=1, noack=True)
+        async with asyncio.timeout(4):
+            while True:
+                names = {info["name"] for info in await runtime.redis.xinfo_consumers(STREAM_KEY, GROUP)}
+                if "control-dead-runtime" not in names and any(name.startswith("control-") for name in names):
+                    break
+                await asyncio.sleep(0.05)
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
