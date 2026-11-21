@@ -32,7 +32,7 @@ pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 async def test_child_question_competing_response_history_and_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_output: str
 ) -> None:
-    root = _write_configuration(tmp_path)
+    root = _write_configuration(tmp_path, allow_agent_creation=True)
     agent_path = tmp_path / "agents/assistant.yaml"
     parent = yaml.safe_load(agent_path.read_text())
     parent["subagents"] = [{"agent": "agent-worker"}]
@@ -215,7 +215,7 @@ async def test_child_streams_provisional_text_before_message_close_and_saved_com
 ) -> None:
     from anyio import create_task_group
 
-    root = _write_configuration(tmp_path)
+    root = _write_configuration(tmp_path, allow_agent_creation=True)
     agent_path = tmp_path / "agents/assistant.yaml"
     parent = yaml.safe_load(agent_path.read_text())
     parent["subagents"] = [{"agent": "agent-worker"}]

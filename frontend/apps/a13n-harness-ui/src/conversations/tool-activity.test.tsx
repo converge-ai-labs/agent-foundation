@@ -324,6 +324,7 @@ it("refines all collaboration tools and exposes discovered Thread links on expan
     "list_agents",
     "list_models",
     "create_thread",
+    "create_worker",
     "run_thread",
     "steer_thread",
     "send_thread_message",
@@ -348,6 +349,53 @@ it("refines all collaboration tools and exposes discovered Thread links on expan
     screen.getByRole("link", { name: "Research" }).getAttribute("href"),
   ).toBe("/threads/thread-one");
   expect(screen.getByText("1 threads found")).toBeTruthy();
+});
+
+it("renders selected model, thinking, and legacy model_id in collaboration details", () => {
+  render(
+    <MemoryRouter>
+      <ToolCall
+        tool={{
+          ...completed("create_worker"),
+          input: {
+            title: "Build worker",
+            prompt: "Run checks",
+            model: "model-worker",
+            thinking: "high",
+          },
+          result: {
+            ok: true,
+            thread_id: "thread-worker",
+            receipt: { receipt_id: "receipt-1" },
+          },
+        }}
+      />
+      <ToolCall
+        tool={{
+          ...completed("create_thread"),
+          id: "legacy-create",
+          input: {
+            title: "Legacy chat",
+            prompt: "Historical task",
+            model_id: "model-legacy",
+          },
+          result: {
+            ok: true,
+            thread_id: "thread-legacy",
+            receipt: { receipt_id: "receipt-2" },
+          },
+        }}
+      />
+    </MemoryRouter>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Start worker/ }));
+  expect(screen.getByText("Model")).toBeTruthy();
+  expect(screen.getByText("model-worker")).toBeTruthy();
+  expect(screen.getByText("Thinking")).toBeTruthy();
+  expect(screen.getByText("high")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /Start chat/ }));
+  expect(screen.getByText("Model override")).toBeTruthy();
+  expect(screen.getByText("model-legacy")).toBeTruthy();
 });
 
 it("retains saved applied diffs and explicit omission without reconstructing requested input", () => {

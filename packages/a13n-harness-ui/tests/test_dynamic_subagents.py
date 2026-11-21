@@ -13,7 +13,7 @@ from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.subagent_tools import guidance
-from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus
+from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus, RunModelOverrides
 from anyio import Event, fail_after, sleep
 from pydantic import ValidationError
 from pydantic_ai.messages import ModelRequest, SystemPromptPart, ToolReturnPart
@@ -126,6 +126,86 @@ async def test_dynamic_tool_is_absent_when_disabled(tmp_path, monkeypatch):
         ).status is RootOperationStatus.completed
 
 
+@pytest.mark.parametrize("allowed", [[], ["model-main"]])
+async def test_delegate_roster_uses_effective_child_models(tmp_path, monkeypatch, allowed):
+    control_tools = {
+        "delegate",
+        "subagent_info",
+        "wait_subagent",
+        "steer_subagent",
+        "cancel_subagent",
+        "resume_subagent",
+    }
+
+    async def model(messages, info):
+        tools = {tool.name for tool in info.function_tools}
+        if allowed:
+            assert control_tools <= tools
+            assert "agent-reviewer:" in info.instructions
+            assert guidance("parent") in info.instructions
+        else:
+            assert control_tools.isdisjoint(tools)
+            assert "agent-reviewer:" not in info.instructions
+            assert guidance("parent") not in info.instructions
+        assert "explorer:" not in info.instructions
+        yield "done"
+
+    context = await open_app(tmp_path, monkeypatch, model, dynamic={"allowed_models": allowed})
+    alternative = yaml.safe_load((tmp_path / "models/main.yaml").read_text())
+    alternative["id"] = "model-alt"
+    (tmp_path / "models/alt.yaml").write_text(yaml.safe_dump(alternative))
+    parent_path = tmp_path / "agents/main.yaml"
+    parent = yaml.safe_load(parent_path.read_text())
+    (tmp_path / "agents/reviewer.yaml").write_text(yaml.safe_dump({**parent, "id": "agent-reviewer"}))
+    parent_path.write_text(yaml.safe_dump({**parent, "subagents": [{"agent": "agent-reviewer"}]}))
+    async with context as app:
+        thread = await new_thread(app)
+        # The built-in explorer inherits this composer override. The reviewer keeps model-main.
+        receipt = await app.submit_thread(
+            thread_id=thread.thread_id, prompt="start", model_overrides=RunModelOverrides(model_id="model-alt")
+        )
+        assert (
+            await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        ).status is RootOperationStatus.completed
+
+
+async def test_operator_spawn_rejects_when_dynamic_subagents_are_disabled(tmp_path, monkeypatch):
+    from a13n_harness.capabilities import SubagentOperatorContext
+    from pydantic_ai.exceptions import ToolFailed
+
+    app_ref: list = []
+    seen_error: list[str] = []
+
+    async def model(messages, info):
+        app = app_ref[0]
+        with pytest.raises(ToolFailed, match="disabled") as exc:
+            await app._subagent_operator.spawn(
+                SubagentOperatorContext(
+                    parent_thread_id=thread_ref[0],
+                    parent_run_id=next(iter(app._subagent_operator._parents))[1],
+                    parent_agent_instance_id=next(
+                        iter(app._subagent_operator._parents.values())
+                    ).instance.agent_instance_id,
+                    host_refs={"thread_id": thread_ref[0]},
+                ),
+                name="reviewer",
+                prompt="Check",
+            )
+        seen_error.append(str(exc.value))
+        yield "done"
+
+    thread_ref: list[str] = []
+    async with await open_app(tmp_path, monkeypatch, model, enabled=False) as app:
+        app_ref.append(app)
+        thread = await new_thread(app)
+        thread_ref.append(thread.thread_id)
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
+        assert (
+            await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
+        ).status is RootOperationStatus.completed
+    assert seen_error
+
+
 async def test_spawn_without_model_uses_the_default_model(tmp_path, monkeypatch):
     (tmp_path / "models").mkdir()
     (tmp_path / "models/alt.yaml").write_text(
@@ -150,7 +230,7 @@ async def test_spawn_without_model_uses_the_default_model(tmp_path, monkeypatch)
             assert "model accepts model-main, model-alt; when omitted, it uses model-alt." in (
                 tools["spawn_subagent"].description or ""
             )
-            args = {"name": "reviewer", "instructions": "ROLE", "prompt": "TASK"}
+            args = {"name": "reviewer", "prompt": "TASK"}
             yield {0: DeltaToolCall(name="spawn_subagent", json_args=json.dumps(args))}
         else:
             receipts.append(returned(messages)[0].content)
@@ -176,7 +256,7 @@ async def test_spawn_without_model_uses_the_default_model(tmp_path, monkeypatch)
 @pytest.mark.parametrize(
     "arguments,error",
     [
-        ({"model": "model-unknown"}, "allowed_models"),
+        ({"model": "model-unknown"}, "creation_model_not_allowed"),
         ({"thinking": "max"}, "thinking"),
     ],
 )
@@ -184,7 +264,7 @@ async def test_spawn_rejects_invalid_admission(tmp_path, monkeypatch, arguments,
     async def model(messages, info):
         results = returned(messages)
         if not results:
-            args = {"name": "reviewer", "instructions": "ROLE", "prompt": "TASK", **arguments}
+            args = {"name": "reviewer", "prompt": "TASK", **arguments}
             yield {0: DeltaToolCall(name="spawn_subagent", json_args=json.dumps(args))}
         else:
             assert error.lower() in str(results[-1].content).lower()
@@ -209,11 +289,9 @@ async def test_leaf_instructions_and_idle_delivery(tmp_path, monkeypatch, messag
         if "send_parent_message" in tools:
             assert "spawn_subagent" not in tools and "delegate" not in tools
             assert "PARENT_PRIVATE_ROLE" not in (info.instructions or "")
-            assert (info.instructions or "").count("CHILD_ROLE") == 1
-            assert "CHILD_ROLE" not in str(
-                [request_input_content(request) for request in messages if isinstance(request, ModelRequest)]
-            )
-            assert (info.instructions or "").index(guidance("child")) < (info.instructions or "").index("CHILD_ROLE")
+            assert "CHILD_ROLE" not in (info.instructions or "")
+            assert "CHILD_TASK" not in (info.instructions or "")
+            assert guidance("child") in (info.instructions or "")
             assert "ROOT_HISTORY_SECRET" not in str(messages)
             assert "CHILD_TASK" in str(messages)
             assert "GLOBAL_GUIDANCE" in str(messages)
@@ -241,7 +319,6 @@ async def test_leaf_instructions_and_idle_delivery(tmp_path, monkeypatch, messag
                     json_args=json.dumps(
                         {
                             "name": "reviewer",
-                            "instructions": "CHILD_ROLE",
                             "prompt": "CHILD_TASK",
                             "model": "model-main",
                             "thinking": "high",
@@ -285,7 +362,7 @@ async def test_dynamic_resume_uses_host_source_and_retained_role(tmp_path, monke
 
     async def model(messages, info):
         if "send_parent_message" in {tool.name for tool in info.function_tools}:
-            assert "CHILD_ROLE" in (info.instructions or "")
+            assert "initial task" in str(messages)
             child_calls.append(messages)
             yield "child done"
             return
@@ -294,7 +371,7 @@ async def test_dynamic_resume_uses_host_source_and_retained_role(tmp_path, monke
             yield {
                 0: DeltaToolCall(
                     name="spawn_subagent",
-                    json_args='{"name":"reviewer","instructions":"CHILD_ROLE","prompt":"initial task"}',
+                    json_args='{"name":"reviewer","prompt":"initial task"}',
                 )
             }
         elif len(results) == 1:
@@ -357,7 +434,7 @@ async def test_repeated_resume_returns_tool_error_without_failing_parent(
             arguments = (
                 {"subagent_name": "explorer", "prompt": "initial task"}
                 if spawn == "delegate"
-                else {"name": "worker", "instructions": "CHILD_ROLE", "prompt": "initial task"}
+                else {"name": "worker", "prompt": "initial task"}
             )
             yield {0: DeltaToolCall(name=spawn, json_args=json.dumps(arguments))}
         elif len(results) == 1:
@@ -442,7 +519,7 @@ async def test_dynamic_child_of_bot_or_live_gets_the_package_prompt(tmp_path, mo
             yield "done"
         else:
             parent_instructions.append(prompt(messages, info))
-            arguments = {"name": "reviewer", "instructions": "CHILD_ROLE", "prompt": "CHILD_TASK"}
+            arguments = {"name": "reviewer", "prompt": "CHILD_TASK"}
             yield {0: DeltaToolCall(name="spawn_subagent", json_args=json.dumps(arguments))}
 
     async def resolve(self, model_id, *, thread_id):
@@ -462,7 +539,7 @@ async def test_dynamic_child_of_bot_or_live_gets_the_package_prompt(tmp_path, mo
     assert role in parent_instructions[0]
     assert role not in child_instructions[0]
     assert "You are the Harness UI CLI Agent" in child_instructions[0]
-    assert "CHILD_ROLE" in child_instructions[0]
+    assert "You are a subagent" in child_instructions[0]
 
 
 @pytest.mark.parametrize("first,second", [("delegate", "spawn_subagent")])
@@ -473,7 +550,7 @@ async def test_concurrency_limit_is_shared_by_declared_and_dynamic(tmp_path, mon
         return (
             {"subagent_name": "explorer", "prompt": "task"}
             if tool == "delegate"
-            else {"name": "worker", "instructions": "role", "prompt": "task"}
+            else {"name": "worker", "prompt": "task"}
         )
 
     async def model(messages, info):
@@ -508,26 +585,18 @@ async def test_resume_uses_the_same_concurrency_limit(tmp_path, monkeypatch):
     async def model(messages, info):
         nonlocal first_id
         if "send_parent_message" in {tool.name for tool in info.function_tools}:
-            if "BLOCKED_ROLE" in (info.instructions or ""):
+            if "BLOCKED_ROLE" in str(messages):
                 await release.wait()
             yield "done"
             return
         results = returned(messages)
         if not results:
-            yield {
-                0: DeltaToolCall(
-                    name="spawn_subagent", json_args='{"name":"first","instructions":"FIRST_ROLE","prompt":"task"}'
-                )
-            }
+            yield {0: DeltaToolCall(name="spawn_subagent", json_args='{"name":"first","prompt":"task"}')}
         elif len(results) == 1:
             first_id = results[0].content["execution_id"]
             yield {0: DeltaToolCall(name="wait_subagent", json_args=json.dumps({"execution_id": first_id}))}
         elif len(results) == 2:
-            yield {
-                0: DeltaToolCall(
-                    name="spawn_subagent", json_args='{"name":"second","instructions":"BLOCKED_ROLE","prompt":"task"}'
-                )
-            }
+            yield {0: DeltaToolCall(name="spawn_subagent", json_args='{"name":"second","prompt":"BLOCKED_ROLE task"}')}
         elif len(results) == 3:
             yield {
                 0: DeltaToolCall(

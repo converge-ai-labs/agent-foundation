@@ -503,7 +503,6 @@ class TerminalProjectionService:
             for item in await self._store.configurations.resources(source.source_digest)
         }
         return ThreadSelectorCatalog(
-            sidekick_enabled=True,
             dictation=source.document.dictation
             if source.document.dictation.backend == "codex" or source.document.dictation.model
             else None,

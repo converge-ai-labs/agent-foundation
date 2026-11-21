@@ -137,19 +137,19 @@ subagents:
 
 ### 内置工具与 subagent
 
-| 根字段                                    | 默认值      | 用途                                                       |
-| ----------------------------------------- | ----------- | ---------------------------------------------------------- |
-| `tools.enable_ask_user_question`          | `true`      | 包含原生提问工具                                           |
-| `tools.enable_codeact`                    | `true`      | 包含 CodeAct 及 `store`/`load`/`forget`                    |
-| `tools.interaction_timeout_seconds`       | `120`       | 每次 TUI 交互或 WebUI 根决策批次的正有限秒数               |
-| `tools.execution.mode`                    | `inline`    | `inline` 等待；`auto` 为支持的通用工具启用定时交接         |
-| `tools.execution.foreground_wait_seconds` | `5.0`       | 非负有限等待时间；支持小数秒                               |
-| `input.steering_mode`                     | `immediate` | `immediate` 中断等待；`queued` 等待安全边界                |
-| `subagents.include`                       | `[]`        | 有序唯一名称：`code-reviewer`、`executor`、`explorer`      |
-| `subagents.max_concurrent`                | `8`         | 每个对话中运行子级数量的正整数上限，所有类型及恢复执行共用 |
-| `subagents.dynamic.enabled`               | `false`     | 向根 Agent 提供按任务创建子级的 `spawn_subagent`           |
-| `subagents.dynamic.allowed_models`        | `[]`        | 显式创建时可选的已配置 Model ID，不能重复                  |
-| `subagents.dynamic.default_model`         | 未设置      | 省略 `model` 时使用；启用动态创建时必填                    |
+| 根字段                                    | 默认值      | 用途                                                                                                                                                                       |
+| ----------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools.enable_ask_user_question`          | `true`      | 包含原生提问工具                                                                                                                                                           |
+| `tools.enable_codeact`                    | `true`      | 包含 CodeAct 及 `store`/`load`/`forget`                                                                                                                                    |
+| `tools.interaction_timeout_seconds`       | `120`       | 每次 TUI 交互或 WebUI 根决策批次的正有限秒数                                                                                                                               |
+| `tools.execution.mode`                    | `inline`    | `inline` 等待；`auto` 为支持的通用工具启用定时交接                                                                                                                         |
+| `tools.execution.foreground_wait_seconds` | `5.0`       | 非负有限等待时间；支持小数秒                                                                                                                                               |
+| `input.steering_mode`                     | `immediate` | `immediate` 中断等待；`queued` 等待安全边界                                                                                                                                |
+| `subagents.include`                       | `[]`        | 有序唯一名称：`code-reviewer`、`executor`、`explorer`                                                                                                                      |
+| `subagents.max_concurrent`                | `8`         | 每个对话中运行子级数量的正整数上限，所有类型及恢复执行共用                                                                                                                 |
+| `subagents.dynamic.enabled`               | `false`     | 向根 Agent 提供按任务创建子级的 `spawn_subagent`                                                                                                                           |
+| `subagents.dynamic.allowed_models`        | `[]`        | 允许 Agent 在创建独立会话、Worker 与子角色时选用的 Model ID                                                                                                                |
+| `subagents.dynamic.default_model`         | 未设置      | 创建任务省略 `model` 时的默认允许 Model；`subagents.dynamic.enabled` 为 `true` 时配置加载必填，未设置时在 `create_thread` 或 `create_worker` 中省略 `model` 会在运行时失败 |
 
 常规设置包含全部三个内置子级。高级设置提供全部或不选；编辑列表可选择子集。定义由包维护，不会复制 Markdown 文件。用 `a13n-harness-ui config subagents` 检查包含情况。见[子级继承和冲突](agents-and-subagents.md#built-in-subagents)。
 
@@ -353,22 +353,9 @@ webui:
 
 ### WebUI 子智能体
 
-在 **Settings → Agents → 子智能体** 中允许智能体创建辅助角色、选择可用 Model 并设置同一对话共享的运行上限（默认 8）。Model 列表为空时仅允许继承主智能体的 Model；显式选择必须在列表中。最终结果自动返回。独立的 **Sidekick** 分组用于开启单独对话；问号提示说明两者区别。
+在 **Settings → Agents → Agent creation** 设置可用模型和默认模型。创建独立会话（`create_thread`）、Coordinator Worker（`create_worker`）或动态子智能体（`spawn_subagent`）时可以显式选用模型，也可以使用默认模型。已声明的子智能体使用自己配置或继承的模型，只有该模型在允许列表中才会出现在 `delegate` 名单里。
 
-### WebUI Sidekick
-
-**Settings → Agents → Sidekick** 控制独立工作的默认选择。Sidekick 在 WebUI 中始终可用。省略设置、`sidekick: {}` 和旧的 `sidekick: null` 都采用继承的默认值。为新 Sidekick Thread 选择默认 Model：
-
-```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
-webui:
-  sidekick:
-    agent: null
-    model: model-worker
-```
-
-使用已保存 ID。null/省略 `agent` 继承调用方；null/省略 `model` 跟随该 Agent 的 Model。配置的 Model 成为新 Thread 的持久默认值，供后续输入使用。显式 `create_thread(model_id=...)` 或 Run 选择器只覆盖对应 Run。
-
-保存后影响新的 WebUI 根 Run。保存不启动工作、不改变已有 Thread，也不改变 `defaults.agent`、TUI Run 或委派子级。设置向导保留已配置的 Agent/Model 选择。Sidekick 不再提供关闭开关；工具可见性和角色范围仍然有效。见[协作与交付](webui.md#agent-collaboration-and-sidekick)。
+在 **Settings → Agents → Subagents** 中，`subagents.dynamic.enabled` 用于控制根会话是否开放 `spawn_subagent` 工具，`subagents.max_concurrent`（默认 `8`）则限制单个根会话内同时运行的子级任务数量。详见 [Agent 协作](webui.md#agent-collaboration)与[动态 subagent](agents-and-subagents.md#dynamic-subagents-and-result-delivery)。
 
 ### MCP 生命周期与协议
 

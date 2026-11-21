@@ -90,7 +90,6 @@ let activity: URL[];
 let activeThreads: ReturnType<typeof thread>[];
 let starredThreads: ReturnType<typeof thread>[];
 let writes: Request[];
-let sidekickEnabled: boolean;
 let coordinators: ReturnType<typeof thread>[];
 let workerThreads: ReturnType<typeof thread>[];
 let failMore: boolean;
@@ -112,7 +111,6 @@ beforeEach(async () => {
   activeThreads = [];
   starredThreads = [];
   writes = [];
-  sidekickEnabled = false;
   coordinators = [];
   workerThreads = [];
   failMore = false;
@@ -246,7 +244,6 @@ beforeEach(async () => {
         return json({
           agents: [],
           environments: [],
-          sidekick_enabled: sidekickEnabled,
         });
       const activeThread = activeThreads.find(
         (item) =>
@@ -1465,7 +1462,6 @@ it("keeps discovery failure inside the popup and supports retry without an empty
 });
 
 it("keeps workers collapsed on direct navigation and pages them separately from ordinary Running and Recent", async () => {
-  sidekickEnabled = true;
   coordinators = [
     { ...thread("coordinator-one"), role: "coordinator", auto_followup: true },
   ];
@@ -1626,7 +1622,6 @@ it("keeps an off-page owner in Running while its worker is active without loadin
 });
 
 it("shows worker fetch failures without claiming empty and retries inside the disclosure", async () => {
-  sidekickEnabled = true;
   coordinators = [
     { ...thread("coordinator-one"), role: "coordinator", auto_followup: true },
   ];
@@ -1701,7 +1696,7 @@ it("promotes the selected ordinary chat without replacing its identity or route"
   );
 });
 
-it("renders multiple Coordinators with disjoint workers and independent follow-up even with Sidekick off", async () => {
+it("renders multiple Coordinators with disjoint workers and independent follow-up", async () => {
   coordinators = ["alpha", "beta"].map((id) => ({
     ...thread(id),
     role: "coordinator",

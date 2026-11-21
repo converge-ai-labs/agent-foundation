@@ -155,6 +155,8 @@ export function ResourceFields({
   const allowedModels =
     strings(["subagents", "dynamic", "allowed_models"]) ?? [];
   const defaultModelPath = ["subagents", "dynamic", "default_model"];
+  const dynamicSubagentsEnabled =
+    get(["subagents", "dynamic", "enabled"]) === true;
   const list = (
     label: string,
     path: string[],
@@ -588,29 +590,58 @@ export function ResourceFields({
             )}
             {(!group || group === "agents") && (
               <>
-                <SettingsSection
-                  title={
-                    <span className="flex items-center gap-1">
-                      {t("Sidekick")}
-                      <HelpTip label={t("About Sidekick")}>
-                        {t(
-                          "A Sidekick opens a separate chat in your chat list. Use it for work that needs its own conversation, your decisions or later follow-up.",
-                        )}
-                      </HelpTip>
-                    </span>
-                  }
-                >
-                  {scalar(
-                    t("Sidekick agent"),
-                    ["webui", "sidekick", "agent"],
-                    agentOptions,
-                    t("Use current agent"),
-                  )}
-                  {scalar(
-                    t("Sidekick model"),
-                    ["webui", "sidekick", "model"],
-                    models,
-                    t("Use agent model"),
+                <SettingsSection title={t("Agent creation")}>
+                  <ModelSelectionField
+                    label={t("Allowed models")}
+                    description={
+                      allowedModels.length
+                        ? t(
+                            "Agents can use these models for new chats, workers, and declared or dynamic subagents.",
+                          )
+                        : t(
+                            "With no models selected, agents cannot create chats or workers, or delegate to subagents.",
+                          )
+                    }
+                    models={selectors.data?.models ?? []}
+                    value={allowedModels}
+                    onChange={(value) => {
+                      let updated = updateDocument(
+                        source,
+                        ["subagents", "dynamic", "allowed_models"],
+                        value,
+                      );
+                      // The default must stay one of the allowed models.
+                      const fallback = text(defaultModelPath);
+                      if (fallback && !value?.includes(fallback))
+                        updated = updateDocument(
+                          updated,
+                          defaultModelPath,
+                          undefined,
+                        );
+                      onChange(updated);
+                    }}
+                  />
+                  {allowedModels.length > 0 && (
+                    <ResourceChoice
+                      label={t("Default model")}
+                      description={t(
+                        "Used when the agent does not choose a model.",
+                      )}
+                      value={text(defaultModelPath)}
+                      placeholder={t("Choose a model")}
+                      loading={selectors.isPending || sources.isPending}
+                      onValueChange={(value) =>
+                        set(defaultModelPath, value || undefined)
+                      }
+                      options={[
+                        ...(dynamicSubagentsEnabled
+                          ? []
+                          : [{ value: "", label: t("None") }]),
+                        ...models.filter((model) =>
+                          allowedModels.includes(model.value),
+                        ),
+                      ]}
+                    />
                   )}
                 </SettingsSection>
                 <SettingsSection
@@ -628,12 +659,17 @@ export function ResourceFields({
                   <SettingsRow
                     label={t("Let the agent create subagents")}
                     controlId="dynamic-subagents-enabled"
+                    description={
+                      dynamicSubagentsEnabled && !text(defaultModelPath)
+                        ? t(
+                            "Choose at least one allowed model and a default model in Agent creation above.",
+                          )
+                        : undefined
+                    }
                   >
                     <Switch
                       id="dynamic-subagents-enabled"
-                      checked={
-                        get(["subagents", "dynamic", "enabled"]) === true
-                      }
+                      checked={dynamicSubagentsEnabled}
                       onCheckedChange={(enabled) =>
                         set(
                           ["subagents", "dynamic", "enabled"],
@@ -642,51 +678,6 @@ export function ResourceFields({
                       }
                     />
                   </SettingsRow>
-                  {get(["subagents", "dynamic", "enabled"]) === true && (
-                    <>
-                      <ModelSelectionField
-                        label={t("Models for created subagents")}
-                        description={t(
-                          "The agent can choose from these. Choose at least one.",
-                        )}
-                        models={selectors.data?.models ?? []}
-                        value={allowedModels}
-                        onChange={(value) => {
-                          let updated = updateDocument(
-                            source,
-                            ["subagents", "dynamic", "allowed_models"],
-                            value,
-                          );
-                          // The default must stay one of the allowed models.
-                          const fallback = text(defaultModelPath);
-                          if (fallback && !value?.includes(fallback))
-                            updated = updateDocument(
-                              updated,
-                              defaultModelPath,
-                              undefined,
-                            );
-                          onChange(updated);
-                        }}
-                      />
-                      {allowedModels.length > 0 && (
-                        <ResourceChoice
-                          label={t("Default model")}
-                          description={t(
-                            "Used when the agent does not choose a model.",
-                          )}
-                          value={text(defaultModelPath)}
-                          placeholder={t("Choose a model")}
-                          loading={selectors.isPending || sources.isPending}
-                          onValueChange={(value) =>
-                            set(defaultModelPath, value)
-                          }
-                          options={models.filter((model) =>
-                            allowedModels.includes(model.value),
-                          )}
-                        />
-                      )}
-                    </>
-                  )}
                   <SettingsRow
                     label={t("Maximum running subagents")}
                     controlId="subagents-max-concurrent"

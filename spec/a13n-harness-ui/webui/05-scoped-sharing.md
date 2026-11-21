@@ -16,7 +16,7 @@ Links use a fragment credential, removed before mounting network consumers. Gues
 
 ## Scope and Permission
 
-Thread access includes the selected root and its child execution lineage, not independently created sidekick or worker roots. Project access includes roots currently assigned to that Project and their child execution lineage, including roots created after the link. Moving a root out of the Project removes Project-granted access. A missing target is unavailable. Memory-maintenance and Live Threads are not share targets.
+Thread access includes the selected root and its child execution lineage, not independent chat or worker roots. Project access includes roots currently assigned to that Project and their child execution lineage, including roots created after the link. Moving a root out of the Project removes Project-granted access. A missing target is unavailable. Memory-maintenance and Live Threads are not share targets.
 
 | Capability                                                                                        | View | Prompt |
 | ------------------------------------------------------------------------------------------------- | ---- | ------ |

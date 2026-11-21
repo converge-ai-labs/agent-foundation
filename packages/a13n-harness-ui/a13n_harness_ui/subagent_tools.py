@@ -67,7 +67,6 @@ class SubagentTools(AbstractModelContextCapability):
         self,
         ctx: RunContext[AgentContext],
         name: Annotated[str, Field(min_length=1, max_length=63)],
-        instructions: Annotated[str, Field(min_length=1, max_length=1024 * 1024)],
         prompt: Annotated[str, Field(min_length=1, max_length=1024 * 1024)],
         model: str | None = None,
         thinking: ThinkingSelection | None = None,
@@ -78,9 +77,7 @@ class SubagentTools(AbstractModelContextCapability):
             parent_agent_instance_id=ctx.deps.instance.agent_instance_id,
             host_refs=ctx.deps.instance.host_refs,
         )
-        execution = await self.operator.spawn(
-            context, name=name, instructions=instructions, prompt=prompt, model=model, thinking=thinking
-        )
+        execution = await self.operator.spawn(context, name=name, prompt=prompt, model=model, thinking=thinking)
         return execution.receipt()
 
     async def send_parent_message(

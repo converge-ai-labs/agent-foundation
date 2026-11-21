@@ -1,6 +1,6 @@
 ---
 title: Use WebUI
-description: Collaborate with agents in the browser using WebUI's conversation workspace, live file explorer, Git diff viewer, integrated terminals, and Sidekick.
+description: Collaborate with agents in the browser using WebUI's conversation workspace, live file explorer, Git diff viewer, integrated terminals, and Coordinator workers.
 ---
 
 WebUI is the browser workbench for Harness UI. It uses the same App and saved conversations as the TUI. Start with one conversation; add Projects, file review, browser control, and collaboration as your work needs them.
@@ -340,29 +340,54 @@ Guests cannot configure the instance, answer approvals, manage links, or use nat
 
 The Coordinator delegates substantive investigation, implementation, and testing to workers by default. It focuses on communication with you, planning, coordination, and review of results. Simple questions, lightweight checks, and review stay in the Coordinator conversation. Tightly coupled work can stay with one worker; delegation does not require parallel execution. If you ask the Coordinator to do the work itself, it follows your choice without delegating or asking you to confirm that choice again. This is an Agent instruction, not a restriction on its tools.
 
-Each Project can have several Coordinators. The role is permanent, including if sending subsequently fails. An existing conversation can use **Make Coordinator** when idle, unarchived, Project-bound, and free of pending decisions. Conversion keeps its URL/history/settings. Workers cannot be promoted; old conversations and Sidekicks are not adopted.
+Each Project can have several Coordinators. The role is permanent, including if sending subsequently fails. An existing conversation can use **Make Coordinator** when idle, unarchived, Project-bound, and free of pending decisions. Conversion keeps its URL/history/settings. Workers cannot be promoted; existing conversations are not adopted.
 
 A worker is a root conversation with human controls, not a Subagent. **Managed by · name** fixes its owner and Project. Before creation, remove that label to make an independent draft without losing text, attachments, or choices. After creation it stays fixed; uncertain creation must be inspected before retrying. Workers appear under their owner, and search labels them **Coordinator worker**.
 
-Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use Sidekick defaults, while manual workers use composer choices. Sidekick defaults do not control Coordinator identity or automatic follow-up.
+Use **Pause automatic follow-up** or **Enable automatic follow-up** in the Coordinator menu. It controls lifecycle notifications, not worker execution. New Coordinators enable it; migrated ones retain their setting. Agent-created workers use the shared creation model selection. Manual workers use composer choices.
 
 Automatic follow-up attempts delivery on first direct worker assignment and when owned work finishes, fails, is cancelled, or waits for input. The Coordinator inspects saved results before accepting completion. Notifications have no retry/restart replay. Closing the browser leaves work running; stopping the Coordinator neither stops workers nor pauses later notifications. Decision deadlines still apply.
 
-## Agent collaboration and Sidekick
+## Agent collaboration
 
-Use inline conversation links from collaboration tools to inspect other root work. Agents receive their Thread ID and captured Project/roots; a newly created root receives the task and return address, not the requester's full conversation history.
+Agents in WebUI can inspect related conversations, spin up independent or managed chats, and delegate bounded tasks within the current chat. When an Agent creates a new root conversation, the target receives the task prompt and a return address (`send_thread_message`) while keeping its own clean conversation history.
 
-| Root role     | Agent's collaboration scope                                                  |
-| ------------- | ---------------------------------------------------------------------------- |
-| Ordinary root | Other roots, excluding managed workers                                       |
-| Coordinator   | Its owned workers; new roots stay in its Project                             |
-| Worker        | Inspect itself/owner, message owner, use Subagents for task-local delegation |
+| Root role     | Collaboration scope available to the Agent                                                           |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| Ordinary root | List, inspect, create, and message other non-worker roots (including Coordinators)                   |
+| Coordinator   | Create, list, inspect, and message its owned workers inside the same Project                         |
+| Worker        | Inspect itself and its owning Coordinator, message its Coordinator, and use Subagents for local work |
 
-These limits apply to model tools, not human WebUI access. Workers cannot create roots, control their owner, or access siblings.
+These scope rules govern model-facing collaboration tools; you can still browse and open any conversation directly in WebUI.
 
-An ordinary root's `create_thread` can retain the Project, select another ID, or choose null. `agent_id` selects an Agent; absent Sidekick or explicit Agent/Project changes, source selections are inherited. `model_id` selects the first Run's Model; `run_thread` can select another for a later Run. A Run started without a selection, such as a message or background result, keeps the previous Run's Model. `send_thread_message` steers an active target or starts an idle turn. Track the returned operation or stream events to confirm when an accepted input has been processed and saved. Inspect failed/uncertain sends before retrying; archived/Subagent Threads and unresolved pending decisions cannot receive a new turn.
+### Choose the right creation tool
 
-Configure **Settings → Agents → Sidekick** for the Sidekick Agent and Model. Sidekick is always available in WebUI. **Inherit current agent** and **Use agent model** select inheritance; legacy `sidekick: null` now uses those defaults. The selected Model becomes a new Thread's default for later turns. Saving affects future captures and roots, not active Runs/existing Threads, and starts no work by itself. See [Sidekick configuration](configuration.md#webui-sidekick).
+Agents select a creation tool based on where the work belongs:
+
+| Tool                                                                                                | Where the work lives                                     | Who can call it                                           |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------- |
+| `create_thread(prompt, title=None, agent_id=None, project_id="current", model=None, thinking=None)` | A new independent root chat with its own history         | Ordinary roots and Bot                                    |
+| `create_worker(prompt, title=None, agent_id=None, model=None, thinking=None)`                       | A managed worker chat owned by the calling Coordinator   | Coordinators only (stays in the Coordinator's Project)    |
+| `spawn_subagent(name, prompt, model=None, thinking=None)`                                           | A child execution inside the current conversation's tree | Root conversations with dynamic subagent creation enabled |
+
+In `create_thread`, `project_id="current"` keeps the caller's Project and inherited Agent/environment selections, `None` creates a projectless chat, and an explicit Project ID targets that Project (resolving the target Project's default Agent, then the global default Agent, when `agent_id` is omitted). If prompt admission fails after the Thread record is created, the tool returns the new Thread ID so the Agent can inspect or message it rather than creating a duplicate chat.
+
+### Shared model selection for agent creation
+
+Open **Settings → Agents → Agent creation** (configured under `subagents.dynamic.allowed_models` and `subagents.dynamic.default_model` in `a13n-harness-ui.yaml`) to choose which Models agents may use when creating work:
+
+- `create_thread`, `create_worker`, and `spawn_subagent` all validate an explicit `model` argument against `allowed_models` and fall back to `default_model` when `model` is omitted (`default_model` is required at config load only when `subagents.dynamic.enabled` is `true`; when `default_model` is unset, calling `create_thread` or `create_worker` without an explicit `model` fails at runtime).
+- `delegate` lists only declared and built-in subagents whose effective model is allowed, including models inherited from the composer. If none qualify, the tool is hidden.
+- For a newly created root chat or worker, the selected Model is saved as that Thread's default Model for future turns.
+
+### Message an existing conversation
+
+Agents call `send_thread_message(thread_id, message, kind="task")` to send follow-up instructions or reports to an existing root chat within their scope:
+
+- **Active target (`mode="steer"`):** attempts best-effort enqueue on the target's current receipt without forcing immediate steering or falling back to starting a new Run. Acceptance confirms the enqueue only, not processing or persistence.
+- **Idle target (`mode="run"`):** starts a new Run on the target chat (provided the chat is unarchived and has no unresolved human decisions), reusing the target's previous Run model selection when available or otherwise its saved default Model.
+
+WebUI displays cross-conversation messages with a source icon and an expandable **From thread** link identifying the sender Thread, keeping agent-to-agent messages visually distinct from your own prompts. Check the target chat's saved history and results (for example, with `get_thread`) to verify what was processed, and inspect its state before retrying an uncertain delivery.
 
 ## Fork a conversation
 
@@ -410,7 +435,7 @@ For later changes:
 | **Accounts & API keys** | Server credentials                                                          |
 | **Connections**         | MCP, reusable agent plugins, conversation connection defaults               |
 | **Environments**        | Local defaults, Devices, profiles/extensions, runtime preparation           |
-| **General**             | Live, Memory, Sidekick, notifications, setup/diagnostics                    |
+| **General**             | Live, Memory, notifications, setup/diagnostics                              |
 | **Configuration files** | Inspect or edit the underlying files                                        |
 
 Forms/YAML share one draft. **Save changes** validates and replaces the complete file. Tab navigation preserves unsaved edits; reload does not. Detected external changes retain your dirty draft, while file saves remain last-write-wins. Hidden MCP source text means a replacement also replaces unseen fields and all resources in that file. Active Runs keep captured configuration. Follow [configuration recipes](configuration-recipes.md) for complete file-based setups.

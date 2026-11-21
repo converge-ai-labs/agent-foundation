@@ -217,6 +217,16 @@ async def test_context_window_alias_equal_values_normalize_without_mutation():
     assert value == {"context_window": 128000, "context_window_tokens": 128000}
 
 
+@pytest.mark.parametrize("sidekick", [{}, {"model": "model-primary"}])
+async def test_old_setup_warns_without_selecting_creation_models(tmp_path, caplog, sidekick):
+    path = _write_configuration(tmp_path)
+    path.write_text(yaml.safe_dump({"schema_version": "1", "webui": {"sidekick": sidekick}}))
+    config = await load_harness_ui_configuration(path)
+    assert config.document.subagents.dynamic.allowed_models == ()
+    assert config.document.subagents.dynamic.default_model is None
+    assert "configuration.document.webui are preserved but not applied: 'sidekick'" in caplog.text
+
+
 async def test_additive_configuration_fields_survive_nested_snapshot_round_trip(tmp_path, caplog):
     root = _write_configuration(tmp_path)
     extra = {"items": [1, True, None, "  private-future-value  "]}

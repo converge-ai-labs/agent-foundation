@@ -293,7 +293,7 @@ async def test_inspection_accounts_and_notes_use_existing_owners(
             assert (await api.get("/api/configuration/sources/mcp/unknown.yaml")).status_code == 404
 
 
-async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_restart(
+async def test_creation_model_settings_save_applies_to_future_webui_runs_and_survives_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from pydantic_ai.models.function import DeltaToolCall
@@ -302,9 +302,11 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
     document = yaml.safe_load(root.read_text())
     started, release = Event(), Event()
     seen = []
+    toolsets = []
 
     async def model(messages, info):
         seen.append(info.instructions or "")
+        toolsets.append({tool.name for tool in info.function_tools})
         if len(seen) == 1:
             started.set()
             await release.wait()
@@ -323,16 +325,17 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
             first = (await api.post(prefix + "/submit", json={"parts": ["Inspect settings"]})).json()["receipt_id"]
             with fail_after(10):
                 await started.wait()
-            assert "Sidekick is enabled" in seen[0] and "Agent 'agent-assistant'" in seen[0]
+            assert "No models are allowed for new agents" in seen[0]
+            assert {"create_thread", "create_worker", "spawn_subagent", "delegate"}.isdisjoint(toolsets[0])
             captured = (await api.get(prefix + "/configuration")).json()["captured"]
-            assert captured["webui_sidekick"] == {"agent": None, "model": None}
-            invalid = {**document, "webui": {"sidekick": {"agent": "agent-missing"}}}
+            assert "webui_sidekick" not in captured
+            invalid = {**document, "subagents": {"dynamic": {"allowed_models": ["model-missing"]}}}
             assert (
                 await api.put(
                     "/api/configuration/sources/a13n-harness-ui.yaml", json={"content": yaml.safe_dump(invalid)}
                 )
             ).status_code == 400
-            document["webui"] = {"sidekick": None}
+            document["subagents"] = {"dynamic": {"allowed_models": ["model-primary"], "default_model": "model-primary"}}
             saved = await api.put(
                 "/api/configuration/sources/a13n-harness-ui.yaml", json={"content": yaml.safe_dump(document)}
             )
@@ -340,24 +343,19 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
             assert (await api.get(prefix + "/configuration")).json()["captured"] == captured
             release.set()
             assert (await settled(api, first))["status"] == "completed"
-            assert "Sidekick is enabled" in seen[1]  # Later requests in the same Run retain captured instructions.
+            assert (
+                "No models are allowed for new agents" in seen[1]
+            )  # Later requests in the same Run retain captured instructions.
             second = (await api.post(prefix + "/submit", json={"parts": ["Inspect again"]})).json()["receipt_id"]
             assert (await settled(api, second))["status"] == "completed"
-            assert "Sidekick is enabled" in seen[2]
-            assert (await api.get(prefix + "/configuration")).json()["captured"]["webui_sidekick"] == {
-                "agent": None,
-                "model": None,
-            }
+            assert "Agent creation models: model-primary" in seen[2]
+            assert "create_thread" not in toolsets[1] and "create_thread" in toolsets[2]
             assert (await api.get("/api/threads")).json()["total"] == 1  # Settings never create work.
     async with listener_with_app(tmp_path, configuration_path=root) as (http, _, _app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             saved = (await api.get("/api/configuration/sources/a13n-harness-ui.yaml")).json()
-            assert yaml.safe_load(saved["content"])["webui"]["sidekick"] is None
+            assert yaml.safe_load(saved["content"])["subagents"] == document["subagents"]
             assert (await api.get("/api/threads")).json()["total"] == 1
             third = (await api.post(prefix + "/submit", json={"parts": ["Still available"]})).json()["receipt_id"]
             assert (await settled(api, third))["status"] == "completed"
-            assert (await api.get(prefix + "/configuration")).json()["captured"]["webui_sidekick"] == {
-                "agent": None,
-                "model": None,
-            }
-            assert "Sidekick is enabled" in seen[-1]
+            assert "Agent creation models: model-primary" in seen[-1]

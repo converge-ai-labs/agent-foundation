@@ -1506,7 +1506,7 @@ it("shows Live entries only after enabling and saving, and hides them again with
   expect(writesToExecution).toEqual([]);
 });
 
-it("configures Sidekick in Agents without changing defaults or starting chats", async () => {
+it("configures shared creation models in Agents without changing chat defaults or starting chats", async () => {
   window.history.replaceState(null, "", "/settings/agents");
   const rootSource = {
     ...source,
@@ -1581,40 +1581,22 @@ it("configures Sidekick in Agents without changing defaults or starting chats", 
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
-  expect(
-    (await screen.findByRole("combobox", { name: "Sidekick agent" }))
-      .textContent,
-  ).toContain("Use current agent");
-  await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
+  await user.click(
+    await screen.findByRole("checkbox", { name: "Worker model" }),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Default model" }));
   await user.click(await screen.findByRole("option", { name: "Worker model" }));
-  expect(parse(content).webui.sidekick).toBeUndefined();
-  await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
-  await user.click(await screen.findByRole("option", { name: "Worker" }));
   expect(writes).toBe(0);
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toBe(1));
-  expect(parse(content).webui.sidekick).toEqual({
-    agent: "agent-worker",
-    model: "model-worker",
+  expect(parse(content).subagents.dynamic).toEqual({
+    allowed_models: ["model-worker"],
+    default_model: "model-worker",
   });
-  expect(content).toContain("agent-assistant");
+  expect(parse(content).defaults.agent).toBe("agent-assistant");
   expect(content).toContain("Keep this comment");
   expect(content).toContain("DEBUG");
   expect(content).toContain("custom: keep");
-  await waitFor(() =>
-    expect(
-      screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
-    ).toContain("Worker"),
-  );
-  await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
-  await user.click(
-    await screen.findByRole("option", { name: "Use current agent" }),
-  );
-  await user.click(screen.getByRole("button", { name: "Save" }));
-  await waitFor(() => expect(writes).toBe(2));
-  expect(parse(content).webui.sidekick).toEqual({ model: "model-worker" });
-  expect(content).toContain("custom: keep");
-  expect(content).toContain("agent-assistant");
   expect(submissions).toBe(0);
 });
 

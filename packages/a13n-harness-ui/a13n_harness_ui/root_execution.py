@@ -240,7 +240,7 @@ class RootRunExecutor:
         response = None if response is None else response.model_copy(deep=True)
         thread = await self._threads.get(thread_id)
         if thread.parent_thread_id is not None:
-            raise ThreadError("run_thread accepts only root Threads.", code="child_thread_scoped")
+            raise ThreadError("Only root Threads can start a root operation.", code="child_thread_scoped")
         if thread.archived:
             raise ThreadError("An archived Thread cannot run.", code="thread_archived")
         if thread.memory_scope is not None:

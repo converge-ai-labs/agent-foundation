@@ -1,6 +1,6 @@
 ---
 title: 使用 WebUI 浏览器工作台
-description: 在 WebUI 浏览器界面中与 Agent 协同开发，实时查看项目文件树、对比 Git 变更 diff、操作内置终端并使用 Sidekick 辅助对话。
+description: 在 WebUI 浏览器界面中与 Agent 协同开发，实时查看项目文件树、对比 Git 变更 diff、操作内置终端，并通过 Coordinator 协调工作聊天。
 ---
 
 WebUI 是 Harness UI 的浏览器工作台，与 TUI 使用相同的 App 和已保存对话。先完成一次对话，再按工作需要加入 Project、文件审阅、浏览器控制和协作。
@@ -340,29 +340,54 @@ Terminal 与 Files、Changes 和 Browser 共用资源标签栏。在 Side by sid
 
 Coordinator 默认把实质性的调查、实现和测试委派给 worker，自己侧重与你交流、规划、协调和审查结果。简单问题、轻量检查和审查仍在 Coordinator 对话中完成。紧密关联的工作可以持续交给同一个 worker；委派不要求并行执行。如果你要求 Coordinator 亲自执行，它会遵循你的选择，不委派，也不要求你再次确认这一选择。这是 Agent 指令，不是工具权限限制。
 
-每个 Project 可有多个 Coordinator。角色永久保留，包括之后发送失败的情况。已有对话空闲、未归档、绑定 Project 且无待决策时可用 **Make Coordinator**。转换保留 URL/历史/设置。Worker 不能升级，旧对话和 Sidekick 不会被收编。
+每个 Project 可有多个 Coordinator。角色永久保留，包括之后发送失败的情况。已有对话空闲、未归档、绑定 Project 且无待决策时可用 **Make Coordinator**。转换保留 URL/历史/设置。Worker 不能升级，已有对话不会被收编。
 
 Worker 是有人类控件的根对话，不是 Subagent。**Managed by · name** 固定 owner 和 Project。创建前移除此标签可变为独立草稿，不丢文字、附件或选择；创建后固定。创建结果不确定时先检查再重试。Worker 位于 owner 下，搜索标为 **Coordinator worker**。
 
-在 Coordinator 菜单使用 **Pause automatic follow-up** 或 **Enable automatic follow-up**。它控制生命周期通知，不控制 worker 执行。新 Coordinator 默认开启，迁移保留原设置。Agent 创建的 worker 使用 Sidekick 默认值，手动创建使用输入框选择。Sidekick 默认值不控制 Coordinator 身份或自动跟进。
+在 Coordinator 菜单使用 **Pause automatic follow-up** 或 **Enable automatic follow-up**。它控制生命周期通知，不控制 worker 执行。新 Coordinator 默认开启，迁移保留原设置。Agent 创建的 worker 使用共享模型设置，手动创建的 worker 使用输入框中的选择。
 
 自动跟进会在首次直接分配 worker 任务，以及所属工作完成、失败、取消或等待输入时尝试交付。Coordinator 先检查保存结果再接受完成。通知没有重试/重启重放。关闭浏览器保留工作；停止 Coordinator 不停止 worker，也不暂停之后通知。决策截止时间仍生效。
 
-## Agent 协作与 Sidekick
+## Agent 协作
 
-通过协作工具的内联对话链接检查其他根工作。Agent 会收到 Thread ID 和捕获的 Project/根目录；新根收到任务和回信地址，不继承请求方完整历史。
+WebUI 中的 Agent 可以查看关联会话、拉起独立会话或受管 Worker，以及在当前对话内委派子任务。当 Agent 创建新的根会话时，目标会话会收到任务提示词与回信地址（`send_thread_message`），同时保持自身独立的对话历史。
 
-| 根角色      | Agent 协作范围                                            |
-| ----------- | --------------------------------------------------------- |
-| 普通根      | 其他根，不含托管 worker                                   |
-| Coordinator | 自己的 worker；新根保持在其 Project                       |
-| Worker      | 查看自己/owner、向 owner 发消息、用 Subagent 做任务内委派 |
+| 根会话角色  | Agent 可用的协作范围                                                      |
+| ----------- | ------------------------------------------------------------------------- |
+| 普通根会话  | 列出、查看、创建并向其他非 Worker 根会话（含 Coordinator）发送消息        |
+| Coordinator | 在所属 Project 内创建、列出、查看并向自己管理的 Worker 发送消息           |
+| Worker      | 查看自身与所属 Coordinator、向 Coordinator 汇报消息，并使用 Subagent 委派 |
 
-限制应用于模型工具，不限制人类 WebUI 访问。Worker 不能创建根、控制 owner 或访问兄弟 worker。
+上述范围仅约束模型侧的协作工具调用；你在 WebUI 界面中仍可直接浏览和打开任意会话。
 
-普通根的 `create_thread` 可以保留 Project、选其他 ID 或用 null。`agent_id` 选择 Agent；没有 Sidekick 或显式 Agent/Project 变化时继承来源选择。`model_id` 选择首个 Run 的模型，`run_thread` 可以为后续 Run 另选模型。没有选择模型就启动的 Run（例如消息或后台结果触发的 Run）沿用上一个 Run 的模型。`send_thread_message` 对活动目标发送 steering，对空闲目标开始一轮。接受不证明已处理或保存交付。失败/不确定发送先检查再重试；归档/Subagent Thread 和待决策未解决的 Thread 不能接收新轮次。
+### 选择合适的创建工具
 
-在 **设置 → 智能体 → Sidekick** 配置 Sidekick Agent 和 Model。Sidekick 在 WebUI 中始终可用。**Inherit current agent** 和 **Use agent model** 选择继承；旧的 `sidekick: null` 现在也采用这些默认值。选定 Model 成为新 Thread 后续默认值。保存影响未来捕获和根，不影响活动 Run/现有 Thread，也不会自行开始工作。见 [Sidekick 配置](configuration.md#webui-sidekick)。
+Agent 根据任务归属选择对应的创建工具：
+
+| 工具签名                                                                                            | 任务运行位置                              | 允许调用的角色                            |
+| --------------------------------------------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------- |
+| `create_thread(prompt, title=None, agent_id=None, project_id="current", model=None, thinking=None)` | 拥有独立历史的新建根会话                  | 普通根会话与 Bot                          |
+| `create_worker(prompt, title=None, agent_id=None, model=None, thinking=None)`                       | 归属于当前 Coordinator 的受管 Worker 会话 | 仅限 Coordinator（固定在相同 Project 内） |
+| `spawn_subagent(name, prompt, model=None, thinking=None)`                                           | 当前会话树内的异步子 Agent 执行           | 已开启按需动态创建子智能体的根会话        |
+
+在 `create_thread` 中，`project_id="current"` 会沿用调用方所在的 Project 及其 Agent/环境选择，`None` 会创建无 Project 的独立会话，传入具体 Project ID 则可跨项目创建会话（省略 `agent_id` 时优先使用目标 Project 的默认 Agent，其次回落到全局默认 Agent）。若会话记录已创建但首条消息准入失败，工具会返回已创建的 Thread ID，方便 Agent 先检查或补发消息，避免重复创建会话。
+
+### 跨会话与子智能体共享的模型选择
+
+在 **Settings → Agents → Agent creation**（对应 `a13n-harness-ui.yaml` 中的 `subagents.dynamic.allowed_models` 与 `subagents.dynamic.default_model`）中，统一配置允许 Agent 在创建任务时选用的模型：
+
+- `create_thread`、`create_worker` 与 `spawn_subagent` 均会校验显式传入的 `model` 是否位于 `allowed_models` 白名单内；省略 `model` 时自动采用 `default_model`（`default_model` 仅在 `subagents.dynamic.enabled` 为 `true` 时于配置加载阶段强制必填；当 `default_model` 未设置时，不传 `model` 调用 `create_thread` 或 `create_worker` 会在运行时失败）。
+- `delegate` 仅列出实际模型在允许列表中的已声明和内置子智能体，包括继承了输入框所选模型的子智能体。名单为空时，Agent 看不到此工具。
+- 对于新建的独立根会话或 Worker，所选 Model 会持久保存为该 Thread 后续轮次的默认模型。
+
+### 向已有会话发送消息
+
+Agent 可调用 `send_thread_message(thread_id, message, kind="task")` 向协作范围内的已有根会话发送后续指令或进展汇报：
+
+- **目标会话正在运行（`mode="steer"`）：** 尽力将消息入队到目标当前的活跃回执中，不会强制立即打断执行，也不会在被拒时回落为启动新 Run。返回结果仅确认已接收，不证明已处理或已持久化。
+- **目标会话处于空闲（`mode="run"`）：** 在目标会话未归档且无待处理人工决策时启动一轮新 Run，优先沿用目标上一轮 Run 的模型选择，无上一轮覆盖时使用其已保存的默认 Model。
+
+WebUI 会在跨会话消息顶部展示来源图标与可展开的 **From thread** 溯源链接，使 Agent 之间的协作消息与你的手动输入一目了然。请通过目标会话的历史记录与结果（例如 `get_thread`）核实消息是否已处理；若投递结果不确定，请先检查目标会话状态再决定是否重试。
 
 ## 创建对话副本
 
@@ -410,7 +435,7 @@ Coordinator、worker、Subagent Thread 和内部 Memory/Live Thread 不能 fork�
 | **Accounts & API keys** | 服务器凭据                                          |
 | **Connections**         | MCP、可复用 agent 插件、对话连接默认值              |
 | **Environments**        | 本地默认值、Device、profile/extension、运行时准备   |
-| **General**             | Live、Memory、Sidekick、通知、设置/诊断             |
+| **General**             | Live、Memory、通知、设置/诊断                       |
 | **Configuration files** | 查看或编辑底层文件                                  |
 
 表单/YAML 共用草稿。**Save changes** 校验并替换整个文件。标签页内导航保留未保存编辑，重载不保留。检测到外部变化会保留未保存草稿，文件保存仍以后写覆盖前写。MCP 源文本隐藏，替换也会覆盖不可见字段和文件中全部资源。活动 Run 保留捕获配置。完整文件设置见[配置配方](configuration-recipes.md)。

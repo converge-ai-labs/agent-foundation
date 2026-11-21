@@ -137,19 +137,19 @@ The file-only `configuration` mount exposes the selected YAML's directory. It re
 
 ### Built-in tools and subagents
 
-| Root field                                | Default     | Purpose                                                                                |
-| ----------------------------------------- | ----------- | -------------------------------------------------------------------------------------- |
-| `tools.enable_ask_user_question`          | `true`      | Include the native question tool                                                       |
-| `tools.enable_codeact`                    | `true`      | Include CodeAct and `store`/`load`/`forget`                                            |
-| `tools.interaction_timeout_seconds`       | `120`       | Positive finite seconds per TUI interaction or WebUI root decision batch               |
-| `tools.execution.mode`                    | `inline`    | `inline` waits; `auto` enables timed handoff for eligible generic tools                |
-| `tools.execution.foreground_wait_seconds` | `5.0`       | Nonnegative finite wait; fractional seconds allowed                                    |
-| `input.steering_mode`                     | `immediate` | `immediate` interrupts waiting; `queued` waits for a safe boundary                     |
-| `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`                          |
-| `subagents.max_concurrent`                | `8`         | Positive running-child limit per conversation, shared by all subagent kinds and resume |
-| `subagents.dynamic.enabled`               | `false`     | Expose task-specific `spawn_subagent` to root Agents                                   |
-| `subagents.dynamic.allowed_models`        | `[]`        | Unique configured Model IDs allowed for explicit spawn Model choices                   |
-| `subagents.dynamic.default_model`         | unset       | Allowed Model used when a spawn omits `model`; required when dynamic creation is on    |
+| Root field                                | Default     | Purpose                                                                                                                                                                                                          |
+| ----------------------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools.enable_ask_user_question`          | `true`      | Include the native question tool                                                                                                                                                                                 |
+| `tools.enable_codeact`                    | `true`      | Include CodeAct and `store`/`load`/`forget`                                                                                                                                                                      |
+| `tools.interaction_timeout_seconds`       | `120`       | Positive finite seconds per TUI interaction or WebUI root decision batch                                                                                                                                         |
+| `tools.execution.mode`                    | `inline`    | `inline` waits; `auto` enables timed handoff for eligible generic tools                                                                                                                                          |
+| `tools.execution.foreground_wait_seconds` | `5.0`       | Nonnegative finite wait; fractional seconds allowed                                                                                                                                                              |
+| `input.steering_mode`                     | `immediate` | `immediate` interrupts waiting; `queued` waits for a safe boundary                                                                                                                                               |
+| `subagents.include`                       | `[]`        | Ordered unique names: `code-reviewer`, `executor`, `explorer`                                                                                                                                                    |
+| `subagents.max_concurrent`                | `8`         | Positive running-child limit per conversation, shared by all subagent kinds and resume                                                                                                                           |
+| `subagents.dynamic.enabled`               | `false`     | Expose task-specific `spawn_subagent` to root Agents                                                                                                                                                             |
+| `subagents.dynamic.allowed_models`        | `[]`        | Unique configured Model IDs permitted for agent-created chats, workers, and subagents                                                                                                                            |
+| `subagents.dynamic.default_model`         | unset       | Allowed Model used when agent creation omits `model`; required at config load when `subagents.dynamic.enabled` is `true`, and omitting `model` in `create_thread` or `create_worker` fails at runtime when unset |
 
 Normal setup includes all three built-in children. Advanced setup offers all or none; edit the list for a subset. Definitions remain package-owned, with no copied Markdown files. Inspect inclusion with `a13n-harness-ui config subagents`. See [child inheritance and conflicts](agents-and-subagents.md#built-in-subagents).
 
@@ -353,22 +353,9 @@ This controls request-address admission, not CORS. Authentication and same-origi
 
 ### WebUI subagents
 
-In **Settings → Agents → Subagents**, enable agent-created helpers, choose their allowed Models and set the shared per-chat running limit (default 8). An empty Model list permits only the inherited main Agent Model; explicit choices must be listed. Final results return automatically. The separate **Sidekick** group opens independent chats. Use the question-mark help icons to compare them.
+In **Settings → Agents → Agent creation**, choose the allowed models and an optional default. Independent chats (`create_thread`), Coordinator workers (`create_worker`), and dynamic subagents (`spawn_subagent`) use the default when the agent omits the model. Declared subagents keep their configured or inherited model and appear in the `delegate` roster only when that model is allowed.
 
-### WebUI Sidekick
-
-**Settings → Agents → Sidekick** controls defaults for independent work. Sidekick is always available in WebUI. Omitted settings, `sidekick: {}`, and legacy `sidekick: null` all use inherited defaults. To choose a default Model for new Sidekick Threads:
-
-```yaml title="a13n-harness-ui.yaml — Sidekick defaults"
-webui:
-  sidekick:
-    agent: null
-    model: model-worker
-```
-
-Use saved IDs. Null/omitted `agent` inherits the caller; null/omitted `model` follows that Agent's Model. A configured Model becomes the new Thread's saved default for follow-ups. Explicit `create_thread(model_id=...)` or a Run picker overrides only that Run.
-
-Save to affect new WebUI root Runs. Saving starts no work, changes no existing Thread, and does not change `defaults.agent`, TUI Runs, or delegated children. Setup preserves authored Agent/Model choices. There is no Sidekick disable switch; tool visibility and role scope still apply. See [collaboration and delivery](webui.md#agent-collaboration-and-sidekick).
+Under **Settings → Agents → Subagents**, `subagents.dynamic.enabled` controls whether root conversations can call `spawn_subagent`, and `subagents.max_concurrent` (default `8`) bounds the number of simultaneously running child executions in one conversation. See [Agent collaboration](webui.md#agent-collaboration) and [Dynamic subagents](agents-and-subagents.md#dynamic-subagents-and-result-delivery).
 
 ### MCP lifetime and protocol
 

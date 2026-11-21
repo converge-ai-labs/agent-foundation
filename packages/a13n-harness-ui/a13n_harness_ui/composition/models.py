@@ -14,7 +14,6 @@ from a13n_harness_ui.configuration.models import (
     BackgroundCompactionConfiguration,
     DeviceResource,
     ModelCharacteristics,
-    SidekickConfiguration,
     SubagentsConfiguration,
     SubscriptionGroupResource,
     WebProviderResource,
@@ -224,7 +223,7 @@ class ResolvedRunComposition(CompositionModel):
     )
     tool_execution: ToolExecutionConfig = Field(default_factory=ToolExecutionConfig)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
-    webui_sidekick: SidekickConfiguration | None = None
+
     role: Literal["ordinary", "coordinator", "worker"] | None = None
     coordinator_thread_id: str | None = None
     # The Run's explicit Model selection. Admissions without one reuse it.
@@ -257,6 +256,14 @@ class ResolvedRunComposition(CompositionModel):
             values.append(node)
             pending.extend(reversed(tuple(item.definition for item in node.children)))
         return tuple(values)
+
+    # Historical Run snapshots can still carry the retired preference.
+    @model_validator(mode="before")
+    @classmethod
+    def _read_previous_capture(cls, value: object) -> object:
+        if isinstance(value, dict) and "webui_sidekick" in value:
+            return {key: item for key, item in value.items() if key != "webui_sidekick"}
+        return value
 
     @model_validator(mode="after")
     def _valid_environment_selection(self) -> Self:

@@ -318,8 +318,9 @@ export function describeTool(tool: ToolView) {
       kind = "search";
       summary = text(args.project_id);
       break;
+    case "create_worker":
     case "create_thread":
-      label = "Start chat";
+      label = tool.name === "create_worker" ? "Start worker" : "Start chat";
       kind = "thread";
       summary = text(args.title) || text(args.prompt);
       break;
@@ -430,7 +431,7 @@ export function describeTool(tool: ToolView) {
     else if (
       !failed &&
       record(result.receipt) &&
-      ["create_thread", "run_thread"].includes(tool.name)
+      ["create_thread", "create_worker", "run_thread"].includes(tool.name)
     )
       phase = "Run accepted";
     else if (
@@ -477,7 +478,9 @@ export function describeTool(tool: ToolView) {
       : "";
   const threadTitle =
     text(thread.title) ||
-    (tool.name === "create_thread" ? text(args.title) : "");
+    (["create_thread", "create_worker"].includes(tool.name)
+      ? text(args.title)
+      : "");
   const errorText = tool.failure || text(error.message) || text(error.code);
   const stdout = record(result.stdout) ? result.stdout : {};
   const stderr = record(result.stderr) ? result.stderr : {};

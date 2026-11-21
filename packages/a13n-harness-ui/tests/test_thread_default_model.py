@@ -51,7 +51,7 @@ async def test_default_model_override_patch_clear_and_restart(tmp_path, monkeypa
                     expected_version=1, patch=ThreadConfigurationPatch(default_model_id=None)
                 ),
             )
-        # Ordinary generic creation inherits a sticky default without Sidekick.
+        # Model-created chats persist the configured creation default.
         copied = await controller(app).create_thread(
             source_thread_id=thread.thread_id,
             prompt="Copy selections",
@@ -60,6 +60,22 @@ async def test_default_model_override_patch_clear_and_restart(tmp_path, monkeypa
         )
         assert (await app.wait_root_operation(copied["receipt"]["receipt_id"])).status is RootOperationStatus.completed
         assert (await app.get_thread(copied["thread_id"])).thread.configuration.default_model_id == "model-secondary"
+        # Patching the created Thread's default_model_id must apply to subsequent override-free sends.
+        await app.patch_thread_configuration(
+            thread_id=copied["thread_id"],
+            mutation=ThreadConfigurationMutationInput(
+                expected_version=1, patch=ThreadConfigurationPatch(default_model_id="model-primary")
+            ),
+        )
+        follow_up = await controller(app).send_thread_message(
+            source_thread_id=thread.thread_id, thread_id=copied["thread_id"], message="Use updated default"
+        )
+        assert (
+            await app.wait_root_operation(follow_up["receipt"]["receipt_id"])
+        ).status is RootOperationStatus.completed
+        assert (
+            await app.inspect_operation_configuration(follow_up["receipt"]["receipt_id"])
+        ).agent.model_id == "model-primary"
     async with open_harness_ui_app(settings, configuration_path=root) as app:
         assert (await app.get_thread(thread.thread_id)).thread.configuration.default_model_id == "model-secondary"
         cleared = await app.patch_thread_configuration(

@@ -269,7 +269,8 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
         for message in messages
         if isinstance(message, ModelRequest)
         for item in request_input_content(message)
-        if item.metadata.display and not (item.metadata.model_extra or {}).get("a13n.steering-source")
+        if item.metadata.display
+        and (item.metadata.model_extra or {}).get("a13n.steering-source") in (None, "parent_agent")
         if (part := project_input_content(item)) and isinstance(text := part[0], str)
     ]
     separator = "："  # noqa: RUF001 -- Chinese review conversation.
@@ -289,7 +290,7 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
             "目前确定的方案是" + separator + "、".join(f"{label}「{value}」" for label, value in choices.items()) + "。"
         )
         return
-    role = (info.instructions or "").partition("Fixture role: ")[2].split(".")[0]
+    role = " ".join(authored).partition("Fixture role: ")[2].split(".")[0]
     if role:
         prompt = role
         returns = [
@@ -390,8 +391,8 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
                         {
                             "name": name,
                             "thinking": "high",
-                            "instructions": f"Review only the assigned fixture task. Fixture role: {state}.",
-                            "prompt": (
+                            "prompt": f"Fixture role: {state}. "
+                            + (
                                 [
                                     "Check that repeated clicks reuse the order identifier and create only one order.",
                                     "Summarize the release checklist for checkout retry behavior.",

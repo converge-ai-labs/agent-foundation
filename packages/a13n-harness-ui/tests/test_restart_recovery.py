@@ -29,7 +29,7 @@ async def test_restored_parent_delegates_using_the_captured_child_definition(tmp
     import yaml
     from a13n_harness_ui.composition import ResolvedRunComposition, resolver
 
-    root = _write_configuration(tmp_path)
+    root = _write_configuration(tmp_path, allow_agent_creation=True)
     agent_path = tmp_path / "agents/assistant.yaml"
     config = yaml.safe_load(agent_path.read_text())
     config["subagents"] = [{"agent": "agent-worker"}]
@@ -395,7 +395,7 @@ async def test_child_restores_with_active_or_completed_parent(
 ):
     import yaml
 
-    root = _write_configuration(tmp_path)
+    root = _write_configuration(tmp_path, allow_agent_creation=True)
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
     agent_path = tmp_path / "agents/assistant.yaml"
     parent = yaml.safe_load(agent_path.read_text())
@@ -670,7 +670,7 @@ async def test_children_admitted_during_drain_require_complete_family_staging(tm
     from a13n_harness_ui.root_run import RootRunCoordinator
     from anyio import move_on_after
 
-    root = _write_configuration(tmp_path)
+    root = _write_configuration(tmp_path, allow_agent_creation=True)
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
     parent_path = tmp_path / "agents/assistant.yaml"
     parent = yaml.safe_load(parent_path.read_text())

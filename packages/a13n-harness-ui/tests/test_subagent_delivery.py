@@ -290,7 +290,7 @@ async def test_terminal_result_offer_precedes_child_settlement(tmp_path, monkeyp
             yield {
                 0: DeltaToolCall(
                     name="spawn_subagent",
-                    json_args='{"name":"worker","instructions":"Child task","prompt":"Work"}',
+                    json_args='{"name":"worker","prompt":"Work"}',
                 )
             }
         else:
@@ -359,11 +359,7 @@ async def test_result_offer_preparation_failure_settles_child_and_keeps_operator
             await release.wait()
             yield "Child result"
         elif not returned(messages):
-            yield {
-                0: DeltaToolCall(
-                    name="spawn_subagent", json_args='{"name":"worker","instructions":"Work","prompt":"Work"}'
-                )
-            }
+            yield {0: DeltaToolCall(name="spawn_subagent", json_args='{"name":"worker","prompt":"Work"}')}
         else:
             yield "Parent finished"
 
@@ -411,11 +407,7 @@ async def test_user_stop_delivers_cancelled_child_result_to_parent(tmp_path, mon
             notified.set()
             yield "Child stopped"
         elif not returned(messages):
-            yield {
-                0: DeltaToolCall(
-                    name="spawn_subagent", json_args='{"name":"worker","instructions":"Work","prompt":"Work"}'
-                )
-            }
+            yield {0: DeltaToolCall(name="spawn_subagent", json_args='{"name":"worker","prompt":"Work"}')}
         else:
             yield "Work is running"
 

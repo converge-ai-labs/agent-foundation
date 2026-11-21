@@ -37,6 +37,7 @@ from a13n_harness_ui.configuration.models import ProjectDefaults, ProjectResourc
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError, ThreadError
+from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.root_execution import RootRunAdmission
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage.repositories import ThreadRepository
@@ -224,21 +225,6 @@ class ThreadToolController:
             result["configuration"] = inspection.model_dump(mode="json")
         return result
 
-    async def run_thread(
-        self, *, source_thread_id: str, thread_id: str, prompt: str, model_id: str | None = None
-    ) -> dict[str, Any]:
-        if not prompt.strip():
-            raise ThreadError("A non-empty prompt is required.", code="thread_prompt_empty")
-        await self._require_target(source_thread_id, thread_id, control=True)
-        source = await self._projections.detail(source_thread_id)
-        receipt = await self._root_runs.submit_prompt(
-            thread_id=thread_id,
-            prompt=_thread_input(source.thread, prompt),
-            model_overrides=RunModelOverrides(model_id=model_id) if model_id is not None else None,
-            touch=True,
-        )
-        return receipt.model_dump(mode="json")
-
     async def create_thread(
         self,
         *,
@@ -248,10 +234,12 @@ class ThreadToolController:
         agent_id: str | None,
         project_id: str | None = "current",
         model_id: str | None = None,
+        thinking: ThinkingSelection | None = None,
+        worker: bool = False,
         source_composition: ResolvedRunComposition | None = None,
     ) -> dict[str, Any]:
-        model_overrides = RunModelOverrides(model_id=model_id) if model_id is not None else None
         if source_thread_id is None:
+            model_overrides = RunModelOverrides(model_id=model_id) if model_id is not None else None
             created = await self._create_thread(
                 defaults=NewThreadDefaults(project_id=project_id, agent_id=agent_id), title=title
             )
@@ -259,32 +247,32 @@ class ThreadToolController:
         source = await self._projections.detail(source_thread_id)
         configuration = source.thread.configuration
         is_coordinator = await self._threads.is_coordinator(source_thread_id)
+        if worker and not is_coordinator:
+            raise ThreadError("Only a Coordinator can create a worker.", code="coordinator_required")
         if source.thread.coordinator_thread_id is not None:
             raise ThreadError(
                 "Ask your Coordinator to create another worker; use subagents for bounded work within your task.",
                 code="coordinator_worker_creation_scoped",
             )
+        if is_coordinator and not worker:
+            raise ThreadError("Use create_worker to start work in your Project.", code="coordinator_worker_required")
         if is_coordinator and project_id not in ("current", configuration.project_id):
             raise ThreadError(
                 "A Coordinator creates workers only in its own Project.", code="coordinator_worker_project_locked"
             )
-        sidekick = source_composition.webui_sidekick if source_composition is not None else None
-        if sidekick is not None and agent_id is None:
-            assert source_composition is not None
-            agent_id = sidekick.agent
-            if (
-                agent_id is None
-                and source_composition.root.source_kind == "agent"
-                and (project_id != "current" or configuration.agent_source.id != source_composition.root.source_id)
-            ):
-                # Inherit the calling Run's Agent, not a concurrently edited Thread selection.
-                agent_id = source_composition.root.source_id
-        default_model_id = None if sidekick is None else sidekick.model
+        recipe = await self._configurations.creation_model(
+            source_composition, model_id, thinking, current_generation=True
+        )
         if project_id == "current" and agent_id is None and configuration.agent_source.kind == "agent":
+            inherited_agent = (
+                source_composition.root.source_id
+                if source_composition is not None and source_composition.root.source_kind == "agent"
+                else configuration.agent_source.id
+            )
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id,
-                agent_id=configuration.agent_source.id,
-                default_model_id=(default_model_id if sidekick is not None else configuration.default_model_id),
+                agent_id=inherited_agent,
+                default_model_id=recipe.model_id,
                 local_roots=configuration.local_roots,
                 environment_profile_id=configuration.environment_profile_id,
                 environment_bindings=configuration.environment_bindings,
@@ -298,10 +286,10 @@ class ThreadToolController:
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id if project_id == "current" else project_id,
                 agent_id=agent_id,
-                default_model_id=default_model_id,
+                default_model_id=recipe.model_id,
             )
         created = await self._create_thread(
-            defaults=defaults, title=title, coordinator_thread_id=source_thread_id if is_coordinator else None
+            defaults=defaults, title=title, coordinator_thread_id=source_thread_id if worker else None
         )
         requester_project = (
             source_composition.project_id if source_composition is not None else configuration.project_id
@@ -310,12 +298,12 @@ class ThreadToolController:
             f"Task from Thread {source_thread_id}. Requesting Project: {requester_project or 'No Project'}.\n"
             "This is an independent root Thread, not a delegated child. "
             f"For clarification, decisions or blockers, use send_thread_message(thread_id={source_thread_id!r}, "
-            "message=...) to ask the requester. The requester can reply with the same tool targeting your Thread. "
+            "message=...) to ask the requester. "
             "When finished, use that tool to report your findings, changes, validation and remaining issues to the requester. "
             "Sending a message does not wait for an answer; do not invent a reply. "
             "Do not send acknowledgement-only replies or delegate the same task back to its requester."
         )
-        if is_coordinator:
+        if worker:
             context += (
                 " The requester is the Coordinator coordinating this work. "
                 "Use ordinary send_thread_message messages for coordination questions, not ask_user_question. "
@@ -323,7 +311,9 @@ class ThreadToolController:
                 "Existing tool approvals still apply; ordinary messages cannot grant a denied approval."
             )
         return await self._admit_created_thread(
-            created.thread_id, _thread_input(source.thread, prompt, context=context), model_overrides
+            created.thread_id,
+            _thread_input(source.thread, prompt, context=context),
+            RunModelOverrides(thinking=thinking) if thinking is not None else None,
         )
 
     async def _admit_created_thread(
@@ -380,22 +370,16 @@ class ThreadToolController:
                 "Coordinator did not accept lifecycle notification: %s", operation.receipt.receipt_id
             )
 
-    async def _require_target(self, source_thread_id: str, thread_id: str, *, control: bool = False) -> None:
+    async def _require_target(self, source_thread_id: str, thread_id: str) -> None:
         target = await self._threads.get(thread_id)
         if target is None or target.memory_scope is not None or target.parent_thread_id is not None:
             raise ThreadError("This Thread is not accessible from your conversation.", code="thread_access_denied")
-        if control and thread_id == BOT_THREAD_ID:
-            raise ThreadError("Bot is controlled by human input and Host heartbeat.", code="bot_wake_rejected")
-        if control and target.configuration.agent_source.kind == "live":
-            raise ThreadError(
-                "Send a message to Live instead of controlling its executor.", code="live_thread_reserved"
-            )
         if source_thread_id == thread_id:
             return
         owners = await self._threads.worker_owners((source_thread_id, thread_id))
         source_owner, target_owner = owners.get(source_thread_id), owners.get(thread_id)
         if source_owner is not None:
-            allowed = thread_id == source_owner and not control
+            allowed = thread_id == source_owner
         elif await self._threads.is_coordinator(source_thread_id):
             allowed = target_owner == source_thread_id
         else:
@@ -477,20 +461,6 @@ class ThreadToolController:
         receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt, reject_deferred=True)
         return {"ok": True, "mode": "run", "receipt": receipt.model_dump(mode="json")}
 
-    async def steer_thread(self, *, source_thread_id: str, thread_id: str, message: str) -> dict[str, Any]:
-        if not message.strip():
-            raise ThreadError("A non-empty message is required.", code="thread_message_empty")
-        await self._require_target(source_thread_id, thread_id, control=True)
-        operation = await self._root_runs.active(thread_id)
-        if operation is None:
-            return {"accepted": False, "receipt_id": None, "enqueue_id": None}
-        source = await self._projections.detail(source_thread_id)
-        result = await self._root_runs.steer(
-            receipt_id=operation.receipt.receipt_id,
-            message=_thread_input(source.thread, message),
-        )
-        return result.model_dump(mode="json")
-
 
 @dataclass(kw_only=True, slots=True)
 class ThreadCollaborationCapability(AbstractModelContextCapability):
@@ -539,36 +509,18 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 f"\nYou are a managed worker of Coordinator {self.composition.coordinator_thread_id}. "
                 + self._guidance("worker")
             )
-        if (
-            self.composition is not None
-            and self.source_thread_id != BOT_THREAD_ID
-            and self.composition.coordinator_thread_id is None
-            and (sidekick := self.composition.webui_sidekick) is not None
-        ):
-            agent_id = sidekick.agent or self.composition.root.source_id
-            model_selection = f", model_id={sidekick.model!r}" if sidekick.model is not None else ""
-            instructions += (
-                "\nSidekick is enabled. For work delegated to independent worker Threads under your "
-                "Coordinator instructions, use "
-                if is_coordinator
-                else "\nSidekick is enabled. Use subagents for parallel research, exploration, and other bounded tasks "
-                "whose results you will integrate into the current conversation. If no suitable subagent is available, "
-                "keep that work in the current Thread rather than creating a Sidekick as a fallback. "
-                "Create a separate Thread only for coordination work that needs human attention, decisions, or "
-                "follow-up in its own conversation. For that work, use "
-            )
-            instructions += (
-                "create_thread(prompt=...). The Host applies the captured Sidekick defaults "
-                f"(Agent {agent_id!r}{model_selection}) when arguments are omitted. "
-                "Its configured Model becomes the new Thread's default for later turns. "
-                "Explicit agent_id selects another Agent; explicit model_id selects the first Run's Model. "
-                "Give a bounded task and necessary context; inspect "
-                "results before integrating them. Other configured Agents and Models remain selectable. "
-                "The created task identifies your Thread and Project and tells the worker how to ask you questions "
-                "and report back through send_thread_message. Answer its questions through that same tool. "
-                "If you are already executing another Thread's task, ask for clarification as needed, complete it and report to the requester "
-                "rather than creating another Sidekick for the same task. Do not create work merely because enabled."
-            )
+        if self.composition is not None and self.composition.coordinator_thread_id is None:
+            policy = self.composition.subagents.dynamic
+            if policy.allowed_models:
+                instructions += f"\nAgent creation models: {', '.join(policy.allowed_models)}. "
+                instructions += f"Default: {policy.default_model}." if policy.default_model else "Specify a model."
+                if not is_coordinator:
+                    instructions += (
+                        " Open an independent chat only for work that needs a separate conversation."
+                        " When carrying out another chat's task, finish it and report back."
+                    )
+            else:
+                instructions += "\nNo models are allowed for new agents. Use existing chats for collaboration."
         if self._notes_available and self.source_thread_id != BOT_THREAD_ID:
             instructions += (
                 "\nBot Notes are Agent-managed Markdown handoffs. When the projected Bot collaboration status is enabled, "
@@ -634,27 +586,23 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                     effects={"read", "write", "external_communication"},
                     idempotency="none",
                 ),
-                _tool(
-                    self.create_thread,
-                    name="create_thread",
-                    effects={"read", "write", "external_communication"},
-                    idempotency="none",
-                ),
-                _tool(
-                    self.run_thread,
-                    name="run_thread",
-                    effects={"read", "write", "external_communication"},
-                    idempotency="none",
-                ),
-                _tool(
-                    self.steer_thread,
-                    name="steer_thread",
-                    effects={"write"},
-                    idempotency="none",
-                ),
             ],
             id="a13n-a13n-harness-ui-thread-tools",
         )
+        if (
+            self.composition is not None
+            and self.composition.coordinator_thread_id is None
+            and self.composition.subagents.dynamic.allowed_models
+        ):
+            create = self.create_worker if self.composition.role == "coordinator" else self.create_thread
+            self._toolset.add_tool(
+                _tool(
+                    create,
+                    name=create.__name__,
+                    effects={"read", "write", "external_communication"},
+                    idempotency="none",
+                )
+            )
         if self.source_thread_id == BOT_THREAD_ID and self.controller.bot is not None:
             self._toolset.add_tool(
                 _tool(
@@ -915,28 +863,6 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         except (HarnessUiError, ValueError) as exc:
             return thread_tool_failure(exc, "thread_get_failed")
 
-    async def run_thread(
-        self,
-        ctx: RunContext[AgentContext],
-        thread_id: str,
-        prompt: str,
-        model_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Start another idle Thread, optionally selecting its Model until another selection; its Agent stays."""
-        self._require_context(ctx)
-        if thread_id == self.source_thread_id:
-            return _failure_code(
-                "thread_recursive_run",
-                "A Thread cannot recursively run itself from its active root invocation.",
-            )
-        try:
-            receipt = await self.controller.run_thread(
-                source_thread_id=self.source_thread_id, thread_id=thread_id, prompt=prompt, model_id=model_id
-            )
-            return {"ok": True, "receipt": receipt}
-        except (HarnessUiError, ValueError) as exc:
-            return thread_tool_failure(exc, "thread_run_failed")
-
     async def create_thread(
         self,
         ctx: RunContext[AgentContext],
@@ -944,25 +870,42 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         title: str | None = None,
         agent_id: str | None = None,
         project_id: str | None = "current",
-        model_id: str | None = None,
+        model: str | None = None,
+        thinking: ThinkingSelection | None = None,
     ) -> dict[str, Any]:
-        """Create independent work with a return address and return immediately after run admission.
+        """Start an independent chat. Use project_id="current" for this Project, null for no Project, or a Project ID.
 
-        project_id='current' keeps this Project; null selects no Project; an ID selects another Project.
-        Enabled Sidekick defaults are applied by the Host: omitted agent_id uses its Agent (or inherits
-        the caller); its configured Model initializes the new Thread's persistent default_model_id.
-        Explicit agent_id wins. model_id selects the first Run's Model, never the saved default.
-        Without Sidekick, unchanged Project/Agent inherits this Thread's selections; explicit selections
-        use normal Project/Agent defaults. Discover IDs using list_projects, list_agents and list_models.
-
-        For a Coordinator, creation atomically assigns the new root to that Coordinator and must
-        stay in its Project. Ordinary Sidekicks remain independent and receive no automatic
-        lifecycle notification. Managed workers cannot create more roots: ask their Coordinator
-        for another worker or use a declared subagent for bounded work.
-
-        The returned receipt is not completion. Use get_thread to inspect progress.
-        If admission fails after creation, the returned thread_id remains valid; do not create a duplicate.
+        If prompt admission fails with a thread_id, inspect or message that chat instead of creating another.
         """
+        return await self._create_chat(ctx, prompt, title, agent_id, project_id, model, thinking, worker=False)
+
+    async def create_worker(
+        self,
+        ctx: RunContext[AgentContext],
+        prompt: str,
+        title: str | None = None,
+        agent_id: str | None = None,
+        model: str | None = None,
+        thinking: ThinkingSelection | None = None,
+    ) -> dict[str, Any]:
+        """Start an owned worker in this Coordinator's Project and submit its first prompt.
+
+        If prompt admission fails with a thread_id, inspect or message that worker instead of creating another.
+        """
+        return await self._create_chat(ctx, prompt, title, agent_id, "current", model, thinking, worker=True)
+
+    async def _create_chat(
+        self,
+        ctx: RunContext[AgentContext],
+        prompt: str,
+        title: str | None,
+        agent_id: str | None,
+        project_id: str | None,
+        model: str | None,
+        thinking: ThinkingSelection | None,
+        *,
+        worker: bool,
+    ) -> dict[str, Any]:
         self._require_context(ctx)
         if not prompt.strip():
             return _failure_code("thread_prompt_empty", "A non-empty initial prompt is required.")
@@ -973,31 +916,13 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 title=title,
                 agent_id=agent_id,
                 project_id=project_id,
-                model_id=model_id,
+                model_id=model,
+                thinking=thinking,
+                worker=worker,
                 source_composition=self.composition,
             )
         except (HarnessUiError, ValueError) as exc:
             return thread_tool_failure(exc, "thread_create_failed")
-
-    async def steer_thread(
-        self,
-        ctx: RunContext[AgentContext],
-        thread_id: str,
-        message: str,
-    ) -> dict[str, Any]:
-        self._require_context(ctx)
-        if thread_id == self.source_thread_id:
-            return _failure_code(
-                "thread_recursive_steer",
-                "A Thread cannot steer itself from its active root invocation.",
-            )
-        try:
-            result = await self.controller.steer_thread(
-                source_thread_id=self.source_thread_id, thread_id=thread_id, message=message
-            )
-            return {"ok": result["accepted"], **result}
-        except HarnessUiError as exc:
-            return thread_tool_failure(exc, "thread_steer_failed")
 
     async def list_projects(
         self,

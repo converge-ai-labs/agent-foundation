@@ -39,7 +39,6 @@ from a13n_harness_ui.configuration.models import (
     DEFAULT_CAPABILITY_KEYS,
     CapabilitySelection,
     MarkdownSubagentSelection,
-    SidekickConfiguration,
     SubscriptionGroupResource,
 )
 from a13n_harness_ui.environment_bindings import (
@@ -414,9 +413,6 @@ class AgentCompositionResolver:
                 kind: self.model_recipe(source.models[model_id], source)
                 for kind, model_id in source.document.media_understanding.selections().items()
             },
-            webui_sidekick=SidekickConfiguration(
-                agent=source.document.webui.sidekick.agent, model=source.document.webui.sidekick.model
-            ),
             content_plugins=tuple(
                 ResolvedContentPlugin(
                     plugin_id=item.plugin_id,

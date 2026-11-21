@@ -32,17 +32,23 @@ async def test_creation_owns_only_new_lead_workers_and_retains_failed_admission(
             raise ThreadError("Admission rejected", code="test_rejected")
 
         monkeypatch.setattr(app._root_runs, "submit_prompt", reject)
-        managed = await controller(app).create_thread(
-            source_thread_id=lead.thread_id, prompt="Work", title=None, agent_id=None, source_composition=composition
+        tools = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=lead.thread_id, composition=composition
         )
-        independent = await controller(app).create_thread(
-            source_thread_id=ordinary.thread_id, prompt="Sidekick", title=None, agent_id=None
-        )
+        ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=lead.thread_id))
+        managed = await tools.create_worker(ctx, prompt="Work")
+        denied = await tools.create_thread(ctx, prompt="Independent task")
+        assert denied["error"]["code"] == "coordinator_worker_required"
+        ordinary_tools = ThreadCollaborationCapability(controller=controller(app), source_thread_id=ordinary.thread_id)
+        ordinary_ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=ordinary.thread_id))
+        independent = await ordinary_tools.create_thread(ordinary_ctx, prompt="Independent task")
+        refused = await ordinary_tools.create_worker(ordinary_ctx, prompt="Work")
+        assert refused["error"]["code"] == "coordinator_required"
         assert not managed["ok"] and not independent["ok"]
         worker = observed[0]
         assert worker.thread_id == managed["thread_id"]
         assert worker.coordinator_thread_id == lead.thread_id and worker.parent_thread_id is None
-        assert worker.configuration.agent_source.id == "agent-worker"
+        assert worker.configuration.agent_source.id == "agent-assistant"
         assert worker.configuration.default_model_id == "model-secondary"
         assert observed[1].coordinator_thread_id is None
         assert (await app.get_thread(ordinary.thread_id)).thread.coordinator_thread_id is None
@@ -74,8 +80,6 @@ async def test_lead_shared_tools_enforce_scope_even_with_automatic_mode_disabled
         for target in (ordinary, other_lead, other_worker):
             for action in (
                 capability.get_thread(ctx, thread_id=target.thread_id, history_limit=20),
-                capability.run_thread(ctx, thread_id=target.thread_id, prompt="Do not run"),
-                capability.steer_thread(ctx, thread_id=target.thread_id, message="Do not steer"),
                 capability.send_thread_message(ctx, thread_id=target.thread_id, message="Do not send"),
             ):
                 result = await action
@@ -114,15 +118,20 @@ async def test_worker_identity_is_captured_each_run_without_inheriting_lead_role
             )
             instructions = capability.get_instructions()
             assert f"managed worker of Coordinator {lead.thread_id}" in instructions
+            assert "When a user messages you directly" in instructions
             assert "Do not create another root" in instructions
-            assert "Create a separate Thread only" not in instructions
         with pytest.raises(ThreadError, match="Ask your Coordinator"):
             await controller(app).create_thread(
                 source_thread_id=worker.thread_id, prompt="Nested", title=None, agent_id=None
             )
         with pytest.raises(ThreadError, match="own Project"):
             await controller(app).create_thread(
-                source_thread_id=lead.thread_id, prompt="Outside", title=None, agent_id=None, project_id="project-other"
+                worker=True,
+                source_thread_id=lead.thread_id,
+                prompt="Outside",
+                title=None,
+                agent_id=None,
+                project_id="project-other",
             )
         with pytest.raises(StoreConflictError, match="cannot move"):
             await app.update_thread_configuration(
@@ -230,8 +239,6 @@ async def test_private_workers_are_filtered_before_search_and_pagination(tmp_pat
                 tools.get_thread(
                     source_thread_id=source.thread_id, thread_id=own.thread_id, history_cursor=None, history_limit=20
                 ),
-                tools.run_thread(source_thread_id=source.thread_id, thread_id=own.thread_id, prompt="Do not run"),
-                tools.steer_thread(source_thread_id=source.thread_id, thread_id=own.thread_id, message="Do not steer"),
                 tools.send_thread_message(
                     source_thread_id=source.thread_id, thread_id=own.thread_id, message="Do not send"
                 ),
@@ -244,12 +251,6 @@ async def test_private_workers_are_filtered_before_search_and_pagination(tmp_pat
                 source_thread_id=own.thread_id, thread_id=first.thread_id, history_cursor=None, history_limit=20
             )
         )["thread"]["thread"]["thread_id"] == first.thread_id
-        for operation in (
-            tools.run_thread(source_thread_id=own.thread_id, thread_id=first.thread_id, prompt="Do not run"),
-            tools.steer_thread(source_thread_id=own.thread_id, thread_id=first.thread_id, message="Do not steer"),
-        ):
-            with pytest.raises(ThreadError, match="not accessible"):
-                await operation
         with pytest.raises(ThreadError, match="another query"):
             await tools.list_threads(
                 source_thread_id=second.thread_id, query="Private", cursor=page["next_cursor"], limit=1

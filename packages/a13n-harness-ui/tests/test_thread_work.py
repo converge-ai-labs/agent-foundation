@@ -67,7 +67,7 @@ async def test_work_observes_unsaved_notes_and_restores_all_tasks_on_idle_reply(
     settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
     async with open_harness_ui_app(settings, configuration_path=path, host_mode="webui", instrumentation=None) as app:
         root = await app.create_thread()
-        sidekick = await app.create_thread()
+        other_chat = await app.create_thread()
         async with app._summary_hub.subscribe() as hints:
             receipt = await app.submit_thread(thread_id=root.thread_id, prompt="Remember work")
             try:
@@ -79,7 +79,7 @@ async def test_work_observes_unsaved_notes_and_restores_all_tasks_on_idle_reply(
                 assert work.notes.page is not None and work.notes.page.notes[0].value == "unsaved"
                 assert (await app.thread_notes(thread_id=root.thread_id)).total == 0
                 assert (await app.thread_tasks(thread_id=root.thread_id)).total == 0
-                assert (await app.thread_work(thread_id=sidekick.thread_id)).notes.total == 0
+                assert (await app.thread_work(thread_id=other_chat.thread_id)).notes.total == 0
                 with fail_after(5):
                     while True:
                         hint = await hints.receive()
@@ -95,9 +95,9 @@ async def test_work_observes_unsaved_notes_and_restores_all_tasks_on_idle_reply(
         assert saved.source == "saved" and saved.tasks.total == 1 and saved.notes.total == 1
         assert saved.tasks.page is None and saved.notes.page is None
         report = await controller(app).send_thread_message(
-            source_thread_id=sidekick.thread_id,
+            source_thread_id=other_chat.thread_id,
             thread_id=root.thread_id,
-            message="Sidekick findings",
+            message="Findings from the other chat",
         )
         try:
             assert report["ok"] and report["mode"] == "run"

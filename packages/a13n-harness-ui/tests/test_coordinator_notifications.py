@@ -3,7 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import yaml
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import StoreConflictError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
@@ -117,10 +116,6 @@ async def test_terminal_notice_respects_project_and_current_host_state(
         lead = await create_coordinator(app, "project-main")
         if case == "mode_off":
             await app.set_auto_followup(lead.thread_id, False)
-    if case == "sidekick_off":
-        document = yaml.safe_load(root.read_text())
-        document["webui"]["sidekick"] = None
-        root.write_text(yaml.safe_dump(document))
     calls = []
 
     async def resolve(self, context, model_id):
@@ -165,7 +160,7 @@ async def test_terminal_notice_respects_project_and_current_host_state(
             assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
             if original is not None:
                 await settled.wait()
-        if case == "sidekick_off":
+        if case == "owned_worker":
             with fail_after(15):
                 operation = await app._root_runs.active(lead.thread_id)
                 if operation is not None:

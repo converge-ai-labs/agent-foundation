@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import Field
 
 from a13n_harness_ui.composition import ResolvedRunComposition
-from a13n_harness_ui.configuration.models import AgentToolSearch, SidekickConfiguration
+from a13n_harness_ui.configuration.models import AgentToolSearch
 from a13n_harness_ui.configuration.views import AgentToolSearchView
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.model_fast import FastState, fast_state
@@ -33,7 +33,6 @@ class CapturedConfiguration(SurfaceModel):
     thread_configuration_version: int
     project_id: str | None
     project_roots: tuple[str, ...]
-    webui_sidekick: SidekickConfiguration | None = None
     memory_enabled: bool = False
     memory_scopes: tuple[str, ...] = ()
     agent: CapturedAgentSelection
@@ -74,7 +73,6 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
         thread_configuration_version=value.thread_configuration_version,
         project_id=value.project_id,
         project_roots=value.project_roots,
-        webui_sidekick=value.webui_sidekick,
         memory_enabled=value.memory_enabled or value.memory_organization,
         memory_scopes=(
             ((f"project:{value.project_id}" if value.project_id is not None else "global"),)
