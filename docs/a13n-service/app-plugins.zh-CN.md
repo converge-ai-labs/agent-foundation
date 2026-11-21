@@ -86,6 +86,12 @@ def definition() -> AppDefinition:
 
 `OrganizationSweep` 回调接收已有 Runtime 和一个已启用的组织 ID。Service 选择组织，并在回调前关闭 SQL session。回调负责有界业务工作以及多副本安全的认领。每个组织使用声明的超时时间；某个回调失败后，同批其他组织继续执行，该轮扫描记为失败。可选的 `startup(runtime, stack)` 打开进程资源，并在已有退出栈上注册清理。每个已安装 App 都会运行 startup，与组织启用状态无关。App 可以声明带独立迁移的可选数据库，见下文。Service 在运行任何 App startup 回调前校验所有已安装 App 的数据库版本。
 
+## 响应 Run 封口并提交 Inbox 消息
+
+在 `AppDefinition(run_seals=(...,))` 中声明 `RunSealSubscription(callback, timeout=5)`。异步回调接收 Runtime 和 `RunSealEvent`，后者包含组织、工作区、Session、Thread、Run 和 principal ID、状态以及接受 Run 时固定的 options 标签。默认选择 completed、failed 和 cancelled；需要 waiting 时，在 `statuses` 中显式加入。Service 只在提交后发布提示，并在回调前检查 App 当前是否启用。有界 Redis Stream 的 consumer group 使用 NOACK 将每条保留的提示交给一个 control 副本。创建组之前发布、读取前被裁剪或接收后丢失的提示不会重试；提示也可能重复。保留组织 sweep，并确保业务操作幂等。发布和回调并发有上限；通过 `a13n_app_run_seal_dropped_total` 和 `a13n_run_seal_publish_dropped_total` 可以发现容量不足造成的丢弃。
+
+为自动操作配置 service account principal。也可以使用用户 principal，Service 会检查其当前权限。事件中的 principal 属于原始 Run，并不是操作授权。准备提交时会持有组织锁直到事务结束，同一组织内的 App 提交因此会串行；尤其在大量并发跟进时，应保持事务短小。调用 `runs.submit.submit_app_message(runtime, principal_id, workspace_id, thread_id, message, request_key=...)`，Service 会按当前权限和工作区范围提交。需要与 App 数据原子提交时，使用 `infra.db.transaction`，在获取任何 App 行锁或 Thread acceptance lock 之前调用 `prepare_app_submission(session, runtime, workspace_id, principal_id)`（锁顺序为组织 → App → Thread），再将返回值传给 `submit_message_in_transaction`。该准入结果只属于当前事务。自动跟进时，在 Thread 锁内检查预期的最近 Run、空闲且未暂停的状态，以及原生 Inbox 是否已有待处理输入，再提交消息。事务提交后回执才持久化；普通输入不会回答等待中的请求，也不保证送达指定的活动 Run。这些 API 不应用 Run 的委托权限上限，不能用于 Run 委托操作。
+
 ## 持久化业务数据
 
 App 需要在宿主 PostgreSQL 数据库中建表时，使用 `AppDatabase`。每个 App 在 `public` 中拥有独立的迁移历史。App 使用普通 SQLAlchemy 模型和现有 Runtime Storage，可以直接关联查询原生 Service ORM 行，无需另建连接池。前缀划分迁移归属；App 代码仍需执行租户范围限制和授权。

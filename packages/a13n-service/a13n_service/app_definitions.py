@@ -11,6 +11,8 @@ from fastapi import APIRouter
 from a13n_service.app_database import AppDatabase
 from a13n_service.app_plugins import AppManifest, Frontend
 from a13n_service.runs.runtime import Runtime
+from a13n_service.runs.schemas import Sealed
+from a13n_service.runs.seal_events import RunSealEvent
 from a13n_service.settings import Section
 
 
@@ -25,6 +27,24 @@ class OrganizationSweep:
 
 
 @dataclass(frozen=True)
+class RunSealSubscription:
+    """A bounded best-effort callback for committed Run seal hints."""
+
+    run: Callable[[Runtime, RunSealEvent], Awaitable[object]]
+    timeout: float = 5.0
+    statuses: frozenset[Sealed] = frozenset({"completed", "failed", "cancelled"})
+
+    def __post_init__(self) -> None:
+        if (
+            not 0 < self.timeout <= 30
+            or not self.statuses
+            or not self.statuses <= {"completed", "failed", "cancelled", "waiting"}
+        ):
+            raise ValueError("Invalid Run seal subscription")
+        object.__setattr__(self, "statuses", frozenset(self.statuses))
+
+
+@dataclass(frozen=True)
 class AppDefinition:
     app_id: str
     name: str
@@ -32,6 +52,7 @@ class AppDefinition:
     routers: tuple[APIRouter, ...] = ()
     settings: Mapping[str, type[Section]] = field(default_factory=dict)
     sweeps: tuple[OrganizationSweep, ...] = ()
+    run_seals: tuple[RunSealSubscription, ...] = ()
     startup: Callable[[Runtime, AsyncExitStack], Awaitable[None]] | None = None
     frontend: Frontend | None = None
     database: AppDatabase | None = None
@@ -64,6 +85,7 @@ class InstalledApp:
             version=self.version,
             factory_keys=self.definition.factory_keys,
             frontend=self.definition.frontend,
+            has_run_seal_subscribers=bool(self.definition.run_seals),
         )
 
 

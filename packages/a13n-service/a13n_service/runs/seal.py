@@ -25,6 +25,7 @@ from a13n_service.runs.attempts import Lease, lock_thread_lease
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.completion import complete as complete_occurrence
 from a13n_service.runs.schemas import Failure, Outcome, Sealed
+from a13n_service.runs.seal_events import publish_after_commit
 from a13n_service.runs.tables import AttemptRow, RunRow, ThreadRow
 from a13n_service.runs.usage import totals
 from a13n_service.runs.webhooks import LifecycleKind, notify_subscribers
@@ -180,6 +181,7 @@ async def seal(
         )
     await complete_occurrence(session, runtime, thread, run, at)
     await notify_subscribers(session, runtime, run, kinds, at=at, attempt=attempt)
+    await publish_after_commit(session, runtime, run, outcome.status)
     await checkpoints.reclaim(session, run)
 
 

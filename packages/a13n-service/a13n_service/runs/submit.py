@@ -7,15 +7,17 @@ the winner committed while it waited for a lock, then replays the winner.
 """
 
 from collections.abc import Awaitable, Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from a13n_harness.configuration import RunConfiguration
+from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.execution_policy import matches
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid
+from a13n_service.infra.http import IdempotencyKey
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentOverride
 from a13n_service.resources.assets.service import require_usable
@@ -52,8 +54,9 @@ from a13n_service.runs.schemas import (
 from a13n_service.runs.sessions import find_session, new_session, require_conversation
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import get_run, get_thread, new_thread, refresh_version, require_open
-from a13n_service.tenancy.access import workspace_scope
+from a13n_service.tenancy.access import lock_organization, principal_for, workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, execution_authority
+from a13n_service.tenancy.tables import WorkspaceRow
 
 # The request as the resolved workspace names it, so a replay matches however the path spelled the workspace.
 type Requested = Callable[[WorkspaceScope], Request]
@@ -215,19 +218,130 @@ async def _lookup(
     return scope, request, await find_request(session, scope.workspace_id, actor.id, request.key)
 
 
+_MESSAGE_KEY = TypeAdapter(IdempotencyKey)
+
+
+def _message_key(request_key: str) -> None:
+    try:
+        _MESSAGE_KEY.validate_python(request_key)
+    except ValidationError as error:
+        raise invalid("request_key", "must be 1-512 printable ASCII characters without spaces") from error
+
+
+async def _create_message(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    scope: WorkspaceScope,
+    thread_id: str,
+    message: Message,
+    request: Request,
+) -> tuple[ThreadRow, Source]:
+    thread = await get_thread(session, scope.workspace_id, thread_id, lock="acceptance")
+    require_open(thread)
+    source = await prepare_message(
+        session, runtime, actor, scope, thread, message, request, authority=execution_authority(actor, scope)
+    )
+    return thread, source
+
+
 async def submit_message(
     runtime: Runtime, actor: Principal, workspace_id: str, thread_id: str, message: Message, *, request_key: str
 ) -> tuple[Submitted, bool]:
+    """Submit using the authenticated request principal; receipt is not execution completion."""
+    _message_key(request_key)
+
     async def create(session: AsyncSession, scope: WorkspaceScope, request: Request) -> tuple[ThreadRow, Source]:
-        thread = await get_thread(session, scope.workspace_id, thread_id, lock="acceptance")
-        require_open(thread)
-        return thread, await prepare_message(
-            session, runtime, actor, scope, thread, message, request, authority=execution_authority(actor, scope)
-        )
+        return await _create_message(session, runtime, actor, scope, thread_id, message, request)
 
     return await _submit(
         runtime, actor, workspace_id, lambda _: Request.of(request_key, "message", thread_id, message), create
     )
+
+
+@dataclass(frozen=True, slots=True)
+class AppSubmission:
+    """Admission bound to one Service transaction and workspace."""
+
+    _session: AsyncSession
+    _runtime: Runtime
+    _workspace_id: str
+    _actor: Principal
+
+
+async def prepare_app_submission(
+    session: AsyncSession, runtime: Runtime, workspace_id: str, principal_id: str
+) -> AppSubmission:
+    """Lock current App actor authority before taking the target Thread acceptance lock.
+
+    This takes the organization FOR NO KEY UPDATE lock. Call it before acquiring any App row or Thread
+    acceptance lock (organization → App → Thread), and keep the enclosing transaction short.
+    """
+    if not session.info.get("a13n.transaction") or not session.in_transaction() or session.in_nested_transaction():
+        raise RuntimeError("App submission requires the outer Service transaction")
+    workspace = await session.get(WorkspaceRow, workspace_id)
+    if workspace is None:
+        from a13n_service.infra.errors import not_found
+
+        raise not_found("workspace", workspace_id)
+    scope = WorkspaceScope(workspace.organization_id, workspace.id)
+    await lock_organization(session, scope.organization_id)
+    actor = await principal_for(session, runtime.access, principal_id, confinement=scope, share=True)
+    await session.refresh(workspace)
+    await workspace_scope(session, actor, workspace_id, "run")
+    admission = AppSubmission(session, runtime, workspace_id, actor)
+    session.info["a13n.app_submission"] = admission
+    return admission
+
+
+async def submit_app_message(
+    runtime: Runtime, principal_id: str, workspace_id: str, thread_id: str, message: Message, *, request_key: str
+) -> tuple[Submitted, bool]:
+    """Submit as the App-configured principal using its current workspace-confined authority."""
+    async with transaction(runtime.storage) as session:
+        admission = await prepare_app_submission(session, runtime, workspace_id, principal_id)
+        return await submit_message_in_transaction(
+            session, runtime, admission, workspace_id, thread_id, message, request_key=request_key
+        )
+
+
+async def submit_message_in_transaction(
+    session: AsyncSession,
+    runtime: Runtime,
+    admission: AppSubmission,
+    workspace_id: str,
+    thread_id: str,
+    message: Message,
+    *,
+    request_key: str,
+) -> tuple[Submitted, bool]:
+    """Submit in a caller-owned transaction; abort and retry the whole transaction on contention.
+
+    Call prepare_app_submission before taking the Thread lock. This uses the App principal's current
+    grants, not a fenced Run's delegation, and must not be used as a delegated Run operation.
+    The receipt is committed only if the caller commits; abort and retry the whole transaction on contention.
+    """
+    _message_key(request_key)
+    if (
+        not session.info.get("a13n.transaction")
+        or not session.in_transaction()
+        or session.in_nested_transaction()
+        or session.info.get("a13n.app_submission") is not admission
+        or admission._session is not session
+        or admission._runtime is not runtime
+        or admission._workspace_id != workspace_id
+    ):
+        raise RuntimeError("Call prepare_app_submission in the same Service transaction before locking the Thread")
+    actor = admission._actor
+    scope, request, found = await _lookup(
+        session, actor, workspace_id, lambda _: Request.of(request_key, "message", thread_id, message)
+    )
+    if found is not None:
+        return await _replay(session, found, request), False
+    thread, source = await _create_message(session, runtime, actor, scope, thread_id, message, request)
+    await accept(session, runtime, thread, explicit=source)
+    assert source.entry is not None
+    return await receipt(session, thread, source.entry), True
 
 
 async def prepare_thread(

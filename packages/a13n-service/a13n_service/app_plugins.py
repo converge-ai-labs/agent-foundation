@@ -45,6 +45,7 @@ class AppManifest:
     version: str
     factory_keys: frozenset[str] = frozenset()
     frontend: Frontend | None = None
+    has_run_seal_subscribers: bool = False
 
     def __post_init__(self) -> None:
         if not re.fullmatch(r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*", self.app_id):

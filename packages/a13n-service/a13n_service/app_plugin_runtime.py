@@ -6,6 +6,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from importlib.resources import as_file, files
 from pathlib import Path
+from typing import Any
+from uuid import uuid4
 
 from anyio.to_thread import run_sync
 from fastapi import APIRouter, Request
@@ -17,9 +19,12 @@ from a13n_service.app_plugins import AppCatalog, AppManifest
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import not_found
 from a13n_service.infra.sweeps import Sweep
+from a13n_service.infra.telemetry import meter
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.app_plugins import AppRoute, policy
 from a13n_service.tenancy.tables import OrganizationRow
+
+SEAL_DROPS = meter.create_counter("a13n.app.run_seal.dropped", unit="{hint}")
 
 
 def app_routers(apps: tuple[InstalledApp, ...]) -> tuple[APIRouter, ...]:
@@ -145,3 +150,84 @@ def app_sweeps(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> list[Sweep]:
         for app in apps
         for sweep in app.definition.sweeps
     ]
+
+
+async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> None:
+    """Receive lossy cross-role hints; drop excess work and rely on App reconciliation."""
+    from a13n_logging import exception_details, get_logger
+    from pydantic import ValidationError
+    from redis.exceptions import RedisError, ResponseError
+
+    from a13n_service.runs.seal_events import GROUP, STREAM_KEY, RunSealEvent
+
+    logger = get_logger(__name__)
+    subscriptions = [(app.app_id, sub) for app in apps for sub in app.definition.run_seals]
+    if not subscriptions:
+        return
+    consumer = f"control-{uuid4().hex[:12]}"
+    block_ms = min(1000, max(1, int(runtime.settings.redis.timeout * 500)))
+    running: set[asyncio.Task[None]] = set()
+    app_running: dict[str, set[asyncio.Task[None]]] = {app_id: set() for app_id, _ in subscriptions}
+
+    async def deliver(app_id: str, subscription: object, event: RunSealEvent) -> None:
+        from a13n_service.app_definitions import RunSealSubscription
+
+        assert isinstance(subscription, RunSealSubscription)
+        try:
+            admission = runtime.settings.database.connect_timeout + runtime.settings.database.statement_timeout
+            async with asyncio.timeout(admission + subscription.timeout):
+                async with short_session(runtime.storage) as session:
+                    organization = await session.get(OrganizationRow, event.organization_id)
+                    enabled = organization is not None and app_id in policy(organization.settings).enabled
+                if enabled:
+                    async with asyncio.timeout(subscription.timeout):
+                        await subscription.run(runtime, event)
+        except Exception as error:
+            logger.warning(
+                "App Run seal callback failed", extra={"app_id": app_id, "exception_details": exception_details(error)}
+            )
+
+    try:
+        while True:
+            try:
+                try:
+                    await runtime.redis.xgroup_create(STREAM_KEY, GROUP, id="$", mkstream=True)
+                except ResponseError as error:
+                    if not str(error).startswith("BUSYGROUP"):
+                        raise
+                while True:
+                    batches: Any = await runtime.redis.xreadgroup(
+                        GROUP, consumer, {STREAM_KEY: ">"}, count=32, block=block_ms, noack=True
+                    )
+                    for _, entries in batches:
+                        for _, fields in entries:
+                            try:
+                                event = RunSealEvent.model_validate_json(fields["data"])
+                            except (KeyError, ValidationError, ValueError, TypeError):
+                                continue
+                            for app_id, subscription in subscriptions:
+                                if event.status not in subscription.statuses:
+                                    continue
+                                active = app_running[app_id]
+                                if len(active) >= 32:
+                                    SEAL_DROPS.add(1, {"stage": "delivery", "app_id": app_id})
+                                    continue
+                                task = asyncio.create_task(deliver(app_id, subscription, event))
+                                running.add(task)
+                                active.add(task)
+                                task.add_done_callback(running.discard)
+                                task.add_done_callback(active.discard)
+            except RedisError as error:
+                logger.warning(
+                    "App Run seal subscription disconnected", extra={"exception_details": exception_details(error)}
+                )
+                await asyncio.sleep(1)
+    finally:
+        for task in running:
+            task.cancel()
+        await asyncio.gather(*running, return_exceptions=True)
+        try:
+            async with asyncio.timeout(min(runtime.settings.redis.timeout, 0.5)):
+                await runtime.redis.xgroup_delconsumer(STREAM_KEY, GROUP, consumer)
+        except (RedisError, TimeoutError):
+            pass
