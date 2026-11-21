@@ -239,7 +239,9 @@ class ThreadToolController:
         source_composition: ResolvedRunComposition | None = None,
     ) -> dict[str, Any]:
         if source_thread_id is None:
-            model_overrides = RunModelOverrides(model_id=model_id) if model_id is not None else None
+            model_overrides = (
+                RunModelOverrides(model_id=model_id, carry_forward=False) if model_id is not None else None
+            )
             created = await self._create_thread(
                 defaults=NewThreadDefaults(project_id=project_id, agent_id=agent_id), title=title
             )

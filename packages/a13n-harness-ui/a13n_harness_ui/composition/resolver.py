@@ -407,7 +407,7 @@ class AgentCompositionResolver:
             subagents=source.document.subagents,
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,
-            model_overrides=model_overrides,
+            model_overrides=model_overrides if model_overrides is not None and model_overrides.carry_forward else None,
             project_roots=selection.local_roots,
             media_understanding={
                 kind: self.model_recipe(source.models[model_id], source)
