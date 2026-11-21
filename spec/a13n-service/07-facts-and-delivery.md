@@ -80,6 +80,8 @@ Overview, Agent, Model and member usage queries accept optional `principal_id`. 
 
 The in-process `filtered_models` operation returns the same typed, paginated model breakdown and accepts exact-match Run labels in addition to the window and optional principal. Every supplied label must match `Run.options.labels`, frozen at acceptance, rather than mutable Run labels. Cursors bind the label filter as well as the existing scope and window. Principal-filtered calls retain Workspace `admin`; other calls require `read`. Labels are caller-supplied selectors, not proof of App ownership or quota attribution; use an execution principal filter when identity attribution is needed. This operation adds no HTTP or MCP parameter.
 
+Trusted installed Apps use the in-process `app_models` operation to read model usage for an App-owned resource. The App authorizes that resource in the selected Workspace and derives the required `principal_id` from its stored execution binding, never a request parameter. Service checks Workspace `read` and restricts the same paginated breakdown to Runs by that principal in that Workspace and any supplied acceptance-time labels. Native HTTP/MCP analytics and `filtered_models` keep their existing admin requirement for caller-selected principals.
+
 ## Background compaction facts
 
 ```text

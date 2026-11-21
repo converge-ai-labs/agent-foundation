@@ -1006,3 +1006,63 @@ async def test_in_process_model_usage_filters_acceptance_labels(service, scripte
     with pytest.raises(ServiceError) as denied:
         await filtered_models(service.runtime.storage, reader, tenant.workspace_id, query)
     assert denied.value.code == "forbidden"
+
+
+async def test_app_model_usage_uses_the_resource_principal_without_granting_native_admin(
+    service, scripted_model, runs_kit
+):
+    from types import SimpleNamespace
+
+    from a13n_service.infra.db import short_session
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.tenancy.access import principal_for
+    from a13n_service.usage.schemas import AppModelUsageQuery
+    from a13n_service.usage.service import app_models
+    from pydantic import ValidationError
+
+    async def account(name, role):
+        path = f"{service.workspace}/service-accounts"
+        response = await service.client.post(path, json={"name": name, "role": role})
+        assert response.status_code == 201, response.text
+        principal_id = response.json()["id"]
+        response = await service.client.post(f"{path}/{principal_id}/keys", json={"name": "Usage test"})
+        assert response.status_code == 201, response.text
+        return principal_id, {"Authorization": f"Bearer {response.json()['secret']}"}
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    app_principal_id, app_headers = await account("App execution", "runner")
+    options = {"labels": {"claw": "one"}}
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=service.app), base_url="https://service.test", headers=app_headers
+    ) as client:
+        app = SimpleNamespace(**{**vars(service), "client": client})
+        await observed_run(app, runs_kit, agent, records=[("scripted", 100, 20, 0, None, START)], options=options)
+        await observed_run(app, runs_kit, agent, records=[("scripted", 400, 20, 0, None, START)])
+    await observed_run(service, runs_kit, agent, records=[("scripted", 900, 20, 0, None, START)], options=options)
+    query = AppModelUsageQuery(**WINDOW, principal_id=app_principal_id, run_labels=options["labels"])
+    for invalid_scope in ({}, {"principal_id": None}):
+        with pytest.raises(ValidationError, match="principal_id"):
+            AppModelUsageQuery.model_validate({**WINDOW, **invalid_scope})
+
+    response = await service.client.post(f"{service.organization}/workspaces", json={"name": "Other workspace"})
+    assert response.status_code == 201, response.text
+    other_workspace_id = response.json()["id"]
+    storage, workspace_id = service.runtime.storage, service.tenant.workspace_id
+    for role in ("viewer", "runner"):
+        reader_id, reader_headers = await account(f"App Usage {role}", role)
+        async with short_session(storage) as session:
+            actor = await principal_for(session, service.runtime.access, reader_id)
+        [item] = (await app_models(storage, actor, workspace_id, query)).items
+        assert item.model == "scripted"
+        assert (item.usage.requests, item.usage.input_tokens) == (1, 100)
+        with pytest.raises(ServiceError) as denied_workspace:
+            await app_models(storage, actor, other_workspace_id, query)
+        assert denied_workspace.value.code == "forbidden"
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=service.app), base_url="https://service.test", headers=reader_headers
+        ) as client:
+            for endpoint in ("overview", "models"):
+                url = f"{service.api}/usage/{endpoint}"
+                assert (await client.get(url, params=WINDOW)).status_code == 200
+                assert (await client.get(url, params={**WINDOW, "principal_id": app_principal_id})).status_code == 403
