@@ -239,10 +239,31 @@ async def create_revision(
 ) -> AgentRevision:
     """The new revision, or the default one when the validated configuration equals it."""
     async with transaction(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "write")
-        head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
-        preset_edits.require_editable(head, if_match)
-        return await _publish_revision(session, actor, scope, head, body, registry=registry, plugins=plugins)
+        return await publish_revision(
+            session, actor, workspace_id, agent_id, body, if_match=if_match, registry=registry, plugins=plugins
+        )
+
+
+async def publish_revision(
+    session: AsyncSession,
+    actor: Principal,
+    workspace_id: str,
+    agent_id: str,
+    body: AgentRevisionCreate,
+    *,
+    if_match: str | None,
+    registry: Registry,
+    plugins: HarnessPluginFactoryCatalog,
+) -> AgentRevision:
+    """Publish under native authorization in the caller's transaction.
+
+    The caller commits or rolls back and must end the transaction without external I/O or long waits;
+    the Agent head lock is held until then. Exceptions must abort the caller's transaction.
+    """
+    scope = await workspace_scope(session, actor, workspace_id, "write")
+    head = await resolve_agent(session, scope.workspace_id, agent_id, lock=True)
+    preset_edits.require_editable(head, if_match)
+    return await _publish_revision(session, actor, scope, head, body, registry=registry, plugins=plugins)
 
 
 async def _publish_revision(

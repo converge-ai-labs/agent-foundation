@@ -1372,3 +1372,36 @@ def test_context_recovery_is_default_host_execution_policy() -> None:
     built = build(agent, capabilities=lambda _: [], plugins=PLUGINS, instrumentation=None)
     assert built.definition.context_recovery == ContextRecoveryPolicy()
     assert "context_recovery" not in AgentConfig.model_fields
+
+
+async def test_transactional_revision_publication_enforces_boundary_and_rolls_back(service):
+    from a13n_service.resources.agents.schemas import AgentRevisionCreate
+    from a13n_service.resources.agents.service import publish_revision
+    from a13n_service.resources.agents.tables import AgentRevisionRow
+
+    model = await create_model(service)
+    agent = await create_agent(service, "published", model)
+    tenant = service.tenant
+    actor = Principal(tenant.principal_id, "user", (Grant(tenant.organization_id, None, BUILT_IN_ROLES["admin"]),))
+    runtime = service.runtime
+    body = AgentRevisionCreate.model_validate({"config": {"model": model, "summarize": True}, "make_default": False})
+    kwargs = {"if_match": etag(agent), "registry": runtime.registry, "plugins": runtime.plugins}
+
+    with pytest.raises(RuntimeError, match="rollback"):
+        async with transaction(runtime.storage) as session:
+            rolled = await publish_revision(session, actor, tenant.workspace_id, agent["id"], body, **kwargs)
+            raise RuntimeError("rollback")
+    async with short_session(runtime.storage) as session:
+        assert await session.get(AgentRevisionRow, rolled.id) is None
+    async with transaction(runtime.storage) as session:
+        published = await publish_revision(session, actor, tenant.workspace_id, agent["id"], body, **kwargs)
+    assert published.id != agent["default_revision_id"]
+    current = (await service.client.get(f"{service.api}/agents/{agent['id']}")).json()
+    assert current["default_revision_id"] == agent["default_revision_id"]
+    async with transaction(runtime.storage) as session:
+        with pytest.raises(ServiceError) as denied:
+            await publish_revision(session, viewer(service), tenant.workspace_id, agent["id"], body, **kwargs)
+        assert denied.value.code == "forbidden"
+    async with transaction(runtime.storage) as session:
+        with pytest.raises(ServiceError):
+            await publish_revision(session, actor, tenant.workspace_id, agent["id"], body, **kwargs)

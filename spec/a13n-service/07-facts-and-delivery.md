@@ -78,6 +78,8 @@ Agent rows carry `agent_id`, `name`, `usage` and `runs`; attribution uses the ow
 
 Overview, Agent, Model and member usage queries accept optional `principal_id`. Any such filter requires Workspace `admin`, even for the caller's own identity; unfiltered overview/Agent/Model queries continue to require `read`. Filtering constrains both populations and daily buckets to Runs with that execution identity in the selected Workspace. Missing or foreign identities return empty usage without exposing a global identity profile. Cursors also bind the identity filter. A shared bot's consumption belongs to its Service execution account, not individual external chat users; schedule and delegated work use their recorded Run identity. No attribution by Agent creator, Session creator, latest caller or arbitrary metadata is inferred. These JSON analytics reads are explicitly MCP-admitted with unchanged HTTP authorization and without internal platform admission.
 
+The in-process `filtered_models` operation returns the same typed, paginated model breakdown and accepts exact-match Run labels in addition to the window and optional principal. Every supplied label must match `Run.options.labels`, frozen at acceptance, rather than mutable Run labels. Cursors bind the label filter as well as the existing scope and window. Principal-filtered calls retain Workspace `admin`; other calls require `read`. Labels are caller-supplied selectors, not proof of App ownership or quota attribution; use an execution principal filter when identity attribution is needed. This operation adds no HTTP or MCP parameter.
+
 ## Background compaction facts
 
 ```text

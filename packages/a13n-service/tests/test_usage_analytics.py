@@ -22,10 +22,20 @@ WINDOW = {"start": START.isoformat(), "end": (START + timedelta(days=3)).isoform
 
 
 async def observed_run(
-    service, kit, agent, *, started=START, seconds=10, records=(), record_fields=None, thread_id=None, outcome="failed"
+    service,
+    kit,
+    agent,
+    *,
+    started=START,
+    seconds=10,
+    records=(),
+    record_fields=None,
+    thread_id=None,
+    outcome="failed",
+    options=None,
 ):  # type: ignore[no-untyped-def]
     submitted = (
-        await kit.start_thread(service, agent, "Usage fixture")
+        await kit.start_thread(service, agent, "Usage fixture", **({"options": options} if options else {}))
         if thread_id is None
         else (await kit.submit(service, thread_id, kit.message(agent, "Usage fixture"))).json()
     )
@@ -928,3 +938,71 @@ async def test_stacked_overview_ranks_window_and_preserves_daily_totals(service,
     empty = await read(service, group_by="models", start=(START - timedelta(days=3)).isoformat(), end=START.isoformat())
     assert empty["series"] == []
     assert all(day["usage"]["cost"] == "0" for day in empty["daily"])
+
+
+async def test_in_process_model_usage_filters_acceptance_labels(service, scripted_model, runs_kit):
+    from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal
+    from a13n_service.usage.schemas import FilteredModelUsageQuery
+    from a13n_service.usage.service import filtered_models, models
+
+    await runs_kit.pause_sweeps(service)
+    agent = await runs_kit.create_agent(service, scripted_model)
+    first, _ = await observed_run(
+        service,
+        runs_kit,
+        agent,
+        records=[("scripted", 100, 20, 0, None, START), (None, 10, 1, 0, None, START)],
+        options={"labels": {"claw": "one", "extra": "yes"}},
+    )
+    second, _ = await observed_run(
+        service, runs_kit, agent, records=[("scripted", 900, 20, 0, None, START)], options={"labels": {"claw": "two"}}
+    )
+    async with transaction(service.runtime.storage) as session:
+        run = await session.get_one(RunRow, first)
+        run.labels = {"claw": "edited"}
+        run = await session.get_one(RunRow, second)
+        run.labels = {"claw": "one"}
+    tenant = service.tenant
+    actor = Principal(tenant.principal_id, "user", (Grant(tenant.organization_id, None, BUILT_IN_ROLES["admin"]),))
+    query = FilteredModelUsageQuery(
+        start=START,
+        end=START + timedelta(days=3),
+        principal_id=tenant.principal_id,
+        run_labels={"claw": "one", "extra": "yes"},
+    )
+    page = await filtered_models(service.runtime.storage, actor, tenant.workspace_id, query)
+    assert await models(service.runtime.storage, actor, tenant.workspace_id, query) == page
+    assert len(page.items) == 2
+    scripted = next(item for item in page.items if item.model == "scripted")
+    assert scripted.usage.input_tokens == 100
+    assert scripted.usage.unpriced_requests == 1
+    assert scripted.usage.cost is None
+    first_page = await filtered_models(
+        service.runtime.storage, actor, tenant.workspace_id, query.model_copy(update={"limit": 1})
+    )
+    assert first_page.next_cursor is not None
+    second_page = await filtered_models(
+        service.runtime.storage,
+        actor,
+        tenant.workspace_id,
+        query.model_copy(update={"limit": 1, "cursor": first_page.next_cursor}),
+    )
+    assert first_page.items + second_page.items == page.items
+    from a13n_service.infra.errors import ServiceError
+
+    with pytest.raises(ServiceError) as wrong_cursor:
+        await filtered_models(
+            service.runtime.storage,
+            actor,
+            tenant.workspace_id,
+            query.model_copy(update={"run_labels": {"claw": "two"}, "cursor": first_page.next_cursor}),
+        )
+    assert wrong_cursor.value.code == "invalid_cursor"
+    missing = query.model_copy(update={"run_labels": {"claw": "on"}})
+    assert (await filtered_models(service.runtime.storage, actor, tenant.workspace_id, missing)).items == []
+    reader = Principal(
+        tenant.principal_id, "user", (Grant(tenant.organization_id, tenant.workspace_id, BUILT_IN_ROLES["viewer"]),)
+    )
+    with pytest.raises(ServiceError) as denied:
+        await filtered_models(service.runtime.storage, reader, tenant.workspace_id, query)
+    assert denied.value.code == "forbidden"
