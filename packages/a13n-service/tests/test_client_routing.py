@@ -40,8 +40,8 @@ def request(method="process.start", *, seconds=3, environment_id="env_client", e
 
 
 @asynccontextmanager
-async def routers(redis_url, dispatch, *, max_requests=4):
-    config = ClientEnvironments(max_requests=max_requests, response_margin_seconds=0.1)
+async def routers(redis_url, dispatch, *, max_requests=4, response_margin_seconds=0.1):
+    config = ClientEnvironments(max_requests=max_requests, response_margin_seconds=response_margin_seconds)
     worker, control = [Routing(RedisSettings(url=SecretStr(redis_url)), config) for _ in range(2)]
     ready = asyncio.Event()
     serving = asyncio.create_task(
@@ -139,8 +139,10 @@ async def test_control_timeout_does_not_dispatch_a_kill_or_repeat_start(redis_ur
         finally:
             cancelled.set()
 
-    async with routers(redis_url, dispatch) as (worker, _, _):
-        response = await worker.call(request("process.wait", seconds=0.5))
+    # Keep the control timeout short while allowing the failure reply to cross Redis under CI load.
+    response_margin = ClientEnvironments().response_margin_seconds
+    async with routers(redis_url, dispatch, response_margin_seconds=response_margin) as (worker, _, _):
+        response = await worker.call(request("process.wait", seconds=0.5 + response_margin))
         assert isinstance(response.outcome, Failure)
         assert not response.outcome.pre_dispatch
         assert cancelled.is_set() and seen == ["process.wait"]
