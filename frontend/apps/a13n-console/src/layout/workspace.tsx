@@ -1,11 +1,12 @@
 import { Button } from "a13n-ui";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { Link, Navigate, Outlet, useLocation, useParams } from "react-router";
 
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../auth/context";
+import { useSignOut } from "../auth/sign-out";
 import { AppPluginsProvider } from "../app-plugins/registry";
 import { CreateWorkspace } from "../features/settings/create-workspace";
 import { workspacePath } from "../shared/paths";
@@ -197,10 +198,9 @@ function NoWorkspace({
   organization: Schema["Organization"];
 }) {
   const { t } = useTranslation(),
-    auth = useAuth(),
     location = useLocation();
   const admin = organization.permissions.includes("admin");
-  const logout = useMutation({ mutationFn: auth.logout });
+  const logout = useSignOut();
   return (
     <Context.Provider
       value={{
@@ -258,10 +258,9 @@ function NoWorkspace({
 }
 
 function NoOrganization() {
-  const auth = useAuth(),
-    { t } = useTranslation(),
+  const { t } = useTranslation(),
     location = useLocation();
-  const logout = useMutation({ mutationFn: auth.logout });
+  const logout = useSignOut();
   return (
     <main id="main-content">
       <Page

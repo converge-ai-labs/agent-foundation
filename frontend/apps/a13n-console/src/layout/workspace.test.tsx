@@ -5,13 +5,21 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { WorkspaceProvider, useWorkspace } from "./workspace";
 
-const mocks = vi.hoisted(() => ({ GET: vi.fn(), userId: "usr_test" }));
+const mocks = vi.hoisted(() => ({
+  GET: vi.fn(),
+  logout: vi.fn(),
+  hasOrganization: true,
+  userId: "usr_test",
+}));
 vi.mock("../auth/context", () => ({
   useAuth: () => ({
     isPending: false,
     error: null,
+    logout: mocks.logout,
     data: {
-      organizations: [{ id: "org_test", name: "Acme", permissions: [] }],
+      organizations: mocks.hasOrganization
+        ? [{ id: "org_test", name: "Acme", permissions: [] }]
+        : [],
       user: { value: { id: mocks.userId } },
     },
   }),
@@ -29,37 +37,50 @@ vi.mock("react-i18next", () => ({
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  mocks.hasOrganization = true;
 });
 
 function CurrentWorkspace() {
   const { workspace, basePath } = useWorkspace();
   return <p>{`${useLocation().pathname}|${workspace.id}|${basePath}`}</p>;
 }
+function SignInDestination() {
+  const { pathname, state } = useLocation();
+  return <h1>{`${pathname} ${JSON.stringify(state)}`}</h1>;
+}
+
 function mount(
   path: string,
   {
     workspacesError,
     firstArchived,
-  }: { workspacesError?: Error; firstArchived?: boolean } = {},
+    noWorkspaces,
+  }: {
+    workspacesError?: Error;
+    firstArchived?: boolean;
+    noWorkspaces?: boolean;
+  } = {},
 ) {
   mocks.GET.mockImplementation(async (route: string) => {
     if (route.endsWith("/workspaces")) {
       if (workspacesError) throw workspacesError;
       return {
         data: {
-          items: [
-            {
-              id: "ws_first",
-              name: "Research",
-              permissions: ["read"],
-              archived_at: firstArchived ? "2026-09-24T00:00:00Z" : null,
-            },
-            {
-              id: "ws_second",
-              name: "Design",
-              permissions: ["read"],
-            },
-          ],
+          items: noWorkspaces
+            ? []
+            : [
+                {
+                  id: "ws_first",
+                  name: "Research",
+                  permissions: ["read"],
+                  archived_at: firstArchived ? "2026-09-24T00:00:00Z" : null,
+                },
+                {
+                  id: "ws_second",
+                  name: "Design",
+                  permissions: ["read"],
+                },
+              ],
           next_cursor: null,
         },
       };
@@ -75,6 +96,7 @@ function mount(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path="*" element={<h1>Not found</h1>} />
+          <Route path="/login" element={<SignInDestination />} />
           <Route
             path="/workspace/:workspaceId/*"
             element={
@@ -82,6 +104,10 @@ function mount(
                 <CurrentWorkspace />
               </WorkspaceProvider>
             }
+          />
+          <Route
+            path="/settings/profile"
+            element={<WorkspaceProvider>{null}</WorkspaceProvider>}
           />
           <Route
             path="/"
@@ -150,6 +176,34 @@ it("preserves the selected workspace when provider management opens in another t
     ),
   ).toBeTruthy();
 });
+
+it.each([
+  {
+    heading: "No organization access",
+    path: "/workspace/ws_previous/agents?view=all#results",
+    hasOrganization: false,
+  },
+  {
+    heading: "Acme",
+    path: "/settings/profile",
+    hasOrganization: true,
+  },
+])(
+  "signs out from $heading without a return destination",
+  async ({ heading, path, hasOrganization }) => {
+    mocks.hasOrganization = hasOrganization;
+    mocks.logout.mockResolvedValue(undefined);
+    mount(path, { noWorkspaces: true });
+    await screen.findByRole("heading", { name: heading });
+
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    expect(mocks.logout).toHaveBeenCalledOnce();
+    expect(
+      await screen.findByRole("heading", { name: "/login null" }),
+    ).toBeTruthy();
+  },
+);
 
 it("offers retry and personal settings when workspaces fail", async () => {
   mount("/workspace/ws_second/agents", {

@@ -1,4 +1,3 @@
-import { useMutation } from "@tanstack/react-query";
 import {
   Button,
   Menu,
@@ -20,6 +19,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useAuth } from "../auth/context";
+import { useSignOut } from "../auth/sign-out";
 import { ErrorToast } from "../shared/feedback";
 import { UserAvatar } from "./avatar";
 import { useAppearance } from "./appearance";
@@ -40,10 +40,7 @@ export function AccountMenu({
   const { workspace } = useAccess();
   const { theme, setTheme } = useAppearance();
   const user = auth.data!.user.value;
-  const logout = useMutation({
-    mutationFn: auth.logout,
-    onSuccess: () => navigate("/login", { replace: true }),
-  });
+  const logout = useSignOut();
   const open = (path: string) => {
     onNavigate();
     navigate(path);
