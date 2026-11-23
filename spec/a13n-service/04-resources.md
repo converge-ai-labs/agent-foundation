@@ -235,9 +235,20 @@ Semantic references cover resource lifecycles, replacement/null semantics, versi
 
 Deployments update API-serving and Worker roles together before preparing new presets: older builds assume a single builtin Agent. The migration backfills existing builtin heads as Composer; a downgrade preserves Finding Agent heads as custom Agents without promising older builds can execute their configurations.
 
-Finding Agent reads authorized trace evidence and the Run's executed configuration, considers bounded exact-revision existing Findings and reviewer feedback as untrusted context, submits unreviewed findings, and summarizes results and limitations in its final reply ([07](07-facts-and-delivery.md#findings-and-analysis)). Analysis runs use ordinary Session, Thread, Run, usage and interruption lifecycles.
+Finding Agent investigates authorized workspace execution evidence, compares its diagnosis with existing Findings and reviewer feedback for the executed revision, submits unreviewed Findings, and summarizes results and limitations in its final reply ([07](07-facts-and-delivery.md#findings-and-analysis)). Analysis runs use ordinary Session, Thread, Run, usage and interruption lifecycles.
 
-It enables the `execution` platform tools `get_trace`, `list_trace_spans`, `get_trace_span`, `get_run_configuration`, `get_finding` and `create_finding`, each `allow`, with inline execution. Trace navigation yields Run-bound content references; native `read_content` and `search_content` provide redacted bounded fragments and continuations for root and child payloads. Its only write submits a finding, so it can change no configuration. It enables no built-in toolset. Platform tools take native typed arguments rather than HTTP request envelopes. Trace reads and finding submission share the application authorization and evidence rules of [07](07-facts-and-delivery.md#findings-and-analysis); the submitted finding's source Run comes from the authenticated invocation. Custom Agents select these tools like any other, with writes defaulting to `ask`.
+The preset enables these `execution` platform tools with inline execution and `allow` permission:
+
+| Evidence or action                                               | Tools                                                                             |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Run input, output, messages, attempts and executed configuration | `get_run`, `list_run_items`, `list_run_attempts`, `get_run_configuration`         |
+| Durable tool executions and retained results                     | `list_tool_executions`, `get_tool_execution_result`                               |
+| Trace discovery and inspection                                   | `list_traces`, `search_traces`, `get_trace`, `list_trace_spans`, `get_trace_span` |
+| Bounded reads of returned content references                     | `read_content`, `search_content`                                                  |
+| Existing Findings, assessments and reviewer notes                | `list_findings`, `get_finding`                                                    |
+| Submit an unreviewed Finding                                     | `create_finding`                                                                  |
+
+Finding submission is its only write. It enables no built-in toolset. Platform tools take native typed arguments rather than HTTP request envelopes. Trace reads and finding submission share the application authorization and evidence rules of [07](07-facts-and-delivery.md#findings-and-analysis); the submitted finding's source Run comes from the authenticated invocation. Custom Agents select these tools like any other, with writes defaulting to `ask`.
 
 New generic messages cannot launch the builtin Finding Agent or continue a managed Analysis Thread as chat. Clients start an analysis through `POST /finding-analyses`; custom duplicates remain independent conversational Agents. Previously accepted executions and internal continuations retain their frozen configuration.
 
