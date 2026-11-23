@@ -57,13 +57,12 @@ it("asks for the existing account's password when the invited email already has 
   expect(document.activeElement).toBe(password);
 });
 
-function renderAt(path: string, configuration: { email_delivery: boolean }) {
-  http.GET.mockResolvedValue({
-    data: { initialized: true, ...configuration },
-    response: new Response(),
+function renderAuthPage(path: string) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
   });
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route path={path} element={<AuthPage />} />
@@ -73,6 +72,41 @@ function renderAt(path: string, configuration: { email_delivery: boolean }) {
   );
   return userEvent.setup();
 }
+
+function renderAt(path: string, configuration: { email_delivery: boolean }) {
+  http.GET.mockResolvedValue({
+    data: { initialized: true, ...configuration },
+    response: new Response(),
+  });
+  return renderAuthPage(path);
+}
+
+it("retries unavailable sign-in configuration without showing a password form", async () => {
+  http.GET.mockRejectedValueOnce(
+    new TypeError("network error"),
+  ).mockResolvedValue({
+    data: {
+      initialized: true,
+      password_enabled: false,
+      oidc_providers: [
+        { id: "team", label: "Team Identity", brand: "generic" },
+      ],
+    },
+    response: new Response(),
+  });
+  const user = renderAuthPage("/login");
+
+  expect(
+    await screen.findByText("Couldn’t load sign-in options."),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText("Password")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Try again" }));
+
+  expect(
+    await screen.findByRole("link", { name: "Sign in with {{provider}}" }),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText("Password")).toBeNull();
+});
 
 it("validates sign-in under each field instead of sending an empty request", async () => {
   const user = renderAt("/login", { email_delivery: true });

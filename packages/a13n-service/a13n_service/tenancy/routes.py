@@ -137,7 +137,7 @@ async def auth_configuration(response: Response, runtime: CurrentRuntime) -> Aut
     return AuthConfiguration(
         password_enabled=auth.password_enabled,
         oidc_providers=[
-            OIDCSignIn(id=name, label=provider.label, brand=provider.brand)
+            OIDCSignIn(id=name, label=provider.label, brand=provider.sign_in_brand)
             for name, provider in auth.oidc.providers.items()
         ],
         email_delivery=auth.password_enabled and auth.mail.smtp_host is not None,

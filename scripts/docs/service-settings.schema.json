@@ -1468,8 +1468,15 @@
           "type": "string"
         },
         "brand": {
-          "$ref": "#/$defs/OIDCBrand",
-          "default": "generic"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OIDCBrand"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "issuer": {
           "maxLength": 1024,

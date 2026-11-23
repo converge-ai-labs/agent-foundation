@@ -5,6 +5,7 @@ Every limit is finite and visible here. `A13N_<SECTION>__<FIELD>` overrides a fi
 
 import json
 import os
+import re
 import tomllib
 from collections.abc import Mapping
 from functools import cached_property
@@ -203,6 +204,10 @@ class Mail(Section):
 
 type OIDCBrand = Literal["generic", "google", "microsoft"]
 
+_ENTRA_V2_ISSUER = re.compile(
+    r"https://login\.microsoftonline\.com/[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/v2\.0"
+)
+
 
 def oidc_endpoint_policy(issuer: str) -> EndpointPolicy:
     parts = urlsplit(issuer)
@@ -215,11 +220,22 @@ def oidc_endpoint_policy(issuer: str) -> EndpointPolicy:
 
 class OIDCProvider(Section):
     label: str = Field(min_length=1, max_length=64)
-    brand: OIDCBrand = "generic"
+    brand: OIDCBrand | None = None
     issuer: str = Field(min_length=1, max_length=1024)
     client_id: str = Field(min_length=1, max_length=512)
     client_secret: SecretStr = Field(min_length=1, max_length=4096)
     token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] = "client_secret_basic"
+
+    @property
+    def sign_in_brand(self) -> OIDCBrand:
+        """A display hint only; never used to choose an endpoint or validate identity."""
+        if self.brand is not None:
+            return self.brand
+        if self.issuer == "https://accounts.google.com":
+            return "google"
+        if _ENTRA_V2_ISSUER.fullmatch(self.issuer):
+            return "microsoft"
+        return "generic"
 
     @field_validator("issuer")
     @classmethod

@@ -1,11 +1,9 @@
 import {
   ArrowLeftIcon,
-  ArrowUpRightIcon,
+  ArrowRightIcon,
   CheckCircleIcon,
   InfoIcon,
-  GoogleLogoIcon,
   ShieldCheckIcon,
-  WindowsLogoIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -17,6 +15,7 @@ import {
   FormField,
   Input,
   Logo,
+  Spinner,
   Wordmark,
 } from "a13n-ui";
 import {
@@ -39,6 +38,8 @@ import {
 import { ApiError } from "../service-client";
 import { data } from "../shared/api";
 import { Loading } from "../shared/feedback";
+import googleMark from "./brands/google.png";
+import microsoftMark from "./brands/microsoft.svg";
 import { useAuth, useClient } from "./context";
 import styles from "./pages.module.css";
 
@@ -46,12 +47,6 @@ type Mode = "login" | "setup" | "invite" | "forgot" | "reset" | "email";
 type Translate = (value: string) => string;
 /** A failure the reader can act on: beside the fields, or above the button. */
 type Failure = { field?: boolean; message: string };
-
-const identityIcons = {
-  generic: ShieldCheckIcon,
-  google: GoogleLogoIcon,
-  microsoft: WindowsLogoIcon,
-};
 
 const passwordFieldId = "auth-password";
 const passwordErrorId = `${passwordFieldId}-error`;
@@ -199,6 +194,17 @@ export function AuthPage() {
   const oidcFailed =
     routeMode === "login" &&
     new URLSearchParams(location.search).get("oidc") === "failed";
+  const [starting, setStarting] = useState<string>();
+  const startingRef = useRef(false);
+  useEffect(() => {
+    function restore(event: PageTransitionEvent) {
+      if (!event.persisted) return;
+      startingRef.current = false;
+      setStarting(undefined);
+    }
+    window.addEventListener("pageshow", restore);
+    return () => window.removeEventListener("pageshow", restore);
+  }, []);
   const linkUnavailable = !passwords && routeMode !== "login";
   const needsBootstrap =
     !passwords &&
@@ -399,34 +405,76 @@ export function AuthPage() {
           <div className={styles.providers}>
             {oidcFailed && (
               <Notice>
-                {t("Sign-in didn’t complete. Choose a provider to try again.")}
+                {t(
+                  "Sign-in didn’t complete. Try again or contact your administrator.",
+                )}
               </Notice>
             )}
             {providers.map((provider) => {
-              const Icon = identityIcons[provider.brand] ?? ShieldCheckIcon;
+              const mark =
+                provider.brand === "google"
+                  ? googleMark
+                  : provider.brand === "microsoft"
+                    ? microsoftMark
+                    : undefined;
               return (
                 <Button
                   key={provider.id}
-                  variant="outline"
+                  variant={
+                    !passwords && providers.length === 1 && !mark
+                      ? "default"
+                      : "outline"
+                  }
                   size="lg"
                   className={styles.provider}
                   render={
                     <a
                       href={`/api/v1/auth/oidc/${encodeURIComponent(provider.id)}/start`}
+                      aria-busy={starting === provider.id || undefined}
+                      aria-disabled={starting !== undefined || undefined}
+                      onClick={(event) => {
+                        if (startingRef.current) {
+                          event.preventDefault();
+                        } else if (
+                          !event.metaKey &&
+                          !event.ctrlKey &&
+                          !event.shiftKey &&
+                          !event.altKey
+                        ) {
+                          startingRef.current = true;
+                          setStarting(provider.id);
+                        }
+                      }}
                     />
                   }
                 >
-                  <Icon size={19} aria-hidden="true" />
+                  <span className={styles.providerMark} aria-hidden="true">
+                    {mark ? (
+                      <img
+                        src={mark}
+                        alt=""
+                        className={
+                          provider.brand === "google"
+                            ? styles.googleMark
+                            : undefined
+                        }
+                      />
+                    ) : (
+                      <ShieldCheckIcon className="size-5" />
+                    )}
+                  </span>
                   <span>
                     {t("Sign in with {{provider}}", {
                       provider: provider.label,
                     })}
                   </span>
-                  <ArrowUpRightIcon
-                    className={styles.providerArrow}
-                    size={14}
-                    aria-hidden="true"
-                  />
+                  <span className={styles.providerEnd} aria-hidden="true">
+                    {starting === provider.id ? (
+                      <Spinner className="size-4" />
+                    ) : (
+                      <ArrowRightIcon className="size-4" />
+                    )}
+                  </span>
                 </Button>
               );
             })}
@@ -435,7 +483,24 @@ export function AuthPage() {
             )}
           </div>
         )}
-        {needsBootstrap ? (
+        {!configuration.data ? (
+          <div className={styles.form}>
+            <Notice
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={configuration.isFetching}
+                  onClick={() => void configuration.refetch()}
+                >
+                  {t("Try again")}
+                </Button>
+              }
+            >
+              {t("Couldn’t load sign-in options.")}
+            </Notice>
+          </div>
+        ) : needsBootstrap ? (
           <p className={styles.unavailable}>
             {t("Ask your Service operator to finish setup.")}
           </p>
@@ -576,7 +641,7 @@ export function AuthPage() {
             </Button>
           </form>
         )}
-        {links}
+        {configuration.data && links}
       </div>
       <p className={styles.tagline}>{t("The foundation for your agents.")}</p>
     </main>

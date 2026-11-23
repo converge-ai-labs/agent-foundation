@@ -147,7 +147,7 @@ client_id = "a13n-console"
 client_secret = "replace-at-deploy-time"
 ```
 
-Add more `[auth.oidc.providers.<id>]` tables to show more sign-in buttons. A provider must support Discovery, authorization code with PKCE S256, signed ID tokens (`RS256` or `ES256`), and the `openid profile email` scopes. If the provider requires `client_secret_post`, set `token_endpoint_auth_method = "client_secret_post"`; the default uses HTTP Basic. `brand = "google"` or `"microsoft"` selects a built-in mark; the default shows a shield.
+Add more `[auth.oidc.providers.<id>]` tables to show more sign-in buttons. A provider must support Discovery, authorization code with PKCE S256, signed ID tokens (`RS256` or `ES256`), and the `openid profile email` scopes. If the provider requires `client_secret_post`, set `token_endpoint_auth_method = "client_secret_post"`; the default uses HTTP Basic. Console shows the bundled Google mark for `https://accounts.google.com` and the Microsoft mark for `https://login.microsoftonline.com/<tenant UUID>/v2.0`. Other issuers get a shield. Set `brand` to `"google"`, `"microsoft"`, or `"generic"` to override the mark, for example when a trusted broker always redirects to one provider. Choose distinct labels that users will recognize.
 
 Any user your provider lets authorize this client can sign in. Configure application access at the IdP before publishing a button. For Google Workspace, create the web client in a project owned by your organization and set **Google Auth Platform → Audience → Internal** to limit admission to that organization ([Google's audience guide](https://support.google.com/cloud/answer/15549945)). An External app can admit users outside your organization; a domain-looking email address is not an admission rule in Service.
 

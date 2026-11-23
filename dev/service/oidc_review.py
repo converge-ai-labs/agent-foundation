@@ -29,6 +29,11 @@ EMAIL = "admin@example.com"
 LOCAL_PASSWORD = "local-fixture-password"
 DEX_PASSWORD = "dex-fixture-password"
 DEX_CLIENTS = {"team": "Team Identity", "engineering": "Engineering SSO"}
+BRAND_PREVIEW = {
+    "google": ("Google", "https://accounts.google.com"),
+    "microsoft": ("Microsoft", "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0"),
+}
+LONG_LABEL = "Research and Engineering Workspace Identity for Regional Offices"
 
 
 def wait_for(url: str, process: subprocess.Popen | None = None) -> None:
@@ -101,11 +106,18 @@ def write_dex(directory: Path, issuer: str, origin: str) -> Path:
     return config
 
 
-def oidc_settings(issuer: str, workspace_id: str, *, password_enabled: bool) -> str:
-    result = f"\n[auth]\npassword_enabled = {str(password_enabled).lower()}\n[auth.oidc]\ndefault_workspace_id = {json.dumps(workspace_id)}\n"
-    for name, label in DEX_CLIENTS.items():
+def oidc_settings(issuer: str, workspace_id: str, phase: str) -> str:
+    password_enabled = phase == "mixed"
+    result = f"\n[auth]\npassword_enabled = {str(password_enabled).lower()}\n[auth.oidc]\ndefault_workspace_id = {json.dumps(workspace_id)}\nsession_seconds = 900\n"
+    providers = {name: (label, issuer) for name, label in DEX_CLIENTS.items()}
+    if phase == "mixed":
+        # Brand rendering only: these issuers are not contacted in the browser flow.
+        providers = BRAND_PREVIEW | providers
+    elif phase == "single":
+        providers = {"team": (LONG_LABEL, issuer)}
+    for name, (label, provider_issuer) in providers.items():
         result += (
-            f"[auth.oidc.providers.{name}]\nlabel = {json.dumps(label)}\nissuer = {json.dumps(issuer)}\n"
+            f"[auth.oidc.providers.{name}]\nlabel = {json.dumps(label)}\nissuer = {json.dumps(provider_issuer)}\n"
             f"client_id = {json.dumps(name)}\nclient_secret = 'public-fixture-client-secret'\n"
         )
     return result
@@ -152,10 +164,11 @@ def run(directory: Path, *, manual: bool) -> None:
             "email": EMAIL,
             "localPassword": LOCAL_PASSWORD,
             "dexPassword": DEX_PASSWORD,
+            "longLabel": LONG_LABEL,
         }
         (directory / "fixture.json").write_text(json.dumps(fixture))
-        for phase in ("mixed", "oidc-only"):
-            config.write_text(base + oidc_settings(issuer, workspace, password_enabled=phase == "mixed"))
+        for phase in ("mixed", "oidc-only", "single"):
+            config.write_text(base + oidc_settings(issuer, workspace, phase))
             with service(directory, config, port):
                 if manual:
                     print(
