@@ -96,7 +96,7 @@ export function WebhookEditor({
             <SecretReveal value={secret} label={t("Signing secret")} wrap />
             <p className={styles.note}>
               {t(
-                "Verify X-A13n-Webhook-Signature with this secret and deduplicate by X-A13n-Delivery-Id.",
+                "Verify webhook-signature with this secret and deduplicate by webhook-id.",
               )}
             </p>
             <div className={styles.toolbar}>

@@ -29,7 +29,7 @@ export function Dictation({
   disabled?: boolean;
   onActive: (active: boolean) => void;
   readDraft: () => DictationDraft | undefined;
-  insert: (text: string) => void;
+  insert: (text: string, restoreFocus: boolean) => void;
 }) {
   const { t } = useTranslation();
   const { client } = useTransport();
@@ -37,6 +37,7 @@ export function Dictation({
     "idle" | "requesting" | "recording" | "transcribing" | "failed"
   >("idle");
   const [levels, setLevels] = useState<{ id: number; value: number }[]>([]);
+  const bar = useRef<HTMLDivElement>(null);
   const rail = useRef<HTMLDivElement>(null);
   const firstSampleAt = useRef<number | undefined>(undefined);
   // Move the whole strip at display cadence. Audio callbacks only append bars.
@@ -82,8 +83,9 @@ export function Dictation({
       );
       if (ctl.signal.aborted) return;
       if (!response.text.trim()) throw new Error(t("No speech detected."));
+      const restoreFocus = !!bar.current?.contains(document.activeElement);
       reset();
-      insert(response.text);
+      insert(response.text, restoreFocus);
       if (response.warning)
         setNotice(t("Cleanup unavailable; using the original transcript."));
     } catch (e) {
@@ -195,7 +197,7 @@ export function Dictation({
       </>
     );
   return (
-    <div className={styles.bar} data-dictation-active>
+    <div ref={bar} tabIndex={-1} className={styles.bar} data-dictation-active>
       <Button
         type="button"
         size="icon-sm"
@@ -232,7 +234,10 @@ export function Dictation({
           type="button"
           size="sm"
           variant="outline"
-          onClick={() => void transcribe()}
+          onClick={() => {
+            bar.current?.focus({ preventScroll: true });
+            void transcribe();
+          }}
         >
           {t("Retry")}
         </Button>
@@ -242,7 +247,11 @@ export function Dictation({
           size="icon-sm"
           variant="ghost"
           aria-label={t("Stop recording")}
-          onClick={() => void finish.current?.()}
+          onClick={() => {
+            // Stop disappears while waiting. Keep a focus target until the user moves on.
+            bar.current?.focus({ preventScroll: true });
+            void finish.current?.();
+          }}
         >
           <Stop weight="fill" />
         </Button>

@@ -2543,6 +2543,22 @@
       "title": "NativeToolSearch",
       "type": "object"
     },
+    "NoPrimaryEnvironment": {
+      "additionalProperties": false,
+      "description": "Skip the primary mount for this Run. Named mounts remain available.",
+      "properties": {
+        "mode": {
+          "const": "none",
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode"
+      ],
+      "title": "NoPrimaryEnvironment",
+      "type": "object"
+    },
     "ObserverContinuation": {
       "additionalProperties": false,
       "description": "Native conversion cursors required to resume mid-part, without raw history.",
@@ -3176,7 +3192,10 @@
         "environment_templates",
         "providers",
         "execution",
-        "schedules"
+        "schedules",
+        "usage",
+        "subscriptions",
+        "egress_credentials"
       ],
       "type": "string"
     },
@@ -3463,7 +3482,8 @@
       "discriminator": {
         "mapping": {
           "existing": "#/$defs/ExistingRunEnvironment",
-          "fresh": "#/$defs/FreshRunEnvironment"
+          "fresh": "#/$defs/FreshRunEnvironment",
+          "none": "#/$defs/NoPrimaryEnvironment"
         },
         "propertyName": "mode"
       },
@@ -3473,6 +3493,9 @@
         },
         {
           "$ref": "#/$defs/ExistingRunEnvironment"
+        },
+        {
+          "$ref": "#/$defs/NoPrimaryEnvironment"
         }
       ]
     },

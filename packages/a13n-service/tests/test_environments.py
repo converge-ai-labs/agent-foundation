@@ -481,7 +481,8 @@ async def test_a_draining_worker_yields_while_a_sandbox_is_being_created(env, ru
     assert [item["status"] for item in attempts] == ["yielded"]
 
 
-async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("skip_primary", [False, True])
+async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_model, runs_kit, skip_primary) -> None:  # type: ignore[no-untyped-def]
     """Edges pinning one revision still differ in what their children mount."""
     model = await runs_kit.create_model(env, scripted_model)
     unused_default = await reserve(env, env.template["id"])
@@ -508,9 +509,16 @@ async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_
         delegate = {"subagent_name": name, "prompt": "go"}
         scripted_model.call("delegate", delegate, call_id=f"call_{name}", to="Role: coordinator")
     scripted_model.say("Delegated", to="Role: coordinator")
-    submitted = await runs_kit.start_thread(env, coordinator, "split the work")
-    [primary] = submitted["run"]["environment_mounts"]
-    await advance(env.runtime, primary["environment_id"], owner="test")
+    submitted = await runs_kit.start_thread(
+        env,
+        coordinator,
+        "split the work",
+        environments=[{"name": "workspace", "environment_id": unused_default["id"]}] if skip_primary else [],
+        options={"environment": {"mode": "none"}} if skip_primary else {},
+    )
+    if not skip_primary:
+        [primary] = submitted["run"]["environment_mounts"]
+        await advance(env.runtime, primary["environment_id"], owner="test")
     await (await runs_kit.attempt(env))
     assert (await runs_kit.get_run(env, submitted["run"]["id"]))["status"] == "completed"
 
@@ -522,10 +530,11 @@ async def test_each_async_edge_applies_its_own_environment_policy(env, scripted_
         return (await env.client.get(f"{env.api}/threads/{thread_id}/environments")).json()["items"]
 
     assert await mounted(children["researcher"]) == []
-    desired = {key: value for key, value in primary.items() if key not in {"session_version", "session_configuration"}}
-    assert await mounted(children["builder"]) == [{**desired, "desktop_enabled": False}]
+    assert bool(submitted["run"]["environment_mounts"]) == (not skip_primary)
+    assert await mounted(children["builder"]) == ([] if skip_primary else await mounted(submitted["thread"]["id"]))
     [dedicated] = await mounted(children["tester"])
-    assert dedicated["name"] == "workspace" and dedicated["environment_id"] != primary["environment_id"]
+    [desired] = await mounted(submitted["thread"]["id"])
+    assert dedicated["name"] == "workspace" and dedicated["environment_id"] != desired["environment_id"]
 
 
 async def test_a_child_without_a_primary_gets_one_from_its_edge(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]

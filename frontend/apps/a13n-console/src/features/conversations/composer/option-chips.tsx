@@ -17,11 +17,13 @@ export function RunOptions({
   showAgent = true,
   newThread = true,
   agentId,
+  defaultEnvironment,
 }: {
   options: RunOptionsState;
   showAgent?: boolean;
   newThread?: boolean;
   agentId?: string;
+  defaultEnvironment?: string;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -60,6 +62,16 @@ export function RunOptions({
           value={options.labels.environment ?? options.environment}
         />
       )}
+      {newThread &&
+        options.environment === "inherit" &&
+        options.runEnvironment === "inherit" &&
+        defaultEnvironment && (
+          <OptionChip
+            onClick={() => edit("run-environment")}
+            label={t("Agent default environment")}
+            value={defaultEnvironment}
+          />
+        )}
       {options.runEnvironment !== "inherit" && (
         <OptionChip
           onClick={() => edit("run-environment")}

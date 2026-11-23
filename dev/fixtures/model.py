@@ -182,6 +182,31 @@ async def completion(request: Request):
 def planned_tool(body: dict, prompt: str) -> dict | list[dict] | None:
     choices = (
         (
+            "[composer-webhook]",
+            "configure_webhook",
+            {
+                "request": {
+                    "action": "create",
+                    "name": "Run notifications",
+                    "url": "https://example.com/hooks/runs",
+                    "kinds": ["run.completed", "run.failed"],
+                    "enabled": False,
+                }
+            },
+        ),
+        (
+            "[composer-credential]",
+            "configure_egress_credential",
+            {
+                "request": {
+                    "action": "create",
+                    "name": "Research API",
+                    "description": "Token for the research environment",
+                    "allowed_hosts": ["api.example.com"],
+                }
+            },
+        ),
+        (
             "[client]",
             "local_review",
             {"prompt": "Review this fictional release. Supply a decision and a short reason."},

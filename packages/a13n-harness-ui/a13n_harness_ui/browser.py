@@ -448,7 +448,8 @@ class HostBrowsers:
                         if len(parts) == 2 and parts[0].isdecimal() and parts[1].startswith("/devtools/browser/"):
                             break
                     await asyncio.sleep(0.05)
-            self.runtime = await Chromium.connect(f"ws://127.0.0.1:{parts[0]}{parts[1]}")
+            address = f"ws://127.0.0.1:{parts[0]}{parts[1]}"
+            self.runtime = await Chromium.connect(address)
             downloads = self.root.parent / "downloads"
             await asyncio.to_thread(downloads.mkdir, mode=0o700, parents=True, exist_ok=True)
             await self.runtime.configure_downloads(str(downloads))
@@ -468,18 +469,21 @@ class HostBrowsers:
 
             async def watch() -> None:
                 assert self.desktop is not None
-                waits = [
+                waits: list[asyncio.Task] = [
                     asyncio.create_task(component.wait())
                     for component in [process, *(component for component, _ in self.desktop.processes)]
                 ]
+                connection = asyncio.create_task(self.watch_connection(address))
                 try:
-                    await asyncio.wait(waits, return_when=asyncio.FIRST_COMPLETED)
-                    if self.process is process:
+                    done, _ = await asyncio.wait([*waits, connection], return_when=asyncio.FIRST_COMPLETED)
+                    if connection in done:
+                        await connection
+                    elif self.process is process:
                         self.failed("Browser or display exited. Start the browser to continue.")
                 finally:
-                    for task in waits:
+                    for task in [*waits, connection]:
                         task.cancel()
-                    await asyncio.gather(*waits, return_exceptions=True)
+                    await asyncio.gather(*waits, connection, return_exceptions=True)
 
             self.monitor = asyncio.create_task(watch())
             self.runtime_failed = False
@@ -487,6 +491,64 @@ class HostBrowsers:
             self.runtime_ready = True
         except BaseException:
             await self.close_runtime()
+            raise
+
+    async def watch_connection(self, address: str) -> None:
+        """Reconnect only the transport to this launch's exact browser endpoint."""
+        while self.runtime is not None and not self.runtime_failed:
+            previous = self.runtime
+            await previous.wait_disconnected()
+            async with self.control_lock, self.lifecycle:
+                if self.runtime is not previous or self.runtime_failed:
+                    return
+                self.runtime_ready = False
+                try:
+                    async with asyncio.timeout(20):
+                        await self.reconnect(previous, address)
+                except Exception as exc:
+                    self.failed(f"Browser connection could not be restored: {exc}")
+                    return
+                self.runtime_ready = True
+
+    async def reconnect(self, previous: Chromium, address: str) -> None:
+        # Do not move scopes with in-flight commands onto a new connection.
+        # Retire them and give the same bindings fresh page sessions and refs.
+        bindings = [
+            (item, item.scope, item.page.target if item.page else None)
+            for item in self.bindings.values()
+            if item.status == "ready" and item.scope is not None and not item.retiring
+        ]
+        await previous.close()
+        runtime = await Chromium.connect(address)
+        try:
+            await runtime.configure_downloads(str(self.root.parent / "downloads"))
+            infos = (await runtime.send("Target.getTargets"))["targetInfos"]
+            live = {info["targetId"] for info in infos if info["type"] == "page"}
+            if self.keepalive not in live:
+                raise BrowserError("The browser runtime window closed.")
+            runtime.closed = self.page_closed
+            replacements = []
+            for item, old, selected in bindings:
+                scope = CdpBrowserBackend(runtime, new_window=old.new_window, check_access=old.check_access)
+                for target in sorted(old.targets & live):
+                    try:
+                        await scope.attach(target, select=target == selected or not scope.targets)
+                    except BrowserError:
+                        # A user can close a tab while the transport is reconnecting.
+                        remaining = (await runtime.send("Target.getTargets"))["targetInfos"]
+                        if any(info["targetId"] == target for info in remaining):
+                            raise
+                if self.human_thread:
+                    await scope.pause()
+                replacements.append((item, scope))
+            if self.runtime_failed:
+                raise BrowserError("Browser runtime stopped during reconnection.")
+            runtime.opened = self.opened
+            self.runtime = runtime
+            for item, scope in replacements:
+                item.scope = scope
+        except BaseException:
+            await runtime.close()
             raise
 
     def preview_windows(self) -> set[int] | None:

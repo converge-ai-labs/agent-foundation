@@ -1,3 +1,4 @@
+import { ComposerAction } from "../../agents/composer-action";
 import { WebhooksLogoIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SettingsRow, SettingsSection } from "a13n-ui";
@@ -55,7 +56,14 @@ export function WebhookDetail({ subscriptionId }: { subscriptionId: string }) {
           status={
             <StatePill state={subscription.enabled ? "enabled" : "disabled"} />
           }
-          actions={<WebhookEditor subscription={subscription} />}
+          actions={
+            <>
+              <ComposerAction
+                target={{ kind: "webhooks", resource_id: subscription.id }}
+              />
+              <WebhookEditor subscription={subscription} />
+            </>
+          }
         />
       }
       tabs={[

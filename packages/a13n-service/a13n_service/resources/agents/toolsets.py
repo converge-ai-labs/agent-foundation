@@ -614,6 +614,9 @@ _TOOLSETS: tuple[_Toolset, ...] = (
         "execution", "Execution", "Sessions, threads, runs, traces and findings; its only write submits a finding."
     ),
     _platform("schedules", "Schedules", "One-time and recurring Agent schedules, manual dispatch and trigger history."),
+    _platform("usage", "Usage", "Recorded model costs, consumption and context usage."),
+    _platform("subscriptions", "Webhooks", "Lifecycle subscriptions and delivery diagnostics; requires admin."),
+    _platform("egress_credentials", "Egress credentials", "Nonsecret credentials and Session application status."),
 )
 _BY_KEY = {toolset.key: toolset for toolset in _TOOLSETS}
 

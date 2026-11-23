@@ -53,7 +53,7 @@ it("retries with the original audio and reading context and inserts the response
   expect(insert).not.toHaveBeenCalled();
   fireEvent.click(retry);
   await waitFor(() =>
-    expect(insert).toHaveBeenCalledExactlyOnceWith("Run Pyright."),
+    expect(insert).toHaveBeenCalledExactlyOnceWith("Run Pyright.", true),
   );
   expect(post.mock.calls[0][1].body.context).toContain(
     "Selected assistant text: Pyright",
@@ -104,7 +104,7 @@ it("waits for the final text and inserts it once without preview or confirmation
   expect(onActive).toHaveBeenLastCalledWith(true);
   resolve({ data: { text: "new speech", warning: "cleanup_failed" } });
   await waitFor(() =>
-    expect(insert).toHaveBeenCalledExactlyOnceWith("new speech"),
+    expect(insert).toHaveBeenCalledExactlyOnceWith("new speech", true),
   );
   expect(onActive).toHaveBeenLastCalledWith(false);
   expect(screen.queryByText("new speech")).toBeNull();

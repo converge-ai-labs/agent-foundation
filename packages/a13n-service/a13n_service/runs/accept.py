@@ -293,7 +293,7 @@ class Source:
                 EnvironmentMount.model_validate(
                     next(mount for mount in run.environment_mounts if mount["name"] == PRIMARY)
                 )
-                if options.environment is not None
+                if options.environment is not None and options.environment.mode != "none"
                 else None
             ),
             options_digest=run.options_digest,
@@ -417,8 +417,8 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     )
     # An instance reserved here is a new row that a refusal discards with it; freezing checks the mounts are usable.
     primary_override: EnvironmentMount | MountCreate | None = source.environment_mount
-    if options.environment is not None and primary_override is None:
-        selection = options.environment
+    selection = options.environment
+    if selection is not None and selection.mode != "none" and primary_override is None:
         if selection.mode == "fresh":
             instance = await reserve(
                 session, principal, scope, selection.template_id, limit=runtime.settings.environments.managed_count
@@ -434,7 +434,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
             working_directory=selection.working_directory,
             permission_ceiling=selection.permission_ceiling,
         )
-    if primary_override is None and not await thread_has_primary(session, thread):
+    if selection is None and not await thread_has_primary(session, thread):
         primary = await primary_source(session, thread, revision.config)
         if isinstance(primary, MountCreate):
             await mount_environments(
@@ -460,6 +460,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
         thread,
         principal=principal,
         primary=primary_override,
+        omit_primary=selection is not None and selection.mode == "none",
         default_session_configuration=revision.config.default_session_configuration,
         authority=source.authority,
         # A desktop handback requires the original target and already holds its exclusive lock.

@@ -100,7 +100,7 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
       })
     ).getAttribute("aria-disabled"),
   ).toBe("true");
-  // Without a choice the agent's own template is reserved; there is no "none".
+  // Conversation setup inherits the Agent default. Only the Run may skip the primary.
   expect(screen.queryByRole("option", { name: "No environment" })).toBeNull();
   await user.click(
     await screen.findByRole("option", {
@@ -576,5 +576,19 @@ it("offers fresh allocation on an existing conversation without editing its moun
   expect(submit.mock.lastCall?.[0].environment).toBeUndefined();
   expect(submit.mock.lastCall?.[0].options).toEqual({
     environment: { mode: "fresh", template_id: "envt_kubernetes" },
+  });
+  await user.click(
+    screen.getByRole("button", { name: "Run environment: Kubernetes" }),
+  );
+  await user.click(
+    screen.getByRole("combobox", { name: "Primary environment for this run" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "No primary environment" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit.mock.lastCall?.[0].options).toEqual({
+    environment: { mode: "none" },
   });
 });

@@ -51,6 +51,7 @@ beforeEach(() => {
     {
       model: "large",
       requests: 3,
+      unpriced_requests: 0,
       input_tokens: 24000,
       output_tokens: 900,
       cache_read_tokens: 18000,

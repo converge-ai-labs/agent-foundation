@@ -11148,6 +11148,8 @@ export interface components {
       output_tokens_per_second: number | null;
       /** Requests */
       requests: number;
+      /** Unpriced Requests */
+      unpriced_requests: number;
     };
     /** ModelUsageGroup */
     ModelUsageGroup: {
@@ -11364,6 +11366,17 @@ export interface components {
       session?: components["schemas"]["SessionCreate"] | null;
       /** Session Id */
       session_id?: string | null;
+    };
+    /**
+     * NoPrimaryEnvironment
+     * @description Skip the primary mount for this Run. Named mounts remain available.
+     */
+    NoPrimaryEnvironment: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      mode: "none";
     };
     /** @enum {string} */
     OAuthGrant: "authorization_code" | "client_credentials";
@@ -12021,7 +12034,10 @@ export interface components {
       | "environment_templates"
       | "providers"
       | "execution"
-      | "schedules";
+      | "schedules"
+      | "usage"
+      | "subscriptions"
+      | "egress_credentials";
     /** PluginCatalog */
     PluginCatalog: {
       /** Items */
@@ -12941,10 +12957,12 @@ export interface components {
     };
     "RunEnvironment-Input":
       | components["schemas"]["FreshRunEnvironment-Input"]
-      | components["schemas"]["ExistingRunEnvironment-Input"];
+      | components["schemas"]["ExistingRunEnvironment-Input"]
+      | components["schemas"]["NoPrimaryEnvironment"];
     "RunEnvironment-Output":
       | components["schemas"]["FreshRunEnvironment-Output"]
-      | components["schemas"]["ExistingRunEnvironment-Output"];
+      | components["schemas"]["ExistingRunEnvironment-Output"]
+      | components["schemas"]["NoPrimaryEnvironment"];
     /** RunInputPreview */
     RunInputPreview: {
       /**
@@ -14512,7 +14530,7 @@ export interface components {
     };
     /**
      * SubscriptionCreate
-     * @description Without `signing_secret` the service generates one; either way it is returned only by this request.
+     * @description The supplied or generated signing secret is returned only at creation.
      */
     SubscriptionCreate: {
       /**
@@ -14553,7 +14571,7 @@ export interface components {
     };
     /**
      * SubscriptionUpdate
-     * @description `signing_secret` replaces the secret for deliveries queued after this change.
+     * @description Secret replacement applies only to newly queued deliveries.
      */
     SubscriptionUpdate: {
       /** Enabled */

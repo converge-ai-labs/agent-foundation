@@ -1,3 +1,4 @@
+import { ComposerAction } from "../agents/composer-action";
 import { KeyIcon } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SettingsRow, SettingsSection, useToast } from "a13n-ui";
@@ -65,10 +66,14 @@ export function CredentialDetail() {
             </>
           }
           actions={
-            can("write") &&
-            !credential.owner_app_id && (
-              <CredentialActions credential={credential} />
-            )
+            <>
+              <ComposerAction
+                target={{ kind: "credentials", resource_id: credential.id }}
+              />
+              {can("write") && !credential.owner_app_id && (
+                <CredentialActions credential={credential} />
+              )}
+            </>
           }
         />
       }

@@ -1,0 +1,386 @@
+{
+  "configure_egress_credential": {
+    "$defs": {
+      "Description": {
+        "maxLength": 2048,
+        "type": "string"
+      },
+      "EgressCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "create",
+            "title": "Action",
+            "type": "string"
+          },
+          "allowed_hosts": {
+            "$ref": "#/$defs/Hosts"
+          },
+          "description": {
+            "$ref": "#/$defs/Description",
+            "default": ""
+          },
+          "name": {
+            "$ref": "#/$defs/Name"
+          }
+        },
+        "required": [
+          "name",
+          "allowed_hosts",
+          "action"
+        ],
+        "title": "EgressCreate",
+        "type": "object"
+      },
+      "EgressEdit": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "update",
+            "title": "Action",
+            "type": "string"
+          },
+          "credential_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Credential Id",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Description"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "expected_version": {
+            "description": "The exact original id:version from the resource read.",
+            "minLength": 1,
+            "title": "Expected Version",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Name"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "expected_version",
+          "action",
+          "credential_id"
+        ],
+        "title": "EgressEdit",
+        "type": "object"
+      },
+      "EgressSync": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "sync",
+            "title": "Action",
+            "type": "string"
+          },
+          "credential_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Credential Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "credential_id"
+        ],
+        "title": "EgressSync",
+        "type": "object"
+      },
+      "EgressValueAction": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "rotate",
+              "revoke"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "credential_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Credential Id",
+            "type": "string"
+          },
+          "expected_version": {
+            "description": "The exact original id:version from the resource read.",
+            "minLength": 1,
+            "title": "Expected Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_version",
+          "action",
+          "credential_id"
+        ],
+        "title": "EgressValueAction",
+        "type": "object"
+      },
+      "Hosts": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 256,
+        "minItems": 1,
+        "type": "array"
+      },
+      "Name": {
+        "maxLength": 128,
+        "minLength": 1,
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "request": {
+        "discriminator": {
+          "mapping": {
+            "create": "#/$defs/EgressCreate",
+            "revoke": "#/$defs/EgressValueAction",
+            "rotate": "#/$defs/EgressValueAction",
+            "sync": "#/$defs/EgressSync",
+            "update": "#/$defs/EgressEdit"
+          },
+          "propertyName": "action"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/EgressCreate"
+          },
+          {
+            "$ref": "#/$defs/EgressEdit"
+          },
+          {
+            "$ref": "#/$defs/EgressValueAction"
+          },
+          {
+            "$ref": "#/$defs/EgressSync"
+          }
+        ],
+        "title": "Request"
+      }
+    },
+    "required": [
+      "request"
+    ],
+    "title": "EgressConfiguration",
+    "type": "object"
+  },
+  "configure_webhook": {
+    "$defs": {
+      "LifecycleKind": {
+        "enum": [
+          "run.accepted",
+          "run.running",
+          "run.waiting",
+          "run.completed",
+          "run.failed",
+          "run.cancelled",
+          "run_attempt.leased",
+          "run_attempt.running",
+          "run_attempt.succeeded",
+          "run_attempt.yielded",
+          "run_attempt.failed",
+          "run_attempt.cancelled",
+          "schedule.enabled",
+          "schedule.paused",
+          "schedule.completed",
+          "schedule.archived",
+          "schedule_occurrence.submitted",
+          "schedule_occurrence.skipped",
+          "schedule_occurrence.failed",
+          "schedule_occurrence.cancelled",
+          "schedule_occurrence.completed"
+        ],
+        "type": "string"
+      },
+      "SubscriptionFilter": {
+        "additionalProperties": false,
+        "description": "Absent fields match every event; a specified identity must exist and match.",
+        "properties": {
+          "agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Agent Id"
+          },
+          "schedule_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schedule Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Session Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Thread Id"
+          }
+        },
+        "title": "SubscriptionFilter",
+        "type": "object"
+      },
+      "WebhookCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "create",
+            "title": "Action",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "filter": {
+            "$ref": "#/$defs/SubscriptionFilter"
+          },
+          "kinds": {
+            "items": {
+              "$ref": "#/$defs/LifecycleKind"
+            },
+            "maxItems": 21,
+            "minItems": 1,
+            "title": "Kinds",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "url",
+          "kinds",
+          "action"
+        ],
+        "title": "WebhookCreate",
+        "type": "object"
+      },
+      "WebhookRotation": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "const": "rotate",
+            "title": "Action",
+            "type": "string"
+          },
+          "expected_version": {
+            "description": "The exact original id:version from the resource read.",
+            "minLength": 1,
+            "title": "Expected Version",
+            "type": "string"
+          },
+          "subscription_id": {
+            "maxLength": 41,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+            "title": "Subscription Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_version",
+          "action",
+          "subscription_id"
+        ],
+        "title": "WebhookRotation",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "request": {
+        "discriminator": {
+          "mapping": {
+            "create": "#/$defs/WebhookCreate",
+            "rotate": "#/$defs/WebhookRotation"
+          },
+          "propertyName": "action"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/WebhookCreate"
+          },
+          {
+            "$ref": "#/$defs/WebhookRotation"
+          }
+        ],
+        "title": "Request"
+      }
+    },
+    "required": [
+      "request"
+    ],
+    "title": "WebhookConfiguration",
+    "type": "object"
+  }
+}

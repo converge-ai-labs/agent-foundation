@@ -17,12 +17,27 @@ function modelRequired(error: unknown) {
   );
 }
 
-/** The agent version a conversation with the composer starts from. */
-export interface ComposerTarget {
-  agent: Pick<Schema["Agent"], "id" | "name">;
-  revision: Pick<Schema["AgentRevision"], "id" | "number">;
-  context?: string;
-}
+/** The selected resource or usage window a Composer conversation starts from. */
+export type ComposerTarget =
+  | {
+      agent: Pick<Schema["Agent"], "id" | "name">;
+      revision: Pick<Schema["AgentRevision"], "id" | "number">;
+      context?: string;
+    }
+  | {
+      kind: "usage";
+      start: string;
+      end: string;
+      timezone: string;
+      principal_id?: string;
+      agent_id?: string;
+      group_by: string;
+      metric: string;
+    }
+  | {
+      kind: "webhooks" | "credentials";
+      resource_id?: string;
+    };
 
 /**
  * Agent Composer is the workspace's composer preset. Writers
@@ -54,21 +69,35 @@ export function useAgentComposer() {
   });
   const converse = (agentId: string, target?: ComposerTarget) => {
     const search = new URLSearchParams({ agent: agentId });
-    if (target)
+    if (target) {
+      const agentTarget = "agent" in target;
+      const message = agentTarget
+        ? t(
+            "Help me change the agent {{name}} (ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).",
+            {
+              name: target.agent.name,
+              id: target.agent.id,
+              version: target.revision.number,
+              revision: target.revision.id,
+            },
+          )
+        : t(
+            target.kind === "usage"
+              ? "Help me understand usage and costs for this selection."
+              : target.kind === "webhooks"
+                ? "Help me configure and diagnose Webhooks."
+                : "Help me manage environment credentials and check Session application.",
+          );
+      const context = agentTarget
+        ? { agent_id: target.agent.id, base_revision_id: target.revision.id }
+        : target;
       search.set(
         "message",
-        t(
-          "Help me change the agent {{name}} (ID {{id}}), starting from its version {{version}} (revision ID {{revision}}).",
-          {
-            name: target.agent.name,
-            id: target.agent.id,
-            version: target.revision.number,
-            revision: target.revision.id,
-          },
-        ) +
-          `\n\nConsole context: ${JSON.stringify({ page: location.pathname, workspace_id: workspace.id, agent_id: target.agent.id, base_revision_id: target.revision.id })}` +
-          (target.context ? `\n\n${target.context}` : ""),
+        message +
+          `\n\nConsole context: ${JSON.stringify({ page: location.pathname, workspace_id: workspace.id, ...context })}` +
+          (agentTarget && target.context ? `\n\n${target.context}` : ""),
       );
+    }
     navigate(`${basePath}/sessions/new?${search}`);
   };
   const prepare = useMutation({

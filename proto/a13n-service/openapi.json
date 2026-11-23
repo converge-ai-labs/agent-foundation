@@ -16040,9 +16040,14 @@
           "requests": {
             "title": "Requests",
             "type": "integer"
+          },
+          "unpriced_requests": {
+            "title": "Unpriced Requests",
+            "type": "integer"
           }
         },
         "required": [
+          "unpriced_requests",
           "model",
           "requests",
           "input_tokens",
@@ -16612,6 +16617,22 @@
           "agent_id"
         ],
         "title": "NewThread",
+        "type": "object"
+      },
+      "NoPrimaryEnvironment": {
+        "additionalProperties": false,
+        "description": "Skip the primary mount for this Run. Named mounts remain available.",
+        "properties": {
+          "mode": {
+            "const": "none",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "NoPrimaryEnvironment",
         "type": "object"
       },
       "OAuthGrant": {
@@ -18580,7 +18601,10 @@
           "environment_templates",
           "providers",
           "execution",
-          "schedules"
+          "schedules",
+          "usage",
+          "subscriptions",
+          "egress_credentials"
         ],
         "type": "string"
       },
@@ -21101,7 +21125,8 @@
         "discriminator": {
           "mapping": {
             "existing": "#/components/schemas/ExistingRunEnvironment-Input",
-            "fresh": "#/components/schemas/FreshRunEnvironment-Input"
+            "fresh": "#/components/schemas/FreshRunEnvironment-Input",
+            "none": "#/components/schemas/NoPrimaryEnvironment"
           },
           "propertyName": "mode"
         },
@@ -21111,6 +21136,9 @@
           },
           {
             "$ref": "#/components/schemas/ExistingRunEnvironment-Input"
+          },
+          {
+            "$ref": "#/components/schemas/NoPrimaryEnvironment"
           }
         ]
       },
@@ -21118,7 +21146,8 @@
         "discriminator": {
           "mapping": {
             "existing": "#/components/schemas/ExistingRunEnvironment-Output",
-            "fresh": "#/components/schemas/FreshRunEnvironment-Output"
+            "fresh": "#/components/schemas/FreshRunEnvironment-Output",
+            "none": "#/components/schemas/NoPrimaryEnvironment"
           },
           "propertyName": "mode"
         },
@@ -21128,6 +21157,9 @@
           },
           {
             "$ref": "#/components/schemas/ExistingRunEnvironment-Output"
+          },
+          {
+            "$ref": "#/components/schemas/NoPrimaryEnvironment"
           }
         ]
       },
@@ -25963,7 +25995,7 @@
       },
       "SubscriptionCreate": {
         "additionalProperties": false,
-        "description": "Without `signing_secret` the service generates one; either way it is returned only by this request.",
+        "description": "The supplied or generated signing secret is returned only at creation.",
         "properties": {
           "enabled": {
             "default": true,
@@ -26108,7 +26140,7 @@
       },
       "SubscriptionUpdate": {
         "additionalProperties": false,
-        "description": "`signing_secret` replaces the secret for deliveries queued after this change.",
+        "description": "Secret replacement applies only to newly queued deliveries.",
         "properties": {
           "enabled": {
             "anyOf": [

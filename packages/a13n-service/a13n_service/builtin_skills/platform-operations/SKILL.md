@@ -25,6 +25,9 @@ Read only the references needed for the current task:
 
 - [Agents](references/agents.md): read before answering whether an Agent can be changed or proposing configuration changes; covers editing restrictions, atomic configuration deltas, revisions and selected resources.
 - [Models](references/models.md): model keys, filtered catalog price lookup, filling model configuration, and shared settings.
+- [Usage and costs](references/usage.md): bounded reporting, attribution, pricing gaps and context usage.
+- [Webhooks](references/webhooks.md): admin configuration, delivery diagnosis and private signing keys.
+- [Environment credentials](references/egress-credentials.md): private mutations, immutable hosts and Session application.
 - [Providers](references/providers.md): private credential cards, provider configuration, connection tests and safe retries.
 - [Connections](references/connections.md): tools, tests and authorization.
 - [Skills](references/skills.md): upload/GitHub sources and exact revision references.
@@ -38,4 +41,4 @@ Use `view`, `ls`, `glob`, and `grep` under this directory or `/platform-instance
 
 Keep questions focused on decisions that affect the result. Read current state before proposing a concrete change. When review is required, the request must show the exact target, parameters and original version. A changed target or configuration needs a new review. Report real result IDs and any unresolved errors.
 
-Memory operations and plugin configuration are outside Composer's scope. Preserve unrelated existing fields. Use the `configure_provider` client tool for private provider credential entry when available. Browser authorization, connection credentials and file uploads use their existing Console pages. Never collect secrets in chat or tool arguments.
+Memory operations and plugin configuration are outside Composer's scope. Preserve unrelated existing fields. Use `configure_provider`, `configure_webhook` and `configure_egress_credential` for the corresponding private configuration forms when available. Browser authorization, connection credentials and file uploads use their existing Console pages. Never collect secrets in chat or tool arguments.

@@ -245,6 +245,9 @@ export function AgentDetail() {
           error={save.error}
           readonly={!editable}
           preset={editablePreset(agent) ? revision : undefined}
+          composer={
+            agent.preset_kind === "composer" && agent.source === "builtin"
+          }
           submit={(config, etag, note) => save.mutate({ config, etag, note })}
           discard={() => void reload()}
         />

@@ -1439,11 +1439,11 @@ export function Composer({
                     after: doc.sliceString(to),
                   };
                 }}
-                insert={(text) => {
+                insert={(text, restoreFocus) => {
                   const view = editor.current;
                   if (!view) return;
                   view.dispatch(view.state.replaceSelection(text));
-                  requestAnimationFrame(() => view.focus());
+                  if (restoreFocus) requestAnimationFrame(() => view.focus());
                 }}
               />
             )}
