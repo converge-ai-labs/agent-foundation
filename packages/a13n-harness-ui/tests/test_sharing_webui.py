@@ -362,7 +362,8 @@ async def test_bot_cannot_be_shared_and_existing_bot_grants_cannot_read_history(
         assert error.value.code == "share_unavailable"
 
 
-async def test_prompt_guest_can_pull_and_receive_a_prediction_only_in_the_shared_thread(tmp_path, monkeypatch):
+async def test_prompt_guest_can_read_and_receive_a_prediction_only_in_the_shared_thread(tmp_path, monkeypatch):
+    import asyncio
     import json
 
     from a13n_harness_ui.model_runtime import HarnessUiModelResolver
@@ -385,8 +386,14 @@ async def test_prompt_guest_can_pull_and_receive_a_prediction_only_in_the_shared
     async def run_model(self, context, model_id):
         return FunctionModel(stream_function=stream)
 
+    release = asyncio.Event()
+
     async def prediction_model(self, model_id, *, thread_id, prediction=False, prediction_account=None):
-        return FunctionModel(function=lambda _messages, _info: ModelResponse(parts=[TextPart("Add an example.")]))
+        async def sample(_messages, _info):
+            await release.wait()
+            return ModelResponse(parts=[TextPart("Add an example.")])
+
+        return FunctionModel(function=sample)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", run_model)
     monkeypatch.setattr(HarnessUiModelResolver, "resolve", prediction_model)
@@ -413,9 +420,12 @@ async def test_prompt_guest_can_pull_and_receive_a_prediction_only_in_the_shared
             assert DraftFrame.model_validate(initial).prediction is None
             response = await client.post(path + "/input-prediction", json=request)
             assert response.status_code == 200, response.text
+            assert response.json() == {**request, "text": None}
+            release.set()
             expected = {**request, "text": "Add an example."}
-            assert response.json() == expected
             frame = DraftFrame.model_validate(await frame_until(guest, lambda frame: frame.get("prediction")))
             assert frame.prediction is not None and frame.prediction.model_dump() == expected
+            response = await client.post(path + "/input-prediction", json=request)
+            assert response.status_code == 200 and response.json() == expected
             denied = await client.post(f"{prefix}/threads/{other}/input-prediction", json=request)
             assert denied.status_code == 401, denied.text

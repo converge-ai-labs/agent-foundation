@@ -153,7 +153,11 @@ class HarnessUiModelResolver:
             )
         authentication = recipe.authentication
         if isinstance(authentication, ApiKeyAuthentication):
-            model = await self._api_key_model(recipe, authentication)
+            model = (
+                await self._api_key_model(recipe, authentication, retry_http=False)
+                if prediction
+                else await self._api_key_model(recipe, authentication)
+            )
             header = recipe.model_configuration.get("session_affinity_header")
             if isinstance(header, str):
                 return RequestHeadersModel(model, common_headers={header: derive_model_affinity_id(thread_id)})
@@ -272,7 +276,9 @@ class HarnessUiModelResolver:
 
         return SubscriptionGroupModel(group, source.accounts, source.usage, factory, selected=selected)
 
-    async def _api_key_model(self, recipe: ResolvedModelRecipe, authentication: ApiKeyAuthentication) -> Model:
+    async def _api_key_model(
+        self, recipe: ResolvedModelRecipe, authentication: ApiKeyAuthentication, *, retry_http: bool = True
+    ) -> Model:
         api_key = (
             os.environ.get(authentication.env)
             if authentication.env is not None
@@ -290,11 +296,13 @@ class HarnessUiModelResolver:
         if base_url is not None and not isinstance(base_url, str):
             raise ModelResolutionError("Invalid Model base URL.", code="model_reconstruction_failed")
         try:
+            credential = ApiKeyCredential.model_validate({"api_key": api_key})
+            if retry_http:
+                return await build_api_key_model(
+                    recipe.route, credential, base_url=base_url, configuration=self.configuration
+                )
             return await build_api_key_model(
-                recipe.route,
-                ApiKeyCredential.model_validate({"api_key": api_key}),
-                base_url=base_url,
-                configuration=self.configuration,
+                recipe.route, credential, base_url=base_url, configuration=self.configuration, http_retry=None
             )
         except Exception as exc:
             raise ModelResolutionError(

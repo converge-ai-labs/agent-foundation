@@ -12,7 +12,7 @@ from anyio import move_on_after
 from ...configuration import RunConfiguration
 from ...models.configuration import configured_model
 from ...models.inference import ROUTE_ALIASES as ROUTE_ALIASES
-from ...models.transport import create_model_http_client
+from ...models.transport import DEFAULT_MODEL_HTTP_RETRY_CONFIG, create_model_http_client
 from ..endpoint_policy import EndpointPolicy
 from .builtins import BUILT_IN_MODEL_PROVIDERS
 from .credentials import ApiKeyCredential
@@ -20,6 +20,8 @@ from .credentials import ApiKeyCredential
 if TYPE_CHECKING:
     from pydantic_ai.models import Model
     from pydantic_ai.providers import Provider
+
+    from ...models.transport import ModelHttpRetryConfig
 
 
 def _zai_model(model_name: str, model: Model) -> Model:
@@ -66,11 +68,13 @@ async def build_api_key_model(
     *,
     base_url: str | None = None,
     configuration: RunConfiguration | None = None,
+    http_retry: ModelHttpRetryConfig | None = DEFAULT_MODEL_HTTP_RETRY_CONFIG,
 ) -> Model:
     """Build a native route with explicit credentials and host-selected endpoint access.
 
     The returned native Model owns its HTTP client, built with the shared model
-    transport timeouts, retries and accepted Run hostname authorization.
+    transport timeouts and accepted Run hostname authorization. Pass
+    ``http_retry=None`` to disable transport retries on declared routes.
     Service uses definitions with its own Host client instead.
     """
     configuration = configuration or RunConfiguration()
@@ -84,7 +88,7 @@ async def build_api_key_model(
             raise ValueError("This native Model route cannot enforce Run allowed hosts")
         return await build_inferred_route(f"{provider_name}:{model_name}", credential, base_url=base_url)
     return await _build_declared_route(
-        selected, model_name, credential, base_url or selected.default_base_url, configuration
+        selected, model_name, credential, base_url or selected.default_base_url, configuration, http_retry
     )
 
 
@@ -94,10 +98,11 @@ async def _build_declared_route(
     credential: ApiKeyCredential,
     base_url: str | None,
     configuration: RunConfiguration,
+    http_retry: ModelHttpRetryConfig | None,
 ) -> Model:
     definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == route.provider_type)
     policy = EndpointPolicy(configuration=configuration)
-    client_factory = partial(create_model_http_client, configuration=configuration)
+    client_factory = partial(create_model_http_client, configuration=configuration, retry=http_retry)
     client = client_factory()
     try:
         model = await definition.build(

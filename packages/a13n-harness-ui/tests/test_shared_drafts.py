@@ -327,6 +327,26 @@ async def test_server_capture_clear_updates_empty_membership_and_is_idempotent()
     assert draft.prepare_clear(capture(draft, authored)) == clear
 
 
+@pytest.mark.parametrize("publish_successor", [False, True])
+async def test_draft_clear_consumes_only_the_captured_prediction(publish_successor: bool) -> None:
+    from a13n_harness_ui.shared_drafts import CachedInputPrediction
+
+    draft = SharedDraft()
+    participant = draft.attach()
+    authored = composer_document()
+    authored.get("text", type=Text).insert(0, "sent")
+    await draft.command(participant, sync(draft, authored), valid)
+    previous = CachedInputPrediction(continuation_id="previous", text="Previous suggestion")
+    successor = CachedInputPrediction(continuation_id="next", text="Next suggestion")
+    await draft.set_prediction(previous)
+    clear = draft.prepare_clear(capture(draft, authored))
+    if publish_successor:
+        await draft.set_prediction(successor)
+    assert await draft.clear(clear)
+    assert composer_values(draft.document) == ("", ())
+    assert draft.prediction == (successor if publish_successor else None)
+
+
 @pytest.mark.parametrize("edit", ["insert", "delete", "attachment", "incarnation", "malformed"])
 async def test_server_rejects_unsynchronized_or_invalid_capture_before_clearing(edit: str) -> None:
     draft = SharedDraft()

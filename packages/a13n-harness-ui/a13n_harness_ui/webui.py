@@ -1685,7 +1685,7 @@ def create_webui(
 
     async def input_prediction(request: Request, thread_id: str) -> InputPredictionResponse:
         document = await _document(request, InputPredictionRequest)
-        text = await while_connected(request, lambda: app().predict_input(thread_id, document.continuation_id))
+        text = await app().predict_input(thread_id, document.continuation_id)
         return InputPredictionResponse(continuation_id=document.continuation_id, text=text)
 
     @server.post(
