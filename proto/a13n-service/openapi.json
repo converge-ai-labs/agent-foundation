@@ -2717,6 +2717,10 @@
             "title": "Initialized",
             "type": "boolean"
           },
+          "manual_password_reset": {
+            "title": "Manual Password Reset",
+            "type": "boolean"
+          },
           "oidc_providers": {
             "items": {
               "$ref": "#/components/schemas/OIDCSignIn"
@@ -2733,6 +2737,7 @@
           "password_enabled",
           "oidc_providers",
           "email_delivery",
+          "manual_password_reset",
           "initialized"
         ],
         "title": "AuthConfiguration",
@@ -18521,6 +18526,30 @@
           "password"
         ],
         "title": "PasswordResetConfirm",
+        "type": "object"
+      },
+      "PasswordResetReceipt": {
+        "properties": {
+          "email_queued": {
+            "title": "Email Queued",
+            "type": "boolean"
+          },
+          "reset_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reset Url"
+          }
+        },
+        "required": [
+          "email_queued"
+        ],
+        "title": "PasswordResetReceipt",
         "type": "object"
       },
       "Pending": {
@@ -49529,6 +49558,62 @@
           }
         ],
         "summary": "List Members",
+        "tags": [
+          "tenancy"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/members/{user_id}/password-reset": {
+      "post": {
+        "operationId": "reset_member_password",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PasswordResetReceipt"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "csrf": [],
+            "loginSession": []
+          }
+        ],
+        "summary": "Reset Member Password",
         "tags": [
           "tenancy"
         ]

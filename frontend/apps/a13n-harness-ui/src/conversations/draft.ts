@@ -119,6 +119,14 @@ export class ThreadDraft {
   error = "";
   errorRaw = false;
   submission: Submission = { kind: "idle" };
+  dismissedPrediction?: string;
+  private guestPrediction?: Schema<"CachedInputPrediction"> | null;
+  get prediction() {
+    return this.sharedOptions
+      ? (this.optionsDoc.getMap("options").get("prediction") as
+          Schema<"CachedInputPrediction"> | undefined)
+      : this.guestPrediction;
+  }
   // Private cancellation feedback, never serialized into the shared document.
   stop: StopRequest | undefined;
   // Private presentation only. This is neither shared input nor an execution queue.
@@ -169,7 +177,11 @@ export class ThreadDraft {
     this.notify();
   }
   get optionsUninitialized() {
-    return this.sharedOptions && Y.snapshot(this.optionsDoc).sv.size === 0;
+    const { sv } = Y.snapshot(this.optionsDoc);
+    // The Host owns client 1 for predictions, including their tombstones.
+    return (
+      this.sharedOptions && (sv.size === 0 || (sv.size === 1 && sv.has(1)))
+    );
   }
   get modelOptions() {
     return composerOptions(this.optionsDoc).model;
@@ -375,6 +387,7 @@ export class ThreadDraft {
       this.acceptedUpdate = frame.update_base64;
     }
     this.sharedOptions = frame.options_update_base64 != null;
+    this.guestPrediction = frame.prediction;
     if (
       frame.options_update_base64 != null &&
       frame.options_update_base64 !== this.acceptedOptionsUpdate
@@ -394,6 +407,7 @@ export class ThreadDraft {
     if (!frame) return;
     const oldText = this.doc.getText("text").toString();
     const oldOptions = this.optionsDoc.getMap("options").toJSON();
+    delete oldOptions.prediction;
     const oldAttachments = [
       ...this.doc.getMap<string>("attachments").entries(),
     ];

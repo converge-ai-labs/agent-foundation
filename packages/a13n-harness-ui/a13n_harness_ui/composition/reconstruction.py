@@ -41,6 +41,7 @@ from a13n_harness.model_context import (
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
 from a13n_harness.pricing import PricingCatalog
 from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
+from a13n_harness.token_pricing import TokenPricingCapability
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from a13n_harness.tools.tool_search import grouped_tool_name
@@ -94,6 +95,7 @@ class ReconstructedAgent:
     media_models: Mapping[NativeInputMediaKind, ResolvedModelRecipe] = field(default_factory=dict)
     memory_cursors: MemoryCursors = field(default_factory=MemoryCursors)
     compaction: CompactionRun | None = None
+    pricing: TokenPricingCapability | None = None
     web_providers: tuple[WebProviderResource, ...] = ()
     web_configuration: WebConfiguration | None = None
     api_keys: ApiKeyStore | None = None
@@ -426,6 +428,7 @@ class AgentReconstructor:
             executable=cast(ExecutableAgent[str | None], executable),
             model_resolver=model_resolver,
             compaction=compaction,
+            pricing=pricing,
             definition_capability_ids=frozenset(item.id for item in definition.capabilities if item.id is not None),
             media_models={
                 kind: recipe.model_copy(deep=True) for kind, recipe in composition.media_understanding.items()

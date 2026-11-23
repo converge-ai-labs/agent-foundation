@@ -357,7 +357,9 @@ export function UsageDetails({ usage }: { usage?: ThreadUsage }) {
                                       : group.source ===
                                           "files.media_understanding"
                                         ? t("Media understanding - view")
-                                        : group.source || t("Unattributed"),
+                                        : group.source === "input_prediction"
+                                          ? t("Input prediction")
+                                          : group.source || t("Unattributed"),
                                 })}
                               </div>
                               <DebugOnly>

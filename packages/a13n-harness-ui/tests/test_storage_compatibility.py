@@ -84,6 +84,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN unread BOOLEAN NOT NULL DEFAULT 0"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_state_version INTEGER NOT NULL DEFAULT 0"))
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
+            connection.execute(text("ALTER TABLE thread_usage ADD COLUMN indexed_through DATETIME"))
             # Keep unrelated query/push tables on both sides of this comment-only fixture.
             for name in (
                 "bot_state",
@@ -98,7 +99,9 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
                 "deleted_thread",
                 "webui_draft",
                 "usage_model",
+                "usage_fact",
                 "envd_session_binding",
+                "inbox_item",
                 "tool_execution",
                 "compaction",
                 "coordinator",

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from collections import defaultdict
 from collections.abc import Mapping
@@ -37,6 +36,7 @@ from a13n_harness_ui.model_presets import configured_price_entry
 
 from .database import DatabaseSessions, short_session, transaction
 from .models import ThreadRecord, ThreadUsageRecord, UsageModelRecord
+from .usage_index import fact, index_facts, usage_model
 
 if TYPE_CHECKING:
     from a13n_harness_ui.composition.models import ResolvedModelRecipe
@@ -68,13 +68,13 @@ class _StoredSnapshot(BaseModel):
 
 def _prepare_snapshot_write(
     snapshot: UsageSnapshot, previous_payload: str | None
-) -> tuple[str, datetime, dict[str, ProviderUsageRecord]] | None:
+) -> tuple[str, datetime, dict[str, ProviderUsageRecord], tuple[UsageRecord, ...]] | None:
     """Validate and serialize detached values; never move the session to a worker."""
     previous = None if previous_payload is None else _StoredSnapshot.model_validate_json(previous_payload).snapshot
     if previous is not None and select_usage_snapshot(previous, snapshot).sequence == previous.sequence:
         return None
     # Retained receipts were checked on admission; selection forbids losing or changing them.
-    known = {record.record_id for record in previous.records} if previous is not None else set()
+    known = {record.record_id: record for record in previous.records} if previous is not None else {}
     receipts = {
         record.record_id: record
         for record in snapshot.records
@@ -82,7 +82,7 @@ def _prepare_snapshot_write(
     }
     now = datetime.now(UTC)
     payload = _StoredSnapshot(snapshot=snapshot, observed_through=now).model_dump_json()
-    return payload, now, receipts
+    return payload, now, receipts, tuple(r for r in snapshot.records if known.get(r.record_id) != r)
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,20 +189,6 @@ class _Totals:
             unknown_provider_costs=self.unknown_provider,
             omitted_currency_receipts=self.omitted_currency,
         )
-
-
-def usage_model(record: ModelUsageRecord, configured: str | None) -> tuple[str, str]:
-    """Stable filter key and visible label, including pre-selection observations."""
-    if record.model_id:
-        name = configured or record.model_id
-        return json.dumps([name], separators=(",", ":")), name
-    return json.dumps([record.provider_name, record.model_name], separators=(",", ":")), reported_model(record)
-
-
-def reported_model(record: ModelUsageRecord) -> str:
-    provider = record.provider_name or "unknown"
-    model = record.model_name or "unknown"
-    return model if model.startswith(f"{provider}/") else f"{provider}/{model}"
 
 
 async def configured_usage_models(session: AsyncSession) -> dict[str, str]:
@@ -489,7 +475,9 @@ class ThreadUsageRepository:
             prepared = await to_thread.run_sync(_prepare_snapshot_write, snapshot, previous_payload)
             if prepared is None:
                 return
-            payload, now, receipts = prepared
+            payload, now, receipts, changed = prepared
+            records = snapshot.records if previous is None or previous.indexed_through is None else changed
+            facts_to_publish = [fact(r) for r in records]
             async with transaction(self._sessions) as session:
                 row = await session.scalar(query)
                 if row is not None and row.origin_thread_id != thread_id:
@@ -519,19 +507,21 @@ class ThreadUsageRepository:
                 if row is None:
                     if configured:
                         await self.index_models(session, configured)
-                    session.add(
-                        ThreadUsageRecord(
-                            root_thread_id=root_id,
-                            origin_thread_id=thread_id,
-                            record_id=snapshot.usage_id,
-                            run_id=snapshot.run_id,
-                            descendant=thread_id != root_id or snapshot.parent_agent_instance_id is not None,
-                            payload_json=payload,
-                            observed_at=now,
-                        )
+                    row = ThreadUsageRecord(
+                        root_thread_id=root_id,
+                        origin_thread_id=thread_id,
+                        record_id=snapshot.usage_id,
+                        run_id=snapshot.run_id,
+                        descendant=thread_id != root_id or snapshot.parent_agent_instance_id is not None,
+                        payload_json=payload,
+                        observed_at=now,
                     )
+                    session.add(row)
                 else:
                     row.payload_json = payload
+                row.indexed_through = now
+                await session.flush()
+                await index_facts(session, row.sequence, root_id, facts_to_publish)
             return
 
     @staticmethod
@@ -601,18 +591,20 @@ class ThreadUsageRepository:
                             "A usage identity was reused with different facts.", code="usage_record_conflict"
                         )
                     continue
-                session.add(
-                    ThreadUsageRecord(
-                        root_thread_id=root_id,
-                        origin_thread_id=thread_id,
-                        record_id=record.record_id,
-                        run_id=record.run_id,
-                        descendant=thread_id != root_id or record.parent_agent_instance_id is not None,
-                        payload_json=record.model_dump_json(),
-                        observed_at=datetime.now(UTC),
-                    )
+                now = datetime.now(UTC)
+                row = ThreadUsageRecord(
+                    root_thread_id=root_id,
+                    origin_thread_id=thread_id,
+                    record_id=record.record_id,
+                    run_id=record.run_id,
+                    descendant=thread_id != root_id or record.parent_agent_instance_id is not None,
+                    payload_json=record.model_dump_json(),
+                    observed_at=now,
+                    indexed_through=now,
                 )
+                session.add(row)
                 await session.flush()
+                await index_facts(session, row.sequence, root_id, [fact(record)])
 
     async def model_records(
         self, *, thread_id: str, run_id: str, agent_instance_id: str

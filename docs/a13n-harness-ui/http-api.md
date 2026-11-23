@@ -282,6 +282,18 @@ Instance-key clients can use the shared [Bot](bot.md) without creating another T
 
 Queries start no work. New human messages immediately admit an idle Run or immediately steer the exact active Run, independently of automatic inbox delivery and the global steering mode. A rejected steering attempt returns an error without queuing or starting a replacement Run. For an uncertain input submission, explicitly retry the same ID and text. Exact retries return the retained outcome without repeating execution. Different content with the same ID fails. Open `/bot` for chat and pending human responses; `/threads/thread_bot` redirects there. The existing decision API retains its normal continuation checks. Configuration belongs under `webui.bot`; private Connector configuration is not a YAML resource or a provider management API.
 
+## Inbox
+
+Instance-key clients read the [Inbox](webui.md#read-your-inbox) that Agents fill with `post_to_inbox`. Scoped guests cannot access these routes.
+
+| Method and path                     | Body                                   | Result                                                                                   |
+| ----------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `GET /api/inbox`                    | None                                   | Newest-first `items`, nullable `next_cursor`, and `unread_count` of open unread items    |
+| `PATCH /api/inbox/{item_id}`        | `{ "read": true }`, `{ "done": true }` | The updated item; Done also marks it read, and `{ "done": false }` moves it back to Open |
+| `GET /api/inbox/{item_id}/location` | None                                   | `thread_id`, `continuation_id` and `turn_id` of the posting call in the selected history |
+
+`GET /api/inbox?state=open&limit=30&before=<item_id>` pages Open items; use `state=done` for Done items. Pass `next_cursor` as `before` to load older items. Limits are 1–100. Each item has `item_id`, `thread_id`, `tool_call_id`, `kind` (`result`, `needs_human` or `milestone`), `title`, Markdown `message`, `created_at`, nullable `read_at` and `done_at`, and the source chat's title, archive state and Project. `location` returns null `continuation_id` and `turn_id` when the chat's selected history no longer contains the call. Open `/threads/{thread_id}?inbox={item_id}`, or `/bot?inbox={item_id}` for Bot, to land on the item in the WebUI.
+
 ## Connectors
 
 Instance-key clients manage [Connectors](connectors.md) through `/api/connectors`. Scoped guests cannot use these routes. `GET /api/connectors/catalog` lists declarations; `GET /api/connectors` lists safe instance views. `PUT /api/connectors/{connector_id}` creates with `expected_version: null` or updates with the current version. `DELETE` requires the current `expected_version` and permanently retires the ID.

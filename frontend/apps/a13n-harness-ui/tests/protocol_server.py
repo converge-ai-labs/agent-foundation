@@ -19,7 +19,7 @@ from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.webui import create_webui
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 
@@ -343,6 +343,18 @@ async def main() -> None:
 
         async def resolve(self, context, model_id):
             return FunctionModel(stream_function=model)
+
+        if "--input-predictions" in sys.argv:
+            with configuration.open("a", encoding="utf-8") as config:
+                config.write("input_prediction: {enabled: true}\nauto_chat_title: false\n")
+
+            async def predict(self, model_id, *, thread_id, prediction=False, prediction_account=None):
+                def answer(messages, info):
+                    return ModelResponse(parts=[TextPart("Add a short example for each step.")])
+
+                return FunctionModel(function=answer)
+
+            HarnessUiModelResolver.resolve = predict
 
         async def offline_directory():
             return model_catalog.bundled_models()

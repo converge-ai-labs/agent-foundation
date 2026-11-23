@@ -5,6 +5,7 @@ import {
   executionHeaders,
 } from "./background-links";
 import { ConnectorOffer } from "../connectors/offers";
+import { InboxPost, isInboxPost } from "../inbox";
 import { useTranslation } from "../i18n";
 import { BOT_THREAD_ID, botInputId } from "../bot-identity";
 import {
@@ -148,6 +149,7 @@ type Row = {
   | { kind: "origin"; childId: string }
   | { kind: "app"; reference: Schema<"AppReference">; live?: boolean }
   | { kind: "question"; tool?: ToolView; content?: ReactNode }
+  | { kind: "inbox"; tool: ToolView }
   | {
       kind: "assistant";
       text: string;
@@ -475,6 +477,7 @@ function questionRows(rows: Row[], pending?: PendingInteraction): Row[] {
       !row.tools.some(
         (tool) =>
           tool.name === "ask_user_question" ||
+          isInboxPost(tool) ||
           (tool.toolCallId && questions.has(questionKey(tool))),
       )
     ) {
@@ -506,7 +509,10 @@ function questionRows(rows: Row[], pending?: PendingInteraction): Row[] {
         };
         projected.push(question);
         if (key) questions.set(key, question);
-      } else projected.push({ ...row, id: `tools:${tool.id}`, tools: [tool] });
+      } else if (isInboxPost(tool))
+        // Inbox posts stay visible where the agent sent them; Inbox jumps land here.
+        projected.push({ ...row, id: `inbox:${tool.id}`, kind: "inbox", tool });
+      else projected.push({ ...row, id: `tools:${tool.id}`, tools: [tool] });
     }
   }
   if (!pending) return projected;
@@ -687,6 +693,8 @@ function Rows({
         <Reasoning segments={row.segments} />
       ) : row.kind === "question" ? (
         (row.content ?? (row.tool && <QuestionInteraction tool={row.tool} />))
+      ) : row.kind === "inbox" ? (
+        <InboxPost tool={row.tool} />
       ) : row.kind === "app" ? (
         <AppCard reference={row.reference} live={row.live} />
       ) : row.kind === "tools" ? (
@@ -1428,6 +1436,9 @@ function TurnSegments({
     }
     previousPosition = before;
   };
+  // Interactive cards start their own visible segment.
+  const standalone = (row?: Row) =>
+    row?.kind === "question" || row?.kind === "app" || row?.kind === "inbox";
   for (const row of rows) {
     appendGap(row.position ?? turn?.end_position ?? previousPosition);
     const kind =
@@ -1435,14 +1446,10 @@ function TurnSegments({
       (row.kind === "input" ||
         row.kind === "assistant" ||
         row.kind === "failure" ||
-        row.kind === "app" ||
-        row.kind === "question")
+        standalone(row))
         ? "visible"
         : "execution";
-    if (row.kind === "input") {
-      boundary = row.id;
-      textIndex = 0;
-    } else if (row.kind === "question" || row.kind === "app") {
+    if (row.kind === "input" || standalone(row)) {
       boundary = row.id;
       textIndex = 0;
     } else if (row.kind === "assistant" && kind === "visible") textIndex++;
@@ -1450,10 +1457,7 @@ function TurnSegments({
     if (
       previous?.kind === kind &&
       (kind === "execution" ||
-        (row.kind !== "question" &&
-          row.kind !== "app" &&
-          previous.rows.at(-1)?.kind !== "question" &&
-          previous.rows.at(-1)?.kind !== "app"))
+        (!standalone(row) && !standalone(previous.rows.at(-1))))
     )
       previous.rows.push(row);
     else

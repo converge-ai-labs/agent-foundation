@@ -264,6 +264,11 @@ class PasswordReset(_Input):
     email: Email
 
 
+class PasswordResetReceipt(BaseModel):
+    email_queued: bool
+    reset_url: str | None = None
+
+
 class PasswordResetConfirm(_Input):
     token: LinkToken
     password: NewPassword
@@ -312,6 +317,7 @@ class AuthConfiguration(BaseModel):
     password_enabled: bool
     oidc_providers: list[OIDCSignIn]
     email_delivery: bool
+    manual_password_reset: bool
     # False until the first administrator is created, which the public bootstrap route then allows.
     initialized: bool
 

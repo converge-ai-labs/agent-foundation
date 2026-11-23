@@ -1,3 +1,4 @@
+import { useInputPrediction } from "./input-prediction";
 import { Dictation } from "./dictation";
 import type { DictationTarget } from "./dictation-context";
 import { useTranslation } from "../i18n";
@@ -386,6 +387,7 @@ export function Composer({
   dictation,
   canClearContext = false,
   continuationId,
+  predictionEnabled = false,
   unavailableReason,
   feedback,
   feedbackError,
@@ -400,6 +402,7 @@ export function Composer({
   dictation?: DictationTarget;
   canClearContext?: boolean;
   continuationId?: string | null;
+  predictionEnabled?: boolean;
   unavailableReason?: string;
   feedback?: ReactNode;
   feedbackError?: unknown;
@@ -631,6 +634,23 @@ export function Composer({
   const ready =
     local ||
     (draft.status === "Connected" && !draft.replacement && !draft.error);
+  const { prediction, setComposing } = useInputPrediction(
+    transport,
+    draft,
+    threadId,
+    continuationId,
+    predictionEnabled &&
+      canRun &&
+      ready &&
+      !local &&
+      !busy &&
+      !disconnected &&
+      !preparing &&
+      !clearing &&
+      !pending &&
+      !unknown &&
+      !dictating,
+  );
   const canSteer =
     !queuedInput?.locked &&
     !cancellation.request &&
@@ -1315,6 +1335,8 @@ export function Composer({
               }}
               submit={() => void submit(busy ? "steer" : "send")}
               editor={editor}
+              prediction={prediction}
+              onComposition={setComposing}
               attachments={{
                 transport,
                 threadId,

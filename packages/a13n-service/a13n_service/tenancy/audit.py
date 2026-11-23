@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
@@ -33,7 +33,10 @@ async def list_account_events(storage: Storage, actor: Principal, *, limit: int,
     parts = (
         select(AuditEventRow).where(AuditEventRow.actor_id == actor.id),
         select(AuditEventRow).where(
-            AuditEventRow.target_kind == "user",
+            or_(
+                AuditEventRow.target_kind == "user",
+                and_(AuditEventRow.target_kind == "member", AuditEventRow.action == "user.password.reset_assisted"),
+            ),
             AuditEventRow.target_id == actor.id,
             AuditEventRow.actor_id.is_distinct_from(actor.id),
         ),

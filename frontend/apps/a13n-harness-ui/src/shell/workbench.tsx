@@ -1,6 +1,7 @@
 import { BotComposerProvider, BotNavigation, BotPage } from "../bot";
 import { useTranslation } from "../i18n";
 import { UsagePage } from "../usage/page";
+import { InboxPage } from "../inbox";
 import { ModelsPage } from "../configuration/models";
 import { VoicePage, VoiceIndicator } from "../voice";
 import { useEffect, useRef, useState } from "react";
@@ -494,6 +495,7 @@ function WorkbenchContent({
                   />
                 }
               />
+              <Route path="/inbox" element={<InboxPage />} />
               <Route path="/usage" element={<UsagePage />} />
               <Route path="/archived" element={<ArchivedPage />} />
               <Route element={<SettingsLayout />}>

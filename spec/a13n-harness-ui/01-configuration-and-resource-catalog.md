@@ -251,6 +251,12 @@ Collection defaults are ordered exact resource IDs. The first explicitly supplie
 
 The optional root field `chat_title_model` references a configured Model for automatic and manual WebUI chat titles. When omitted, title generation uses the current chat Model.
 
+`auto_chat_title` defaults to `true`. Automatic naming uses an extra model request on the first human submission of an eligible new chat. Setting it to `false` leaves manual title generation available.
+
+## Input predictions
+
+`input_prediction.enabled` is an opt-in boolean that defaults to `false`. Predictions use the settled chat's Model and provider request prefix; there is no separate Model selection. The [Workbench interaction contract](webui/04-workbench-interaction.md#composer-input-predictions) defines when the extra request is allowed and how its result is retained.
+
 ## Dictation
 
 Root `dictation` configures private WebUI draft transcription independently of the conversation Model. `backend` is `model` by default: a non-null `model` selects an audio-input Model resource; null disables dictation. Existing `dictation.model` configurations retain this behavior. Native subscription login alone never selects or enables the Codex backend.

@@ -205,7 +205,6 @@ export function ThreadRow({
     onSettled: () => {
       refreshThread(queries, row.thread.thread_id, "metadata");
       void refreshThreadLists(queries);
-      void queries.invalidateQueries({ queryKey: ["unsent-threads"] });
     },
   });
   return (

@@ -27,6 +27,7 @@ from .contracts import ChildExecutionHead, Continuation, StoredChildCheckpoint, 
 from .database import Database, open_database, short_session, transaction
 from .drafts import DraftRepository
 from .envd_sessions import EnvdSessionRepository
+from .inbox import InboxRepository
 from .inspection import InspectionRepository
 from .layout import StorageLayout
 from .mcp_oauth import McpOAuthRepository
@@ -82,6 +83,7 @@ class LocalStore:
         self.bot = BotRepository(database.sessions)
         self.bot_inbox = BotInboxRepository(database.sessions)
         self.bot_notes = BotNoteRepository(database.sessions)
+        self.inbox = InboxRepository(database.sessions)
         self.connectors = ConnectorRepository(database.sessions)
         self.mcp_oauth = McpOAuthRepository(database.sessions)
         self.restarts = RestartRepository(database.sessions)

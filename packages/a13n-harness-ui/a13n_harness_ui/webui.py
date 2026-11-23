@@ -116,6 +116,8 @@ from a13n_harness_ui.host_git import (
     GitStatus,
 )
 from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
+from a13n_harness_ui.inbox_models import InboxItem, InboxItemMutation, InboxLocation, InboxPage
+from a13n_harness_ui.input_prediction import InputPredictionRequest, InputPredictionResponse
 from a13n_harness_ui.interactive_transport import (
     InteractiveAuthentication,
     InteractiveOutput,
@@ -665,6 +667,22 @@ def create_webui(
     async def bot_pause(request: Request) -> BotSnapshot:
         command = await _document(request, BotPause)
         return await app().bot().pause(command.paused)
+
+    @server.get("/api/inbox", response_model=InboxPage)
+    async def inbox_items(
+        state: Literal["open", "done"] = "open",
+        before: Annotated[str | None, Query(max_length=80)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> InboxPage:
+        return await app().inbox().page(state=state, before=before, limit=limit)
+
+    @server.patch("/api/inbox/{item_id}", response_model=InboxItem, openapi_extra=_body(InboxItemMutation))
+    async def inbox_update(item_id: str, request: Request) -> InboxItem:
+        return await app().inbox().update(item_id, await _document(request, InboxItemMutation))
+
+    @server.get("/api/inbox/{item_id}/location", response_model=InboxLocation)
+    async def inbox_location(item_id: str) -> InboxLocation:
+        return await app().inbox().location(item_id)
 
     @server.middleware("http")
     async def response_headers(request: Request, call_next: Any) -> Any:
@@ -1665,6 +1683,19 @@ def create_webui(
     async def dictate(request: Request) -> DictationResult:
         return await app().transcribe(await _document(request, DictationInput, max_bytes=16 * _MAX_BODY))
 
+    async def input_prediction(request: Request, thread_id: str) -> InputPredictionResponse:
+        document = await _document(request, InputPredictionRequest)
+        text = await while_connected(request, lambda: app().predict_input(thread_id, document.continuation_id))
+        return InputPredictionResponse(continuation_id=document.continuation_id, text=text)
+
+    @server.post(
+        "/api/threads/{thread_id}/input-prediction",
+        response_model=InputPredictionResponse,
+        openapi_extra=_body(InputPredictionRequest),
+    )
+    async def predict_input(request: Request, thread_id: str) -> InputPredictionResponse:
+        return await input_prediction(request, thread_id)
+
     @server.post("/api/threads/{thread_id}/title-suggestion", response_model=str)
     async def suggest_chat_title(thread_id: str, model_id: str | None = None) -> str:
         return await app().suggest_chat_title(thread_id, model_id=model_id)
@@ -1701,17 +1732,17 @@ def create_webui(
     @server.post("/api/envd/start", response_model=EnvironmentReadiness, openapi_extra=_body(StartEnvdRequest))
     async def start_envd(request: Request) -> EnvironmentReadiness:
         document = await _document(request, StartEnvdRequest)
-        return await readiness_while_connected(request, lambda: app().start_envd(computer_use=document.computer_use))
+        return await while_connected(request, lambda: app().start_envd(computer_use=document.computer_use))
 
     @server.post("/api/envd/restart", response_model=EnvironmentReadiness, openapi_extra=_body(StopEnvdRequest))
     async def restart_envd(request: Request) -> EnvironmentReadiness:
         await _document(request, StopEnvdRequest)
-        return await readiness_while_connected(request, lambda: app().restart_envd())
+        return await while_connected(request, lambda: app().restart_envd())
 
     @server.post("/api/envd/reinstall", response_model=EnvironmentReadiness, openapi_extra=_body(StopEnvdRequest))
     async def reinstall_envd(request: Request) -> EnvironmentReadiness:
         await _document(request, StopEnvdRequest)
-        return await readiness_while_connected(request, lambda: app().restart_envd(reinstall=True))
+        return await while_connected(request, lambda: app().restart_envd(reinstall=True))
 
     @server.post("/api/envd/stop", status_code=204, openapi_extra=_body(StopEnvdRequest))
     async def stop_envd(request: Request) -> Response:
@@ -1724,14 +1755,12 @@ def create_webui(
     )
     async def preflight(request: Request) -> EnvironmentReadiness:
         document = await _document(request, PreflightRequest)
-        return await readiness_while_connected(
+        return await while_connected(
             request, lambda: app().preflight_environment(document.profile_id, project_path=document.project_path)
         )
 
-    async def readiness_while_connected(
-        request: Request, operation: Callable[[], Awaitable[EnvironmentReadiness]]
-    ) -> EnvironmentReadiness:
-        readiness: EnvironmentReadiness | None = None
+    async def while_connected[T](request: Request, operation: Callable[[], Awaitable[T]]) -> T:
+        result: list[T] = []
         async with create_task_group() as tasks:
 
             async def disconnected() -> None:
@@ -1742,11 +1771,11 @@ def create_webui(
                         return
 
             tasks.start_soon(disconnected)
-            readiness = await operation()
+            result.append(await operation())
             tasks.cancel_scope.cancel()
-        if readiness is None:
-            raise HarnessUiError("Environment preflight was cancelled.", code="preflight_cancelled")
-        return readiness
+        if not result:
+            raise HarnessUiError("The client disconnected.", code="request_disconnected")
+        return result[0]
 
     @server.get("/api/subscriptions/copilot/usage", response_model=CopilotUsage)
     async def copilot_usage() -> CopilotUsage:
@@ -2666,7 +2695,11 @@ def create_webui(
 
     @guest.get("/access", response_model=ShareAccess)
     async def shared_access(share_id: str, request: Request) -> ShareAccess:
-        return await app().sharing.authenticate(share_id, request.headers["authorization"][7:])
+        access = await app().sharing.authenticate(share_id, request.headers["authorization"][7:])
+        source = await app().current_configuration()
+        return access.model_copy(
+            update={"input_prediction_enabled": source is not None and source.document.input_prediction.enabled}
+        )
 
     @guest.get("/threads", response_model=ThreadPage)
     async def shared_threads(
@@ -2694,6 +2727,18 @@ def create_webui(
     @guest.get("/threads/{thread_id}", response_model=ThreadDetail)
     async def shared_thread(share_id: str, thread_id: str) -> ThreadDetail:
         return await app().sharing.thread(share_id, thread_id)
+
+    @guest.post(
+        "/threads/{thread_id}/input-prediction",
+        response_model=InputPredictionResponse,
+        openapi_extra=_body(InputPredictionRequest),
+        dependencies=[Depends(require_prompt)],
+    )
+    async def shared_predict_input(request: Request, share_id: str, thread_id: str) -> InputPredictionResponse:
+        await app().sharing.thread(share_id, thread_id, prompt=True)
+        response = await input_prediction(request, thread_id)
+        await app().sharing.thread(share_id, thread_id, prompt=True)
+        return response
 
     @guest.post(
         "/threads/{thread_id}/submit",

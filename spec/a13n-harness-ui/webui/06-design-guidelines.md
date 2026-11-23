@@ -51,7 +51,7 @@ Reserve space for appearing actions and carets. Hover, loading and expansion nev
 
 ## Navigation
 
-**New** has one leading plus; **Search** and **Drafts** share its text start. Project and chat rows retain the thin gap between fills. Brand, page title and header actions share a vertical center.
+**New** has one leading plus; **Search** and **Inbox** share its text start; the Inbox unread count is a neutral trailing count. Project and chat rows retain the thin gap between fills. Brand, page title and header actions share a vertical center.
 
 A Project's leading folder becomes a small caret only while hovered; pointer leave restores the folder even when expanded, selected or focused. Focus uses the normal ring. Coordinators retain their distinct leading worker disclosure, medium title and indented guide under [Coordinator Entry](04-workbench-interaction.md#coordinator-entry).
 
@@ -80,6 +80,8 @@ The collapsed Agent & Model button shows the current Thinking level when known. 
 In saved chats, one compact row above the editor holds the composer mode chips and Activity shortcuts at the left and context/cost at the right. Debug mode gives the expanded usage metrics and Run diagnostics their own trailing-aligned row. On narrow layouts, the diagnostics may wrap without moving controls off-screen. Bot keeps context/cost visible and shows the Activity controls in Debug mode; attachment and microphone controls stay in the composer. Sustained live connection status uses quiet, unboxed text, collapsing to an accessible connection icon when space is limited; activation opens details on keyboard and touch as well as pointer. Its appearance does not shift the composer or usage controls. Narrow rows consolidate Activity shortcuts into their existing menu before crowding status and usage. Context shows a compact token count preceded by a brand-purple occupancy ring, or the context icon when occupancy is unknown; cost retains `$`; cache belongs inside the context popover. Units and unavailable values follow the conversation contract.
 
 Usage popovers lead with the requested figure and unit, then aligned supporting rows. Breakdowns expand inside one bounded reader; help carries accounting explanations. Avoid a card, subtitle or large gap for every metric. Scope changes preserve position and alignment.
+
+Input predictions replace the empty composer placeholder with muted italic ghost text. A fine pointer layout shows a small `Tab` key hint; a coarse pointer layout provides a visible, accessible acceptance button. Preview appearance follows reduced-motion preferences and does not change composer height or show a loading indicator.
 
 ### Reader Edges
 

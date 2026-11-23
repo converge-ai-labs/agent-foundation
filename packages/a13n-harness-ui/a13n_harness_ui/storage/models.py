@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from sqlalchemy import (
@@ -213,6 +213,29 @@ class BotNoteRecord(Base):
     last_writer_thread_id: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
+class InboxItemRecord(Base):
+    """One intentional human-facing message posted by an ordinary root Run."""
+
+    __tablename__ = "inbox_item"
+    __table_args__ = (
+        CheckConstraint("kind IN ('result', 'needs_human', 'milestone')", name="kind"),
+        UniqueConstraint("thread_id", "tool_call_id", name="uq_inbox_item_tool_call"),
+        Index("ix_inbox_item_open", "done_at", "created_at", "item_id"),
+    )
+
+    item_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=False
+    )
+    tool_call_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+    kind: Mapped[Literal["result", "needs_human", "milestone"]] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+
+
 class BotStateRecord(Base):
     __tablename__ = "bot_state"
     __table_args__ = (CheckConstraint("singleton_id = 1", name="singleton"),)
@@ -265,7 +288,7 @@ class WebPushSubscriptionRecord(Base):
     p256dh: Mapped[str] = mapped_column(Text, nullable=False)
     auth: Mapped[str] = mapped_column(Text, nullable=False)
     origin: Mapped[str] = mapped_column(Text, nullable=False)
-    scope: Mapped[Literal["all", "bot"]] = mapped_column(String(8), nullable=False, server_default="all")
+    scope: Mapped[Literal["all", "bot", "inbox"]] = mapped_column(String(8), nullable=False, server_default="all")
     language: Mapped[Literal["en", "zh-CN", "hi"]] = mapped_column(String(8), nullable=False, server_default="en")
     last_active_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
@@ -546,7 +569,13 @@ class ThreadUsageRecord(Base):
     """First observed canonical usage contribution within one root Thread family."""
 
     __tablename__ = "thread_usage"
-    __table_args__ = (UniqueConstraint("root_thread_id", "record_id", name="identity"),)
+    __table_args__ = (
+        UniqueConstraint("root_thread_id", "record_id", name="identity"),
+        Index("ix_thread_usage_unindexed", "sequence", sqlite_where=text("indexed_through IS NULL")),
+    )
+
+    # NULL means this retained envelope still needs projection after an upgrade.
+    indexed_through: Mapped[datetime | None] = mapped_column(UtcDateTime())
 
     sequence: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     root_thread_id: Mapped[str] = mapped_column(
@@ -560,6 +589,26 @@ class ThreadUsageRecord(Base):
     descendant: Mapped[bool] = mapped_column(Boolean, nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class UsageFactRecord(Base):
+    """Winning contribution; receipt identities have no response day and are not charged here."""
+
+    __tablename__ = "usage_fact"
+    __table_args__ = (Index("ix_usage_fact_root_day", "root_thread_id", "day"),)
+
+    root_thread_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    record_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    sequence: Mapped[int] = mapped_column(ForeignKey("thread_usage.sequence", ondelete="CASCADE"), index=True)
+    day: Mapped[date | None] = mapped_column(index=True)
+    recipe_id: Mapped[str | None]
+    model_key: Mapped[str | None]
+    model_label: Mapped[str | None]
+    input_tokens: Mapped[int]
+    output_tokens: Mapped[int]
+    cache_read_tokens: Mapped[int]
+    cache_write_tokens: Mapped[int]
+    cost: Mapped[str | None]
 
 
 class EnvdSessionBindingRecord(Base):

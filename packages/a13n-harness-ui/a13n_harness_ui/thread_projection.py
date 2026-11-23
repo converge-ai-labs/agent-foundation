@@ -479,6 +479,30 @@ class ThreadProjectionService:
                     )
         return None, False
 
+    async def tool_call_turn(self, thread_id: str, tool_call_id: str) -> tuple[str, str | None]:
+        """Locate a tool call in the selected history; absent after rewind or another branch."""
+        thread = await self._required_thread(thread_id)
+        _, header = await self._inspection_header(thread)
+        candidates = await self._store.inspections.matching_entries(thread_id, header.source_id, tool_call_id)
+        entries = await to_thread.run_sync(
+            lambda: tuple(TranscriptEntry.model_validate_json(value) for value in candidates)
+        )
+        position = next(
+            (
+                entry.position
+                for entry in entries
+                for part in entry.parts
+                if part.kind == "tool_call" and part.tool_call_id == tool_call_id
+            ),
+            None,
+        )
+        if position is None:
+            return header.source_id, None
+        turns = await self._store.inspections.turns(
+            thread_id, header.source_id, lower=position, upper=position + 1, limit=1
+        )
+        return header.source_id, TranscriptTurn.model_validate_json(turns[0]).turn_id if turns else None
+
     async def title_entries(self, thread_id: str) -> tuple[TranscriptEntry, ...]:
         thread = await self._required_thread(thread_id)
         _, header = await self._inspection_header(thread)
