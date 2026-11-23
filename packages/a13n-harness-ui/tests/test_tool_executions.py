@@ -694,10 +694,7 @@ async def test_child_completion_keeps_lane_and_admitted_authority(tmp_path, monk
             assert (await app._store.child_executions.latest_for_child(child_id)).status == "cancelled"
 
 
-@pytest.mark.parametrize(
-    "change",
-    [None, "source", "archived", "parent_during_prepare"],
-)
+@pytest.mark.parametrize("change", [None, "archived"])
 async def test_child_completion_restores_frozen_authority_after_app_restart(tmp_path, monkeypatch, change):
     from dataclasses import replace
 

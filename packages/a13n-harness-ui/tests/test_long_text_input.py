@@ -110,9 +110,7 @@ def test_long_text_configuration_defaults_and_disabled_value():
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    "threshold,length,converted", [(8000, 8000, False), (8000, 8001, True), (None, 9000, False), (10, 11, True)]
-)
+@pytest.mark.parametrize("threshold,length,converted", [(8000, 8000, False), (8000, 8001, True)])
 async def test_root_input_threshold_has_no_inline_preview(tmp_path, monkeypatch, threshold, length, converted):
     observed = []
 

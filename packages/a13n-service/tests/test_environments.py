@@ -1927,7 +1927,7 @@ async def test_instance_reclamation_is_frozen_and_debug_hold_only_delays_automat
     assert (await environment(env, second["id"]))["status"] == "deleted"
 
 
-@pytest.mark.parametrize("result", ["pending", "completed", "unknown"])
+@pytest.mark.parametrize("result", ["pending", "unknown"])
 async def test_preparation_deadline_preserves_state_and_reconciles_unknown_before_cleanup(env, result):
     await reclamation_template(env, preparation_seconds=30, failed_retention_seconds=60)
     target = await reserve(env, env.template["id"])

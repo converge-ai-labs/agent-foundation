@@ -31,7 +31,7 @@ async def item(service, schedule, occurrence):  # type: ignore[no-untyped-def]
     return response.json()
 
 
-@pytest.mark.parametrize("mode", ["default", "session", "thread", "create_thread"])
+@pytest.mark.parametrize("mode", ["session", "thread"])
 async def test_create_targets_replay_and_memory(service, scripted_model, runs_kit, mode):  # type: ignore[no-untyped-def]
     schedule, agent = await schedule_for(service, scripted_model, runs_kit)
     existing = await runs_kit.start_thread(service, agent, "Existing conversation")

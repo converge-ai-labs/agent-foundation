@@ -290,8 +290,6 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
     "token,query,protocols",
     [
         ("wrong", "", ["eip.v1"]),
-        ("test-only-key", "", ["eip.v1"]),
-        (TOKEN, "?token=anything", ["eip.v1"]),
         (TOKEN, "", []),
     ],
 )

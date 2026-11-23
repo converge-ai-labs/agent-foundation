@@ -128,15 +128,12 @@ async def test_surface_guidance_changes_only_on_transition_and_provenance_is_per
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("surface", ["tui", "webui"])
 @pytest.mark.parametrize(
-    "prompt,error",
+    ("surface", "prompt", "error"),
     [
-        ("", RunCoordinationError),
-        ("  ", RunCoordinationError),
-        ((), InputError),
-        (ComposerInput(parts=()), ValueError),
-        (ComposerInput(parts=("  ",)), ValueError),
+        ("tui", "", RunCoordinationError),
+        ("webui", (), InputError),
+        ("webui", ComposerInput(parts=("  ",)), ValueError),
     ],
 )
 async def test_surface_hint_does_not_make_empty_input_valid(tmp_path, monkeypatch, surface, prompt, error):

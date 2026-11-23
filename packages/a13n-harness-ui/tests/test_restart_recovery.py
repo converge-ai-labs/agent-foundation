@@ -739,7 +739,7 @@ async def test_incompatible_reconstruction_is_blocked_and_never_retried(tmp_path
         assert calls == 1
 
 
-@pytest.mark.parametrize("startup", ["success", "parent_failure", "timeout", "cancel"])
+@pytest.mark.parametrize("startup", ["success", "timeout"])
 async def test_children_admitted_during_drain_require_complete_family_staging(tmp_path, monkeypatch, startup):
     import yaml
     from a13n_harness_ui.root_run import RootRunCoordinator

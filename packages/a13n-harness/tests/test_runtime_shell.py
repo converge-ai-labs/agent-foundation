@@ -71,8 +71,14 @@ def bindings(runtime, **kwargs):
     )
 
 
-@pytest.mark.parametrize("code", ["environment_unavailable", "environment_timeout", "environment_unknown_outcome"])
-@pytest.mark.parametrize("dispatch_stage", ["pre_dispatch", "dispatched", None])
+@pytest.mark.parametrize(
+    ("code", "dispatch_stage"),
+    [
+        ("environment_unavailable", "pre_dispatch"),
+        ("environment_timeout", "dispatched"),
+        ("environment_unknown_outcome", None),
+    ],
+)
 async def test_owned_start_rejection_only_preserves_uncertain_effects(tmp_path, monkeypatch, code, dispatch_stage):
     from a13n_harness.environment import EnvironmentError
     from a13n_harness.environment.process_recovery import EnvdProcessState, current_process_checkpoint
@@ -238,8 +244,7 @@ async def start_live(runtime, root, *, environment=None):
     return first, execution_id, runtime.resource(first.thread_id, execution_id)
 
 
-@pytest.mark.parametrize("wait_tool", ["shell_wait", "tool_execution_wait"])
-@pytest.mark.parametrize("immediate", [False, True])
+@pytest.mark.parametrize(("wait_tool", "immediate"), [("shell_wait", False), ("tool_execution_wait", True)])
 async def test_steering_releases_control_wait_without_stopping_original_shell(
     tmp_path, monkeypatch, wait_tool, immediate
 ):

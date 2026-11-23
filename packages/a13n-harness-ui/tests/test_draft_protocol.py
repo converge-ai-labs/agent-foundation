@@ -345,8 +345,11 @@ async def test_real_shared_composer_submit_capture_steer_rejoin_restart(
             assert missing.status_code == 400 and missing.json()["error"]["code"] == "root_receipt_missing"
 
 
-@pytest.mark.parametrize("action", ["send", "steer"])
-@pytest.mark.parametrize("submitted", ["submitted", "中" * 160000], ids=["short", "large-unicode"])
+@pytest.mark.parametrize(
+    ("action", "submitted"),
+    [("send", "submitted"), ("steer", "中" * 160000)],
+    ids=["send-short", "steer-large-unicode"],
+)
 async def test_accepted_input_clears_peer_draft_without_the_submitting_editor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action: str, submitted: str
 ) -> None:

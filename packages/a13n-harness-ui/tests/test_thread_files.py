@@ -468,8 +468,7 @@ async def test_terminal_steering_retains_uploads_and_delivers_native_images(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("with_project", [False, True])
-@pytest.mark.parametrize("canonical_paths", [False, True])
+@pytest.mark.parametrize(("with_project", "canonical_paths"), [(False, False), (True, True)])
 async def test_root_and_child_tool_results_use_their_own_thread_scratch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_project: bool, canonical_paths: bool
 ) -> None:

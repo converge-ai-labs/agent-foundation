@@ -784,9 +784,8 @@ async def test_backlog_expired_tool_leases_exclude_shell_completed_and_live(serv
 
 
 @pytest.mark.parametrize("batch", [False, True])
-@pytest.mark.parametrize("commit", [False, True])
 async def test_deliveries_created_dead_are_observed_only_after_insertion_commits(
-    runtime, reader, logged, monkeypatch, batch, commit
+    runtime, reader, logged, monkeypatch, batch
 ):
     labels = {"kind": "email", "result": "dead"}
     before = measured(reader, "a13n.outbox.deliveries", labels)
@@ -809,21 +808,23 @@ async def test_deliveries_created_dead_are_observed_only_after_insertion_commits
         await session.flush()
         assert measured(reader, "a13n.outbox.deliveries", labels) == before
 
-    if commit:
+    with pytest.raises(RuntimeError, match="rollback"):
         async with transaction(runtime.storage) as session:
             await stage(session)
-    else:
-        with pytest.raises(RuntimeError, match="rollback"):
-            async with transaction(runtime.storage) as session:
-                await stage(session)
-                raise RuntimeError("rollback")
-    assert measured(reader, "a13n.outbox.deliveries", labels) == before + (2 if commit else 0)
-    assert len(messages(logged, "Outbox delivery dead")) == (2 if commit else 0)
+            raise RuntimeError("rollback")
+    assert measured(reader, "a13n.outbox.deliveries", labels) == before
+    assert len(messages(logged, "Outbox delivery dead")) == 0
     async with short_session(runtime.storage) as session:
-        assert await session.scalar(select(func.count()).select_from(outbox.OutboxRow)) == (3 if commit else 0)
+        assert await session.scalar(select(func.count()).select_from(outbox.OutboxRow)) == 0
+    async with transaction(runtime.storage) as session:
+        await stage(session)
+    assert measured(reader, "a13n.outbox.deliveries", labels) == before + 2
+    assert len(messages(logged, "Outbox delivery dead")) == 2
+    async with short_session(runtime.storage) as session:
+        assert await session.scalar(select(func.count()).select_from(outbox.OutboxRow)) == 3
     # Dead-at-insert rows are not claimed or counted a second time.
     await outbox.claim(runtime.storage, "email", owner="test", limit=10, lease_seconds=60, max_attempts=1)
-    assert measured(reader, "a13n.outbox.deliveries", labels) == before + (2 if commit else 0)
+    assert measured(reader, "a13n.outbox.deliveries", labels) == before + 2
 
 
 @pytest.mark.parametrize("batch", [False, True])

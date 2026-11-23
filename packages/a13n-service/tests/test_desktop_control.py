@@ -143,44 +143,44 @@ async def desktop(service, scripted_model, runs_kit, monkeypatch, request):
 
 
 @pytest.mark.parametrize("desktop", [[]], indirect=True)
-@pytest.mark.parametrize("enabled", [True, False])
-async def test_mount_desktop_projection_uses_frozen_opt_in_without_computer_permissions(service, desktop, enabled):
+async def test_mount_desktop_projection_uses_frozen_opt_in_without_computer_permissions(service, desktop):
     first, environment_id, actor, calls, *_ = desktop
     thread_id = first["run"]["thread_id"]
-    async with transaction(service.runtime.storage) as session:
-        environment = await session.get(EnvironmentRow, environment_id)
-        handle = Handle.model_validate(environment.handle)
-        environment.handle = handle.model_copy(
-            update={"recipe": {**handle.recipe, "desktop_assistance": enabled}}
-        ).model_dump(mode="json")
-    # The template still enables access. The instance's frozen recipe owns the projection.
     path = f"{service.api}/threads/{thread_id}/environments"
-    listing = await service.client.get(path)
-    assert listing.status_code == 200, listing.text
-    [mount] = listing.json()["items"]
-    assert mount["desktop_enabled"] is enabled
-    assert mount["permission_ceiling"] == {"operations": []}
-    assert "desktop_enabled" not in first["run"]["environment_mounts"][0]
-    updated = await service.client.patch(
-        f"{path}/workspace",
-        json={"permission_ceiling": {"operations": []}},
-        headers={"if-match": listing.headers["etag"]},
-    )
-    assert updated.status_code == 200, updated.text
-    assert updated.json()["desktop_enabled"] is enabled
-    removed = await service.client.delete(f"{path}/workspace", headers={"if-match": updated.headers["etag"]})
-    assert removed.status_code == 204, removed.text
-    added = await service.client.post(
-        path,
-        json={"name": "workspace", "environment_id": environment_id, "permission_ceiling": {"operations": []}},
-        headers={"if-match": removed.headers["etag"]},
-    )
-    assert added.status_code == 201, added.text
-    assert added.json()["desktop_enabled"] is enabled
-    assert not calls
-    if enabled:
-        # Human access is independently authorized, even with no Agent Computer actions.
-        await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
+    for enabled in (False, True):
+        async with transaction(service.runtime.storage) as session:
+            environment = await session.get(EnvironmentRow, environment_id)
+            handle = Handle.model_validate(environment.handle)
+            environment.handle = handle.model_copy(
+                update={"recipe": {**handle.recipe, "desktop_assistance": enabled}}
+            ).model_dump(mode="json")
+        # The template still enables access. The instance's frozen recipe owns the projection.
+        listing = await service.client.get(path)
+        assert listing.status_code == 200, listing.text
+        [mount] = listing.json()["items"]
+        assert mount["desktop_enabled"] is enabled
+        assert mount["permission_ceiling"] == {"operations": []}
+        assert "desktop_enabled" not in first["run"]["environment_mounts"][0]
+        updated = await service.client.patch(
+            f"{path}/workspace",
+            json={"permission_ceiling": {"operations": []}},
+            headers={"if-match": listing.headers["etag"]},
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["desktop_enabled"] is enabled
+        removed = await service.client.delete(f"{path}/workspace", headers={"if-match": updated.headers["etag"]})
+        assert removed.status_code == 204, removed.text
+        added = await service.client.post(
+            path,
+            json={"name": "workspace", "environment_id": environment_id, "permission_ceiling": {"operations": []}},
+            headers={"if-match": removed.headers["etag"]},
+        )
+        assert added.status_code == 201, added.text
+        assert added.json()["desktop_enabled"] is enabled
+        assert not calls
+        if enabled:
+            # Human access is independently authorized, even with no Agent Computer actions.
+            await control.get(service.runtime, actor, service.tenant.workspace_id, environment_id)
 
 
 async def begin(service, desktop):

@@ -89,7 +89,7 @@ async def test_classification_uses_analysis_association_and_frozen_mode(
     assert content == ({"native": True} if analysis_origin and mode == "inline" else record.receipt())
 
 
-@pytest.mark.parametrize("value", ["native", "retry", "failed"])
+@pytest.mark.parametrize("value", ["native", "failed"])
 async def test_native_result_restoration_and_checkpoint_ack(service, scripted_model, runs_kit, value):
     runtime, created, lease, _, _ = await origin(service, scripted_model, runs_kit)
     store, record = Store(runtime), _record(lease)

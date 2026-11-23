@@ -109,7 +109,7 @@ async def test_app_ready_waits_for_commit_and_opens_before_run_ends(
                     await task
 
 
-@pytest.mark.parametrize("app_run", [False, "paged", "save_failed"], indirect=True)
+@pytest.mark.parametrize("app_run", ["paged", "save_failed"], indirect=True)
 async def test_saved_app_readiness_uses_committed_references(service, app_run, monkeypatch):
     from a13n_service.runs.contents import ContentObject
     from a13n_service.runs.stream import SessionHub

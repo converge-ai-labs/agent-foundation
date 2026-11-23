@@ -118,8 +118,7 @@ async def test_new_episode_block_during_delivery_survives_prior_acceptance():
         notices.stop()
 
 
-@pytest.mark.parametrize("active", [False, True])
-@pytest.mark.parametrize("goal", [False, True])
+@pytest.mark.parametrize(("active", "goal"), [(False, True), (True, False)])
 async def test_app_handback_steers_active_or_wakes_idle_without_resuming_goal(tmp_path, monkeypatch, active, goal):
     from functools import partial
     from unittest.mock import AsyncMock

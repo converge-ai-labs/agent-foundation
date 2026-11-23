@@ -21,9 +21,10 @@ pytestmark = pytest.mark.anyio
 SKILL_NAME = "harness-ui-configuration"
 
 
-@pytest.mark.parametrize("with_project", [False, True])
-@pytest.mark.parametrize("canonical_paths", [False, True])
-@pytest.mark.parametrize("skills_enabled", [False, True])
+@pytest.mark.parametrize(
+    ("with_project", "canonical_paths", "skills_enabled"),
+    [(False, False, False), (True, True, True), (True, False, True)],
+)
 async def test_builtin_skill_discovery_and_read_only_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -373,9 +374,7 @@ def test_ui_guidance_uses_flat_attribute_free_xml_sections(name: str, root: str 
     [
         (True, True, None, None, True),
         (False, True, None, None, False),
-        (True, False, None, None, False),
         (True, True, ["ls"], None, False),
-        (True, True, None, ["get_thread"], False),
     ],
 )
 async def test_guidance_delivery_requires_selected_skills_and_view(

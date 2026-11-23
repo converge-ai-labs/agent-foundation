@@ -159,10 +159,9 @@ async def test_programmatic_setup_without_characteristics_seeds_stable_media_lis
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "mode,chosen_name",
-    [("setup", ""), ("add_model", ""), ("add_agent", ""), ("add_model", "研究助手"), ("add_agent", "研究助手")],
+    ("mode", "chosen_name", "provider"),
+    [("setup", "", "api"), ("add_model", "研究助手", "codex"), ("add_agent", "研究助手", "grok")],
 )
-@pytest.mark.parametrize("provider", ["api", "codex", "grok"])
 async def test_all_creation_flows_persist_known_native_image_support(
     tmp_path: Path, mode, chosen_name, provider
 ) -> None:

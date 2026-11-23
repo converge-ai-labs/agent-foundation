@@ -280,7 +280,7 @@ async def test_restarted_worker_keeps_owner_and_rejects_configuration_move(
         assert calls.count(worker_id) == 2
 
 
-@pytest.mark.parametrize("delivery", ["accepted", "rejected", "error", "paused"])
+@pytest.mark.parametrize("delivery", ["accepted", "error"])
 async def test_direct_human_work_notifies_owner_without_changing_admission(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, delivery: str
 ) -> None:

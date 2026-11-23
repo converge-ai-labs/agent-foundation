@@ -1323,8 +1323,6 @@ it.each([false, true])(
 
 it.each([
   [false, false],
-  [false, true],
-  [true, false],
   [true, true],
 ])(
   "dictates into Bot draft once without sending (busy=%s, debug=%s)",

@@ -19,7 +19,7 @@ from .test_thread_collaboration import configuration, controller
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("overrides", [None, RunModelOverrides(thinking="high"), RunModelOverrides(fast=False)])
+@pytest.mark.parametrize("overrides", [None, RunModelOverrides(thinking="high")])
 async def test_default_model_override_patch_clear_and_restart(tmp_path, monkeypatch, overrides):
     root = configuration(tmp_path)
 

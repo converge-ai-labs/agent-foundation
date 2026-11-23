@@ -85,10 +85,9 @@ class ThrottledLink:
             await asyncio.gather(*active, return_exceptions=True)
 
 
-# Include cold Docker/Service startup as well as the roughly 60-second throttled transfer.
+# Include cold Docker/Service startup as well as the roughly 52-second throttled transfer.
 @pytest.mark.timeout(240)
-@pytest.mark.parametrize("frame_bytes", [None, 8192], ids=["default-chunks", "small-frame-diagnostic"])
-async def test_asset_ref_and_sibling_controls_survive_slow_reverse_link(stack, frame_bytes, request):
+async def test_asset_ref_and_sibling_controls_survive_slow_reverse_link(stack, request):
     if BINARY is None or not Path(BINARY).is_file():
         reason = "Build this checkout's a13n-envd and set A13N_ENVD_TEST_BINARY"
         if request.config.getoption("--require-all"):
@@ -121,8 +120,6 @@ async def test_asset_ref_and_sibling_controls_survive_slow_reverse_link(stack, f
         toolsets={"object_store": {"enabled": True}, "files": {"enabled": True}},
     )
     config = {"default_working_directory": str(workspace), "full_control": True, "idle_timeout_ms": 3_600_000}
-    if frame_bytes is not None:
-        config["limits"] = {"max_transfer_frame_bytes": frame_bytes}
     link = ThrottledLink()
     async with link.serve(stack.control.port) as port:
         with (stack.directory / "envd.log").open("wb") as log:

@@ -29,25 +29,43 @@ def test_wrapped_endpoint_refusals_keep_the_safe_reason(grouped):
     }
 
 
-@pytest.mark.parametrize(
-    ("base_url", "reason"),
-    [
+async def test_model_endpoint_refusal_is_visible_without_retrying(serve, settings, runs_kit):
+    providers = settings.providers.model_copy(update={"require_https": True, "http_origins": ()})
+    cases = [
         ("http://model.example/v1", "endpoint must use HTTPS"),
         ("https://model bad.example/v1", "allowed hosts must be exact DNS hostnames or IP literals"),
         ("https://user:private-secret@model.example/v1", "endpoint must not contain user information"),
         ("https://model.example/v1?api_key=private-secret", "endpoint query contains a sensitive parameter"),
-    ],
-)
-async def test_model_endpoint_refusal_is_visible_without_retrying(serve, settings, runs_kit, base_url, reason):
-    providers = settings.providers.model_copy(update={"require_https": True, "http_origins": ()})
+    ]
     async with serve(settings=settings.model_copy(update={"providers": providers})) as service:
-        agent = await runs_kit.create_agent(service, SimpleNamespace(url=base_url))
-        run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
-        await (await runs_kit.attempt(service))
-        run = await runs_kit.get_run(service, run_id)
-    assert run["status"] == "failed" and run["attempts"] == 1, run
-    assert run["failure"] == {"code": "provider_endpoint_denied", "message": reason}
-    assert "private-secret" not in str(run["failure"])
+        for index, (base_url, reason) in enumerate(cases):
+            provider = await service.client.post(
+                f"{service.api}/model-providers",
+                json={
+                    "type": "openai",
+                    "name": f"Denied-{index}",
+                    "config": {"base_url": base_url},
+                    "credential": {"api_key": "sk-scripted"},
+                },
+            )
+            assert provider.status_code == 201, provider.text
+            model = await service.client.post(
+                f"{service.api}/models",
+                json={
+                    "provider_id": provider.json()["id"],
+                    "key": f"denied-{index}",
+                    "name": f"Denied-{index}",
+                    "config": {"model_name": "scripted", "model_api": "openai.chat_completions"},
+                },
+            )
+            assert model.status_code == 201, model.text
+            agent = await runs_kit.add_agent(service, f"helper-{index}", model.json()["key"])
+            run_id = (await runs_kit.start_thread(service, agent, "hi"))["run"]["id"]
+            await (await runs_kit.attempt(service))
+            run = await runs_kit.get_run(service, run_id)
+            assert run["status"] == "failed" and run["attempts"] == 1, run
+            assert run["failure"] == {"code": "provider_endpoint_denied", "message": reason}
+            assert "private-secret" not in str(run["failure"])
 
 
 @pytest.mark.parametrize("status_code", [401, 422])

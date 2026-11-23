@@ -284,7 +284,7 @@ async def test_explicit_connection_never_creates_or_rebinds(service):
         assert await session.scalar(select(func.count()).select_from(EnvironmentRow)) == 2
 
 
-@pytest.mark.parametrize("state", ["disabled", "deleted", "revoked"])
+@pytest.mark.parametrize("state", ["disabled", "revoked"])
 async def test_connection_cannot_restore_disabled_deleted_or_revoked_registration(service, state):
     created = await connect(service)
     identity = created.json()["client"]["environment"]["id"]

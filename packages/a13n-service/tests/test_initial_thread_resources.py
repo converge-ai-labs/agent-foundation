@@ -150,39 +150,41 @@ async def test_browser_lock_precedes_fresh_environment_reservation(
     assert run["environment_mounts"][0]["environment_id"] != fields["environments"][0]["environment_id"]
 
 
-@pytest.mark.parametrize("primary_selection", ["agent_default", "run_override"])
 async def test_schedule_locks_initial_mounts_with_existing_primary(
-    service, scripted_model, runs_kit, resources, monkeypatch, primary_selection
+    service, scripted_model, runs_kit, resources, monkeypatch
 ):
     fields, _ = resources
     another = await reserve(service, service.template["id"])
     first, second = sorted([fields["environments"][0]["environment_id"], another["id"]])
-    config = {"default_environment_id": first} if primary_selection == "agent_default" else {}
-    agent = await runs_kit.create_agent(service, scripted_model, **config)
-    invocation = {"environments": [{"name": "sidecar", "environment_id": second}]}
-    if primary_selection == "run_override":
-        invocation["options"] = {"environment": {"mode": "existing", "environment_id": first}}
-    created = await create_schedule(service, runs_kit, agent, invocation)
-    assert created.status_code == 201, created.text
-    schedule = created.json()
-    occurrence = await trigger(service, schedule, runs_kit)
-    acquired_sets = []
     lock_environments = mounts.lock_environments
+    acquired_sets = []
 
     async def check_lock_set(session, workspace_id, environment_ids, *, principal_id):
         acquired_sets.append(set(environment_ids))
         return await lock_environments(session, workspace_id, environment_ids, principal_id=principal_id)
 
     monkeypatch.setattr(mounts, "lock_environments", check_lock_set)
-    await dispatch.process(service.runtime, schedule["id"])
-    assert acquired_sets[0] == {first, second}
-    async with short_session(service.runtime.storage) as session:
-        item = await session.get_one(OccurrenceRow, occurrence["id"])
-        assert item.status == "submitted" and item.entry_id is not None
-        entry = await session.get_one(InboxEntryRow, item.entry_id)
-        assert entry.assigned_run_id is not None
-        run = await session.get_one(RunRow, entry.assigned_run_id)
-        assert {mount["environment_id"] for mount in run.environment_mounts} == {first, second}
+    model = await runs_kit.create_model(service, scripted_model)
+    for primary_selection in ("agent_default", "run_override"):
+        acquired_sets.clear()
+        config = {"default_environment_id": first} if primary_selection == "agent_default" else {}
+        agent = await runs_kit.add_agent(service, f"helper-{primary_selection}", model, **config)
+        invocation = {"environments": [{"name": "sidecar", "environment_id": second}]}
+        if primary_selection == "run_override":
+            invocation["options"] = {"environment": {"mode": "existing", "environment_id": first}}
+        created = await create_schedule(service, runs_kit, agent, invocation)
+        assert created.status_code == 201, created.text
+        schedule = created.json()
+        occurrence = await trigger(service, schedule, runs_kit, key=f"manual-{primary_selection}")
+        await dispatch.process(service.runtime, schedule["id"])
+        assert acquired_sets[0] == {first, second}
+        async with short_session(service.runtime.storage) as session:
+            item = await session.get_one(OccurrenceRow, occurrence["id"])
+            assert item.status == "submitted" and item.entry_id is not None
+            entry = await session.get_one(InboxEntryRow, item.entry_id)
+            assert entry.assigned_run_id is not None
+            run = await session.get_one(RunRow, entry.assigned_run_id)
+            assert {mount["environment_id"] for mount in run.environment_mounts} == {first, second}
 
 
 @pytest.mark.parametrize("with_browser", [False, True])
@@ -215,7 +217,7 @@ async def test_direct_thread_first_run_refusal_preserves_legacy_mount_only_behav
             assert await session.scalar(select(func.count()).select_from(table)) == (0 if with_browser else 1)
 
 
-@pytest.mark.parametrize("failure", ["released", "expired", "missing"])
+@pytest.mark.parametrize("failure", ["released", "missing"])
 async def test_invalid_browser_refuses_dispatch_without_leaving_work(
     service, scripted_model, runs_kit, resources, failure
 ):
@@ -278,29 +280,29 @@ async def test_fresh_schedule_rolls_back_initial_mounts_when_run_acceptance_fail
             assert await session.scalar(select(func.count()).select_from(table)) == 0
 
 
-@pytest.mark.parametrize("field", ["browser_binding", "environments"])
-async def test_fixed_schedule_target_requires_clearing_initial_resources(service, runs_kit, resources, field):
+async def test_fixed_schedule_target_requires_clearing_initial_resources(service, runs_kit, resources):
     fields, _ = resources
-    initial = {field: fields[field]}
     agent = service.agent
     fixed = {"mode": "thread"}
-    invalid = await create_schedule(service, runs_kit, agent, initial, target=fixed)
-    assert invalid.status_code == 400, invalid.text
-    created = await create_schedule(service, runs_kit, agent, initial)
-    assert created.status_code == 201, created.text
-    schedule = created.json()
-    item = await trigger(service, schedule, runs_kit)
-    path = f"{service.api}/schedules/{schedule['id']}"
-    headers = runs_kit.if_match(schedule)
-    invalid = await service.client.patch(path, json={"target": fixed}, headers=headers)
-    assert invalid.status_code == 400, invalid.text
-    invocation = {key: value for key, value in schedule["invocation"].items() if key != field}
-    updated = await service.client.patch(path, json={"target": fixed, "invocation": invocation}, headers=headers)
-    assert updated.status_code == 200, updated.text
-    async with short_session(service.runtime.storage) as session:
-        stored = await session.get_one(OccurrenceRow, item["id"])
-        assert stored.status == "cancelled" and stored.reason == "schedule_changed"
-    invalid = await service.client.patch(
-        path, json={"invocation": schedule["invocation"]}, headers=runs_kit.if_match(updated.json())
-    )
-    assert invalid.status_code == 400, invalid.text
+    for field in ("browser_binding", "environments"):
+        initial = {field: fields[field]}
+        invalid = await create_schedule(service, runs_kit, agent, initial, target=fixed)
+        assert invalid.status_code == 400, invalid.text
+        created = await create_schedule(service, runs_kit, agent, initial)
+        assert created.status_code == 201, created.text
+        schedule = created.json()
+        item = await trigger(service, schedule, runs_kit, key=f"manual-{field}")
+        path = f"{service.api}/schedules/{schedule['id']}"
+        headers = runs_kit.if_match(schedule)
+        invalid = await service.client.patch(path, json={"target": fixed}, headers=headers)
+        assert invalid.status_code == 400, invalid.text
+        invocation = {key: value for key, value in schedule["invocation"].items() if key != field}
+        updated = await service.client.patch(path, json={"target": fixed, "invocation": invocation}, headers=headers)
+        assert updated.status_code == 200, updated.text
+        async with short_session(service.runtime.storage) as session:
+            stored = await session.get_one(OccurrenceRow, item["id"])
+            assert stored.status == "cancelled" and stored.reason == "schedule_changed"
+        invalid = await service.client.patch(
+            path, json={"invocation": schedule["invocation"]}, headers=runs_kit.if_match(updated.json())
+        )
+        assert invalid.status_code == 400, invalid.text

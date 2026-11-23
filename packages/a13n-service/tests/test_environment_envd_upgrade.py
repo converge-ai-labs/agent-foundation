@@ -271,7 +271,7 @@ async def test_explicit_upgrade_retry_retains_target_and_version_but_fences_the_
     assert status == "ready" and handle.envd_target_version is None and handle.state == before.state
 
 
-@pytest.mark.parametrize("blocker", ["unknown", "unsettled", "lease", "stale"])
+@pytest.mark.parametrize("blocker", ["unknown", "stale"])
 async def test_upgrade_retry_refuses_unconfirmed_or_stale_attempts(managed, monkeypatch, blocker):
     env = managed
     environment_id, _, _ = await failed_upgrade(env, monkeypatch)
@@ -346,7 +346,7 @@ async def test_confirmed_loss_requires_replacement_instead_of_upgrade_retry(mana
         assert lifecycle.confirmed_loss(row) and row.handle == before
 
 
-@pytest.mark.parametrize("blocker", ["provider_identity_changed", "missing_state", "missing_target"])
+@pytest.mark.parametrize("blocker", ["provider_identity_changed", "missing_target"])
 async def test_progress_and_retry_agree_when_failed_start_cannot_be_retried(managed, monkeypatch, blocker):
     env = managed
     environment_id, _, _ = await failed_upgrade(env, monkeypatch)

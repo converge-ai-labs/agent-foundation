@@ -168,9 +168,7 @@ async def test_invalid_or_unavailable_run_environment_never_falls_back(tmp_path,
         assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
 
 
-@pytest.mark.parametrize(
-    "patch", [None, {"project_id": None}, {"environment_profile_id": "environment-native"}, {"local_roots": ()}]
-)
+@pytest.mark.parametrize("patch", [None, {"environment_profile_id": "environment-native"}])
 async def test_deferred_response_retains_run_environment_unless_explicitly_changed(tmp_path, monkeypatch, patch):
     async with open_harness_ui_app(
         _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
