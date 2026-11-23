@@ -85,7 +85,7 @@ class ThrottledLink:
             await asyncio.gather(*active, return_exceptions=True)
 
 
-# Include cold Docker/Service startup as well as the roughly 26-second throttled transfer.
+# Include cold Docker/Service startup as well as the roughly 52-second throttled transfer.
 @pytest.mark.timeout(240)
 async def test_asset_ref_and_sibling_controls_survive_slow_reverse_link(stack, request):
     if BINARY is None or not Path(BINARY).is_file():
@@ -96,7 +96,7 @@ async def test_asset_ref_and_sibling_controls_survive_slow_reverse_link(stack, r
     api, model = stack.api, stack.model
     workspace = stack.directory / "native"
     workspace.mkdir()
-    payload = os.urandom(512 * 1024)
+    payload = os.urandom(1024 * 1024)
     source = workspace / "binary.dat"
     source.write_bytes(payload)
     probe = workspace / "control.txt"

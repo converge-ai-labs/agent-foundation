@@ -184,15 +184,10 @@ async def test_policy_preconditions_authority_and_atomic_audit(apps_service):
     assert sorted(event.outcome for event in events) == ["denied", "ok"]
     [changed] = [event for event in events if event.outcome == "ok"]
     assert changed.details == {"enabled": True}
-
-
-async def test_policy_can_disable_an_uninstalled_retained_app_without_changing_other_settings(apps_service):
-    service = apps_service
     retained = "retired.reports"
     async with transaction(service.runtime.storage) as session:
         organization = await session.get_one(OrganizationRow, service.tenant.organization_id)
         organization.settings = {"other": {"value": 1}, "app_plugins": {"enabled": [retained]}}
-    path = f"{service.organization}/app-plugins"
     current = await service.client.get(path)
     response = await service.client.put(f"{path}/{retained}", json={"enabled": False}, headers=if_match(current.json()))
     assert response.status_code == 200, response.text
@@ -213,7 +208,7 @@ async def test_guard_runs_before_dependencies_and_preserves_csrf_and_workspace_a
     disabled = await service.client.post(path)
     assert disabled.status_code == 422, disabled.text
     assert service.calls == ["startup"]
-    await toggle(service, True)
+    enabled = await toggle(service, True)
     csrf = service.client.headers.pop("x-csrf-token")
     assert (await service.client.post(path)).status_code == 403
     service.client.headers["x-csrf-token"] = csrf
@@ -226,14 +221,6 @@ async def test_guard_runs_before_dependencies_and_preserves_csrf_and_workspace_a
     allowed = await service.client.post(path)
     assert allowed.status_code == 200, allowed.text
     assert service.calls == ["startup", "dependency", "handler"]
-    await toggle(service, False)
-    assert (await service.client.post(path)).status_code == 422
-    assert service.calls == ["startup", "dependency", "handler"]
-
-
-async def test_packaged_assets_keep_chunks_css_real_404_and_immutable_cache(apps_service):
-    service = apps_service
-    enabled = await toggle(service, True)
     frontend = enabled.json()["items"][0]["frontend"]
     entry = await service.client.get(frontend["entry"])
     assert entry.status_code == 200 and "./chunk.js" in entry.text
@@ -246,11 +233,13 @@ async def test_packaged_assets_keep_chunks_css_real_404_and_immutable_cache(apps
     missing = await service.client.get(frontend["entry"].replace("index.js", "missing.js"))
     assert missing.status_code == 404 and "text/html" not in missing.headers["content-type"]
     assert (await service.client.get(frontend["entry"].replace("/1.0/", "/2.0/"))).status_code == 404
-    for path in ("%00.js", "..%2F..%2Foutside.js", "a" * 300):
-        response = await service.client.get(frontend["entry"].replace("index.js", path))
+    for bad_path in ("%00.js", "..%2F..%2Foutside.js", "a" * 300):
+        response = await service.client.get(frontend["entry"].replace("index.js", bad_path))
         assert response.status_code == 404, response.text
         assert "text/html" not in response.headers["content-type"]
     await toggle(service, False)
+    assert (await service.client.post(path)).status_code == 422
+    assert service.calls == ["startup", "dependency", "handler"]
     # Public code is cached independently of business authority, as with core Console assets.
     assert (await service.client.get(frontend["entry"])).status_code == 200
 
@@ -386,8 +375,7 @@ async def test_background_adapter_selects_only_enabled_tenants_outside_sql(apps_
     assert calls == [service.tenant.organization_id]
 
 
-@pytest.mark.parametrize("failure", ["error", "cancel"])
-async def test_background_callbacks_isolate_tenant_failures_and_preserve_cancellation(service, app_sessions, failure):
+async def test_background_callbacks_isolate_tenant_failures_and_preserve_cancellation(service, app_sessions):
     organizations = ["org_app_first", "org_app_second"]
     async with transaction(service.runtime.storage) as session:
         session.add_all(
@@ -398,32 +386,33 @@ async def test_background_callbacks_isolate_tenant_failures_and_preserve_cancell
                 for organization_id in organizations
             ]
         )
-    calls = []
-
-    async def sweep(runtime, organization_id):
-        assert app_sessions and all(not session.in_transaction() for session in app_sessions)
-        calls.append(organization_id)
-        if organization_id == organizations[0]:
-            if failure == "error":
-                raise RuntimeError("First organization failed")
-            raise asyncio.CancelledError
-
-    apps = installed_apps(sweeps=(OrganizationSweep("reports", 1, 0.01, sweep),))
     settings = service.runtime.settings.model_copy(
         update={"control": service.runtime.settings.control.model_copy(update={"sweep_batch": 2})}
     )
-    scoped = replace(service.runtime, settings=settings, apps=AppCatalog(tuple(app.manifest for app in apps)))
-    [job] = app_sweeps(scoped, apps)
-    if failure == "cancel":
-        with pytest.raises(asyncio.CancelledError):
-            await job.run()
-        assert calls == organizations[:1]
-        return
-    with pytest.raises(ExceptionGroup) as error:
-        await job.run()
-    assert len(error.value.exceptions) == 1 and isinstance(error.value.exceptions[0], RuntimeError)
-    assert organizations[0] in error.value.exceptions[0].__notes__[0]
-    assert calls == organizations
+    for failure in ("error", "cancel"):
+        calls = []
+
+        async def sweep(runtime, organization_id, *, failure=failure, calls=calls):
+            assert app_sessions and all(not session.in_transaction() for session in app_sessions)
+            calls.append(organization_id)
+            if organization_id == organizations[0]:
+                if failure == "error":
+                    raise RuntimeError("First organization failed")
+                raise asyncio.CancelledError
+
+        apps = installed_apps(sweeps=(OrganizationSweep("reports", 1, 0.01, sweep),))
+        scoped = replace(service.runtime, settings=settings, apps=AppCatalog(tuple(app.manifest for app in apps)))
+        [job] = app_sweeps(scoped, apps)
+        if failure == "cancel":
+            with pytest.raises(asyncio.CancelledError):
+                await job.run()
+            assert calls == organizations[:1]
+        else:
+            with pytest.raises(ExceptionGroup) as error:
+                await job.run()
+            assert len(error.value.exceptions) == 1 and isinstance(error.value.exceptions[0], RuntimeError)
+            assert organizations[0] in error.value.exceptions[0].__notes__[0]
+            assert calls == organizations
 
 
 async def test_background_admission_failure_does_not_skip_later_healthy_tenants(service, app_sessions):

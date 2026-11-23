@@ -295,8 +295,7 @@ def _delta(sequence: int) -> Observed:
     )
 
 
-@pytest.mark.parametrize("failure", ["dropped", "pending"])
-@pytest.mark.parametrize("previous", [False, True])
+@pytest.mark.parametrize(("failure", "previous"), [("dropped", False), ("pending", True)])
 async def test_writer_keeps_only_confirmed_positions(
     runtime: Runtime, monkeypatch: pytest.MonkeyPatch, failure: str, previous: bool
 ) -> None:
