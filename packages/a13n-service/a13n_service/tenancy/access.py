@@ -368,6 +368,11 @@ async def lock_organization(session: AsyncSession, organization_id: str) -> None
     )
 
 
+async def organization_count(session: AsyncSession) -> int:
+    """Distinguish uninitialized, single-organization and multi-organization deployments."""
+    return len((await session.scalars(select(OrganizationRow.id).limit(2))).all())
+
+
 @dataclass(frozen=True, slots=True)
 class OrganizationPath:
     """An organization a route names by ID."""

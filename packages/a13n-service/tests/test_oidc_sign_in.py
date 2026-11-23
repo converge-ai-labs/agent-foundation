@@ -226,6 +226,49 @@ async def test_oidc_account_is_provisioned_once_and_sessions_never_roll(service)
         await authenticate_secret(storage, access, first.secret, "session", session_seconds=43200, auth=settings.auth)
 
 
+async def test_password_recovery_respects_sign_in_mode_and_identity(service, monkeypatch) -> None:
+    runtime, tenant = service.runtime, service.tenant
+    auth = Authentication(
+        oidc=OIDC(
+            providers={"team": PROVIDER},
+            defaults=[OIDCGrantSpec(organization_id=tenant.organization_id, role="admin")],
+        )
+    )
+    mixed = runtime.settings.model_copy(update={"auth": auth})
+    oidc_admin = await oidc.sign_in(
+        runtime.storage,
+        runtime.access,
+        mixed,
+        "team",
+        PROVIDER,
+        oidc.Identity("recovery-admin", "SSO Admin", "admin@example.com"),
+    )
+    monkeypatch.setattr(service.app.state, "runtime", replace(runtime, settings=mixed))
+    oidc_target = f"{service.organization}/members/{oidc_admin.principal.id}/password-reset"
+    for delivery in ("manual", "email"):
+        refused = await service.client.post(oidc_target, json={"delivery": delivery})
+        assert refused.status_code == 404
+    local_target = f"{service.organization}/members/{tenant.principal_id}/password-reset"
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=service.app), base_url="https://service.test"
+    ) as client:
+        client.cookies.set(session_cookie(mixed), oidc_admin.secret)
+        client.headers["x-csrf-token"] = oidc_admin.csrf_token
+        link = await client.post(local_target, json={"delivery": "manual"})
+        assert link.status_code == 200, link.text
+        token = link.json()["reset_url"].split("#token=", 1)[1]
+        disabled = mixed.model_copy(update={"auth": auth.model_copy(update={"password_enabled": False})})
+        monkeypatch.setattr(service.app.state, "runtime", replace(runtime, settings=disabled))
+        configuration = (await client.get("/api/v1/auth/configuration")).json()
+        assert not configuration["password_enabled"] and not configuration["manual_password_reset"]
+        for delivery in ("manual", "email"):
+            assert (await client.post(local_target, json={"delivery": delivery})).status_code == 403
+        confirm = await client.post(
+            "/api/v1/auth/password-reset/confirm", json={"token": token, "password": "new-password"}
+        )
+        assert confirm.status_code == 403
+
+
 async def test_same_oidc_subject_from_two_issuers_is_two_accounts(service) -> None:
     runtime = service.runtime
     other = PROVIDER.model_copy(update={"issuer": "https://other.example.test/realm"})

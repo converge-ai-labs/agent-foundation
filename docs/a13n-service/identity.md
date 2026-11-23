@@ -218,6 +218,8 @@ Use a login session for profile changes, password and email changes, login-sessi
 
 OIDC users manage sign-in details at their identity provider. Current-password checks share a rate limit per client address and account. Runs started by a disabled user stop at their next authority check.
 
+When password sign-in is enabled, organization administrators can help local password users recover access. OIDC users recover access through their identity provider. If a member cannot use self-service recovery, open **Organization settings → Members → Reset password** as an organization administrator and select their account. Choose **Send reset email** to deliver a link to their sign-in address, or **Generate reset link** to copy it and share it privately. The copy option is available on single-organization deployments even when email is configured. The member opens the link, sets a new password and signs in again with their existing account and workspace access. If you are the only organization administrator and cannot sign in, configure SMTP through your deployment to use self-service recovery.
+
 ## Operator account control
 
 An operator with deployment access can disable or re-enable a user, including one who disabled their own account. Run the appropriate command with the deployment's configuration:

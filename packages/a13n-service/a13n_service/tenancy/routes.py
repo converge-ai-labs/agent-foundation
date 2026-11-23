@@ -4,11 +4,12 @@ from fastapi import APIRouter, Request, Response
 from starlette.responses import RedirectResponse
 
 from a13n_service.infra import images
+from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.settings import Settings
 from a13n_service.tenancy import api_keys, oidc, users
-from a13n_service.tenancy.access import Authenticated, login_session_required
+from a13n_service.tenancy.access import Authenticated, login_session_required, organization_count
 from a13n_service.tenancy.audit import list_account_events
 from a13n_service.tenancy.authenticate import (
     Login,
@@ -134,6 +135,8 @@ async def session_profile(request: Request, credential: Credential, runtime: Cur
 async def auth_configuration(response: Response, runtime: CurrentRuntime) -> AuthConfiguration:
     auth = runtime.settings.auth
     response.headers["Cache-Control"] = "no-store"
+    async with short_session(runtime.storage) as session:
+        count = await organization_count(session)
     return AuthConfiguration(
         password_enabled=auth.password_enabled,
         oidc_providers=[
@@ -141,7 +144,8 @@ async def auth_configuration(response: Response, runtime: CurrentRuntime) -> Aut
             for name, provider in auth.oidc.providers.items()
         ],
         email_delivery=auth.password_enabled and auth.mail.smtp_host is not None,
-        initialized=await initialized(runtime.storage),
+        initialized=count > 0,
+        manual_password_reset=auth.password_enabled and count == 1,
     )
 
 

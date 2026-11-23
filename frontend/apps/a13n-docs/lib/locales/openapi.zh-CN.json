@@ -283,6 +283,7 @@
   "Confirm Email Change": "确认邮箱修改",
   "Password Login": "密码登录",
   "Logout": "退出登录",
+  "Reset Member Password": "重置成员密码",
   "Request Password Reset": "请求重置密码",
   "Confirm Password Reset": "确认密码重置",
   "Consume a browser-bound OIDC callback and establish an ordinary Service browser session.": "验证与浏览器绑定的 OIDC 回调并建立 Service 浏览器会话。",

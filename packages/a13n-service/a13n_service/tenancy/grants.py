@@ -133,7 +133,7 @@ async def create_grant(
     """Give a role to a principal already in the organization; new people join through invitations."""
     async with administering(storage, access, actor, path, action="grant.create") as (session, scope):
         access.check_role(body.role)
-        principal = await _lock_member(session, body.principal_id, scope.organization_id)
+        principal = await lock_organization_member(session, body.principal_id, scope.organization_id)
         grant = await add_grant(session, principal, scope, body.role, actor_id=actor.id)
         return await _manual_grant_view(session, grant, principal)
 
@@ -194,7 +194,7 @@ def member_of(*organization_ids: str) -> ColumnElement[bool]:
     )
 
 
-async def _lock_member(session: AsyncSession, principal_id: str, organization_id: str) -> PrincipalRow:
+async def lock_organization_member(session: AsyncSession, principal_id: str, organization_id: str) -> PrincipalRow:
     """A member of the organization, locked as `lock_member` does; anyone else is not found, so no identity from
     outside the organization is revealed."""
     principal = await session.scalar(

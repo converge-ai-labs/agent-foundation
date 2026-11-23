@@ -39,7 +39,7 @@ import {
 } from "../../shared/collection";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { ConflictNotice, Confirm } from "../../shared/dialogs";
-import { FormActions } from "../../shared/forms";
+import { FormActions, SecretReveal } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import settings from "./settings.module.css";
 import { InvitationEditor, Invitations } from "./invitations";
@@ -78,7 +78,12 @@ export function MemberSettings({ scope }: { scope: MembershipScope }) {
   );
   return (
     <div className={styles.stack}>
-      <PageActions>{actions}</PageActions>
+      <PageActions>
+        {scope.kind === "organization" && organizationAdmin && passwords && (
+          <MemberPasswordReset organizationId={scope.id} />
+        )}
+        {actions}
+      </PageActions>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList variant="underline">
           <TabsTab value="members">{t("Members")}</TabsTab>
@@ -497,22 +502,14 @@ function ChangeRole({
     </ModalFrame>
   );
 }
-function AddMember({
-  scope,
-  organizationId,
-}: {
-  scope: MembershipScope;
-  organizationId?: string;
-}) {
-  const { t } = useTranslation(),
-    client = useClient(),
-    cache = useQueryClient();
-  const [open, setOpen] = useState(false),
-    [userId, setUserId] = useState(""),
-    [role, setRole] = useState<Role>("viewer");
-  const users = useQuery({
+function useOrganizationUsers(
+  organizationId: string | undefined,
+  enabled: boolean,
+) {
+  const client = useClient();
+  return useQuery({
     queryKey: ["organization-users", organizationId],
-    enabled: open && !!organizationId,
+    enabled: enabled && !!organizationId,
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         client.http
@@ -526,6 +523,154 @@ function AddMember({
           .then(data),
       ),
   });
+}
+
+function MemberPasswordReset({ organizationId }: { organizationId: string }) {
+  const { t } = useTranslation();
+  const client = useClient();
+  const [open, setOpen] = useState(false);
+  const [userId, setUserId] = useState("");
+  const configuration = useAuthConfiguration();
+  const users = useOrganizationUsers(organizationId, open);
+  const eligible = (users.data ?? []).filter(
+    (user) => user.status === "active" && user.email,
+  );
+  const user = eligible.find((user) => user.id === userId);
+  const reset = useMutation({
+    gcTime: 0,
+    mutationFn: (delivery: "manual" | "email") =>
+      client.http
+        .POST(
+          "/api/v1/organizations/{organization_id}/members/{user_id}/password-reset",
+          {
+            params: {
+              path: { organization_id: organizationId, user_id: userId },
+            },
+            body: { delivery },
+          },
+        )
+        .then(data),
+  });
+  const manual = configuration.data?.manual_password_reset;
+  const email = configuration.data?.email_delivery;
+  if (!manual && !email) return null;
+  return (
+    <ModalFrame
+      open={open}
+      onOpenChange={(value) => {
+        setOpen(value);
+        if (!value) {
+          setUserId("");
+          reset.reset();
+        }
+      }}
+      trigger={
+        <Button variant="outline" type="button">
+          {t("Reset password")}
+        </Button>
+      }
+      size="md"
+      title={t("Reset member password")}
+      description={t("Give a member a one-time link to set a new password.")}
+      closeLabel={t("Close")}
+    >
+      {reset.data ? (
+        <div className={styles.stack}>
+          {reset.data.reset_url ? (
+            <SecretReveal
+              value={reset.data.reset_url}
+              label={t("Password reset link")}
+              copyLabel={t("Copy reset link")}
+              caution={t(
+                "Share this link privately with the member. It is shown only once.",
+              )}
+              wrap
+            />
+          ) : (
+            <p role="status" className={settings.note}>
+              {t("Password reset email queued")}
+            </p>
+          )}
+          <footer className={styles.formActions}>
+            <Button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setUserId("");
+                reset.reset();
+              }}
+            >
+              {t("Done")}
+            </Button>
+          </footer>
+        </div>
+      ) : (
+        <div className={styles.form}>
+          <FormField label={t("Member")}>
+            <SearchPicker
+              label={t("Member")}
+              placeholder={t("Choose a member…")}
+              emptyMessage={t("No members found")}
+              value={userId}
+              groups={[
+                {
+                  label: t("Organization members"),
+                  options: eligible.map((member) => ({
+                    value: member.id,
+                    label: member.name,
+                    description: member.email ?? undefined,
+                  })),
+                },
+              ]}
+              onValueChange={(value) => {
+                setUserId(value);
+                reset.reset();
+              }}
+              disabled={reset.isPending}
+            />
+          </FormField>
+          <ErrorNotice error={users.error ?? reset.error} />
+          <footer className={styles.formActions}>
+            {manual && (
+              <Button
+                type="button"
+                variant={email ? "outline" : "default"}
+                disabled={!user || reset.isPending}
+                onClick={() => reset.mutate("manual")}
+              >
+                {t("Generate reset link")}
+              </Button>
+            )}
+            {email && (
+              <Button
+                type="button"
+                disabled={!user || reset.isPending}
+                onClick={() => reset.mutate("email")}
+              >
+                {t("Send reset email")}
+              </Button>
+            )}
+          </footer>
+        </div>
+      )}
+    </ModalFrame>
+  );
+}
+
+function AddMember({
+  scope,
+  organizationId,
+}: {
+  scope: MembershipScope;
+  organizationId?: string;
+}) {
+  const { t } = useTranslation(),
+    client = useClient(),
+    cache = useQueryClient();
+  const [open, setOpen] = useState(false),
+    [userId, setUserId] = useState(""),
+    [role, setRole] = useState<Role>("viewer");
+  const users = useOrganizationUsers(organizationId, open);
   const existing = useQuery({
     queryKey: ["bindings", scope.kind, scope.id, "existing"],
     enabled: open && !!organizationId,

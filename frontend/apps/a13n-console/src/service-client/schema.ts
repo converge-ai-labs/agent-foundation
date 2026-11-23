@@ -3215,6 +3215,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/organizations/{organization_id}/members/{user_id}/password-reset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reset Member Password */
+    post: operations["reset_member_password"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/organizations/{organization_id}/workspaces": {
     parameters: {
       query?: never;
@@ -6306,6 +6323,8 @@ export interface components {
       email_delivery: boolean;
       /** Initialized */
       initialized: boolean;
+      /** Manual Password Reset */
+      manual_password_reset: boolean;
       /** Oidc Providers */
       oidc_providers: components["schemas"]["OIDCSignIn"][];
       /** Password Enabled */
@@ -10171,6 +10190,14 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** MemberPasswordReset */
+    MemberPasswordReset: {
+      /**
+       * Delivery
+       * @enum {string}
+       */
+      delivery: "manual" | "email";
+    };
     /** MemberUsage */
     MemberUsage: {
       /**
@@ -12001,6 +12028,11 @@ export interface components {
       password: string;
       /** Token */
       token: string;
+    };
+    /** PasswordResetReceipt */
+    PasswordResetReceipt: {
+      /** Reset Url */
+      reset_url?: string | null;
     };
     /**
      * Pending
@@ -22979,6 +23011,35 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MemberPage"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  reset_member_password: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+        user_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemberPasswordReset"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PasswordResetReceipt"];
         };
       };
       400: components["responses"]["Error"];
