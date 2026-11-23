@@ -5,7 +5,7 @@ import { ToastProvider } from "a13n-ui";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ApiError } from "../../service-client";
-import { useAgentComposer } from "./composer";
+import { useAgentComposer, type ComposerTarget } from "./composer";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
 const access = vi.hoisted(() => ({ verbs: ["read", "run", "write"] }));
@@ -68,13 +68,13 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-function Launcher() {
+function Launcher({ target }: { target?: ComposerTarget }) {
   const composer = useAgentComposer();
   return (
     <>
       {composer.available && (
         <>
-          <button type="button" onClick={() => composer.start()}>
+          <button type="button" onClick={() => composer.start(target)}>
             Create with AI
           </button>
           <button
@@ -97,7 +97,7 @@ function Launcher() {
   );
 }
 
-function renderLauncher() {
+function renderLauncher(target?: ComposerTarget) {
   render(
     <QueryClientProvider
       client={
@@ -111,7 +111,7 @@ function renderLauncher() {
     >
       <ToastProvider closeLabel="Dismiss">
         <MemoryRouter>
-          <Launcher />
+          <Launcher target={target} />
         </MemoryRouter>
       </ToastProvider>
     </QueryClientProvider>,
@@ -245,3 +245,38 @@ it("opens the conversation with a first message naming the agent version to star
     "Help me change the agent Research (ID ap_research), starting from its version 3 (revision ID apr_three).",
   );
 });
+
+it.each<ComposerTarget>([
+  {
+    kind: "usage",
+    start: "2026-11-01T00:00:00Z",
+    end: "2026-11-08T00:00:00Z",
+    timezone: "Asia/Shanghai",
+    principal_id: "usr_member",
+    agent_id: "ap_target",
+    group_by: "models",
+    metric: "cost",
+  },
+  { kind: "webhooks", resource_id: "sub_target" },
+  { kind: "credentials", resource_id: "ecred_target" },
+])(
+  "preserves workspace operation context through missing-model setup: $kind",
+  async (target) => {
+    models.enabled = false;
+    http.POST.mockResolvedValue({ data: { id: "ap_composer" } });
+    const user = renderLauncher(target);
+    await user.click(screen.getByRole("button", { name: "Create with AI" }));
+    await screen.findByRole("dialog", { name: "Add model" });
+    await user.click(screen.getByRole("button", { name: "Save model" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Current path").textContent).toContain(
+        "ap_composer",
+      ),
+    );
+    const message = new URLSearchParams(
+      screen.getByLabelText("Current path").textContent ?? "",
+    ).get("message")!;
+    const context = JSON.parse(message.split("Console context: ")[1]!);
+    expect(context).toEqual({ page: "/", workspace_id: "ws_test", ...target });
+  },
+);

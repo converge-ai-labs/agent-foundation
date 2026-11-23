@@ -185,6 +185,7 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
     ).json()
     assert [(row["model"], row["requests"]) for row in summary["models"]] == [("scripted", 3), (None, 1)]
     assert all("cache_write_tokens" in row for row in summary["models"])
+    assert [row["unpriced_requests"] for row in summary["models"]] == [1, 1]
     # Only the first Run has request timing; include the wait before its first chunks.
     timing = [
         (row["average_time_to_first_chunk_seconds"], row["output_tokens_per_second"]) for row in summary["models"]
@@ -197,6 +198,7 @@ async def test_overview_and_groups_use_distinct_populations(service, scripted_mo
     ).json()["items"]
     assert [run["run_id"] for run in runs] == [first_run, late_run]
     first = runs[0]
+    assert [row["unpriced_requests"] for row in first["models"]] == [1, 1]
     assert [(row["model"], row["requests"], row["input_tokens"], row["cost"]) for row in first["models"]] == [
         ("scripted", 2, 1000, "0.1"),
         (None, 1, 50, None),

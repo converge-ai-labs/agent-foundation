@@ -676,5 +676,7 @@
   "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` replaces supplied members.\nEvery other field, including `subagents`, replaces the whole value.": "单次运行对修订版本配置的覆盖；省略或为 null 的字段保留修订版本值。\n\n`toolsets` 替换整个工具集；`retries` 替换已提供的成员。其他字段（包括 `subagents`）均整体替换。",
   "List Memory Guidance Presets": "列出记忆指导预设",
   "List Session Usage": "列出会话用量",
-  "Sessions ranked by recorded cost for one Agent within the selected window.": "在所选时间范围内，按已记录费用对指定 Agent 的会话排序。"
+  "Sessions ranked by recorded cost for one Agent within the selected window.": "在所选时间范围内，按已记录费用对指定 Agent 的会话排序。",
+  "The supplied or generated signing secret is returned only at creation.": "仅在创建时返回传入或自动生成的签名密钥。",
+  "Secret replacement applies only to newly queued deliveries.": "更换密钥仅影响新入队的投递。"
 }

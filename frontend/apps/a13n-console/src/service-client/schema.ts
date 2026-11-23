@@ -11092,6 +11092,8 @@ export interface components {
       output_tokens_per_second: number | null;
       /** Requests */
       requests: number;
+      /** Unpriced Requests */
+      unpriced_requests: number;
     };
     /** ModelUsageGroup */
     ModelUsageGroup: {
@@ -11955,7 +11957,10 @@ export interface components {
       | "environment_templates"
       | "providers"
       | "execution"
-      | "schedules";
+      | "schedules"
+      | "usage"
+      | "subscriptions"
+      | "egress_credentials";
     /** PluginCatalog */
     PluginCatalog: {
       /** Items */
@@ -14442,7 +14447,7 @@ export interface components {
     };
     /**
      * SubscriptionCreate
-     * @description Without `signing_secret` the service generates one; either way it is returned only by this request.
+     * @description The supplied or generated signing secret is returned only at creation.
      */
     SubscriptionCreate: {
       /**
@@ -14483,7 +14488,7 @@ export interface components {
     };
     /**
      * SubscriptionUpdate
-     * @description `signing_secret` replaces the secret for deliveries queued after this change.
+     * @description Secret replacement applies only to newly queued deliveries.
      */
     SubscriptionUpdate: {
       /** Enabled */

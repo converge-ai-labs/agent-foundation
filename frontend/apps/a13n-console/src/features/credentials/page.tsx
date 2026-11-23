@@ -1,3 +1,4 @@
+import { ComposerAction } from "../agents/composer-action";
 import { KeyIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { ChoiceField } from "a13n-ui";
@@ -73,7 +74,10 @@ export function CredentialsPage() {
         />
       }
     >
-      <PageActions>{create}</PageActions>
+      <PageActions>
+        <ComposerAction target={{ kind: "credentials" }} />
+        {create}
+      </PageActions>
       {query.isPending ? (
         <Loading variant="table" columns={5} />
       ) : query.error ? (

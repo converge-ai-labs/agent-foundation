@@ -7,7 +7,17 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 type PlatformGroup = Literal[
-    "agents", "models", "connections", "skills", "environment_templates", "providers", "execution", "schedules"
+    "agents",
+    "models",
+    "connections",
+    "skills",
+    "environment_templates",
+    "providers",
+    "execution",
+    "schedules",
+    "usage",
+    "subscriptions",
+    "egress_credentials",
 ]
 
 PLATFORM_GROUPS: tuple[PlatformGroup, ...] = (
@@ -19,6 +29,9 @@ PLATFORM_GROUPS: tuple[PlatformGroup, ...] = (
     "providers",
     "execution",
     "schedules",
+    "usage",
+    "subscriptions",
+    "egress_credentials",
 )
 PLATFORM_METADATA = "x-a13n-platform"
 

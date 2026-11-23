@@ -170,6 +170,7 @@ class UsageFilter(BaseModel):
 
 
 class ModelUsage(BaseModel):
+    unpriced_requests: int
     # The model's key; None for records no model priced.
     model: str | None
     requests: int
