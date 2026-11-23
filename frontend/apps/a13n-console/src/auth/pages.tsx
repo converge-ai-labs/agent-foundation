@@ -29,6 +29,7 @@ import {
   useLocation,
   useNavigate,
   useParams,
+  type To,
 } from "react-router";
 
 import { ApiError } from "../service-client";
@@ -185,6 +186,8 @@ export function AuthPage() {
     routeMode === "login" && configuration.data?.initialized === false
       ? "setup"
       : routeMode;
+  const returnTo: To =
+    routeMode === "login" ? (location.state?.returnTo ?? "/") : "/";
   const [token] = useState(
     () => new URLSearchParams(window.location.hash.slice(1)).get("token") ?? "",
   );
@@ -236,7 +239,7 @@ export function AuthPage() {
                 }),
               );
       auth.authenticated(result.csrf_token);
-      navigate("/", { replace: true });
+      navigate(returnTo, { replace: true });
     },
     // Another visitor may have created the administrator first; sign in instead.
     onError: () => {
@@ -244,13 +247,17 @@ export function AuthPage() {
     },
   });
   useEffect(() => {
-    if (mutation.isSuccess && window.location.hash)
+    if (
+      mutation.isSuccess &&
+      (mode === "reset" || mode === "email") &&
+      window.location.hash
+    )
       window.history.replaceState(
         null,
         "",
         window.location.pathname + window.location.search,
       );
-  }, [mutation.isSuccess]);
+  }, [mode, mutation.isSuccess]);
   const asksEmail = ["login", "setup", "forgot"].includes(mode);
   const asksPassword = ["login", "setup", "invite", "reset"].includes(mode);
   const missingToken = ["reset", "invite", "email"].includes(mode) && !token;
@@ -300,7 +307,7 @@ export function AuthPage() {
     email: t("Confirm email"),
   };
   if (mode === "login" && auth.data && !auth.anonymous)
-    return <Navigate to="/" replace />;
+    return <Navigate to={returnTo} replace />;
   if (routeMode === "login" && configuration.isPending) return <Loading />;
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -326,12 +333,16 @@ export function AuthPage() {
   const links = (
     <div className={styles.links}>
       {mode === "login" && configuration.data?.email_delivery && (
-        <Link className={styles.link} to="/forgot-password">
+        <Link
+          className={styles.link}
+          to="/forgot-password"
+          state={location.state}
+        >
           {t("Forgot password")}
         </Link>
       )}
       {(mode === "forgot" || mode === "reset") && (
-        <Link className={styles.link} to="/login">
+        <Link className={styles.link} to="/login" state={location.state}>
           <ArrowLeftIcon size={13} aria-hidden="true" />
           {t("Back to sign in")}
         </Link>
@@ -382,7 +393,10 @@ export function AuthPage() {
             <Button
               variant="outline"
               render={
-                <Link to={mode === "email" ? "/settings/profile" : "/login"} />
+                <Link
+                  to={mode === "email" ? "/settings/profile" : "/login"}
+                  state={mode === "email" ? undefined : location.state}
+                />
               }
             >
               {t("Continue")}
