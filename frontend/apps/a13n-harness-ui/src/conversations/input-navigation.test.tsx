@@ -225,7 +225,7 @@ it("keeps one reader observer while streaming revisions update the active input"
   vi.unstubAllGlobals();
 });
 
-it("reveals the phone history trigger while the reader scrolls", () => {
+it("reveals the phone history trigger while the person scrolls the reader", () => {
   vi.useFakeTimers();
   const client = new QueryClient();
   const reader = createRef<HTMLDivElement>();
@@ -255,17 +255,25 @@ it("reveals the phone history trigger while the reader scrolls", () => {
   const trigger = screen
     .getByRole("button", { name: "Input history" })
     .closest("[data-revealed], div")!;
+  const turn = reader.current!.querySelector("section")!;
   expect(trigger.hasAttribute("data-revealed")).toBe(false);
-  fireEvent.scroll(document);
-  expect(trigger.hasAttribute("data-revealed")).toBe(false);
+  // A jump scrolls the reader programmatically and leaves its landing clear.
   fireEvent.scroll(reader.current!);
+  fireEvent.touchMove(document.body);
+  expect(trigger.hasAttribute("data-revealed")).toBe(false);
+  fireEvent.touchMove(turn);
   expect(trigger.hasAttribute("data-revealed")).toBe(true);
+  // Momentum scrolling after the touch ends keeps the trigger visible.
   act(() => vi.advanceTimersByTime(1900));
   fireEvent.scroll(reader.current!);
   act(() => vi.advanceTimersByTime(1900));
   expect(trigger.hasAttribute("data-revealed")).toBe(true);
   act(() => vi.advanceTimersByTime(200));
   expect(trigger.hasAttribute("data-revealed")).toBe(false);
+  fireEvent.scroll(reader.current!);
+  expect(trigger.hasAttribute("data-revealed")).toBe(false);
+  fireEvent.wheel(turn);
+  expect(trigger.hasAttribute("data-revealed")).toBe(true);
   rendered.unmount();
   client.clear();
   vi.useRealTimers();
