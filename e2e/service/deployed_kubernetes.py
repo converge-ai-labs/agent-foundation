@@ -134,6 +134,8 @@ async def retire(api: Workspace, identifier: str) -> None:
 
 
 async def journey(api: Workspace, model: ScriptedModel, image: str) -> None:
+    namespace = json.loads(k8s.kubectl("get", "namespace", k8s.SANDBOX_NAMESPACE, "-o", "json", capture=True))
+    assert namespace["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
     provider = expect(
         await api.client.post(
             "/api/v1/environment-providers",
@@ -174,6 +176,8 @@ async def journey(api: Workspace, model: ScriptedModel, image: str) -> None:
         "shell_exec",
         {
             "command": "test $(id -u):$(id -g) = 1000:1000 && "
+            "test \"$(awk '/^Uid:/{print $2}' /proc/1/status)\" = 1000 && "
+            "test \"$(awk '/^NoNewPrivs:/{print $2}' /proc/self/status)\" = 1 && "
             "test -r /var/lib/a13n-envd/credential/token && "
             "echo cluster-direct-$((6 * 7)) > proof.txt"
         },
@@ -208,7 +212,10 @@ async def journey(api: Workspace, model: ScriptedModel, image: str) -> None:
         assert pod["metadata"]["uid"] == native["pod_uid"]
         assert pod["spec"]["serviceAccountName"] == "a13n-a13n-sandbox"
         assert pod["spec"]["automountServiceAccountToken"] is False
-        assert pod["spec"]["containers"][0]["image"] == image
+        container = pod["spec"]["containers"][0]
+        assert container["image"] == image
+        assert container["securityContext"]["runAsNonRoot"] is True
+        assert container["securityContext"]["runAsUser"] == 1000
         logs = expect(await api.client.get(f"{path}/logs", params={"container": "envd", "tail_lines": 50}), 200)
         assert logs["pod_uid"] == native["pod_uid"] and logs["text"]
         await retire(api, identifier)

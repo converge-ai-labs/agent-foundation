@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { expect, it, vi } from "vitest";
@@ -133,6 +139,25 @@ it.each([
     );
   },
 );
+
+it("opens the startup comparison beside the launcher without editing the recipe", async () => {
+  render(<Editor initial={JSON.stringify(direct)} />);
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("button", { name: "Compare Envd startup modes" }),
+  );
+  const matrix = await screen.findByRole("table");
+  expect(
+    within(matrix).getByRole("rowheader", { name: "Non-root" }),
+  ).toBeDefined();
+  expect(within(matrix).getByText("Inherits Pod networking")).toBeDefined();
+  expect(
+    screen.getByText(/explicitly require controlled or denied egress/),
+  ).toBeDefined();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("table")).toBeNull());
+  expect(recipe()).toEqual(direct);
+});
 
 it("requires an explicit execution selection after removing its container", async () => {
   const initial = {

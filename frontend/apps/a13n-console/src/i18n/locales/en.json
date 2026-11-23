@@ -1,4 +1,13 @@
 {
+  "Compare Envd startup modes": "Compare Envd startup modes",
+  "Restricted admission": "Restricted admission",
+  "Envd egress": "Envd egress",
+  "Execution container complies": "Execution container complies",
+  "Inherits Pod networking": "Inherits Pod networking",
+  "Not allowed": "Not allowed",
+  "Depends on Envd configuration and runtime permissions": "Depends on Envd configuration and runtime permissions",
+  "Depends on the Pod template": "Depends on the Pod template",
+  "Non-root overrides the Envd egress default. Sessions that explicitly require controlled or denied egress are rejected. Kubernetes NetworkPolicy still applies.": "Non-root overrides the Envd egress default. Sessions that explicitly require controlled or denied egress are rejected. Kubernetes NetworkPolicy still applies.",
   "Envd startup": "Envd startup",
   "Non-root": "Non-root",
   "From Pod template": "From Pod template",

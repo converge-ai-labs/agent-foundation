@@ -1,4 +1,13 @@
 {
+  "Compare Envd startup modes": "Envd शुरू करने के मोड की तुलना करें",
+  "Restricted admission": "Restricted प्रवेश नीति",
+  "Envd egress": "Envd का आउटबाउंड ट्रैफ़िक",
+  "Execution container complies": "एक्ज़ीक्यूशन कंटेनर नियमों का पालन करता है",
+  "Inherits Pod networking": "Pod की नेटवर्क सेटिंग लागू होती हैं",
+  "Not allowed": "अनुमति नहीं है",
+  "Depends on Envd configuration and runtime permissions": "Envd कॉन्फ़िगरेशन और रनटाइम अनुमतियों पर निर्भर",
+  "Depends on the Pod template": "Pod टेम्पलेट पर निर्भर",
+  "Non-root overrides the Envd egress default. Sessions that explicitly require controlled or denied egress are rejected. Kubernetes NetworkPolicy still applies.": "गैर-रूट मोड Envd की डिफ़ॉल्ट आउटबाउंड सेटिंग बदल देता है। नियंत्रित या बंद आउटबाउंड ट्रैफ़िक की स्पष्ट माँग करने वाले सेशन अस्वीकार किए जाते हैं। Kubernetes NetworkPolicy लागू रहती है।",
   "Envd startup": "Envd स्टार्टअप",
   "Non-root": "गैर-root",
   "From Pod template": "Pod टेम्पलेट से",

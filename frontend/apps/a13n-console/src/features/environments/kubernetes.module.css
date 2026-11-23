@@ -32,6 +32,11 @@
   line-height: 20px;
   margin-bottom: 8px;
 }
+.startupChoice [data-slot="field-label-row"]:has([data-field-help]) {
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
 .hint {
   margin: 0;
   color: var(--a13n-secondary);

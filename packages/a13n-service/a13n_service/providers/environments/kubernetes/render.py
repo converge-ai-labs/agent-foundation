@@ -25,6 +25,7 @@ from a13n_service.providers.environment.envd import envd_environment
 from a13n_service.providers.environment.recipes.kubernetes import (
     ENVD_DATA_DIRECTORY,
     ENVD_DATA_VOLUME,
+    ENVD_LAUNCHER_SECURITY,
     KubernetesRecipe,
     Metadata,
     borrowed_resources,
@@ -127,19 +128,12 @@ def render(
         secret_mode = 0o400
         spec.setdefault("volumes", [])
         container.setdefault("volumeMounts", [])
+        if recipe.envd_launcher is not None:
+            container["securityContext"] = {
+                **container.get("securityContext", {}),
+                **deepcopy(ENVD_LAUNCHER_SECURITY[recipe.envd_launcher]),
+            }
         if recipe.envd_launcher == "non_root":
-            pod_security = spec.setdefault("securityContext", {})
-            if pod_security.get("fsGroup") is None:
-                pod_security["fsGroup"] = 1000
-            container.setdefault("securityContext", {}).update(
-                runAsNonRoot=True,
-                runAsUser=1000,
-                runAsGroup=1000,
-                allowPrivilegeEscalation=False,
-                privileged=False,
-                capabilities={"drop": ["ALL"]},
-                seccompProfile={"type": "RuntimeDefault"},
-            )
             spec["volumes"].append({"name": ENVD_DATA_VOLUME, "emptyDir": {}})
             container["volumeMounts"].append({"name": ENVD_DATA_VOLUME, "mountPath": ENVD_DATA_DIRECTORY})
             variables.update(
@@ -151,9 +145,9 @@ def render(
                 A13N_ENVD_STATE_DIR=f"{ENVD_DATA_DIRECTORY}/state",
                 A13N_ENVD_RUNTIME_DIR=f"{ENVD_DATA_DIRECTORY}/runtime",
             )
-            secret_mode = 0o440
-        elif recipe.envd_launcher == "root":
-            container.setdefault("securityContext", {}).update(runAsNonRoot=False, runAsUser=0, runAsGroup=0)
+            # The Pod is the trust boundary. Avoid a Pod-wide fsGroup just for the token:
+            # it could change permissions on mounted, operator-owned persistent data.
+            secret_mode = 0o444
         container.setdefault("env", []).extend(
             {"name": key, "value": value} for key, value in envd_environment(variables, recipe.envd).items()
         )

@@ -115,6 +115,20 @@ ENVD_DATA_VOLUME = "a13n-envd-data"
 ENVD_DATA_DIRECTORY = "/var/lib/a13n-envd"
 
 
+ENVD_LAUNCHER_SECURITY = {
+    "non_root": {
+        "runAsNonRoot": True,
+        "runAsUser": 1000,
+        "runAsGroup": 1000,
+        "allowPrivilegeEscalation": False,
+        "privileged": False,
+        "capabilities": {"drop": ["ALL"]},
+        "seccompProfile": {"type": "RuntimeDefault"},
+    },
+    "root": {"runAsNonRoot": False, "runAsUser": 0, "runAsGroup": 0},
+}
+
+
 class KubernetesRecipe(KubernetesEnvironmentConfiguration):
     envd_launcher: Literal["non_root", "root"] | None = Field(default=None, exclude_if=lambda value: value is None)
     pod_template: NativeTemplate
@@ -154,14 +168,17 @@ class KubernetesRecipe(KubernetesEnvironmentConfiguration):
                     raise ValueError("volumeMounts require string mountPath values")
                 private_path(mount["mountPath"])
             if container.get("name") == self.execution_container:
+                if self.envd_launcher is not None:
+                    security = native_object(container, "securityContext")
+                    for field, required in ENVD_LAUNCHER_SECURITY[self.envd_launcher].items():
+                        if field in security and security[field] != required:
+                            raise ValueError(
+                                f"Execution container securityContext.{field} conflicts with envd_launcher"
+                            )
                 if self.envd_launcher == "non_root":
-                    native_object(spec, "securityContext")
-                    native_object(container, "securityContext")
                     paths = [mount["mountPath"] for mount in mounts] + [binding.mount_path for binding in self.storage]
                     if any(PurePosixPath(path).is_relative_to(ENVD_DATA_DIRECTORY) for path in paths):
                         raise ValueError("Mounts must not overlap the Envd data directory in non-root mode")
-                elif self.envd_launcher == "root":
-                    native_object(container, "securityContext")
                 if "workingDir" in container:
                     raise ValueError("Use working_directory for the execution container")
                 variables = native_objects(container, "env")

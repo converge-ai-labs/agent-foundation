@@ -139,9 +139,17 @@ docker push registry.example.com/team/a13n-sandbox:reviewed
 
 资源请求与限制、init 容器、sidecar、调度、安全上下文及 ConfigMap、Secret 引用保留在 `pod_template.spec` 中，由 Kubernetes admission 校验这些原生字段。Service 管理 Pod 身份、沙箱 ServiceAccount 和私有 Envd 凭据注入。当 Pod 进入 Running 状态且目标容器内的 Envd 守护进程通过就绪探针后，环境即可开始执行任务。
 
-Console 新建的模板默认使用 `envd_launcher: non_root`。Envd 与 Agent 的 Files 和 Shell 在同一个 Pod 中以 UID/GID 1000 运行。此模式关闭桌面、sudo 和 Envd 出站管控；出站流量由 Kubernetes 网络及适用的 NetworkPolicy 管理。Pod 是信任边界：Agent 可以读取当前实例的 Envd 连接令牌，但该令牌不是 Service API 密钥。所选容器按 Restricted Pod Security 配置；自行添加的 sidecar、init 容器和其他 Pod 设置也要符合命名空间的准入策略。
+Console 新模板的预设使用 `envd_launcher: non_root`。执行容器可选以下启动模式：
 
-如果命名空间允许，可以选择 `envd_launcher: root`，让 Envd 以 root 启动。官方沙箱镜像仍使用镜像配置的非 root 账号执行 Agent 操作。省略 `envd_launcher`（Console 中选择 **沿用 Pod 模板**），则沿用镜像和 Pod 模板指定的启动身份，已有模板保持不变。在非 root 模式下，请确保执行账号对工作目录及需要修改的挂载存储有写权限。
+| Envd 启动模式                   | Restricted Pod Security                                                                               | Envd 出站管控                                                                                                 |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **非 root**（`non_root`）       | Service 按 Restricted 配置执行容器。自行添加的 init 容器、sidecar 和其他 Pod 设置也必须符合准入要求。 | Envd 强制使用 `inherit`，覆盖镜像和守护进程的启动默认值。Session 显式要求 `controlled` 或 `deny` 时会被拒绝。 |
+| **Root**（`root`）              | 要求命名空间允许 root 容器。                                                                          | 取决于 Envd 配置和运行时权限。以 root 启动不会自动开启出站管控。                                              |
+| **沿用 Pod 模板**（省略该字段） | 取决于自定义 Pod 配置和镜像。                                                                         | 沿用原行为，取决于 Envd 配置和运行时权限。                                                                    |
+
+Kubernetes NetworkPolicy 独立于 Envd 启动模式，仍然生效。非 root 模式下，Envd 与 Agent 的 Files 和 Shell 共用 UID/GID 1000，不提供桌面或 sudo。镜像需要包含对应账号，且该账号要能写入工作目录。Pod 是信任边界：Agent 可以读取本实例的 Envd 连接令牌并写入其 Envd 状态；该令牌不授予 Service API 访问权限。使用官方沙箱镜像时，即使 Envd 以 root 启动，Agent 操作仍以镜像内的非 root 账号执行。
+
+显式启动模式由 Service 管理所选容器的启动安全字段，并拒绝冲突配置。Pod 级 `fsGroup` 由运维决定；只有存储确实需要，而且该组适用于整个卷时才设置它。省略 `envd_launcher` 可保留现有启动行为。请在所有 Service 组件升级后再保存显式模式；旧版本不识别该字段。
 
 `direct` 从 Service 连接 Pod IP，Service 可以部署在集群内或集群外。集群外部署时，运维在 Control 和 Worker 上提供 kubeconfig profile。直连要求两个进程都能访问 Pod IP。没有 Pod IP 路由的本地调试可使用 `port_forward`，前提是 kubeconfig profile 明确允许且已安装 `kubectl`；隧道仅属于使用它的进程。两种方式目前都使用 Bearer 认证的 HTTP，需要 profile 显式设置 `allow_plaintext_envd = true`。此类流量应保留在可信私有网络内。provider 检查成功代表配置、认证和 Pod 列举权限正常；镜像拉取、Pod 创建、调度、存储和 Envd 就绪仍需通过真实实例验证。
 
