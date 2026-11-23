@@ -184,9 +184,14 @@ const curatedBrands: Record<string, Brand> = {
     hosts: ["fly.io"],
   },
   browserbase: { icon: "https://www.browserbase.com/favicon.svg" },
-  browser_use: { icon: "https://browser-use.com/favicon-32x32.png" },
+  browser_use: {
+    icon: "https://browser-use.com/logo-primary.svg",
+    invertInDark: true,
+  },
   kernel: { icon: "https://www.onkernel.com/favicon.svg" },
-  kubernetes: { icon: "https://kubernetes.io/icons/favicon-64.png" },
+  kubernetes: {
+    icon: "https://cdn.jsdelivr.net/gh/cncf/artwork@40e2e8948509b40e4bad479446aaec18d6273bf2/projects/kubernetes/icon/color/kubernetes-icon-color.svg",
+  },
   boxd: { icon: boxdIcon, invertInDark: true },
   mem0: {
     icon: "https://framerusercontent.com/images/2ys67ADJdvcyGmQnhp8vKWSq8.svg",
