@@ -14,7 +14,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 16px 12px 24px;
+  padding: calc(12px + env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right)) 12px
+    max(24px, env(safe-area-inset-left));
   border-bottom: 1px solid var(--a13n-border);
 }
 .title[data-slot="dialog-title"] {
@@ -78,7 +80,7 @@
 @media (max-width: 600px) {
   .header {
     gap: 8px;
-    padding-left: 16px;
+    padding-left: max(16px, env(safe-area-inset-left));
   }
   .actions {
     gap: 4px;
@@ -87,6 +89,6 @@
     display: none;
   }
   .canvas {
-    padding: 12px;
+    padding: 12px 12px max(12px, env(safe-area-inset-bottom));
   }
 }

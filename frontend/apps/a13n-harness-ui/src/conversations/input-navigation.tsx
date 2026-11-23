@@ -45,6 +45,8 @@ export function InputNavigation({
   const [hovered, setHovered] = useState<number>();
   const [focused, setFocused] = useState<number>();
   const [open, setOpen] = useState(false);
+  // On phones the trigger floats over prose, so it appears while reading moves.
+  const [scrolling, setScrolling] = useState(false);
   const waveOrigin = hovered ?? focused;
   const query = useInfiniteQuery({
     queryKey: ["thread", threadId, "inputs", continuation],
@@ -125,6 +127,44 @@ export function InputNavigation({
       resize?.disconnect();
     };
   }, [reader, threadId, update]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let revealed = false;
+    const reveal = () => {
+      revealed = true;
+      setScrolling(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        revealed = false;
+        setScrolling(false);
+      }, 2000);
+    };
+    // Only the reader's own touch or wheel movement reveals the trigger, so a
+    // jump that scrolls programmatically never covers the turn it lands on.
+    // Momentum scrolling keeps a revealed trigger visible. Listen at the
+    // document so a remounted reader element (for example after a workspace
+    // layout change) still reveals; scroll does not bubble, so capture.
+    const gesture = (event: Event) => {
+      if (
+        event.target instanceof Node &&
+        reader.current?.contains(event.target)
+      )
+        reveal();
+    };
+    const scroll = (event: Event) => {
+      if (revealed && event.target === reader.current) reveal();
+    };
+    const options = { capture: true, passive: true };
+    document.addEventListener("touchmove", gesture, options);
+    document.addEventListener("wheel", gesture, options);
+    document.addEventListener("scroll", scroll, options);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("touchmove", gesture, options);
+      document.removeEventListener("wheel", gesture, options);
+      document.removeEventListener("scroll", scroll, options);
+    };
+  }, [reader]);
   const select = (id: string) => {
     setOpen(false);
     setActive(id);
@@ -209,7 +249,10 @@ export function InputNavigation({
           </Button>
         )}
       </nav>
-      <div className={styles.mobile}>
+      <div
+        className={styles.mobile}
+        data-revealed={scrolling || open || undefined}
+      >
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
             render={

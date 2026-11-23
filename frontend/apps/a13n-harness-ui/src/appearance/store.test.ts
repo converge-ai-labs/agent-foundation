@@ -12,11 +12,16 @@ afterEach(() => {
   document.documentElement.classList.remove("dark");
 });
 it("migrates the legacy theme once and resets only appearance", () => {
+  const themeColor = document.createElement("meta");
+  themeColor.name = "theme-color";
+  themeColor.content = "#fbfbfd";
+  document.head.append(themeColor);
   localStorage.setItem(LEGACY_THEME_KEY, "dark");
   localStorage.setItem("a13n-harness-ui.language", "zh-CN");
   const store = new AppearanceStore(window);
   stop = store.start();
   expect(document.documentElement.classList.contains("dark")).toBe(true);
+  expect(themeColor.content).toBe("#1c1c1c");
   expect(localStorage.getItem(LEGACY_THEME_KEY)).toBeNull();
   expect(JSON.parse(localStorage.getItem(APPEARANCE_KEY)!)).toMatchObject({
     version: 1,
@@ -28,6 +33,8 @@ it("migrates the legacy theme once and resets only appearance", () => {
     document.documentElement.style.getPropertyValue("--harness-code-size"),
   ).toBe("18px");
   store.reset();
+  expect(themeColor.content).toBe("#fbfbfd");
+  themeColor.remove();
   expect(new AppearanceStore(window).getSnapshot().appearance).toEqual(
     defaultAppearance(),
   );

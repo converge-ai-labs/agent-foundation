@@ -11,11 +11,20 @@ export function fitVisualViewport(element: HTMLElement) {
       if (window.innerWidth <= 700 && viewport.scale === 1) {
         element.style.setProperty("--visible-height", `${viewport.height}px`);
         element.style.setProperty("--visible-top", `${viewport.offsetTop}px`);
+        // A keyboard hides far more than browser toolbars ever do.
+        element.toggleAttribute(
+          "data-keyboard-open",
+          window.innerHeight - viewport.height > 120,
+        );
       } else {
-        element.style.removeProperty("--visible-height");
-        element.style.removeProperty("--visible-top");
+        release();
       }
     });
+  };
+  const release = () => {
+    element.style.removeProperty("--visible-height");
+    element.style.removeProperty("--visible-top");
+    element.removeAttribute("data-keyboard-open");
   };
   update();
   viewport.addEventListener("resize", update);
@@ -26,7 +35,6 @@ export function fitVisualViewport(element: HTMLElement) {
     viewport.removeEventListener("resize", update);
     viewport.removeEventListener("scroll", update);
     window.removeEventListener("resize", update);
-    element.style.removeProperty("--visible-height");
-    element.style.removeProperty("--visible-top");
+    release();
   };
 }

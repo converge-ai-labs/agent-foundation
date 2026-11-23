@@ -60,8 +60,14 @@
     background-color 120ms var(--a13n-ease),
     opacity 120ms var(--a13n-ease);
 }
-.item:not([data-expanded]):is(:hover, :has(:focus-visible)) {
+.item:not([data-expanded]):has(:focus-visible) {
   background: var(--a13n-hover);
+}
+/* A tap must not leave a sticky hover fill on touch screens. */
+@media (hover: hover) {
+  .item:not([data-expanded]):hover {
+    background: var(--a13n-hover);
+  }
 }
 .item[data-expanded] {
   margin-block: 6px;
@@ -151,6 +157,30 @@
 .source {
   color: var(--a13n-text-supporting);
 }
+/* Phone rows give the title a second line before it ellipsizes; the kind
+   icon, time and unread marker stay centered on its first line. */
+@media (max-width: 600px) {
+  .summary {
+    align-items: start;
+  }
+  .kindIcon {
+    margin-block: 2px;
+  }
+  .time {
+    line-height: 20px;
+  }
+  .unread {
+    margin-block: 7px;
+  }
+  .item:not([data-expanded]) .title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
 .quick {
   display: flex;
   align-items: center;
@@ -239,8 +269,23 @@
   font-size: var(--a13n-text-sm);
   cursor: pointer;
 }
-.more:hover {
-  color: var(--a13n-text);
+@media (hover: hover) {
+  .more:hover {
+    color: var(--a13n-text);
+  }
+}
+/* Small text actions keep a 44px touch area without changing the layout. */
+@media (pointer: coarse) {
+  .more,
+  .postSource {
+    position: relative;
+  }
+  .more::after,
+  .postSource::after {
+    content: "";
+    position: absolute;
+    inset: -12px -8px;
+  }
 }
 .actions {
   display: flex;
@@ -327,8 +372,10 @@
   color: var(--a13n-secondary);
   text-decoration: none;
 }
-.postSource:hover {
-  color: var(--a13n-text);
+@media (hover: hover) {
+  .postSource:hover {
+    color: var(--a13n-text);
+  }
 }
 .postSource svg {
   width: 14px;

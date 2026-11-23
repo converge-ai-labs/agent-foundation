@@ -102,6 +102,25 @@
     0 0 0 1px rgb(255 255 255 / 9%), 0 12px 40px -12px rgb(0 0 0 / 55%);
 }
 
+/* The workbench is an app surface: the page itself never pans sideways,
+   bounces, pulls to refresh, or inflates text. Its own regions scroll. */
+html {
+  overflow-x: clip;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+body {
+  overscroll-behavior: none;
+}
+/* Double-tap zoom shifts a phone layout sideways; pinch zoom stays available. */
+@media (pointer: coarse) {
+  :where(html, html *) {
+    touch-action: manipulation;
+  }
+}
+
 :is(input, textarea)::placeholder {
   color: var(--harness-placeholder);
   opacity: 1;

@@ -4,7 +4,7 @@
   gap: 4px;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden auto;
 }
 .back {
   composes: backToChats from "./shell/workbench.module.css";

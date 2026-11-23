@@ -30,6 +30,14 @@ export function ToastProvider({
   );
 }
 
+// Inline formulas compose swipe, stacking and enter motion; state classes only
+// change their inputs, so no transform utility has to win a cascade.
+const toastMotion = {
+  translate:
+    "var(--toast-swipe-movement-x, 0px) calc(var(--toast-swipe-movement-y, 0px) + var(--toast-stack-y, 0px) + var(--toast-enter-y, 0px))",
+  scale: "calc(var(--toast-stack-scale, 1) * var(--toast-enter-scale, 1))",
+} satisfies React.CSSProperties;
+
 function ToastViewport({
   closeLabel,
   viewportLabel,
@@ -48,7 +56,14 @@ function ToastViewport({
           <ToastPrimitive.Root
             key={toast.id}
             toast={toast}
-            className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 overflow-hidden rounded-xl border bg-popover p-2 sm:gap-x-2.5 sm:p-3 text-popover-foreground shadow-lg/15 transition-[opacity,translate,scale] duration-200 data-ending-style:-translate-y-2 data-starting-style:-translate-y-2 data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0"
+            swipeDirection={["up", "left", "right"]}
+            style={toastMotion}
+            className={cn(
+              "grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2 overflow-hidden rounded-xl border bg-popover p-2 sm:gap-x-2.5 sm:p-3 text-popover-foreground shadow-lg/15 transition-[opacity,translate,scale,height] duration-200 data-swiping:duration-0 data-limited:hidden data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:[--toast-enter-y:-0.5rem] data-starting-style:[--toast-enter-y:-0.5rem] data-ending-style:[--toast-enter-scale:0.98] data-starting-style:[--toast-enter-scale:0.98]",
+              // Phones keep one readable toast in front; older ones peek
+              // behind it and fan out while the stack is expanded.
+              "max-sm:absolute max-sm:inset-x-0 max-sm:top-0 max-sm:z-[calc(10-var(--toast-index))] max-sm:h-(--toast-frontmost-height) max-sm:origin-bottom max-sm:[--toast-stack-scale:calc(1-var(--toast-index)*0.05)] max-sm:[--toast-stack-y:calc(var(--toast-index)*0.5rem)] max-sm:not-data-expanded:*:opacity-[calc(1-var(--toast-index))] max-sm:*:transition-opacity max-sm:data-expanded:h-(--toast-height) max-sm:data-expanded:[--toast-stack-scale:1] max-sm:data-expanded:[--toast-stack-y:calc(var(--toast-offset-y)+var(--toast-index)*0.375rem)]",
+            )}
           >
             <ToastStatusIcon type={toast.type} />
             <ToastPrimitive.Content className="min-w-0 self-center">
@@ -57,12 +72,12 @@ function ToastViewport({
             </ToastPrimitive.Content>
             <ToastPrimitive.Close
               aria-label={closeLabel}
-              className="-me-1 -mt-1 grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2"
+              className="relative -me-1 -mt-1 grid size-7 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 pointer-coarse:after:absolute pointer-coarse:after:-inset-2"
             >
               <XIcon aria-hidden="true" className="size-4" />
             </ToastPrimitive.Close>
             {toast.actionProps && (
-              <ToastPrimitive.Action className="col-start-2 mt-1 w-fit rounded-md border px-2 py-0.5 text-xs leading-5 font-medium sm:mt-2 sm:px-2.5 sm:py-1 hover:bg-muted focus-visible:outline-2" />
+              <ToastPrimitive.Action className="relative col-start-2 mt-1 w-fit rounded-md border px-2 py-0.5 text-xs leading-5 font-medium sm:mt-2 sm:px-2.5 sm:py-1 hover:bg-muted focus-visible:outline-2 pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-2.5" />
             )}
           </ToastPrimitive.Root>
         ))}
