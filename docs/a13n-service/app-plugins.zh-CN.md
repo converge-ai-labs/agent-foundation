@@ -104,7 +104,7 @@ App 自己维护的令牌通过 `egress.create_app_credential`、`rotate_app_cre
 
 要让凭据变更和 App 状态一起提交，请在同一个 Service 事务内调用 `egress.create_app_credential_in_transaction`、`egress.rotate_app_credential_in_transaction` 或 `egress.revoke_app_credential_in_transaction`。轮换和撤销只在事务提交后通知活跃 Session。
 
-使用 `threads.update_app_egress_secrets` 修改空闲的共享 Thread 子树的主绑定。`set_secrets` 接收 App 自有凭据的 `egress.SecretReference`，`remove_envs` 接收要移除的环境变量名。每个 Thread 保留自己的出口目标策略和其他所有者的引用。如果绑定既没有出口模式，也没有出口策略，添加引用时必须显式传入 `initialize_destinations`。例如，使用 `a13n_envd_client.eip.v1` 中的 `AllowlistDestinations(mode="allowlist", hosts=("api.example.com",))`，即可为该主机初始化受控出口。只有明确允许访问公网目标时，才使用 `PublicDestinations(mode="public")`。这两种设置都不会覆盖现有策略。移除引用会保留出口目标策略；要让活跃 Session 中的凭据失效，请撤销该凭据。
+使用 `threads.update_app_egress_secrets` 修改空闲的共享 Thread 子树的主绑定。`set_secrets` 接收 App 自有凭据的 `egress.SecretReference`，`remove_envs` 接收要移除的环境变量名。每个 Thread 保留自己的出口目标策略和其他所有者的引用。如果绑定既没有出口模式，也没有出口策略，添加引用时必须显式传入 `initial_destinations`。例如，使用 `a13n_envd_client.eip.v1` 中的 `AllowlistDestinations(mode="allowlist", hosts=("api.example.com",))`，即可为该主机初始化受控出口。只有明确允许访问公网目标时，才使用 `PublicDestinations(mode="public")`。这两种设置都不会覆盖现有策略。移除引用会保留出口目标策略；要让活跃 Session 中的凭据失效，请撤销该凭据。
 
 ## 持久化业务数据
 

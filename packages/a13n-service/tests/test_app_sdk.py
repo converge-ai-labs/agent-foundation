@@ -735,7 +735,7 @@ def test_app_secret_upsert_never_expands_configured_egress(policy):
 
 
 @pytest.mark.parametrize(
-    "initialize_destinations",
+    "initial_destinations",
     [
         PublicDestinations(mode="public"),
         AllowlistDestinations(mode="allowlist", hosts=("api.github.com", "example.org")),
@@ -743,7 +743,7 @@ def test_app_secret_upsert_never_expands_configured_egress(policy):
     ids=["public", "allowlist"],
 )
 async def test_patch_app_egress_secrets_in_each_shared_binding(
-    service, app_runtime, runner, scripted_model, runs_kit, initialize_destinations
+    service, app_runtime, runner, scripted_model, runs_kit, initial_destinations
 ):
     from a13n_service.app_sdk._access import run_actor
     from a13n_service.resources.egress_credentials.tables import CredentialRow
@@ -835,7 +835,7 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(
         for changes in ({"set_secrets": [ref]}, {"remove_envs": [ref.env]}):
             with pytest.raises(ServiceError) as conflict:
                 await threads.update_app_egress_secrets(
-                    db, runtime, ws, **args, initialize_destinations=initialize_destinations, **changes
+                    db, runtime, ws, **args, initial_destinations=initial_destinations, **changes
                 )
             assert conflict.value.details["reason"] == "egress_secret_owner_conflict"
         assert (await saved(db, root.id)).version == 1
@@ -850,7 +850,7 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(
         assert missing_policy.value.code == "invalid_argument"
         for edits in ({}, {"remove_envs": [ref.env]}):
             await threads.update_app_egress_secrets(
-                db, runtime, ws, **args, initialize_destinations=initialize_destinations, **edits
+                db, runtime, ws, **args, initial_destinations=initial_destinations, **edits
             )
         root_binding = await saved(db, root.id)
         assert root_binding.version == 1
@@ -859,7 +859,7 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(
     with pytest.raises(RuntimeError, match="rollback bindings"):
         async with transaction(runtime.storage) as db:
             await threads.update_app_egress_secrets(
-                db, runtime, ws, **args, set_secrets=[ref], initialize_destinations=initialize_destinations
+                db, runtime, ws, **args, set_secrets=[ref], initial_destinations=initial_destinations
             )
             assert (await saved(db, root.id)).version == 2
             raise RuntimeError("rollback bindings")
@@ -871,11 +871,11 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(
             await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[other_ref])
         assert denied.value.code == "not_found"
         await threads.update_app_egress_secrets(
-            db, runtime, ws, **args, set_secrets=[ref], initialize_destinations=initialize_destinations
+            db, runtime, ws, **args, set_secrets=[ref], initial_destinations=initial_destinations
         )
         root_cfg = threads.SessionConfiguration.model_validate((await saved(db, root.id)).configuration)
         child_cfg = threads.SessionConfiguration.model_validate((await saved(db, shared_id)).configuration)
-        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations == initialize_destinations
+        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations == initial_destinations
         assert root_cfg.credential_references == (ref,)
         assert child_cfg.credential_references == (*operator.credential_references, ref)
         assert child_cfg.model_dump(exclude={"egress"}) == operator.model_dump(exclude={"egress"})
@@ -891,7 +891,7 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(
     async with transaction(runtime.storage) as db:
         with pytest.raises(ServiceError) as narrow:
             await threads.update_app_egress_secrets(
-                db, runtime, ws, **args, set_secrets=[wide_ref], initialize_destinations=initialize_destinations
+                db, runtime, ws, **args, set_secrets=[wide_ref], initial_destinations=initial_destinations
             )
         assert narrow.value.code == "invalid_argument"
         assert (await saved(db, root.id)).version == 2
@@ -908,7 +908,7 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(
         await set_child_policy(policy)
         async with transaction(runtime.storage) as db:
             child_version = (await saved(db, shared_id)).version
-            init = {"initialize_destinations": initialize_destinations} if policy else {}
+            init = {"initial_destinations": initial_destinations} if policy else {}
             with pytest.raises(ServiceError) as refused:
                 await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[wide_ref], **init)
             assert refused.value.code == "invalid_argument"
@@ -935,6 +935,6 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(
         assert (await saved(db, shared_id)).version == child_before
         await threads.update_app_egress_secrets(db, runtime, ws, **args, remove_envs=[ref.env])
         root_cfg = threads.SessionConfiguration.model_validate((await saved(db, root.id)).configuration)
-        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations == initialize_destinations
+        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations == initial_destinations
         assert root_cfg.credential_references == ()
         assert (await saved(db, shared_id)).configuration == operator.model_dump(mode="json")

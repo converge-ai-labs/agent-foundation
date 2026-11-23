@@ -257,7 +257,7 @@ async def update_app_egress_secrets(
     root_thread_id: str,
     set_secrets: Sequence[SecretReference] = (),
     remove_envs: Sequence[str] = (),
-    initialize_destinations: EgressDestinations | None = None,
+    initial_destinations: EgressDestinations | None = None,
 ) -> None:
     """Patch this App's references in each desired primary binding of a quiescent shared subtree.
 
@@ -325,7 +325,7 @@ async def update_app_egress_secrets(
         current = {reference.env: reference for reference in configuration.credential_references}
         if any(current[env].credential_id not in owned for env in current.keys() & changed_envs):
             raise conflict("session_binding", binding.name, "egress_secret_owner_conflict", thread_id=thread.id)
-        next_configuration = _patch_secrets(configuration, upserts, removals, initialize_destinations)
+        next_configuration = _patch_secrets(configuration, upserts, removals, initial_destinations)
         if configuration != next_configuration:
             await bindings.require_idle(
                 session,
@@ -363,14 +363,14 @@ def _patch_secrets(
     configuration: SessionConfiguration,
     upserts: dict[str, SecretReference],
     removals: set[str],
-    initialize_destinations: EgressDestinations | None,
+    initial_destinations: EgressDestinations | None,
 ) -> SessionConfiguration:
     egress = configuration.egress
     mode = configuration.egress_mode
     if not upserts and not any(ref.env in removals for ref in configuration.credential_references):
         return configuration
-    if mode is None and egress is None and upserts and initialize_destinations is not None:
-        destinations = initialize_destinations
+    if mode is None and egress is None and upserts and initial_destinations is not None:
+        destinations = initial_destinations
     elif mode == EgressMode.CONTROLLED and egress is not None:
         destinations = egress.destinations
     else:
