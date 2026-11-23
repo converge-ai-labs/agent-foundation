@@ -44,13 +44,15 @@ export function TimelineRows({
   scope: RunScope;
   depth?: number;
 }) {
-  return entries.map((entry) =>
-    entry.kind === "event" ? (
+  return entries.map((entry) => {
+    // The publication fact is already in Other observations in Debug.
+    if (entry.kind === "publication") return null;
+    return entry.kind === "event" ? (
       <EventRow key={entry.id} entry={entry} scope={scope} depth={depth} />
     ) : (
       <StepRow key={entry.id} entry={entry} scope={scope} depth={depth} />
-    ),
-  );
+    );
+  });
 }
 
 function StepRow({

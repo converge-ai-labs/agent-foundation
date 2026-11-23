@@ -61,6 +61,8 @@ curl -sS -X POST "$A13N_URL/api/v1/assets" \
 
 对于 agent 生成的文件，启用 `assets` 工具集，并为 agent 提供包含该文件的环境。agent 调用 `publish_asset`；返回的资产在 `source` 中记录生成它的运行、执行尝试和工具调用。发布文件的大小受 `objects.max_bytes` 限制。
 
+在 Console 的 Chat 中，可以直接下载对话中由 agent 发布的附件，重新打开该次运行后也能下载。Chat 会标明已停用的文件，并禁用其下载操作。
+
 ## Webhook
 
 <span id="manage-in-console"></span> <span id="create-through-the-api"></span> <span id="payload-and-signature"></span> <span id="delivery-and-retries"></span>

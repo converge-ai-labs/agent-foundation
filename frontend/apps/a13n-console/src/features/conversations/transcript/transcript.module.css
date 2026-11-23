@@ -181,6 +181,9 @@
   gap: 14px;
   min-width: 0;
 }
+.agentContent > .attachment {
+  justify-self: start;
+}
 .agentMessage {
   min-width: 0;
   font-size: var(--a13n-text-md);

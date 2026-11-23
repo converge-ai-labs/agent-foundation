@@ -61,6 +61,8 @@ Retirement prevents new messages from attaching the asset. Its content remains r
 
 For agent-produced files, enable the `assets` toolset and give the agent an environment containing the file. The agent calls `publish_asset`; the returned asset records its producing run, attempt and tool call in `source`. Published files are limited by `objects.max_bytes`.
 
+In Console Chat, download an agent-published file from the attachment in the conversation, even after reopening the run. Chat marks retired files and disables their download action.
+
 ## Webhooks
 
 <span id="manage-in-console"></span> <span id="create-through-the-api"></span> <span id="payload-and-signature"></span> <span id="delivery-and-retries"></span>

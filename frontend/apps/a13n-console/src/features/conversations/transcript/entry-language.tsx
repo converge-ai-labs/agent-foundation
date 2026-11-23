@@ -124,6 +124,8 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
         name: t("{{count}} other observations", { count: entry.count }),
         mono: false,
       };
+    case "publication":
+      return { name: entry.asset.assetId, mono: false };
     case "event":
       return { name: noticeText(entry.notice, t), mono: false };
     case "subagent":
@@ -216,6 +218,8 @@ export function entryGlyph(entry: TimelineEntry): Icon {
       return EyeSlashIcon;
     case "other":
       return DotsThreeIcon;
+    case "publication":
+      return FileTextIcon;
     case "event":
       return noticeGlyph(entry.notice);
     case "hitl":

@@ -66,6 +66,7 @@ const blocks = (items: PresentedItem[], runState: string) =>
 it("names the agent once and reads its work in one line before the answer", () => {
   const markup = renderToStaticMarkup(
     <AgentTurn
+      runId="run"
       agentName="Release reviewer"
       blocks={blocks(
         [
@@ -104,6 +105,7 @@ it("names the agent once and reads its work in one line before the answer", () =
 it("shows reasoning on request and preserves the reader's choice as tools update", () => {
   const turn = (state: string) => (
     <AgentTurn
+      runId="run"
       blocks={blocks(
         [
           item("thought", "reasoning_message", {
@@ -141,6 +143,7 @@ it("shows reasoning on request and preserves the reader's choice as tools update
 it("says what it is waiting for instead of opening the rows", () => {
   const markup = renderToStaticMarkup(
     <AgentTurn
+      runId="run"
       blocks={blocks(
         [
           tool(
@@ -163,6 +166,7 @@ it("says what it is waiting for instead of opening the rows", () => {
 it("keeps running work collapsed while showing its status", () => {
   const markup = renderToStaticMarkup(
     <AgentTurn
+      runId="run"
       blocks={blocks(
         [
           tool(
@@ -183,6 +187,7 @@ it("keeps running work collapsed while showing its status", () => {
 it("does not keep interrupted work spinning, and shows guidance sent mid-run", () => {
   const markup = renderToStaticMarkup(
     <AgentTurn
+      runId="run"
       blocks={blocks(
         [
           tool(
@@ -209,7 +214,7 @@ it("does not keep interrupted work spinning, and shows guidance sent mid-run", (
 
 it("keeps fallback output and error details inside the same agent response", () => {
   const markup = renderToStaticMarkup(
-    <AgentTurn blocks={[]} agentName="Reviewer">
+    <AgentTurn runId="run" blocks={[]} agentName="Reviewer">
       <p>Fallback output</p>
       <p>Failure detail</p>
     </AgentTurn>,
@@ -252,6 +257,7 @@ it("carries the same edits and delegations Debug reports", () => {
   const { container } = render(
     <MemoryRouter>
       <AgentTurn
+        runId="run"
         blocks={transcriptBlocks(
           fixtureTimeline({ execution }).entries,
           "running",

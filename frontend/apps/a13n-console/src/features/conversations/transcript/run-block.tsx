@@ -76,6 +76,7 @@ export function RunBlock({
       />
       <AgentTurn
         blocks={blocks}
+        runId={run.id}
         durationMs={
           run.status === "completed" ? timeline.totals.durationMs : null
         }

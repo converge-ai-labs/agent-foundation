@@ -15,10 +15,11 @@ from typing import Annotated
 from a13n_harness import AgentContext
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.events import emit_tool_event
 from a13n_harness.tools import current_invocation_scope
 from a13n_harness.tools.diagnostics import tool_error_text
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
-from pydantic import Field, JsonValue
+from pydantic import BaseModel, Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ToolFailed
@@ -33,6 +34,10 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tool_executions.authority import prove
 from a13n_service.runs.tools import tool_failures
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope, authorize
+
+
+class _PublishedAsset(BaseModel):
+    asset_id: str
 
 
 class AssetsCapability(AbstractCapability[AgentContext]):
@@ -95,6 +100,10 @@ class AssetsCapability(AbstractCapability[AgentContext]):
                 AssetCreate(upload_id=upload.upload_id, name=upload.filename),
                 source={"run_id": lease.run_id, "run_attempt_id": lease.attempt_id, "tool_call_id": call_id},
             )
+        # An on-demand proxy's result does not expose the target invocation's identity.
+        await emit_tool_event(
+            ctx, tool_id=PUBLISH_ASSET_TOOL_ID, name="asset_published", value=_PublishedAsset(asset_id=asset.id)
+        )
         return {
             "asset_id": asset.id,
             "name": asset.name,

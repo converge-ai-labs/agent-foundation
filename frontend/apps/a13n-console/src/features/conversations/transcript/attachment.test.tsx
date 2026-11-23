@@ -23,7 +23,11 @@ afterEach(() => {
   allowed = true;
 });
 
-function mount() {
+function mount(publication?: {
+  runId: string;
+  toolCallId: string;
+  legacy: boolean;
+}) {
   render(
     <QueryClientProvider
       client={
@@ -35,7 +39,7 @@ function mount() {
         })
       }
     >
-      <AssetAttachment assetId="ast_fixture" />
+      <AssetAttachment assetId="ast_fixture" publication={publication} />
     </QueryClientProvider>,
   );
 }
@@ -92,3 +96,57 @@ it("retains the asset reference without reading or downloading when permission i
   expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });
+
+it.each([
+  { source: { run_id: "other", tool_call_id: "call" } },
+  { source: { run_id: "run", tool_call_id: "other" } },
+  { source: null },
+])(
+  "does not offer a legacy attachment without matching source: $source",
+  async ({ source }) => {
+    const fetch = vi.fn(async () =>
+      Response.json({ id: "ast_fixture", name: "other.md", source }),
+    );
+    client = createClient({
+      baseUrl: "https://service.example",
+      auth: { type: "session" },
+      fetch,
+    });
+    mount({ runId: "run", toolCallId: "call", legacy: true });
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    expect(screen.queryByText("other.md")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
+  },
+);
+
+it.each(["retired", "missing"])(
+  "shows a %s publication without an enabled download",
+  async (state) => {
+    const fetch = vi.fn(async () =>
+      state === "missing"
+        ? Response.json({ error: { message: "Not found" } }, { status: 404 })
+        : Response.json({
+            id: "ast_fixture",
+            name: "review.md",
+            retired_at: "2026-11-23T00:00:00Z",
+            source: { run_id: "run", tool_call_id: "call" },
+          }),
+    );
+    client = createClient({
+      baseUrl: "https://service.example",
+      auth: { type: "session" },
+      fetch,
+    });
+    mount({ runId: "run", toolCallId: "call", legacy: false });
+    expect(
+      await screen.findByText(
+        state === "retired" ? "File retired" : "File details unavailable",
+      ),
+    ).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: /Download/ }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(fetch).toHaveBeenCalledOnce();
+  },
+);
