@@ -1008,9 +1008,12 @@ class RootRunExecutor:
             composition=published.reference,
             interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
             prediction=(
-                PredictionSnapshot(prediction.prefix, reconstructed.model_resolver, usage_reporter)
+                PredictionSnapshot(
+                    prediction.prefix, reconstructed.model_resolver, usage_reporter, reconstructed.pricing
+                )
                 if prediction is not None
                 and prediction.prefix is not None
+                and reconstructed.pricing is not None
                 and prediction.prefix.model_id in reconstructed.model_resolver.configured_models
                 and result.deferred is None
                 else None

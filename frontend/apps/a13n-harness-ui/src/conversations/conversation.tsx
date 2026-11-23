@@ -1207,7 +1207,7 @@ function ConversationContent({
             predictionEnabled={
               (guest
                 ? guest.input_prediction_enabled
-                : status.data?.app.input_prediction_enabled) &&
+                : status.data?.app?.input_prediction_enabled) &&
               !isBot &&
               !readOnly &&
               !thread?.archived &&

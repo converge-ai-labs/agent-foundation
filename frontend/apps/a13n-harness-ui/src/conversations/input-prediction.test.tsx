@@ -76,3 +76,16 @@ it("aborts the pull immediately when a collaborator inserts text", () => {
   expect(signal.aborted).toBe(true);
   expect(result.current.prediction).toBeUndefined();
 });
+
+it("keeps pulling across notifications from a settled accepted submission", () => {
+  const draft = new ThreadDraft();
+  draft.submission = { kind: "accepted", action: "send", receipt: "r1" };
+  const { post } = mount(draft);
+  expect(post).toHaveBeenCalledTimes(1);
+  const signal = (
+    post.mock.calls as unknown as [string, { signal: AbortSignal }][]
+  )[0][1].signal;
+  act(() => draft.notify());
+  expect(signal.aborted).toBe(false);
+  expect(post).toHaveBeenCalledTimes(1);
+});

@@ -258,7 +258,7 @@ class SharedDraft:
             candidate = composer_document()
             candidate.apply_update(self._update)
             candidate.apply_update(updates[0])
-            options = options_document()
+            options = options_document(prediction=True)
             options.apply_update(self._options_update)
             if updates[1] is not None:
                 options.apply_update(updates[1])

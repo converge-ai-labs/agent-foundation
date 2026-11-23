@@ -392,10 +392,12 @@ export function ComposerEditor({
           ? placeholder((view) => {
               const ghost = view.dom.ownerDocument.createElement("span");
               ghost.className = predictionStyles.ghost;
-              ghost.textContent = text;
+              const label = view.dom.ownerDocument.createElement("span");
+              label.className = predictionStyles.ghostText;
+              label.textContent = text;
               const key = view.dom.ownerDocument.createElement("kbd");
               key.textContent = t("Tab");
-              ghost.append(key);
+              ghost.append(label, key);
               return ghost;
             })
           : placeholder(t("Ask anything, or describe a task…")),

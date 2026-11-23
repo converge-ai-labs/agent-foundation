@@ -13,7 +13,7 @@ from uuid import uuid4
 from a13n_harness.context import AgentContext
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.metering import MeteredModel, ModelUsageBinding
-from a13n_harness.pricing import CatalogModelCostCapability
+from a13n_harness.token_pricing import TokenPricingCapability
 from a13n_harness.usage import RunUsageLedger, UsageDeltaReporter, UsageReporter
 from a13n_logging import get_logger
 from pydantic import Field
@@ -122,6 +122,7 @@ class PredictionSnapshot:
     prefix: PredictionPrefix
     resolver: HarnessUiModelResolver
     reporter: UsageReporter | UsageDeltaReporter
+    pricing: TokenPricingCapability
     account_id: str | None = None
 
     async def sample(self, thread_id: str, *, expires_at: float) -> str | None:
@@ -153,7 +154,7 @@ class PredictionSnapshot:
             if monotonic() >= expires_at:
                 return None
             response = await model_request(
-                MeteredModel(context, ModelUsageBinding(ledger, CatalogModelCostCapability(), source=source), None),
+                MeteredModel(context, ModelUsageBinding(ledger, self.pricing, source=source), None),
                 messages,
                 model_settings=prefix.settings,
                 model_request_parameters=prefix.parameters,

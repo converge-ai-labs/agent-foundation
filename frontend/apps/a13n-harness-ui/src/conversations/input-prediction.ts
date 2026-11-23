@@ -40,7 +40,8 @@ export function useInputPrediction(
       if (
         !emptyForPrediction(draft) ||
         draft.replacement ||
-        draft.submission.kind !== "idle"
+        draft.submission.kind === "pending" ||
+        draft.submission.kind === "unknown"
       ) {
         controller.abort();
       }
