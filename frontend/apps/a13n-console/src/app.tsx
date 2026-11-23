@@ -9,6 +9,7 @@ import {
   Outlet,
   Route,
   Routes,
+  useLocation,
 } from "react-router";
 import "./app.css";
 import { AuthProvider, useAuth } from "./auth/context";
@@ -213,9 +214,17 @@ const RunPage = lazy(() =>
 
 function Authenticated() {
   const auth = useAuth();
+  const { pathname, search, hash } = useLocation();
   const { t } = useTranslation();
   if (auth.isPending) return <Loading page />;
-  if (auth.anonymous) return <Navigate to="/login" replace />;
+  if (auth.anonymous)
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={{ returnTo: { pathname, search, hash } }}
+      />
+    );
   if (auth.error)
     return (
       <ErrorPage
