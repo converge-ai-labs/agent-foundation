@@ -2161,6 +2161,11 @@ div:has(+ .execution) > .assistantMessage {
     scrollbar-gutter: auto;
     padding-block-start: 36px;
   }
+  /* Text here runs from the start edge to the scrollbar, so the fades cover
+     the same span; fixed insets would leave unfaded text at either edge. */
+  .readerFrame > .readerFade {
+    inset-inline: 0 var(--reader-scrollbar, 0px);
+  }
 }
 
 @container conversation-page (max-width: 600px) {
