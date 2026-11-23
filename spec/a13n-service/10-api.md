@@ -193,6 +193,8 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | Path                                 | Methods     | Owner                                           |
 | ------------------------------------ | ----------- | ----------------------------------------------- |
 | `/auth/configuration`                | GET         | [03](03-tenancy.md#identity-mail) (public)      |
+| `/auth/oidc/{provider_id}/start`     | GET         | [03](03-tenancy.md#openid-connect-sign-in)      |
+| `/auth/oidc/{provider_id}/callback`  | GET         | [03](03-tenancy.md#openid-connect-sign-in)      |
 | `/auth/login`                        | POST        | [03](03-tenancy.md#authentication) (public)     |
 | `/auth/bootstrap`                    | POST        | [03](03-tenancy.md#bootstrap) (public)          |
 | `/auth/logout`                       | POST        | [03](03-tenancy.md#authentication)              |
@@ -225,6 +227,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/organizations/{org}/icon`                            | GET, PUT, DELETE   | [03](03-tenancy.md#images)                                 |
 | `/organizations/{org}/workspaces`                      | GET, POST          | [03](03-tenancy.md#organizations-and-workspaces)           |
 | `/organizations/{org}/members`                         | GET                | [03](03-tenancy.md#grants)                                 |
+| `/organizations/{org}/members/{user}/password-reset`   | POST               | [03](03-tenancy.md#account-management)                     |
 | `/organizations/{org}/grants`                          | GET, POST          | [03](03-tenancy.md#grants)                                 |
 | `/organizations/{org}/grants/{grant}`                  | PATCH, DELETE      | [03](03-tenancy.md#grants)                                 |
 | `/organizations/{org}/invitations`                     | GET, POST          | [03](03-tenancy.md#invitations)                            |

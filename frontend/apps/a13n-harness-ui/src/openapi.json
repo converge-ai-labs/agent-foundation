@@ -4018,6 +4018,55 @@
         }
       }
     },
+    "/api/threads/{thread_id}/input-prediction": {
+      "post": {
+        "summary": "Predict Input",
+        "operationId": "predict_input_api_threads__thread_id__input_prediction_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputPredictionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InputPredictionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/title-suggestion": {
       "post": {
         "summary": "Suggest Chat Title",
@@ -8852,6 +8901,64 @@
         }
       }
     },
+    "/api/shared/{share_id}/threads/{thread_id}/input-prediction": {
+      "post": {
+        "summary": "Shared Predict Input",
+        "operationId": "shared_predict_input_api_shared__share_id__threads__thread_id__input_prediction_post",
+        "parameters": [
+          {
+            "name": "share_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Share Id"
+            }
+          },
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputPredictionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InputPredictionRequest"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/shared/{share_id}/threads/{thread_id}/submit": {
       "post": {
         "summary": "Shared Submit",
@@ -10975,6 +11082,11 @@
                 "type": "null"
               }
             ]
+          },
+          "input_prediction_enabled": {
+            "type": "boolean",
+            "title": "Input Prediction Enabled",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -18329,6 +18441,32 @@
         ],
         "title": "InboxPage"
       },
+      "InputPredictionResponse": {
+        "properties": {
+          "continuation_id": {
+            "type": "string",
+            "title": "Continuation Id"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "continuation_id",
+          "text"
+        ],
+        "title": "InputPredictionResponse"
+      },
       "Instance": {
         "properties": {
           "connector_id": {
@@ -22887,6 +23025,11 @@
       },
       "ShareAccess": {
         "properties": {
+          "input_prediction_enabled": {
+            "type": "boolean",
+            "title": "Input Prediction Enabled",
+            "default": false
+          },
           "grant": {
             "$ref": "#/components/schemas/ShareGrant"
           },
@@ -28847,6 +28990,29 @@
         "title": "DraftCommand",
         "type": "object"
       },
+      "CachedInputPrediction": {
+        "additionalProperties": false,
+        "properties": {
+          "continuation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Continuation Id",
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "continuation_id",
+          "text"
+        ],
+        "title": "CachedInputPrediction",
+        "type": "object"
+      },
       "DraftFrame": {
         "additionalProperties": false,
         "properties": {
@@ -28879,6 +29045,17 @@
             ],
             "default": null,
             "title": "Options Update Base64"
+          },
+          "prediction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CachedInputPrediction"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "participants": {
             "additionalProperties": {
@@ -30031,6 +30208,22 @@
           "audio"
         ],
         "title": "DictationInput"
+      },
+      "InputPredictionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "continuation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Continuation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "continuation_id"
+        ],
+        "title": "InputPredictionRequest",
+        "type": "object"
       },
       "ModelOptionsRequest": {
         "properties": {

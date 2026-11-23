@@ -27,7 +27,7 @@ return {count, redis.call('TTL', KEYS[1])}
 
 
 async def rate_limit(client: Redis, identity: str, *, limit: int, window_seconds: int) -> None:
-    """Refuse `identity` past `limit` calls per window; while Redis cannot count, the call proceeds unlimited."""
+    """Refuse `identity` past `limit` calls per window when Redis is available."""
     key = "a13n:rate:" + hashlib.sha256(identity.encode()).hexdigest()
     try:
         count, remaining = await client.eval(_RATE_LIMIT, 1, key, window_seconds)

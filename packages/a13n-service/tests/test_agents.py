@@ -949,7 +949,7 @@ async def test_preparing_composer_refreshes_metadata_without_a_revision(service,
     refreshed = await service.client.post(prepare)
     assert refreshed.status_code == 200, refreshed.text
     composer = refreshed.json()
-    assert (composer["name"], composer["description"]) == ("Agent Composer", "Create and refine your agents.")
+    assert (composer["name"], composer["description"]) == ("Agent Composer", builtin_composer.DESCRIPTION)
     assert composer["id"] == before["id"]
     assert composer["default_revision_id"] == before["default_revision_id"]
     assert composer["version"] == before["version"] + 1

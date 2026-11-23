@@ -230,9 +230,13 @@ async def child_environment_policy(session: AsyncSession, thread: ThreadRow) -> 
     assert origin is not None and thread.origin_thread_id is not None and thread.subagent is not None
     assert origin.agent_revision_id is not None
     revision = await load_revision(session, origin.agent_id, origin.agent_revision_id)
-    override = stored.require(RunOptions, origin.options, kind="run", id=origin.id).overrides
-    spawning = stored.require_effective(revision.config, override, revision_id=revision.revision_id)
-    return spawning.subagents.named[thread.subagent].environment
+    options = stored.require(RunOptions, origin.options, kind="run", id=origin.id)
+    spawning = stored.require_effective(revision.config, options.overrides, revision_id=revision.revision_id)
+    policy = spawning.subagents.named[thread.subagent].environment
+    if policy.mode == "shared" and options.environment is not None and options.environment.mode == "none":
+        # The spawning Run explicitly omitted the primary, even if its Thread has one.
+        return ChildEnvironmentPolicy(mode="none")
+    return policy
 
 
 async def _recovery_enabled(session: AsyncSession, thread: ThreadRow) -> bool:
@@ -291,6 +295,7 @@ async def freeze_mounts(
     principal: Principal,
     primary: EnvironmentMount | MountCreate | None = None,
     recreation_limit: int | None,
+    omit_primary: bool = False,
     default_session_configuration: SessionConfiguration | None = None,
     authority: ExecutionAuthority | None = None,
 ) -> list[dict]:
@@ -306,7 +311,7 @@ async def freeze_mounts(
         )
         .where(ThreadEnvironmentRow.thread_id == thread.id)
     )
-    if primary is not None:
+    if omit_primary or primary is not None:
         query = query.where(ThreadEnvironmentRow.name != PRIMARY)
     recovery_id = None
     selected: list[ThreadEnvironmentRow | EnvironmentMount | MountCreate] = []

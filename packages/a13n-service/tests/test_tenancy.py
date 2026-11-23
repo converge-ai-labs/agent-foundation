@@ -79,6 +79,39 @@ async def join(
     return client
 
 
+async def test_organization_admin_recovers_a_workspace_member_without_smtp(service: SimpleNamespace) -> None:
+    async with AsyncExitStack() as stack:
+        member = await join(service, stack, "recovery@example.com", "admin")
+        user_id = (await member.get("/api/v1/users/me")).json()["id"]
+        path = f"{service.organization}/members/{user_id}/password-reset"
+        assert (await member.post(path)).status_code == 403
+        tokens = []
+        for _ in range(2):
+            response = await service.client.post(path)
+            assert response.status_code == 200, response.text
+            assert response.headers["cache-control"] == "no-store"
+            assert response.json()["email_queued"] is False
+            tokens.append(response.json()["reset_url"].split("#token=", 1)[1])
+        old, token = tokens
+        outsider = await stack.enter_async_context(new_client(service))
+        assert (await member.get("/api/v1/users/me")).status_code == 200
+        confirm = "/api/v1/auth/password-reset/confirm"
+        assert (await outsider.post(confirm, json={"token": old, "password": "new-password"})).status_code == 400
+        assert (await outsider.post(confirm, json={"token": token, "password": "new-password"})).status_code == 204
+        assert (await outsider.post(confirm, json={"token": token, "password": "other-password"})).status_code == 400
+        assert (await member.get("/api/v1/users/me")).status_code == 401
+        login = await outsider.post(
+            "/api/v1/auth/login", json={"email": "recovery@example.com", "password": "new-password"}
+        )
+        assert login.status_code == 200 and login.json()["principal_id"] == user_id
+        assert (await outsider.get(f"{service.workspace}/grants")).status_code == 200
+        trail = await outsider.get("/api/v1/users/me/audit-events")
+        assert [event["action"] for event in trail.json()["items"] if event["outcome"] == "ok"].count(
+            "user.password.reset_assisted"
+        ) == 2
+    assert (await audit_actions(service, target_id=user_id)).count("user.password.reset_assisted") == 2
+
+
 async def audit_actions(service: SimpleNamespace, **where: str) -> list[str]:
     async with short_session(service.runtime.storage) as session:
         rows = (
@@ -95,6 +128,23 @@ async def mailing(serve, settings: Settings) -> AsyncIterator[SimpleNamespace]: 
         settings=settings.model_copy(update={"auth": settings.auth.model_copy(update={"mail": mail})})
     ) as served:
         yield served
+
+
+async def test_admin_receives_the_same_link_sent_by_email(mailing: SimpleNamespace) -> None:
+    admin_id = (await mailing.client.get("/api/v1/users/me")).json()["id"]
+    path = f"{mailing.organization}/members/{admin_id}/password-reset"
+    response = await mailing.client.post(path)
+    assert response.status_code == 200, response.text
+    [(recipient, url)] = await sent_links(mailing)
+    assert recipient == ADMIN
+    assert response.json() == {"email_queued": True, "reset_url": url}
+    async with transaction(mailing.runtime.storage) as session:
+        session.add(OrganizationRow(id=new_object_id("org"), name="Other organization"))
+    assert (await mailing.client.get("/api/v1/auth/configuration")).json()["manual_password_reset"] is False
+    response = await mailing.client.post(path)
+    assert response.status_code == 200, response.text
+    assert response.json() == {"email_queued": True, "reset_url": None}
+    assert len(await sent_links(mailing)) == 2
 
 
 async def sent_links(service: SimpleNamespace) -> list[tuple[str, str]]:
@@ -518,7 +568,13 @@ async def test_only_a_login_session_sends_invitations(service) -> None:  # type:
 
 async def test_identity_mail_is_queued_encrypted(mailing) -> None:  # type: ignore[no-untyped-def]
     client = mailing.client
-    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": True, "initialized": True}
+    assert (await client.get("/api/v1/auth/configuration")).json() == {
+        "password_enabled": True,
+        "oidc_providers": [],
+        "email_delivery": True,
+        "initialized": True,
+        "manual_password_reset": True,
+    }
     receipt = await client.post(
         f"{mailing.workspace}/invitations", json={"email": "mail@example.com", "role": "runner"}
     )
@@ -756,7 +812,13 @@ async def test_profile_password_and_login_sessions(service) -> None:  # type: ig
         json={"email": "x@example.com", "current_password": PASSWORD},
     )
     assert unavailable.status_code == 503
-    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": False, "initialized": True}
+    assert (await client.get("/api/v1/auth/configuration")).json() == {
+        "password_enabled": True,
+        "oidc_providers": [],
+        "email_delivery": False,
+        "initialized": True,
+        "manual_password_reset": True,
+    }
     async with new_client(service) as anonymous:
         assert (await anonymous.post("/api/v1/auth/password-reset", json={"email": ADMIN})).status_code == 204
     async with new_client(service) as other:
@@ -1173,3 +1235,45 @@ async def test_smtp_sends_are_bounded_as_a_whole() -> None:
         # The exchange ended too, rather than finishing the mail after the outbox gave up on this attempt.
         async with asyncio.timeout(2):
             await closed.wait()
+
+
+async def test_organization_grants_preserve_membership_and_scope_boundaries(service) -> None:
+    admin = service.client
+    org_grants = f"{service.organization}/grants"
+    async with AsyncExitStack() as stack:
+        runner = await join(service, stack, "oidc-runner@example.com", "runner")
+        runner_id = (await runner.get("/api/v1/users/me")).json()["id"]
+        body = {"principal_id": runner_id, "role": "admin"}
+        assert (await runner.post(org_grants, json=body)).status_code == 403
+        assert (await runner.post(f"{service.workspace}/grants", json=body)).status_code == 403
+        directory = await admin.get(f"{service.organization}/members", params={"kind": "user"})
+        assert any(member["id"] == runner_id for member in directory.json()["items"])
+
+        async with transaction(service.runtime.storage) as session:
+            other = OrganizationRow(id=new_object_id("org"), name="Another organization")
+            outsider = PrincipalRow(id=new_object_id("usr"), kind="user", name="Outside", email="outside@example.test")
+            session.add_all([other, outsider])
+            await session.flush()
+            session.add(
+                GrantRow(
+                    id=new_object_id("rb"),
+                    organization_id=other.id,
+                    principal_id=outsider.id,
+                    role="admin",
+                    created_by_id=outsider.id,
+                )
+            )
+            outsider_id = outsider.id
+        assert (await admin.post(org_grants, json={**body, "principal_id": outsider_id})).status_code == 404
+        assert (await admin.post(org_grants, json={**body, "role": "workspace_admin"})).status_code == 400
+        account = (
+            await admin.post(f"{service.workspace}/service-accounts", json={"name": "Scoped", "role": "admin"})
+        ).json()
+        assert account["role"] == "admin"
+        assert (await admin.post(org_grants, json={**body, "principal_id": account["id"]})).status_code == 400
+
+        promoted = await admin.post(org_grants, json=body)
+        assert promoted.status_code == 201 and promoted.json()["workspace_id"] is None
+        duplicate = await admin.post(org_grants, json=body)
+        assert duplicate.status_code == 409 and duplicate.json()["error"]["code"] == "already_exists"
+        assert (await runner.get(org_grants)).status_code == 200

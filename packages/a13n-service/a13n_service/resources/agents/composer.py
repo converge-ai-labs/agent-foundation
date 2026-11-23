@@ -1,4 +1,4 @@
-"""Agent Composer: the workspace's builtin agent that creates and changes agents with its users.
+"""Agent Composer: the workspace's builtin agent for configuration, usage and execution diagnosis.
 
 Its head has `source = 'builtin'` and `preset_kind = 'composer'`: its runs, threads and approvals are every
 agent's, and it can be duplicated. The deployment owns its definition; the workspace owns the model it runs on, so
@@ -16,12 +16,13 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from a13n_service.infra.db import Storage
 from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.providers.registry import Registry
+from a13n_service.resources.agents.configuration_tools import configuration_tools
 from a13n_service.resources.agents.schemas import Agent, AgentConfig
 from a13n_service.resources.agents.toolsets import ToolSelection, ToolsetSelection, default_toolsets
 from a13n_service.tenancy.authorize import Principal
 
 NAME = "Agent Composer"
-DESCRIPTION = "Create and refine your agents."
+DESCRIPTION = "Configure workspace resources, understand costs, and diagnose executions."
 
 
 class ProviderConfiguration(BaseModel):
@@ -75,7 +76,7 @@ def configuration(model: str) -> AgentConfig:
         },
         builtin_skills=frozenset({"platform-operations"}),
         user_questions=True,
-        client_tools=(provider_tool(),),
+        client_tools=(provider_tool(), *configuration_tools()),
     )
 
 

@@ -72,6 +72,7 @@ from a13n_harness_ui.environment_runtime import EnvironmentFinalization, Environ
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
+from a13n_harness_ui.input_prediction import PredictionCapture, PredictionSnapshot
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.memory import MemoryOrganizationRun
@@ -129,6 +130,7 @@ class RootRunOutcome:
     continuation: RootContinuationSelection
     composition: ObjectRef
     interaction_timeout_seconds: float = 120.0
+    prediction: PredictionSnapshot | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -490,6 +492,16 @@ class RootRunExecutor:
                 display.supplement((*image_events, *app_events))
 
             is_bot = published.value.root.source_kind == "bot"
+            prediction = (
+                PredictionCapture()
+                if published.value.root.source_kind == "agent"
+                and source.document.input_prediction.enabled
+                and thread_id != BOT_THREAD_ID
+                and admission.organization is None
+                and thread.memory_scope is None
+                and thread.parent_thread_id is None
+                else None
+            )
             environment = None
             if is_bot and admission.organization is None:
                 # Only Bot needs its runtime while constructing lazy target tools.
@@ -522,6 +534,7 @@ class RootRunExecutor:
                         if self._restart is not None
                         else None,
                     ),
+                    *((prediction,) if prediction is not None else ()),
                     _ToolPresentationCapability(retain_tool_presentation),
                     *(
                         (
@@ -994,6 +1007,17 @@ class RootRunExecutor:
             continuation=continuation,
             composition=published.reference,
             interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
+            prediction=(
+                PredictionSnapshot(
+                    prediction.prefix, reconstructed.model_resolver, usage_reporter, reconstructed.pricing
+                )
+                if prediction is not None
+                and prediction.prefix is not None
+                and reconstructed.pricing is not None
+                and prediction.prefix.model_id in reconstructed.model_resolver.configured_models
+                and result.deferred is None
+                else None
+            ),
         )
 
     @asynccontextmanager

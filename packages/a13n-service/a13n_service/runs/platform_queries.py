@@ -198,7 +198,7 @@ async def list_runs(ctx: ToolContext, *, filters: Annotated[RunQuery, Query()]) 
 
 
 async def get_run(ctx: ToolContext, *, run_id: str) -> content.ContentView[read_views.RunSummary]:
-    """Read Run status and previews with version-bound references for its complete sections."""
+    """Read Run status and previews. Pass content.input or content.output to read_content for the full request or answer."""
     value = context_response(await runs.get(ctx.runtime.storage, ctx.actor, ctx.workspace_id, run_id))
     return content.ContentView(
         summary=await runs.compact_view(ctx.runtime.storage, value),
@@ -266,7 +266,7 @@ async def list_run_items(
 async def get_run_configuration(
     ctx: ToolContext, *, run_id: str, part: agent_reads.ConfigSection = "all"
 ) -> content.ContentView[agent_reads.RunAgentSummary]:
-    """Read the frozen original/effective configuration and override references. These are immutable execution facts, not editable Agent configuration."""
+    """Inspect the executed configuration. Read the selected part using the original, effective or overrides reference in content."""
     value = await runs.agent(ctx.runtime.storage, ctx.actor, ctx.workspace_id, run_id)
     run = await runs.get(ctx.runtime.storage, ctx.actor, ctx.workspace_id, run_id)
     sections = {

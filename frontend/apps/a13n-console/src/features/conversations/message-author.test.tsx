@@ -46,12 +46,21 @@ function record(
   name: string,
   email: string | null = `${id}@example.com`,
   kind = "user",
+  oidc_email: string | null = null,
 ) {
   const author: Schema["MessageAuthor"] = {
     entry_id: entry,
     principal_id: id,
     submitted_at: "2026-10-09T08:05:00Z",
-    principal: { id, name, email, kind, status: "active", image_url: null },
+    principal: {
+      id,
+      name,
+      email,
+      oidc_email,
+      kind,
+      status: "active",
+      image_url: null,
+    },
   };
   records.set(entry, author);
   return author;
@@ -171,7 +180,7 @@ it("names a queued entry's author in Debug as a fact, under the Run's own start"
 
 it("disambiguates equal names, identifies service accounts, and never calls an unknown sender You", async () => {
   record("inb_a", "usr_me", "Alex", "me@example.com");
-  record("inb_b", "usr_peer", "Alex", "peer@example.com");
+  record("inb_b", "usr_peer", "Alex", null, "user", "peer@example.com");
   record("inb_bot", "sa_bot", "Automation", null, "service_account");
   show(
     <>

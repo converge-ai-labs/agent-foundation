@@ -44,7 +44,7 @@ Handle = Annotated[
     Field(
         min_length=1,
         max_length=2048,
-        description="Opaque content or continuation reference returned by an execution tool. Pass unchanged.",
+        description="Copy the exact value of a returned content field or continuation into this argument.",
     ),
 ]
 

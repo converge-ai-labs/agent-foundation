@@ -435,7 +435,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_run",
-    "summary": "Read Run status and previews with version-bound references for its complete sections."
+    "summary": "Read Run status and previews. Pass content.input or content.output to read_content for the full request or answer."
   },
   {
     "effect": "read",
@@ -447,7 +447,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_run_configuration",
-    "summary": "Read the frozen original/effective configuration and override references. These are immutable execution facts, not editable Agent configuration."
+    "summary": "Inspect the executed configuration. Read the selected part using the original, effective or overrides reference in content."
   },
   {
     "effect": "read",
@@ -483,7 +483,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_trace",
-    "summary": "Read a redacted observation summary and version-bound content references."
+    "summary": "Read the trace root summary. Use read_content or search_content on a returned content field for its detail."
   },
   {
     "effect": "read",
@@ -495,7 +495,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_trace_span",
-    "summary": "Read a redacted observation summary and version-bound content references."
+    "summary": "Read one span summary. Its content fields are references for read_content or search_content."
   },
   {
     "effect": "read",
@@ -603,7 +603,7 @@
     "effect": "read",
     "group": "execution",
     "key": "search_traces",
-    "summary": "Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.\n\nProviders execute each query without a result cache; pages may reflect updates between requests.\nKeyset cursors bind the ordering, filters and last sort value with trace/span IDs.\nIncomplete queries fail without a partial rank."
+    "summary": "Rank traces in a time window. Scope filters intersect: use session_id across Threads, thread_id across Runs,\nor run_id across attempts. Apply the requested metric bounds and order_by (duration or cost) before paging.\nKeep filters fixed with the cursor. Costs sum reported span costs."
   },
   {
     "effect": "write",
@@ -676,5 +676,119 @@
     "group": "schedules",
     "key": "update_schedule",
     "summary": "Change only specified task fields at the observed version. Omitted invocation and execution choices survive."
+  },
+  {
+    "effect": "read",
+    "group": "usage",
+    "key": "context_usage",
+    "summary": "Read the selected main generation and configured context capacity; this is not cumulative usage or a pending prompt estimate."
+  },
+  {
+    "effect": "read",
+    "group": "usage",
+    "key": "list_run_usage",
+    "summary": "Page whole Runs and their model usage; totals belong to summarize_usage, not a page sum."
+  },
+  {
+    "effect": "read",
+    "group": "usage",
+    "key": "list_session_usage",
+    "summary": "Rank Sessions for one Agent within the selected window."
+  },
+  {
+    "effect": "read",
+    "group": "usage",
+    "key": "list_usage_members",
+    "summary": "Rank execution identities by usage; requires workspace admin. This is historical attribution, not a member directory."
+  },
+  {
+    "effect": "read",
+    "group": "usage",
+    "key": "model_request_metrics",
+    "summary": "Read derived latency and throughput for one recorded model contribution."
+  },
+  {
+    "effect": "read",
+    "group": "usage",
+    "key": "summarize_usage",
+    "summary": "Read current per-model usage for a Run, Thread, Session or ingestion window. Costs are known USD subtotals; check unpriced_requests."
+  },
+  {
+    "effect": "read",
+    "group": "usage",
+    "key": "usage_agents",
+    "summary": "Rank Agents by recorded cost in the selected window."
+  },
+  {
+    "effect": "read",
+    "group": "usage",
+    "key": "usage_models",
+    "summary": "Rank models by recorded cost in the selected window."
+  },
+  {
+    "effect": "read",
+    "group": "usage",
+    "key": "usage_overview",
+    "summary": "Read totals and daily usage in an explicit bounded window and timezone. Consumption follows first ingestion; Run metrics follow start time."
+  },
+  {
+    "effect": "write",
+    "group": "subscriptions",
+    "key": "delete_subscription",
+    "summary": "Delete a Webhook. Already queued deliveries still run with their original target; requires admin."
+  },
+  {
+    "effect": "read",
+    "group": "subscriptions",
+    "key": "get_subscription",
+    "summary": "Read a Webhook and its version, without its signing secret; requires admin."
+  },
+  {
+    "effect": "read",
+    "group": "subscriptions",
+    "key": "list_deliveries",
+    "summary": "Read newest deliveries and errors. Queued deliveries retain their original URL and key; requires admin."
+  },
+  {
+    "effect": "read",
+    "group": "subscriptions",
+    "key": "list_subscriptions",
+    "summary": "List Webhooks in this workspace; requires admin even for reads."
+  },
+  {
+    "effect": "write",
+    "group": "subscriptions",
+    "key": "redeliver",
+    "summary": "Requeue a dead delivery with its original ID, URL and key. Success means queued, not delivered. Requires admin."
+  },
+  {
+    "effect": "write",
+    "group": "subscriptions",
+    "key": "update_subscription",
+    "summary": "Change only supplied nonsecret fields, including enabled. Changes affect future deliveries, not queued ones; requires admin."
+  },
+  {
+    "effect": "read",
+    "group": "egress_credentials",
+    "key": "get_egress_credential",
+    "summary": "Read metadata and the original version before proposing a private credential action. No token is returned."
+  },
+  {
+    "effect": "read",
+    "group": "egress_credentials",
+    "key": "list_credential_sessions",
+    "summary": "Inspect credential application. Summary covers all matching bindings, not just this page. Saved does not mean applied."
+  },
+  {
+    "effect": "read",
+    "group": "egress_credentials",
+    "key": "list_egress_credentials",
+    "summary": "List nonsecret credential metadata, allowed hosts and versions. Follow pagination to find a target."
+  },
+  {
+    "effect": "read",
+    "group": "egress_credentials",
+    "key": "list_environment_credential_sessions",
+    "summary": "Inspect credential versions applied to one Environment's Sessions, preserving private Environment access checks."
   }
 ]

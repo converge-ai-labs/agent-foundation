@@ -21,8 +21,8 @@ from a13n_service.infra.db import Base, Stamped, identity_guarded, rules, trigge
 _GUARD_PRINCIPAL = """
 CREATE FUNCTION guard_principal() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    IF ROW(NEW.id, NEW.kind, NEW.home_workspace_id, NEW.created_at)
-        IS DISTINCT FROM ROW(OLD.id, OLD.kind, OLD.home_workspace_id, OLD.created_at)
+    IF ROW(NEW.id, NEW.kind, NEW.home_workspace_id, NEW.created_at, NEW.oidc_issuer, NEW.oidc_subject)
+        IS DISTINCT FROM ROW(OLD.id, OLD.kind, OLD.home_workspace_id, OLD.created_at, OLD.oidc_issuer, OLD.oidc_subject)
     THEN RAISE EXCEPTION 'principal identity and home workspace are immutable'; END IF;
     RETURN NEW;
 END $$
@@ -55,7 +55,14 @@ class PrincipalRow(Stamped, Base):
     __table_args__ = (
         CheckConstraint("kind IN ('user', 'service_account')", name="kind"),
         CheckConstraint("status IN ('active', 'disabled')", name="status"),
-        CheckConstraint("(kind = 'user') = (email IS NOT NULL)", name="user_email"),
+        CheckConstraint(
+            "(oidc_issuer IS NULL) = (oidc_subject IS NULL) AND "
+            "(oidc_email IS NULL OR oidc_issuer IS NOT NULL) AND "
+            "((kind = 'user' AND (email IS NOT NULL) <> (oidc_issuer IS NOT NULL)) OR "
+            "(kind = 'service_account' AND email IS NULL AND oidc_issuer IS NULL))",
+            name="sign_in_identity",
+        ),
+        UniqueConstraint("oidc_issuer", "oidc_subject"),
         CheckConstraint("(kind = 'service_account') = (home_workspace_id IS NOT NULL)", name="account_home"),
         CheckConstraint("(kind = 'service_account') = (description IS NOT NULL)", name="account_description"),
         Index("ix_principals_home_workspace_id", "home_workspace_id"),
@@ -65,11 +72,36 @@ class PrincipalRow(Stamped, Base):
     kind: Mapped[str]
     name: Mapped[str]
     email: Mapped[str | None] = mapped_column(unique=True)
+    oidc_issuer: Mapped[str | None]
+    oidc_subject: Mapped[str | None]
+    oidc_email: Mapped[str | None]
     home_workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"))
     status: Mapped[str] = mapped_column(server_default="active")
     description: Mapped[str | None]
     # A user's profile image reference (`infra/images.py`).
     image: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+
+
+class OIDCGrantRow(Base):
+    """One provider's synchronized role at an organization or workspace, independent of manual grants."""
+
+    __tablename__ = "oidc_grants"
+    __table_args__ = (
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        UniqueConstraint(
+            "principal_id", "provider_id", "organization_id", "workspace_id", postgresql_nulls_not_distinct=True
+        ),
+        Index("ix_oidc_grants_scope", "organization_id", "workspace_id", "principal_id"),
+        Index("ix_oidc_grants_principal_provider", "principal_id", "provider_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    provider_id: Mapped[str] = mapped_column(String(32))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
+    role: Mapped[str]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class GrantRow(Base):

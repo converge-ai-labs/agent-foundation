@@ -646,3 +646,24 @@ it("keeps unavailable Bot references visible without changing the source", () =>
   ).toContain("model-missing (unavailable)");
   expect(screen.getByTestId("source").textContent).toBe(initial);
 });
+
+it("keeps predictions opt-in and automatic titles independently enabled by default", () => {
+  renderFields('schema_version: "1"\n');
+  const titles = screen.getByRole("switch", {
+    name: "Automatically generate chat titles",
+  });
+  const predictions = screen.getByRole("switch", {
+    name: "Suggest follow-ups",
+  });
+  expect(titles.getAttribute("aria-checked")).toBe("true");
+  expect(predictions.getAttribute("aria-checked")).toBe("false");
+  fireEvent.click(titles);
+  fireEvent.click(predictions);
+  expect(parse(screen.getByTestId("source").textContent!)).toMatchObject({
+    auto_chat_title: false,
+    input_prediction: { enabled: true },
+  });
+  expect(
+    screen.getByRole("combobox", { name: "Title generation model" }),
+  ).toBeTruthy();
+});

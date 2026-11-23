@@ -1,3 +1,4 @@
+import { ComposerAction } from "../agents/composer-action";
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, SegmentedControl } from "a13n-ui";
 import { useMemo, useRef } from "react";
@@ -181,6 +182,17 @@ function UsageBrowser() {
               />
             )}
           </div>
+          <ComposerAction
+            target={{
+              kind: "usage",
+              ...window,
+              timezone,
+              principal_id: principalId,
+              agent_id: agent?.agent_id,
+              group_by: group,
+              metric,
+            }}
+          />
           <RefreshButton
             pending={fetching > 0}
             onRefresh={() => {

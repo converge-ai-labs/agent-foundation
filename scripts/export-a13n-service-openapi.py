@@ -9,6 +9,7 @@ from a13n_service.app import build_app
 from a13n_service.distribution import OSS, Distribution
 from a13n_service.infra.platform import PLATFORM_GROUPS
 from a13n_service.platform_tools import validate_catalog
+from a13n_service.resources.agents.configuration_tools import configuration_tools
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.runs.stream import frames_schema
 from a13n_service.runs.thread_stream import frames_schema as thread_frames_schema
@@ -16,6 +17,7 @@ from a13n_service.runs.thread_stream import frames_schema as thread_frames_schem
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "proto/a13n-service"
 SKILL_SCHEMA = ROOT / "packages/a13n-service/a13n_service/builtin_skills/platform-operations/schemas/agent-config.json"
+COMPOSER_TOOLS = ROOT / "frontend/apps/a13n-console/src/service-client/composer-tools.json"
 PLATFORM_TOOLS = ROOT / "packages/a13n-service/a13n_service/infra/platform_tools.json"
 
 
@@ -39,6 +41,7 @@ def documents(distribution: Distribution = OSS) -> dict[Path, object]:
         TARGET / "session-stream.schema.json": frames_schema(),
         TARGET / "thread-stream.schema.json": thread_frames_schema(),
         PLATFORM_TOOLS: platform_tools(distribution),
+        COMPOSER_TOOLS: {tool.name: tool.parameters_json_schema for tool in configuration_tools()},
     }
 
 

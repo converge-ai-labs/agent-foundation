@@ -1,5 +1,8 @@
 {
+  "Inclusive lower bound on trace duration in seconds, applied before ranking.": "Trace 耗时下限，单位为秒，包含边界值。先筛选，再排序。",
   "List App Plugins": "列出 App 插件",
+  "Pair each trace with its owning Run. In an analysis, first read every cited trace with get_trace, get_trace_span or a list_trace_spans call that returns spans.": "将每条 Trace 与所属 Run 配对。分析时先读取每条要引用的 Trace：调用 get_trace、get_trace_span，或通过 list_trace_spans 读到其中的 span。",
+  "Scope a comparison across Threads to this Session.": "将跨线程比较限定在此会话内。",
   "Update App Plugin": "更新 App 插件",
   "Organization administration is intentionally outside the MCP management surface.": "组织管理不纳入 MCP 管理接口。",
   "Object Reference Transport rules by original tool name; '*' matches any characters. Exact names win, then more literal characters, with false winning equally specific patterns. Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.": "按原始工具名选择 Object Reference Transport 的规则；'*' 可匹配任意字符。精确名称优先，其次是字面字符更多的模式，具体程度相同时 false 优先。使用 {'*': true} 启用所有工具；未匹配的工具沿用原生元数据，默认不支持。",
@@ -36,6 +39,7 @@
   "Provider-owned portable semantic soft reference for one target.": "由 provider 管理、指向单个目标的可移植语义软引用。",
   "Reserve a primary instance for this accepted Run without changing Thread mounts.": "为本次已接受的 Run 预留主实例，不修改 Thread 挂载。",
   "Set Environment Debug Hold": "设置环境调试保留",
+  "Skip the primary mount for this Run. Named mounts remain available.": "本次运行跳过主挂载，其他命名挂载仍可使用。",
   "Use this exact primary instance for the Run; absence never triggers allocation.": "为本次 Run 使用指定主实例；实例缺失时不触发分配。",
   "Frozen instance configuration enables human desktop access; not authorization or a health check.": "实例的冻结配置是否启用人工桌面访问；不代表授权或健康检查结果。",
   "Read-only projection of sealed desktop suspensions predating Computer-scoped control.": "仅用于读取 Computer 范围控制引入前已封存的桌面暂停记录。",
@@ -279,8 +283,13 @@
   "Confirm Email Change": "确认邮箱修改",
   "Password Login": "密码登录",
   "Logout": "退出登录",
+  "Reset Member Password": "重置成员密码",
   "Request Password Reset": "请求重置密码",
   "Confirm Password Reset": "确认密码重置",
+  "Consume a browser-bound OIDC callback and establish an ordinary Service browser session.": "验证与浏览器绑定的 OIDC 回调并建立 Service 浏览器会话。",
+  "Start sign-in at the configured identity provider in the top-level browser window.": "在当前浏览器窗口前往已配置的身份提供方，开始登录。",
+  "Finish Oidc Sign In": "完成 OIDC 登录",
+  "Start Oidc Sign In": "开始 OIDC 登录",
   "Restores a browser session; the CSRF token is stable for the session's lifetime.": "恢复浏览器会话；CSRF token 在会话生命周期内保持稳定。",
   "Session Profile": "会话资料",
   "List Connections": "列出连接",
@@ -435,6 +444,7 @@
   "Skills of the workspace. `q` matches the name or description, ignoring case; `source` the kind of\nsource the default revision was read from; `archived` keeps only archived skills, or only open ones.": "工作空间的 skill。`q` 对名称或描述进行不区分大小写的匹配；`source` 为默认修订版本的来源类型；`archived` 仅保留已归档或未归档 skill。",
   "List Skills": "列出 skill",
   "Create Skill": "创建 skill",
+  "The manual grant overrides an SSO default at this scope.": "这条手动授权覆盖同一范围内的单点登录默认授权。",
   "The manifest the package would give a new skill or revision, checked as creation checks it; nothing is\nstored.": "按创建时相同的规则检查软件包，返回它将赋予新 skill 或修订版本的清单，不保存任何内容。",
   "Validate Skill": "校验 skill 软件包",
   "Get Skill": "获取 skill",
@@ -676,5 +686,7 @@
   "What one run changes of its revision's configuration; an omitted or null field keeps the revision's.\n\n`toolsets` replaces whole toolsets; `retries` replaces supplied members.\nEvery other field, including `subagents`, replaces the whole value.": "单次运行对修订版本配置的覆盖；省略或为 null 的字段保留修订版本值。\n\n`toolsets` 替换整个工具集；`retries` 替换已提供的成员。其他字段（包括 `subagents`）均整体替换。",
   "List Memory Guidance Presets": "列出记忆指导预设",
   "List Session Usage": "列出会话用量",
-  "Sessions ranked by recorded cost for one Agent within the selected window.": "在所选时间范围内，按已记录费用对指定 Agent 的会话排序。"
+  "Sessions ranked by recorded cost for one Agent within the selected window.": "在所选时间范围内，按已记录费用对指定 Agent 的会话排序。",
+  "The supplied or generated signing secret is returned only at creation.": "仅在创建时返回传入或自动生成的签名密钥。",
+  "Secret replacement applies only to newly queued deliveries.": "更换密钥仅影响新入队的投递。"
 }

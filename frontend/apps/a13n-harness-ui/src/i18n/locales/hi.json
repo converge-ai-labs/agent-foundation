@@ -3648,5 +3648,14 @@
   "This Inbox item is not in the chat's current history.": "यह Inbox आइटम चैट के वर्तमान इतिहास में नहीं है।",
   "New in Inbox": "Inbox में नया",
   "Inbox only": "केवल Inbox",
-  "Bot messages, Inbox items, task results and requests for your input on this browser.": "इस ब्राउज़र पर Bot संदेश, Inbox आइटम, कार्य परिणाम और आपके इनपुट के अनुरोध।"
+  "Bot messages, Inbox items, task results and requests for your input on this browser.": "इस ब्राउज़र पर Bot संदेश, Inbox आइटम, कार्य परिणाम और आपके इनपुट के अनुरोध।",
+  "Automatically generate chat titles": "चैट के शीर्षक अपने आप बनाएँ",
+  "Use an extra model request to name new chats. You can still generate a title manually when this is off.": "नई चैट का नाम रखने के लिए मॉडल को एक अतिरिक्त अनुरोध भेजें। इसे बंद करने पर भी आप खुद शीर्षक बनवा सकते हैं।",
+  "Input predictions": "इनपुट सुझाव",
+  "Input prediction": "इनपुट सुझाव",
+  "Suggest follow-ups": "अगला संदेश सुझाएँ",
+  "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.": "जवाब के बाद, संदेश बॉक्स खाली होने पर चैट के मॉडल को एक अतिरिक्त अनुरोध भेजा जा सकता है। सुझाव स्वीकार करने से वह बॉक्स में भरेगा; कुछ भी अपने आप नहीं भेजा जाएगा।",
+  "Tab": "Tab",
+  "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.": "सुझाया गया अगला संदेश: {{text}} भरने के लिए Tab या हटाने के लिए Escape दबाएँ।",
+  "Use suggestion": "सुझाव इस्तेमाल करें"
 }

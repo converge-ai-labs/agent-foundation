@@ -81,6 +81,39 @@ def test_revisions_match_metadata_and_rules(empty_database: Database, database: 
     assert len(migrated) >= len(OSS.rules())
 
 
+def test_oidc_upgrade_from_previous_head_preserves_password_identity(empty_database: Database) -> None:
+    with migration_connection(empty_database, OSS) as config:
+        command.upgrade(config, "ddc9c71ce4de")
+    engine = create_engine(empty_database.url.get_secret_value())
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO principals (id, kind, name, email) "
+                    "VALUES ('usr_existing', 'user', 'Existing', 'existing@example.test')"
+                )
+            )
+        upgrade(empty_database, OSS)
+        check(empty_database, OSS)
+        with engine.begin() as connection:
+            assert connection.execute(
+                text("SELECT email, oidc_issuer, oidc_subject, oidc_email FROM principals WHERE id = 'usr_existing'")
+            ).one() == ("existing@example.test", None, None, None)
+            connection.execute(
+                text(
+                    "INSERT INTO principals (id, kind, name, oidc_issuer, oidc_subject, oidc_email) "
+                    "VALUES ('usr_oidc', 'user', 'SSO', 'https://identity.example.test', 'subject', 'existing@example.test')"
+                )
+            )
+        with (
+            pytest.raises(DBAPIError, match="principal identity and home workspace are immutable"),
+            engine.begin() as connection,
+        ):
+            connection.execute(text("UPDATE principals SET oidc_subject = 'another' WHERE id = 'usr_oidc'"))
+    finally:
+        engine.dispose()
+
+
 def test_revisions_downgrade_to_an_empty_schema_and_upgrade_again(empty_database: Database) -> None:
     upgrade(empty_database, OSS)
     with migration_connection(empty_database, OSS) as config:

@@ -118,7 +118,7 @@ curl "$A13N_URL/api/v1/agents" \
 2. 用 `PATCH …/grants/{grant_id}` 和 `{role}` 修改角色。角色变更会替换授权；后续操作使用响应返回的新 ID。
 3. 用 `DELETE …/grants/{grant_id}` 移除访问权限。同时检查组织授权：组织授权提供的权限在该工作空间中仍然生效。
 
-组织授权使用对应的 `/api/v1/organizations/{organization_id}/grants` 路径。授权路由不接受 `If-Match`。最后一位活跃的组织管理员不能被移除、降级或禁用；这类请求返回 `409 conflict`，原因为 `last_organization_admin`。移除服务账号的最后一条授权会停用该账号并撤销其密钥。
+组织授权使用对应的 `/api/v1/organizations/{organization_id}/grants` 路径。授权路由不接受 `If-Match`。最后一位仍活跃的手动授权组织管理员不能被移除、降级或禁用；这类请求返回 `409 conflict`，原因为 `last_organization_admin`。移除服务账号的最后一条授权会停用该账号并撤销其密钥。
 
 ## 登录与登录会话
 
@@ -129,6 +129,80 @@ Console 负责处理登录 cookie 和 CSRF token。使用邮箱和密码登录�
 HTTPS cookie 名为 `__Host-a13n_session`，带有 `Secure`、`HttpOnly` 和 `SameSite=Strict`。明文 HTTP 使用不带 `Secure` 的 `a13n_session`。登录会话在闲置 `auth.session_seconds` 后过期，默认 12 小时；登录尝试按客户端地址和邮箱限流。
 
 `GET /api/v1/auth/session` 读取当前登录会话和 CSRF token；`POST /api/v1/auth/logout` 结束当前登录会话，两者都需要会话 cookie。`GET /api/v1/users/me/login-sessions` 列出你的登录会话供管理。这些操作拒绝 API 密钥，返回 `403 forbidden`。
+
+### 配置 OIDC 登录
+
+1. 先升级所有 Service API 副本，再启用 OIDC。初始化本地管理员，并复制新用户要加入的工作空间 ID。
+2. 在身份提供方注册机密 Web OIDC 客户端。将回调地址设为 `{server.public_url}/api/v1/auth/oidc/{provider_id}/callback`（省略 `server.public_url` 末尾的斜杠）。选用 `team` 等提供方 ID，并在配置与回调路径中使用同一 ID。除本机开发环境外，请使用 HTTPS。
+3. 在部署的 Secret 中将 `A13N_AUTH__OIDC` 设为下面的 JSON，然后重启 Service API 副本。把工作空间 ID、签发方、客户端 ID 和客户端密钥替换为实际值。
+
+```json
+{
+  "defaults": [{"workspace_id": "ws_replace_with_your_workspace_id", "role": "runner"}],
+  "providers": {
+    "team": {
+      "label": "Team Identity",
+      "issuer": "https://identity.example.com/realms/team",
+      "client_id": "a13n-console",
+      "client_secret": "replace-at-deploy-time"
+    }
+  }
+}
+```
+
+`A13N_AUTH__OIDC` 会替换 `service.toml` 中整段 `[auth.oidc]`。请在 JSON 中填入全部提供方及所有非默认的 OIDC 设置。`[auth]` 中的其他字段仍由各自的环境变量或 TOML 提供。如果改用 TOML 配置，则在 `[auth.oidc]` 的 `defaults` 中填写初始授权，在 `[auth.oidc.providers.team]` 中填写提供方配置。
+
+每增加一个 `[auth.oidc.providers.<id>]` 表，登录页就会多一个按钮。提供方须支持 Discovery、带 PKCE S256 的授权码流程、签名 ID token（`RS256` 或 `ES256`）以及 `openid profile email` 权限范围。默认使用 HTTP Basic；如果提供方要求 `client_secret_post`，请设置 `token_endpoint_auth_method = "client_secret_post"`。签发方为 `https://accounts.google.com` 时，Console 显示内置的 Google 图标；签发方为 `https://login.microsoftonline.com/<租户 UUID>/v2.0` 时显示 Microsoft 图标；其他签发方显示盾牌。如果受信任的身份代理始终将用户转到同一家提供方，可以将 `brand` 设为 `"google"`、`"microsoft"` 或 `"generic"` 来指定图标。请为各提供方设置易于辨认、互不重复的标签。
+
+Service 接受两种 `aud` 格式：配置的客户端 ID 字符串，或只包含该 ID 的数组。如果 ID token 提供 `azp`，它也必须匹配同一个 ID。ID token 的 `iat`、`nbf` 可比当前时间晚最多 30 秒，`exp` 也有 30 秒的到期宽限。请允许 Service 出站访问签发方的 Discovery 端点，以及 Discovery 返回的 token 和 JWKS 端点。除本机开发外，这些请求必须使用 HTTPS，不跟随重定向，只接受 `Content-Encoding: identity` 或不带内容编码的响应。浏览器需要访问 Discovery 返回的授权端点。请将反向代理访问日志配置为省略回调 URL 的查询字符串。
+
+OIDC 发起请求有独立的 Redis 限流预算：同一客户端地址访问各提供方共用 `auth.oidc` 下的 `start_limit`（默认 30 次）和 `start_window_seconds`（默认 60 秒）。共享一个 NAT 地址的客户端共用预算；反向代理部署请配置 `server.trusted_proxies`，按可信代理转发的客户端地址计数。Redis 不可用时，Service 会跳过限流检查，但仍须先保存一次性流程才能发起浏览器登录。
+
+凡是身份提供方允许向该客户端授权的用户，都可以登录。请先在身份提供方设置应用访问规则，再发布登录按钮。对于 Google Workspace，请在组织拥有的项目中创建 Web 客户端，并将 **Google Auth Platform → Audience → Internal** 设为仅本组织可用（参见 [Google 的受众指南](https://support.google.com/cloud/answer/15549945)）。External 应用可以允许组织外用户登录；Service 不会按邮箱域名限制准入。
+
+在 Microsoft Entra 员工租户中，`email` 是提供方报告的邮箱，`xms_edov` 验证的是域名所有者，并不验证用户邮箱。[可选声明参考](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference)没有把 `email_verified` 列为 Entra 的标准可选声明，另见 [ID token 声明参考](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference)。如果身份提供方或受信任的上游支持标准 `email_verified` 声明，应仅在实际验证用户邮箱后签发布尔值 `true`。没有该声明时，Service 仍使用签名 token 中的主体标识和显示名，邮箱留空。
+
+如需在 Entra 中限制应用访问，请[启用分配要求并分配指定用户或组](https://learn.microsoft.com/en-us/entra/identity-platform/howto-restrict-your-app-to-a-set-of-users)。Entra 全局管理员不受此分配要求限制。
+
+未设置规则的提供方会在首次登录时创建独立的 Service 用户，并写入 `defaults` 指定的普通授权。身份提供方验证过的邮箱仅用于显示，即使某个密码账号也使用同一邮箱。请通过[成员与授权](identity.md#members-and-grants)管理权限。以后登录时，Service 会保留现有授权，不会恢复已移除的角色。
+
+### 按 ID token 声明同步角色
+
+在提供方配置中添加 `role_rules`，按组织或工作区同步角色。每个授权目标填写 `organization_id` 或 `workspace_id`（二选一）以及已注册的角色。以下示例给 `console-admins` 组组织管理员权限，其他人则获得默认工作区的 Runner 权限。请选择由身份提供方控制、用户不能自行修改的声明。
+
+```json
+{
+  "defaults": [{"workspace_id": "ws_replace_with_your_workspace_id", "role": "runner"}],
+  "providers": {
+    "team": {
+      "label": "Team Identity",
+      "issuer": "https://identity.example.com/realms/team",
+      "client_id": "a13n-console",
+      "client_secret": "replace-at-deploy-time",
+      "extra_scopes": ["groups"],
+      "role_rules": [
+        {"match": {"groups": "console-admins"}, "organization_id": "org_replace_with_your_org_id", "role": "admin"}
+      ]
+    }
+  }
+}
+```
+
+一条规则里的所有声明都要匹配；单个声明可配置一个字符串或多个候选字符串。Service 优先查找同名顶层键，找不到才按点分路径查找嵌套声明，例如 `realm_access.roles`。比较区分大小写；token 中的值须是字符串或全由字符串组成的数组。缺失、格式错误或标明分布式的声明不匹配。请用 `extra_scopes` 请求所需 scope，并在提供方配置中把声明写入 ID token。
+
+启用规则后，Service 每次成功登录都会同步该提供方的授权：有匹配时只使用匹配规则；无匹配时使用默认授权。提供方省略 `defaults` 会继承全局值，设置 `defaults: []` 则禁用回退；没有规则命中、也没有可回退的授权时，拒绝登录并保留上一次同步结果。每个提供方至少要有可用默认授权或一条规则。配置的组织或工作区不存在时，本次登录失败且原授权不变。首次登录不能授予已归档工作区的权限。
+
+在组织或工作区的**成员 → 更改角色**中，选择**手动设置角色**可以覆盖当前范围的单点登录默认角色。选择**使用单点登录默认角色 → 恢复单点登录默认角色**，可清除手动覆盖，让最近同步的授权立即生效。没有单点登录默认角色的普通授权仍可直接更改或移除。请保留至少一名活跃的手动授权组织管理员，以便恢复访问。
+
+已有浏览器会话、用户 API 密钥和 Worker 在下次鉴权时使用最新角色。服务账号密钥继续使用其自身账号的授权。去掉提供方的全部规则并保留可用默认授权，用户再次登录后会清除该提供方以前同步的授权；直接删除提供方不会清除现有授权。
+
+### 切换到仅 OIDC 登录
+
+1. 让预定的管理员通过身份提供方登录一次。使用本地管理员会话打开 **组织 → 成员 → 添加成员**，选中新账户并授予**管理员**角色。选择列表也包含只有工作空间角色的成员。修改或撤销现有角色时，使用该成员所在行的操作菜单。
+2. 在独立的浏览器会话中通过身份提供方登录，确认新管理员可以打开 **组织 → 成员** 并管理成员。
+3. 将 Service API 副本的环境变量设为 `A13N_AUTH__PASSWORD_ENABLED=false`，然后重启各副本。这会覆盖 `service.toml` 中的 `password_enabled`。现有密码会话失效，密码登录、创建和重发邀请以及密码找回停用。管理员仍可查看和撤销邀请，API 密钥继续有效。
+
+OIDC 会话在 `auth.oidc.session_seconds` 后到期（默认 12 小时），操作不会延长有效期。移除某人的身份提供方访问权时，如需立即撤销本地访问，还要使用 `--principal-id` 禁用对应的 Service 用户。需要恢复密码登录时，将环境变量设为 `A13N_AUTH__PASSWORD_ENABLED=true`，然后重启 API 副本。原有密码账户仍然保留。
 
 ## 你的账号
 
@@ -143,6 +217,8 @@ HTTPS cookie 名为 `__Host-a13n_session`，带有 `Secure`、`HttpOnly` 和 `Sa
 | 禁用账号       | 调用 `POST /api/v1/users/me/disable` 并提供当前密码，会停止认证，撤销尚未使用的密码重置和邮箱修改链接。授权和密钥仍保留。只有运维人员可以重新启用账号。 |
 
 当前密码检查共享按客户端地址和账号计算的限流额度。被禁用用户启动的运行会在下次权限检查时停止。
+
+启用密码登录时，组织管理员可以帮本地密码账号找回访问权限。OIDC 用户通过身份提供方恢复访问。如果成员无法自助找回密码，请打开组织设置中的 **成员**（仅加入工作区的成员可在该工作区设置中找到），在对应成员的行菜单中选择 **重置密码** 并确认。配置 SMTP 后，Service 会将重置邮件加入发送队列，收件人是成员的登录邮箱。单组织部署无论是否配置 SMTP，管理员都可以复制同一个一次性链接，私下发给成员。成员打开链接设置新密码后，用原账号重新登录，工作区权限保持不变。如果你是唯一的组织管理员且无法登录，请配置 SMTP，再走自助找回流程。
 
 ## 运维账号控制
 

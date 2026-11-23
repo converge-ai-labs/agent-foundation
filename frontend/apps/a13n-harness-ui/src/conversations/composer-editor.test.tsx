@@ -178,6 +178,33 @@ function inlineEditor() {
   };
 }
 
+it("keeps native Pinyin edits in the draft through candidate selection, deletion and further typing", async () => {
+  const { draft, editor, textbox } = inlineEditor();
+  act(() => {
+    draft.doc.getText("text").insert(0, "A");
+    editor.current!.dispatch({ selection: { anchor: 1 } });
+    editor.current!.focus();
+  });
+  await act(async () => {});
+  const edit = async (value: string, inputType: string) => {
+    const text = textbox.querySelector(".cm-line")!.firstChild as Text;
+    // A mobile keyboard can signal a key before its native DOM edit is observed.
+    fireEvent.keyDown(textbox, { key: "Process", keyCode: 229 });
+    text.data = value;
+    window.getSelection()!.collapse(text, value.length);
+    fireEvent.input(textbox, { inputType });
+    await waitFor(() => expect(values(draft.doc).prompt).toBe(value));
+  };
+  fireEvent.compositionStart(textbox);
+  await edit("Ani", "insertCompositionText");
+  await edit("A你", "insertCompositionText");
+  fireEvent.compositionEnd(textbox, { data: "你" });
+  await edit("A", "deleteContentBackward");
+  fireEvent.compositionStart(textbox);
+  await edit("A好", "insertCompositionText");
+  fireEvent.compositionEnd(textbox, { data: "好" });
+});
+
 it("moves by Chinese words in the composer without entering attachment tokens or changing the draft", async () => {
   const { draft, editor, textbox } = inlineEditor();
   act(() => {
@@ -870,4 +897,74 @@ it("opens skill suggestions without a typing debounce and filters each edit sync
     cleanup();
     vi.useRealTimers();
   }
+});
+
+it("keeps a prediction out of shared text until Tab fills it as one undoable edit", () => {
+  const draft = new ThreadDraft();
+  const submit = vi.fn();
+  const dismiss = vi.fn();
+  render(
+    <ComposerEditor
+      draft={draft}
+      profile={{ display_name: "Alice", color: "#2563eb" }}
+      presence={() => {}}
+      submit={submit}
+      prediction={{ text: "Add an example.", dismiss }}
+    />,
+  );
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  expect(textbox.querySelector(".cm-placeholder")?.textContent).toContain(
+    "Add an example.",
+  );
+  expect(screen.getByText("Tab")).toBeTruthy();
+  expect(textbox.getAttribute("aria-description")).toContain(
+    "Suggested follow-up: Add an example. Press Tab to fill or Escape to dismiss.",
+  );
+  expect(draft.doc.getText("text").length).toBe(0);
+  expect(draft.undo.undoStack).toHaveLength(0);
+  fireEvent.keyDown(textbox, { key: "Enter" });
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(textbox, { key: "Escape" });
+  expect(dismiss).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(textbox, { key: "Tab" });
+  expect(draft.doc.getText("text").toString()).toBe("Add an example.");
+  expect(textbox.getAttribute("aria-description")).not.toContain(
+    "Suggested follow-up:",
+  );
+  expect(draft.undo.undoStack).toHaveLength(1);
+  act(() => draft.undo.undo());
+  expect(draft.doc.getText("text").length).toBe(0);
+});
+
+it("does not accept a ghost prediction during IME composition", () => {
+  const draft = new ThreadDraft();
+  render(
+    <ComposerEditor
+      draft={draft}
+      profile={{ display_name: "Alice", color: "#2563eb" }}
+      presence={() => {}}
+      submit={() => {}}
+      prediction={{ text: "Add an example.", dismiss: () => {} }}
+    />,
+  );
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  fireEvent.compositionStart(textbox);
+  fireEvent.keyDown(textbox, { key: "Tab" });
+  expect(draft.doc.getText("text").length).toBe(0);
+  expect(draft.undo.undoStack).toHaveLength(0);
+});
+
+it("offers a button to fill the prediction without a keyboard", () => {
+  const draft = new ThreadDraft();
+  render(
+    <ComposerEditor
+      draft={draft}
+      profile={{ display_name: "Alice", color: "#2563eb" }}
+      presence={() => {}}
+      submit={() => {}}
+      prediction={{ text: "Add an example.", dismiss: () => {} }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Use suggestion" }));
+  expect(draft.doc.getText("text").toString()).toBe("Add an example.");
 });

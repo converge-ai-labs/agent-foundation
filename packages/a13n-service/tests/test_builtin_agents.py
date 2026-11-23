@@ -157,13 +157,17 @@ async def test_official_guidance_comes_from_the_worker_without_revising_user_con
 
 @pytest.mark.parametrize(("endpoint", "module"), [("agent-composer", composer), ("finding-agent", finding_preset)])
 async def test_tool_definition_updates_are_automatic_for_finding_and_candidates_for_composer(
-    service, scripted_model, runs_kit, monkeypatch, endpoint, module
+    skill_service, scripted_model, runs_kit, monkeypatch, endpoint, module
 ):
+    service = skill_service
     await runs_kit.create_model(service, scripted_model)
     head, path, original = await prepared(service, endpoint)
+    config = {**original["config"], "model_settings": {"max_tokens": 1536}, "instructions": "Keep this."}
+    if endpoint == "agent-composer":
+        config["default_environment_template_id"] = service.skill_template_id
     saved = await service.client.post(
         f"{path}/revisions",
-        json={"config": {**original["config"], "model_settings": {"max_tokens": 1536}, "instructions": "Keep this."}},
+        json={"config": config},
         headers={"If-Match": head.headers["etag"]},
     )
     assert saved.status_code == 201, saved.text
@@ -181,6 +185,7 @@ async def test_tool_definition_updates_are_automatic_for_finding_and_candidates_
     versions = (await service.client.get(f"{path}/revisions")).json()["items"]
     assert len(versions) == 3
     candidate = versions[0]
+    assert candidate["config"]["default_environment_template_id"] == config.get("default_environment_template_id")
     assert candidate["config"]["lazy_environment"] is False
     assert candidate["config"]["model_settings"] == {"max_tokens": 1536}
     assert candidate["config"]["instructions"] == "Keep this."
@@ -192,6 +197,72 @@ async def test_tool_definition_updates_are_automatic_for_finding_and_candidates_
     assert adopted.status_code == 200, adopted.text
     _, _, current = await prepared(service, endpoint)
     assert current["id"] == candidate["id"]
+
+
+async def test_composer_default_instance_requires_a_shared_target_and_can_be_cleared(
+    skill_service, scripted_model, runs_kit
+):
+    from .test_environments_external import insert
+
+    service = skill_service
+    await runs_kit.create_model(service, scripted_model)
+    head, path, original = await prepared(service, "agent-composer")
+    private = await insert(service, "https://device.test")
+    config = {**original["config"], "default_environment_id": private}
+    refused = await service.client.post(
+        f"{path}/revisions", json={"config": config}, headers={"If-Match": head.headers["etag"]}
+    )
+    assert refused.status_code == 400 and "workspace-shared" in refused.text
+    instance = await service.client.post(f"{service.api}/environments", json={"template_id": service.skill_template_id})
+    assert instance.status_code == 201, instance.text
+    for selected in (instance.json()["id"], None):
+        config["default_environment_id"] = selected
+        version = (await service.client.get(path)).headers["etag"]
+        saved = await service.client.post(f"{path}/revisions", json={"config": config}, headers={"If-Match": version})
+        assert saved.status_code == 201, saved.text
+        _, _, current = await prepared(service, "agent-composer")
+        assert current["config"]["default_environment_id"] == selected
+
+    version = (await service.client.get(path)).headers["etag"]
+    saved = await service.client.post(
+        f"{path}/revisions",
+        json={
+            "config": {
+                **config,
+                "default_environment_template_id": service.skill_template_id,
+            }
+        },
+        headers={"If-Match": version},
+    )
+    assert saved.status_code == 201, saved.text
+    template = f"{service.api}/environment-templates/{service.skill_template_id}"
+    disabled = await service.client.patch(
+        template, json={"enabled": False}, headers={"If-Match": (await service.client.get(template)).headers["etag"]}
+    )
+    assert disabled.status_code == 200, disabled.text
+    official = composer.configuration
+    with patch.object(
+        composer,
+        "configuration",
+        side_effect=lambda model: official(model).model_copy(update={"lazy_environment": False}),
+    ):
+        current, _, revision = await prepared(service, "agent-composer")
+        assert revision["id"] == saved.json()["id"]
+        skipped = await runs_kit.start_thread(
+            service,
+            current.json(),
+            "Use platform tools",
+            options={"environment": {"mode": "none"}, "overrides": {"instructions": "Be brief."}},
+        )
+        assert skipped["run"]["environment_mounts"] == []
+
+    finding, path, original = await prepared(service, "finding-agent")
+    refused = await service.client.post(
+        f"{path}/revisions",
+        json={"config": {**original["config"], "default_environment_template_id": service.skill_template_id}},
+        headers={"If-Match": finding.headers["etag"]},
+    )
+    assert refused.status_code == 400 and "read-only" in refused.text
 
 
 async def test_waiting_resume_uses_current_official_guidance_and_frozen_supplement(

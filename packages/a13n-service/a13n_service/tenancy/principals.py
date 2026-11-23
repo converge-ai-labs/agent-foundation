@@ -16,7 +16,13 @@ def avatar_url(row: PrincipalRow) -> str | None:
 
 def principal_summary(row: PrincipalRow) -> PrincipalSummary:
     return PrincipalSummary(
-        id=row.id, kind=row.kind, name=row.name, email=row.email, status=row.status, image_url=avatar_url(row)
+        id=row.id,
+        kind=row.kind,
+        name=row.name,
+        email=row.email,
+        oidc_email=row.oidc_email,
+        status=row.status,
+        image_url=avatar_url(row),
     )
 
 

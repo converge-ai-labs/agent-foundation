@@ -125,8 +125,9 @@ async def validate_message(
     await require_thread_tool_names(session, thread, revision, overrides)
     await require_usable(session, scope.workspace_id, asset_fields(message.payload))
     primary = (
-        message.options.environment is not None
-        or await thread_has_primary(session, thread)
+        options.environment.mode != "none"
+        if options.environment is not None
+        else await thread_has_primary(session, thread)
         or await primary_source(session, thread, revision.config) is not None
     )
     await require_readable(

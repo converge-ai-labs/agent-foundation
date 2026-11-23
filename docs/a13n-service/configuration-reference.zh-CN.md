@@ -82,21 +82,27 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 ## `auth`
 
-| 设置                        | 环境变量                                      | 类型 / 选项       | 约束与默认值                                  |
-| --------------------------- | --------------------------------------------- | ----------------- | --------------------------------------------- |
-| `auth.session_seconds`      | `A13N_AUTH__SESSION_SECONDS`                  | 整数              | minimum=60; maximum=604800; default=43200     |
-| `auth.login_limit`          | `A13N_AUTH__LOGIN_LIMIT`                      | 整数              | minimum=1; maximum=1000; default=10           |
-| `auth.login_window_seconds` | `A13N_AUTH__LOGIN_WINDOW_SECONDS`             | 整数              | minimum=1; maximum=3600; default=60           |
-| `auth.invitation_seconds`   | `A13N_AUTH__INVITATION_SECONDS`               | 整数              | minimum=3600; maximum=2592000; default=604800 |
-| `auth.link_seconds`         | `A13N_AUTH__LINK_SECONDS`                     | 整数              | minimum=300; maximum=86400; default=3600      |
-| `auth.expiry_scan_seconds`  | `A13N_AUTH__EXPIRY_SCAN_SECONDS`              | 数值              | maximum=3600; exclusiveMinimum=0; default=60  |
-| `auth.mail.smtp_host`       | `A13N_AUTH__MAIL` (JSON 字段 `smtp_host`)     | 字符串或 null     | maxLength=253; default=null                   |
-| `auth.mail.smtp_port`       | `A13N_AUTH__MAIL` (JSON 字段 `smtp_port`)     | 整数              | minimum=1; maximum=65535; default=587         |
-| `auth.mail.smtp_security`   | `A13N_AUTH__MAIL` (JSON 字段 `smtp_security`) | "starttls", "tls" | default="starttls"                            |
-| `auth.mail.smtp_username`   | `A13N_AUTH__MAIL` (JSON 字段 `smtp_username`) | 字符串或 null     | maxLength=320; default=null                   |
-| `auth.mail.smtp_password`   | `A13N_AUTH__MAIL` (JSON 字段 `smtp_password`) | 字符串或 null     | format="password"; default=null               |
-| `auth.mail.sender`          | `A13N_AUTH__MAIL` (JSON 字段 `sender`)        | 字符串或 null     | maxLength=320; default=null                   |
-| `auth.mail.timeout`         | `A13N_AUTH__MAIL` (JSON 字段 `timeout`)       | 数值              | maximum=60; exclusiveMinimum=0; default=10    |
+| 设置                             | 环境变量                                              | 类型 / 选项       | 约束与默认值                                  |
+| -------------------------------- | ----------------------------------------------------- | ----------------- | --------------------------------------------- |
+| `auth.password_enabled`          | `A13N_AUTH__PASSWORD_ENABLED`                         | 布尔值            | default=true                                  |
+| `auth.oidc.providers`            | `A13N_AUTH__OIDC`（JSON 字段 `providers`）            | 对象              | —                                             |
+| `auth.oidc.defaults`             | `A13N_AUTH__OIDC`（JSON 字段 `defaults`）             | 对象数组          | —                                             |
+| `auth.oidc.session_seconds`      | `A13N_AUTH__OIDC`（JSON 字段 `session_seconds`）      | 整数              | minimum=60; maximum=604800; default=43200     |
+| `auth.oidc.start_limit`          | `A13N_AUTH__OIDC`（JSON 字段 `start_limit`）          | 整数              | minimum=1; maximum=1000; default=30           |
+| `auth.oidc.start_window_seconds` | `A13N_AUTH__OIDC`（JSON 字段 `start_window_seconds`） | 整数              | minimum=1; maximum=3600; default=60           |
+| `auth.session_seconds`           | `A13N_AUTH__SESSION_SECONDS`                          | 整数              | minimum=60; maximum=604800; default=43200     |
+| `auth.login_limit`               | `A13N_AUTH__LOGIN_LIMIT`                              | 整数              | minimum=1; maximum=1000; default=10           |
+| `auth.login_window_seconds`      | `A13N_AUTH__LOGIN_WINDOW_SECONDS`                     | 整数              | minimum=1; maximum=3600; default=60           |
+| `auth.invitation_seconds`        | `A13N_AUTH__INVITATION_SECONDS`                       | 整数              | minimum=3600; maximum=2592000; default=604800 |
+| `auth.link_seconds`              | `A13N_AUTH__LINK_SECONDS`                             | 整数              | minimum=300; maximum=86400; default=3600      |
+| `auth.expiry_scan_seconds`       | `A13N_AUTH__EXPIRY_SCAN_SECONDS`                      | 数值              | maximum=3600; exclusiveMinimum=0; default=60  |
+| `auth.mail.smtp_host`            | `A13N_AUTH__MAIL` (JSON 字段 `smtp_host`)             | 字符串或 null     | maxLength=253; default=null                   |
+| `auth.mail.smtp_port`            | `A13N_AUTH__MAIL` (JSON 字段 `smtp_port`)             | 整数              | minimum=1; maximum=65535; default=587         |
+| `auth.mail.smtp_security`        | `A13N_AUTH__MAIL` (JSON 字段 `smtp_security`)         | "starttls", "tls" | default="starttls"                            |
+| `auth.mail.smtp_username`        | `A13N_AUTH__MAIL` (JSON 字段 `smtp_username`)         | 字符串或 null     | maxLength=320; default=null                   |
+| `auth.mail.smtp_password`        | `A13N_AUTH__MAIL` (JSON 字段 `smtp_password`)         | 字符串或 null     | format="password"; default=null               |
+| `auth.mail.sender`               | `A13N_AUTH__MAIL` (JSON 字段 `sender`)                | 字符串或 null     | maxLength=320; default=null                   |
+| `auth.mail.timeout`              | `A13N_AUTH__MAIL` (JSON 字段 `timeout`)               | 数值              | maximum=60; exclusiveMinimum=0; default=10    |
 
 ## `encryption`
 

@@ -114,21 +114,95 @@ Use grants to change access for an existing member; use [invitations](#invitatio
 
 For a workspace, manage `/api/v1/workspaces/{workspace_id}/grants`:
 
-1. Create a grant with `POST` and `{principal_id, role}`. A principal has at most one grant per scope.
+1. Create a grant with `POST` and `{principal_id, role}`. A principal has at most one manual grant per scope.
 2. Change its role with `PATCH …/grants/{grant_id}` and `{role}`. A role change replaces the grant; use the new ID returned by the response for subsequent operations.
 3. Remove access with `DELETE …/grants/{grant_id}`. Check organization grants too: their permissions still apply in the workspace.
 
-Organization grants use the equivalent `/api/v1/organizations/{organization_id}/grants` paths. Grant routes take no `If-Match`. The last active organization administrator cannot be removed, demoted or disabled; the request returns `409 conflict` with reason `last_organization_admin`. Removing a service account's last grant retires that account and revokes its keys.
+Organization grants use the equivalent `/api/v1/organizations/{organization_id}/grants` paths. Grant routes take no `If-Match`. The last active, manually granted organization administrator cannot be removed, demoted or disabled; the request returns `409 conflict` with reason `last_organization_admin`. Removing a service account's last grant retires that account and revokes its keys.
 
 ## Sign in and login sessions
 
-Console handles login cookies and CSRF tokens. Sign in with your email address and password. Under **Personal settings → Login sessions**, review active logins and revoke those you no longer use. Logging out ends the current login session.
+Console handles login cookies and CSRF tokens. Sign in with your email and password or choose an identity provider when your operator has configured one. Under **Personal settings → Login sessions**, review active logins and revoke those you no longer use. Logging out ends the current login session.
 
 For a custom client, `POST /api/v1/auth/login` accepts `{email, password}` and returns a CSRF token while setting the login cookie. Send `X-CSRF-Token` on cookie-authenticated requests that change state. Browser origins must match the Service's public origin; loopback deployments accept `localhost` and `127.0.0.1`. See [HTTP authentication](http.md#authentication).
 
-The HTTPS cookie is `__Host-a13n_session` with `Secure`, `HttpOnly` and `SameSite=Strict`. Plain HTTP uses `a13n_session` without `Secure`. Sessions expire after `auth.session_seconds` of inactivity (12 hours by default), and login attempts are rate limited per client address and email.
+The HTTPS cookie is `__Host-a13n_session` with `Secure`, `HttpOnly` and `SameSite=Strict`. Plain HTTP uses `a13n_session` without `Secure`. Password sessions expire after `auth.session_seconds` of inactivity (12 hours by default), and login attempts are rate limited per client address and email.
 
 `GET /api/v1/auth/session` reads the current login session and CSRF token; `POST /api/v1/auth/logout` ends it. Both require the session cookie. `GET /api/v1/users/me/login-sessions` lists your logins for management. These operations reject API keys with `403 forbidden`.
+
+### Set up OIDC sign-in
+
+1. Upgrade every Service API replica before enabling OIDC. Bootstrap your local administrator and copy the ID of the workspace that new users should join.
+2. Register a confidential web OIDC client with your identity provider. Use the exact callback `{server.public_url}/api/v1/auth/oidc/{provider_id}/callback` (omit any trailing slash on `server.public_url`). Choose a provider ID such as `team` for the last configuration segment and the matching callback path. Use HTTPS outside loopback development.
+3. In your deployment's Secret, set `A13N_AUTH__OIDC` to the JSON below and restart the Service API replicas. Replace the workspace ID, issuer, client ID and client secret with the values from your deployment.
+
+```json
+{
+  "defaults": [{"workspace_id": "ws_replace_with_your_workspace_id", "role": "runner"}],
+  "providers": {
+    "team": {
+      "label": "Team Identity",
+      "issuer": "https://identity.example.com/realms/team",
+      "client_id": "a13n-console",
+      "client_secret": "replace-at-deploy-time"
+    }
+  }
+}
+```
+
+`A13N_AUTH__OIDC` replaces the entire `[auth.oidc]` value from `service.toml`. Include every provider and all non-default OIDC settings in the JSON. Other `[auth]` fields still come from their own environment variables or TOML. If you configure OIDC in TOML instead, use `defaults` under `[auth.oidc]` for the initial grants and `[auth.oidc.providers.team]` for the provider.
+
+Add more `[auth.oidc.providers.<id>]` tables to show more sign-in buttons. A provider must support Discovery, authorization code with PKCE S256, signed ID tokens (`RS256` or `ES256`), and the `openid profile email` scopes. If the provider requires `client_secret_post`, set `token_endpoint_auth_method = "client_secret_post"`; the default uses HTTP Basic. Console shows the bundled Google mark for `https://accounts.google.com` and the Microsoft mark for `https://login.microsoftonline.com/<tenant UUID>/v2.0`. Other issuers get a shield. Set `brand` to `"google"`, `"microsoft"`, or `"generic"` to override the mark, for example when a trusted broker always redirects to one provider. Choose distinct labels that users will recognize.
+
+Service accepts `aud` as the configured client ID or an array containing only that ID. If present, `azp` must match that client ID as well. ID tokens allow 30 seconds of clock skew for future `iat` and `nbf`, and for expiry (`exp`). Allow Service outbound access to the issuer's Discovery endpoint and the discovered token and JWKS endpoints. These requests use HTTPS outside loopback development, do not follow redirects, and require `Content-Encoding: identity` (or no content encoding). The browser must reach the discovered authorization endpoint. Configure any reverse proxy access log to omit the callback query string.
+
+OIDC start requests have a separate Redis budget per client address across providers: `start_limit` is 30 and `start_window_seconds` is 60 by default, both under `auth.oidc`. Clients behind one NAT address share the budget. Behind a reverse proxy, configure `server.trusted_proxies` to count the forwarded client address. When Redis is unavailable, Service skips the rate-limit check but cannot start a browser login without saving the one-use flow.
+
+Any user your provider lets authorize this client can sign in. Configure application access at the IdP before publishing a button. For Google Workspace, create the web client in a project owned by your organization and set **Google Auth Platform → Audience → Internal** to limit admission to that organization ([Google's audience guide](https://support.google.com/cloud/answer/15549945)). An External app can admit users outside your organization; a domain-looking email address is not an admission rule in Service.
+
+For Microsoft Entra workforce tenants, `email` is a reported address and `xms_edov` covers verification of the domain owner, not verification of the user's address. The [optional claims reference](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference) does not list `email_verified` as a standard Entra optional claim; see also the [ID token claims reference](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference). If your IdP or trusted upstream supports the standard `email_verified` claim, configure it to issue boolean `true` only after verifying the user's address. Without that claim, Service still uses the signed subject and display name, and leaves the email blank.
+
+To limit app access in Entra, [require assignment and assign the intended users or groups](https://learn.microsoft.com/en-us/entra/identity-platform/howto-restrict-your-app-to-a-set-of-users). Entra exempts Global Administrators from this requirement.
+
+For a provider without rules, the first sign-in creates a separate Service user and writes the configured defaults as manual grants. It keeps any verified provider email as display metadata, even if a password account has the same address. Use [members and grants](#members-and-grants) to change access. Returning sign-ins preserve existing grants and do not re-add a removed role.
+
+### Synchronize roles from ID token claims
+
+Add `role_rules` to a provider to synchronize roles at organization or workspace scope. Each grant names exactly one `organization_id` or `workspace_id` and a registered role. This example gives the `console-admins` group organization Admin and grants other users Runner in the default workspace. Use claims that your identity provider controls and users cannot edit.
+
+```json
+{
+  "defaults": [{"workspace_id": "ws_replace_with_your_workspace_id", "role": "runner"}],
+  "providers": {
+    "team": {
+      "label": "Team Identity",
+      "issuer": "https://identity.example.com/realms/team",
+      "client_id": "a13n-console",
+      "client_secret": "replace-at-deploy-time",
+      "extra_scopes": ["groups"],
+      "role_rules": [
+        {"match": {"groups": "console-admins"}, "organization_id": "org_replace_with_your_org_id", "role": "admin"}
+      ]
+    }
+  }
+}
+```
+
+All claims in a rule must match. Each claim accepts one string or a list of alternatives. Service checks an exact top-level key first, then tries a dotted path such as `realm_access.roles`. A match is case-sensitive and accepts a string or a complete array of strings. Missing, malformed, or distributed claims do not match. Request any extra scopes the provider needs and configure it to include the claims in the ID token.
+
+With rules enabled, each successful sign-in synchronizes the provider's grants: matching rules take precedence and defaults are used only when no rule matches. Omit a provider's `defaults` to inherit the global defaults, or use `defaults: []` to disable fallback. With no match and no fallback, sign-in is refused and the last synchronized grants remain unchanged. Each provider needs effective defaults or at least one rule. A selected organization or workspace that does not exist also stops sign-in without changing grants. A first sign-in cannot grant access to an archived workspace.
+
+In the organization or workspace **Members → Change role** dialog, choose **Set role manually** to override SSO at that scope. Choose **Use SSO default → Restore SSO default** to clear the override and apply the latest synchronized role immediately. A manual grant with no SSO default keeps the usual change and remove actions. Keep an active manually granted organization administrator for recovery.
+
+Existing browser sessions, user API keys, and workers use updated roles on their next authorization check. Service-account keys follow their own grants. To retire synchronized roles, remove all of the provider's rules and retain effective defaults; its old synchronized grants clear as users sign in again. Removing the provider entirely leaves its existing grants in place.
+
+### Switch to OIDC-only sign-in
+
+1. Have the intended administrator sign in with the IdP once. In a local administrator session, open **Organization → Members → Add member**, select the new account, and assign **Admin**. The picker includes workspace-only members. To edit or revoke an existing role, use that member's row menu.
+2. In a separate browser session, sign in with the IdP and verify that the new administrator can open **Organization → Members** and manage members.
+3. Set `A13N_AUTH__PASSWORD_ENABLED=false` in the Service API replicas' environment and restart them. This overrides `password_enabled` in `service.toml`. Password sessions stop working; password sign-in, new invitations, resends, and password recovery stop. Administrators can still list and revoke invitations, and API keys keep working.
+
+OIDC sessions expire after `auth.oidc.session_seconds` (12 hours by default), even during activity. When removing someone's IdP access, also disable the Service principal for immediate local revocation. Use `--principal-id` for an OIDC account. To recover password sign-in, set `A13N_AUTH__PASSWORD_ENABLED=true` and restart the API replicas. The original password accounts are retained.
 
 ## Your account
 
@@ -142,7 +216,9 @@ Use a login session for profile changes, password and email changes, login-sessi
 | Change your email          | Supply the new address and current password. SMTP sends a confirmation link to the new address; opening it applies the change and ends all login sessions.                                                      |
 | Disable your account       | `POST /api/v1/users/me/disable` with the current password stops authentication and revokes outstanding reset and email-change links. Grants and keys remain stored. Only an operator can re-enable the account. |
 
-Current-password checks share a rate limit per client address and account. Runs started by a disabled user stop at their next authority check.
+OIDC users manage sign-in details at their identity provider. Current-password checks share a rate limit per client address and account. Runs started by a disabled user stop at their next authority check.
+
+When password sign-in is enabled, organization administrators can help local password users recover access. OIDC users recover access through their identity provider. If a member cannot use self-service recovery, open **Members** in organization settings, or in workspace settings for a workspace-only member. Choose **Reset password** from the member’s row menu and confirm. When SMTP is configured, Service queues an email to the member’s sign-in address. On single-organization deployments, the confirmation also lets you copy the same one-time link to share privately, with or without SMTP. The member opens the link, sets a new password and signs in again with their existing account and workspace access. If you are the only organization administrator and cannot sign in, configure SMTP through your deployment to use self-service recovery.
 
 ## Operator account control
 
@@ -153,7 +229,7 @@ a13n-service --config service.toml user disable --email person@example.com
 a13n-service --config service.toml user enable --email person@example.com
 ```
 
-These are alternative actions. Disabling stops the user's credentials; accepted runs stop at their next authority refresh. Enabling restores use of the retained grants and keys, subject to expiry and revocation. The commands require no organization or workspace role. Audit events have no actor and record `details.authority = "operator"`.
+These are alternative actions. For an OIDC user, replace `--email` with `--principal-id usr_…` using the ID shown in the member list. Disabling stops the user's credentials; accepted runs stop at their next authority refresh. Enabling restores use of the retained grants and keys, subject to expiry and revocation. The commands require no organization or workspace role. Audit events have no actor and record `details.authority = "operator"`.
 
 ## Audit
 

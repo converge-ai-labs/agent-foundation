@@ -259,6 +259,16 @@ For Bot, the entire context/cost/activity row is visible only in the existing De
 
 In the chat workspace, the Activity card previews Tasks and Notes. Each section shows up to three rows. View all opens its own supporting tab; choosing a preview opens that item’s details in the same tab. Views without the supporting workspace retain the floating inspector. The composer shows context and cost at the trailing edge. Status updates never open the inspector or take focus. Task and note projections retain their existing version, stale-state and omission rules. Eligible ordinary roots retain their read-only Bot Note; Bot's global Work notes uses the supporting resource tabs.
 
+### Composer input predictions
+
+An enabled WebUI can pull a follow-up only for a visible, idle, runnable saved chat with an empty, synchronized composer and no pending interaction. Bot and observation-only Threads are excluded. Editing, attachments, reply annotations, composition, navigation, or a new Run suppress the preview and cancel an in-flight pull. Escape dismisses the prediction locally for that continuation; deleting typed input can otherwise reveal the same prediction again.
+
+`POST /api/threads/{thread_id}/input-prediction` takes `{continuation_id}` and returns `{continuation_id, text}`. Prompt-capable shares use the corresponding scoped route; read-only shares cannot sample. The Host samples only the current selected continuation of a successfully completed root Run observed while predictions were enabled. It reuses the captured Model, provider settings, and request prefix in one direct model request. The prefix is process-local, bounded, and expires 300 seconds after the last response; a cold or expired prefix never causes a history replay. Sampling does not run tools or mutate Run or provider conversation state; requests that require native tools or persistent provider conversations are ineligible. Unusable outputs, including tool calls and abstentions, return `null`. Concurrent pulls share work; disconnecting the last waiter cancels the request. Admission and continuation changes invalidate the warm prefix, and the Host rechecks the selected continuation before publishing. Usage is attributed to `input_prediction` and excluded from context occupancy.
+
+A successful suggestion is stored as `{continuation_id, text}` in shared composer options, within normal draft retention. A matching suggestion can outlive the sampling window, browser reloads and App restarts; clients reuse it without a pull. This option is not unsent input and is not part of the text document or its undo history. Consuming the draft clears the prediction. The composer never shows a prediction for a different continuation.
+
+Tab accepts an available prediction as one undoable edit, after skill completion priority. Touch users can use the visible acceptance button. Enter never accepts or submits ghost text. The preview does not enter shared text until accepted.
+
 ### Activity
 
 Share is an icon-only header action with an accessible name and tooltip. Activity sits immediately to its right and shows the observed running count, omitted when zero. It toggles a compact floating card at the chat area's top-right. The card defaults closed and remembers its open state per Thread in this browser. Updates never open it or move focus.

@@ -73,6 +73,19 @@ it("prefers an explicit remote logo before the MCP fallback", () => {
   expect(container.querySelector("img")?.src).toBe(brands.mcp.icon);
 });
 
+it("resolves Service browser, environment and memory provider types", () => {
+  for (const type of [
+    "browserbase",
+    "browser_use",
+    "kernel",
+    "kubernetes",
+    "boxd",
+  ])
+    expect(resolveBrand({ identity: type, alias: type })?.icon).toBeTruthy();
+  for (const type of ["mem0_oss", "mem0_platform"])
+    expect(resolveBrand({ identity: type, alias: type })).toBe(brands.mem0);
+});
+
 it("resolves every built-in Web provider identity while keeping unknown providers generic", () => {
   for (const identity of [
     "duckduckgo",
@@ -92,3 +105,42 @@ it("resolves every built-in Web provider identity while keeping unknown provider
     expect(resolveBrand({ identity })?.icon).toBeTruthy();
   expect(resolveBrand({ identity: "future-web-provider" })).toBeUndefined();
 });
+
+it.each(["google", "microsoft"])(
+  "uses the bundled %s mark and custom fallback on failure",
+  (identity) => {
+    const fallback = <svg data-testid="shield" aria-hidden />;
+    const { container, getByTestId } = render(
+      <BrandIcon identity={identity} bundledOnly fallback={fallback} />,
+    );
+    const icon = container.querySelector("img")!;
+    expect(icon.getAttribute("src")).toBe(brands[identity].icon);
+    const url = new URL(icon.src);
+    expect(
+      /^data:image\/svg\+xml[;,]/.test(icon.src) ||
+        (["http:", "https:"].includes(url.protocol) &&
+          url.origin === location.origin),
+    ).toBe(true);
+    expect(icon.alt).toBe("");
+    fireEvent.error(icon);
+    expect(container.querySelector("img")).toBeNull();
+    expect(getByTestId("shield")).toBeTruthy();
+  },
+);
+
+it.each(["generic", "github"])(
+  "never uses remote or caller-supplied images in bundled-only mode (%s)",
+  (identity) => {
+    const { container, getByTestId } = render(
+      <BrandIcon
+        identity={identity}
+        bundledOnly
+        logo="https://logos.example/icon.svg"
+        fallbackIdentity="microsoft"
+        fallback={<svg aria-hidden data-testid="shield" />}
+      />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(getByTestId("shield")).toBeTruthy();
+  },
+);

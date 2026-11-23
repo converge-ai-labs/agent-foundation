@@ -442,6 +442,10 @@ class BrowserConfiguration(ConfigurationModel):
         return None
 
 
+class InputPredictionConfiguration(ConfigurationModel):
+    enabled: bool = False
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
@@ -460,6 +464,10 @@ class HarnessUiDocument(ConfigurationModel):
     mcp: McpConfiguration = Field(
         default_factory=McpConfiguration,
         exclude_if=lambda value: not value.host_owned_servers and not value.protocol_overrides,
+    )
+    auto_chat_title: bool = Field(default=True, exclude_if=lambda value: value)
+    input_prediction: InputPredictionConfiguration = Field(
+        default_factory=InputPredictionConfiguration, exclude_if=lambda value: not value.enabled
     )
     chat_title_model: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
     dictation: DictationConfiguration = Field(

@@ -139,6 +139,7 @@ async def test_service_account_author_uses_current_profile_even_when_disabled(
         "kind": "service_account",
         "name": "Renamed automation",
         "email": None,
+        "oidc_email": None,
         "status": "disabled",
         "image_url": None,
     }

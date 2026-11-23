@@ -73,6 +73,7 @@ export function AgentEditor({
   onUnnamed,
   overridden,
   preset: incomingPreset,
+  composer = false,
 }: {
   /** Lets a submit button outside the form, such as a page header's, save. */
   id?: string;
@@ -90,6 +91,7 @@ export function AgentEditor({
   submit: (config: AgentConfig, etag?: string, note?: string | null) => void;
   /** A managed preset edits supplements; the Host supplies its official guidance. */
   preset?: Schema["AgentRevision"];
+  composer?: boolean;
   discard?: () => void;
   rail?: (summary: AgentDraftSummary) => ReactNode;
   saveLabel?: string;
@@ -226,6 +228,10 @@ export function AgentEditor({
           model: built.config.model,
           model_settings: built.config.model_settings,
           instructions: built.config.instructions,
+          ...(composer && {
+            default_environment_id: draft.environmentId,
+            default_environment_template_id: draft.environmentTemplateId,
+          }),
         },
         etag,
         note.trim() || null,
@@ -354,7 +360,8 @@ export function AgentEditor({
                 draft.setEnvironmentTemplateId(null);
               }}
               disabled={pending}
-              readOnly={configurationReadonly}
+              readOnly={readonly || (!!preset && !composer)}
+              composer={composer}
             />
             <ConfigurationGroup
               title={t("Advanced")}

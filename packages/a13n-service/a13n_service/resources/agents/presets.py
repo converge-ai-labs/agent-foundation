@@ -99,9 +99,25 @@ async def prepare_in_session(
                 {key: value for key, value in held.model_settings.items() if key in preset_edits.MODEL_SETTINGS}
             )
         config = config.model_copy(update={"model_settings": settings, "instructions": held.instructions})
+        if kind == "composer":
+            config = config.model_copy(
+                update={
+                    "default_environment_id": held.default_environment_id,
+                    "default_environment_template_id": held.default_environment_template_id,
+                }
+            )
         if config == held:
             return agent_view(head)
-        config = await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)
+        try:
+            config = await validate_config(session, actor, scope, head.id, config, registry=registry, plugins=plugins)
+        except ServiceError as error:
+            # A stale workspace default can postpone an official update. Users must still be able to run without it.
+            if kind == "composer" and error.details.get("field") in {
+                "default_environment_id",
+                "default_environment_template_id",
+            }:
+                return agent_view(head)
+            raise
         offered = await session.scalar(
             select(AgentRevisionRow)
             .where(

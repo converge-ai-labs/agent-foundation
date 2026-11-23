@@ -1,5 +1,6 @@
 """The bounded fields workspace users may change on managed Agent revisions."""
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import conflict, invalid
@@ -8,6 +9,7 @@ from a13n_service.resources import revisions
 from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.schemas import AgentConfig
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
+from a13n_service.resources.environment_instances.tables import EnvironmentRow
 
 EDITABLE_KINDS = frozenset({"composer", "finding"})
 MODEL_SETTINGS = frozenset({"thinking", "max_tokens", "temperature", "top_p"})
@@ -35,7 +37,18 @@ async def validate_edit(session: AsyncSession, head: AgentRow | None, config: Ag
         raise conflict(head.KIND, head.id, "builtin")
     base = await session.get_one(AgentRevisionRow, head.default_revision_id)
     previous = stored.read(AgentConfig, base.config, kind=base.KIND, id=base.id)
-    for name in sorted(AgentConfig.model_fields.keys() - {"model", "model_settings", "instructions"}):
+    allowed = {"model", "model_settings", "instructions"}
+    if head.preset_kind == "composer":
+        allowed.update({"default_environment_id", "default_environment_template_id"})
+        if config.default_environment_id and config.default_environment_id != previous.default_environment_id:
+            kind = await session.scalar(
+                select(EnvironmentRow.kind).where(
+                    EnvironmentRow.workspace_id == head.workspace_id, EnvironmentRow.id == config.default_environment_id
+                )
+            )
+            if kind == "external_http":
+                raise invalid("default_environment_id", "Composer requires a workspace-shared environment")
+    for name in sorted(AgentConfig.model_fields.keys() - allowed):
         if getattr(config, name) != getattr(previous, name):
             raise invalid(name, "managed preset field is read-only")
     for name in sorted((config.model_settings.keys() | previous.model_settings.keys()) - MODEL_SETTINGS):

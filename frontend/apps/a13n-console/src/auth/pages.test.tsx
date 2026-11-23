@@ -43,7 +43,7 @@ it("asks for the existing account's password when the invited email already has 
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
-  await user.type(screen.getByLabelText("Your name"), "Ada");
+  await user.type(await screen.findByLabelText("Your name"), "Ada");
   await user.type(screen.getByLabelText("Password"), "not-my-password");
   await user.click(screen.getByRole("button", { name: "Accept invitation" }));
 
@@ -57,22 +57,90 @@ it("asks for the existing account's password when the invited email already has 
   expect(document.activeElement).toBe(password);
 });
 
-function renderAt(path: string, configuration: { email_delivery: boolean }) {
-  http.GET.mockResolvedValue({
-    data: { initialized: true, ...configuration },
-    response: new Response(),
+function renderAuthPage(path: string) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
   });
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path={path} element={<AuthPage />} />
+          <Route path="*" element={<AuthPage />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
   return userEvent.setup();
 }
+
+function renderAt(
+  path: string,
+  configuration: {
+    email_delivery: boolean;
+    password_enabled?: boolean;
+    manual_password_reset?: boolean;
+  },
+) {
+  http.GET.mockResolvedValue({
+    data: { initialized: true, ...configuration },
+    response: new Response(),
+  });
+  return renderAuthPage(path);
+}
+
+it("retries unavailable sign-in configuration without showing a password form", async () => {
+  http.GET.mockRejectedValueOnce(
+    new TypeError("network error"),
+  ).mockResolvedValue({
+    data: {
+      initialized: true,
+      password_enabled: false,
+      oidc_providers: [
+        { id: "team", label: "Team Identity", brand: "generic" },
+      ],
+    },
+    response: new Response(),
+  });
+  const user = renderAuthPage("/login");
+
+  expect(
+    await screen.findByText("Couldn’t load sign-in options."),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText("Password")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Try again" }));
+
+  expect(
+    await screen.findByRole("link", { name: "Sign in with {{provider}}" }),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText("Password")).toBeNull();
+});
+
+it.each([true, false])(
+  "offers the configured OIDC provider when password sign-in is %s",
+  async (passwordEnabled) => {
+    http.GET.mockResolvedValue({
+      data: {
+        initialized: true,
+        password_enabled: passwordEnabled,
+        email_delivery: true,
+        oidc_providers: [
+          { id: "team", label: "Team Identity", brand: "generic" },
+        ],
+      },
+      response: new Response(),
+    });
+    renderAuthPage("/login");
+
+    const provider = await screen.findByRole("link", {
+      name: "Sign in with {{provider}}",
+    });
+    expect(provider.getAttribute("href")).toBe("/api/v1/auth/oidc/team/start");
+    expect(Boolean(screen.queryByLabelText("Password"))).toBe(passwordEnabled);
+    expect(
+      Boolean(screen.queryByRole("link", { name: "Forgot password" })),
+    ).toBe(passwordEnabled);
+  },
+);
 
 it("validates sign-in under each field instead of sending an empty request", async () => {
   const user = renderAt("/login", { email_delivery: true });
@@ -100,3 +168,37 @@ it("explains unavailable password recovery without offering a form it cannot sen
   ).toBeNull();
   expect(screen.getByRole("link", { name: "Back to sign in" })).toBeTruthy();
 });
+
+it("directs users to their organization admin when only manual recovery is available", async () => {
+  const user = renderAt("/login", {
+    email_delivery: false,
+    manual_password_reset: true,
+  });
+  await user.click(
+    await screen.findByRole("link", { name: "Forgot password" }),
+  );
+  await screen.findByText(
+    "Ask your organization administrator for a password reset link.",
+  );
+  expect(
+    screen.queryByRole("button", { name: "Send recovery link" }),
+  ).toBeNull();
+});
+
+it.each(["/forgot-password", "/reset-password#token=fixture"])(
+  "does not offer password recovery on %s when password sign-in is disabled",
+  async (path) => {
+    renderAt(path, {
+      password_enabled: false,
+      email_delivery: false,
+      manual_password_reset: false,
+    });
+    await screen.findByText(
+      "This Service uses an identity provider. Go to sign in to continue.",
+    );
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Send recovery link" }),
+    ).toBeNull();
+  },
+);

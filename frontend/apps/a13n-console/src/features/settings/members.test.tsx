@@ -1,13 +1,23 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError } from "../../service-client";
 import { MemoryRouter } from "react-router";
 import { MemberSettings } from "./members";
 
-const access = vi.hoisted(() => ({ organizationAdmin: true }));
+const access = vi.hoisted(() => ({
+  organizationAdmin: true,
+  workspaceAdmin: true,
+  archived: false,
+}));
 const http = vi.hoisted(() => ({
   GET: vi.fn(),
   POST: vi.fn(),
@@ -20,6 +30,8 @@ vi.mock("../../auth/context", () => ({
 vi.mock("../../layout/workspace", () => ({
   useAccess: () => ({
     organization: { id: "org_acme" },
+    workspace: { archived_at: access.archived ? "2026-09-01T00:00:00Z" : null },
+    can: () => access.workspaceAdmin,
     organizationCan: () => access.organizationAdmin,
   }),
 }));
@@ -34,6 +46,8 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
   access.organizationAdmin = true;
+  access.workspaceAdmin = true;
+  access.archived = false;
 });
 
 const scope = { kind: "workspace", id: "ws_design" } as const;
@@ -56,9 +70,11 @@ const ada = { id: "usr_ada", kind: "user", name: "Ada" };
 
 function setup(items: () => ReturnType<typeof grant>[]) {
   http.GET.mockImplementation(async (path: string) => ({
-    data: path.endsWith("/members")
-      ? { items: [{ ...ada, email: "ada@example.com" }], next_cursor: null }
-      : { items: items(), next_cursor: null },
+    data: path.endsWith("/configuration")
+      ? { password_enabled: true }
+      : path.endsWith("/members")
+        ? { items: [{ ...ada, email: "ada@example.com" }], next_cursor: null }
+        : { items: items(), next_cursor: null },
     response: new Response(),
   }));
   render(
@@ -180,22 +196,24 @@ it.each(["workspace", "organization"] as const)(
       id: kind === "workspace" ? "ws_design" : "org_acme",
     };
     http.GET.mockImplementation(async (path: string) => ({
-      data: {
-        items: path.endsWith("/invitations")
-          ? [
-              {
-                id: "inv_ada",
-                email: "ada@example.com",
-                role: "viewer",
-                created_at: "2026-10-20T00:00:00Z",
-                expires_at: "2099-10-27T00:00:00Z",
-                accepted_at: null,
-                revoked_at: null,
-              },
-            ]
-          : [grant("rb_ada", "viewer", ada)],
-        next_cursor: null,
-      },
+      data: path.endsWith("/configuration")
+        ? { password_enabled: true }
+        : {
+            items: path.endsWith("/invitations")
+              ? [
+                  {
+                    id: "inv_ada",
+                    email: "ada@example.com",
+                    role: "viewer",
+                    created_at: "2026-10-20T00:00:00Z",
+                    expires_at: "2099-10-27T00:00:00Z",
+                    accepted_at: null,
+                    revoked_at: null,
+                  },
+                ]
+              : [grant("rb_ada", "viewer", ada)],
+            next_cursor: null,
+          },
       response: new Response(),
     }));
     http.POST.mockResolvedValue({
@@ -215,7 +233,7 @@ it.each(["workspace", "organization"] as const)(
     );
     const user = userEvent.setup();
     await screen.findByText("Ada");
-    await user.click(screen.getByRole("button", { name: "Invite" }));
+    await user.click(await screen.findByRole("button", { name: "Invite" }));
     await user.type(
       screen.getByRole("textbox", { name: "Email address" }),
       "ada@example.com",
@@ -249,11 +267,299 @@ it.each(["workspace", "organization"] as const)(
   },
 );
 
-it("lets workspace administrators invite without organization administration", async () => {
+it("lets workspace administrators grant by principal ID without listing the organization directory", async () => {
   access.organizationAdmin = false;
   const user = setup(() => [grant("rb_ada", "admin", ada)]);
   await screen.findByText("Ada");
-  expect(screen.queryByRole("button", { name: "Add member" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Invite" }));
-  expect(screen.getByRole("dialog", { name: "Invite member" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Add member" }));
+  const dialog = screen.getByRole("dialog", { name: "Add existing member" });
+  http.POST.mockResolvedValue({
+    response: new Response(null, { status: 201 }),
+  });
+  await user.type(
+    within(dialog).getByRole("textbox", { name: "Principal ID" }),
+    "usr_grace",
+  );
+  await user.click(within(dialog).getByRole("button", { name: "Add member" }));
+  expect(http.POST).toHaveBeenCalledWith(
+    "/api/v1/workspaces/{workspace_id}/grants",
+    {
+      params: { path: { workspace_id: scope.id } },
+      body: { principal_id: "usr_grace", role: "viewer" },
+    },
+  );
+  expect(http.GET.mock.calls.some(([path]) => path.endsWith("/members"))).toBe(
+    false,
+  );
 });
+
+it.each([undefined, true])(
+  "renders invitation actions from the known policy (%s) until disabled",
+  async (cached) => {
+    let complete: (value: unknown) => void = () => {};
+    const configuration = new Promise((resolve) => {
+      complete = resolve;
+    });
+    http.GET.mockImplementation(async (path: string) => {
+      const data = path.endsWith("/configuration")
+        ? await configuration
+        : {
+            items: [
+              {
+                id: "inv_old",
+                email: "old@example.com",
+                role: "viewer",
+                created_at: "2026-10-20T00:00:00Z",
+                expires_at: "2099-10-27T00:00:00Z",
+                accepted_at: null,
+                revoked_at: null,
+              },
+            ],
+            next_cursor: null,
+          };
+      return { data, response: new Response() };
+    });
+    const cache = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    if (cached)
+      cache.setQueryData(["auth-configuration"], { password_enabled: true });
+    render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter initialEntries={["/?tab=invitations"]}>
+          <MemberSettings scope={{ kind: "organization", id: "org_acme" }} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await screen.findByText("old@example.com");
+    expect(Boolean(screen.queryByRole("button", { name: "Invite" }))).toBe(
+      cached === true,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Invitation actions" }),
+    );
+    if (cached) await screen.findByText("Resend", { exact: true });
+    else expect(screen.queryByText("Resend", { exact: true })).toBeNull();
+    complete({ password_enabled: false });
+    await waitFor(() =>
+      expect(cache.getQueryData(["auth-configuration"])).toEqual({
+        password_enabled: false,
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reset password" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Resend" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Revoke" })).toBeTruthy();
+  },
+);
+
+it("edits the effective organization role and only offers SSO defaults for OIDC users", async () => {
+  const grace = { id: "usr_grace", kind: "user", name: "Grace" };
+  const items = [
+    {
+      ...grant("rb_sso_ada", "admin", ada),
+      workspace_id: null,
+      source: "oidc",
+    },
+    {
+      ...grant("rb_grace", "viewer", grace),
+      workspace_id: null,
+      source: "manual",
+    },
+  ];
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/configuration")
+      ? { password_enabled: false }
+      : { items, next_cursor: null },
+    response: new Response(),
+  }));
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <MemberSettings scope={{ kind: "organization", id: "org_acme" }} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  const sso = await screen.findByRole("row", { name: /Ada.*SSO/ });
+  await user.click(within(sso).getByRole("button", { name: "Member actions" }));
+  const edit = await screen.findByRole("menuitem", { name: "Change role" });
+  expect(screen.queryByRole("menuitem", { name: "Remove" })).toBeNull();
+  await user.click(edit);
+  const editor = await screen.findByRole("dialog", { name: "Change role" });
+  expect(
+    within(editor).getByRole("combobox", { name: "Role source" }).textContent,
+  ).toContain("Use SSO default");
+  expect(within(editor).queryByRole("combobox", { name: "Role" })).toBeNull();
+  await user.click(within(editor).getByRole("button", { name: "Cancel" }));
+  const manual = screen.getByRole("row", { name: /Grace.*viewer/i });
+  await user.click(
+    within(manual).getByRole("button", { name: "Member actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Change role" }),
+  );
+  const passwordEditor = await screen.findByRole("dialog", {
+    name: "Change role",
+  });
+  expect(
+    within(passwordEditor).queryByRole("combobox", { name: "Role source" }),
+  ).toBeNull();
+  expect(
+    within(passwordEditor).getByRole("combobox", { name: "Role" }),
+  ).toBeTruthy();
+});
+
+it("keeps only ordinary manual removal available in an archived workspace", async () => {
+  access.archived = true;
+  const user = setup(() => [
+    { ...grant("oidcrb_ada", "admin", ada), source: "oidc" },
+    {
+      ...grant("rb_grace", "viewer", {
+        id: "usr_grace",
+        kind: "user",
+        name: "Grace",
+      }),
+      source: "manual",
+      overrides_sso: true,
+    },
+    grant("rb_lee", "runner", { id: "usr_lee", kind: "user", name: "Lee" }),
+  ]);
+  const sso = await screen.findByRole("row", { name: /Ada.*SSO/ });
+  const override = screen.getByRole("row", { name: /Grace.*Manual/ });
+  for (const row of [sso, override]) {
+    expect(
+      within(row).queryByRole("button", { name: "Member actions" }),
+    ).toBeNull();
+  }
+  const manual = screen.getByRole("row", { name: /Lee.*runner/ });
+  await user.click(
+    within(manual).getByRole("button", { name: "Member actions" }),
+  );
+  expect(await screen.findByRole("menuitem", { name: "Remove" })).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Change role" })).toBeNull();
+});
+
+const localMember = { ...ada, email: "ada@example.com" };
+const ssoMember = {
+  id: "usr_sso",
+  kind: "user",
+  name: "SSO Member",
+  email: null,
+  oidc_email: "sso@example.com",
+};
+const orgScope = { kind: "organization", id: "org_acme" } as const;
+
+function setupPasswordReset(
+  memberScope: typeof scope | typeof orgScope,
+  emailDelivery: boolean,
+  passwordEnabled = true,
+) {
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/configuration")
+      ? {
+          password_enabled: passwordEnabled,
+          manual_password_reset: passwordEnabled,
+          email_delivery: emailDelivery,
+        }
+      : {
+          items: [
+            grant("rb_ada", "runner", localMember),
+            grant("rb_sso", "runner", ssoMember),
+          ],
+          next_cursor: null,
+        },
+    response: new Response(),
+  }));
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <MemberSettings scope={memberScope} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return user;
+}
+
+it.each([
+  [orgScope, true],
+  [scope, false],
+] as const)(
+  "confirms a specific member from the row menu (%j, SMTP: %s)",
+  async (memberScope, emailDelivery) => {
+    const user = setupPasswordReset(memberScope, emailDelivery);
+    http.POST.mockResolvedValue({
+      data: {
+        email_queued: emailDelivery,
+        reset_url: "https://service.test/reset-password#token=fixture",
+      },
+      response: new Response(),
+    });
+    const row = await screen.findByRole("row", { name: /Ada/ });
+    async function openReset() {
+      await user.click(
+        within(row).getByRole("button", { name: "Member actions" }),
+      );
+      const menu = await screen.findByRole("menu", { name: "Member actions" });
+      await user.click(
+        within(menu).getByRole("menuitem", { name: "Reset password" }),
+      );
+      const dialog = await screen.findByRole("dialog", {
+        name: "Reset member password?",
+      });
+      return { dialog, menu };
+    }
+    const { dialog, menu } = await openReset();
+    expect(within(dialog).getByText("Ada")).toBeTruthy();
+    expect(within(dialog).getByText("ada@example.com")).toBeTruthy();
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
+    expect(http.POST).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Reset password" }),
+    );
+    expect(http.POST).toHaveBeenCalledExactlyOnceWith(
+      "/api/v1/organizations/{organization_id}/members/{user_id}/password-reset",
+      { params: { path: { organization_id: "org_acme", user_id: ada.id } } },
+    );
+    await screen.findByRole("button", { name: "Copy reset link" });
+    expect(Boolean(screen.queryByText("Password reset email queued"))).toBe(
+      emailDelivery,
+    );
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    // ModalFrame closes the parent menu after the dialog's exit completes.
+    await waitFor(() => expect(menu.isConnected).toBe(false));
+    await openReset();
+    expect(
+      screen.queryByRole("button", { name: "Copy reset link" }),
+    ).toBeNull();
+  },
+);
+
+it.each(["SSO member", "workspace administrator", "password sign-in disabled"])(
+  "omits the row reset for %s",
+  async (scenario) => {
+    if (scenario === "workspace administrator")
+      access.organizationAdmin = false;
+    const user = setupPasswordReset(
+      scope,
+      false,
+      scenario !== "password sign-in disabled",
+    );
+    const row = await screen.findByRole("row", {
+      name: scenario === "SSO member" ? /SSO Member/ : /Ada/,
+    });
+    await user.click(
+      within(row).getByRole("button", { name: "Member actions" }),
+    );
+    await screen.findByRole("menuitem", { name: "Change role" });
+    expect(
+      screen.queryByRole("menuitem", { name: "Reset password" }),
+    ).toBeNull();
+  },
+);

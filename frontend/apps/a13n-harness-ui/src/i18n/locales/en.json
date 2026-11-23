@@ -3648,5 +3648,14 @@
   "This Inbox item is not in the chat's current history.": "This Inbox item is not in the chat's current history.",
   "New in Inbox": "New in Inbox",
   "Inbox only": "Inbox only",
-  "Bot messages, Inbox items, task results and requests for your input on this browser.": "Bot messages, Inbox items, task results and requests for your input on this browser."
+  "Bot messages, Inbox items, task results and requests for your input on this browser.": "Bot messages, Inbox items, task results and requests for your input on this browser.",
+  "Automatically generate chat titles": "Automatically generate chat titles",
+  "Use an extra model request to name new chats. You can still generate a title manually when this is off.": "Use an extra model request to name new chats. You can still generate a title manually when this is off.",
+  "Input predictions": "Input predictions",
+  "Input prediction": "Input prediction",
+  "Suggest follow-ups": "Suggest follow-ups",
+  "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.": "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.",
+  "Tab": "Tab",
+  "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.": "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.",
+  "Use suggestion": "Use suggestion"
 }

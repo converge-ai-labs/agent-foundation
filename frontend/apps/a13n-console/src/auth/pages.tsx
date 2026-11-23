@@ -1,14 +1,18 @@
 import {
   ArrowLeftIcon,
+  ArrowRightIcon,
   CheckCircleIcon,
   InfoIcon,
+  ShieldCheckIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useAuthConfiguration } from "./configuration";
 import {
   Alert,
   AlertAction,
   AlertDescription,
+  BrandIcon,
   Button,
   FormField,
   Input,
@@ -26,6 +30,7 @@ import { useTranslation } from "react-i18next";
 import {
   Link,
   Navigate,
+  createPath,
   useLocation,
   useNavigate,
   useParams,
@@ -167,11 +172,7 @@ export function AuthPage() {
     navigate = useNavigate();
   const { invitationId } = useParams();
   const { t } = useTranslation();
-  const configuration = useQuery({
-    queryKey: ["auth-configuration"],
-    queryFn: ({ signal }) =>
-      client.http.GET("/api/v1/auth/configuration", { signal }).then(data),
-  });
+  const configuration = useAuthConfiguration();
   const routeMode: Mode = invitationId
     ? "invite"
     : location.pathname === "/forgot-password"
@@ -181,13 +182,34 @@ export function AuthPage() {
         : location.pathname === "/confirm-email"
           ? "email"
           : "login";
+  const passwords = configuration.data?.password_enabled !== false;
+  const providers = configuration.data?.initialized
+    ? (configuration.data.oidc_providers ?? [])
+    : [];
+  const hasProviders = routeMode === "login" && providers.length > 0;
+  const oidcFailed =
+    routeMode === "login" &&
+    new URLSearchParams(location.search).get("oidc") === "failed";
+  const linkUnavailable = !passwords && routeMode !== "login";
+  const needsBootstrap =
+    !passwords &&
+    configuration.data?.initialized === false &&
+    routeMode === "login";
   /** Until the first administrator exists, whoever signs in first creates it. */
   const mode: Mode =
-    routeMode === "login" && configuration.data?.initialized === false
+    routeMode === "login" &&
+    passwords &&
+    configuration.data?.initialized === false
       ? "setup"
       : routeMode;
   const returnTo: To =
     routeMode === "login" ? (location.state?.returnTo ?? "/") : "/";
+  const returnPath =
+    typeof returnTo === "string" ? returnTo : createPath(returnTo);
+  const oidcReturn =
+    returnPath === "/"
+      ? ""
+      : `?${new URLSearchParams({ return_to: returnPath })}`;
   const [token] = useState(
     () => new URLSearchParams(window.location.hash.slice(1)).get("token") ?? "",
   );
@@ -308,7 +330,7 @@ export function AuthPage() {
   };
   if (mode === "login" && auth.data && !auth.anonymous)
     return <Navigate to={returnTo} replace />;
-  if (routeMode === "login" && configuration.isPending) return <Loading />;
+  if (configuration.isPending) return <Loading />;
   function submit(event: FormEvent) {
     event.preventDefault();
     setAttempted(true);
@@ -332,22 +354,25 @@ export function AuthPage() {
   }
   const links = (
     <div className={styles.links}>
-      {mode === "login" && configuration.data?.email_delivery && (
-        <Link
-          className={styles.link}
-          to="/forgot-password"
-          state={location.state}
-        >
-          {t("Forgot password")}
-        </Link>
-      )}
-      {(mode === "forgot" || mode === "reset") && (
+      {mode === "login" &&
+        passwords &&
+        (configuration.data?.email_delivery ||
+          configuration.data?.manual_password_reset) && (
+          <Link
+            className={styles.link}
+            to="/forgot-password"
+            state={location.state}
+          >
+            {t("Forgot password")}
+          </Link>
+        )}
+      {(linkUnavailable || mode === "forgot" || mode === "reset") && (
         <Link className={styles.link} to="/login" state={location.state}>
           <ArrowLeftIcon size={13} aria-hidden="true" />
           {t("Back to sign in")}
         </Link>
       )}
-      {mode === "email" && auth.anonymous && (
+      {mode === "email" && !linkUnavailable && auth.anonymous && (
         <a
           className={styles.link}
           href="/login"
@@ -367,15 +392,98 @@ export function AuthPage() {
           <Wordmark />
         </div>
         <h1 className={styles.title}>{titles[mode]}</h1>
-        {!withoutDelivery && (
+        {!withoutDelivery && !linkUnavailable && !needsBootstrap && (
           <p className={styles.description}>{descriptions[mode]}</p>
         )}
-        {withoutDelivery ? (
+        {hasProviders && (
+          <div className={styles.providers}>
+            {oidcFailed && (
+              <Notice>
+                {t(
+                  "Sign-in didn’t complete. Try again or contact your administrator.",
+                )}
+              </Notice>
+            )}
+            {providers.map((provider) => {
+              return (
+                <Button
+                  key={provider.id}
+                  variant={
+                    !passwords &&
+                    providers.length === 1 &&
+                    provider.brand === "generic"
+                      ? "default"
+                      : "outline"
+                  }
+                  size="lg"
+                  className={styles.provider}
+                  render={
+                    <a
+                      href={`/api/v1/auth/oidc/${encodeURIComponent(provider.id)}/start${oidcReturn}`}
+                    />
+                  }
+                >
+                  <span className={styles.providerMark} aria-hidden="true">
+                    <BrandIcon
+                      identity={provider.brand}
+                      bundledOnly
+                      size={22}
+                      fallback={<ShieldCheckIcon className="size-5" />}
+                    />
+                  </span>
+                  <span>
+                    {t("Sign in with {{provider}}", {
+                      provider: provider.label,
+                    })}
+                  </span>
+                  <span className={styles.providerEnd} aria-hidden="true">
+                    <ArrowRightIcon className="size-4" />
+                  </span>
+                </Button>
+              );
+            })}
+            {passwords && (
+              <div className={styles.divider}>{t("Or use your password")}</div>
+            )}
+          </div>
+        )}
+        {!configuration.data ? (
+          <div className={styles.form}>
+            <Notice
+              action={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  loading={configuration.isFetching}
+                  onClick={() => void configuration.refetch()}
+                >
+                  {t("Try again")}
+                </Button>
+              }
+            >
+              {t("Couldn’t load sign-in options.")}
+            </Notice>
+          </div>
+        ) : needsBootstrap ? (
+          <p className={styles.unavailable}>
+            {t("Ask your Service operator to finish setup.")}
+          </p>
+        ) : linkUnavailable ? (
+          <p className={styles.unavailable}>
+            {t(
+              "This Service uses an identity provider. Go to sign in to continue.",
+            )}
+          </p>
+        ) : !passwords ? null : withoutDelivery ? (
           <p className={styles.unavailable}>
             <InfoIcon size={16} aria-hidden="true" />
-            {t(
-              "Email delivery is not configured. Contact your organization administrator.",
-            )}
+            {configuration.data?.manual_password_reset
+              ? t(
+                  "Ask your organization administrator for a password reset link.",
+                )
+              : t(
+                  "Email delivery is not configured. Contact your organization administrator.",
+                )}
           </p>
         ) : succeeded ? (
           <div className={styles.success}>
@@ -501,7 +609,7 @@ export function AuthPage() {
             </Button>
           </form>
         )}
-        {links}
+        {configuration.data && links}
       </div>
       <p className={styles.tagline}>{t("The foundation for your agents.")}</p>
     </main>

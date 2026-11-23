@@ -1,9 +1,13 @@
+import boxdIcon from "./boxd.svg";
+import googleIcon from "./google.svg";
 import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
+import microsoftIcon from "./microsoft.svg";
 import typesafeIcon from "./typesafe.svg";
 
 /** Display identities only. These mappings never select an endpoint or account. */
 export interface Brand {
   icon: string;
+  bundled?: boolean;
   darkIcon?: string;
   invertInDark?: boolean;
   aliases?: readonly string[];
@@ -11,8 +15,15 @@ export interface Brand {
   endpoints?: readonly string[];
 }
 
+// Vite imports the URL directly; the Next.js image loader wraps it in metadata.
+function assetUrl(asset: string | { src: string }): string {
+  return typeof asset === "string" ? asset : asset.src;
+}
+
 const svgl = "https://svgl.app/library/";
 const curatedBrands: Record<string, Brand> = {
+  google: { icon: assetUrl(googleIcon), bundled: true },
+  microsoft: { icon: assetUrl(microsoftIcon), bundled: true },
   github: {
     icon: `${svgl}github_light.svg`,
     darkIcon: `${svgl}github_dark.svg`,
@@ -155,7 +166,7 @@ const curatedBrands: Record<string, Brand> = {
   kimi: { icon: `${lobeIconsCdn}kimi.svg`, invertInDark: true },
   moonshot: { icon: `${lobeIconsCdn}kimi.svg`, invertInDark: true },
   typesafe: {
-    icon: typesafeIcon,
+    icon: assetUrl(typesafeIcon),
     invertInDark: true,
     hosts: ["typesafe.ai", "api.typesafe.ai"],
   },
@@ -182,6 +193,16 @@ const curatedBrands: Record<string, Brand> = {
     aliases: ["fly", "fly.io", "sprites"],
     hosts: ["fly.io"],
   },
+  browserbase: { icon: "https://www.browserbase.com/favicon.svg" },
+  browser_use: {
+    icon: "https://browser-use.com/logo-primary.svg",
+    invertInDark: true,
+  },
+  kernel: { icon: "https://www.onkernel.com/favicon.svg" },
+  kubernetes: {
+    icon: "https://cdn.jsdelivr.net/gh/cncf/artwork@40e2e8948509b40e4bad479446aaec18d6273bf2/projects/kubernetes/icon/color/kubernetes-icon-color.svg",
+  },
+  boxd: { icon: boxdIcon, invertInDark: true },
   mem0: {
     icon: "https://framerusercontent.com/images/2ys67ADJdvcyGmQnhp8vKWSq8.svg",
     aliases: [
@@ -189,6 +210,8 @@ const curatedBrands: Record<string, Brand> = {
       "a13n.mem0-platform",
       "mem0-oss",
       "mem0-platform",
+      "mem0_oss",
+      "mem0_platform",
     ],
     hosts: ["mem0.ai", "app.mem0.ai", "api.mem0.ai"],
   },
