@@ -3629,5 +3629,14 @@
   "Uses local DuckDuckGo search and HTML scraping. Add a Web provider to use another service.": "Uses local DuckDuckGo search and HTML scraping. Add a Web provider to use another service.",
   "{{field}} environment variable": "{{field}} environment variable",
   "Agent creation": "Agent creation",
-  "Allowed models": "Allowed models"
+  "Allowed models": "Allowed models",
+  "Automatically generate chat titles": "Automatically generate chat titles",
+  "Use an extra model request to name new chats. You can still generate a title manually when this is off.": "Use an extra model request to name new chats. You can still generate a title manually when this is off.",
+  "Input predictions": "Input predictions",
+  "Input prediction": "Input prediction",
+  "Suggest follow-ups": "Suggest follow-ups",
+  "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.": "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.",
+  "Tab": "Tab",
+  "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.": "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.",
+  "Use suggestion": "Use suggestion"
 }

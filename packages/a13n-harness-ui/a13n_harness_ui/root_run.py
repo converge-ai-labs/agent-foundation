@@ -6,7 +6,7 @@ import json
 from collections import Counter, OrderedDict
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from time import monotonic
@@ -29,6 +29,7 @@ from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.goal import GoalView
+from a13n_harness_ui.input_prediction import InputPredictions
 from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.memory import MemoryOrganizationRun
@@ -145,6 +146,7 @@ class RootRunCoordinator:
         self._observation = observation or UiObservation()
         self._restart = restart_coordinator
         self._executor = executor
+        self.input_predictions = InputPredictions()
         self._touch_thread = touch_thread
         self._save_execution = save_execution
         self._summary_hub = summary_hub
@@ -185,6 +187,7 @@ class RootRunCoordinator:
         """Reject new fence users without waiting for caller-owned captures."""
         async with self._lock:
             self._accepting = False
+            self.input_predictions.clear()
 
     async def stop_admission(self) -> None:
         await self.seal_admission()
@@ -279,7 +282,7 @@ class RootRunCoordinator:
                     self._fences_idle.set()
 
     @asynccontextmanager
-    async def require_inactive(self, thread_id: str) -> AsyncGenerator[None]:
+    async def require_inactive(self, thread_id: str, *, clear_interaction: bool = True) -> AsyncGenerator[None]:
         """Serialize an idle-only mutation against root admission for one Thread."""
 
         async with self._thread_fence(thread_id):
@@ -289,7 +292,7 @@ class RootRunCoordinator:
                     code="thread_run_active",
                 )
             yield
-            if (pending := self._interaction_waits.pop(thread_id, None)) is not None:
+            if clear_interaction and (pending := self._interaction_waits.pop(thread_id, None)) is not None:
                 pending.cancelled.set()
 
     @asynccontextmanager
@@ -481,6 +484,7 @@ class RootRunCoordinator:
                 if self._restart is not None and organization is None:
                     self._restart.register(thread_id)
                 self._operations[receipt.receipt_id] = operation
+                self.input_predictions.evict(thread_id)
                 self._active_by_thread[thread_id] = receipt.receipt_id
                 if human_input and self._browser_handback is not None:
                     self._browser_handback.user_input(thread_id)
@@ -812,6 +816,20 @@ class RootRunCoordinator:
             # cannot remove a newly registered successor or its boundary.
             if self._active_by_thread.get(thread_id) == operation.receipt.receipt_id:
                 self._active_by_thread.pop(thread_id, None)
+            if (
+                self._accepting
+                and not operation.observation_only
+                and operation.status is RootOperationStatus.completed
+                and outcome is not None
+                and outcome.prediction is not None
+                and (reference := outcome.continuation.reference) is not None
+            ):
+                prediction = outcome.prediction
+                if (account := operation.main_account) is not None and (
+                    prediction.resolver.configured_models[prediction.prefix.model_id].model_id == account.model_id
+                ):
+                    prediction = replace(prediction, account_id=account.account_id)
+                self.input_predictions.retain(thread_id, reference.logical_digest, prediction)
             operation.done.set()
             if self._tool_executions is not None:
                 self._tool_executions.run_settled(thread_id)

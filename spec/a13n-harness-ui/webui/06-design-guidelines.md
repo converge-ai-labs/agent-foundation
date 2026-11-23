@@ -81,6 +81,8 @@ In saved chats, one compact row above the editor holds the composer mode chips a
 
 Usage popovers lead with the requested figure and unit, then aligned supporting rows. Breakdowns expand inside one bounded reader; help carries accounting explanations. Avoid a card, subtitle or large gap for every metric. Scope changes preserve position and alignment.
 
+Input predictions replace the empty composer placeholder with muted italic ghost text. A fine pointer layout shows a small `Tab` key hint; a coarse pointer layout provides a visible, accessible acceptance button. Preview appearance follows reduced-motion preferences and does not change composer height or show a loading indicator.
+
 ### Reader Edges
 
 Content fades continuously toward the header and composer. No hard seam, ghosted text, text-shadow halo or blurred strip crosses a readable line. Apply the effect at the reading boundary; keep controls crisp and content fully readable away from it. Prose, tables and code retain their geometry through scrolling.

@@ -1470,6 +1470,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/input-prediction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Predict Input */
+        post: operations["predict_input_api_threads__thread_id__input_prediction_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/title-suggestion": {
         parameters: {
             query?: never;
@@ -3019,6 +3036,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shared/{share_id}/threads/{thread_id}/input-prediction": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Shared Predict Input */
+        post: operations["shared_predict_input_api_shared__share_id__threads__thread_id__input_prediction_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shared/{share_id}/threads/{thread_id}/submit": {
         parameters: {
             query?: never;
@@ -3677,6 +3711,11 @@ export interface components {
              */
             capability_warnings?: string[];
             memory_organization?: components["schemas"]["MemoryOrganizationStatus"] | null;
+            /**
+             * Input Prediction Enabled
+             * @default false
+             */
+            input_prediction_enabled?: boolean;
         };
         /** AppView */
         AppView: {
@@ -6195,6 +6234,13 @@ export interface components {
              */
             support_gif?: boolean;
         };
+        /** InputPredictionResponse */
+        InputPredictionResponse: {
+            /** Continuation Id */
+            continuation_id: string;
+            /** Text */
+            text: string | null;
+        };
         /** Instance */
         Instance: {
             /** Connector Id */
@@ -7901,6 +7947,11 @@ export interface components {
         };
         /** ShareAccess */
         ShareAccess: {
+            /**
+             * Input Prediction Enabled
+             * @default false
+             */
+            input_prediction_enabled?: boolean;
             grant: components["schemas"]["ShareGrant"];
             /** Title */
             title: string;
@@ -10131,6 +10182,13 @@ export interface components {
             /** @default null */
             presence?: components["schemas"]["DraftPresence"] | null;
         };
+        /** CachedInputPrediction */
+        CachedInputPrediction: {
+            /** Continuation Id */
+            continuation_id: string;
+            /** Text */
+            text: string;
+        };
         /** DraftFrame */
         DraftFrame: {
             /**
@@ -10150,6 +10208,8 @@ export interface components {
              * @default null
              */
             options_update_base64?: string | null;
+            /** @default null */
+            prediction?: components["schemas"]["CachedInputPrediction"] | null;
             /** Participants */
             participants: {
                 [key: string]: components["schemas"]["DraftPresence"];
@@ -10598,6 +10658,11 @@ export interface components {
              */
             context?: string;
             draft?: components["schemas"]["DictationDraft"];
+        };
+        /** InputPredictionRequest */
+        InputPredictionRequest: {
+            /** Continuation Id */
+            continuation_id: string;
         };
         /** ModelOptionsRequest */
         ModelOptionsRequest: {
@@ -13830,6 +13895,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DictationResult"];
+                };
+            };
+        };
+    };
+    predict_input_api_threads__thread_id__input_prediction_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InputPredictionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputPredictionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -17089,6 +17189,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shared_predict_input_api_shared__share_id__threads__thread_id__input_prediction_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                share_id: string;
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InputPredictionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputPredictionResponse"];
                 };
             };
             /** @description Validation Error */

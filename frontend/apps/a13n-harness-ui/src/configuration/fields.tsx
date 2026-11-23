@@ -420,6 +420,22 @@ export function ResourceFields({
                     agentOptions,
                   )}
 
+                  <SettingsRow
+                    label={t("Automatically generate chat titles")}
+                    controlId="auto-chat-title"
+                    stackOnNarrow={false}
+                    description={t(
+                      "Use an extra model request to name new chats. You can still generate a title manually when this is off.",
+                    )}
+                  >
+                    <Switch
+                      id="auto-chat-title"
+                      checked={get(["auto_chat_title"]) !== false}
+                      onCheckedChange={(enabled) =>
+                        set(["auto_chat_title"], enabled)
+                      }
+                    />
+                  </SettingsRow>
                   <ResourceChoice
                     label={t("Title generation model")}
                     value={text(["chat_title_model"])}
@@ -431,6 +447,27 @@ export function ResourceFields({
                       set(["chat_title_model"], value || undefined)
                     }
                   />
+                </SettingsSection>
+                <SettingsSection
+                  variant="grouped"
+                  title={t("Input predictions")}
+                >
+                  <SettingsRow
+                    label={t("Suggest follow-ups")}
+                    controlId="input-prediction-enabled"
+                    stackOnNarrow={false}
+                    description={t(
+                      "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.",
+                    )}
+                  >
+                    <Switch
+                      id="input-prediction-enabled"
+                      checked={get(["input_prediction", "enabled"]) === true}
+                      onCheckedChange={(enabled) =>
+                        set(["input_prediction", "enabled"], enabled)
+                      }
+                    />
+                  </SettingsRow>
                 </SettingsSection>
                 <DictationFields source={source} onChange={onChange} />
                 {group === "chats" && (

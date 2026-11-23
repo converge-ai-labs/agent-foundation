@@ -140,7 +140,9 @@ class HarnessUiModelResolver:
     ) -> Model:
         return await self.resolve(model_id, thread_id=context.deps.thread_id)
 
-    async def resolve(self, model_id: str, *, thread_id: str) -> Model:
+    async def resolve(
+        self, model_id: str, *, thread_id: str, prediction_account: str | None = None, prediction: bool = False
+    ) -> Model:
         """Construct a captured Model for either primary or auxiliary inference."""
         recipe = self._recipes.get(model_id)
         if recipe is None:
@@ -163,7 +165,9 @@ class HarnessUiModelResolver:
             )
         managed = self._subscription_sources.get(authentication.kind)
         if isinstance(managed, ManagedSubscriptionSource):
-            return self._managed_model(recipe, managed, thread_id=thread_id)
+            return await self._managed_model(
+                recipe, managed, thread_id=thread_id, prediction=prediction, prediction_account=prediction_account
+            )
         if isinstance(authentication, ChatGPTSubscriptionAuthentication):
             from pydantic_ai.models.openai import OpenAIResponsesModel
             from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTProvider
@@ -208,8 +212,14 @@ class HarnessUiModelResolver:
             code="model_authentication_unsupported",
         )
 
-    def _managed_model(
-        self, recipe: ResolvedModelRecipe, source: ManagedSubscriptionSource, *, thread_id: str
+    async def _managed_model(
+        self,
+        recipe: ResolvedModelRecipe,
+        source: ManagedSubscriptionSource,
+        *,
+        thread_id: str,
+        prediction: bool,
+        prediction_account: str | None,
     ) -> Model:
         from a13n_harness.models.codex import CodexRequestModel
         from a13n_harness.providers.model.oauth import build_grok_model
@@ -240,6 +250,21 @@ class HarnessUiModelResolver:
                 )
             assert isinstance(store, GrokAccountStore)
             return build_grok_model(_model_name(recipe), credential_source=store, refresh=source.grok_refresh)
+
+        if prediction:
+            if prediction_account is None or prediction_account not in {member.account for member in group.accounts}:
+                raise ModelResolutionError(
+                    "The previous subscription account is unavailable.", code="subscription_group_unavailable"
+                )
+            account = await source.accounts.get(prediction_account, available=True)
+            if (
+                account.provider != group.provider
+                or await source.usage.tier(account, _model_name(recipe), allow_credits=group.allow_credits) is None
+            ):
+                raise ModelResolutionError(
+                    "The previous subscription account is unavailable.", code="subscription_group_unavailable"
+                )
+            return factory(account)
 
         def selected(event: AccountSelectionEvent) -> None:
             if source.selected is not None:
