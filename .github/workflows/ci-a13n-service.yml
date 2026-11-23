@@ -265,9 +265,9 @@ jobs:
 
       - name: Test a13n Service
         if: startsWith(matrix.task.name, 'tests-')
-        # Balanced runner shards preserve file-local fixtures and execute the complete suite.
+        # Leave time for runner variance and teardown after the full shard runs.
         # Individual stalled tests still fail through faulthandler below.
-        timeout-minutes: 6
+        timeout-minutes: 10
         env:
           TEST_TARGETS: ${{ matrix.task.targets }}
           BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
