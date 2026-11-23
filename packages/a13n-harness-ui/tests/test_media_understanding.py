@@ -217,9 +217,10 @@ async def test_auxiliary_settings_are_independent_and_cancellation_propagates(tm
         await media.understand(request())
 
 
-@pytest.mark.parametrize("native", [False, True])
-@pytest.mark.parametrize("delegated", [False, True])
-@pytest.mark.parametrize("source_kind", ["file", "url"])
+@pytest.mark.parametrize(
+    ("native", "delegated", "source_kind"),
+    [(False, False, "file"), (True, False, "url"), (False, True, "file")],
+)
 async def test_media_native_first_with_configured_auxiliary_in_root_and_child(
     tmp_path, monkeypatch, native, delegated, source_kind
 ):

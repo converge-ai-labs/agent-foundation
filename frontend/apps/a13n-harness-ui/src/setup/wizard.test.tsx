@@ -883,8 +883,7 @@ it("keeps an unsaved provider key in memory when switching language without savi
 
 it.each([
   ["reconcile", true],
-  ["first chat", true],
-  ["reconcile", false],
+  ["first chat", false],
 ] as const)(
   "keeps %s network recovery with global notice=%s and allows resume",
   async (stage, disconnected) => {

@@ -260,13 +260,13 @@ async def test_removing_source_capability_clears_only_its_credentials(service, c
         }
 
 
-@pytest.mark.parametrize("port", ["abc", "65536", "-1"])
-async def test_source_endpoint_rejects_invalid_ports_before_network_access(service, port):
-    payload = body()
-    payload["config"]["export"]["endpoint"] = f"http://localhost:{port}/v1/metrics"
-    response = await service.client.post(f"{service.api}/metrics-data-sources", json=payload)
-    assert response.status_code == 400, response.text
-    assert response.json()["error"]["code"] == "invalid_argument"
+async def test_source_endpoint_rejects_invalid_ports_before_network_access(service):
+    for port in ("abc", "65536", "-1"):
+        payload = body()
+        payload["config"]["export"]["endpoint"] = f"http://localhost:{port}/v1/metrics"
+        response = await service.client.post(f"{service.api}/metrics-data-sources", json=payload)
+        assert response.status_code == 400, response.text
+        assert response.json()["error"]["code"] == "invalid_argument"
 
 
 async def test_writer_cannot_erase_admin_mapping_by_replacing_the_same_binding(service):

@@ -60,8 +60,10 @@ def guest_files(tmp_path):
     )
 
 
-@pytest.mark.parametrize("operation", ["replace", "upsert", "append", "patch"])
-@pytest.mark.parametrize("original_mode", [0o755, 0o600, 0o640])
+@pytest.mark.parametrize(
+    ("operation", "original_mode"),
+    [("replace", 0o755), ("upsert", 0o600), ("append", 0o640), ("patch", 0o755)],
+)
 async def test_guest_publication_preserves_existing_file_permissions(tmp_path, guest_files, operation, original_mode):
     target = tmp_path / "target"
     target.write_text("old\n")

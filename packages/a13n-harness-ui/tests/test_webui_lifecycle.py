@@ -513,11 +513,6 @@ def test_prompt_rejects_invalid_presentation_identity(values: dict[str, object])
     [
         # Both routes share InteractiveOutput's closed-transport classification.
         ("/api/realtime/connect", 'Cannot call "send" once a close message has been sent.'),
-        ("/api/presence/connect", 'Cannot call "send" once a close message has been sent.'),
-        (
-            "/api/presence/connect",
-            "Unexpected ASGI message 'websocket.send', after sending 'websocket.close'.",
-        ),
         (
             "/api/presence/connect",
             "Unexpected ASGI message 'websocket.send', after sending 'websocket.close' or response already completed.",

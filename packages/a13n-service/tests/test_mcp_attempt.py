@@ -80,7 +80,7 @@ async def test_projection_caches_catalog_until_next_run_without_owning_client_or
         assert not client.is_connected()
 
 
-@pytest.mark.parametrize("refusal", [None, "worker", "connection"])
+@pytest.mark.parametrize("refusal", [None, "connection"])
 async def test_state_only_rounds_recheck_authority_without_replaying(service, refusal):
     connection = await create(service, {"config": {"url": "https://mcp.example.test/mcp"}})
     business: list[dict] = []

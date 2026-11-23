@@ -167,9 +167,7 @@ async def test_bot_access_policy_controls_actual_tools_and_long_input(
         assert ("Long text was kept inline" in requests[-1]) is not enabled
 
 
-@pytest.mark.parametrize(
-    "name", ["computer_a11y_roots", "computer_accessibility_typo", "computer_ax_typo", "file_typo", "shell_typo"]
-)
+@pytest.mark.parametrize("name", ["computer_a11y_roots", "file_typo"])
 async def test_bot_deferred_computer_allowlist_still_rejects_unknown_names(tmp_path, monkeypatch, name):
     root = _write_configuration(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"

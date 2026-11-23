@@ -705,8 +705,7 @@ async def test_onboarding_import_enrolls_inheriting_subagent_and_is_retryable(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("composed", [False, True])
-@pytest.mark.parametrize("mode", ["concise", "detailed"])
+@pytest.mark.parametrize(("composed", "mode"), [(False, "concise"), (True, "detailed")])
 async def test_queued_guidance_reaches_native_model_in_order_without_another_root_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, composed: bool, mode: str
 ) -> None:

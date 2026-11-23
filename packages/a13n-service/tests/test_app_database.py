@@ -378,17 +378,7 @@ def test_live_parity_uses_read_only_deployment_role(database, app_database, monk
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize(
-    "role,master,include_apps,prepared",
-    [
-        ("control", True, True, True),
-        ("worker", True, True, False),
-        ("control", True, False, False),
-    ],
-)
-async def test_installed_app_auto_migration_options(
-    settings, app_database, monkeypatch, role, master, include_apps, prepared
-):
+async def test_installed_app_auto_migration_options(settings, app_database, monkeypatch):
     definition = app_database()
     notes(definition)
     apps.initialize(definition)
@@ -405,20 +395,27 @@ async def test_installed_app_auto_migration_options(
     installed = (
         InstalledApp(AppDefinition(definition.app_id, "Demo", database=definition, startup=start), "demo", "1"),
     )
-    config = settings.model_copy(
-        update={
-            "database": settings.database.model_copy(
-                update={
-                    "auto_migrate": master,
-                    "auto_migrate_apps": include_apps,
-                }
-            )
-        }
-    )
-    app = assembly.build_app(settings=config, apps=installed, role=role)
-    monkeypatch.setattr(apps, "heads", lambda *args: pytest.fail("Reloaded installed migration heads"))
-    with pytest.raises(StartupReached if prepared else RuntimeError):
-        async with app.router.lifespan_context(app):
-            pytest.fail("Startup callback must be reached only after schema preparation")
-    assert events == (["started"] if prepared else [])
-    assert apps.status(settings.database, OSS, definition)["ready"] is prepared
+    for role, master, include_apps, prepared in (
+        ("worker", True, True, False),
+        ("control", True, False, False),
+        ("control", True, True, True),
+    ):
+        events.clear()
+        config = settings.model_copy(
+            update={
+                "database": settings.database.model_copy(
+                    update={
+                        "auto_migrate": master,
+                        "auto_migrate_apps": include_apps,
+                    }
+                )
+            }
+        )
+        app = assembly.build_app(settings=config, apps=installed, role=role)
+        with monkeypatch.context() as patch:
+            patch.setattr(apps, "heads", lambda *args: pytest.fail("Reloaded installed migration heads"))
+            with pytest.raises(StartupReached if prepared else RuntimeError):
+                async with app.router.lifespan_context(app):
+                    pytest.fail("Startup callback must be reached only after schema preparation")
+        assert events == (["started"] if prepared else [])
+        assert apps.status(settings.database, OSS, definition)["ready"] is prepared

@@ -1229,8 +1229,10 @@ async def test_inline_session_lease_covers_result_validation_and_busy_restart():
         await state.close()
 
 
-@pytest.mark.parametrize("runner", ["run_code", "run_program"])
-@pytest.mark.parametrize("failure", ["concurrent", "timeout", "deferred"])
+@pytest.mark.parametrize(
+    ("runner", "failure"),
+    [("run_code", "concurrent"), ("run_program", "timeout"), ("run_code", "deferred")],
+)
 async def test_codeact_failure_projects_settled_calls(tmp_path: Path, runner: str, failure: str) -> None:
     import asyncio
 

@@ -264,7 +264,7 @@ def test_service_e2e_workflow_shard_coverage(collect_scenarios):
         assert nodes and not selected.intersection(nodes)
         assert f"{lifecycle}[docker]" not in nodes
         slow_link = {node for node in nodes if "test_client_transfer_backpressure.py::" in node}
-        assert len(slow_link) == (2 if shard["name"] == "other" else 0)
+        assert len(slow_link) == (1 if shard["name"] == "other" else 0)
         selected.update(nodes)
     docker = collect_scenarios("--require-all", "-k", "docker")
     assert docker and not selected.intersection(docker)

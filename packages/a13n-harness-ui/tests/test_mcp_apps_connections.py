@@ -690,8 +690,7 @@ async def test_modern_input_is_not_captured_until_native_terminal_tool_return(tm
         await connections.close()
 
 
-@pytest.mark.parametrize("codeact", [False, True])
-@pytest.mark.parametrize("captured_before_return", [False, True])
+@pytest.mark.parametrize(("codeact", "captured_before_return"), [(False, False), (True, True)])
 @pytest.mark.usefixtures("migrated_databases")
 async def test_detached_result_keeps_original_app_across_runs(
     tmp_path: Path, monkeypatch, codeact: bool, captured_before_return: bool

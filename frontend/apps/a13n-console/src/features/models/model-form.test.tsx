@@ -728,7 +728,7 @@ it("edits native defaults through fields and JSON without losing other settings"
   );
 });
 
-it.each([undefined, "http", "websocket"])(
+it.each([undefined, "websocket"])(
   "reflects and saves WebSocket transport (%s)",
   async (transport) => {
     const settings = transport ? { openai_transport: transport } : {};

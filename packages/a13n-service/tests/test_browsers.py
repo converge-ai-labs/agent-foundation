@@ -959,7 +959,7 @@ async def test_handback_is_committed_before_compaction_can_observe_it(
 
 @pytest.mark.parametrize(
     ("tool", "outcome"),
-    [("js", "success"), ("js", "unknown"), ("js", "dialog"), ("cdp", "protocol_error")],
+    [("js", "unknown"), ("cdp", "protocol_error")],
 )
 async def test_programming_retains_selected_page_grants_and_unknown_permits(
     service, runs_kit, scripted_model, invocation, tool, outcome

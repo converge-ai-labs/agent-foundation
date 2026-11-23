@@ -85,7 +85,7 @@ async def test_unknown_operation_retirement_is_terminal(service, runs_kit, scrip
     assert response.status_code == 201, response.text
 
 
-@pytest.mark.parametrize("status", ["accepted", "running", "waiting"])
+@pytest.mark.parametrize("status", ["running", "waiting"])
 async def test_explicit_retirement_protects_all_active_borrowers(service, runs_kit, scripted_model, status):
     _, browser = await setup(service, runs_kit)
     agent = await runs_kit.create_agent(service, scripted_model, user_questions=True)

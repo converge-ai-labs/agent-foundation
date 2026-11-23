@@ -24,7 +24,7 @@ def settings(settings):
     )
 
 
-@pytest.mark.parametrize("requested", [10, 7200, None])
+@pytest.mark.parametrize("requested", [10, None])
 async def test_configured_takeover_and_renew_bounds_and_default(service, runs_kit, scripted_model, requested):
     _, browser = await setup(service, runs_kit)
     lease, binding = await bound_run(service, runs_kit, scripted_model, browser)

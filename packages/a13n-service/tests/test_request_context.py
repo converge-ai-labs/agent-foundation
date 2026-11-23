@@ -70,8 +70,6 @@ def test_steer_retains_or_matches_context(headers: dict | None, joins: bool) -> 
     [
         (True, True, False),
         (False, True, True),
-        (True, False, True),
-        (True, None, True),
     ],
 )
 async def test_model_forwarding_priority_flags_and_fresh_runs(

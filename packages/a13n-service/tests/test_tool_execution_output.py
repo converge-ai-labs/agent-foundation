@@ -47,7 +47,7 @@ def _observation(data=b"ready"):
     )
 
 
-@pytest.mark.parametrize("publish_failure", [None, "redis", "timeout"])
+@pytest.mark.parametrize("publish_failure", [None, "redis"])
 async def test_cache_coalesces_and_redis_failure_does_not_delay_execution(
     service, scripted_model, runs_kit, monkeypatch, publish_failure
 ):

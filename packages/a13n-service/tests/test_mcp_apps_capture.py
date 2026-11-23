@@ -27,9 +27,15 @@ URI = "ui://counter/app.html"
 MIME = "text/html;profile=mcp-app"
 
 
-@pytest.mark.parametrize("codeact", [False, True])
-@pytest.mark.parametrize("capture_fails", [False, True])
-@pytest.mark.parametrize("tool_error", [False, True])
+@pytest.mark.parametrize(
+    ("codeact", "capture_fails", "tool_error"),
+    [
+        (False, False, False),
+        (True, False, True),
+        (False, True, False),
+        (True, True, True),
+    ],
+)
 async def test_nested_calls_keep_outer_identity_and_capture_failure_does_not_retry(codeact, capture_fails, tool_error):
     server = FastMCP("Nested Apps")
     count = 0

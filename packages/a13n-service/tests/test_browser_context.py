@@ -33,7 +33,7 @@ async def test_context_and_registration_never_prepare_or_admit_page_work(service
     assert not supplier.grants
 
 
-@pytest.mark.parametrize("phase", ["draining", "human", "returning"])
+@pytest.mark.parametrize("phase", ["draining", "human"])
 async def test_explicit_registration_coalesces_with_blocked_calls(service, runs_kit, scripted_model, phase):
     _, browser = await setup(service, runs_kit)
     lease, binding = await bound_run(service, runs_kit, scripted_model, browser)

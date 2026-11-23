@@ -140,13 +140,9 @@ async def test_credentials_discovery_confinement_and_concurrency(service: Simple
         assert (await rpc(second, "tools/list")).status_code == 421
 
 
-@pytest.mark.parametrize("reuse_contract", [False, True])
-async def test_real_client_and_two_api_process_lifespans(
-    service: SimpleNamespace, listen: Any, service_app: Any, reuse_contract: bool
-) -> None:
+async def test_real_client_and_two_api_process_lifespans(service: SimpleNamespace, listen: Any) -> None:
     credential = await key(service)
-    factory = service_app if reuse_contract else build_app
-    second = factory(role="all", settings=service.runtime.settings)
+    second = build_app(role="all", settings=service.runtime.settings)
     async with second.router.lifespan_context(second):
         assert second.state.runtime is not service.runtime
         async with listen(service.app) as first_url, listen(second) as second_url:

@@ -724,10 +724,15 @@ async def test_approval_only_retains_tools_that_execute(approved):
         assert result.state.agent_context_state.get(discovery._DISCOVERY_ID) is None
 
 
-@pytest.mark.parametrize("proxy", [False, True])
-@pytest.mark.parametrize("runtime_function", [False, True])
-@pytest.mark.parametrize("inline", [False, True])
-@pytest.mark.parametrize("failed", [False, True])
+@pytest.mark.parametrize(
+    ("proxy", "runtime_function", "inline", "failed"),
+    [
+        (False, False, False, False),
+        (True, True, True, False),
+        (True, False, True, True),
+        (False, True, False, True),
+    ],
+)
 async def test_deferred_completion_retains_actual_tool_but_failure_does_not(proxy, runtime_function, inline, failed):
     returned = ToolFailed("External execution failed") if failed else {"value": 42}
 

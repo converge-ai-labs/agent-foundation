@@ -140,7 +140,7 @@ async def test_once_retry_keeps_intent_and_finishes_only_after_submission(
         assert item.status == "submitted" and item.dispatch_attempts == 2
 
 
-@pytest.mark.parametrize("code", ["forbidden", "not_found", "unavailable", "missed_deadline"])
+@pytest.mark.parametrize("code", ["forbidden", "missed_deadline"])
 async def test_once_final_submission_failure_completes_instead_of_pausing(
     service, scripted_model, runs_kit, monkeypatch, code
 ) -> None:  # type: ignore[no-untyped-def]

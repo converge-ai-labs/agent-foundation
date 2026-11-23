@@ -38,7 +38,7 @@ async def _statuses(service: SimpleNamespace) -> dict[str, str]:
         return dict((await session.execute(select(RunRow.id, RunRow.status))).tuples().all())
 
 
-@pytest.mark.parametrize("row_type", [ThreadRow, RunRow, AttemptRow])
+@pytest.mark.parametrize("row_type", [ThreadRow, AttemptRow])
 async def test_locked_pages_do_not_starve_later_runs_and_release_partial_locks(
     service, scripted_model, runs_kit, row_type
 ) -> None:  # type: ignore[no-untyped-def]

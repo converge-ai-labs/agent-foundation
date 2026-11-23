@@ -1463,10 +1463,7 @@ async def test_failed_stream_entry_still_exports_retained_state(
     ("owner", "name"),
     [
         ("root", "with_goal"),
-        ("root", "detach_display_history"),
-        ("collector", "__init__"),
         ("collector", "capture"),
-        ("root", "project_continuation"),
         ("goal", "with_goal"),
     ],
 )

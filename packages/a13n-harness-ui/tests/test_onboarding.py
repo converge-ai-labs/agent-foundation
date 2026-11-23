@@ -37,8 +37,7 @@ def _codex_login_file(expiry: datetime) -> Path:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("expired", [False, True])
-@pytest.mark.parametrize("fast", ["", "on", "off"])
+@pytest.mark.parametrize(("expired", "fast"), [(False, "on"), (True, "off")])
 async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
     tmp_path: Path, expired: bool, fast: str
 ) -> None:

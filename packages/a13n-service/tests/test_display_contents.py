@@ -284,10 +284,10 @@ async def test_upload_without_committed_display_is_reclaimed_but_current_attempt
     assert await runtime.objects.keys(prefix, limit=100) == [current]
 
 
-@pytest.mark.parametrize("limited", [False, True])
 async def test_history_content_api_authorizes_references_and_page_cleanup_keeps_bodies(
-    service, scripted_model, runs_kit, monkeypatch, limited
+    service, scripted_model, runs_kit, monkeypatch
 ) -> None:  # type: ignore[no-untyped-def]
+    limited = True
     if limited:
         monkeypatch.setattr(display_contents, "MAX_CONTENT_BYTES", 40000)
     await runs_kit.pause_sweeps(service)

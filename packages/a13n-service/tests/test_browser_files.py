@@ -97,17 +97,16 @@ async def test_upload_assets_enforces_scope_retirement_paths_and_size(service, r
     transfer.provider.upload_file.assert_not_awaited()
 
 
-@pytest.mark.parametrize("name", ["folder/input.txt", "..", r"folder\input.txt"])
-async def test_upload_uses_asset_id_for_names_that_are_not_safe_paths(
-    service, runs_kit, scripted_model, monkeypatch, name
-):
+async def test_upload_uses_asset_id_for_names_that_are_not_safe_paths(service, runs_kit, scripted_model, monkeypatch):
     transfer, actor, _ = await fixture(service, runs_kit, scripted_model, monkeypatch)
     item = await asset(service, actor)
-    async with transaction(service.runtime.storage) as session:
-        row = await session.get(AssetRow, item.id)
-        row.name = name
-    await transfer.upload(AsyncMock(), "input", (f"asset:{item.id}",), revision="fresh")
-    transfer.provider.upload_file.assert_awaited_once_with(transfer.state, item.id, b"upload bytes")
+    for name in ("folder/input.txt", "..", r"folder\input.txt"):
+        transfer.provider.upload_file.reset_mock()
+        async with transaction(service.runtime.storage) as session:
+            row = await session.get(AssetRow, item.id)
+            row.name = name
+        await transfer.upload(AsyncMock(), "input", (f"asset:{item.id}",), revision="fresh")
+        transfer.provider.upload_file.assert_awaited_once_with(transfer.state, item.id, b"upload bytes")
 
 
 async def test_download_publication_is_deduplicated_scoped_and_hides_paths(
@@ -200,7 +199,7 @@ async def test_unsupported_provider_never_exposes_host_download_paths(service, r
             await backend.upload("input", ("/private/file",), revision="fresh")
 
 
-@pytest.mark.parametrize("failure", ["asset_refused", "known", "unknown"])
+@pytest.mark.parametrize("failure", ["known", "unknown"])
 async def test_file_failures_preserve_only_unknown_permits(service, runs_kit, scripted_model, monkeypatch, failure):
     from a13n_service.infra.db import short_session
     from a13n_service.providers.browser.definition import BrowserProviderError

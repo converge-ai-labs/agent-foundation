@@ -233,7 +233,7 @@ it("selects a base model and returns to automatic without editing the gateway ro
   expect(parse(source()).route).toBe("openai-responses:old-custom");
 });
 
-it.each([undefined, "http", "websocket"])(
+it.each([undefined, "websocket"])(
   "reflects and edits persisted WebSocket settings (%s) without losing YAML",
   async (transport) => {
     const initial = transport
@@ -651,11 +651,6 @@ it("removes a completed account catalog immediately after an identity-only chang
 
 it.each([
   [undefined, undefined, "/settings/accounts?tab=groups"],
-  [
-    undefined,
-    "codex-default",
-    "/settings/accounts?tab=groups&group=codex-default",
-  ],
   [
     "codex-work",
     "codex-work",

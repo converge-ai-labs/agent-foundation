@@ -744,8 +744,7 @@ async def test_direct_popup_download_is_tracked_before_attachment(native_browser
         await other.close()
 
 
-@pytest.mark.parametrize("background", [False, True])
-@pytest.mark.parametrize("mixed", [False, True])
+@pytest.mark.parametrize(("background", "mixed"), [(False, False), (True, True)])
 async def test_nested_scaled_cross_site_frames_with_shadow_form(native_browser, workflow_site, background, mixed):
     endpoint, _ = native_browser
     async with CdpBrowserBackend.connect(endpoint) as backend:

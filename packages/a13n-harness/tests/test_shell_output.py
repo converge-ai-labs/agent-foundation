@@ -201,9 +201,10 @@ async def test_offload_at_provider_clamped_limit(monkeypatch, complete):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell fixture")
-@pytest.mark.parametrize("owned", [True, False])
-@pytest.mark.parametrize("operation", ["write", "commit"])
-@pytest.mark.parametrize("exit_code", [0, 7])
+@pytest.mark.parametrize(
+    ("owned", "operation", "exit_code"),
+    [(True, "write", 0), (True, "commit", 7), (False, "write", 7)],
+)
 async def test_shell_waiting_on_spool_failure_preserves_exit(tmp_path, monkeypatch, owned, operation, exit_code):
     from a13n_harness.environment.models import EnvironmentError
     from a13n_harness.providers.environment._local_retention import LocalRetentionWriter

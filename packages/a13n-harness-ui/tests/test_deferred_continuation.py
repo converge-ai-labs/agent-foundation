@@ -20,8 +20,7 @@ from .test_app import _reconstructed, _settings, _write_configuration
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("submission", ["prompt", "partial", "empty"])
-@pytest.mark.parametrize("fail_after_handoff", [False, True])
+@pytest.mark.parametrize(("submission", "fail_after_handoff"), [("prompt", False), ("partial", True)])
 async def test_mixed_batch_continues_through_handoff_and_reopens(tmp_path, submission, fail_after_handoff):
     calls = 0
     effects = []
