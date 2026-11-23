@@ -37,6 +37,8 @@ from a13n_harness_ui.configuration.models import ProjectDefaults, ProjectResourc
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError, ThreadError
+from a13n_harness_ui.inbox import InboxController
+from a13n_harness_ui.inbox_models import InboxKind
 from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.root_execution import RootRunAdmission
 from a13n_harness_ui.root_run import RootRunCoordinator
@@ -138,6 +140,7 @@ class ThreadToolController:
         bot: BotController | None = None,
         create_project: ProjectCreator | None = None,
         read_project_memory: ProjectMemoryReader | None = None,
+        inbox: InboxController | None = None,
     ) -> None:
         self._projections = projections
         self._threads = threads
@@ -149,6 +152,7 @@ class ThreadToolController:
         self.bot = bot
         self.create_project = create_project
         self.read_project_memory = read_project_memory
+        self.inbox = inbox
 
     async def resources(
         self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
@@ -488,6 +492,18 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             and (self.composition is None or self.composition.root.source_kind not in {"live", "memory"})
         )
 
+    @property
+    def _inbox_available(self) -> bool:
+        # Ordinary roots, Coordinators and Bot report to the human; subagent
+        # children and managed workers report to their parent instead.
+        return (
+            isinstance(self.controller, ThreadToolController)
+            and self.controller.inbox is not None
+            and self.composition is not None
+            and self.composition.coordinator_thread_id is None
+            and self.composition.root.source_kind not in {"live", "memory"}
+        )
+
     def _guidance(self, name: str) -> str:
         from a13n_harness_ui.builtin_guidance import instruction_reference_root, ui_guidance
 
@@ -523,6 +539,12 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                     )
             else:
                 instructions += "\nNo models are allowed for new agents. Use existing chats for collaboration."
+        if self._inbox_available:
+            instructions += (
+                "\nThe user reads important outcomes in one Inbox instead of opening every chat. Call post_to_inbox only "
+                "for a final result, a question or decision the user must answer, or a major milestone; never for routine "
+                "progress, acknowledgements or repeats. After a needs_human item, also ask in chat and end your turn."
+            )
         if self._notes_available and self.source_thread_id != BOT_THREAD_ID:
             instructions += (
                 "\nBot Notes are Agent-managed Markdown handoffs. When the projected Bot collaboration status is enabled, "
@@ -621,6 +643,15 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 )
             if self.controller.read_project_memory is not None:
                 self._toolset.add_tool(_tool(self.read_project_memory, name="read_project_memory", effects={"read"}))
+        if self._inbox_available:
+            self._toolset.add_tool(
+                _tool(
+                    self.post_to_inbox,
+                    name="post_to_inbox",
+                    effects={"write", "external_communication"},
+                    idempotency="none",
+                )
+            )
         if self._notes_available:
             is_bot = self.source_thread_id == BOT_THREAD_ID
             for function, name, effects in (
@@ -639,6 +670,34 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             if is_bot:
                 self._toolset.add_tool(_tool(self.list_bot_notes, name="list_bot_notes", effects={"read"}))
         return self._toolset
+
+    async def post_to_inbox(
+        self,
+        ctx: RunContext[AgentContext],
+        kind: InboxKind,
+        title: str = Field(min_length=1, max_length=120),
+        message: str = Field(min_length=1, max_length=4096),
+    ) -> dict[str, Any]:
+        """Post one important item to the user's Inbox, where they read outcomes without opening each chat.
+
+        kind: `result` for a final result or deliverable; `needs_human` for a question, decision, approval or
+        confirmation the user must give; `milestone` for a major checkpoint in long work. Do not post routine
+        progress, acknowledgements or duplicates. Write `message` in Markdown so it stands alone: the conclusion,
+        key evidence and exactly what the user must do. The item links back to this point in the chat.
+        """
+        self._require_context(ctx)
+        assert self.controller.inbox is not None and ctx.tool_call_id is not None
+        try:
+            item = await self.controller.inbox.post(
+                thread_id=self.source_thread_id,
+                tool_call_id=ctx.tool_call_id,
+                kind=kind,
+                title=title,
+                message=message,
+            )
+        except HarnessUiError as exc:
+            return thread_tool_failure(exc, "inbox_post_failed")
+        return {"ok": True, "item_id": item.item_id}
 
     async def read_bot_note(self, ctx: RunContext[AgentContext]) -> dict[str, Any]:
         """Read this root Thread's Bot Note. A missing slot is empty."""

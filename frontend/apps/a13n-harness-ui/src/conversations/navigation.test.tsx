@@ -85,7 +85,7 @@ function json(body: unknown, status = 200) {
 }
 let unsentDrafts: Schema<"DraftSummary">[];
 let unsentThreads: ReturnType<typeof thread>[];
-let failDrafts: boolean;
+let inboxUnread: number;
 let activity: URL[];
 let activeThreads: ReturnType<typeof thread>[];
 let starredThreads: ReturnType<typeof thread>[];
@@ -106,7 +106,7 @@ beforeEach(async () => {
   localStorage.clear();
   unsentDrafts = [];
   unsentThreads = [];
-  failDrafts = false;
+  inboxUnread = 0;
   activity = [];
   activeThreads = [];
   starredThreads = [];
@@ -138,10 +138,9 @@ beforeEach(async () => {
     "fetch",
     vi.fn(async (request: Request) => {
       const url = new URL(request.url);
-      if (url.pathname === "/api/drafts")
-        return failDrafts
-          ? json({ error: { message: "Draft discovery unavailable" } }, 503)
-          : json(unsentDrafts);
+      if (url.pathname === "/api/drafts") return json(unsentDrafts);
+      if (url.pathname === "/api/inbox")
+        return json({ items: [], unread_count: inboxUnread });
       if (
         url.pathname === "/api/threads/activity/lookup" &&
         unsentThreads.length
@@ -1328,41 +1327,23 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   vi.restoreAllMocks();
 });
 
-it("opens unvisited drafts on demand and refreshes only discovery on a draft hint", async () => {
+it("marks unsent drafts on their rows and refreshes only discovery on a draft hint", async () => {
   unsentThreads = [
     { ...thread("old-draft"), root_activity: { state: "running" } },
-    { ...thread("archived-draft"), archived: true },
   ];
   unsentDrafts = unsentThreads.map((item) => ({
     thread_id: item.thread_id,
     draft_id: `draft-${item.thread_id}`,
     unsent_since: "2026-09-21T10:00:00Z",
   }));
-  mount("/", true);
-  const trigger = await screen.findByRole("button", { name: "Drafts 1" });
-  expect(screen.queryByRole("dialog", { name: "Drafts" })).toBeNull();
-  expect(activity).toHaveLength(0);
-  fireEvent.click(trigger);
-  const popup = await screen.findByRole("dialog", { name: "Drafts" });
-  const shortcut = within(popup).getByRole("link", { name: /old-draft/ });
-  expect(within(shortcut).getByText("One")).toBeTruthy();
-  expect(within(popup).queryByText("Running")).toBeNull();
-  expect(within(popup).queryByRole("button", { name: /Actions/ })).toBeNull();
-  expect(screen.queryByText("archived-draft")).toBeNull();
-  fireEvent.click(shortcut);
-  await waitFor(() =>
-    expect(screen.getByLabelText("Current route").textContent).toBe(
-      "/threads/old-draft?compose=1",
-    ),
-  );
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(screen.getByRole("button", { name: "Drafts 1" })).toBe(trigger);
+  mount("/threads/old-draft", true);
   const project = await screen.findByRole("region", { name: "One" });
   const row = within(project).getByRole("link", { name: /old-draft/ });
-  expect(
-    within(row).getByRole("img", { name: "Draft - Unsent input" }),
-  ).toBeTruthy();
-  expect(within(row).queryByText("Draft")).toBeNull();
+  await waitFor(() =>
+    expect(
+      within(row).getByRole("img", { name: "Draft - Unsent input" }),
+    ).toBeTruthy(),
+  );
   expect(within(row).getByText("Running")).toBeTruthy();
   await screen.findByText("Recent 5");
   const activityCalls = activity.length;
@@ -1376,89 +1357,32 @@ it("opens unvisited drafts on demand and refreshes only discovery on a draft hin
     });
   });
   await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Drafts" })).toBe(trigger),
+    expect(
+      within(row).queryByRole("img", { name: "Draft - Unsent input" }),
+    ).toBeNull(),
   );
-  expect(
-    within(row).queryByRole("img", { name: "Draft - Unsent input" }),
-  ).toBeNull();
   expect(activity).toHaveLength(activityCalls);
 });
 
-it("keeps the entry and project rows stable while local drafts appear and clear", async () => {
-  const user = userEvent.setup();
-  const draft = new ThreadDraft();
-  unsentThreads = [thread("old-draft")];
-  mount("/", false, null, draft);
-  const project = await screen.findByRole("button", { name: "One" });
-  const trigger = screen.getByRole("button", { name: "Drafts" });
-  await user.click(trigger);
-  await screen.findByText("No unsent drafts.");
-  await user.keyboard("{Escape}");
-  await waitFor(() => expect(document.activeElement).toBe(trigger));
-  fireEvent.click(screen.getByRole("button", { name: "Search chats" }));
-  const search = screen.getByRole("searchbox");
-  search.focus();
-  act(() => {
-    draft.doc.getText("text").insert(0, "Remember me");
-  });
-  await waitFor(() => expect(trigger.textContent).toContain("1"));
-  expect(screen.getByRole("dialog", { name: "Search chats" })).toBeTruthy();
-  await waitFor(() => expect(document.activeElement).toBe(search));
-  await user.keyboard("{Escape}");
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  expect(screen.getByRole("button", { name: "One" })).toBe(project);
-  await user.click(trigger);
-  await screen.findByRole("link", { name: /old-draft/ });
-  act(() => {
-    draft.doc.getText("text").delete(0, draft.doc.getText("text").length);
-  });
-  await screen.findByText("No unsent drafts.");
-  expect(screen.getByRole("button", { name: "Drafts" })).toBe(trigger);
-  expect(screen.getByRole("dialog", { name: "Drafts" })).toBeTruthy();
-});
-
-it("refocuses the current draft without dismissing its reminder", async () => {
-  const user = userEvent.setup();
-  const draft = new ThreadDraft();
-  draft.doc.getText("text").insert(0, "Continue writing");
-  unsentThreads = [thread("old-draft")];
-  mount("/threads/old-draft?compose=1", false, null, draft);
-  const editor = document.createElement("textarea");
-  editor.setAttribute("data-composer-editor", "");
-  document.body.append(editor);
-  try {
-    await user.click(await screen.findByRole("button", { name: "Drafts 1" }));
-    const popup = await screen.findByRole("dialog", { name: "Drafts" });
-    await user.click(within(popup).getByRole("link", { name: /old-draft/ }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await waitFor(() => expect(document.activeElement).toBe(editor));
-    expect(screen.getByRole("button", { name: "Drafts 1" })).toBeTruthy();
-    expect(draft.hasUnsentInput).toBe(true);
-  } finally {
-    editor.remove();
-  }
-});
-
-it("keeps discovery failure inside the popup and supports retry without an empty claim", async () => {
-  failDrafts = true;
-  mount();
-  await screen.findByLabelText("Draft discovery unavailable");
-  expect(screen.queryByText("Draft discovery unavailable")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /Drafts/ }));
-  await screen.findByText("Draft discovery unavailable");
-  expect(screen.queryByText("No unsent drafts.")).toBeNull();
-  failDrafts = false;
-  unsentThreads = [thread("old-draft")];
-  unsentDrafts = [
-    {
+it("shows the Inbox entry with its unread count and refreshes it on Inbox events", async () => {
+  inboxUnread = 2;
+  mount("/", true);
+  const entry = await screen.findByRole("link", { name: "Inbox, 2 unread" });
+  expect(entry.getAttribute("href")).toBe("/inbox");
+  expect(screen.queryByRole("button", { name: /Drafts/ })).toBeNull();
+  inboxUnread = 0;
+  await act(async () => {
+    vi.mocked(watchSummary).mock.calls.at(-1)![1]({
+      kind: "inbox",
       thread_id: "old-draft",
-      draft_id: "draft-one",
-      unsent_since: "2026-09-21T10:00:00Z",
-    },
-  ];
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await screen.findByRole("button", { name: "Drafts 1" });
-  await screen.findByRole("link", { name: /old-draft/ });
+      root_thread_id: "old-draft",
+      epoch: "test",
+      sequence: 1,
+    });
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("link", { name: "Inbox" })).toBe(entry),
+  );
 });
 
 it("keeps workers collapsed on direct navigation and pages them separately from ordinary Running and Recent", async () => {

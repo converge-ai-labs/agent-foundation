@@ -126,6 +126,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "deleted_thread",
             "environment_binding",
             "envd_session_binding",
+            "inbox_item",
             "live_transcript_head",
             "mcp_oauth",
             "project_model_preference",

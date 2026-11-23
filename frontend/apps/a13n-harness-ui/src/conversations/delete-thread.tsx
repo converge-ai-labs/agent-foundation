@@ -66,7 +66,6 @@ export function DeleteThread({
         });
       void refreshThreadLists(queries);
       void queries.invalidateQueries({ queryKey: ["unsent-drafts"] });
-      void queries.invalidateQueries({ queryKey: ["unsent-threads"] });
       void queries.invalidateQueries({ queryKey: ["projects"] });
     },
     retry: false,

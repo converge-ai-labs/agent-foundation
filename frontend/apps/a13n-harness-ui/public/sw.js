@@ -15,9 +15,8 @@ self.addEventListener("push", (event) => {
       }
       const path =
         typeof notice.path === "string" &&
-        (/^\/threads\/[^/?#]+$/.test(notice.path) ||
-          notice.path === "/settings/notifications" ||
-          notice.path === "/bot")
+        (/^\/(threads\/[^/?#]+|bot)(\?inbox=[\w-]+)?$/.test(notice.path) ||
+          notice.path === "/settings/notifications")
           ? notice.path
           : "/";
       await self.registration.showNotification(

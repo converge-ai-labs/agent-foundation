@@ -105,6 +105,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/": "New chat",
   "/new": "New chat",
   "/memory": "Memory",
+  "/inbox": "Inbox",
   "/usage": "Usage",
   "/archived": "Archived chats",
   "/setup": "Set up Harness",

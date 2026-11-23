@@ -20,9 +20,11 @@ export class PushError extends Error {
   }
 }
 
-export type NotificationScope = "all" | "bot";
-export const notificationScope = (): NotificationScope =>
-  readPreference("notifications.scope", "all") === "bot" ? "bot" : "all";
+export type NotificationScope = "all" | "bot" | "inbox";
+export const notificationScope = (): NotificationScope => {
+  const scope = readPreference("notifications.scope", "all");
+  return scope === "bot" || scope === "inbox" ? scope : "all";
+};
 const SUBSCRIPTION = "notifications.push-subscription";
 export const pushSubscriptionId = () => readPreference(SUBSCRIPTION, "");
 export const supportsPush = () =>

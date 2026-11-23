@@ -101,6 +101,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
                 "usage_model",
                 "usage_fact",
                 "envd_session_binding",
+                "inbox_item",
                 "tool_execution",
                 "compaction",
                 "coordinator",

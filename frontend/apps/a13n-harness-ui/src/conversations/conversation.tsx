@@ -9,6 +9,7 @@ import {
   useContext,
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -22,6 +23,7 @@ import {
   useSearchParams,
 } from "react-router";
 import { BOT_THREAD_ID } from "../bot-identity";
+import { flashInboxPost } from "../inbox";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Input, ModalFrame } from "a13n-ui";
 import { ArrowDown, Sparkle } from "@phosphor-icons/react";
@@ -370,35 +372,77 @@ function ConversationContent({
       ].find((element) => element.dataset.turnId === id),
     [],
   );
+  // An Inbox jump lands on its post inside the turn when that post is rendered.
+  const pendingPost = useRef<string | undefined>(undefined);
+  const landJump = useCallback((target: HTMLElement) => {
+    const element = reader.current!;
+    const post = pendingPost.current
+      ? target.querySelector<HTMLElement>(
+          `[data-inbox-call="${CSS.escape(pendingPost.current)}"]`,
+        )
+      : null;
+    const anchor = post ?? target;
+    element.scrollTop +=
+      anchor.getBoundingClientRect().top -
+      element.getBoundingClientRect().top -
+      16;
+    anchor.focus({ preventScroll: true });
+    if (post) flashInboxPost(post);
+    readingAnchor.current = captureReadingAnchor(element);
+    pendingJump.current = undefined;
+    pendingPost.current = undefined;
+  }, []);
   const jumpToInput = (id: string) => {
     interruptScroll();
     const target = findTurn(id);
     pendingJump.current = id;
     if (!target) setSelectedTurn(id);
-    else {
-      const element = reader.current!;
-      element.scrollTop +=
-        target.getBoundingClientRect().top -
-        element.getBoundingClientRect().top -
-        16;
-      target.focus({ preventScroll: true });
-      readingAnchor.current = captureReadingAnchor(element);
-      pendingJump.current = undefined;
-    }
+    else landJump(target);
   };
   useLayoutEffect(() => {
     if (!pendingJump.current || history.isPreviousHistory) return;
     const target = findTurn(pendingJump.current);
-    const element = reader.current;
-    if (!target || !element) return;
-    element.scrollTop +=
-      target.getBoundingClientRect().top -
-      element.getBoundingClientRect().top -
-      16;
-    target.focus({ preventScroll: true });
-    readingAnchor.current = captureReadingAnchor(element);
-    pendingJump.current = undefined;
-  }, [entries, history.isPreviousHistory, findTurn]);
+    if (target && reader.current) landJump(target);
+  }, [entries, history.isPreviousHistory, findTurn, landJump]);
+  const inboxItem = guest ? null : search.get("inbox");
+  const [inboxProblem, setInboxProblem] = useState<unknown>();
+  const openInboxItem = useEffectEvent((itemId: string) => {
+    setSearch(
+      (current) => {
+        current.delete("inbox");
+        return current;
+      },
+      { replace: true },
+    );
+    setInboxProblem(undefined);
+    const path = { params: { path: { item_id: itemId } } };
+    // Opening the item reads it; its location names the turn in the selected history.
+    void Promise.all([
+      result(
+        transport.client.PATCH("/api/inbox/{item_id}", {
+          ...path,
+          body: { read: true },
+        }),
+      ),
+      result(transport.client.GET("/api/inbox/{item_id}/location", path)),
+    ]).then(
+      ([item, location]) => {
+        void queries.invalidateQueries({ queryKey: ["inbox"] });
+        if (!location.turn_id)
+          return setInboxProblem(
+            new Error(
+              t("This Inbox item is not in the chat's current history."),
+            ),
+          );
+        pendingPost.current = item.tool_call_id;
+        jumpToInput(location.turn_id);
+      },
+      (error: unknown) => setInboxProblem(error),
+    );
+  });
+  useEffect(() => {
+    if (inboxItem) openInboxItem(inboxItem);
+  }, [inboxItem]);
   const reconcileSavedInputs = useCallback(
     (savedEntries: Schema<"TranscriptEntry">[]) => {
       const saved = new Set(
@@ -747,6 +791,8 @@ function ConversationContent({
           });
       }}
     />
+  ) : inboxProblem ? (
+    <ErrorNotice inline error={inboxProblem} />
   ) : !!detail.data &&
     !disconnected &&
     history.isPending &&

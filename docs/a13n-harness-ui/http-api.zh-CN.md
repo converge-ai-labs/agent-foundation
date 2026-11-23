@@ -282,6 +282,18 @@ Transcript 分页附带相交的 `turns` 和 `boundary_entries`，用于显示�
 
 查询不会启动工作。新的人类消息会立即启动空闲 Run，或向确切的当前 Run 发起 immediate steer，不经过自动 inbox，也不受全局 steering 模式影响。steering 被拒绝时会返回错误，不排队或启动替代 Run。输入提交结果不确定时，显式使用相同 ID 和文本重试；精确重试只返回保留结果，不重复执行；相同 ID 配不同内容会失败。打开 `/bot` 查看聊天并回答人类决策；`/threads/thread_bot` 会重定向到该页面。现有决策 API 仍执行正常的 continuation 检查。配置位于 `webui.bot`；私有 Connector 配置既不是 YAML 资源，也不是提供方管理 API。
 
+## Inbox
+
+使用实例密钥的客户端可以读取 Agent 通过 `post_to_inbox` 写入的[收件箱](webui.md#read-your-inbox)。受限访客无法访问这些路由。
+
+| 方法与路径                          | 请求体                                 | 结果                                                                             |
+| ----------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------- |
+| `GET /api/inbox`                    | 无                                     | 按时间倒序的 `items`、可为空的 `next_cursor`，以及待处理未读数 `unread_count`    |
+| `PATCH /api/inbox/{item_id}`        | `{ "read": true }`、`{ "done": true }` | 更新后的条目；标记完成会同时标为已读，`{ "done": false }` 移回待处理             |
+| `GET /api/inbox/{item_id}/location` | 无                                     | 发出条目的工具调用在当前所选历史中的 `thread_id`、`continuation_id` 和 `turn_id` |
+
+`GET /api/inbox?state=open&limit=30&before=<item_id>` 分页读取待处理条目，`state=done` 读取已完成条目。把 `next_cursor` 作为 `before` 传入即可加载更早的条目，`limit` 范围为 1–100。每个条目包含 `item_id`、`thread_id`、`tool_call_id`、`kind`（`result`、`needs_human` 或 `milestone`）、`title`、Markdown 格式的 `message`、`created_at`、可为空的 `read_at` 和 `done_at`，以及来源对话的标题、归档状态和 Project。如果对话的当前所选历史已不包含该调用，`location` 返回的 `continuation_id` 和 `turn_id` 为空。在 WebUI 中打开 `/threads/{thread_id}?inbox={item_id}`（Bot 为 `/bot?inbox={item_id}`）即可定位到该条目。
+
 ## Connector
 
 持实例密钥的客户端通过 `/api/connectors` 管理 [Connector](connectors.md)，受限访客无法使用这些路由。`GET /api/connectors/catalog` 列出声明；`GET /api/connectors` 列出安全的实例视图。`PUT /api/connectors/{connector_id}` 创建时使用 `expected_version: null`，更新时使用当前版本。`DELETE` 要求当前 `expected_version`，并永久停用该 ID。

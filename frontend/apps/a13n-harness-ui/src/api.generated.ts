@@ -273,6 +273,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inbox Items */
+        get: operations["inbox_items_api_inbox_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/inbox/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Inbox Update */
+        patch: operations["inbox_update_api_inbox__item_id__patch"];
+        trace?: never;
+    };
+    "/api/inbox/{item_id}/location": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inbox Location */
+        get: operations["inbox_location_api_inbox__item_id__location_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/configuration": {
         parameters: {
             query?: never;
@@ -6234,6 +6285,63 @@ export interface components {
              */
             support_gif?: boolean;
         };
+        /** InboxItem */
+        InboxItem: {
+            /** Item Id */
+            item_id: string;
+            /** Thread Id */
+            thread_id: string;
+            /** Tool Call Id */
+            tool_call_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "result" | "needs_human" | "milestone";
+            /** Title */
+            title: string;
+            /** Message */
+            message: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Read At */
+            read_at?: string | null;
+            /** Done At */
+            done_at?: string | null;
+            /** Thread Title */
+            thread_title?: string | null;
+            /**
+             * Thread Archived
+             * @default false
+             */
+            thread_archived?: boolean;
+            /** Project Id */
+            project_id?: string | null;
+        };
+        /**
+         * InboxLocation
+         * @description Where the posting tool call sits in the Thread's currently selected history.
+         */
+        InboxLocation: {
+            /** Thread Id */
+            thread_id: string;
+            /** Continuation Id */
+            continuation_id?: string | null;
+            /** Turn Id */
+            turn_id?: string | null;
+        };
+        /** InboxPage */
+        InboxPage: {
+            /** Items */
+            items: components["schemas"]["InboxItem"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+            /** Unread Count */
+            unread_count: number;
+        };
         /** InputPredictionResponse */
         InputPredictionResponse: {
             /** Continuation Id */
@@ -9737,6 +9845,20 @@ export interface components {
             /** Resume Cursor */
             resume_cursor: string | null;
         };
+        /** InboxNotice */
+        InboxNotice: {
+            /** Item Id */
+            item_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "result" | "needs_human" | "milestone";
+            /** Title */
+            title: string;
+            /** Brief */
+            brief: string;
+        };
         /** @enum {string} */
         ItemKind: "text_message" | "reasoning_message" | "tool_call" | "observation";
         /**
@@ -9955,7 +10077,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "thread_work" | "draft";
+            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "thread_work" | "draft" | "inbox";
             /**
              * Root Thread Id
              * @default null
@@ -9973,6 +10095,8 @@ export interface components {
             execution_id?: string | null;
             /** @default null */
             notice?: components["schemas"]["RootOperationNotice"] | null;
+            /** @default null */
+            inbox?: components["schemas"]["InboxNotice"] | null;
             /**
              * Work Sections
              * @default []
@@ -10398,6 +10522,13 @@ export interface components {
             /** Paused */
             paused: boolean;
         };
+        /** InboxItemMutation */
+        InboxItemMutation: {
+            /** Read */
+            read?: boolean | null;
+            /** Done */
+            done?: boolean | null;
+        };
         /** PushKeys */
         PushKeys: {
             /** P256Dh */
@@ -10417,7 +10548,7 @@ export interface components {
              * @default all
              * @enum {string}
              */
-            scope?: "all" | "bot";
+            scope?: "all" | "bot" | "inbox";
             /**
              * Language
              * @default en
@@ -11625,6 +11756,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BotSnapshot"];
+                };
+            };
+        };
+    };
+    inbox_items_api_inbox_get: {
+        parameters: {
+            query?: {
+                state?: "open" | "done";
+                before?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inbox_update_api_inbox__item_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboxItemMutation"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inbox_location_api_inbox__item_id__location_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxLocation"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
