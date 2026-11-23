@@ -1,5 +1,8 @@
 {
+  "Inclusive lower bound on trace duration in seconds, applied before ranking.": "Trace 耗时下限，单位为秒，包含边界值。先筛选，再排序。",
   "List App Plugins": "列出 App 插件",
+  "Pair each trace with its owning Run. In an analysis, first read every cited trace with get_trace, get_trace_span or a list_trace_spans call that returns spans.": "将每条 Trace 与所属 Run 配对。分析时先读取每条要引用的 Trace：调用 get_trace、get_trace_span，或通过 list_trace_spans 读到其中的 span。",
+  "Scope a comparison across Threads to this Session.": "将跨线程比较限定在此会话内。",
   "Update App Plugin": "更新 App 插件",
   "Organization administration is intentionally outside the MCP management surface.": "组织管理不纳入 MCP 管理接口。",
   "Object Reference Transport rules by original tool name; '*' matches any characters. Exact names win, then more literal characters, with false winning equally specific patterns. Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.": "按原始工具名选择 Object Reference Transport 的规则；'*' 可匹配任意字符。精确名称优先，其次是字面字符更多的模式，具体程度相同时 false 优先。使用 {'*': true} 启用所有工具；未匹配的工具沿用原生元数据，默认不支持。",
