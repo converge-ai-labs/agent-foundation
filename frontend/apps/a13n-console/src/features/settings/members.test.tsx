@@ -16,6 +16,7 @@ import { MemberSettings } from "./members";
 const access = vi.hoisted(() => ({
   organizationAdmin: true,
   workspaceAdmin: true,
+  archived: false,
 }));
 const http = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("../../auth/context", () => ({
 vi.mock("../../layout/workspace", () => ({
   useAccess: () => ({
     organization: { id: "org_acme" },
+    workspace: { archived_at: access.archived ? "2026-09-01T00:00:00Z" : null },
     can: () => access.workspaceAdmin,
     organizationCan: () => access.organizationAdmin,
   }),
@@ -45,6 +47,7 @@ afterEach(() => {
   vi.resetAllMocks();
   access.organizationAdmin = true;
   access.workspaceAdmin = true;
+  access.archived = false;
 });
 
 const scope = { kind: "workspace", id: "ws_design" } as const;
@@ -409,4 +412,34 @@ it("edits the effective organization role and only offers SSO defaults for OIDC 
   expect(
     within(passwordEditor).getByRole("combobox", { name: "Role" }),
   ).toBeTruthy();
+});
+
+it("keeps only ordinary manual removal available in an archived workspace", async () => {
+  access.archived = true;
+  const user = setup(() => [
+    { ...grant("oidcrb_ada", "admin", ada), source: "oidc" },
+    {
+      ...grant("rb_grace", "viewer", {
+        id: "usr_grace",
+        kind: "user",
+        name: "Grace",
+      }),
+      source: "manual",
+      overrides_sso: true,
+    },
+    grant("rb_lee", "runner", { id: "usr_lee", kind: "user", name: "Lee" }),
+  ]);
+  const sso = await screen.findByRole("row", { name: /Ada.*SSO/ });
+  const override = screen.getByRole("row", { name: /Grace.*Manual/ });
+  for (const row of [sso, override]) {
+    expect(
+      within(row).queryByRole("button", { name: "Member actions" }),
+    ).toBeNull();
+  }
+  const manual = screen.getByRole("row", { name: /Lee.*runner/ });
+  await user.click(
+    within(manual).getByRole("button", { name: "Member actions" }),
+  );
+  expect(await screen.findByRole("menuitem", { name: "Remove" })).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Change role" })).toBeNull();
 });

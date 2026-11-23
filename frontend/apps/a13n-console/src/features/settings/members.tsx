@@ -164,79 +164,80 @@ function Members({
             rowMenuLabel={t("Member actions")}
             rowMenu={
               canManage
-                ? (item) => (
-                    <>
-                      {canChange && (
-                        <ChangeRole
-                          item={item}
-                          scope={scope}
-                          triggerElement={
-                            <MenuItem closeOnClick={false}>
-                              <UserSwitchIcon size={14} />
-                              {t("Change role")}
-                            </MenuItem>
-                          }
-                        />
-                      )}
-                      {!hasSSODefault(item) && (
-                        <Confirm
-                          subject={`${item.principal.name} · ${t(
-                            `role.${item.role}`,
-                            {
-                              defaultValue: item.role,
-                            },
-                          )}`}
-                          title={t("Remove member")}
-                          description={
-                            // A service account is granted only in its home workspace,
-                            // so this is its last grant.
-                            item.principal.kind === "service_account"
-                              ? t(
-                                  "This removes the service account's only role, which disables it and revokes its keys.",
-                                )
-                              : t(
-                                  "This removes the selected role. Other explicit grants may still allow access.",
-                                )
-                          }
-                          triggerElement={
-                            <MenuItem
-                              closeOnClick={false}
-                              variant="destructive"
-                            >
-                              <UserMinusIcon size={14} />
-                              {t("Remove")}
-                            </MenuItem>
-                          }
-                          danger
-                          action={() =>
-                            scope.kind === "organization"
-                              ? client.http.DELETE(
-                                  "/api/v1/organizations/{organization_id}/grants/{grant_id}",
-                                  {
-                                    params: {
-                                      path: {
-                                        organization_id: scope.id,
-                                        grant_id: item.id,
+                ? (item) =>
+                    !canChange && hasSSODefault(item) ? null : (
+                      <>
+                        {canChange && (
+                          <ChangeRole
+                            item={item}
+                            scope={scope}
+                            triggerElement={
+                              <MenuItem closeOnClick={false}>
+                                <UserSwitchIcon size={14} />
+                                {t("Change role")}
+                              </MenuItem>
+                            }
+                          />
+                        )}
+                        {!hasSSODefault(item) && (
+                          <Confirm
+                            subject={`${item.principal.name} · ${t(
+                              `role.${item.role}`,
+                              {
+                                defaultValue: item.role,
+                              },
+                            )}`}
+                            title={t("Remove member")}
+                            description={
+                              // A service account is granted only in its home workspace,
+                              // so this is its last grant.
+                              item.principal.kind === "service_account"
+                                ? t(
+                                    "This removes the service account's only role, which disables it and revokes its keys.",
+                                  )
+                                : t(
+                                    "This removes the selected role. Other explicit grants may still allow access.",
+                                  )
+                            }
+                            triggerElement={
+                              <MenuItem
+                                closeOnClick={false}
+                                variant="destructive"
+                              >
+                                <UserMinusIcon size={14} />
+                                {t("Remove")}
+                              </MenuItem>
+                            }
+                            danger
+                            action={() =>
+                              scope.kind === "organization"
+                                ? client.http.DELETE(
+                                    "/api/v1/organizations/{organization_id}/grants/{grant_id}",
+                                    {
+                                      params: {
+                                        path: {
+                                          organization_id: scope.id,
+                                          grant_id: item.id,
+                                        },
                                       },
                                     },
-                                  },
-                                )
-                              : client.http.DELETE(
-                                  "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
-                                  {
-                                    params: {
-                                      path: {
-                                        workspace_id: scope.id,
-                                        grant_id: item.id,
+                                  )
+                                : client.http.DELETE(
+                                    "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
+                                    {
+                                      params: {
+                                        path: {
+                                          workspace_id: scope.id,
+                                          grant_id: item.id,
+                                        },
                                       },
                                     },
-                                  },
-                                )
-                          }
-                        />
-                      )}
-                    </>
-                  )
+                                  )
+                            }
+                          />
+                        )}
+                      </>
+                    )
                 : undefined
             }
             columns={[

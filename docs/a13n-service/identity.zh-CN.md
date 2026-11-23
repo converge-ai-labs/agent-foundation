@@ -150,7 +150,7 @@ HTTPS cookie 名为 `__Host-a13n_session`，带有 `Secure`、`HttpOnly` 和 `Sa
 }
 ```
 
-`A13N_AUTH__OIDC` 会替换 `service.toml` 中整段 `[auth.oidc]`。请在 JSON 中填入全部提供方及所有非默认的 OIDC 设置。`[auth]` 中的其他字段仍由各自的环境变量或 TOML 提供。如果改用 TOML 配置，则把工作空间 ID 写在 `[auth.oidc]`，把提供方配置写在 `[auth.oidc.providers.team]`。
+`A13N_AUTH__OIDC` 会替换 `service.toml` 中整段 `[auth.oidc]`。请在 JSON 中填入全部提供方及所有非默认的 OIDC 设置。`[auth]` 中的其他字段仍由各自的环境变量或 TOML 提供。如果改用 TOML 配置，则在 `[auth.oidc]` 的 `defaults` 中填写初始授权，在 `[auth.oidc.providers.team]` 中填写提供方配置。
 
 每增加一个 `[auth.oidc.providers.<id>]` 表，登录页就会多一个按钮。提供方须支持 Discovery、带 PKCE S256 的授权码流程、签名 ID token（`RS256` 或 `ES256`）以及 `openid profile email` 权限范围。默认使用 HTTP Basic；如果提供方要求 `client_secret_post`，请设置 `token_endpoint_auth_method = "client_secret_post"`。签发方为 `https://accounts.google.com` 时，Console 显示内置的 Google 图标；签发方为 `https://login.microsoftonline.com/<租户 UUID>/v2.0` 时显示 Microsoft 图标；其他签发方显示盾牌。如果受信任的身份代理始终将用户转到同一家提供方，可以将 `brand` 设为 `"google"`、`"microsoft"` 或 `"generic"` 来指定图标。请为各提供方设置易于辨认、互不重复的标签。
 
