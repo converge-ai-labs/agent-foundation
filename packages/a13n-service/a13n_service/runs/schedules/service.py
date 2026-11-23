@@ -164,67 +164,79 @@ async def create(
 ) -> tuple[Schedule, bool]:
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        authority = execution_authority(actor, scope)
-        digest = request_digest("schedule.create", scope.workspace_id, body.model_dump(mode="json"))
-        # Both the quota and replay arbitration belong to this workspace. No tentative Session is needed by a loser.
-        await advisory_lock(session, "schedules", scope.workspace_id)
-        found = await session.scalar(
-            select(ScheduleRow).where(
-                ScheduleRow.workspace_id == scope.workspace_id,
-                ScheduleRow.created_by_id == actor.id,
-                ScheduleRow.create_request_key == request_key,
-            )
+        return await create_in_transaction(session, runtime, actor, scope, body, request_key=request_key)
+
+
+async def create_in_transaction(
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    scope: WorkspaceScope,
+    body: ScheduleCreate,
+    *,
+    request_key: str,
+) -> tuple[Schedule, bool]:
+    authority = execution_authority(actor, scope)
+    digest = request_digest("schedule.create", scope.workspace_id, body.model_dump(mode="json"))
+    # Both the quota and replay arbitration belong to this workspace. No tentative Session is needed by a loser.
+    await advisory_lock(session, "schedules", scope.workspace_id)
+    found = await session.scalar(
+        select(ScheduleRow).where(
+            ScheduleRow.workspace_id == scope.workspace_id,
+            ScheduleRow.created_by_id == actor.id,
+            ScheduleRow.create_request_key == request_key,
         )
-        if found is not None:
-            if found.create_request_digest != digest:
-                raise conflict("request", request_key, IDEMPOTENCY_KEY_REUSED)
-            return queries.view(found), False
-        count = await session.scalar(
-            select(func.count())
-            .select_from(ScheduleRow)
-            .where(
-                ScheduleRow.workspace_id == scope.workspace_id,
-                ScheduleRow.state != "archived",
-            )
+    )
+    if found is not None:
+        if found.create_request_digest != digest:
+            raise conflict("request", request_key, IDEMPOTENCY_KEY_REUSED)
+        return queries.view(found), False
+    count = await session.scalar(
+        select(func.count())
+        .select_from(ScheduleRow)
+        .where(
+            ScheduleRow.workspace_id == scope.workspace_id,
+            ScheduleRow.state != "archived",
         )
-        if (count or 0) >= runtime.settings.schedules.max_per_workspace:
-            raise rate_limited(
-                "Workspace Schedule limit reached",
-                60,
-                {"kind": "schedule_limit", "limit": runtime.settings.schedules.max_per_workspace},
-            )
-        await validate_invocation(session, runtime, actor, scope, body.invocation, authority)
-        current = await now(session)
-        future = first_fire(body.schedule, current)
-        session_id, thread_id = await resolve_target(session, runtime, actor, scope, body.target, body.invocation)
-        row = ScheduleRow(
-            id=new_object_id("sch"),
-            organization_id=scope.organization_id,
-            workspace_id=scope.workspace_id,
-            session_id=session_id,
-            thread_id=thread_id,
-            name=body.name,
-            description=body.description,
-            labels=dict(body.labels),
-            state=body.state,
-            pause_reason="manual" if body.state == "paused" else None,
-            **time_values(body.schedule),
-            max_lateness_seconds=body.max_lateness_seconds,
-            invocation=body.invocation.model_dump(mode="json"),
-            principal_id=actor.id,
-            authority=authority.model_dump(mode="json"),
-            created_by_id=actor.id,
-            updated_by_id=actor.id,
-            create_request_key=request_key,
-            create_request_digest=digest,
-            next_fire_at=future if body.state == "enabled" else None,
+    )
+    if (count or 0) >= runtime.settings.schedules.max_per_workspace:
+        raise rate_limited(
+            "Workspace Schedule limit reached",
+            60,
+            {"kind": "schedule_limit", "limit": runtime.settings.schedules.max_per_workspace},
         )
-        session.add(row)
-        audit_row(session, actor, row, "create", {"session_id": session_id})
-        await session.flush()
-        if row.state == "enabled":
-            await webhooks.schedule_changed(session, runtime, row, current)
-        return queries.view(row), True
+    await validate_invocation(session, runtime, actor, scope, body.invocation, authority)
+    current = await now(session)
+    future = first_fire(body.schedule, current)
+    session_id, thread_id = await resolve_target(session, runtime, actor, scope, body.target, body.invocation)
+    row = ScheduleRow(
+        id=new_object_id("sch"),
+        organization_id=scope.organization_id,
+        workspace_id=scope.workspace_id,
+        session_id=session_id,
+        thread_id=thread_id,
+        name=body.name,
+        description=body.description,
+        labels=dict(body.labels),
+        state=body.state,
+        pause_reason="manual" if body.state == "paused" else None,
+        **time_values(body.schedule),
+        max_lateness_seconds=body.max_lateness_seconds,
+        invocation=body.invocation.model_dump(mode="json"),
+        principal_id=actor.id,
+        authority=authority.model_dump(mode="json"),
+        created_by_id=actor.id,
+        updated_by_id=actor.id,
+        create_request_key=request_key,
+        create_request_digest=digest,
+        next_fire_at=future if body.state == "enabled" else None,
+    )
+    session.add(row)
+    audit_row(session, actor, row, "create", {"session_id": session_id})
+    await session.flush()
+    if row.state == "enabled":
+        await webhooks.schedule_changed(session, runtime, row, current)
+    return queries.view(row), True
 
 
 async def update(

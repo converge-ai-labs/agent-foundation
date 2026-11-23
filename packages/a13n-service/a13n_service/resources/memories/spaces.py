@@ -84,36 +84,47 @@ async def create_space(
 ) -> MemorySpace:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        authority = await _authority(session, actor, scope, body.organization)
-        memory = await insert_memory(
-            session,
-            actor,
-            scope,
-            MemoryCreate(
-                name=body.name,
-                guidance=body.guidance,
-                always_load=body.always_load,
-            ),
-            settings=settings,
-        )
-        row = MemorySpaceRow(
-            id=new_object_id("mspace"),
-            organization_id=scope.organization_id,
-            workspace_id=scope.workspace_id,
-            memory_id=memory.id,
+        return await insert_space(session, actor, scope, body, settings=settings)
+
+
+async def insert_space(
+    session: AsyncSession,
+    actor: Principal,
+    scope: WorkspaceScope,
+    body: MemorySpaceCreate,
+    *,
+    settings: MemorySettings,
+) -> MemorySpace:
+    authority = await _authority(session, actor, scope, body.organization)
+    memory = await insert_memory(
+        session,
+        actor,
+        scope,
+        MemoryCreate(
             name=body.name,
-            description=body.description,
-            labels=body.labels,
-            enabled=body.enabled,
-            organization=body.organization.model_dump(mode="json", exclude_none=True),
-            authority=authority,
-            created_by_id=actor.id,
-            updated_by_id=actor.id,
-        )
-        session.add(row)
-        await session.flush()
-        audit_row(session, actor, row, "create")
-        return (await views(session, [row]))[0]
+            guidance=body.guidance,
+            always_load=body.always_load,
+        ),
+        settings=settings,
+    )
+    row = MemorySpaceRow(
+        id=new_object_id("mspace"),
+        organization_id=scope.organization_id,
+        workspace_id=scope.workspace_id,
+        memory_id=memory.id,
+        name=body.name,
+        description=body.description,
+        labels=body.labels,
+        enabled=body.enabled,
+        organization=body.organization.model_dump(mode="json", exclude_none=True),
+        authority=authority,
+        created_by_id=actor.id,
+        updated_by_id=actor.id,
+    )
+    session.add(row)
+    await session.flush()
+    audit_row(session, actor, row, "create")
+    return (await views(session, [row]))[0]
 
 
 async def list_spaces(

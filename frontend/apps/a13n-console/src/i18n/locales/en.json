@@ -4310,6 +4310,7 @@
   "Manage tokens for authenticated HTTPS requests from agent environments.": "Manage tokens for authenticated HTTPS requests from agent environments.",
   "Search credentials": "Search credentials",
   "Credential": "Credential",
+  "Managed by {{appId}}": "Managed by {{appId}}",
   "Credential version": "Credential version",
   "{{count}} credentials on this page": "{{count}} credentials on this page",
   "No matching credentials": "No matching credentials",

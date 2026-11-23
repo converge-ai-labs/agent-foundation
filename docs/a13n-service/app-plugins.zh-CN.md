@@ -94,6 +94,12 @@ def definition() -> AppDefinition:
 
 为自动操作配置 service account principal。也可以使用用户 principal，Service 会检查其当前权限。事件中的 principal 属于原始 Run，并不是操作授权。准备提交时会持有组织锁直到事务结束，同一组织内的 App 提交因此会串行；尤其在大量并发跟进时，应保持事务短小。调用 `runs.submit.submit_app_message(runtime, principal_id, workspace_id, thread_id, message, request_key=...)`，Service 会按当前权限和工作区范围提交。需要与 App 数据原子提交时，使用 `infra.db.transaction`，在获取任何 App 行锁或 Thread acceptance lock 之前调用 `prepare_app_submission(session, runtime, workspace_id, principal_id)`（锁顺序为组织 → App → Thread），再将返回值传给 `submit_message_in_transaction`。该准入结果只属于当前事务。自动跟进时，在 Thread 锁内检查预期的最近 Run、空闲且未暂停的状态，以及原生 Inbox 是否已有待处理输入，再提交消息。事务提交后回执才持久化；普通输入不会回答等待中的请求，也不保证送达指定的活动 Run。这些 API 不应用 Run 的委托权限上限，不能用于 Run 委托操作。
 
+## 使用进程内 App SDK
+
+已安装的插件可通过 `a13n_service.app_sdk` 使用原生 Thread、项目资源、Agent 修订版本、Schedule、出口凭据和模型用量接口。接收 session 参数的操作使用 `app_sdk.transaction(runtime.storage)`。要在同一事务中创建 Thread 或提交消息，先调用 `threads.prepare_admission(session, runtime, workspace_id, principal_id, app_id=...)`，再锁定 App 状态，并将返回值传给 `threads.create_thread_in_transaction` 或 `threads.submit_message_in_transaction`。执行身份是具有 `run` 权限的工作区服务账号。为每个请求使用带 App 前缀的稳定幂等键，将受理回执和业务状态写入同一个事务。
+
+App 自己维护的令牌通过 `egress.create_app_credential`、`rotate_app_credential` 和 `revoke_app_credential` 管理。操作归因于组织内当前有效的身份，工作区 Runner 账号无需提升为 `write`。运维人员可以在 Console 查看凭据所有者并请求同步 Session。**滚动升级时，先升级所有提供 API 的副本，再启用会创建 App 凭据的功能。** 旧副本不会执行新的修改限制。
+
 ## 持久化业务数据
 
 App 需要在宿主 PostgreSQL 数据库中建表时，使用 `AppDatabase`。每个 App 在 `public` 中拥有独立的迁移历史。App 使用普通 SQLAlchemy 模型和现有 Runtime Storage，可以直接关联查询原生 Service ORM 行，无需另建连接池。前缀划分迁移归属；App 代码仍需执行租户范围限制和授权。
