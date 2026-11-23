@@ -83,17 +83,14 @@ async def list_traces(
 async def search_traces(
     ctx: ToolContext, *, filters: Annotated[trace_search.TraceSearch, Query()]
 ) -> trace_search.TraceSearchPage:
-    """Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.
-
-    Providers execute each query without a result cache; pages may reflect updates between requests.
-    Keyset cursors bind the ordering, filters and last sort value with trace/span IDs.
-    Incomplete queries fail without a partial rank.
+    """Rank traces in the requested time window. Pass the Session, Thread or Run scope and any duration or cost bounds.
+    Filters apply before sorting and paging. Keep them fixed with the cursor. Costs sum reported span costs.
     """
     return await trace_search.search(ctx.runtime, ctx.actor, ctx.workspace_id, filters)
 
 
 async def get_trace(ctx: ToolContext, *, trace_id: TraceId) -> content.ContentView[trace_reads.SpanSummary]:
-    """Read a redacted observation summary and version-bound content references."""
+    """Read the trace root summary. Use read_content or search_content on a returned content field for its detail."""
     span = await traces.get_trace(ctx.runtime.storage, ctx.runtime.traces, ctx.actor, ctx.workspace_id, trace_id)
     await analysis.record_read(ctx.runtime, ctx.actor, ctx.workspace_id, ctx.origin, trace_id)
     return content.ContentView(
@@ -141,7 +138,7 @@ async def list_trace_spans(
 async def get_trace_span(
     ctx: ToolContext, *, trace_id: TraceId, span_id: Annotated[str, Path(pattern="^[0-9a-f]{16}$")]
 ) -> content.ContentView[trace_reads.SpanSummary]:
-    """Read a redacted observation summary and version-bound content references."""
+    """Read one span summary. Its content fields are references for read_content or search_content."""
     span = await traces.get_trace_span(
         ctx.runtime.storage, ctx.runtime.traces, ctx.actor, ctx.workspace_id, trace_id, span_id
     )

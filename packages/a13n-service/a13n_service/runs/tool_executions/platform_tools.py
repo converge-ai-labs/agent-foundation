@@ -1,5 +1,9 @@
 """Explicit execution platform tools, independent of HTTP operation admission."""
 
+from typing import Annotated
+
+from pydantic import Field
+
 from a13n_service.infra import reads
 from a13n_service.infra.http import PageLimit
 from a13n_service.platform_tools import ToolContext as PlatformContext
@@ -15,7 +19,9 @@ async def list_tool_executions(
     ctx: ToolContext,
     *,
     thread_id: str,
-    run_id: str | None = None,
+    run_id: Annotated[
+        str | None, Field(description="Supply the Service Run ID when inspecting one Run within the Thread.")
+    ] = None,
     active: bool | None = None,
     limit: PageLimit = 50,
     cursor: str | None = None,
