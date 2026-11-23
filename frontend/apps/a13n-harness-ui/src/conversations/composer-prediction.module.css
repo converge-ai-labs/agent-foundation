@@ -9,7 +9,8 @@
 
 .ghost {
   display: inline-flex;
-  align-items: baseline;
+  /* Center the key hint on the text line; baseline alignment drifts with the clipped text box. */
+  align-items: center;
   /* CodeMirror's line can grow to fit the widget. Use the scrollport width instead. */
   max-width: calc(100cqi - 2 * var(--composer-text-inset, 0px));
   color: var(--harness-placeholder);
@@ -34,6 +35,7 @@
   border-radius: 0.25rem;
   font-size: var(--a13n-text-2xs);
   font-style: normal;
+  line-height: 1.4;
 }
 
 .touch {
