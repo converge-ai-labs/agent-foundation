@@ -1,4 +1,6 @@
 {
+  "Password reset link ready": "密码重置链接已生成",
+  "Password reset email queued": "重置邮件已加入发送队列",
   "Agent default environment": "Agent 默认环境",
   "No primary environment": "不使用主环境",
   "This default applies to everyone in the workspace when a thread has no primary environment. Composer can read files in the selected environment.": "线程没有主环境时，工作区内的所有成员都会使用此默认环境。Composer 可以读取所选环境中的文件。",
@@ -8,9 +10,6 @@
   "Password reset link": "密码重置链接",
   "Copy reset link": "复制重置链接",
   "Share this link privately with the member. It is shown only once.": "请私下把链接发给这位成员。链接只显示一次。",
-  "Password reset email queued": "密码重置邮件已加入发送队列",
-  "Generate reset link": "生成重置链接",
-  "Send reset email": "发送重置邮件",
   "audit.user.password.reset_assisted": "发起了成员密码重置",
   "Compare Envd startup modes": "比较 Envd 启动模式",
   "Restricted admission": "Restricted 准入",

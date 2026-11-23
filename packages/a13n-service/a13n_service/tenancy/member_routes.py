@@ -23,7 +23,6 @@ from a13n_service.tenancy.schemas import (
     IssuedKey,
     KeyCreate,
     MemberPage,
-    MemberPasswordReset,
     PasswordResetReceipt,
     ServiceAccount,
     ServiceAccountCreate,
@@ -53,10 +52,10 @@ async def list_members(
 
 @router.post(ORGANIZATION + "/members/{user_id}/password-reset", response_model=PasswordResetReceipt)
 async def reset_member_password(
-    organization_id: str, user_id: str, body: MemberPasswordReset, actor: Actor, runtime: CurrentRuntime
+    organization_id: str, user_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> PasswordResetReceipt:
     return await users.reset_member_password(
-        runtime.storage, runtime.access, runtime.keys, runtime.settings, actor, organization_id, user_id, body.delivery
+        runtime.storage, runtime.access, runtime.keys, runtime.settings, actor, organization_id, user_id
     )
 
 

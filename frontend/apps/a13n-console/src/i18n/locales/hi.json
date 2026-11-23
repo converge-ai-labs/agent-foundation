@@ -1,4 +1,6 @@
 {
+  "Password reset link ready": "पासवर्ड रीसेट लिंक तैयार है",
+  "Password reset email queued": "पासवर्ड रीसेट ईमेल भेजने की कतार में है",
   "Agent default environment": "एजेंट का डिफ़ॉल्ट एनवायरनमेंट",
   "No primary environment": "प्राथमिक एनवायरनमेंट का उपयोग न करें",
   "This default applies to everyone in the workspace when a thread has no primary environment. Composer can read files in the selected environment.": "जब थ्रेड का कोई प्राथमिक एनवायरनमेंट नहीं होता, तो यह डिफ़ॉल्ट पूरे वर्कस्पेस पर लागू होता है। Composer चुने हुए एनवायरनमेंट की फ़ाइलें पढ़ सकता है।",
@@ -8,9 +10,6 @@
   "Password reset link": "पासवर्ड रीसेट लिंक",
   "Copy reset link": "रीसेट लिंक कॉपी करें",
   "Share this link privately with the member. It is shown only once.": "यह लिंक सदस्य को निजी तौर पर भेजें। यह सिर्फ़ एक बार दिखता है।",
-  "Password reset email queued": "पासवर्ड रीसेट ईमेल भेजने की कतार में है",
-  "Generate reset link": "रीसेट लिंक बनाएँ",
-  "Send reset email": "रीसेट ईमेल भेजें",
   "audit.user.password.reset_assisted": "सदस्य का पासवर्ड रीसेट शुरू किया",
   "Compare Envd startup modes": "Envd शुरू करने के मोड की तुलना करें",
   "Restricted admission": "Restricted प्रवेश नीति",

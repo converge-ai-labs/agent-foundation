@@ -84,13 +84,13 @@ async def test_organization_admin_recovers_a_workspace_member_without_smtp(servi
         member = await join(service, stack, "recovery@example.com", "admin")
         user_id = (await member.get("/api/v1/users/me")).json()["id"]
         path = f"{service.organization}/members/{user_id}/password-reset"
-        assert (await member.post(path, json={"delivery": "manual"})).status_code == 403
-        assert (await service.client.post(path, json={"delivery": "email"})).status_code == 503
+        assert (await member.post(path)).status_code == 403
         tokens = []
         for _ in range(2):
-            response = await service.client.post(path, json={"delivery": "manual"})
+            response = await service.client.post(path)
             assert response.status_code == 200, response.text
             assert response.headers["cache-control"] == "no-store"
+            assert response.json()["email_queued"] is False
             tokens.append(response.json()["reset_url"].split("#token=", 1)[1])
         old, token = tokens
         outsider = await stack.enter_async_context(new_client(service))
@@ -130,21 +130,21 @@ async def mailing(serve, settings: Settings) -> AsyncIterator[SimpleNamespace]: 
         yield served
 
 
-async def test_admin_can_copy_or_email_a_reset_with_smtp(mailing: SimpleNamespace) -> None:
+async def test_admin_receives_the_same_link_sent_by_email(mailing: SimpleNamespace) -> None:
     admin_id = (await mailing.client.get("/api/v1/users/me")).json()["id"]
     path = f"{mailing.organization}/members/{admin_id}/password-reset"
-    manual = await mailing.client.post(path, json={"delivery": "manual"})
-    assert manual.status_code == 200 and manual.json()["reset_url"]
-    assert await sent_links(mailing) == []
-    email = await mailing.client.post(path, json={"delivery": "email"})
-    assert email.status_code == 200 and email.json() == {"reset_url": None}
+    response = await mailing.client.post(path)
+    assert response.status_code == 200, response.text
     [(recipient, url)] = await sent_links(mailing)
-    assert recipient == ADMIN and url != manual.json()["reset_url"]
+    assert recipient == ADMIN
+    assert response.json() == {"email_queued": True, "reset_url": url}
     async with transaction(mailing.runtime.storage) as session:
         session.add(OrganizationRow(id=new_object_id("org"), name="Other organization"))
     assert (await mailing.client.get("/api/v1/auth/configuration")).json()["manual_password_reset"] is False
-    assert (await mailing.client.post(path, json={"delivery": "manual"})).status_code == 403
-    assert (await mailing.client.post(path, json={"delivery": "email"})).status_code == 200
+    response = await mailing.client.post(path)
+    assert response.status_code == 200, response.text
+    assert response.json() == {"email_queued": True, "reset_url": None}
+    assert len(await sent_links(mailing)) == 2
 
 
 async def sent_links(service: SimpleNamespace) -> list[tuple[str, str]]:

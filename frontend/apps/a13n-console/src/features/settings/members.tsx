@@ -538,7 +538,7 @@ function MemberPasswordReset({ organizationId }: { organizationId: string }) {
   const user = eligible.find((user) => user.id === userId);
   const reset = useMutation({
     gcTime: 0,
-    mutationFn: (delivery: "manual" | "email") =>
+    mutationFn: () =>
       client.http
         .POST(
           "/api/v1/organizations/{organization_id}/members/{user_id}/password-reset",
@@ -546,7 +546,6 @@ function MemberPasswordReset({ organizationId }: { organizationId: string }) {
             params: {
               path: { organization_id: organizationId, user_id: userId },
             },
-            body: { delivery },
           },
         )
         .then(data),
@@ -570,13 +569,24 @@ function MemberPasswordReset({ organizationId }: { organizationId: string }) {
         </Button>
       }
       size="md"
-      title={t("Reset member password")}
-      description={t("Give a member a one-time link to set a new password.")}
+      title={
+        reset.data ? t("Password reset link ready") : t("Reset member password")
+      }
+      description={
+        reset.data
+          ? undefined
+          : t("Give a member a one-time link to set a new password.")
+      }
       closeLabel={t("Close")}
     >
       {reset.data ? (
         <div className={styles.stack}>
-          {reset.data.reset_url ? (
+          {reset.data.email_queued && (
+            <p role="status" className={settings.note}>
+              {t("Password reset email queued")}
+            </p>
+          )}
+          {reset.data.reset_url && (
             <SecretReveal
               value={reset.data.reset_url}
               label={t("Password reset link")}
@@ -586,10 +596,6 @@ function MemberPasswordReset({ organizationId }: { organizationId: string }) {
               )}
               wrap
             />
-          ) : (
-            <p role="status" className={settings.note}>
-              {t("Password reset email queued")}
-            </p>
           )}
           <footer className={styles.formActions}>
             <Button
@@ -605,7 +611,13 @@ function MemberPasswordReset({ organizationId }: { organizationId: string }) {
           </footer>
         </div>
       ) : (
-        <div className={styles.form}>
+        <form
+          className={styles.form}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (user && !reset.isPending) reset.mutate();
+          }}
+        >
           <FormField label={t("Member")}>
             <SearchPicker
               label={t("Member")}
@@ -630,28 +642,17 @@ function MemberPasswordReset({ organizationId }: { organizationId: string }) {
             />
           </FormField>
           <ErrorNotice error={users.error ?? reset.error} />
-          <footer className={styles.formActions}>
-            {manual && (
-              <Button
-                type="button"
-                variant={email ? "outline" : "default"}
-                disabled={!user || reset.isPending}
-                onClick={() => reset.mutate("manual")}
-              >
-                {t("Generate reset link")}
-              </Button>
-            )}
-            {email && (
-              <Button
-                type="button"
-                disabled={!user || reset.isPending}
-                onClick={() => reset.mutate("email")}
-              >
-                {t("Send reset email")}
-              </Button>
-            )}
-          </footer>
-        </div>
+          <FormActions
+            label={t("Reset password")}
+            onCancel={() => {
+              setOpen(false);
+              setUserId("");
+              reset.reset();
+            }}
+            pending={reset.isPending}
+            disabled={!user}
+          />
+        </form>
       )}
     </ModalFrame>
   );

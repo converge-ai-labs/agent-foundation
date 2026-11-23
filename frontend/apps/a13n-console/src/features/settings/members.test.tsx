@@ -474,7 +474,10 @@ it.each([false, true])(
       response: new Response(),
     }));
     http.POST.mockResolvedValue({
-      data: { reset_url: "https://service.test/reset-password#token=fixture" },
+      data: {
+        email_queued: emailDelivery,
+        reset_url: "https://service.test/reset-password#token=fixture",
+      },
       response: new Response(),
     });
     render(
@@ -494,22 +497,24 @@ it.each([false, true])(
     });
     expect(screen.queryByRole("option", { name: /SSO Member/ })).toBeNull();
     await user.click(local);
-    expect(
-      Boolean(screen.queryByRole("button", { name: "Send reset email" })),
-    ).toBe(emailDelivery);
+    expect(http.POST).not.toHaveBeenCalled();
     await user.click(
-      screen.getByRole("button", { name: "Generate reset link" }),
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Reset password",
+      }),
     );
+    expect(http.POST).toHaveBeenCalledTimes(1);
     expect(http.POST).toHaveBeenCalledWith(
       "/api/v1/organizations/{organization_id}/members/{user_id}/password-reset",
       {
         params: { path: { organization_id: "org_acme", user_id: ada.id } },
-        body: { delivery: "manual" },
       },
     );
-    await user.click(
-      await screen.findByRole("button", { name: "Copy reset link" }),
+    const copy = await screen.findByRole("button", { name: "Copy reset link" });
+    expect(Boolean(screen.queryByText("Password reset email queued"))).toBe(
+      emailDelivery,
     );
+    await user.click(copy);
     await user.click(screen.getByRole("button", { name: "Done" }));
     await user.click(screen.getByRole("button", { name: "Reset password" }));
     expect(

@@ -12821,24 +12821,6 @@
         "title": "MemberPage",
         "type": "object"
       },
-      "MemberPasswordReset": {
-        "additionalProperties": false,
-        "properties": {
-          "delivery": {
-            "enum": [
-              "manual",
-              "email"
-            ],
-            "title": "Delivery",
-            "type": "string"
-          }
-        },
-        "required": [
-          "delivery"
-        ],
-        "title": "MemberPasswordReset",
-        "type": "object"
-      },
       "MemberUsage": {
         "properties": {
           "kind": {
@@ -18548,6 +18530,10 @@
       },
       "PasswordResetReceipt": {
         "properties": {
+          "email_queued": {
+            "title": "Email Queued",
+            "type": "boolean"
+          },
           "reset_url": {
             "anyOf": [
               {
@@ -18560,6 +18546,9 @@
             "title": "Reset Url"
           }
         },
+        "required": [
+          "email_queued"
+        ],
         "title": "PasswordResetReceipt",
         "type": "object"
       },
@@ -49597,16 +49586,6 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/MemberPasswordReset"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {

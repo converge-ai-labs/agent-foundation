@@ -245,24 +245,21 @@ async def test_password_recovery_respects_sign_in_mode_and_identity(service, mon
     )
     monkeypatch.setattr(service.app.state, "runtime", replace(runtime, settings=mixed))
     oidc_target = f"{service.organization}/members/{oidc_admin.principal.id}/password-reset"
-    for delivery in ("manual", "email"):
-        refused = await service.client.post(oidc_target, json={"delivery": delivery})
-        assert refused.status_code == 404
+    assert (await service.client.post(oidc_target)).status_code == 404
     local_target = f"{service.organization}/members/{tenant.principal_id}/password-reset"
     async with httpx2.AsyncClient(
         transport=httpx2.ASGITransport(app=service.app), base_url="https://service.test"
     ) as client:
         client.cookies.set(session_cookie(mixed), oidc_admin.secret)
         client.headers["x-csrf-token"] = oidc_admin.csrf_token
-        link = await client.post(local_target, json={"delivery": "manual"})
+        link = await client.post(local_target)
         assert link.status_code == 200, link.text
         token = link.json()["reset_url"].split("#token=", 1)[1]
         disabled = mixed.model_copy(update={"auth": auth.model_copy(update={"password_enabled": False})})
         monkeypatch.setattr(service.app.state, "runtime", replace(runtime, settings=disabled))
         configuration = (await client.get("/api/v1/auth/configuration")).json()
         assert not configuration["password_enabled"] and not configuration["manual_password_reset"]
-        for delivery in ("manual", "email"):
-            assert (await client.post(local_target, json={"delivery": delivery})).status_code == 403
+        assert (await client.post(local_target)).status_code == 403
         confirm = await client.post(
             "/api/v1/auth/password-reset/confirm", json={"token": token, "password": "new-password"}
         )

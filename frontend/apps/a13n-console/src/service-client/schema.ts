@@ -10190,14 +10190,6 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
-    /** MemberPasswordReset */
-    MemberPasswordReset: {
-      /**
-       * Delivery
-       * @enum {string}
-       */
-      delivery: "manual" | "email";
-    };
     /** MemberUsage */
     MemberUsage: {
       /**
@@ -12031,6 +12023,8 @@ export interface components {
     };
     /** PasswordResetReceipt */
     PasswordResetReceipt: {
+      /** Email Queued */
+      email_queued: boolean;
       /** Reset Url */
       reset_url?: string | null;
     };
@@ -23027,11 +23021,7 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["MemberPasswordReset"];
-      };
-    };
+    requestBody?: never;
     responses: {
       /** @description Successful Response */
       200: {

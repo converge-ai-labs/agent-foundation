@@ -224,9 +224,8 @@ async def reset_member_password(
     actor: Principal,
     organization_id: str,
     user_id: str,
-    delivery: Literal["manual", "email"],
 ) -> PasswordResetReceipt:
-    """Issue the same recovery credential as self-service, with administrator-selected delivery."""
+    """Issue one recovery link and deliver it through the available channels."""
     if not settings.auth.password_enabled:
         raise ServiceError("forbidden", "Password sign-in is disabled")
     require_login_session(actor)
@@ -235,23 +234,19 @@ async def reset_member_password(
         session,
         scope,
     ):
-        if delivery == "manual" and await organization_count(session) != 1:
-            raise ServiceError("forbidden", "Manual password recovery is available on single-organization deployments")
+        can_copy = await organization_count(session) == 1
+        email_queued = settings.auth.mail.smtp_host is not None
+        if not can_copy and not email_queued:
+            raise ServiceError("unavailable", "Email delivery is not configured", {"dependency": "mail"})
         principal = await lock_organization_member(session, user_id, scope.organization_id)
         if principal.kind != "user" or principal.email is None or await session.get(PasswordRow, user_id) is None:
             raise not_found("user", user_id)
         if principal.status != "active":
             raise conflict("user", user_id, "disabled")
-        if delivery == "email" and settings.auth.mail.smtp_host is None:
-            raise ServiceError("unavailable", "Email delivery is not configured", {"dependency": "mail"})
-        seconds = (
-            min(_MANUAL_RESET_SECONDS, settings.auth.link_seconds)
-            if delivery == "manual"
-            else settings.auth.link_seconds
-        )
+        seconds = min(_MANUAL_RESET_SECONDS, settings.auth.link_seconds) if can_copy else settings.auth.link_seconds
         secret = await issue_link(session, user_id, "password_reset", seconds=seconds)
         url = link(settings.server.public_url, "/reset-password", secret)
-        if delivery == "email":
+        if email_queued:
             _queue_password_reset(session, keys, settings, principal.email, url)
         record(
             session,
@@ -260,9 +255,9 @@ async def reset_member_password(
             action=action,
             target_kind="member",
             target_id=user_id,
-            details={"delivery": delivery},
+            details={"email_queued": email_queued, "link_disclosed": can_copy},
         )
-        return PasswordResetReceipt(reset_url=url if delivery == "manual" else None)
+        return PasswordResetReceipt(email_queued=email_queued, reset_url=url if can_copy else None)
 
 
 def _queue_password_reset(session: AsyncSession, keys: KeyRing, settings: Settings, email: str, url: str) -> None:

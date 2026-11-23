@@ -264,11 +264,8 @@ class PasswordReset(_Input):
     email: Email
 
 
-class MemberPasswordReset(_Input):
-    delivery: Literal["manual", "email"]
-
-
 class PasswordResetReceipt(BaseModel):
+    email_queued: bool
     reset_url: str | None = None
 
 
