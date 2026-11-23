@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Response
 
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
-from a13n_service.tenancy import api_keys, grants, invitations, service_accounts
+from a13n_service.tenancy import api_keys, grants, invitations, service_accounts, users
 from a13n_service.tenancy.access import OrganizationPath, WorkspacePath
 from a13n_service.tenancy.requests import Actor, CurrentRuntime
 from a13n_service.tenancy.schemas import (
@@ -23,6 +23,7 @@ from a13n_service.tenancy.schemas import (
     IssuedKey,
     KeyCreate,
     MemberPage,
+    PasswordResetReceipt,
     ServiceAccount,
     ServiceAccountCreate,
     ServiceAccountPage,
@@ -46,6 +47,15 @@ async def list_members(
 ) -> MemberPage:
     return await grants.list_members(
         runtime.storage, runtime.access, actor, organization_id, kind=kind, limit=limit, cursor=cursor
+    )
+
+
+@router.post(ORGANIZATION + "/members/{user_id}/password-reset", response_model=PasswordResetReceipt)
+async def reset_member_password(
+    organization_id: str, user_id: str, actor: Actor, runtime: CurrentRuntime
+) -> PasswordResetReceipt:
+    return await users.reset_member_password(
+        runtime.storage, runtime.access, runtime.keys, runtime.settings, actor, organization_id, user_id
     )
 
 

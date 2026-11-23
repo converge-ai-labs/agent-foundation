@@ -331,6 +331,8 @@ A user renames themselves, changes their email address or password, lists and en
 - **Password reset** accepts an address and returns the same empty success whether or not an active user owns it; without email delivery nothing is sent. Confirming the link sets the new password and ends every login session and outstanding link.
 - Reset and email-change links expire after `auth.link_seconds`. A new link supersedes any outstanding link of the same kind. A link is consumed under a row lock, so it works once. An invalid, used or expired link is `invalid_argument` (reason `invalid_or_expired`).
 
+Organization administrators are account recovery contacts when password sign-in is enabled. With a login session, they may issue a reset link for an active local-password user who has a grant in their organization, including a workspace-only grant. One request issues one link. When SMTP is configured, Service queues it for delivery to the user's current account address. On a single-organization deployment the issuing administrator also receives the same link once, whether or not SMTP is configured. Links shown to administrators are valid for up to 15 minutes (capped by `auth.link_seconds`). Issuing a link supersedes an outstanding reset link, leaves the password and sessions unchanged, and records `user.password.reset_assisted` in the organization audit log without recording the secret. The user completes the existing reset flow; roles and grants are unchanged.
+
 Password changes do not revoke API keys; keys are revoked individually or stop working when the account is disabled.
 
 ### Disabling

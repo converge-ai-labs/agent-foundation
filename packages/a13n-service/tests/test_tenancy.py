@@ -79,6 +79,39 @@ async def join(
     return client
 
 
+async def test_organization_admin_recovers_a_workspace_member_without_smtp(service: SimpleNamespace) -> None:
+    async with AsyncExitStack() as stack:
+        member = await join(service, stack, "recovery@example.com", "admin")
+        user_id = (await member.get("/api/v1/users/me")).json()["id"]
+        path = f"{service.organization}/members/{user_id}/password-reset"
+        assert (await member.post(path)).status_code == 403
+        tokens = []
+        for _ in range(2):
+            response = await service.client.post(path)
+            assert response.status_code == 200, response.text
+            assert response.headers["cache-control"] == "no-store"
+            assert response.json()["email_queued"] is False
+            tokens.append(response.json()["reset_url"].split("#token=", 1)[1])
+        old, token = tokens
+        outsider = await stack.enter_async_context(new_client(service))
+        assert (await member.get("/api/v1/users/me")).status_code == 200
+        confirm = "/api/v1/auth/password-reset/confirm"
+        assert (await outsider.post(confirm, json={"token": old, "password": "new-password"})).status_code == 400
+        assert (await outsider.post(confirm, json={"token": token, "password": "new-password"})).status_code == 204
+        assert (await outsider.post(confirm, json={"token": token, "password": "other-password"})).status_code == 400
+        assert (await member.get("/api/v1/users/me")).status_code == 401
+        login = await outsider.post(
+            "/api/v1/auth/login", json={"email": "recovery@example.com", "password": "new-password"}
+        )
+        assert login.status_code == 200 and login.json()["principal_id"] == user_id
+        assert (await outsider.get(f"{service.workspace}/grants")).status_code == 200
+        trail = await outsider.get("/api/v1/users/me/audit-events")
+        assert [event["action"] for event in trail.json()["items"] if event["outcome"] == "ok"].count(
+            "user.password.reset_assisted"
+        ) == 2
+    assert (await audit_actions(service, target_id=user_id)).count("user.password.reset_assisted") == 2
+
+
 async def audit_actions(service: SimpleNamespace, **where: str) -> list[str]:
     async with short_session(service.runtime.storage) as session:
         rows = (
@@ -95,6 +128,23 @@ async def mailing(serve, settings: Settings) -> AsyncIterator[SimpleNamespace]: 
         settings=settings.model_copy(update={"auth": settings.auth.model_copy(update={"mail": mail})})
     ) as served:
         yield served
+
+
+async def test_admin_receives_the_same_link_sent_by_email(mailing: SimpleNamespace) -> None:
+    admin_id = (await mailing.client.get("/api/v1/users/me")).json()["id"]
+    path = f"{mailing.organization}/members/{admin_id}/password-reset"
+    response = await mailing.client.post(path)
+    assert response.status_code == 200, response.text
+    [(recipient, url)] = await sent_links(mailing)
+    assert recipient == ADMIN
+    assert response.json() == {"email_queued": True, "reset_url": url}
+    async with transaction(mailing.runtime.storage) as session:
+        session.add(OrganizationRow(id=new_object_id("org"), name="Other organization"))
+    assert (await mailing.client.get("/api/v1/auth/configuration")).json()["manual_password_reset"] is False
+    response = await mailing.client.post(path)
+    assert response.status_code == 200, response.text
+    assert response.json() == {"email_queued": True, "reset_url": None}
+    assert len(await sent_links(mailing)) == 2
 
 
 async def sent_links(service: SimpleNamespace) -> list[tuple[str, str]]:
@@ -523,6 +573,7 @@ async def test_identity_mail_is_queued_encrypted(mailing) -> None:  # type: igno
         "oidc_providers": [],
         "email_delivery": True,
         "initialized": True,
+        "manual_password_reset": True,
     }
     receipt = await client.post(
         f"{mailing.workspace}/invitations", json={"email": "mail@example.com", "role": "runner"}
@@ -766,6 +817,7 @@ async def test_profile_password_and_login_sessions(service) -> None:  # type: ig
         "oidc_providers": [],
         "email_delivery": False,
         "initialized": True,
+        "manual_password_reset": True,
     }
     async with new_client(service) as anonymous:
         assert (await anonymous.post("/api/v1/auth/password-reset", json={"email": ADMIN})).status_code == 204

@@ -17,6 +17,7 @@ import { PageActions, useTabParam } from "../../shared/page";
 
 import { ApiError, type Client } from "../../service-client";
 import {
+  KeyIcon,
   PlusIcon,
   UserMinusIcon,
   UsersIcon,
@@ -39,7 +40,7 @@ import {
 } from "../../shared/collection";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { ConflictNotice, Confirm } from "../../shared/dialogs";
-import { FormActions } from "../../shared/forms";
+import { FormActions, SecretReveal } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import settings from "./settings.module.css";
 import { InvitationEditor, Invitations } from "./invitations";
@@ -59,6 +60,12 @@ export function MemberSettings({ scope }: { scope: MembershipScope }) {
   const config = useAuthConfiguration();
   const passwords = config.data?.password_enabled === true;
   const organizationAdmin = organizationCan("admin");
+  const resetOrganizationId =
+    organizationAdmin &&
+    passwords &&
+    (config.data?.manual_password_reset || config.data?.email_delivery)
+      ? organization.id
+      : undefined;
   const canManage =
     scope.kind === "organization" ? organizationAdmin : can("admin");
   const canAdd =
@@ -99,6 +106,7 @@ export function MemberSettings({ scope }: { scope: MembershipScope }) {
           actions={actions}
           canManage={canManage}
           canChange={canAdd}
+          resetOrganizationId={resetOrganizationId}
         />
       )}
     </div>
@@ -135,11 +143,13 @@ function Members({
   actions,
   canManage,
   canChange,
+  resetOrganizationId,
 }: {
   scope: MembershipScope;
   actions: ReactNode;
   canManage: boolean;
   canChange: boolean;
+  resetOrganizationId?: string;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -162,84 +172,92 @@ function Members({
             items={items}
             caption={t("Members")}
             rowMenuLabel={t("Member actions")}
-            rowMenu={
-              canManage
-                ? (item) =>
-                    !canChange && hasSSODefault(item) ? null : (
-                      <>
-                        {canChange && (
-                          <ChangeRole
-                            item={item}
-                            scope={scope}
-                            triggerElement={
-                              <MenuItem closeOnClick={false}>
-                                <UserSwitchIcon size={14} />
-                                {t("Change role")}
-                              </MenuItem>
-                            }
-                          />
-                        )}
-                        {!hasSSODefault(item) && (
-                          <Confirm
-                            subject={`${item.principal.name} · ${t(
-                              `role.${item.role}`,
+            rowMenu={(item) => {
+              const member = item.principal;
+              const canReset =
+                resetOrganizationId &&
+                member.kind === "user" &&
+                member.status === "active" &&
+                member.email;
+              const canRemove = canManage && !hasSSODefault(item);
+              if (!canChange && !canRemove && !canReset) return null;
+              return (
+                <>
+                  {canChange && (
+                    <ChangeRole
+                      item={item}
+                      scope={scope}
+                      triggerElement={
+                        <MenuItem closeOnClick={false}>
+                          <UserSwitchIcon size={14} />
+                          {t("Change role")}
+                        </MenuItem>
+                      }
+                    />
+                  )}
+                  {resetOrganizationId && canReset && (
+                    <MemberPasswordReset
+                      organizationId={resetOrganizationId}
+                      member={item.principal}
+                    />
+                  )}
+                  {canRemove && (
+                    <Confirm
+                      subject={`${item.principal.name} · ${t(
+                        `role.${item.role}`,
+                        {
+                          defaultValue: item.role,
+                        },
+                      )}`}
+                      title={t("Remove member")}
+                      description={
+                        // A service account is granted only in its home workspace,
+                        // so this is its last grant.
+                        item.principal.kind === "service_account"
+                          ? t(
+                              "This removes the service account's only role, which disables it and revokes its keys.",
+                            )
+                          : t(
+                              "This removes the selected role. Other explicit grants may still allow access.",
+                            )
+                      }
+                      triggerElement={
+                        <MenuItem closeOnClick={false} variant="destructive">
+                          <UserMinusIcon size={14} />
+                          {t("Remove")}
+                        </MenuItem>
+                      }
+                      danger
+                      action={() =>
+                        scope.kind === "organization"
+                          ? client.http.DELETE(
+                              "/api/v1/organizations/{organization_id}/grants/{grant_id}",
                               {
-                                defaultValue: item.role,
+                                params: {
+                                  path: {
+                                    organization_id: scope.id,
+                                    grant_id: item.id,
+                                  },
+                                },
                               },
-                            )}`}
-                            title={t("Remove member")}
-                            description={
-                              // A service account is granted only in its home workspace,
-                              // so this is its last grant.
-                              item.principal.kind === "service_account"
-                                ? t(
-                                    "This removes the service account's only role, which disables it and revokes its keys.",
-                                  )
-                                : t(
-                                    "This removes the selected role. Other explicit grants may still allow access.",
-                                  )
-                            }
-                            triggerElement={
-                              <MenuItem
-                                closeOnClick={false}
-                                variant="destructive"
-                              >
-                                <UserMinusIcon size={14} />
-                                {t("Remove")}
-                              </MenuItem>
-                            }
-                            danger
-                            action={() =>
-                              scope.kind === "organization"
-                                ? client.http.DELETE(
-                                    "/api/v1/organizations/{organization_id}/grants/{grant_id}",
-                                    {
-                                      params: {
-                                        path: {
-                                          organization_id: scope.id,
-                                          grant_id: item.id,
-                                        },
-                                      },
-                                    },
-                                  )
-                                : client.http.DELETE(
-                                    "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
-                                    {
-                                      params: {
-                                        path: {
-                                          workspace_id: scope.id,
-                                          grant_id: item.id,
-                                        },
-                                      },
-                                    },
-                                  )
-                            }
-                          />
-                        )}
-                      </>
-                    )
-                : undefined
-            }
+                            )
+                          : client.http.DELETE(
+                              "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
+                              {
+                                params: {
+                                  path: {
+                                    workspace_id: scope.id,
+                                    grant_id: item.id,
+                                  },
+                                },
+                              },
+                            )
+                      }
+                    />
+                  )}
+                </>
+              );
+            }}
             columns={[
               {
                 label: t("Member"),
@@ -497,22 +515,14 @@ function ChangeRole({
     </ModalFrame>
   );
 }
-function AddMember({
-  scope,
-  organizationId,
-}: {
-  scope: MembershipScope;
-  organizationId?: string;
-}) {
-  const { t } = useTranslation(),
-    client = useClient(),
-    cache = useQueryClient();
-  const [open, setOpen] = useState(false),
-    [userId, setUserId] = useState(""),
-    [role, setRole] = useState<Role>("viewer");
-  const users = useQuery({
+function useOrganizationUsers(
+  organizationId: string | undefined,
+  enabled: boolean,
+) {
+  const client = useClient();
+  return useQuery({
     queryKey: ["organization-users", organizationId],
-    enabled: open && !!organizationId,
+    enabled: enabled && !!organizationId,
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         client.http
@@ -526,6 +536,131 @@ function AddMember({
           .then(data),
       ),
   });
+}
+
+function MemberPasswordReset({
+  organizationId,
+  member,
+}: {
+  organizationId: string;
+  member: Schema["PrincipalSummary"];
+}) {
+  const { t } = useTranslation();
+  const client = useClient();
+  const [open, setOpen] = useState(false);
+  const reset = useMutation({
+    gcTime: 0,
+    mutationFn: () =>
+      client.http
+        .POST(
+          "/api/v1/organizations/{organization_id}/members/{user_id}/password-reset",
+          {
+            params: {
+              path: { organization_id: organizationId, user_id: member.id },
+            },
+          },
+        )
+        .then(data),
+  });
+  const close = () => {
+    setOpen(false);
+    reset.reset();
+  };
+  return (
+    <ModalFrame
+      open={open}
+      onOpenChange={(value) => (value ? setOpen(true) : close())}
+      trigger={
+        <MenuItem closeOnClick={false}>
+          <KeyIcon size={14} aria-hidden="true" />
+          {t("Reset password")}
+        </MenuItem>
+      }
+      size="md"
+      title={
+        reset.data
+          ? t("Password reset link ready")
+          : t("Reset member password?")
+      }
+      description={
+        reset.data
+          ? undefined
+          : t("Give a member a one-time link to set a new password.")
+      }
+      closeLabel={t("Close")}
+    >
+      {reset.data ? (
+        <div className={styles.stack}>
+          {reset.data.email_queued && (
+            <p role="status" className={settings.note}>
+              {t("Password reset email queued")}
+            </p>
+          )}
+          {reset.data.reset_url && (
+            <SecretReveal
+              value={reset.data.reset_url}
+              label={t("Password reset link")}
+              copyLabel={t("Copy reset link")}
+              caution={t(
+                "Share this link privately with the member. It is shown only once.",
+              )}
+              wrap
+            />
+          )}
+          <footer className={styles.formActions}>
+            <Button type="button" onClick={close}>
+              {t("Done")}
+            </Button>
+          </footer>
+        </div>
+      ) : (
+        <form
+          className={styles.form}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!reset.isPending) reset.mutate();
+          }}
+        >
+          <ResourceIdentity
+            name={member.name}
+            description={
+              member.email !== member.name ? member.email : undefined
+            }
+            icon={
+              <UserAvatar
+                name={member.name}
+                id={member.id}
+                url={member.image_url}
+                className="size-8 rounded-[8px]"
+              />
+            }
+          />
+          <ErrorNotice error={reset.error} />
+          <FormActions
+            label={t("Reset password")}
+            onCancel={close}
+            pending={reset.isPending}
+          />
+        </form>
+      )}
+    </ModalFrame>
+  );
+}
+
+function AddMember({
+  scope,
+  organizationId,
+}: {
+  scope: MembershipScope;
+  organizationId?: string;
+}) {
+  const { t } = useTranslation(),
+    client = useClient(),
+    cache = useQueryClient();
+  const [open, setOpen] = useState(false),
+    [userId, setUserId] = useState(""),
+    [role, setRole] = useState<Role>("viewer");
+  const users = useOrganizationUsers(organizationId, open);
   const existing = useQuery({
     queryKey: ["bindings", scope.kind, scope.id, "existing"],
     enabled: open && !!organizationId,

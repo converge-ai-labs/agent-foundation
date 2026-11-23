@@ -354,15 +354,18 @@ export function AuthPage() {
   }
   const links = (
     <div className={styles.links}>
-      {mode === "login" && passwords && configuration.data?.email_delivery && (
-        <Link
-          className={styles.link}
-          to="/forgot-password"
-          state={location.state}
-        >
-          {t("Forgot password")}
-        </Link>
-      )}
+      {mode === "login" &&
+        passwords &&
+        (configuration.data?.email_delivery ||
+          configuration.data?.manual_password_reset) && (
+          <Link
+            className={styles.link}
+            to="/forgot-password"
+            state={location.state}
+          >
+            {t("Forgot password")}
+          </Link>
+        )}
       {(linkUnavailable || mode === "forgot" || mode === "reset") && (
         <Link className={styles.link} to="/login" state={location.state}>
           <ArrowLeftIcon size={13} aria-hidden="true" />
@@ -474,9 +477,13 @@ export function AuthPage() {
         ) : !passwords ? null : withoutDelivery ? (
           <p className={styles.unavailable}>
             <InfoIcon size={16} aria-hidden="true" />
-            {t(
-              "Email delivery is not configured. Contact your organization administrator.",
-            )}
+            {configuration.data?.manual_password_reset
+              ? t(
+                  "Ask your organization administrator for a password reset link.",
+                )
+              : t(
+                  "Email delivery is not configured. Contact your organization administrator.",
+                )}
           </p>
         ) : succeeded ? (
           <div className={styles.success}>

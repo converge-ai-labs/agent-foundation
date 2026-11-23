@@ -21,7 +21,14 @@ from a13n_service.infra.errors import ServiceError, conflict, invalid, not_found
 from a13n_service.infra.http import require_match
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.settings import Settings
-from a13n_service.tenancy.access import Access, lock_organization, require_login_session
+from a13n_service.tenancy.access import (
+    Access,
+    OrganizationPath,
+    administering,
+    lock_organization,
+    organization_count,
+    require_login_session,
+)
 from a13n_service.tenancy.authorize import Principal, Scope, allowed_verbs
 from a13n_service.tenancy.credentials import (
     consume_link,
@@ -32,7 +39,7 @@ from a13n_service.tenancy.credentials import (
     set_password,
     verify_password,
 )
-from a13n_service.tenancy.grants import member_of, other_administrator
+from a13n_service.tenancy.grants import lock_organization_member, member_of, other_administrator
 from a13n_service.tenancy.mail import Mail, link, queue_mail
 from a13n_service.tenancy.principals import avatar_url
 from a13n_service.tenancy.schemas import (
@@ -41,12 +48,15 @@ from a13n_service.tenancy.schemas import (
     LoginSessionPage,
     PasswordChange,
     PasswordResetConfirm,
+    PasswordResetReceipt,
     Profile,
     ProfileUpdate,
 )
 from a13n_service.tenancy.tables import GrantRow, PasswordRow, PrincipalRow, TokenRow
 
 logger = get_logger(__name__)
+
+_MANUAL_RESET_SECONDS = 900
 
 
 def profile_view(row: PrincipalRow) -> Profile:
@@ -135,9 +145,16 @@ async def get_avatar(storage: Storage, actor: Principal, user_id: str) -> dict[s
 
 async def confirm_email_change(storage: Storage, token: str) -> None:
     async with transaction(storage) as session:
-        consumed = await consume_link(session, "email_change", token)
-        principal = await lock(session, PrincipalRow, consumed.principal_id) if consumed else None
-        if consumed is None or principal is None or principal.status != "active" or principal.email is None:
+        found = await find_link(session, "email_change", token)
+        if found is None:
+            raise invalid("token", "invalid_or_expired")
+        principal = await session.get(PrincipalRow, found.principal_id, with_for_update={"key_share": True})
+        consumed = (
+            await consume_link(session, "email_change", token)
+            if principal and principal.status == "active" and principal.email is not None
+            else None
+        )
+        if consumed is None or principal is None:
             raise invalid("token", "invalid_or_expired")
         email = str((consumed.data or {})["new_email"])
         principal.email = email
@@ -162,6 +179,9 @@ async def change_password(
     stored = await _verify_current(storage, actor, body.current_password)
     new_hash = await hash_password(body.password.get_secret_value())
     async with transaction(storage) as session:
+        principal = await session.get(PrincipalRow, actor.id, with_for_update={"key_share": True})
+        if principal is None or principal.status != "active":
+            raise ServiceError("unauthenticated", "Account is not active")
         await _check_password_unchanged(session, actor.id, stored)
         await set_password(session, actor.id, new_hash)
         await revoke_tokens(session, actor.id, keep=current_session_id)
@@ -178,14 +198,14 @@ async def request_password_reset(storage: Storage, keys: KeyRing, settings: Sett
             select(PrincipalRow)
             .join(PasswordRow, PasswordRow.principal_id == PrincipalRow.id)
             .where(PrincipalRow.email == email, PrincipalRow.status == "active")
+            .with_for_update(key_share=True, of=PrincipalRow)
         )
         if principal is None:
             return
         secret = await issue_link(session, principal.id, "password_reset", seconds=settings.auth.link_seconds)
-        url = link(settings.server.public_url, "/reset-password", secret)
-        text = f"Reset your password with this single-use link:\n\n{url}\n"
-        mail = Mail(email, "Reset your a13n password", text)
-        _queue_account_mail(session, keys, settings, mail, purpose="password_reset")
+        _queue_password_reset(
+            session, keys, settings, email, link(settings.server.public_url, "/reset-password", secret)
+        )
         record(
             session,
             None,
@@ -196,6 +216,60 @@ async def request_password_reset(storage: Storage, keys: KeyRing, settings: Sett
         )
 
 
+async def reset_member_password(
+    storage: Storage,
+    access: Access,
+    keys: KeyRing,
+    settings: Settings,
+    actor: Principal,
+    organization_id: str,
+    user_id: str,
+) -> PasswordResetReceipt:
+    """Issue one recovery link and deliver it through the available channels."""
+    if not settings.auth.password_enabled:
+        raise ServiceError("forbidden", "Password sign-in is disabled")
+    require_login_session(actor)
+    action = "user.password.reset_assisted"
+    async with administering(storage, access, actor, OrganizationPath(organization_id), action=action) as (
+        session,
+        scope,
+    ):
+        can_copy = await organization_count(session) == 1
+        email_queued = settings.auth.mail.smtp_host is not None
+        if not can_copy and not email_queued:
+            raise ServiceError("unavailable", "Email delivery is not configured", {"dependency": "mail"})
+        principal = await lock_organization_member(session, user_id, scope.organization_id)
+        if principal.kind != "user" or principal.email is None or await session.get(PasswordRow, user_id) is None:
+            raise not_found("user", user_id)
+        if principal.status != "active":
+            raise conflict("user", user_id, "disabled")
+        seconds = min(_MANUAL_RESET_SECONDS, settings.auth.link_seconds) if can_copy else settings.auth.link_seconds
+        secret = await issue_link(session, user_id, "password_reset", seconds=seconds)
+        url = link(settings.server.public_url, "/reset-password", secret)
+        if email_queued:
+            _queue_password_reset(session, keys, settings, principal.email, url)
+        record(
+            session,
+            scope,
+            actor_id=actor.id,
+            action=action,
+            target_kind="member",
+            target_id=user_id,
+            details={"email_queued": email_queued, "link_disclosed": can_copy},
+        )
+        return PasswordResetReceipt(email_queued=email_queued, reset_url=url if can_copy else None)
+
+
+def _queue_password_reset(session: AsyncSession, keys: KeyRing, settings: Settings, email: str, url: str) -> None:
+    text = (
+        f"Use this link to choose a new password for your a13n account:\n\n{url}\n\n"
+        "The link can only be used once. If you did not request a password reset, you can ignore it.\n"
+    )
+    _queue_account_mail(
+        session, keys, settings, Mail(email, "Reset your a13n password", text), purpose="password_reset"
+    )
+
+
 async def confirm_password_reset(storage: Storage, body: PasswordResetConfirm) -> None:
     """Consume the link and set the password; every login session and outstanding link of the account ends."""
     async with short_session(storage) as session:
@@ -204,9 +278,13 @@ async def confirm_password_reset(storage: Storage, body: PasswordResetConfirm) -
         raise invalid("token", "invalid_or_expired")
     new_hash = await hash_password(body.password.get_secret_value())
     async with transaction(storage) as session:
-        consumed = await consume_link(session, "password_reset", body.token)
-        principal = await lock(session, PrincipalRow, consumed.principal_id) if consumed else None
-        if consumed is None or principal is None or principal.status != "active" or principal.email is None:
+        principal = await session.get(PrincipalRow, found.principal_id, with_for_update={"key_share": True})
+        if (
+            principal is None
+            or principal.status != "active"
+            or principal.email is None
+            or not await consume_link(session, "password_reset", body.token)
+        ):
             raise invalid("token", "invalid_or_expired")
         await set_password(session, principal.id, new_hash)
         await revoke_tokens(session, principal.id)
