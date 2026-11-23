@@ -46,7 +46,7 @@ export function editablePreset(
   );
 }
 
-/** Presets allow only model settings and supplemental instructions to change. */
+/** Managed presets allow bounded revision edits. */
 export function editableAgentRevision(
   agent: Pick<Schema["Agent"], "source" | "preset_kind" | "archived_at">,
 ) {

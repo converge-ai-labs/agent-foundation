@@ -1,4 +1,7 @@
 {
+  "Agent default environment": "एजेंट का डिफ़ॉल्ट एनवायरनमेंट",
+  "No primary environment": "प्राथमिक एनवायरनमेंट का उपयोग न करें",
+  "This default applies to everyone in the workspace when a thread has no primary environment. Composer can read files in the selected environment.": "जब थ्रेड का कोई प्राथमिक एनवायरनमेंट नहीं होता, तो यह डिफ़ॉल्ट पूरे वर्कस्पेस पर लागू होता है। Composer चुने हुए एनवायरनमेंट की फ़ाइलें पढ़ सकता है।",
   "Compare Envd startup modes": "Envd शुरू करने के मोड की तुलना करें",
   "Restricted admission": "Restricted प्रवेश नीति",
   "Envd egress": "Envd का आउटबाउंड ट्रैफ़िक",

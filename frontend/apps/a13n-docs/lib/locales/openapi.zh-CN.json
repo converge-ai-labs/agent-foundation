@@ -36,6 +36,7 @@
   "Provider-owned portable semantic soft reference for one target.": "由 provider 管理、指向单个目标的可移植语义软引用。",
   "Reserve a primary instance for this accepted Run without changing Thread mounts.": "为本次已接受的 Run 预留主实例，不修改 Thread 挂载。",
   "Set Environment Debug Hold": "设置环境调试保留",
+  "Skip the primary mount for this Run. Named mounts remain available.": "本次运行跳过主挂载，其他命名挂载仍可使用。",
   "Use this exact primary instance for the Run; absence never triggers allocation.": "为本次 Run 使用指定主实例；实例缺失时不触发分配。",
   "Frozen instance configuration enables human desktop access; not authorization or a health check.": "实例的冻结配置是否启用人工桌面访问；不代表授权或健康检查结果。",
   "Read-only projection of sealed desktop suspensions predating Computer-scoped control.": "仅用于读取 Computer 范围控制引入前已封存的桌面暂停记录。",

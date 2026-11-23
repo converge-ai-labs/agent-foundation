@@ -200,7 +200,15 @@ class ExistingRunEnvironment(_RunEnvironment):
     environment_id: ObjectId
 
 
-type RunEnvironment = Annotated[FreshRunEnvironment | ExistingRunEnvironment, Field(discriminator="mode")]
+class NoPrimaryEnvironment(_Frozen):
+    """Skip the primary mount for this Run. Named mounts remain available."""
+
+    mode: Literal["none"]
+
+
+type RunEnvironment = Annotated[
+    FreshRunEnvironment | ExistingRunEnvironment | NoPrimaryEnvironment, Field(discriminator="mode")
+]
 
 
 class RunOptions(_Frozen):

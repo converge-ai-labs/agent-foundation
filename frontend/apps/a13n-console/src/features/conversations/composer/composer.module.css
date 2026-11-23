@@ -87,7 +87,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  max-width: 220px;
+  max-width: min(100%, 280px);
   height: 28px;
   padding: 0 10px;
   border: 0;

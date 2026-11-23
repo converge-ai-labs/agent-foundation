@@ -114,7 +114,7 @@ it("keeps non-editable agents and reader views read-only, including the model", 
   expect(submit).not.toHaveBeenCalled();
 });
 
-it("edits supplements through ordinary config and keeps the original ETag", async () => {
+it.each([false, true])("saves preset edits (Composer %s)", async (composer) => {
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -127,10 +127,28 @@ it("edits supplements through ordinary config and keeps the original ETag", asyn
   HTMLElement.prototype.setPointerCapture = () => {};
   HTMLElement.prototype.releasePointerCapture = () => {};
   HTMLElement.prototype.scrollIntoView = () => {};
-  http.GET.mockResolvedValue({
-    data: { items: [], next_cursor: null },
+  http.GET.mockImplementation(async (path: string) => ({
+    data: {
+      items: path.endsWith("/environments")
+        ? [
+            {
+              id: "env_0123456789abcdef0123",
+              name: "Team project",
+              kind: "external",
+              status: "ready",
+            },
+            {
+              id: "env_private",
+              name: "Private target",
+              kind: "external_http",
+              status: "ready",
+            },
+          ]
+        : [],
+      next_cursor: null,
+    },
     response: new Response(null),
-  });
+  }));
   const initial = {
     model: "original",
     instructions: "Old supplement.",
@@ -159,6 +177,7 @@ it("edits supplements through ordinary config and keeps the original ETag", asyn
           <AgentEditor
             initial={revision.config}
             preset={revision}
+            composer={composer}
             version={revision.number}
             etag={etag}
             pending={false}
@@ -183,6 +202,16 @@ it("edits supplements through ordinary config and keeps the original ETag", asyn
     ).disabled,
   ).toBe(true);
   expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
+  if (composer) {
+    await user.click(screen.getByRole("combobox", { name: "Environment" }));
+    const shared = await screen.findByRole("option", {
+      name: "Team project",
+    });
+    expect(screen.queryByRole("option", { name: "Private target" })).toBeNull();
+    await user.click(shared);
+  } else {
+    expect(screen.queryByRole("combobox", { name: "Environment" })).toBeNull();
+  }
   await user.clear(instructions);
   await user.type(instructions, "New supplement.");
   await user.click(screen.getByRole("button", { name: /Model settings/ }));
@@ -209,6 +238,10 @@ it("edits supplements through ordinary config and keeps the original ETag", asyn
         ...initial,
         model_settings: { max_tokens: 2048 },
         instructions: "New supplement.",
+        ...(composer && {
+          default_environment_id: "env_0123456789abcdef0123",
+          default_environment_template_id: null,
+        }),
       },
       '"ap_finding:2"',
       null,

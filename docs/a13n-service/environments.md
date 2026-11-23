@@ -171,7 +171,7 @@ The conversation's run options can create a fresh workspace or select an existin
 {"mode":"existing","environment_id":"env_..."}
 ```
 
-The accepted run captures the instance ID and permissions. Retries of that accepted run retain the same selection. The override replaces only that run's `workspace` mount and leaves the thread's desired mounts unchanged. Omitting it retains the normal thread and agent-default behavior. Selecting an unavailable existing instance fails instead of creating a replacement.
+Select **No primary environment** or send `{"mode":"none"}` to skip `workspace` for this run. Named mounts stay available. When an instance is selected, the accepted run captures its ID and permissions. Retries of that accepted run retain the same selection. The override replaces only that run's `workspace` mount and leaves the thread's desired mounts unchanged. Omitting it retains the normal thread and agent-default behavior. Selecting an unavailable existing instance fails instead of creating a replacement.
 
 ## Templates
 

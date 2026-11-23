@@ -191,7 +191,9 @@ function RunDetails({ selected }: { selected: Run }) {
             {t(
               run.options.environment.mode === "fresh"
                 ? "A fresh primary instance was reserved for this run. Retries reuse it; conversation mounts are unchanged."
-                : "This run selected an existing primary instance. Conversation mounts are unchanged.",
+                : run.options.environment.mode === "none"
+                  ? "No primary environment"
+                  : "This run selected an existing primary instance. Conversation mounts are unchanged.",
             )}
           </p>
         )}

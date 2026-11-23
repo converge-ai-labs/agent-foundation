@@ -1,4 +1,7 @@
 {
+  "Agent default environment": "Agent default environment",
+  "No primary environment": "No primary environment",
+  "This default applies to everyone in the workspace when a thread has no primary environment. Composer can read files in the selected environment.": "This default applies to everyone in the workspace when a thread has no primary environment. Composer can read files in the selected environment.",
   "Compare Envd startup modes": "Compare Envd startup modes",
   "Restricted admission": "Restricted admission",
   "Envd egress": "Envd egress",

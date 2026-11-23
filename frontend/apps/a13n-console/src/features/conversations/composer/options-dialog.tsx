@@ -210,22 +210,25 @@ export function useRunOptions() {
       });
       const policy = executionOverride(execution, t);
       const runOptions: NonNullable<Schema["NewThread"]["options"]> = {
-        ...(runEnvironment === "inherit"
-          ? {}
-          : {
-              environment: runEnvironment.startsWith("template:")
-                ? { mode: "fresh", template_id: runEnvironment.slice(9) }
-                : {
-                    mode: "existing",
-                    environment_id: runEnvironment.slice(9),
-                    ...(runWorkingDirectory
-                      ? { working_directory: runWorkingDirectory }
-                      : {}),
-                  },
-            }),
         ...(Object.keys(override).length ? { overrides: override } : {}),
         ...(policy ? { execution: policy } : {}),
       };
+      if (runEnvironment === "none") {
+        runOptions.environment = { mode: "none" };
+      } else if (runEnvironment.startsWith("template:")) {
+        runOptions.environment = {
+          mode: "fresh",
+          template_id: runEnvironment.slice(9),
+        };
+      } else if (runEnvironment.startsWith("instance:")) {
+        runOptions.environment = {
+          mode: "existing",
+          environment_id: runEnvironment.slice(9),
+          ...(runWorkingDirectory
+            ? { working_directory: runWorkingDirectory }
+            : {}),
+        };
+      }
       return {
         agent_id: agent || undefined,
         agent_revision_id: revision || undefined,
@@ -324,8 +327,12 @@ export function RunOptionsDialog({
     return () => clearTimeout(timer);
   }, [open, focus]);
   // Each choice is its name, with what choosing it does on a quieter line.
+  const inheritEnvironment = {
+    value: "inherit",
+    label: t("Inherit"),
+    icon: <InheritIcon />,
+  };
   const environmentOptions = [
-    { value: "inherit", label: t("Inherit"), icon: <InheritIcon /> },
     ...(choices.data?.templates ?? []).map((template) => ({
       value: `template:${template.id}`,
       label: template.name,
@@ -343,6 +350,11 @@ export function RunOptionsDialog({
         keywords: [item.id],
         icon: <MonitorIcon size={20} className={styles.optionGlyph} />,
       })),
+  ];
+  const runEnvironmentOptions = [
+    inheritEnvironment,
+    { value: "none", label: t("No primary environment") },
+    ...environmentOptions,
   ];
   return (
     <ModalFrame
@@ -456,13 +468,13 @@ export function RunOptionsDialog({
                 emptyMessage={t("No matching environments")}
                 value={options.runEnvironment}
                 groups={[
-                  { label: t("Environment"), options: environmentOptions },
+                  { label: t("Environment"), options: runEnvironmentOptions },
                 ]}
                 onValueChange={(value) => {
                   options.setRunEnvironment(value);
                   options.setLabels((previous) => ({
                     ...previous,
-                    runEnvironment: environmentOptions.find(
+                    runEnvironment: runEnvironmentOptions.find(
                       (item) => item.value === value,
                     )?.label,
                   }));
@@ -557,7 +569,10 @@ export function RunOptionsDialog({
                   emptyMessage={t("No matching environments")}
                   value={options.environment}
                   groups={[
-                    { label: t("Environment"), options: environmentOptions },
+                    {
+                      label: t("Environment"),
+                      options: [inheritEnvironment, ...environmentOptions],
+                    },
                   ]}
                   onValueChange={(value) => {
                     options.setEnvironment(value);

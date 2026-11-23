@@ -143,10 +143,13 @@ async def validate_config(
                 verb=verb,
                 authority=authority,
             )
-    templates = {"default_environment_template_id": config.default_environment_template_id} | {
+    templates = {
         f"subagents.named.{name}.environment.template_id": edge.environment.template_id
         for name, edge in config.subagents.named.items()
     }
+    # Run overrides cannot change the Agent default. Reservation checks it if this Run actually uses it.
+    if held is None:
+        templates["default_environment_template_id"] = config.default_environment_template_id
     for path, template_id in templates.items():
         if template_id is not None:
             with at_field(path):
