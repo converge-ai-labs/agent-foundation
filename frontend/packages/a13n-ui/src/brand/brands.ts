@@ -1,3 +1,4 @@
+import boxdIcon from "./boxd.svg";
 import googleIcon from "./google.svg";
 import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
 import microsoftIcon from "./microsoft.svg";
@@ -192,6 +193,16 @@ const curatedBrands: Record<string, Brand> = {
     aliases: ["fly", "fly.io", "sprites"],
     hosts: ["fly.io"],
   },
+  browserbase: { icon: "https://www.browserbase.com/favicon.svg" },
+  browser_use: {
+    icon: "https://browser-use.com/logo-primary.svg",
+    invertInDark: true,
+  },
+  kernel: { icon: "https://www.onkernel.com/favicon.svg" },
+  kubernetes: {
+    icon: "https://cdn.jsdelivr.net/gh/cncf/artwork@40e2e8948509b40e4bad479446aaec18d6273bf2/projects/kubernetes/icon/color/kubernetes-icon-color.svg",
+  },
+  boxd: { icon: boxdIcon, invertInDark: true },
   mem0: {
     icon: "https://framerusercontent.com/images/2ys67ADJdvcyGmQnhp8vKWSq8.svg",
     aliases: [
@@ -199,6 +210,8 @@ const curatedBrands: Record<string, Brand> = {
       "a13n.mem0-platform",
       "mem0-oss",
       "mem0-platform",
+      "mem0_oss",
+      "mem0_platform",
     ],
     hosts: ["mem0.ai", "app.mem0.ai", "api.mem0.ai"],
   },
