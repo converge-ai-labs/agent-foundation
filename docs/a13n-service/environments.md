@@ -103,6 +103,7 @@ Kubernetes runs an instance as a native Pod with Envd in one selected container.
 {
   "recipe": {
     "execution_container": "envd",
+    "envd_launcher": "non_root",
     "connection": "direct",
     "pod_template": {
       "spec": {
@@ -137,6 +138,18 @@ docker push registry.example.com/team/a13n-sandbox:reviewed
 Configure native `imagePullSecrets` when the registry is private. The image must run Envd and honor Service's injected credential-file path; use the sandbox image built with the matching Service checkout. `make k8s-up K8S_ENVIRONMENTS=1` builds and loads its own image tag; read `sandbox_image` from `deployment.json` in its `K8S_STATE_DIR` rather than assuming it is `:local`. The default directory is `~/.config/a13n-service-kind`, with `-<cluster>` appended for a nondefault `K8S_CLUSTER`.
 
 Keep resource requests and limits, init containers, sidecars, scheduling, security context and references to ConfigMaps or Secrets in `pod_template.spec`. Kubernetes admission validates these native fields. Service owns the Pod identity, sandbox ServiceAccount and private Envd credential injection. Execution becomes ready once the Pod starts and the selected container brings up its Envd daemon.
+
+New Console starters use `envd_launcher: non_root`. Choose the startup mode for the execution container:
+
+| Envd startup                           | Restricted Pod Security                                                                                                                 | Envd-managed egress                                                                                                                    |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Non-root** (`non_root`)              | Service configures the execution container for Restricted. Authored init containers, sidecars, and other Pod settings must also comply. | Envd uses `inherit`, overriding image and daemon startup defaults. An explicit Session request for `controlled` or `deny` is rejected. |
+| **Root user** (`root`)                 | Requires a namespace that permits root containers.                                                                                      | Depends on Envd configuration and the permissions granted to its runtime. Root alone does not enable egress control.                   |
+| **From Pod template** (omit the field) | Depends on the authored Pod and image.                                                                                                  | Existing behavior: depends on Envd configuration and runtime permissions.                                                              |
+
+Kubernetes NetworkPolicy remains independent of Envd startup. In non-root mode Envd and Agent Files and Shell share UID/GID 1000, without Desktop or sudo. Use an image with that account and a workspace writable by it. If you also enable `readOnlyRootFilesystem: true`, mount writable volumes for `/tmp` (required for Envd session state), the working directory, and any writable `$HOME` path your tools need. The Pod is the trust boundary: Agent operations can read their own instance's Envd connection token and write its Envd state; the token grants no Service API access. The official sandbox image continues to run Agent operations as its non-root account when Envd starts as root.
+
+Explicit modes own the selected container's startup security fields and reject conflicting authored values. Pod-level `fsGroup` is left to the operator; set it only if your storage needs it and the group is appropriate for the entire volume. Recipes that omit `envd_launcher` keep their existing startup behavior. Save an explicit mode after upgrading all Service components; older versions do not recognize the field.
 
 `direct` connects to the Pod IP from Service, whether Service runs inside or outside the cluster. Outside the cluster, the operator supplies a kubeconfig profile on both Control and Worker. Both processes must reach Pod IPs for direct connections. For local debugging without Pod IP routing, `port_forward` uses an explicitly permitted kubeconfig profile and an installed `kubectl`; the tunnel is local to the process using it. Both modes currently use bearer-authenticated HTTP and require the profile's explicit `allow_plaintext_envd = true` opt-in. Keep that traffic on a trusted private network. The provider check validates cluster authentication and Pod-list permissions; launch a test instance to verify image pull, scheduling, storage, and Envd startup.
 

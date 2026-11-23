@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { expect, it, vi } from "vitest";
@@ -19,8 +25,12 @@ const direct = {
 };
 const schema = {
   "x-environment-presets": {
-    direct,
-    port_forward: { ...direct, connection: "port_forward" },
+    direct: { ...direct, envd_launcher: "non_root" },
+    port_forward: {
+      ...direct,
+      connection: "port_forward",
+      envd_launcher: "non_root",
+    },
   },
 };
 function Editor({
@@ -76,6 +86,7 @@ it("builds a port-forward sandbox with resource and persistent storage forms, wi
   });
   expect(recipe()).toMatchObject({
     connection: "port_forward",
+    envd_launcher: "non_root",
     execution_container: "envd",
     pod_template: {
       spec: {
@@ -105,6 +116,50 @@ it("builds a port-forward sandbox with resource and persistent storage forms, wi
   expect(
     screen.queryByRole("textbox", { name: "Native recipe JSON" }),
   ).toBeNull();
+});
+
+it.each([
+  [undefined, "From Pod template", "Root user", "root"],
+  ["root", "Root user", "From Pod template", undefined],
+])(
+  "changes an explicit or inherited Envd startup choice (%s)",
+  async (initial, current, choice, next) => {
+    render(
+      <Editor
+        initial={JSON.stringify({ ...direct, envd_launcher: initial })}
+      />,
+    );
+    const user = userEvent.setup();
+    const startup = screen.getByRole("combobox", { name: "Envd startup" });
+    expect(startup.textContent).toContain(current);
+    await user.click(startup);
+    await user.click(await screen.findByRole("option", { name: choice }));
+    expect(recipe()).toEqual(
+      next ? { ...direct, envd_launcher: next } : direct,
+    );
+  },
+);
+
+it("opens the startup comparison beside the launcher without editing the recipe", async () => {
+  render(<Editor initial={JSON.stringify(direct)} />);
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("button", { name: "Compare Envd startup modes" }),
+  );
+  const matrix = await screen.findByRole("table");
+  expect(
+    within(matrix).getByRole("rowheader", { name: "Non-root" }),
+  ).toBeDefined();
+  expect(
+    within(matrix).getByRole("rowheader", { name: "Root user" }),
+  ).toBeDefined();
+  expect(within(matrix).getByText("Inherits Pod networking")).toBeDefined();
+  expect(
+    screen.getByText(/explicitly require controlled or denied egress/),
+  ).toBeDefined();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("table")).toBeNull());
+  expect(recipe()).toEqual(direct);
 });
 
 it("requires an explicit execution selection after removing its container", async () => {

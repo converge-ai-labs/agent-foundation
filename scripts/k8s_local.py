@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CLUSTER = os.environ.get("K8S_CLUSTER", "a13n-local")
 CONTEXT = f"kind-{CLUSTER}"
 NAMESPACE = "a13n-service"
+SANDBOX_NAMESPACE = "a13n-sandboxes"
 BROWSER_NAMESPACE = "a13n-browsers"
 PORT = int(os.environ.get("K8S_PORT", "8080"))
 CONSOLE_URL = f"http://127.0.0.1:{PORT}"
@@ -44,8 +45,8 @@ def run(*args: str, capture: bool = False, input_text: str | None = None) -> str
     return result.stdout if capture else ""
 
 
-def kubectl(*args: str, capture: bool = False, input_text: str | None = None) -> str:
-    return run("kubectl", "--context", CONTEXT, "-n", NAMESPACE, *args, capture=capture, input_text=input_text)
+def kubectl(*args: str, capture: bool = False, input_text: str | None = None, namespace: str = NAMESPACE) -> str:
+    return run("kubectl", "--context", CONTEXT, "-n", namespace, *args, capture=capture, input_text=input_text)
 
 
 def read_env(path: Path) -> dict[str, str]:
@@ -261,6 +262,22 @@ def start(state: Path, *, environments: bool = False, browsers: bool = False) ->
         raise ValueError(f"Existing kind cluster lacks 127.0.0.1:{PORT} -> 30080 mapping; no cluster was deleted")
     if not kubectl("get", "namespace", NAMESPACE, "--ignore-not-found", "-o", "name", capture=True).strip():
         kubectl("create", "namespace", NAMESPACE)
+    if environments:
+        kubectl(
+            "apply",
+            "-f",
+            "-",
+            input_text=json.dumps(
+                {
+                    "apiVersion": "v1",
+                    "kind": "Namespace",
+                    "metadata": {
+                        "name": SANDBOX_NAMESPACE,
+                        "labels": {"pod-security.kubernetes.io/enforce": "restricted"},
+                    },
+                }
+            ),
+        )
     if (
         browsers
         and not kubectl("get", "namespace", BROWSER_NAMESPACE, "--ignore-not-found", "-o", "name", capture=True).strip()
@@ -293,7 +310,16 @@ def deploy(
     environments: bool,
     browser_image: str | None = None,
 ) -> None:
-    overlay = ("-f", "deploy/kubernetes/helm/values-environments-smoke.yaml") if environments else ()
+    overlay = (
+        (
+            "-f",
+            "deploy/kubernetes/helm/values-environments-smoke.yaml",
+            "--set-string",
+            f"kubernetesEnvironments.namespace={SANDBOX_NAMESPACE}",
+        )
+        if environments
+        else ()
+    )
     if browser_image:
         repository, browser_tag = browser_image.rsplit(":", 1)
         overlay += (
