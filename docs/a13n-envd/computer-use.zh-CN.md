@@ -1,211 +1,27 @@
 ---
-title: Envd 桌面 GUI 操控与无障碍树 (Computer Use)
-description: 通过 Envd 驱动 Linux、macOS 与 Windows 图形桌面，支持屏幕截图观测、键鼠操作以及原生无障碍树（AX / UIA / AT-SPI）读写。
+title: 计算机使用
+description: 在 macOS、Linux（X11）与 Windows 上启用 Envd 的桌面截图、键鼠输入及原生无障碍树检查。
 ---
 
-Envd 让 agent 观测并操作已登录的桌面。先将设备与 Harness UI 配对，为线程授权桌面操作，再从截图开始。
+当智能体需要查看桌面画面、执行点击或输入、或读取原生界面无障碍树时，在 `a13n-envd` 中启用 `computer_use`。
 
-已有 `EIPSession` 的 Python 集成可直接使用[截图与缩放示例](#python-client)，Session 设置见 [Python EIP 客户端](python-client.md)。下文的配对与 Thread 授权步骤面向 Harness UI；其他 Host 自行管理注册和权限。
+## 启用计算机使用
 
-## 要求与限制
+传入 `--computer-use` 或设置 `A13N_ENVD_COMPUTER_USE=true`（需关闭操作系统沙箱并使用继承出站网络）：
 
-选择受支持的桌面：
-
-| 平台    | 所需桌面                                                            | 输入支持                                           |
-| ------- | ------------------------------------------------------------------- | -------------------------------------------------- |
-| macOS   | 已登录的图形会话；屏幕录制和辅助功能权限                            | 指针手势、物理组合键、Unicode 文本、声明的滚动单位 |
-| Linux   | 经身份验证的 X11，支持 RandR 1.5、XKB、XTEST 和 TrueColor 根 visual | 指针手势、物理组合键、滚轮步数；不支持字面文本输入 |
-| Windows | 已登录、未锁定的交互用户会话                                        | 指针手势、扫描码组合键、Unicode 文本、滚轮步数     |
-
-使用支持图像的模型，以及具备 `dynamic_environment` 工具的 agent。Envd 电脑操作要求禁用 Sandbox，并继承出站网络。操作以已登录用户的权限作用于共享桌面。工作目录不限制其范围，其他应用或人员也可能在两次调用之间改变焦点和内容。
-
-不支持 Wayland/XWayland、Windows 服务、断开的会话及登录/UAC 安全桌面。Windows 输入不能控制更高完整性级别的目标。
-
-## 连接桌面
-
-1. 在 WebUI 打开**设置 → 环境 → 连接设备**。
-2. 在桌面图形会话中运行显示的命令，添加 `--computer-use true`：
-
-```console
-a13n-envd connect https://your-harness-ui.example.com --computer-use true
+```sh
+A13N_ENVD_COMPUTER_USE=true a13n-envd connect https://host.example.com
 ```
 
-3. 核对验证码，在 WebUI 批准连接。
-4. 完成下方对应平台的就绪步骤，并保持 Envd 运行。
+Envd 会在启动传输前检查桌面就绪状态（超时由 `computer_use_permission_timeout_ms` 控制，默认 120 秒）。
 
-使用可访问的 HTTPS WebUI origin；两个进程位于同一台机器时，也可使用回环 HTTP。重启后，相同命令会复用已保存的注册。电脑操作需要显式启用，与命令 `full_control` 分开；JSON、环境变量和优先级见[守护进程配置](configuration.md)。
+## 原生无障碍能力
 
-### 等待 macOS 授权
+除截图外，Envd 还暴露各平台原生无障碍树（`computer_accessibility_describe`，以及 macOS 的 `computer_ax`、Windows 的 `computer_uia` 和 Linux 的 `computer_atspi`）。在挂载权限上限中授予对应的 `environment.computer.a11y_*` 操作即可启用语义化界面检查与交互。
 
-打开**系统设置 → 隐私与安全性**，为 macOS 指定的进程或启动者授予屏幕录制和辅助功能权限。Envd 在打开 EIP 连接前最多等待 120 秒。两项权限必须就绪；超时或 Ctrl+C 会以失败状态退出。按 macOS 要求重启启动者和 Envd。
+## 升级后恢复 macOS 权限
 
-设置 `A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS=300000` 可等待五分钟。通过 stdio 启动时，应消费 stderr，并将 `initialization_timeout` 设为长于权限等待加启动时间：默认等待可设为 135 秒，五分钟等待可设为 315 秒。Python 客户端默认的十秒不足以覆盖这两个完整权限等待窗口。
+替换 `a13n-envd` 二进制后若 macOS 提示缺少**屏幕录制**或**辅助功能**权限：
 
-### 升级后恢复 macOS 权限
-
-替换可执行文件后，即使系统设置中的旧条目仍显示开启，授权也可能失效。如果升级后 Envd 持续等待权限：
-
-1. 停止 Envd，以及会自动重启它的服务。
-2. 确认启动者实际使用的可执行文件。`command -v a13n-envd` 解析 PATH；服务配置的路径应单独检查。
-3. 打开**系统设置 → 隐私与安全性**，检查**辅助功能**和**屏幕录制**。部分 macOS 版本将后者称为**屏幕与系统音频录制**。
-4. 如果条目已开启但 Envd 仍报告缺少权限，在提供相关控件的面板中移除并重新添加当前可执行文件或启动者。在文件选择窗口按 **Command+Shift+G** 输入路径。若没有这些控件，通过同一启动者重新启动，并按原生授权提示操作。
-5. 开启两项权限，按要求重启启动者，再用已保存的连接设置启动 Envd 或其服务。
-6. 确认 Envd 已连接并能返回截图，再在临时应用中测试输入。
-
-只恢复受影响的条目。更新二进制文件不会重启已运行的守护进程，也不会授予桌面权限。
-
-### Linux X11 就绪检查
-
-在目标 X11 会话中启动 Envd，提供 `DISPLAY` 和所需的 `XAUTHORITY`。保持 X11 身份验证开启。若 X 服务器丢失，打开新的 Session 并重新截图。
-
-滚动使用 `unit="steps"`，每轴最多 100 步。物理组合键遵循当前键盘布局。字面文本可通过[剪贴板流程](#clipboard-text)输入；X11 不声明 `computer_type_text`。
-
-### Windows 就绪检查与输入
-
-在要控制的已登录桌面上，从普通终端启动 Envd。锁定或断开后，手动解锁或重连，再截取新图。保持 Windows 保护开启；提权不能解决桌面访问不可用的问题。
-
-滚动使用 `unit="steps"`。即使启用显示缩放，显示几何仍使用物理像素。受保护内容可能显示为黑色。输入前释放已按住的按键或按钮，并核对文本输入结果：部分应用不接受 Unicode 事件。
-
-## 将桌面绑定到线程
-
-1. 在输入区打开**环境**，或在**对话详情 → 配置**中保存下一次执行的设置。
-2. 添加已连接的设备，选择已有工作目录。
-3. 将别名设为 `desktop`。
-4. 在**允许操作**中选择**完全控制**，纳入设备声明的桌面操作。此绑定预设与守护进程 `full_control` 分开。
-5. 将其设为默认环境，或要求 agent 使用别名 `desktop`。
-6. 保存并开始新的执行。
-
-绑定为下一次执行授权模型访问。**只读**预设排除桌面操作，包括观测。如需允许观测但禁止输入，在项目或线程配置中保存精确上限：
-
-```yaml
-environment_bindings:
-  - device_id: device-your-mac
-    alias: desktop
-    working_directory: /Users/your-account
-    permission_ceiling:
-      operations:
-        - environment.computer.describe
-        - environment.computer.observe
-        - environment.computer.zoom
-default_environment: desktop
-```
-
-将设备 ID 和路径替换为实际选择。流程需要输入时，再逐项添加输入权限。
-
-## 观测、操作、验证
-
-先请求查看桌面：
-
-> 使用 desktop 环境。描述它的显示器并截取屏幕。暂时不要点击或输入。
-
-使用返回的 `observation_id` 和截图像素坐标执行指针输入。键盘输入使用当前前台焦点，因此输入文本或按键前先点击目标字段。操作后再次截图，检查应用结果。
-
-```mermaid
-flowchart TB
-    Observe["观测桌面"] --> Reference["图像和观测 ID"]
-    Reference --> Act["有界输入"]
-    Act --> Verify["观测结果"]
-    Verify --> Next["选择下一操作"]
-
-    class Observe,Reference,Act,Verify a13n
-    class Next app
-```
-
-| 工具                              | 用途                                             |
-| --------------------------------- | ------------------------------------------------ |
-| `computer_describe`               | 列出显示器和原生就绪状态                         |
-| `computer_observe`                | 截取主显示器或所选显示器；最大尺寸 256–2048 像素 |
-| `computer_zoom`                   | 查看区域的新鲜原生细节；继续使用原全屏坐标       |
-| `computer_click`, `computer_move` | 使用返回图像中的位置                             |
-| `computer_drag`                   | 执行有界拖动并释放按钮                           |
-| `computer_scroll`                 | 使用声明的单位；正值表示向右/向下                |
-| `computer_type_text`              | 在 macOS 或 Windows 输入字面 Unicode 文本        |
-| `computer_press_keys`             | 按下并释放组合键，如 `["meta", "a"]`             |
-
-键名包含 `meta`（Command/Super/Windows）、`alt`（Option/Alt）、`enter`、`page_up` 和 `page_down`。引用过期或显示布局变化后，应重新观测。原生输入完成记录事件发送和清理情况；应用是否成功由下一张截图确认。部分执行、结果不明、释放不完整或响应丢失时，先检查状态再重试。
-
-文字或控件太小时，用原 `observation_id` 调用 `computer_zoom`，并以配置的坐标空间提供含 `left`、`top`、`right`、`bottom` 的 `region`。右边界和下边界不包含在区域内；归一化值 1000 表示完整边缘。Zoom 捕获新的原生像素，先裁切再缩小。
-
-Zoom 结果包含 `source_observation_id`，以及按原图像素表示的 `region_pixels`。点击继续使用原全屏坐标，而非局部放大图坐标。Zoom 要求 Provider 支持和 `environment.computer.zoom` 权限。它不创建输入引用，也不延长原引用的有效期。
-
-在 WebUI 展开**观测桌面**或 **Inspect desktop region** 查看图像。临时显示副本可能过期。客户端集成应及时关闭截图 reader，释放传输容量。
-
-## 原生无障碍访问
-
-macOS 在继承的登录会话中，通过 Session 所有的 helper 实现全部七种语义读取及 19 种封闭的 AX 修改操作。在系统设置中为 daemon 或负责启动它的应用授予辅助功能权限；就绪检查不会弹出授权提示。AX 对所有 `view` 值公开同一原生层级。属性元数据保留观测到的可写性，动作保留确切的所有者，原生文本范围保留 AX 位置（AppKit 文本采用 UTF-16 位置）。派生范围保持应用选区不变，直到显式执行选择修改。原生边界使用逻辑 `ax_screen` 坐标；截图映射将所选显示器与保留的观测进行验证，再按该图像缩放。跨显示器矩形可能报告投影不可用。不支持的原生范围操作会明确报告。
-
-Windows 在继承的已解锁交互桌面上实现全部七种语义读取及 32 种封闭的 UIA 修改操作。UIA 对象保留在 Session 所有的 COM helper 中。`raw`、`control` 和 `content` 使用对应的 UIA 树遍历器。`applications` 返回原生顶层窗口；`application` 按 `process_id` 过滤这些窗口，因为 UIA 没有定义应用容器。TextPattern 范围保留不透明的原生端点；派生范围会克隆源范围，并保持应用选区不变。要改变选区，请显式调用选择修改操作。不支持的整数偏移和行索引会返回不支持。原生边界使用 `uia_physical_screen` 坐标框架，保留显示器的负坐标原点。控件公开实际模式和观测到的可写性；依赖操作数的支持状态保留为候选，并在派发前验证。
-
-Linux 在继承的 X11 桌面上实现原生 AT-SPI 读取及全部 30 种 AT-SPI 修改操作。从同一已登录图形会话启动 Envd，保留 `DBUS_SESSION_BUS_ADDRESS`，并确保 AT-SPI 无障碍总线正在运行。Debian/Ubuntu 需要安装 `at-spi2-core` 和 `libatk-adaptor`；应用必须公开无障碍接口。Envd 通过 `org.a11y.Bus` 发现总线，不会选择其他用户的总线。AT-SPI 对所有 `view` 值遍历应用的原生层级；Linux 上的 `raw`、`control` 和 `content` 不应用 UIA 过滤器。文本范围采用原生字符位置，与 UTF-8 字节限额分别计算。
-
-Linux 的焦点获取和命中点下探使用节点、调用次数及 deadline 预算，与树遍历的 `depth` 独立。点获取返回可见窗口的原生命中候选，不保证跨应用的最前窗口顺序。GTK 验收验证按钮动作、文本编辑、数值修改和焦点；受控 D-Bus provider 检查全部 30 种修改操作的原生成员、参数映射及失败证据。
-
-Computer 工具集也提供桌面语义访问。先调用 `computer_accessibility_describe` 检查后端、就绪状态和支持的读取。后端支持、挂载权限和具体控件的能力分别判断。没有原生后端的 daemon 会报告不支持；仅启用 Computer Use 不会提供原生后端。
-
-| 工具                                            | 用途                                                      |
-| ----------------------------------------------- | --------------------------------------------------------- |
-| `computer_accessibility_describe`               | 发现原生后端和就绪状态                                    |
-| `computer_accessibility_roots`                  | 定位桌面、应用、焦点或指定点的根节点                      |
-| `computer_accessibility_inspect`                | 读取有界树和各节点的原生能力                              |
-| `computer_accessibility_find`                   | 在保留的根节点内查找有界匹配                              |
-| `computer_accessibility_read`                   | 读取原生属性、文本、选区、表格和平台专用元数据            |
-| `computer_accessibility_range`                  | 获取或变换原生文本范围引用                                |
-| `computer_accessibility_range_read`             | 读取保留范围的文本、边界或元数据                          |
-| `computer_ax`, `computer_uia`, `computer_atspi` | 执行显式选择的 macOS AX、Windows UIA 或 Linux AT-SPI 修改 |
-
-分别授予语义读取权限，例如 `environment.computer.a11y_describe`、`environment.computer.a11y_roots` 和 `environment.computer.a11y_inspect`。修改需要精确动作权限，例如 `environment.computer.ax_perform_action`、`environment.computer.uia_invoke` 或 `environment.computer.atspi_do_action`。选择分组工具不会授权其中的全部操作。
-
-先检查目标，选择它实际报告的能力，执行原生操作，再回读或截图验证应用结果。限额约束节点数、深度、文本、条目、匹配数、原生调用、序列化字节和时间。判断未匹配前，检查完整性和字段错误。受保护值保持不可用。原生文本偏移保留声明的平台单位。
-
-节点和文本范围引用属于原环境执行及原生 helper 代次。保留返回的引用，不要根据标签或原生 ID 重建。Session 或 helper 替换后重新获取。过期引用会失败，不会改选相似控件。
-
-基于截图命中测试时，roots scope 使用 `kind: "screenshot_point"`，传入已有 `observation_id`，并按配置的截图坐标空间提供 `point`。Inspect 可以请求 `projection_observation_id`；各节点的 `image_projection` 报告原生边界能否映射到该图像。只使用返回的投影，不要将原生边界当作截图坐标。语义读取和投影不会捕获像素或刷新观测。
-
-原生修改结果分别记录原生确认和操作 receipt。`application_outcome: "unverified"` 要求随后观察结果。投递或完成状态不明时，先检查当前状态再决定是否重试；不能安全地自动重放。
-
-## 剪贴板文本
-
-分别授予 `environment.computer.read_clipboard` 和 `environment.computer.write_clipboard`，供 `computer_read_clipboard` 和 `computer_write_clipboard` 使用。两者均支持 macOS、Windows 和 Linux X11。通过 `alias` 选择挂载；调用不需要观测引用。
-
-读取返回 `status: text` 及完整文本，包括空字符串。`no_content` 表示剪贴板为空；`no_text` 表示存在内容但没有受支持的文本。后两者省略 `text`。可按需降低默认 16384 字节的 `max_bytes`；超限读取报错而非截断。
-
-写入必须提供 `text`，允许空字符串，拒绝 NUL，最多接受 16384 个原始 UTF-8 字节。读写将 CRLF 规范化为 LF，只交换 Unicode 纯文本。写入会替换剪贴板内容，不会保存或恢复旧内容。
-
-粘贴时先写入剪贴板，再发送应用的粘贴组合键。读取复制文本时，先发送复制组合键，再读取剪贴板。两次调用应在同一存活 Session 内完成，并检查应用结果。这是两个独立操作：其他应用可能在其间更改剪贴板，成功发送按键也不表示文本已被复制或粘贴。
-
-X11 在 Session 存活期间提供 `CLIPBOARD`，保持 `PRIMARY` 不变。macOS 和 Windows 立即发布原生数据；不保证内容跨 Session 更换、重启或人工接管保留。macOS 剪贴板同意机制仍适用，Windows 需要未锁定的输入桌面。写入效果为 partial/unknown 或 `cleanup_complete` 未完成时，先核对再重试。这些调用操作原生剪贴板，不会将其同步到人工桌面查看器。
-
-## Python 客户端
-
-已有就绪 `EIPSession` 时，通过带完整性验证的传输 helper 读取截图。此例先捕获显示器，再查看其左上四分之一区域：
-
-```python
-async with session.observe_computer(max_dimension=1280) as reader:
-    screenshot = b"".join([chunk async for chunk in reader])
-    observation = reader.opened.observation
-# Closing the reader releases image bytes, not the Session's geometry reference.
-
-from a13n_envd_client.eip.v1 import ComputerRegion
-
-async with session.zoom_computer(
-    observation_id=observation.observation_id,
-    region=ComputerRegion(left=0, top=0, right=observation.width // 2, bottom=observation.height // 2),
-) as reader:
-    detail = b"".join([chunk async for chunk in reader])
-# Pointer input still uses observation and its full-frame image coordinates.
-```
-
-每个新输入动作使用新的操作上下文。效果不确定时，用原操作身份核对。Session 设置和传输限制见 [Python EIP 客户端](python-client.md)。
-
-## 验证
-
-在目标 OS 上使用可丢弃的桌面和应用测试完整流程。执行无害输入、查看下一张截图，再检查权限/会话丢失及显示布局变化。可选 [Linux 桌面 fixture](https://github.com/converge-ai-labs/agent-foundation/tree/main/dev/fixtures/linux-desktop) 在临时容器中测试真实 GUI 输入和截图变化。脚本化对端测试另外覆盖集成，而非原生桌面行为。
-
-验证剪贴板时：
-
-1. 从原生编辑器复制文本，通过 Envd 读取。
-2. 写入包含 `café 中文 𝄞` 等内容的多行文本，粘贴到编辑器并检查结果。
-3. 检查空文本，以及小于复制内容的读取上限。
-4. 在每组复制/读取和写入/粘贴期间保持 Session 存活。macOS 上测试剪贴板授权拒绝；Windows 上测试锁屏行为和剪贴板占用。
-
-可选原生 EIP 回归命令为 `cargo test -p a13n-envd --lib clipboard_eip -- --ignored --test-threads=1`。与手动检查一样，它会替换剪贴板内容。
+1. 打开**系统设置 → 隐私与安全性 → 屏幕录制**与**辅助功能**。
+2. 移除旧的 `a13n-envd` 条目，重新添加新版二进制（或关闭后重新开启），然后重启 Envd。

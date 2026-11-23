@@ -3,28 +3,15 @@ title: Agents and subagents
 description: Define custom YAML Agents and lightweight Markdown subagent roles with tailored instructions, inherited or dedicated models, and filtered tool permissions.
 ---
 
-An **Agent** saves a Model choice, instructions, tools, and optional helpers. Start by creating one Agent and testing it. Add a subagent when you have a specific task to delegate.
-
-| Task                                        | Start here                                                                |
-| ------------------------------------------- | ------------------------------------------------------------------------- |
-| Create an Agent interactively               | `a13n-harness-ui add agent`                                               |
-| Create an Agent in YAML                     | [Create an Agent from files](#create-an-agent-from-files)                 |
-| Add a shipped helper                        | [Built-in subagents](#built-in-subagents)                                 |
-| Write a helper that uses the parent's Model | [Write a Markdown subagent](#write-a-markdown-subagent)                   |
-| Give a helper its own Model or tools        | [Reference an existing Agent](#reference-an-existing-agent-as-a-subagent) |
-| Look up configuration fields                | [Agent file reference](#agent-file-reference)                             |
+An **Agent** (`agents/*.yaml`) pairs a Model with instructions, Capabilities, and optional subagents. Start with one root Agent, then add built-in, dynamic, or custom subagents when you want to delegate focused tasks.
 
 ## Create an Agent from files
 
-This recipe creates a coding Agent with file and shell tools. You need an installed Harness UI and a working Model connection. Complete [setup](setup.md) first if you have neither.
+Run `a13n-harness-ui config path` to locate your config directory (normally `~/.a13n-harness-ui/`).
 
-Run `a13n-harness-ui config path`. All paths below are relative to the parent directory of the root YAML shown as `configuration_path`, normally `~/.a13n-harness-ui/`. For a custom tree, put `--config /absolute/path/a13n-harness-ui.yaml` before each command's subcommand.
+1. **Create a Model** (or reuse an existing Model ID from [setup](setup.md)):
 
-### 1. Create a Model
-
-If setup already created a Model, reuse its `id` in step 2. Otherwise save this complete file as `models/primary.yaml`:
-
-```yaml title="models/primary.yaml — complete file"
+```yaml title="models/primary.yaml"
 schema_version: "1"
 kind: model
 id: model-primary
@@ -35,13 +22,9 @@ authentication:
   env: OPENAI_API_KEY
 ```
 
-Set `OPENAI_API_KEY` in the process that launches Harness UI. The YAML stores the variable name, not the secret. For a stored key or subscription connection, use [Models and authentication](models-and-authentication.md).
+2. **Create the root Agent** in `agents/coder.yaml`:
 
-### 2. Create the root Agent
-
-Save this complete file as `agents/coder.yaml`. Replace `model-primary` if you reused another Model.
-
-```yaml title="agents/coder.yaml — complete file"
+```yaml title="agents/coder.yaml"
 schema_version: "1"
 kind: agent
 id: agent-coder
@@ -58,13 +41,7 @@ capabilities:
 subagents: []
 ```
 
-`dynamic_environment` supplies file and shell tools supported by the selected Environment. Environment access and root tool switches still apply. The default Full Control profile executes with the host account's authority; choose a [Sandbox or custom Environment](environments-and-projects.md) when you need isolation.
-
-Start with this small configuration. Add [Skills](skills-and-content-plugins.md) or other [Capabilities](extensions-and-mcp.md) when the Agent needs them. Harness UI supplies its application infrastructure, including configured task and question tools.
-
-### 3. Select and validate it
-
-Validate the configuration, then launch a new conversation from your repository:
+3. **Validate and run:**
 
 ```console
 a13n-harness-ui config validate
@@ -72,63 +49,30 @@ cd /absolute/path/to/your-repository
 a13n-harness-ui --agent agent-coder
 ```
 
-Send: “List the top-level files and explain where the source code lives. Do not change files.” Check that the response includes a file-tool result from the intended repository. `/status` shows the selected Agent and Model. A validation success checks configuration; the prompt exercises the Model and Environment connection.
-
-To make this Agent the default for new conversations, merge the following fields into the root YAML, preserving other settings:
-
-```yaml title="a13n-harness-ui.yaml — merge into existing defaults"
-defaults:
-  agent: agent-coder
-```
-
-Use `--agent` for a new conversation, not with `--resume`. In the common single-directory workflow, the launch directory supplies the Project and working directory without a separate Project file. See [Projects and threads](environments-and-projects.md) for explicit multi-root Projects.
+To make it the default Agent, set `defaults: {agent: agent-coder}` in `a13n-harness-ui.yaml`.
 
 ## Built-in subagents
 
-The package ships three helpers. Choose the ones you want in the **root YAML**, not in the Agent's `subagents` list.
+Harness UI ships three built-in helpers configured in your **root YAML** (`a13n-harness-ui.yaml`):
 
-| Name            | Task to give it                                                    |
-| --------------- | ------------------------------------------------------------------ |
-| `explorer`      | Locate a specific implementation and return file references        |
-| `code-reviewer` | Review a stated change and report material defects, or no findings |
-| `executor`      | Complete a bounded task with a clear expected result               |
+| Name            | Role                                                  |
+| --------------- | ----------------------------------------------------- |
+| `explorer`      | Locate implementations and return file references     |
+| `code-reviewer` | Review changes and report material defects            |
+| `executor`      | Complete a bounded task with a clear expected outcome |
 
-1. Merge this fragment into `a13n-harness-ui.yaml`:
-
-   ```yaml title="a13n-harness-ui.yaml — merge fragment"
-   subagents:
-     include: [explorer, code-reviewer]
-   ```
-
-2. Inspect the catalog and validate:
-
-   ```console
-   a13n-harness-ui config subagents
-   a13n-harness-ui config validate
-   ```
-
-3. In **Settings → Agents → Agent creation** (or `subagents.dynamic.allowed_models` in `a13n-harness-ui.yaml`), allow the helper's configured or inherited Model.
-
-4. Start a new conversation with `agent-coder`. Ask it to delegate a narrow repository question to `explorer`. Use `/subagents` to inspect the child execution and its result.
-
-Normal setup selects all three roles and seeds your initial chat Model in `allowed_models` and `default_model`. Omit `include`, or set it to `[]`, to disable automatic inclusion. `setup --advanced` offers all or none; edit the list to select a subset.
-
-Built-ins inherit the parent's Model, Capabilities, and visible tools. To restrict a helper to read-only file operations, apply the explicit tool filter shown in the next section.
-
-The selected helpers are appended after the root Agent's authored children, in list order. They are leaves; inclusion does not recursively attach them to every child Agent. To attach just one package role to a particular Agent, add this entry to that Agent's roster:
-
-```yaml title="Agent file — subagents fragment"
+```yaml title="a13n-harness-ui.yaml"
 subagents:
-  - markdown: subagent-builtin-explorer
+  include: [explorer, code-reviewer]
 ```
 
-An explicit reference to the same built-in ID is deduplicated. A different child also named `explorer` is a conflict: rename your child or remove the built-in selection. The `subagent-builtin-*` IDs belong to the package. Package upgrades and configuration edits affect subsequent Runs; active Runs retain their captured definitions.
+Built-in helpers inherit the parent's Model, Capabilities, and visible tools. Inspect them with `a13n-harness-ui config subagents`. To attach a single built-in role to one Agent only, add `- markdown: subagent-builtin-explorer` to that Agent's `subagents` list.
 
 ## Dynamic subagents and result delivery
 
-To let the main Agent create task-specific helpers on the fly, merge this section into the root YAML. Replace `model-primary` with a configured Model ID:
+Enable `spawn_subagent` so root conversations can create task-specific leaf helpers on demand:
 
-```yaml
+```yaml title="a13n-harness-ui.yaml"
 subagents:
   max_concurrent: 8
   dynamic:
@@ -137,227 +81,62 @@ subagents:
     default_model: model-primary
 ```
 
-When creating a chat or Coordinator worker, the agent chooses from `allowed_models`. For built-in and declared helpers, Harness UI resolves each model first, including any selection inherited from the parent chat’s composer. The agent sees only eligible helpers. If none qualify, the Run has no `delegate` tool. When `subagents.dynamic.enabled` is true, root Runs also expose `spawn_subagent(name, prompt, model=None, thinking=None)`:
-
-- `name` labels the helper's role for status displays and transcripts.
-- `prompt` is delivered as the helper's first task input, paired with the package-owned child guidance and global `AGENTS.md` context (the helper starts with a clean history and without parent Agent role instructions).
-- `model` selects an entry from `allowed_models`, or falls back to `default_model` when omitted (both `allowed_models` and `default_model` are required when dynamic creation is enabled).
-- `thinking` sets a reasoning effort supported by the selected Model.
-
-Each dynamic helper inherits the parent's tools and Environment and operates as a leaf child without nested delegation or spawning.
-
-The running-child limit applies to dynamic, configured and built-in helpers, including resumed segments. The Agent receives a clear error at the limit and can wait for existing work. Use `subagent_info`, `wait_subagent`, `steer_subagent`, `resume_subagent` and cancellation with the returned execution ID.
-
-With the default `input.steering_mode: immediate`, sending a message during `wait_subagent` ends the wait and gives the main Agent the current child status. The child keeps working. With `queued`, the main Agent receives your message when the wait returns.
-
-Final results arrive as parent input automatically, including after the parent turn ends. Every child can call `send_parent_message` while continuing to work. A child that needs an answer to continue ends with its question; the main Agent can resume it with an answer. Messages and results identify the child name, execution ID and state. Repeated results with the same ID are possible.
-
-An active parent receives steering. An idle parent can start a new Run after normal completion, which adds Model use. Stop, failure, suspension, interruption, pending user decisions and archival prevent automatic restart. The TUI shows marked parent and completion inputs as Activity.
-
-Before upgrading an existing data root, stop all Harness UI processes using it. Upgrade TUI and WebUI together, then reopen. Mixed-version access is unsupported; schema repair is forward-only or requires restoring a pre-upgrade backup.
+- `allowed_models` and `default_model` also govern model selection for `create_thread`, `create_worker`, and `delegate`.
+- Dynamic helpers inherit the parent's tools and Environment, start with a clean history, and report final results back automatically.
+- Agents manage running children with `subagent_info`, `wait_subagent`, `steer_subagent`, and `resume_subagent`.
 
 ## Write a Markdown subagent
 
-Use Markdown for a helper that needs different instructions but the same Model and Capabilities as its parent.
+Use a Markdown file under `subagents/` for a helper that shares its parent's Model and Capabilities but needs focused instructions or a restricted tool list:
 
-1. Save this complete file as `subagents/investigator.md` beside the selected root YAML:
+```markdown title="subagents/investigator.md"
+---
+name: investigator
+description: Trace a bounded repository question and report evidence.
+instruction: Use for focused read-only discovery before implementation.
+tools: [glob, grep, ls, view]
+---
 
-   ```markdown title="subagents/investigator.md — complete file"
-   ---
-   name: investigator
-   description: Trace a bounded repository question and report evidence.
-   instruction: Use for focused read-only discovery before implementation.
-   tools: [glob, grep, ls, view]
-   ---
+Find the relevant implementation and tests. Return exact file paths and explain
+how the pieces connect. Do not modify files.
+```
 
-   Find the relevant implementation and tests. Return exact file paths and explain
-   how the pieces connect. Do not modify files. Stop at the assigned scope.
-   ```
+Reference it in `agents/coder.yaml`:
 
-2. Add its ID to `agents/coder.yaml`. Preserve any children already in the list:
-
-   ```yaml title="agents/coder.yaml — subagents fragment"
-   subagents:
-     - markdown: subagent-investigator
-   ```
-
-3. Run `a13n-harness-ui config validate`, launch `a13n-harness-ui --agent agent-coder`, and ask it to delegate a file-reading task to **`investigator`**. Inspect the result with `/subagents`.
-
-The parent must contribute the named tools. Unknown allowlist names fail composition. This example exposes read-only file tools; mandatory Harness infrastructure is retained separately.
-
-| Frontmatter field | Required | Purpose                                                       |
-| ----------------- | -------- | ------------------------------------------------------------- |
-| `name`            | Yes      | Delegate name; also derives the default ID `subagent-<name>`  |
-| `description`     | Yes      | Short role description shown to the parent                    |
-| `id`              | No       | Explicit stable `subagent-` resource ID                       |
-| `instruction`     | No       | Extra routing guidance shown to the parent                    |
-| `tools`           | No       | Exact visible-tool filter, as a list or comma-separated names |
-
-The body supplies the child's instructions. Without `tools`, the child inherits the parent's visible-tool filter. Markdown children have no nested roster and always inherit the parent's Model. Remove legacy `model` fields, including `model: inherit`; use an Agent reference for independent settings.
+```yaml
+subagents:
+  - markdown: subagent-investigator
+```
 
 ## Reference an existing Agent as a subagent
 
-Use an Agent reference when the helper needs its own Model, Capabilities, MCP selection, tool groups, or children. Continue from the `agent-coder` recipe above.
+When a subagent needs its own Model, Capabilities, or MCP servers, define it as a normal `agents/*.yaml` file and reference it by ID:
 
-### 1. Define the reviewer Model
-
-Save this complete file as `models/review.yaml`, or reuse an existing Model ID:
-
-```yaml title="models/review.yaml — complete file"
-schema_version: "1"
-kind: model
-id: model-review
-name: Review API model
-route: openai-responses:gpt-5
-authentication:
-  kind: api_key
-  env: OPENAI_API_KEY
-settings:
-  thinking: low
-```
-
-The example uses the same credential as the parent with different reasoning settings. Choose settings supported by your provider and model.
-
-### 2. Define the child Agent
-
-Save this complete file as `agents/reviewer.yaml`:
-
-```yaml title="agents/reviewer.yaml — complete file"
-schema_version: "1"
-kind: agent
-id: agent-reviewer
-name: Independent reviewer
-model: model-review
-instructions: |
-  Review the assigned change. Report concrete material defects with file paths.
-  Return findings to the parent without editing files.
-capabilities:
-  - capability: dynamic_environment
-    configuration:
-      files_enabled: true
-      shell_enabled: false
-tools: [glob, grep, ls, view]
-harness_plugins: []
-mcp_servers: []
-subagents: []
-```
-
-The tool allowlist limits this Agent to read-only file tools plus mandatory Harness infrastructure. Empty Plugin and MCP lists select no sources from those categories.
-
-### 3. Add the reference to the parent's roster
-
-Add the following entry to `agents/coder.yaml`, retaining any existing children:
-
-```yaml title="agents/coder.yaml — subagents fragment"
+```yaml title="agents/coder.yaml"
 subagents:
-  - agent: agent-reviewer
+  - agent: agent-specialist
+    name: specialist
+    description: Run specialized analysis with a dedicated Model.
 ```
-
-Run `a13n-harness-ui config validate` and start a new `agent-coder` conversation. Ask the parent to delegate a focused review to **`agent-reviewer`**. This child uses `model-review`. You can also launch it directly with `a13n-harness-ui --agent agent-reviewer`.
-
-Agent and Markdown entries can share a roster. Each immediate delegate name must be unique, and Agent references must not form cycles. Delegation uses the application's existing Project, Environment, and authorization rules.
-
-## Names and references at a glance
-
-| Value              | Example                     | Where to use it                                        |
-| ------------------ | --------------------------- | ------------------------------------------------------ |
-| Filename           | `agents/reviewer.yaml`      | File organization; it can differ from the ID           |
-| Agent `id`         | `agent-reviewer`            | `--agent`, `defaults.agent`, `- agent:`, delegate name |
-| Agent `name`       | `Independent reviewer`      | Human-facing label                                     |
-| Markdown `id`      | `subagent-investigator`     | `- markdown:` reference                                |
-| Markdown `name`    | `investigator`              | Delegate name                                          |
-| Built-in name      | `explorer`                  | Root `subagents.include` and delegate name             |
-| Built-in source ID | `subagent-builtin-explorer` | Explicit `- markdown:` reference                       |
-
-## Tool search groups
-
-Use groups when an Agent has a large tool collection. The model discovers and calls group members through a fixed proxy instead of receiving every member schema up front.
-
-1. Configure and select the sources first. The example below assumes an existing, enabled MCP resource `mcp-docs`; see [MCP servers](mcp.md).
-
-2. Merge this fragment into the **Agent YAML**:
-
-   ```yaml title="agents/coder.yaml — merge fragment"
-   tool_search:
-     groups:
-       knowledge:
-         description: Search project documents
-         mcp_servers: [mcp-docs]
-   ```
-
-3. Run `a13n-harness-ui config validate` and `a13n-harness-ui config show --format json`. Inspect `tool_search_previews`. These commands inspect the plan without connecting to MCP.
-
-4. In a new conversation, ask for a task served by the group. The model uses `discover_tools`, `describe_tool`, and `call_tool`. `list_tools(detail="full")` with `next_offset` lists the directory across pages.
-
-Groups can also select `harness_plugins` by resource ID and `capabilities` by enabled Capability key. Each source belongs to one group. Disabled sources stay disabled; enabled sources outside groups remain direct. Groups with no prepared tools expose no controls. Content Plugins supply Skills and subagents, not tool sources.
-
-| Setting                       | Rule                                                                               |
-| ----------------------------- | ---------------------------------------------------------------------------------- |
-| Group name                    | Starts with a letter; at most 32 letters, digits, underscores, or hyphens; no `__` |
-| `description`                 | Nonblank; at most 512 characters                                                   |
-| Members                       | Existing exact source IDs or Capability keys; distinct tool names within a group   |
-| Optional `tool_search.config` | Proxy control names and result limits; `mode` omitted or `proxy`                   |
-| Agent `tools` allowlist       | Canonical targets such as `knowledge__lookup`, not only the proxy's `call_tool`    |
-
-Renaming a group changes its canonical target names; update matching allowlists. Grouping preserves tool execution permissions and CodeAct eligibility. Discovery does not add member schemas to later requests. Independent Agent children use their own groups; Markdown children inherit the parent's plan. In WebUI Agent settings, use **Search tools on demand** and select MCP servers. Switching it off writes `tool_search.enabled: false` and preserves the groups for re-enabling. Detailed group descriptions, plugin and Capability membership remain editable in Advanced configuration. Changes apply to later Runs.
-
-See [ToolSearch](../a13n-harness/tool-search.md) for proxy controls and execution details. For older configurations, replace `mode: native` with `proxy` and remove `strategy`.
-
-## Agent file reference
-
-Every file needs `schema_version: "1"`, `kind: agent`, a unique `agent-` ID, and a display `name`.
-
-| Field             | Default | Meaning                                                                                |
-| ----------------- | ------- | -------------------------------------------------------------------------------------- |
-| `model`           | `null`  | Model ID; required before this Agent can run                                           |
-| `instructions`    | `""`    | Instructions added to the package system prompt                                        |
-| `capabilities`    | `[]`    | Ordered `{capability, configuration}` entries from the installed catalog               |
-| `harness_plugins` | `null`  | Inherit root defaults; `[]` selects none; a list selects exact IDs                     |
-| `mcp_servers`     | `null`  | Inherit root defaults; `[]` selects none; a list selects exact IDs                     |
-| `tools`           | `null`  | Default contributed surface; `[]` removes optional tools; a list is an exact allowlist |
-| `tool_search`     | `null`  | Tool groups and optional proxy configuration                                           |
-| `subagents`       | `[]`    | Ordered Agent or Markdown references                                                   |
-
-Plugin and MCP defaults initialize a new Thread's selections. Existing Threads keep their saved lists until explicitly changed. Resource edits are resolved for later Runs; active and saved executions keep their captured configuration.
-
-Put Capability settings inside that Capability's `configuration`, not at the Agent's top level. Root tool-disable switches remain effective even when an Agent selects the corresponding Capability.
 
 ## Instructions and guidance
 
-Put reusable role instructions in Agent `instructions` or a Markdown child's body. Put repository conventions in the working directory's `AGENTS.md`. Put cross-project guidance in `AGENTS.md` beside the root YAML.
+- **`instructions` / `system_prompt`:** Defined on the Agent YAML.
+- **Global `AGENTS.md`:** Placed in your Harness UI config directory; injected into root and child conversations.
+- **Project `AGENTS.md`:** Discovered automatically from the active workspace root.
 
-These additions coexist with the package-owned base system prompt. Each Run captures its instructions. Guidance supplies context, not execution permissions.
+## Tool search groups
 
-Harness UI reads the working directory's `AGENTS.md` through the Environment. It also lists guidance entrypoints in immediate child directories and nearby `.agents/skills` directories, so the Agent can inspect relevant guidance on demand. This bounded discovery does not load those child bodies or change the selected Skill catalog. It does not scan ancestors or use `RULES.md`/`AGENTS.override.md` fallbacks. Global and working-directory guidance remain in native history and are hidden from ordinary TUI history display.
+When an Agent has many tools (such as large MCP servers), configure `tool_search` groups in the Agent's Capabilities to defer tool schemas until the Agent searches for them, reducing prompt token usage without changing tool permissions.
 
-To disable project-entrypoint hints, add an explicit `file_context` Capability with `configuration: {include_project_guidance: false}` while preserving your other Capability entries.
+## Agent file reference
 
-## Import external definitions
-
-For guided import, use `/import` in the TUI. Select Codex or Claude Code, choose the source scope, inspect the preview, and confirm **import and enable**. The imported helper inherits the parent Model and tools.
-
-For standalone conversion:
-
-1. Preview the selected product and scope:
-
-   ```console
-   a13n-harness-ui import subagents --product claude-code --scope user
-   ```
-
-2. Read the target paths and diagnostics. Apply the same selection when the preview is correct:
-
-   ```console
-   a13n-harness-ui import subagents --product claude-code --scope user --apply
-   ```
-
-3. Add each imported `subagent-` ID to your Agent's Markdown roster, then validate and test delegation as above. Standalone import writes definitions; it does not enroll them.
-
-The CLI also accepts `--product codex` or `--product cursor`. For repository definitions, use `--scope project --project-root /absolute/path/to/repository`.
-
-Standalone import preserves representable tool names and diagnoses unsupported Model, permission, hook, and MCP settings. `--apply` writes the previewed definitions into local configuration and can replace existing targets; it leaves the source product's files unchanged. Import is a one-time conversion. Guided import reports definition-save and roster-update results separately, so a partial success tells you which step remains.
-
-## Background work in the WebUI
-
-The icon immediately after Share opens **Background work**. Its compact card shows up to three **Subagents** and three **Tool calls**, with running work first. Hover a row for its task or arguments. Each section's **View all** opens its own history tab, with **Show more** for older pages. Select an item to inspect its own tab; narrow layouts close the card when opening a tab.
-
-Subagent tabs show saved and live conversation with **Main agent** and **User** labels for existing inputs. You cannot type into a child conversation in the WebUI. Use the header's **Stop** when available; accepted stops show **Stopping…** until the item ends. Tool tabs show input and output, with explicit truncation, expiry and unavailable states. Observed Shell processes remain read-only. Closing a tab does not stop work.
+| Field          | Default  | Purpose                                                             |
+| -------------- | -------- | ------------------------------------------------------------------- |
+| `id`, `name`   | Required | Unique `agent-` ID and display name                                 |
+| `model`        | Required | Saved Model ID                                                      |
+| `instructions` | `""`     | Role prompt for the Agent                                           |
+| `capabilities` | `[]`     | Enabled Capabilities (`dynamic_environment`, `web`, `skills`, etc.) |
+| `tools`        | `null`   | Optional exact-name allowlist filtering visible tools               |
+| `subagents`    | `[]`     | List of `markdown:` or `agent:` child entries                       |
+| `defaults`     | `{}`     | Default `mcp_servers`, `harness_plugins`, and run extensions        |
