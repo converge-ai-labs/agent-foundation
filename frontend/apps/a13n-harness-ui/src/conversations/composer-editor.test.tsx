@@ -178,6 +178,33 @@ function inlineEditor() {
   };
 }
 
+it("keeps native Pinyin edits in the draft through candidate selection, deletion and further typing", async () => {
+  const { draft, editor, textbox } = inlineEditor();
+  act(() => {
+    draft.doc.getText("text").insert(0, "A");
+    editor.current!.dispatch({ selection: { anchor: 1 } });
+    editor.current!.focus();
+  });
+  await act(async () => {});
+  const edit = async (value: string, inputType: string) => {
+    const text = textbox.querySelector(".cm-line")!.firstChild as Text;
+    // A mobile keyboard can signal a key before its native DOM edit is observed.
+    fireEvent.keyDown(textbox, { key: "Process", keyCode: 229 });
+    text.data = value;
+    window.getSelection()!.collapse(text, value.length);
+    fireEvent.input(textbox, { inputType });
+    await waitFor(() => expect(values(draft.doc).prompt).toBe(value));
+  };
+  fireEvent.compositionStart(textbox);
+  await edit("Ani", "insertCompositionText");
+  await edit("A你", "insertCompositionText");
+  fireEvent.compositionEnd(textbox, { data: "你" });
+  await edit("A", "deleteContentBackward");
+  fireEvent.compositionStart(textbox);
+  await edit("A好", "insertCompositionText");
+  fireEvent.compositionEnd(textbox, { data: "好" });
+});
+
 it("moves by Chinese words in the composer without entering attachment tokens or changing the draft", async () => {
   const { draft, editor, textbox } = inlineEditor();
   act(() => {

@@ -121,20 +121,7 @@ export function ComposerEditor({
     let active = false;
     let disposed = false;
     let idle: ReturnType<typeof setTimeout> | undefined;
-    const clearCursor = () => {
-      active = false;
-      clearTimeout(idle);
-      awareness.setLocalStateField("cursor", null);
-    };
-    const activate = () => {
-      active = true;
-      clearTimeout(idle);
-      idle = setTimeout(clearCursor, 30000);
-      queueMicrotask(() => {
-        if (!disposed && active) view.dispatch({});
-      });
-    };
-    const publish = (_change: unknown, origin: unknown) => {
+    const publish = (_change?: unknown, origin?: unknown) => {
       if (origin === "server") return;
       const cursor =
         active && document.hasFocus() && document.visibilityState === "visible"
@@ -150,6 +137,23 @@ export function ComposerEditor({
           ? encode(Y.encodeRelativePosition(cursor.head))
           : null,
       });
+    };
+    const clearCursor = () => {
+      clearTimeout(idle);
+      if (active) {
+        active = false;
+        publish();
+      }
+    };
+    const activate = () => {
+      clearTimeout(idle);
+      idle = setTimeout(clearCursor, 30000);
+      if (!active) {
+        active = true;
+        // Publish the binding's cursor without dispatching an editor update:
+        // CodeMirror may not have read the IME's pending DOM edits yet.
+        publish();
+      }
     };
     awareness.on("update", publish);
     const syncPresence = () => {
