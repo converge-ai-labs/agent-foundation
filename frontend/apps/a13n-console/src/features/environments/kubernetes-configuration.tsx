@@ -4,9 +4,13 @@ import {
   Button,
   ChoiceField,
   DisclosureSection,
+  Popover,
+  PopoverPopup,
+  PopoverTitle,
+  PopoverTrigger,
   SegmentedControl,
 } from "a13n-ui";
-import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import { ArrowSquareOutIcon, QuestionIcon } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { FormSection, jsonObject, TextAreaField } from "../../shared/forms";
@@ -29,6 +33,63 @@ import {
   type NativeObject,
 } from "./kubernetes-fields";
 import styles from "./kubernetes.module.css";
+
+function EnvdStartupHelp() {
+  const { t } = useTranslation();
+  return (
+    <Popover>
+      <PopoverTrigger
+        type="button"
+        data-field-help
+        aria-label={t("Compare Envd startup modes")}
+        className="inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <QuestionIcon size={15} aria-hidden="true" />
+      </PopoverTrigger>
+      <PopoverPopup
+        align="start"
+        className="w-[29rem] max-w-[calc(100vw-2rem)] p-3"
+      >
+        <PopoverTitle>{t("Compare Envd startup modes")}</PopoverTitle>
+        <table className="mt-2 w-full text-left text-xs [&_td]:p-1.5 [&_th]:p-1.5 [&_tr]:border-b [&_tr]:border-border">
+          <thead>
+            <tr>
+              <th scope="col">{t("Envd startup")}</th>
+              <th scope="col">{t("Restricted admission")}</th>
+              <th scope="col">{t("Envd egress")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">{t("Non-root")}</th>
+              <td>{t("Execution container complies")}</td>
+              <td>{t("Inherits Pod networking")}</td>
+            </tr>
+            <tr>
+              <th scope="row">{t("Root user")}</th>
+              <td>{t("Not allowed")}</td>
+              <td>
+                {t("Depends on Envd configuration and runtime permissions")}
+              </td>
+            </tr>
+            <tr>
+              <th scope="row">{t("From Pod template")}</th>
+              <td>{t("Depends on the Pod template")}</td>
+              <td>
+                {t("Depends on Envd configuration and runtime permissions")}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {t(
+            "Non-root overrides the Envd egress default. Sessions that explicitly require controlled or denied egress are rejected. Kubernetes NetworkPolicy still applies.",
+          )}
+        </p>
+      </PopoverPopup>
+    </Popover>
+  );
+}
 
 /** Forms patch the native recipe in place; undisplayed fields stay intact. */
 export function KubernetesConfiguration({
@@ -66,6 +127,7 @@ export function KubernetesConfiguration({
   function changeSpec(next: NativeObject) {
     change({ ...recipe, pod_template: { ...template, spec: next } });
   }
+  const launcher = string(recipe?.envd_launcher) || "template";
   const connectionOptions = [
     { value: "direct", label: t("Direct Pod connection") },
     { value: "port_forward", label: t("Local port forwarding") },
@@ -159,6 +221,34 @@ export function KubernetesConfiguration({
                         change({ ...recipe, execution_container })
                       }
                     />
+                    <ChoiceField
+                      label={t("Envd startup")}
+                      labelAction={<EnvdStartupHelp />}
+                      className={`w-full min-w-0 ${styles.startupChoice}`}
+                      value={launcher}
+                      disabled={readOnly}
+                      options={[
+                        { value: "non_root", label: t("Non-root") },
+                        { value: "root", label: t("Root user") },
+                        { value: "template", label: t("From Pod template") },
+                      ]}
+                      onValueChange={(envd_launcher) => {
+                        const next = { ...recipe };
+                        if (envd_launcher === "template")
+                          delete next.envd_launcher;
+                        else next.envd_launcher = envd_launcher;
+                        change(next);
+                      }}
+                    />
+                    <p className={styles.hint}>
+                      {t(
+                        launcher === "non_root"
+                          ? "Run Files and Shell in a Restricted Pod. Outbound traffic follows Kubernetes network policy."
+                          : launcher === "root"
+                            ? "Start Envd as root. Use a namespace that permits root containers."
+                            : "Use the startup identity defined by the existing Pod template.",
+                      )}
+                    </p>
                     <DisclosureSection title={t("Execution settings")}>
                       <Fields
                         properties={{
