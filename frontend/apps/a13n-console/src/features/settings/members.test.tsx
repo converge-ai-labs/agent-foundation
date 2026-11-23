@@ -445,34 +445,55 @@ it("keeps only ordinary manual removal available in an archived workspace", asyn
   expect(screen.queryByRole("menuitem", { name: "Change role" })).toBeNull();
 });
 
-it.each([false, true])(
-  "lets an organization admin copy a reset link (SMTP: %s)",
-  async (emailDelivery) => {
-    http.GET.mockImplementation(async (path: string) => ({
-      data: path.endsWith("/configuration")
-        ? {
-            password_enabled: true,
-            manual_password_reset: true,
-            email_delivery: emailDelivery,
-          }
-        : {
-            items: path.endsWith("/members")
-              ? [
-                  { ...ada, email: "ada@example.com", status: "active" },
-                  {
-                    ...ada,
-                    id: "usr_sso",
-                    name: "SSO Member",
-                    email: null,
-                    oidc_email: "sso@example.com",
-                    status: "active",
-                  },
-                ]
-              : [],
-            next_cursor: null,
-          },
-      response: new Response(),
-    }));
+const localMember = { ...ada, email: "ada@example.com" };
+const ssoMember = {
+  id: "usr_sso",
+  kind: "user",
+  name: "SSO Member",
+  email: null,
+  oidc_email: "sso@example.com",
+};
+const orgScope = { kind: "organization", id: "org_acme" } as const;
+
+function setupPasswordReset(
+  memberScope: typeof scope | typeof orgScope,
+  emailDelivery: boolean,
+  passwordEnabled = true,
+) {
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/configuration")
+      ? {
+          password_enabled: passwordEnabled,
+          manual_password_reset: passwordEnabled,
+          email_delivery: emailDelivery,
+        }
+      : {
+          items: [
+            grant("rb_ada", "runner", localMember),
+            grant("rb_sso", "runner", ssoMember),
+          ],
+          next_cursor: null,
+        },
+    response: new Response(),
+  }));
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter>
+        <MemberSettings scope={memberScope} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return user;
+}
+
+it.each([
+  [orgScope, true],
+  [scope, false],
+] as const)(
+  "confirms a specific member from the row menu (%j, SMTP: %s)",
+  async (memberScope, emailDelivery) => {
+    const user = setupPasswordReset(memberScope, emailDelivery);
     http.POST.mockResolvedValue({
       data: {
         email_queued: emailDelivery,
@@ -480,45 +501,59 @@ it.each([false, true])(
       },
       response: new Response(),
     });
-    render(
-      <QueryClientProvider client={new QueryClient()}>
-        <MemoryRouter>
-          <MemberSettings scope={{ kind: "organization", id: "org_acme" }} />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-    const user = userEvent.setup();
-    await user.click(
-      await screen.findByRole("button", { name: "Reset password" }),
-    );
-    await user.click(screen.getByRole("combobox", { name: "Member" }));
-    const local = await screen.findByRole("option", {
-      name: /Ada.*ada@example.com/,
-    });
-    expect(screen.queryByRole("option", { name: /SSO Member/ })).toBeNull();
-    await user.click(local);
+    const row = await screen.findByRole("row", { name: /Ada/ });
+    async function openReset() {
+      await user.click(
+        within(row).getByRole("button", { name: "Member actions" }),
+      );
+      await user.click(
+        await screen.findByRole("menuitem", { name: "Reset password" }),
+      );
+      return screen.findByRole("dialog", { name: "Reset member password?" });
+    }
+    const dialog = await openReset();
+    expect(within(dialog).getByText("Ada")).toBeTruthy();
+    expect(within(dialog).getByText("ada@example.com")).toBeTruthy();
+    expect(within(dialog).queryByRole("combobox")).toBeNull();
     expect(http.POST).not.toHaveBeenCalled();
     await user.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
-        name: "Reset password",
-      }),
+      within(dialog).getByRole("button", { name: "Reset password" }),
     );
-    expect(http.POST).toHaveBeenCalledTimes(1);
-    expect(http.POST).toHaveBeenCalledWith(
+    expect(http.POST).toHaveBeenCalledExactlyOnceWith(
       "/api/v1/organizations/{organization_id}/members/{user_id}/password-reset",
-      {
-        params: { path: { organization_id: "org_acme", user_id: ada.id } },
-      },
+      { params: { path: { organization_id: "org_acme", user_id: ada.id } } },
     );
-    const copy = await screen.findByRole("button", { name: "Copy reset link" });
+    await screen.findByRole("button", { name: "Copy reset link" });
     expect(Boolean(screen.queryByText("Password reset email queued"))).toBe(
       emailDelivery,
     );
-    await user.click(copy);
     await user.click(screen.getByRole("button", { name: "Done" }));
-    await user.click(screen.getByRole("button", { name: "Reset password" }));
+    await openReset();
     expect(
       screen.queryByRole("button", { name: "Copy reset link" }),
+    ).toBeNull();
+  },
+);
+
+it.each(["SSO member", "workspace administrator", "password sign-in disabled"])(
+  "omits the row reset for %s",
+  async (scenario) => {
+    if (scenario === "workspace administrator")
+      access.organizationAdmin = false;
+    const user = setupPasswordReset(
+      scope,
+      false,
+      scenario !== "password sign-in disabled",
+    );
+    const row = await screen.findByRole("row", {
+      name: scenario === "SSO member" ? /SSO Member/ : /Ada/,
+    });
+    await user.click(
+      within(row).getByRole("button", { name: "Member actions" }),
+    );
+    await screen.findByRole("menuitem", { name: "Change role" });
+    expect(
+      screen.queryByRole("menuitem", { name: "Reset password" }),
     ).toBeNull();
   },
 );

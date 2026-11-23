@@ -5,7 +5,7 @@
   "No primary environment": "不使用主环境",
   "This default applies to everyone in the workspace when a thread has no primary environment. Composer can read files in the selected environment.": "线程没有主环境时，工作区内的所有成员都会使用此默认环境。Composer 可以读取所选环境中的文件。",
   "Ask your organization administrator for a password reset link.": "请向组织管理员索取密码重置链接。",
-  "Reset member password": "重置成员密码",
+  "Reset member password?": "重置成员密码？",
   "Give a member a one-time link to set a new password.": "为成员提供一次性链接，让对方自行设置新密码。",
   "Password reset link": "密码重置链接",
   "Copy reset link": "复制重置链接",

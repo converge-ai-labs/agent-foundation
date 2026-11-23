@@ -28,7 +28,7 @@ Organization and workspace **Members** use the grants API to add, change or remo
 
 ## Member password recovery
 
-Organization settings → Members lets administrators select active local password members, including those with only workspace grants, when password sign-in is enabled, and issue a one-time reset link. After one confirmation, show whether the email was queued and, on single-organization deployments, offer to copy the same link. Show the link only in the issuing dialog. OIDC members recover access through their identity provider. The recipient uses the normal password reset page. On single-organization deployments without SMTP, Forgot password directs the user to their organization administrator instead of offering an email form.
+The **Members** row menu in organization and workspace settings lets organization administrators issue a one-time reset link for an active local password user when password sign-in is enabled. The confirmation identifies the selected member without offering a second selection. After one confirmation, show whether the email was queued and, on single-organization deployments, offer to copy the same link. Show the link only in the issuing dialog. OIDC members recover access through their identity provider. The recipient uses the normal password reset page. On single-organization deployments without SMTP, Forgot password directs the user to their organization administrator instead of offering an email form.
 
 ## App plugins
 
