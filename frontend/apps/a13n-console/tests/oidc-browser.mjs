@@ -134,27 +134,23 @@ try {
     const team = retry.page.getByRole("link", {
       name: "Sign in with Team Identity",
     });
-    // Let React handle the first click, but keep the document available to
-    // inspect the pending state. The separate Dex flow follows the real link.
+    // Cancel the first native navigation; a different provider must still work.
     await team.evaluate((link) => {
       window.addEventListener("click", (event) => event.preventDefault(), {
         once: true,
       });
       link.click();
     });
-    assert.equal(await team.getAttribute("aria-busy"), "true");
-    const engineering = retry.page.getByRole("link", {
-      name: "Sign in with Engineering SSO",
-    });
-    assert.equal(await engineering.getAttribute("aria-disabled"), "true");
-    assert.equal(
-      await engineering.evaluate((link) =>
-        link.dispatchEvent(
-          new MouseEvent("click", { cancelable: true, bubbles: true }),
-        ),
-      ),
-      false,
+    const retryStart = retry.page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname ===
+        "/api/v1/auth/oidc/engineering/start",
     );
+    await retry.page
+      .getByRole("link", { name: "Sign in with Engineering SSO" })
+      .click();
+    assert.equal((await retryStart).status(), 303);
+    await retry.page.waitForURL(`${config.issuer}/**`);
     await retry.page.goto(`${api}/auth/oidc/team/callback`);
     await retry.page
       .getByText(
@@ -206,7 +202,7 @@ try {
       .getByRole("row")
       .filter({ hasText: "Alex Rivera" });
     async function chooseRole(dialog, role) {
-      await dialog.getByRole("combobox", { name: "Role" }).click();
+      await dialog.getByRole("combobox", { name: "Role", exact: true }).click();
       await admin.page.getByRole("option", { name: role, exact: true }).click();
     }
     async function addRole(role, evidence) {
@@ -238,13 +234,12 @@ try {
     await editor.getByRole("button", { name: "Save" }).click();
     await chosen.getByText("Builder", { exact: true }).waitFor();
     await chosen.getByRole("button", { name: "Member actions" }).click();
+    await admin.page.getByRole("menuitem", { name: "Change role" }).click();
+    await editor.getByRole("combobox", { name: "Role source" }).click();
     await admin.page
-      .getByRole("menuitem", { name: "Remove", exact: true })
+      .getByRole("option", { name: "Use SSO default", exact: true })
       .click();
-    await admin.page
-      .getByRole("dialog", { name: "Remove member" })
-      .getByRole("button", { name: "Remove member" })
-      .click();
+    await editor.getByRole("button", { name: "Restore SSO default" }).click();
     await chosen.waitFor({ state: "detached" });
     await addRole("Admin", true);
 
@@ -284,6 +279,62 @@ try {
         invitationToken,
       }),
     );
+  } else if (phase === "mapped") {
+    const remote = await opened();
+    await signInWithDex(remote.page);
+    const local = await opened({ storageState: state("old-session") });
+    const grants = `${api}/organizations/${config.organization}/grants`;
+    await local.page.goto(`${config.origin}/organization/settings/members`);
+    const member = local.page
+      .getByRole("row")
+      .filter({ hasText: "Alex Rivera" });
+    const password = local.page
+      .getByRole("row")
+      .filter({ hasText: config.email })
+      .filter({ hasNotText: "Alex Rivera" });
+    async function editor(row) {
+      await row.getByRole("button", { name: "Member actions" }).click();
+      await local.page.getByRole("menuitem", { name: "Change role" }).click();
+      return local.page.getByRole("dialog", { name: "Change role" });
+    }
+    let dialog = await editor(password);
+    assert.equal(
+      await dialog.getByRole("combobox", { name: "Role source" }).count(),
+      0,
+    );
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    async function source(dialog, label) {
+      await dialog.getByRole("combobox", { name: "Role source" }).click();
+      await local.page
+        .getByRole("option", { name: label, exact: true })
+        .click();
+    }
+    async function restore() {
+      const dialog = await editor(member);
+      await source(dialog, "Use SSO default");
+      await dialog.getByRole("button", { name: "Restore SSO default" }).click();
+      await member.getByText("SSO", { exact: true }).waitFor();
+      assert.equal((await remote.context.request.get(grants)).status(), 200);
+    }
+    await member.getByText("Manual", { exact: true }).waitFor();
+    await restore();
+    dialog = await editor(member);
+    await source(dialog, "Set role manually");
+    await dialog.getByRole("combobox", { name: "Role", exact: true }).click();
+    await local.page
+      .getByRole("option", { name: "Viewer", exact: true })
+      .click();
+    await screenshot(local.page, "organization-oidc-role-editor");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await member.getByText("Viewer", { exact: true }).waitFor();
+    await member.getByText("Manual", { exact: true }).waitFor();
+    assert.equal(await member.getByText("SSO", { exact: true }).count(), 0);
+    assert.equal((await remote.context.request.get(grants)).status(), 403);
+    const relogin = await opened();
+    await signInWithDex(relogin.page);
+    assert.equal((await relogin.context.request.get(grants)).status(), 403);
+    await restore();
+    await screenshot(local.page, "organization-oidc-role-sources");
   } else if (phase === "oidc-only") {
     const local = await opened({ storageState: state("old-session") });
     assert.equal(
@@ -338,7 +389,27 @@ try {
       },
     );
     assert.equal(keyResult.status(), 200, await keyResult.text());
+    const destination = `${config.origin}/settings/profile?source=oidc#focus`;
+    await local.page.goto(destination);
+    await local.page.waitForURL(`${config.origin}/login`);
+    const start = local.page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === "/api/v1/auth/oidc/team/start",
+    );
     await signInWithDex(local.page);
+    const authorization = new URL((await start).headers().location);
+    assert.equal(
+      authorization.searchParams.get("scope"),
+      "openid profile email groups",
+    );
+    assert.ok(!authorization.search.includes("source%3Doidc"));
+    await local.page.waitForURL(destination);
+    const grants = `${api}/organizations/${config.organization}/grants`;
+    assert.equal((await local.context.request.get(grants)).status(), 200);
+    const oldMapped = await opened();
+    await signInWithDex(oldMapped.page);
+    await oldMapped.context.storageState({ path: state("mapped") });
+    await oldMapped.context.close();
     const authenticated = await session(local.context);
     assert.equal(authenticated.user.id, id);
     const request = local.context.request;
@@ -468,6 +539,16 @@ try {
       }),
     );
     await screenshot(page, "single-provider-mobile-dark");
+    const existing = await browser.newContext({
+      storageState: state("mapped"),
+    });
+    const grants = `${api}/organizations/${config.organization}/grants`;
+    assert.equal((await existing.request.get(grants)).status(), 200);
+    const signingIn = await opened();
+    await signInWithDex(signingIn.page, config.longLabel);
+    assert.equal((await signingIn.context.request.get(grants)).status(), 403);
+    assert.equal((await existing.request.get(grants)).status(), 403);
+    await existing.close();
   } else if (phase === "recovery") {
     const { context, page } = await opened();
     await page.getByLabel("Email address", { exact: true }).fill(config.email);

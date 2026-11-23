@@ -114,11 +114,11 @@ Use grants to change access for an existing member; use [invitations](#invitatio
 
 For a workspace, manage `/api/v1/workspaces/{workspace_id}/grants`:
 
-1. Create a grant with `POST` and `{principal_id, role}`. A principal has at most one grant per scope.
+1. Create a grant with `POST` and `{principal_id, role}`. A principal has at most one manual grant per scope.
 2. Change its role with `PATCH …/grants/{grant_id}` and `{role}`. A role change replaces the grant; use the new ID returned by the response for subsequent operations.
 3. Remove access with `DELETE …/grants/{grant_id}`. Check organization grants too: their permissions still apply in the workspace.
 
-Organization grants use the equivalent `/api/v1/organizations/{organization_id}/grants` paths. Grant routes take no `If-Match`. The last active organization administrator cannot be removed, demoted or disabled; the request returns `409 conflict` with reason `last_organization_admin`. Removing a service account's last grant retires that account and revokes its keys.
+Organization grants use the equivalent `/api/v1/organizations/{organization_id}/grants` paths. Grant routes take no `If-Match`. The last active, manually granted organization administrator cannot be removed, demoted or disabled; the request returns `409 conflict` with reason `last_organization_admin`. Removing a service account's last grant retires that account and revokes its keys.
 
 ## Sign in and login sessions
 
@@ -165,6 +165,34 @@ For Microsoft Entra workforce tenants, `email` is a reported address and `xms_ed
 To limit app access in Entra, [require assignment and assign the intended users or groups](https://learn.microsoft.com/en-us/entra/identity-platform/howto-restrict-your-app-to-a-set-of-users). Entra exempts Global Administrators from this requirement.
 
 The first sign-in creates a separate Service user with `runner` access to the designated workspace. It keeps any verified provider email as display metadata, even if a password account has the same address. Use [members and grants](#members-and-grants) to change access. Returning sign-ins preserve existing grants and do not re-add a removed role.
+
+### Map an identity provider role to organization Admin
+
+Add `org_admin` to a provider in the `A13N_AUTH__OIDC` JSON. For example, this provider requests the `groups` scope and maps the `console-admins` group. Use a role or group claim managed by your identity provider that users cannot edit.
+
+```json
+{
+  "default_workspace_id": "ws_replace_with_your_workspace_id",
+  "providers": {
+    "team": {
+      "label": "Team Identity",
+      "issuer": "https://identity.example.com/realms/team",
+      "client_id": "a13n-console",
+      "client_secret": "replace-at-deploy-time",
+      "extra_scopes": ["groups"],
+      "org_admin": {"claim": "groups", "value": "console-admins"}
+    }
+  }
+}
+```
+
+After a successful sign-in, Service reads the configured top-level claim from the validated ID token. A string or an entry in an array of strings must match exactly, including case. Missing claims, malformed values, and distributed claims such as Entra group overage count as no match. Extra scopes are added to `openid profile email`; configure the provider to include the claim in its ID token.
+
+A match makes Admin the SSO default in the organization that owns the default workspace. A later successful sign-in without a match removes that provider’s default. In **Organization → Members → Change role**, choose **Set role manually** to override the default for that organization. Choose **Use SSO default** and select **Restore SSO default** to remove the override. The most recent synchronized default applies immediately; if none exists, the user has no organization-level role. Workspace roles remain in effect. Keep an active administrator with a manual grant for recovery.
+
+Role changes are picked up on sign-in, not pushed from the provider. To retire a mapping, remove `org_admin` and keep the provider enabled so its grants clear as users sign in. Removing the entire provider stops sign-in through it; it does not clear its existing grants. Disable the user in Service who must lose access immediately.
+
+An existing browser session and a user’s workspace API key use the user’s current roles on their next authorized request. A service-account key uses its own service account’s roles; role changes for the person who issued it do not alter that key’s access.
 
 ### Switch to OIDC-only sign-in
 

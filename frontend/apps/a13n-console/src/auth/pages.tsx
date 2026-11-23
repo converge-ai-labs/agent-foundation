@@ -17,7 +17,6 @@ import {
   FormField,
   Input,
   Logo,
-  Spinner,
   Wordmark,
 } from "a13n-ui";
 import {
@@ -31,6 +30,7 @@ import { useTranslation } from "react-i18next";
 import {
   Link,
   Navigate,
+  createPath,
   useLocation,
   useNavigate,
   useParams,
@@ -190,17 +190,6 @@ export function AuthPage() {
   const oidcFailed =
     routeMode === "login" &&
     new URLSearchParams(location.search).get("oidc") === "failed";
-  const [starting, setStarting] = useState<string>();
-  const startingRef = useRef(false);
-  useEffect(() => {
-    function restore(event: PageTransitionEvent) {
-      if (!event.persisted) return;
-      startingRef.current = false;
-      setStarting(undefined);
-    }
-    window.addEventListener("pageshow", restore);
-    return () => window.removeEventListener("pageshow", restore);
-  }, []);
   const linkUnavailable = !passwords && routeMode !== "login";
   const needsBootstrap =
     !passwords &&
@@ -215,6 +204,12 @@ export function AuthPage() {
       : routeMode;
   const returnTo: To =
     routeMode === "login" ? (location.state?.returnTo ?? "/") : "/";
+  const returnPath =
+    typeof returnTo === "string" ? returnTo : createPath(returnTo);
+  const oidcReturn =
+    returnPath === "/"
+      ? ""
+      : `?${new URLSearchParams({ return_to: returnPath })}`;
   const [token] = useState(
     () => new URLSearchParams(window.location.hash.slice(1)).get("token") ?? "",
   );
@@ -421,22 +416,7 @@ export function AuthPage() {
                   className={styles.provider}
                   render={
                     <a
-                      href={`/api/v1/auth/oidc/${encodeURIComponent(provider.id)}/start`}
-                      aria-busy={starting === provider.id || undefined}
-                      aria-disabled={starting !== undefined || undefined}
-                      onClick={(event) => {
-                        if (startingRef.current) {
-                          event.preventDefault();
-                        } else if (
-                          !event.metaKey &&
-                          !event.ctrlKey &&
-                          !event.shiftKey &&
-                          !event.altKey
-                        ) {
-                          startingRef.current = true;
-                          setStarting(provider.id);
-                        }
-                      }}
+                      href={`/api/v1/auth/oidc/${encodeURIComponent(provider.id)}/start${oidcReturn}`}
                     />
                   }
                 >
@@ -454,11 +434,7 @@ export function AuthPage() {
                     })}
                   </span>
                   <span className={styles.providerEnd} aria-hidden="true">
-                    {starting === provider.id ? (
-                      <Spinner className="size-4" />
-                    ) : (
-                      <ArrowRightIcon className="size-4" />
-                    )}
+                    <ArrowRightIcon className="size-4" />
                   </span>
                 </Button>
               );

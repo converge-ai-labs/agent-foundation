@@ -118,7 +118,7 @@ curl "$A13N_URL/api/v1/agents" \
 2. 用 `PATCH …/grants/{grant_id}` 和 `{role}` 修改角色。角色变更会替换授权；后续操作使用响应返回的新 ID。
 3. 用 `DELETE …/grants/{grant_id}` 移除访问权限。同时检查组织授权：组织授权提供的权限在该工作空间中仍然生效。
 
-组织授权使用对应的 `/api/v1/organizations/{organization_id}/grants` 路径。授权路由不接受 `If-Match`。最后一位活跃的组织管理员不能被移除、降级或禁用；这类请求返回 `409 conflict`，原因为 `last_organization_admin`。移除服务账号的最后一条授权会停用该账号并撤销其密钥。
+组织授权使用对应的 `/api/v1/organizations/{organization_id}/grants` 路径。授权路由不接受 `If-Match`。最后一位仍活跃的手动授权组织管理员不能被移除、降级或禁用；这类请求返回 `409 conflict`，原因为 `last_organization_admin`。移除服务账号的最后一条授权会停用该账号并撤销其密钥。
 
 ## 登录与登录会话
 
@@ -165,6 +165,34 @@ OIDC 发起请求有独立的 Redis 限流预算：同一客户端地址访问�
 如需在 Entra 中限制应用访问，请[启用分配要求并分配指定用户或组](https://learn.microsoft.com/en-us/entra/identity-platform/howto-restrict-your-app-to-a-set-of-users)。Entra 全局管理员不受此分配要求限制。
 
 首次登录会创建独立的 Service 用户，并授予其指定工作空间的 `runner` 角色。身份提供方验证过的邮箱仅用于显示，即使某个密码账号也使用同一邮箱。请通过[成员与授权](identity.md#members-and-grants)管理权限。以后登录时，Service 会保留现有授权，不会恢复已移除的角色。
+
+### 将身份提供方角色映射为组织管理员
+
+在 `A13N_AUTH__OIDC` JSON 的提供方配置中添加 `org_admin`。以下示例请求 `groups` scope，并映射 `console-admins` 组。请选择由身份提供方管理、用户不能自行修改的角色或组声明。
+
+```json
+{
+  "default_workspace_id": "ws_replace_with_your_workspace_id",
+  "providers": {
+    "team": {
+      "label": "Team Identity",
+      "issuer": "https://identity.example.com/realms/team",
+      "client_id": "a13n-console",
+      "client_secret": "replace-at-deploy-time",
+      "extra_scopes": ["groups"],
+      "org_admin": {"claim": "groups", "value": "console-admins"}
+    }
+  }
+}
+```
+
+每次成功登录，Service 都会从已验证的 ID token 中读取指定的顶层声明。声明本身可以是字符串，也可以是字符串数组；字符串或其中一个成员须完全匹配，包括大小写。声明缺失、格式错误或需要另行查询（例如 Entra 组数量超限）时，视为不匹配。额外 scope 会加到 `openid profile email` 后；请在提供方配置里将该声明写入 ID token。
+
+匹配时，管理员成为默认工作区所属组织的单点登录默认角色；之后成功登录但不再匹配时，Service 会撤掉该提供方的默认角色。在**组织 → 成员 → 更改角色**中，选择**手动设置角色**来覆盖该组织的默认角色。选择**使用单点登录默认角色**，然后点击**恢复单点登录默认角色**，即可清除手动覆盖；最近同步的默认角色立即生效。若没有默认角色，该用户便没有组织级角色。工作区角色仍然有效。请保留至少一名活跃的手动授权管理员，用于恢复访问。
+
+角色在登录时同步。停用映射时，可移除 `org_admin` 并保留提供方，让用户下次登录时清除这一来源的授权。移除整个提供方会阻止通过该提供方登录，但不会清除已授予的角色。如需立即撤销某位用户的访问，在 Service 中停用该用户。
+
+已有的浏览器会话和用户工作区 API 密钥在下次鉴权时使用用户当前的角色。服务账号密钥按自身账号的角色授权，签发者的角色变化不影响该密钥。
 
 ### 切换到仅 OIDC 登录
 

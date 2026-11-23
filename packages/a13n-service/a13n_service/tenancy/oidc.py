@@ -16,24 +16,26 @@ from urllib.parse import quote_plus
 import httpx2
 import jwt
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
-from a13n_logging import get_logger
+from a13n_logging import exception_details, get_logger
 from pydantic import BaseModel
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.audit import record
 from a13n_service.infra.crypto import secret_hash
-from a13n_service.infra.db import Storage, advisory_lock, lock, transaction
+from a13n_service.infra.db import Storage, advisory_lock, lock, now, transaction
 from a13n_service.infra.errors import ErrorCode, ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.outbound import open_http
-from a13n_service.settings import OIDCProvider, Settings, oidc_endpoint_policy
-from a13n_service.tenancy.access import Access, principal_for
+from a13n_service.settings import OIDCOrgAdmin, OIDCProvider, Settings, oidc_endpoint_policy
+from a13n_service.tenancy.access import Access, lock_organization, principal_for
 from a13n_service.tenancy.authenticate import Login, oidc_session_data, open_session, session_csrf
+from a13n_service.tenancy.authorize import Scope
 from a13n_service.tenancy.credentials import new_secret
-from a13n_service.tenancy.tables import GrantRow, PrincipalRow, WorkspaceRow
+from a13n_service.tenancy.tables import GrantRow, OIDCOrgAdminRow, PrincipalRow, WorkspaceRow
 
 FLOW_SECONDS = 600
 _TOKEN_CLOCK_SKEW_SECONDS = 30
@@ -59,6 +61,7 @@ class Flow:
     authorization_endpoint: str
     token_endpoint: str
     jwks_uri: str
+    return_to: str = "/"
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +69,7 @@ class Identity:
     subject: str
     name: str
     email: str | None
+    org_admin: bool = False
 
 
 class Stage(StrEnum):
@@ -172,8 +176,12 @@ def log_failure(provider_id: str | None, stage: Stage, error: Exception) -> None
             fields["http_status"] = error.status
         if error.provider_error is not None:
             fields["provider_error"] = error.provider_error.value
-    level = logging.ERROR if reason is Reason.INTERNAL else logging.INFO
-    get_logger(__name__).log(level, "OIDC sign-in failed", extra=fields)
+    if reason is Reason.INTERNAL:
+        get_logger(__name__).error(
+            "OIDC sign-in failed", extra={**fields, "exception_details": exception_details(error)}
+        )
+    else:
+        get_logger(__name__).info("OIDC sign-in failed", extra=fields)
 
 
 _outbound_sensitive: ContextVar[bool] = ContextVar("oidc_outbound_sensitive", default=False)
@@ -245,7 +253,16 @@ def _flow_key(name: str, provider: OIDCProvider, redirect_uri: str, state: str, 
     return f"a13n:auth:oidc:{secret_hash(binding)}"
 
 
-async def start(redis: Redis, name: str, provider: OIDCProvider, *, redirect_uri: str) -> tuple[str, str]:
+def console_destination(value: str) -> str:
+    # An origin-relative path only. Browsers normalize backslashes and strip ASCII control characters.
+    if not value.startswith("/") or value.startswith("//") or any(ord(c) <= 32 or c == "\\" for c in value):
+        return "/"
+    return value
+
+
+async def start(
+    redis: Redis, name: str, provider: OIDCProvider, *, redirect_uri: str, return_to: str = "/"
+) -> tuple[str, str]:
     with _upstream(Stage.DISCOVERY):
         policy = oidc_endpoint_policy(provider.issuer)
         async with open_http(policy, timeout=5, max_bytes=128 * 1024) as http:
@@ -268,7 +285,7 @@ async def start(redis: Redis, name: str, provider: OIDCProvider, *, redirect_uri
         "client_id": provider.client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
-        "scope": "openid profile email",
+        "scope": " ".join(provider.scopes),
         "state": state,
         "nonce": nonce,
         "code_challenge": challenge,
@@ -278,7 +295,16 @@ async def start(redis: Redis, name: str, provider: OIDCProvider, *, redirect_uri
     key = _flow_key(name, provider, redirect_uri, state, browser)
     await redis.set(
         key,
-        json.dumps([nonce, verifier, discovery.authorization_endpoint, discovery.token_endpoint, discovery.jwks_uri]),
+        json.dumps(
+            [
+                nonce,
+                verifier,
+                discovery.authorization_endpoint,
+                discovery.token_endpoint,
+                discovery.jwks_uri,
+                console_destination(return_to),
+            ]
+        ),
         ex=FLOW_SECONDS,
     )
     return target, browser
@@ -295,6 +321,21 @@ async def consume(
         # Expired, replayed and mismatched values all look like a missing Redis key.
         raise Failure(Stage.CALLBACK_STATE, Reason.STATE_NOT_FOUND)
     return Flow(*json.loads(value))
+
+
+def _matches_org_admin(rule: OIDCOrgAdmin | None, claims: dict[str, object]) -> bool:
+    if rule is None:
+        return False
+    # Trust a complete inline claim; distributed claims and Entra group overage need a separate lookup.
+    distributed = claims.get("_claim_names")
+    if (isinstance(distributed, dict) and rule.claim in distributed) or (
+        rule.claim == "groups" and "hasgroups" in claims
+    ):
+        return False
+    value = claims.get(rule.claim)
+    if isinstance(value, str):
+        return value == rule.value
+    return isinstance(value, list) and all(isinstance(item, str) for item in value) and rule.value in value
 
 
 def _identity(token: str, keys: list[jwt.PyJWK], provider: OIDCProvider, nonce: str) -> Identity:
@@ -345,7 +386,9 @@ def _identity(token: str, keys: list[jwt.PyJWK], provider: OIDCProvider, nonce: 
     )
     name = claims.get("name")
     name = name.strip()[:128] if isinstance(name, str) and name.isprintable() else ""
-    return Identity(subject, name or email or f"{provider.label} user"[:128], email)
+    return Identity(
+        subject, name or email or f"{provider.label} user"[:128], email, _matches_org_admin(provider.org_admin, claims)
+    )
 
 
 async def exchange(provider: OIDCProvider, flow: Flow, *, redirect_uri: str, code: str) -> Identity:
@@ -379,20 +422,75 @@ async def exchange(provider: OIDCProvider, flow: Flow, *, redirect_uri: str, cod
         return _identity(tokens.id_token, keys, provider, flow.nonce)
 
 
+async def _sync_org_admin(
+    session: AsyncSession,
+    principal_id: str,
+    name: str,
+    current: OIDCOrgAdminRow | None,
+    organization_id: str | None,
+) -> None:
+    previous = current.organization_id if current is not None else None
+    if organization_id == previous:
+        return
+    grant_id = current.id if current is not None else new_object_id("oidcrb")
+    if current is not None:
+        if organization_id is None:
+            await session.delete(current)
+        else:
+            current.organization_id = organization_id
+            current.created_at = await now(session)
+    elif organization_id is not None:
+        session.add(
+            OIDCOrgAdminRow(id=grant_id, principal_id=principal_id, provider_id=name, organization_id=organization_id)
+        )
+    for scope, action in ((previous, "revoked"), (organization_id, "granted")):
+        if scope is not None:
+            record(
+                session,
+                Scope(scope),
+                actor_id=principal_id,
+                action=f"user.oidc_admin_{action}",
+                target_kind="grant",
+                target_id=grant_id,
+                details={"provider": name},
+            )
+    await session.flush()
+
+
 async def sign_in(
     storage: Storage, access: Access, settings: Settings, name: str, provider: OIDCProvider, identity: Identity
 ) -> Login:
-    """Provision once in the session-creation transaction; returning users keep their current grants."""
+    """Synchronize one provider's role and issue the login session in the same transaction."""
     async with transaction(storage) as session:
         await advisory_lock(session, "oidc-identity", provider.issuer, identity.subject)
-        row = await session.scalar(
-            select(PrincipalRow)
-            .where(PrincipalRow.oidc_issuer == provider.issuer, PrincipalRow.oidc_subject == identity.subject)
-            .with_for_update()
+        principal_id = await session.scalar(
+            select(PrincipalRow.id).where(
+                PrincipalRow.oidc_issuer == provider.issuer, PrincipalRow.oidc_subject == identity.subject
+            )
         )
+        current = (
+            await session.scalar(
+                select(OIDCOrgAdminRow).where(
+                    OIDCOrgAdminRow.principal_id == principal_id, OIDCOrgAdminRow.provider_id == name
+                )
+            )
+            if principal_id is not None
+            else None
+        )
+        workspace_id = settings.auth.oidc.default_workspace_id
+        mapped_admin = provider.org_admin is not None and identity.org_admin
+        workspace = (
+            await session.get(WorkspaceRow, workspace_id)
+            if workspace_id is not None and (principal_id is None or mapped_admin)
+            else None
+        )
+        # Match administration's organization → principal lock order. Serialize moves under both orgs.
+        for organization_id in sorted({item.organization_id for item in (current, workspace) if item is not None}):
+            await lock_organization(session, organization_id)
+        if workspace is not None:
+            await session.refresh(workspace)
+        row = await lock(session, PrincipalRow, principal_id) if principal_id is not None else None
         if row is None:
-            workspace_id = settings.auth.oidc.default_workspace_id
-            workspace = await lock(session, WorkspaceRow, workspace_id) if workspace_id else None
             if workspace is None or workspace.archived_at is not None:
                 reason = Reason.WORKSPACE_MISSING if workspace is None else Reason.WORKSPACE_ARCHIVED
                 raise Failure(Stage.PROVISION, reason, code="unavailable")
@@ -430,6 +528,8 @@ async def sign_in(
             raise Failure(Stage.PROVISION, Reason.ACCOUNT_DISABLED)
         elif row.oidc_email != identity.email:
             row.oidc_email = identity.email
+        mapped_organization = workspace.organization_id if mapped_admin and workspace is not None else None
+        await _sync_org_admin(session, row.id, name, current, mapped_organization)
         principal = await principal_for(session, access, row.id)
         secret = await open_session(
             session, row.id, seconds=settings.auth.oidc.session_seconds, oidc=oidc_session_data(name, provider)

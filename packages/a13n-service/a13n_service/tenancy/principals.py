@@ -21,6 +21,7 @@ def principal_summary(row: PrincipalRow) -> PrincipalSummary:
         name=row.name,
         email=row.email,
         oidc_email=row.oidc_email,
+        uses_oidc=row.oidc_issuer is not None,
         status=row.status,
         image_url=avatar_url(row),
     )

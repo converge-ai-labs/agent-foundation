@@ -1,13 +1,13 @@
-"""add oidc principal identities
+"""add oidc identities and admin grants
 
-Revision ID: 3c661732f50f
+Revision ID: 45e76c88a28f
 Revises: ddc9c71ce4de
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "3c661732f50f"
+revision = "45e76c88a28f"
 down_revision = "ddc9c71ce4de"
 branch_labels = None
 depends_on = None
@@ -28,6 +28,28 @@ def _replace_principal_guard(*, oidc: bool) -> None:
 
 
 def upgrade() -> None:
+    op.create_table(
+        "oidc_org_admins",
+        sa.Column("id", sa.String(), nullable=False),
+        sa.Column("principal_id", sa.String(length=72), nullable=False),
+        sa.Column("provider_id", sa.String(length=32), nullable=False),
+        sa.Column("organization_id", sa.String(length=72), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["organization_id"], ["organizations.id"], name=op.f("fk_oidc_org_admins_organization_id_organizations")
+        ),
+        sa.ForeignKeyConstraint(
+            ["principal_id"], ["principals.id"], name=op.f("fk_oidc_org_admins_principal_id_principals")
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_oidc_org_admins")),
+        sa.UniqueConstraint("principal_id", "provider_id", name=op.f("uq_oidc_org_admins_principal_id_provider_id")),
+    )
+    op.create_index(
+        "ix_oidc_org_admins_organization_principal",
+        "oidc_org_admins",
+        ["organization_id", "principal_id"],
+        unique=False,
+    )
     op.add_column("principals", sa.Column("oidc_issuer", sa.String(), nullable=True))
     op.add_column("principals", sa.Column("oidc_subject", sa.String(), nullable=True))
     op.add_column("principals", sa.Column("oidc_email", sa.String(), nullable=True))
@@ -54,3 +76,5 @@ def downgrade() -> None:
     op.drop_column("principals", "oidc_email")
     op.drop_column("principals", "oidc_subject")
     op.drop_column("principals", "oidc_issuer")
+    op.drop_index("ix_oidc_org_admins_organization_principal", table_name="oidc_org_admins")
+    op.drop_table("oidc_org_admins")

@@ -4533,6 +4533,11 @@
   "Couldn’t load sign-in options.": "无法加载登录选项。",
   "Ask your Service operator to finish setup.": "请联系 Service 运维人员完成初始配置。",
   "This Service uses an identity provider. Go to sign in to continue.": "此 Service 通过身份提供方验证登录。请返回登录页继续。",
+  "Role source": "角色来源",
+  "Use SSO default": "使用单点登录默认角色",
+  "Set role manually": "手动设置角色",
+  "Restore SSO default": "恢复单点登录默认角色",
+  "SSO": "单点登录",
   "Sign-in provider": "登录身份提供方",
   "Your identity provider manages your sign-in details.": "你的登录信息由身份提供方管理。"
 }

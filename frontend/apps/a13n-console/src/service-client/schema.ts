@@ -9514,6 +9514,12 @@ export interface components {
       principal: components["schemas"]["PrincipalSummary"];
       /** Role */
       role: string;
+      /**
+       * Source
+       * @default manual
+       * @enum {string}
+       */
+      source?: "manual" | "oidc";
       /** Workspace Id */
       workspace_id: string | null;
     };
@@ -12177,6 +12183,11 @@ export interface components {
       oidc_email?: string | null;
       /** Status */
       status: string;
+      /**
+       * Uses Oidc
+       * @default false
+       */
+      uses_oidc?: boolean;
     };
     /** ProcessStatusProjection */
     ProcessStatusProjection: {

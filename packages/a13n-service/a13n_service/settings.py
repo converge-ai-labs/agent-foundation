@@ -218,6 +218,22 @@ def oidc_endpoint_policy(issuer: str) -> EndpointPolicy:
     )
 
 
+# OAuth 2.0 scope-token excludes spaces, quotes and backslashes.
+_OIDC_SCOPE = r"^[\x21\x23-\x5B\x5D-\x7E]+$"
+
+
+class OIDCOrgAdmin(Section):
+    claim: str = Field(min_length=1, max_length=512)
+    value: str = Field(min_length=1, max_length=512)
+
+    @field_validator("claim")
+    @classmethod
+    def role_claim(cls, value: str) -> str:
+        if not value.isprintable() or value.isspace():
+            raise ValueError("claim must be a printable name")
+        return value
+
+
 class OIDCProvider(Section):
     label: str = Field(min_length=1, max_length=64)
     brand: OIDCBrand | None = None
@@ -225,6 +241,14 @@ class OIDCProvider(Section):
     client_id: str = Field(min_length=1, max_length=512)
     client_secret: SecretStr = Field(min_length=1, max_length=4096)
     token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] = "client_secret_basic"
+    extra_scopes: list[Annotated[str, Field(min_length=1, max_length=256, pattern=_OIDC_SCOPE)]] = Field(
+        default_factory=list, max_length=20
+    )
+    org_admin: OIDCOrgAdmin | None = None
+
+    @property
+    def scopes(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(("openid", "profile", "email", *self.extra_scopes)))
 
     @property
     def sign_in_brand(self) -> OIDCBrand:

@@ -3,19 +3,23 @@
 import asyncio
 import json
 import logging
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlencode
 
+import httpx2
 import jwt
 import pytest
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError
-from a13n_service.settings import OIDC, Authentication, OIDCProvider, Settings
+from a13n_service.settings import OIDC, Authentication, OIDCOrgAdmin, OIDCProvider, Settings
 from a13n_service.tenancy import oidc, routes
-from a13n_service.tenancy.authenticate import authenticate_secret
+from a13n_service.tenancy.access import principals_for
+from a13n_service.tenancy.authenticate import authenticate_secret, session_cookie
+from a13n_service.tenancy.authorize import WorkspaceScope, allowed_verbs
 from a13n_service.tenancy.credentials import new_secret
 from a13n_service.tenancy.tables import GrantRow, PrincipalRow, TokenRow, WorkspaceRow
 from a13n_service.tenancy.users import set_account_status
@@ -367,7 +371,12 @@ async def test_oidc_start_budget_is_per_peer_separate_and_fail_closed(service, c
 
     def browser(address, forwarded):
         return Request(
-            {"type": "http", "client": (address, 2020), "headers": [(b"x-forwarded-for", forwarded.encode())]}
+            {
+                "type": "http",
+                "query_string": b"",
+                "client": (address, 2020),
+                "headers": [(b"x-forwarded-for", forwarded.encode())],
+            }
         )
 
     first = await routes.start_oidc_sign_in(browser("192.0.2.1", "192.0.2.99"), "team", oidc_runtime)
@@ -446,3 +455,170 @@ async def test_http_transport_logs_do_not_expose_oidc_query_or_response_headers(
     assert requests and b"accept-encoding: identity" in requests[0].lower()
     assert failure.value.stage == "token_exchange" and failure.value.status == 400
     assert sentinel not in repr([record.__dict__ for record in caplog.records])
+
+
+@pytest.mark.parametrize(
+    ("claims", "matched"),
+    [
+        ({"team_roles": "ConsoleAdmins"}, True),
+        ({"team_roles": ["member", "ConsoleAdmins"]}, True),
+        ({"team_roles": "consoleadmins"}, False),
+        ({"team_roles": " ConsoleAdmins"}, False),
+        ({"team_roles": ["ConsoleAdmins", 1]}, False),
+        ({"team_roles": {"name": "ConsoleAdmins"}}, False),
+        ({"team_roles": True}, False),
+        ({"team_roles": ["member"]}, False),
+        ({"team_roles": "ConsoleAdmins", "_claim_names": {"team_roles": "src1"}}, False),
+        ({}, False),
+    ],
+)
+def test_id_token_admin_mapping_is_opt_in_and_exact(signing_key, claims, matched) -> None:
+    key, jwks = signing_key
+    mapping = OIDCOrgAdmin(claim="team_roles", value="ConsoleAdmins")
+    provider = PROVIDER.model_copy(update={"org_admin": mapping})
+    encoded = id_token(key, **claims)
+    assert not oidc._identity(encoded, jwks, PROVIDER, NONCE).org_admin
+    assert oidc._identity(encoded, jwks, provider, NONCE).org_admin is matched
+
+
+def test_group_overage_does_not_grant_admin(signing_key) -> None:
+    key, jwks = signing_key
+    provider = PROVIDER.model_copy(update={"org_admin": OIDCOrgAdmin(claim="groups", value="Admins")})
+    assert not oidc._identity(id_token(key, groups=["Admins"], hasgroups=True), jwks, provider, NONCE).org_admin
+
+
+@pytest.mark.parametrize("destination", ["https://else.example/a", "//else.example", "/\\else.example", "/\t/other"])
+def test_oidc_return_to_requires_an_origin_relative_path(destination):
+    assert oidc.console_destination(destination) == "/"
+
+
+async def test_oidc_syncs_org_admin_sources_without_reissuing_credentials(service, signing_key, monkeypatch):
+    runtime, tenant = service.runtime, service.tenant
+    provider = OIDCProvider(
+        label="Team",
+        issuer=PROVIDER.issuer,
+        client_id=PROVIDER.client_id,
+        client_secret=PROVIDER.client_secret,
+        org_admin=OIDCOrgAdmin(claim="team_roles", value="ConsoleAdmins"),
+        extra_scopes=["email", "groups", "profile", "groups"],
+    )
+    assert tuple(provider.scopes) == ("openid", "profile", "email", "groups")
+    settings = runtime.settings.model_copy(
+        update={
+            "auth": Authentication(
+                oidc=OIDC(
+                    providers={"team": provider},
+                    default_workspace_id=tenant.workspace_id,
+                )
+            )
+        }
+    )
+    monkeypatch.setattr(service.app.state, "runtime", replace(runtime, settings=settings))
+    key, jwks = signing_key
+
+    async def sign_in(value):
+        identity = oidc._identity(id_token(key, team_roles=value), jwks, provider, NONCE)
+        return await oidc.sign_in(runtime.storage, runtime.access, settings, "team", provider, identity)
+
+    mapped = await sign_in(["ConsoleAdmins"])
+    subject = mapped.principal.id
+    scope = WorkspaceScope(tenant.organization_id, tenant.workspace_id)
+    assert "admin" in allowed_verbs(mapped.principal, scope)
+    assert not allowed_verbs(mapped.principal, WorkspaceScope("other_org", "other_workspace"))
+    grants_url = f"{service.organization}/grants"
+    async with httpx2.AsyncClient(
+        transport=httpx2.ASGITransport(app=service.app), base_url="https://service.test"
+    ) as client:
+        client.cookies.set(session_cookie(settings), mapped.secret)
+        client.headers["x-csrf-token"] = mapped.csrf_token
+        account_url = f"{service.workspace}/service-accounts"
+        account = await client.post(account_url, json={"name": "edge"})
+        assert account.status_code == 201, account.text
+        issued = await client.post(f"{account_url}/{account.json()['id']}/keys", json={"name": "deploy"})
+        assert issued.status_code == 201, issued.text
+        account_key = {"authorization": "Bearer " + issued.json()["secret"]}
+        personal = await client.post("/api/v1/users/me/keys", json={"workspace_id": tenant.workspace_id, "name": "me"})
+        assert personal.status_code == 201, personal.text
+        human_key = {"authorization": "Bearer " + personal.json()["secret"]}
+        assert "admin" in (await client.get(service.workspace, headers=human_key)).json()["permissions"]
+
+        first = (await client.get(grants_url, params={"limit": 1})).json()
+        (sso,) = first["items"]
+        assert (sso["source"], sso["principal"]["id"], sso["role"]) == ("oidc", subject, "admin")
+        second = (await client.get(grants_url, params={"limit": 1, "cursor": first["next_cursor"]})).json()
+        (manual_admin,) = second["items"]
+        assert manual_admin["source"] == "manual" and second["next_cursor"] is None
+        assert (await client.patch(f"{grants_url}/{sso['id']}", json={"role": "viewer"})).status_code == 404
+        assert (await client.delete(f"{grants_url}/{sso['id']}")).status_code == 404
+        protected = await client.delete(f"{grants_url}/{manual_admin['id']}")
+        assert (
+            protected.status_code == 409 and protected.json()["error"]["details"]["reason"] == "last_organization_admin"
+        )
+
+        # An independent workspace role is unaffected by the organization override.
+        workspace_grants = (await service.client.get(f"{service.workspace}/grants")).json()["items"]
+        runner = next(item for item in workspace_grants if item["principal"]["id"] == subject)
+        workspace_role = await service.client.patch(
+            f"{service.workspace}/grants/{runner['id']}", json={"role": "builder"}
+        )
+        assert workspace_role.status_code == 200, workspace_role.text
+
+        async def set_manual_role():
+            response = await service.client.post(grants_url, json={"role": "viewer", "principal_id": subject})
+            assert response.status_code == 201, response.text
+            return f"{grants_url}/{response.json()['id']}"
+
+        async def effective_role():
+            items = (await service.client.get(grants_url)).json()["items"]
+            return [(item["source"], item["role"]) for item in items if item["principal"]["id"] == subject]
+
+        async def has_worker_admin():
+            async with short_session(runtime.storage) as db:
+                worker = (await principals_for(db, runtime.access, [(subject, scope)]))[subject, scope]
+                assert not isinstance(worker, ServiceError)
+                return "admin" in allowed_verbs(worker, scope)
+
+        assert sso["principal"]["uses_oidc"] and not manual_admin["principal"]["uses_oidc"]
+        assert await has_worker_admin()
+        override = await set_manual_role()
+        assert await effective_role() == [("manual", "viewer")]
+        assert (await client.get(grants_url)).status_code == 403
+        assert (await client.get(service.workspace, headers=human_key)).json()["permissions"] == [
+            "read",
+            "run",
+            "write",
+        ]
+        assert (await client.get(service.workspace, headers=account_key)).json()["permissions"] == ["read", "run"]
+        assert not await has_worker_admin()
+
+        assert (await sign_in("ConsoleAdmins")).principal.id == subject
+        assert await effective_role() == [("manual", "viewer")]
+        assert (await service.client.delete(override)).status_code == 204
+        assert await effective_role() == [("oidc", "admin")]
+        assert (await client.get(grants_url)).status_code == 200
+        assert await has_worker_admin()
+        assert "admin" in (await client.get(service.workspace, headers=human_key)).json()["permissions"]
+
+        # Losing the default revokes it for existing sessions once the override is absent.
+        override = await set_manual_role()
+        mismatch = await sign_in(["consoleadmins"])
+        assert mismatch.principal.id == subject
+        assert await effective_role() == [("manual", "viewer")]
+        assert (await service.client.delete(override)).status_code == 204
+        assert await effective_role() == []
+        assert (await client.get(grants_url)).status_code == 403
+        assert (await client.get(service.workspace, headers=human_key)).json()["permissions"] == [
+            "read",
+            "run",
+            "write",
+        ]
+        assert (await client.get(service.workspace, headers=account_key)).json()["permissions"] == ["read", "run"]
+        assert not await has_worker_admin()
+
+        etag = (await service.client.get(service.workspace)).headers["etag"]
+        archived = await service.client.post(f"{service.workspace}/archive", headers={"If-Match": etag})
+        assert archived.status_code == 200, archived.text
+        assert (await sign_in("ConsoleAdmins")).principal.id == subject
+        assert (await client.get(grants_url)).status_code == 200  # archive leaves its organization intact
+        archived_write = await client.post(account_url, json={"name": "another"})
+        assert archived_write.status_code == 422 and archived_write.json()["error"]["code"] == "disabled"

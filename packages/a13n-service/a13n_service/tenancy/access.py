@@ -14,7 +14,7 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from a13n_logging import exception_details, get_logger
-from sqlalchemy import ColumnElement, Select, and_, false, or_, select
+from sqlalchemy import ColumnElement, Select, String, and_, false, literal, null, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 from starlette.responses import Response
@@ -34,7 +34,7 @@ from a13n_service.tenancy.authorize import (
     allowed_verbs,
     authorize,
 )
-from a13n_service.tenancy.tables import GrantRow, OrganizationRow, PrincipalRow, WorkspaceRow
+from a13n_service.tenancy.tables import GrantRow, OIDCOrgAdminRow, OrganizationRow, PrincipalRow, WorkspaceRow
 
 logger = get_logger(__name__)
 
@@ -142,6 +142,34 @@ class Access:
         return Grant(grant.organization_id, grant.workspace_id, verbs)
 
 
+def oidc_org_admin_is_default() -> ColumnElement[bool]:
+    """A manual organization grant overrides its principal's mapped role at that organization."""
+    return (
+        ~select(GrantRow.id)
+        .where(
+            GrantRow.principal_id == OIDCOrgAdminRow.principal_id,
+            GrantRow.organization_id == OIDCOrgAdminRow.organization_id,
+            GrantRow.workspace_id.is_(None),
+        )
+        .exists()
+    )
+
+
+async def _current_grants(session: AsyncSession, principal_ids: set[str]) -> dict[str, list[RoleGrant]]:
+    grants = select(GrantRow.principal_id, GrantRow.organization_id, GrantRow.workspace_id, GrantRow.role).where(
+        GrantRow.principal_id.in_(principal_ids)
+    )
+    mapped = (
+        select(OIDCOrgAdminRow.principal_id, OIDCOrgAdminRow.organization_id, null(), literal("admin", String()))
+        .where(OIDCOrgAdminRow.principal_id.in_(principal_ids), oidc_org_admin_is_default())
+        .distinct()
+    )
+    result: dict[str, list[RoleGrant]] = defaultdict(list)
+    for principal_id, organization_id, workspace_id, role in (await session.execute(grants.union_all(mapped))).tuples():
+        result[principal_id].append(RoleGrant(organization_id, workspace_id, role))
+    return result
+
+
 async def principal_for(
     session: AsyncSession,
     access: Access,
@@ -172,8 +200,8 @@ async def principal_for(
     if row is None or row.status != "active":
         raise unauthenticated()
     home = await session.get_one(WorkspaceRow, row.home_workspace_id) if row.kind == "service_account" else None
-    grants = (await session.scalars(select(GrantRow).where(GrantRow.principal_id == row.id))).all()
-    return await _principal(access, row, home, grants, confinement)
+    grants = await _current_grants(session, {row.id})
+    return await _principal(access, row, home, grants[row.id], confinement)
 
 
 async def principals_for(
@@ -193,9 +221,7 @@ async def principals_for(
             )
         ).tuples()
     }
-    grants: dict[str, list[GrantRow]] = defaultdict(list)
-    for grant in await session.scalars(select(GrantRow).where(GrantRow.principal_id.in_(ids))):
-        grants[grant.principal_id].append(grant)
+    grants = await _current_grants(session, ids)
     principals: dict[tuple[str, WorkspaceScope], Principal | ServiceError] = {}
     for principal_id, confinement in identities:
         row, home = rows.get(principal_id, (None, None))
@@ -216,10 +242,10 @@ async def _principal(
     access: Access,
     row: PrincipalRow,
     home: WorkspaceRow | None,
-    grants: Sequence[GrantRow],
+    grants: Sequence[RoleGrant],
     confinement: WorkspaceScope | None,
 ) -> Principal:
-    """An active principal from its row, its home workspace when it is a service account, and its stored grants."""
+    """An active principal with current grants and, for a service account, its home workspace."""
     if row.kind == "service_account":
         assert home is not None  # The `account_home` constraint gives every service account a home.
         home_scope = WorkspaceScope(home.organization_id, home.id)

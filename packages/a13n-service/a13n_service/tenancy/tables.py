@@ -82,6 +82,22 @@ class PrincipalRow(Stamped, Base):
     image: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
 
 
+class OIDCOrgAdminRow(Base):
+    """One provider's synchronized organization admin role, independent of manual grants."""
+
+    __tablename__ = "oidc_org_admins"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    principal_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+    provider_id: Mapped[str] = mapped_column(String(32))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint("principal_id", "provider_id"),
+        Index("ix_oidc_org_admins_organization_principal", "organization_id", "principal_id"),
+    )
+
+
 class GrantRow(Base):
     """Created and explicitly removed, never edited: a role change replaces the row."""
 

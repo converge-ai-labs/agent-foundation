@@ -4533,6 +4533,11 @@
   "Couldn’t load sign-in options.": "Couldn’t load sign-in options.",
   "Ask your Service operator to finish setup.": "Ask your Service operator to finish setup.",
   "This Service uses an identity provider. Go to sign in to continue.": "This Service uses an identity provider. Go to sign in to continue.",
+  "Role source": "Role source",
+  "Use SSO default": "Use SSO default",
+  "Set role manually": "Set role manually",
+  "Restore SSO default": "Restore SSO default",
+  "SSO": "SSO",
   "Sign-in provider": "Sign-in provider",
   "Your identity provider manages your sign-in details.": "Your identity provider manages your sign-in details."
 }

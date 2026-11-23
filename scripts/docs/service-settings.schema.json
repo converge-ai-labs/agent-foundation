@@ -1472,6 +1472,29 @@
       ],
       "type": "string"
     },
+    "OIDCOrgAdmin": {
+      "additionalProperties": false,
+      "properties": {
+        "claim": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Claim",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim",
+        "value"
+      ],
+      "title": "OIDCOrgAdmin",
+      "type": "object"
+    },
     "OIDCProvider": {
       "additionalProperties": false,
       "properties": {
@@ -1520,6 +1543,28 @@
           ],
           "title": "Token Endpoint Auth Method",
           "type": "string"
+        },
+        "extra_scopes": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Extra Scopes",
+          "type": "array"
+        },
+        "org_admin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OIDCOrgAdmin"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

@@ -4533,6 +4533,11 @@
   "Couldn’t load sign-in options.": "साइन-इन के विकल्प लोड नहीं हो सके।",
   "Ask your Service operator to finish setup.": "सेटअप पूरा करने के लिए Service ऑपरेटर से संपर्क करें।",
   "This Service uses an identity provider. Go to sign in to continue.": "यह Service एक पहचान प्रदाता इस्तेमाल करती है। जारी रखने के लिए साइन-इन पेज पर जाएँ।",
+  "Role source": "भूमिका का स्रोत",
+  "Use SSO default": "एसएसओ की डिफ़ॉल्ट भूमिका इस्तेमाल करें",
+  "Set role manually": "भूमिका मैन्युअल रूप से तय करें",
+  "Restore SSO default": "एसएसओ की डिफ़ॉल्ट भूमिका बहाल करें",
+  "SSO": "एसएसओ",
   "Sign-in provider": "साइन-इन प्रदाता",
   "Your identity provider manages your sign-in details.": "आपकी साइन-इन जानकारी आपका पहचान प्रदाता प्रबंधित करता है।"
 }

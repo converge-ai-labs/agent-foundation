@@ -13,6 +13,7 @@ from typing import cast
 import httpx2
 import uvicorn
 import yaml
+from a13n_logging import LogFormat, configure_logging
 from a13n_service.app import build_app
 from a13n_service.distribution import OSS
 from a13n_service.migrations.runner import upgrade
@@ -91,7 +92,13 @@ def write_dex(directory: Path, issuer: str, origin: str) -> Path:
                 },
                 "enablePasswordDB": True,
                 "staticPasswords": [
-                    {"email": EMAIL, "hash": password_hash, "username": "Alex Rivera", "userID": "fixture-operator"}
+                    {
+                        "email": EMAIL,
+                        "hash": password_hash,
+                        "username": "Alex Rivera",
+                        "userID": "fixture-operator",
+                        "groups": ["console-admins"],
+                    }
                 ],
                 "staticClients": [
                     {
@@ -122,6 +129,10 @@ def oidc_settings(issuer: str, workspace_id: str, phase: str) -> str:
             f"[auth.oidc.providers.{name}]\nlabel = {json.dumps(label)}\nissuer = {json.dumps(provider_issuer)}\n"
             f"client_id = {json.dumps(name)}\nclient_secret = 'public-fixture-client-secret'\n"
         )
+        if name == "team" and phase in {"mapped", "oidc-only", "single"}:
+            group = "other-group" if phase == "single" else "console-admins"
+            result += f"extra_scopes = ['groups']\norg_admin = {{claim = 'groups', value = '{group}'}}\n"
+
     return result
 
 
@@ -169,9 +180,9 @@ def run(directory: Path, *, manual: bool) -> None:
             "longLabel": LONG_LABEL,
         }
         (directory / "fixture.json").write_text(json.dumps(fixture))
-        for phase in ("mixed", "oidc-only", "single", "recovery"):
+        for phase in ("mixed", "mapped", "oidc-only", "single", "recovery"):
             config.write_text(base + oidc_settings(issuer, workspace, phase))
-            override = None if phase == "mixed" else phase == "recovery"
+            override = None if phase in {"mixed", "mapped"} else phase == "recovery"
             with service(directory, config, port, password_enabled=override):
                 if manual:
                     print(
@@ -196,6 +207,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.serve:
+        configure_logging(log_format=LogFormat.json, logger_names=("a13n_service",))
         app = build_app(settings=load_settings(args.serve), apps=(), console=CONSOLE / "dist")
         uvicorn.run(app, host="127.0.0.1", port=args.port, access_log=False)
     elif args.directory:

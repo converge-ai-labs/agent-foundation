@@ -56,10 +56,8 @@ export type { MembershipScope };
 export function MemberSettings({ scope }: { scope: MembershipScope }) {
   const { t } = useTranslation(),
     { organization, workspace, can, organizationCan } = useAccess();
-  const config = useAuthConfiguration(true);
-  // Confirm the deployment policy on entry; background refreshes keep open forms mounted.
-  const passwords =
-    config.isFetchedAfterMount && config.data?.password_enabled === true;
+  const config = useAuthConfiguration();
+  const passwords = config.data?.password_enabled === true;
   const organizationAdmin = organizationCan("admin");
   const canManage =
     scope.kind === "organization" ? organizationAdmin : can("admin");
@@ -128,6 +126,13 @@ function grants(
         })
         .then(data);
 }
+function hasSSODefault(scope: MembershipScope, item: Schema["GrantView"]) {
+  return (
+    scope.kind === "organization" &&
+    (item.source === "oidc" || item.principal.uses_oidc === true)
+  );
+}
+
 function Members({
   scope,
   actions,
@@ -176,58 +181,63 @@ function Members({
                           }
                         />
                       )}
-                      <Confirm
-                        subject={`${item.principal.name} · ${t(
-                          `role.${item.role}`,
-                          {
-                            defaultValue: item.role,
-                          },
-                        )}`}
-                        title={t("Remove member")}
-                        description={
-                          // A service account is granted only in its home workspace,
-                          // so this is its last grant.
-                          item.principal.kind === "service_account"
-                            ? t(
-                                "This removes the service account's only role, which disables it and revokes its keys.",
-                              )
-                            : t(
-                                "This removes the selected role. Other explicit grants may still allow access.",
-                              )
-                        }
-                        triggerElement={
-                          <MenuItem closeOnClick={false} variant="destructive">
-                            <UserMinusIcon size={14} />
-                            {t("Remove")}
-                          </MenuItem>
-                        }
-                        danger
-                        action={() =>
-                          scope.kind === "organization"
-                            ? client.http.DELETE(
-                                "/api/v1/organizations/{organization_id}/grants/{grant_id}",
-                                {
-                                  params: {
-                                    path: {
-                                      organization_id: scope.id,
-                                      grant_id: item.id,
+                      {!hasSSODefault(scope, item) && (
+                        <Confirm
+                          subject={`${item.principal.name} · ${t(
+                            `role.${item.role}`,
+                            {
+                              defaultValue: item.role,
+                            },
+                          )}`}
+                          title={t("Remove member")}
+                          description={
+                            // A service account is granted only in its home workspace,
+                            // so this is its last grant.
+                            item.principal.kind === "service_account"
+                              ? t(
+                                  "This removes the service account's only role, which disables it and revokes its keys.",
+                                )
+                              : t(
+                                  "This removes the selected role. Other explicit grants may still allow access.",
+                                )
+                          }
+                          triggerElement={
+                            <MenuItem
+                              closeOnClick={false}
+                              variant="destructive"
+                            >
+                              <UserMinusIcon size={14} />
+                              {t("Remove")}
+                            </MenuItem>
+                          }
+                          danger
+                          action={() =>
+                            scope.kind === "organization"
+                              ? client.http.DELETE(
+                                  "/api/v1/organizations/{organization_id}/grants/{grant_id}",
+                                  {
+                                    params: {
+                                      path: {
+                                        organization_id: scope.id,
+                                        grant_id: item.id,
+                                      },
                                     },
                                   },
-                                },
-                              )
-                            : client.http.DELETE(
-                                "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
-                                {
-                                  params: {
-                                    path: {
-                                      workspace_id: scope.id,
-                                      grant_id: item.id,
+                                )
+                              : client.http.DELETE(
+                                  "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
+                                  {
+                                    params: {
+                                      path: {
+                                        workspace_id: scope.id,
+                                        grant_id: item.id,
+                                      },
                                     },
                                   },
-                                },
-                              )
-                        }
-                      />
+                                )
+                          }
+                        />
+                      )}
                     </>
                   )
                 : undefined
@@ -259,10 +269,15 @@ function Members({
               {
                 label: t("Role"),
                 render: (item) => (
-                  <span className={settings.chip}>
-                    {t(`role.${item.role}`, {
-                      defaultValue: item.role,
-                    })}
+                  <span className="inline-flex items-center gap-2">
+                    <span className={settings.chip}>
+                      {t(`role.${item.role}`, { defaultValue: item.role })}
+                    </span>
+                    {hasSSODefault(scope, item) && (
+                      <span className="text-xs text-muted-foreground">
+                        {item.source === "oidc" ? t("SSO") : t("Manual")}
+                      </span>
+                    )}
                   </span>
                 ),
               },
@@ -314,26 +329,47 @@ function ChangeRole({
     cache = useQueryClient();
   const [basis, setBasis] = useState(item),
     [role, setRole] = useState(item.role),
+    [mode, setMode] = useState(item.source ?? "manual"),
     [open, setOpen] = useState(false);
+  const choosingSSO = hasSSODefault(scope, basis);
+  const restoreDefault = choosingSSO && mode === "oidc";
+  const noChange = restoreDefault && basis.source === "oidc";
   const change = useMutation({
-    mutationFn: () =>
-      scope.kind === "organization"
-        ? client.http.PATCH(
+    mutationFn: async () => {
+      if (scope.kind === "organization") {
+        const path = { organization_id: scope.id, grant_id: basis.id };
+        if (restoreDefault) {
+          await client.http.DELETE(
+            "/api/v1/organizations/{organization_id}/grants/{grant_id}",
+            { params: { path } },
+          );
+        } else if (basis.source === "oidc") {
+          await client.http.POST(
+            "/api/v1/organizations/{organization_id}/grants",
+            {
+              params: { path: { organization_id: scope.id } },
+              body: { principal_id: basis.principal.id, role },
+            },
+          );
+        } else {
+          await client.http.PATCH(
             "/api/v1/organizations/{organization_id}/grants/{grant_id}",
             {
-              params: {
-                path: { organization_id: scope.id, grant_id: basis.id },
-              },
+              params: { path },
               body: { role },
             },
-          )
-        : client.http.PATCH(
-            "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
-            {
-              params: { path: { workspace_id: scope.id, grant_id: basis.id } },
-              body: { role },
-            },
-          ),
+          );
+        }
+      } else {
+        await client.http.PATCH(
+          "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
+          {
+            params: { path: { workspace_id: scope.id, grant_id: basis.id } },
+            body: { role },
+          },
+        );
+      }
+    },
     onSuccess: () => {
       void cache.invalidateQueries();
       setOpen(false);
@@ -353,6 +389,7 @@ function ChangeRole({
     onSuccess: (latest) => {
       setBasis(latest);
       setRole(latest.role);
+      setMode(latest.source ?? "manual");
       change.reset();
     },
   });
@@ -366,6 +403,7 @@ function ChangeRole({
           if (value) {
             setBasis(item);
             setRole(item.role);
+            setMode(item.source ?? "manual");
           }
           change.reset();
           reload.reset();
@@ -387,22 +425,37 @@ function ChangeRole({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          change.mutate();
+          if (!noChange) change.mutate();
         }}
       >
-        <ChoiceField
-          placeholder={t("Select role")}
-          value={role}
-          className="min-w-0"
-          onValueChange={(value) => {
-            if (value) setRole(value);
-          }}
-          label={t("Role")}
-          options={rolesIncluding(basis.role).map((value) => ({
-            value,
-            label: t(`role.${value}`, { defaultValue: value }),
-          }))}
-        />
+        {choosingSSO && (
+          <ChoiceField
+            label={t("Role source")}
+            value={mode}
+            onValueChange={(value) => {
+              if (value === "oidc" || value === "manual") setMode(value);
+            }}
+            options={[
+              { value: "oidc", label: t("Use SSO default") },
+              { value: "manual", label: t("Set role manually") },
+            ]}
+          />
+        )}
+        {!restoreDefault && (
+          <ChoiceField
+            placeholder={t("Select role")}
+            value={role}
+            className="min-w-0"
+            onValueChange={(value) => {
+              if (value) setRole(value);
+            }}
+            label={t("Role")}
+            options={rolesIncluding(basis.role).map((value) => ({
+              value,
+              label: t(`role.${value}`, { defaultValue: value }),
+            }))}
+          />
+        )}
         {conflict && !reload.error ? (
           <ConflictNotice
             title={t("This member changed")}
@@ -424,6 +477,10 @@ function ChangeRole({
         <FormActions
           onCancel={() => setOpen(false)}
           pending={change.isPending}
+          disabled={noChange}
+          label={
+            restoreDefault && !noChange ? t("Restore SSO default") : undefined
+          }
         />
       </form>
     </ModalFrame>

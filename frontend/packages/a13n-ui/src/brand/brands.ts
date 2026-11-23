@@ -1,6 +1,6 @@
-import googleIcon from "./google.svg?no-inline";
+import googleIcon from "./google.svg";
 import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
-import microsoftIcon from "./microsoft.svg?no-inline";
+import microsoftIcon from "./microsoft.svg";
 import typesafeIcon from "./typesafe.svg";
 
 /** Display identities only. These mappings never select an endpoint or account. */
@@ -14,10 +14,15 @@ export interface Brand {
   endpoints?: readonly string[];
 }
 
+// Vite imports the URL directly; the Next.js image loader wraps it in metadata.
+function assetUrl(asset: string | { src: string }): string {
+  return typeof asset === "string" ? asset : asset.src;
+}
+
 const svgl = "https://svgl.app/library/";
 const curatedBrands: Record<string, Brand> = {
-  google: { icon: googleIcon, bundled: true },
-  microsoft: { icon: microsoftIcon, bundled: true },
+  google: { icon: assetUrl(googleIcon), bundled: true },
+  microsoft: { icon: assetUrl(microsoftIcon), bundled: true },
   github: {
     icon: `${svgl}github_light.svg`,
     darkIcon: `${svgl}github_dark.svg`,
@@ -160,7 +165,7 @@ const curatedBrands: Record<string, Brand> = {
   kimi: { icon: `${lobeIconsCdn}kimi.svg`, invertInDark: true },
   moonshot: { icon: `${lobeIconsCdn}kimi.svg`, invertInDark: true },
   typesafe: {
-    icon: typesafeIcon,
+    icon: assetUrl(typesafeIcon),
     invertInDark: true,
     hosts: ["typesafe.ai", "api.typesafe.ai"],
   },

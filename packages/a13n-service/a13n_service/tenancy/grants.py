@@ -8,7 +8,7 @@ grant there and the service accounts homed in one of its workspaces.
 from typing import Literal
 
 from pydantic import JsonValue
-from sqlalchemy import ColumnElement, exists, or_, select
+from sqlalchemy import ColumnElement, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
@@ -16,7 +16,14 @@ from a13n_service.infra.audit import Scoped, record
 from a13n_service.infra.db import Storage, lock, unique_key
 from a13n_service.infra.errors import conflict, invalid, not_found
 from a13n_service.infra.ids import new_object_id
-from a13n_service.tenancy.access import Access, AdminPath, OrganizationPath, administering, lock_member
+from a13n_service.tenancy.access import (
+    Access,
+    AdminPath,
+    OrganizationPath,
+    administering,
+    lock_member,
+    oidc_org_admin_is_default,
+)
 from a13n_service.tenancy.authorize import Principal, Scope, WorkspaceScope
 from a13n_service.tenancy.credentials import revoke_api_keys
 from a13n_service.tenancy.principals import principal_summaries, principal_summary
@@ -28,7 +35,7 @@ from a13n_service.tenancy.schemas import (
     MemberPage,
     PrincipalSummary,
 )
-from a13n_service.tenancy.tables import GrantRow, PrincipalRow, WorkspaceRow
+from a13n_service.tenancy.tables import GrantRow, OIDCOrgAdminRow, PrincipalRow, WorkspaceRow
 
 
 def _grant_view(grant: GrantRow, principal: PrincipalSummary) -> GrantView:
@@ -54,20 +61,58 @@ async def list_grants(
 ) -> GrantPage:
     """Grants at exactly this scope, each with its principal, so members can be shown by name."""
     async with administering(storage, access, actor, path, action="grant.list", reading=True) as (session, scope):
-        rows, next_cursor = await cursors.id_page(
-            session,
-            select(GrantRow).where(
-                GrantRow.organization_id == scope.organization_id,
-                GrantRow.workspace_id.is_not_distinct_from(scope.workspace_id),
-            ),
-            GrantRow.id,
-            kind="grants",
-            owner=scope.workspace_id or scope.organization_id,
-            cursor=cursor,
-            limit=limit,
+        owner = scope.workspace_id or scope.organization_id
+        manual = select(GrantRow).where(
+            GrantRow.organization_id == scope.organization_id,
+            GrantRow.workspace_id.is_not_distinct_from(scope.workspace_id),
         )
-        principals = await principal_summaries(session, (row.principal_id for row in rows))
-    return GrantPage(items=[_grant_view(row, principals[row.principal_id]) for row in rows], next_cursor=next_cursor)
+        if scope.workspace_id is not None:
+            rows, next_cursor = await cursors.id_page(
+                session, manual, GrantRow.id, kind="grants", owner=owner, cursor=cursor, limit=limit
+            )
+            principals = await principal_summaries(session, (row.principal_id for row in rows))
+            return GrantPage(
+                items=[_grant_view(row, principals[row.principal_id]) for row in rows], next_cursor=next_cursor
+            )
+        # Merge two bounded, disjoint ID ranges before loading principals. Mutations still only look in grants.
+        after = cursors.id_position(cursor, "grants", owner)
+        manual_rows = (
+            await session.scalars(manual.where(GrantRow.id > after).order_by(GrantRow.id).limit(limit + 1))
+        ).all()
+        # Several providers can map the same principal to Admin; show one effective role.
+        defaults = (
+            select(func.min(OIDCOrgAdminRow.id))
+            .where(OIDCOrgAdminRow.organization_id == scope.organization_id, oidc_org_admin_is_default())
+            .group_by(OIDCOrgAdminRow.principal_id)
+        )
+        oidc_rows = (
+            await session.scalars(
+                select(OIDCOrgAdminRow)
+                .where(OIDCOrgAdminRow.id.in_(defaults), OIDCOrgAdminRow.id > after)
+                .order_by(OIDCOrgAdminRow.id)
+                .limit(limit + 1)
+            )
+        ).all()
+        combined = sorted([*manual_rows, *oidc_rows], key=lambda row: row.id)
+        selected = combined[:limit]
+        principals = await principal_summaries(session, (row.principal_id for row in selected))
+        items = [
+            _grant_view(row, principals[row.principal_id])
+            if isinstance(row, GrantRow)
+            else GrantView(
+                id=row.id,
+                organization_id=row.organization_id,
+                workspace_id=None,
+                principal=principals[row.principal_id],
+                role="admin",
+                source="oidc",
+                created_by_id=row.principal_id,
+                created_at=row.created_at,
+            )
+            for row in selected
+        ]
+        next_cursor = cursors.encode("grants", owner, selected[-1].id) if len(combined) > limit else None
+        return GrantPage(items=items, next_cursor=next_cursor)
 
 
 async def create_grant(
@@ -127,6 +172,9 @@ async def list_members(
 def _member_of(organization_id: str) -> ColumnElement[bool]:
     return or_(
         exists().where(GrantRow.principal_id == PrincipalRow.id, GrantRow.organization_id == organization_id),
+        exists().where(
+            OIDCOrgAdminRow.principal_id == PrincipalRow.id, OIDCOrgAdminRow.organization_id == organization_id
+        ),
         exists().where(
             WorkspaceRow.id == PrincipalRow.home_workspace_id, WorkspaceRow.organization_id == organization_id
         ),
@@ -256,7 +304,7 @@ async def replace_grant(
 
 
 async def other_administrator(session: AsyncSession, access: Access, organization_id: str, principal_id: str) -> bool:
-    """Whether an active principal other than this one administers the organization."""
+    """Whether a different active principal holds a manual organization admin grant."""
     found = await session.scalar(
         select(GrantRow.id)
         .join(PrincipalRow, PrincipalRow.id == GrantRow.principal_id)

@@ -11099,6 +11099,15 @@
             "title": "Role",
             "type": "string"
           },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "oidc"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "workspace_id": {
             "anyOf": [
               {
@@ -19087,6 +19096,11 @@
           "status": {
             "title": "Status",
             "type": "string"
+          },
+          "uses_oidc": {
+            "default": false,
+            "title": "Uses Oidc",
+            "type": "boolean"
           }
         },
         "required": [

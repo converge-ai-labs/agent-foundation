@@ -290,52 +290,123 @@ it("lets workspace administrators grant by principal ID without listing the orga
   );
 });
 
-it("does not expose password invitation actions while checking policy, but still lists and revokes", async () => {
-  let complete: (value: unknown) => void = () => {};
-  const configuration = new Promise((resolve) => {
-    complete = resolve;
-  });
-  http.GET.mockImplementation(async (path: string) => {
-    const data = path.endsWith("/configuration")
-      ? await configuration
-      : {
-          items: [
-            {
-              id: "inv_old",
-              email: "old@example.com",
-              role: "viewer",
-              created_at: "2026-10-20T00:00:00Z",
-              expires_at: "2099-10-27T00:00:00Z",
-              accepted_at: null,
-              revoked_at: null,
-            },
-          ],
-          next_cursor: null,
-        };
-    return { data, response: new Response() };
-  });
-  const cache = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  cache.setQueryData(["auth-configuration"], { password_enabled: true });
+it.each([undefined, true])(
+  "renders invitation actions from the known policy (%s) until disabled",
+  async (cached) => {
+    let complete: (value: unknown) => void = () => {};
+    const configuration = new Promise((resolve) => {
+      complete = resolve;
+    });
+    http.GET.mockImplementation(async (path: string) => {
+      const data = path.endsWith("/configuration")
+        ? await configuration
+        : {
+            items: [
+              {
+                id: "inv_old",
+                email: "old@example.com",
+                role: "viewer",
+                created_at: "2026-10-20T00:00:00Z",
+                expires_at: "2099-10-27T00:00:00Z",
+                accepted_at: null,
+                revoked_at: null,
+              },
+            ],
+            next_cursor: null,
+          };
+      return { data, response: new Response() };
+    });
+    const cache = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    if (cached)
+      cache.setQueryData(["auth-configuration"], { password_enabled: true });
+    render(
+      <QueryClientProvider client={cache}>
+        <MemoryRouter initialEntries={["/?tab=invitations"]}>
+          <MemberSettings scope={{ kind: "organization", id: "org_acme" }} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await screen.findByText("old@example.com");
+    expect(Boolean(screen.queryByRole("button", { name: "Invite" }))).toBe(
+      cached === true,
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Invitation actions" }),
+    );
+    if (cached) await screen.findByText("Resend", { exact: true });
+    else expect(screen.queryByText("Resend", { exact: true })).toBeNull();
+    complete({ password_enabled: false });
+    await waitFor(() =>
+      expect(cache.getQueryData(["auth-configuration"])).toEqual({
+        password_enabled: false,
+      }),
+    );
+    expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Resend" })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: "Revoke" })).toBeTruthy();
+  },
+);
+
+it("edits the effective organization role and only offers SSO defaults for OIDC users", async () => {
+  const grace = { id: "usr_grace", kind: "user", name: "Grace" };
+  const items = [
+    {
+      ...grant("rb_sso_ada", "admin", ada),
+      workspace_id: null,
+      source: "oidc",
+    },
+    {
+      ...grant("rb_grace", "viewer", grace),
+      workspace_id: null,
+      source: "manual",
+    },
+  ];
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/configuration")
+      ? { password_enabled: false }
+      : { items, next_cursor: null },
+    response: new Response(),
+  }));
   render(
-    <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={["/?tab=invitations"]}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
         <MemberSettings scope={{ kind: "organization", id: "org_acme" }} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
-  await screen.findByText("old@example.com");
-  expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Invitation actions" }));
-  expect(screen.queryByRole("menuitem", { name: "Resend" })).toBeNull();
-  complete({ password_enabled: false });
-  await waitFor(() =>
-    expect(cache.getQueryData(["auth-configuration"])).toEqual({
-      password_enabled: false,
-    }),
+  const sso = await screen.findByRole("row", { name: /Ada.*SSO/ });
+  await user.click(within(sso).getByRole("button", { name: "Member actions" }));
+  const edit = await screen.findByRole("menuitem", { name: "Change role" });
+  expect(screen.queryByRole("menuitem", { name: "Remove" })).toBeNull();
+  await user.click(edit);
+  const editor = await screen.findByRole("dialog", { name: "Change role" });
+  expect(
+    within(editor).getByRole("combobox", { name: "Role source" }).textContent,
+  ).toContain("Use SSO default");
+  expect(within(editor).queryByRole("combobox", { name: "Role" })).toBeNull();
+  await user.click(within(editor).getByRole("button", { name: "Cancel" }));
+  const manual = screen.getByRole("row", { name: /Grace.*viewer/i });
+  await user.click(
+    within(manual).getByRole("button", { name: "Member actions" }),
   );
-  expect(screen.queryByRole("menuitem", { name: "Resend" })).toBeNull();
-  expect(screen.getByRole("menuitem", { name: "Revoke" })).toBeTruthy();
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Change role" }),
+  );
+  const passwordEditor = await screen.findByRole("dialog", {
+    name: "Change role",
+  });
+  expect(
+    within(passwordEditor).queryByRole("combobox", { name: "Role source" }),
+  ).toBeNull();
+  expect(
+    within(passwordEditor).getByRole("combobox", { name: "Role" }),
+  ).toBeTruthy();
 });

@@ -177,8 +177,13 @@ async def start_oidc_sign_in(request: Request, provider_id: str, runtime: Curren
             raise oidc.Failure(stage, oidc.Reason.UNKNOWN_PROVIDER)
         if not await initialized(runtime.storage):
             raise oidc.Failure(stage, oidc.Reason.NOT_INITIALIZED)
+        destinations = request.query_params.getlist("return_to")
         target, browser = await oidc.start(
-            runtime.redis, provider_id, provider, redirect_uri=_oidc_callback_url(settings, provider_id)
+            runtime.redis,
+            provider_id,
+            provider,
+            redirect_uri=_oidc_callback_url(settings, provider_id),
+            return_to=destinations[0] if len(destinations) == 1 else "/",
         )
     except Exception as error:
         oidc.log_failure(provider_id if provider is not None else None, stage, error)
@@ -226,7 +231,7 @@ async def finish_oidc_sign_in(request: Request, provider_id: str, runtime: Curre
                 stage, oidc.Reason.PROVIDER_ERROR, provider_error=oidc.ProviderError.from_callback(errors)
             )
         codes = request.query_params.getlist("code")
-        if len(codes) != 1 or not 0 < len(codes[0]) <= 4096:
+        if len(codes) != 1 or not codes[0]:
             raise oidc.Failure(stage, oidc.Reason.INVALID_CODE)
         issuers = request.query_params.getlist("iss")
         if issuers and issuers != [provider.issuer]:
@@ -236,7 +241,7 @@ async def finish_oidc_sign_in(request: Request, provider_id: str, runtime: Curre
         identity = await oidc.exchange(provider, flow, redirect_uri=redirect_uri, code=codes[0])
         stage = oidc.Stage.PROVISION
         result = await oidc.sign_in(runtime.storage, runtime.access, settings, provider_id, provider, identity)
-        response = _oidc_redirect("/")
+        response = _oidc_redirect(flow.return_to)
         set_session_cookie(response, result.secret, settings, seconds=settings.auth.oidc.session_seconds)
     except Exception as error:
         # Do not let callback data reach the general exception logger (or a server traceback).

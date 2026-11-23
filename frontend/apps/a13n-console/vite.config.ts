@@ -56,6 +56,11 @@ export default defineConfig(({ command }) => ({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    // The anonymous sign-in page serves bundled marks from its own origin.
+    assetsInlineLimit: (filePath) =>
+      /\/a13n-ui\/src\/brand\/(google|microsoft)\.svg$/.test(filePath)
+        ? false
+        : undefined,
     rolldownOptions: {
       input: {
         index: resolve(import.meta.dirname, "index.html"),
