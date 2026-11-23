@@ -193,6 +193,8 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | Path                                 | Methods     | Owner                                           |
 | ------------------------------------ | ----------- | ----------------------------------------------- |
 | `/auth/configuration`                | GET         | [03](03-tenancy.md#identity-mail) (public)      |
+| `/auth/oidc/{provider_id}/start`     | GET         | [03](03-tenancy.md#openid-connect-sign-in)      |
+| `/auth/oidc/{provider_id}/callback`  | GET         | [03](03-tenancy.md#openid-connect-sign-in)      |
 | `/auth/login`                        | POST        | [03](03-tenancy.md#authentication) (public)     |
 | `/auth/bootstrap`                    | POST        | [03](03-tenancy.md#bootstrap) (public)          |
 | `/auth/logout`                       | POST        | [03](03-tenancy.md#authentication)              |

@@ -4546,5 +4546,19 @@
   "Resource ID": "संसाधन ID",
   "Rotate secret": "सीक्रेट बदलें",
   "Create": "बनाएँ",
-  "Active Sessions update asynchronously; idle Sessions update on next use.": "सक्रिय Session असिंक्रोनस रूप से अपडेट होते हैं; निष्क्रिय Session अगले उपयोग पर अपडेट होते हैं।"
+  "Active Sessions update asynchronously; idle Sessions update on next use.": "सक्रिय Session असिंक्रोनस रूप से अपडेट होते हैं; निष्क्रिय Session अगले उपयोग पर अपडेट होते हैं।",
+  "Ask your Service operator to finish setup.": "सेटअप पूरा करने के लिए Service ऑपरेटर से संपर्क करें।",
+  "Couldn’t load sign-in options.": "साइन-इन के विकल्प लोड नहीं हो सके।",
+  "No roles have been assigned here yet.": "यहाँ अभी तक कोई भूमिका नहीं सौंपी गई है।",
+  "Or use your password": "या अपना पासवर्ड इस्तेमाल करें",
+  "Restore SSO default": "एसएसओ की डिफ़ॉल्ट भूमिका बहाल करें",
+  "Role source": "भूमिका का स्रोत",
+  "SSO": "एसएसओ",
+  "Set role manually": "भूमिका मैन्युअल रूप से तय करें",
+  "Sign in with {{provider}}": "{{provider}} से साइन इन करें",
+  "Sign-in didn’t complete. Try again or contact your administrator.": "साइन-इन पूरा नहीं हुआ। फिर से कोशिश करें या अपने व्यवस्थापक से संपर्क करें।",
+  "Sign-in provider": "साइन-इन प्रदाता",
+  "This Service uses an identity provider. Go to sign in to continue.": "यह Service एक पहचान प्रदाता इस्तेमाल करती है। जारी रखने के लिए साइन-इन पेज पर जाएँ।",
+  "Use SSO default": "एसएसओ की डिफ़ॉल्ट भूमिका इस्तेमाल करें",
+  "Your identity provider manages your sign-in details.": "आपकी साइन-इन जानकारी आपका पहचान प्रदाता प्रबंधित करता है।"
 }

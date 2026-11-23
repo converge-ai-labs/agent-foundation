@@ -518,7 +518,12 @@ async def test_only_a_login_session_sends_invitations(service) -> None:  # type:
 
 async def test_identity_mail_is_queued_encrypted(mailing) -> None:  # type: ignore[no-untyped-def]
     client = mailing.client
-    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": True, "initialized": True}
+    assert (await client.get("/api/v1/auth/configuration")).json() == {
+        "password_enabled": True,
+        "oidc_providers": [],
+        "email_delivery": True,
+        "initialized": True,
+    }
     receipt = await client.post(
         f"{mailing.workspace}/invitations", json={"email": "mail@example.com", "role": "runner"}
     )
@@ -756,7 +761,12 @@ async def test_profile_password_and_login_sessions(service) -> None:  # type: ig
         json={"email": "x@example.com", "current_password": PASSWORD},
     )
     assert unavailable.status_code == 503
-    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": False, "initialized": True}
+    assert (await client.get("/api/v1/auth/configuration")).json() == {
+        "password_enabled": True,
+        "oidc_providers": [],
+        "email_delivery": False,
+        "initialized": True,
+    }
     async with new_client(service) as anonymous:
         assert (await anonymous.post("/api/v1/auth/password-reset", json={"email": ADMIN})).status_code == 204
     async with new_client(service) as other:
@@ -1173,3 +1183,45 @@ async def test_smtp_sends_are_bounded_as_a_whole() -> None:
         # The exchange ended too, rather than finishing the mail after the outbox gave up on this attempt.
         async with asyncio.timeout(2):
             await closed.wait()
+
+
+async def test_organization_grants_preserve_membership_and_scope_boundaries(service) -> None:
+    admin = service.client
+    org_grants = f"{service.organization}/grants"
+    async with AsyncExitStack() as stack:
+        runner = await join(service, stack, "oidc-runner@example.com", "runner")
+        runner_id = (await runner.get("/api/v1/users/me")).json()["id"]
+        body = {"principal_id": runner_id, "role": "admin"}
+        assert (await runner.post(org_grants, json=body)).status_code == 403
+        assert (await runner.post(f"{service.workspace}/grants", json=body)).status_code == 403
+        directory = await admin.get(f"{service.organization}/members", params={"kind": "user"})
+        assert any(member["id"] == runner_id for member in directory.json()["items"])
+
+        async with transaction(service.runtime.storage) as session:
+            other = OrganizationRow(id=new_object_id("org"), name="Another organization")
+            outsider = PrincipalRow(id=new_object_id("usr"), kind="user", name="Outside", email="outside@example.test")
+            session.add_all([other, outsider])
+            await session.flush()
+            session.add(
+                GrantRow(
+                    id=new_object_id("rb"),
+                    organization_id=other.id,
+                    principal_id=outsider.id,
+                    role="admin",
+                    created_by_id=outsider.id,
+                )
+            )
+            outsider_id = outsider.id
+        assert (await admin.post(org_grants, json={**body, "principal_id": outsider_id})).status_code == 404
+        assert (await admin.post(org_grants, json={**body, "role": "workspace_admin"})).status_code == 400
+        account = (
+            await admin.post(f"{service.workspace}/service-accounts", json={"name": "Scoped", "role": "admin"})
+        ).json()
+        assert account["role"] == "admin"
+        assert (await admin.post(org_grants, json={**body, "principal_id": account["id"]})).status_code == 400
+
+        promoted = await admin.post(org_grants, json=body)
+        assert promoted.status_code == 201 and promoted.json()["workspace_id"] is None
+        duplicate = await admin.post(org_grants, json=body)
+        assert duplicate.status_code == 409 and duplicate.json()["error"]["code"] == "already_exists"
+        assert (await runner.get(org_grants)).status_code == 200

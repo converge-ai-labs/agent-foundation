@@ -21,7 +21,7 @@ from a13n_service.infra.audit import record
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import Storage, lock, now, short_session, transaction
 from a13n_service.infra.errors import ServiceError
-from a13n_service.settings import Settings
+from a13n_service.settings import Authentication, OIDCProvider, Settings
 from a13n_service.tenancy.access import Access, Authenticated, login_session_required, principal_for, unauthenticated
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
 from a13n_service.tenancy.credentials import issue_token, verify_password
@@ -58,11 +58,11 @@ def session_cookie(settings: Settings) -> str:
     return COOKIE_NAME if settings.server.https else HTTP_COOKIE_NAME
 
 
-def set_session_cookie(response: Response, secret: str, settings: Settings) -> None:
+def set_session_cookie(response: Response, secret: str, settings: Settings, *, seconds: int | None = None) -> None:
     response.set_cookie(
         session_cookie(settings),
         secret,
-        max_age=settings.auth.session_seconds,
+        max_age=settings.auth.session_seconds if seconds is None else seconds,
         secure=settings.server.https,
         httponly=True,
         samesite="strict",
@@ -161,7 +161,13 @@ async def _touch_credential(session: AsyncSession, credential: TokenRow | ApiKey
 
 
 async def authenticate_secret(
-    storage: Storage, access: Access, secret: str, kind: LocalKind, *, session_seconds: int
+    storage: Storage,
+    access: Access,
+    secret: str,
+    kind: LocalKind,
+    *,
+    session_seconds: int,
+    auth: Authentication | None = None,
 ) -> Authenticated:
     if not secret or len(secret) > 512:
         raise unauthenticated()
@@ -174,12 +180,21 @@ async def authenticate_secret(
         )
         principal = await principal_for(session, access, credential.principal_id, confinement=confinement)
         current = await now(session)
+        rolling = False
         if isinstance(credential, TokenRow):
-            if credential.expires_at < current + timedelta(seconds=session_seconds) - _TOUCH_INTERVAL:
+            rolling = credential.data is None
+            if auth is not None:
+                if rolling and not auth.password_enabled:
+                    raise unauthenticated()
+                if credential.data is not None:
+                    provider = auth.oidc.providers.get(credential.data.get("provider", ""))
+                    if provider is None or oidc_session_data(credential.data["provider"], provider) != credential.data:
+                        raise unauthenticated()
+            if rolling and credential.expires_at < current + timedelta(seconds=session_seconds) - _TOUCH_INTERVAL:
                 await _touch_credential(session, credential, session_seconds=session_seconds)
         elif credential.last_used_at is None or credential.last_used_at <= current - _TOUCH_INTERVAL:
             await _touch_credential(session, credential, session_seconds=session_seconds)
-        return Authenticated(principal, credential.id, kind)
+        return Authenticated(principal, credential.id, kind, rolling_session=rolling)
 
 
 class LocalAuthenticator:
@@ -205,10 +220,11 @@ class LocalAuthenticator:
             if not hmac.compare_digest(session_csrf(secret).encode(), presented.encode()):
                 raise ServiceError("forbidden", "CSRF validation failed")
         credential = await authenticate_secret(
-            runtime.storage, runtime.access, secret, "session", session_seconds=seconds
+            runtime.storage, runtime.access, secret, "session", session_seconds=seconds, auth=runtime.settings.auth
         )
         # Rolling expiry: the server extends the session, the browser keeps the cookie as long.
-        set_session_cookie(response, secret, runtime.settings)
+        if credential.rolling_session:
+            set_session_cookie(response, secret, runtime.settings)
         return credential
 
     async def recheck(self, session: AsyncSession, credential: Authenticated) -> None:
@@ -235,9 +251,15 @@ class Login:
     csrf_token: str
 
 
-async def open_session(session: AsyncSession, principal_id: str, *, seconds: int) -> str:
+def oidc_session_data(name: str, provider: OIDCProvider) -> dict[str, str]:
+    return {"provider": name, "issuer": provider.issuer, "client_id": provider.client_id}
+
+
+async def open_session(
+    session: AsyncSession, principal_id: str, *, seconds: int, oidc: dict[str, str] | None = None
+) -> str:
     """Issue a login-session token in the caller's transaction and return its cookie secret."""
-    token, secret = await issue_token(session, principal_id, "session", seconds=seconds)
+    token, secret = await issue_token(session, principal_id, "session", seconds=seconds, data=oidc)
     record(
         session,
         None,

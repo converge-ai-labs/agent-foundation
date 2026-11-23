@@ -5,6 +5,7 @@ Every limit is finite and visible here. `A13N_<SECTION>__<FIELD>` overrides a fi
 
 import json
 import os
+import re
 import tomllib
 from collections.abc import Mapping
 from functools import cached_property
@@ -201,7 +202,112 @@ class Mail(Section):
         return self
 
 
+type OIDCBrand = Literal["generic", "google", "microsoft"]
+
+_ENTRA_V2_ISSUER = re.compile(
+    r"https://login\.microsoftonline\.com/[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/v2\.0"
+)
+
+
+def oidc_endpoint_policy(issuer: str) -> EndpointPolicy:
+    parts = urlsplit(issuer)
+    hostname = parts.hostname or ""
+    local = parts.scheme == "http" and (hostname in (*LOOPBACK_NAMES, "::1") or hostname.endswith(".localhost"))
+    return EndpointPolicy.from_http_origins(
+        require_https=True, http_origins=(f"http://{parts.netloc}",) if local else ()
+    )
+
+
+# OAuth 2.0 scope-token excludes spaces, quotes and backslashes.
+_OIDC_SCOPE = r"^[\x21\x23-\x5B\x5D-\x7E]+$"
+
+
+class OIDCGrantSpec(Section):
+    organization_id: str | None = Field(default=None, min_length=1, max_length=72)
+    workspace_id: str | None = Field(default=None, min_length=1, max_length=72)
+    role: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
+
+    @model_validator(mode="after")
+    def one_scope(self) -> "OIDCGrantSpec":
+        if (self.organization_id is None) == (self.workspace_id is None):
+            raise ValueError("each OIDC grant requires exactly one of organization_id and workspace_id")
+        return self
+
+
+_OIDCClaim = Annotated[str, Field(min_length=1, max_length=512)]
+
+
+class OIDCRoleRule(OIDCGrantSpec):
+    match: dict[_OIDCClaim, _OIDCClaim | Annotated[list[_OIDCClaim], Field(min_length=1)]] = Field(min_length=1)
+
+    @field_validator("match")
+    @classmethod
+    def printable_claims(cls, match: dict[str, str | list[str]]) -> dict[str, str | list[str]]:
+        if any(not claim.isprintable() or claim.isspace() for claim in match):
+            raise ValueError("claim must be a printable name")
+        return match
+
+
+class OIDCProvider(Section):
+    label: str = Field(min_length=1, max_length=64)
+    brand: OIDCBrand | None = None
+    issuer: str = Field(min_length=1, max_length=1024)
+    client_id: str = Field(min_length=1, max_length=512)
+    client_secret: SecretStr = Field(min_length=1, max_length=4096)
+    token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] = "client_secret_basic"
+    extra_scopes: list[Annotated[str, Field(min_length=1, max_length=256, pattern=_OIDC_SCOPE)]] = Field(
+        default_factory=list, max_length=20
+    )
+    defaults: list[OIDCGrantSpec] | None = None
+    role_rules: list[OIDCRoleRule] = Field(default_factory=list)
+
+    @property
+    def scopes(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys(("openid", "profile", "email", *self.extra_scopes)))
+
+    @property
+    def sign_in_brand(self) -> OIDCBrand:
+        """A display hint only; never used to choose an endpoint or validate identity."""
+        if self.brand is not None:
+            return self.brand
+        if self.issuer == "https://accounts.google.com":
+            return "google"
+        if _ENTRA_V2_ISSUER.fullmatch(self.issuer):
+            return "microsoft"
+        return "generic"
+
+    @field_validator("issuer")
+    @classmethod
+    def valid_issuer(cls, value: str) -> str:
+        if "?" in value or "#" in value or any(c.isspace() or c == "\\" for c in value):
+            raise ValueError("issuer must be an absolute URL without a query or fragment")
+        oidc_endpoint_policy(value).validate_syntax(value)
+        return value
+
+
+class OIDC(Section):
+    providers: dict[Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,31}$")], OIDCProvider] = Field(
+        default_factory=dict
+    )
+    defaults: list[OIDCGrantSpec] = Field(default_factory=list)
+    session_seconds: int = Field(default=43200, ge=60, le=604800)
+    start_limit: int = Field(default=30, ge=1, le=1000)
+    start_window_seconds: int = Field(default=60, ge=1, le=3600)
+
+    def defaults_for(self, provider: OIDCProvider) -> list[OIDCGrantSpec]:
+        return self.defaults if provider.defaults is None else provider.defaults
+
+    @model_validator(mode="after")
+    def require_grants(self) -> "OIDC":
+        for name, provider in self.providers.items():
+            if not self.defaults_for(provider) and not provider.role_rules:
+                raise ValueError(f"OIDC provider {name!r} requires effective defaults or role_rules")
+        return self
+
+
 class Authentication(Section):
+    password_enabled: bool = True
+    oidc: OIDC = Field(default_factory=OIDC)
     session_seconds: int = Field(default=43200, ge=60, le=604800)
     login_limit: int = Field(default=10, ge=1, le=1000)
     login_window_seconds: int = Field(default=60, ge=1, le=3600)
@@ -210,6 +316,12 @@ class Authentication(Section):
     link_seconds: int = Field(default=3600, ge=300, le=86400)
     expiry_scan_seconds: float = Field(default=60, gt=0, le=3600)
     mail: Mail = Field(default_factory=Mail)
+
+    @model_validator(mode="after")
+    def require_sign_in(self) -> "Authentication":
+        if not self.password_enabled and not self.oidc.providers:
+            raise ValueError("disabling passwords requires at least one OIDC provider")
+        return self
 
 
 class Encryption(Section):
@@ -748,6 +860,15 @@ class Settings(Section):
     monitoring: Monitoring = Field(default_factory=Monitoring)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def oidc_requires_secure_origin(self) -> "Settings":
+        if self.auth.oidc.providers:
+            url = urlsplit(self.server.public_url)
+            if url.path not in ("", "/") or url.query or url.fragment:
+                raise ValueError("OIDC requires server.public_url to be an origin")
+            oidc_endpoint_policy(self.server.public_url).validate_syntax(self.server.public_url)
+        return self
 
     @model_validator(mode="after")
     def metrics_port_is_free(self) -> "Settings":

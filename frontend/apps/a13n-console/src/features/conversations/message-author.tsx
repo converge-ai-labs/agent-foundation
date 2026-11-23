@@ -1,3 +1,4 @@
+import { displayEmail } from "../../shared/identity/display-email";
 import { Button, Popover, PopoverPopup, PopoverTrigger } from "a13n-ui";
 import { RobotIcon, UserIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
@@ -22,6 +23,7 @@ export function MessageAuthor({
   const { t, i18n } = useTranslation();
   const { author, me, sameName, failed, retry } = useMessageAuthor(entryId);
   const principal = author?.principal;
+  const email = displayEmail(principal);
   const id = author?.principal_id ?? principalId;
   const name = principal?.name ?? t("User");
   const service = principal?.kind === "service_account";
@@ -56,9 +58,7 @@ export function MessageAuthor({
             <span className={styles.detail}>· {t("Service account")}</span>
           )}
           {sameName && (
-            <span className={styles.email}>
-              ({principal?.email ?? shortId})
-            </span>
+            <span className={styles.email}>({email ?? shortId})</span>
           )}
         </PopoverTrigger>
         <PopoverPopup className={styles.card} align="start" sideOffset={6}>
@@ -72,11 +72,11 @@ export function MessageAuthor({
             {principal?.status === "disabled" && (
               <span className={styles.detail}>{t("Disabled")}</span>
             )}
-            {principal?.email && (
+            {email && (
               <div className={styles.field}>
-                <span>{principal.email}</span>
+                <span>{email}</span>
                 <CopyButton
-                  value={principal.email}
+                  value={email}
                   iconOnly
                   copyLabel={t("Copy email")}
                 />

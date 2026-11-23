@@ -178,4 +178,70 @@
   .column {
     padding: 28px 22px 24px;
   }
+  .brand {
+    margin-bottom: 24px;
+  }
+}
+
+.providers {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+}
+.provider {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  height: auto;
+  padding-block: 10px;
+  white-space: normal;
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+/* The sole generic entry is still primary, without a bright slab in dark mode. */
+:global(.dark) .provider[data-variant="default"] {
+  background: color-mix(in srgb, var(--a13n-elevated), var(--a13n-text) 9%);
+  border-color: var(--a13n-input-border);
+  color: var(--a13n-text);
+  box-shadow: none;
+}
+:global(.dark) .provider[data-variant="default"]:hover {
+  background: color-mix(in srgb, var(--a13n-elevated), var(--a13n-text) 14%);
+}
+:global(.dark) .provider[data-variant="default"]:active {
+  background: color-mix(in srgb, var(--a13n-elevated), var(--a13n-text) 18%);
+}
+:global(.dark) .provider[data-variant="default"]:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+}
+.providerMark,
+.providerEnd {
+  display: grid;
+  place-items: center;
+}
+.providerEnd {
+  opacity: 0.75;
+}
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  text-align: center;
+}
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.providers + .form {
+  margin-top: 16px;
 }

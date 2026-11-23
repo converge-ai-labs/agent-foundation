@@ -8,3 +8,10 @@ export type MembershipScope = {
 export const roles = ["viewer", "runner", "builder", "admin"] as const;
 
 export type Role = (typeof roles)[number];
+
+/** Keep the held role selectable when a distribution defines additional roles. */
+export function rolesIncluding(current?: string | null): readonly string[] {
+  return current && !roles.some((role) => role === current)
+    ? [...roles, current]
+    : roles;
+}

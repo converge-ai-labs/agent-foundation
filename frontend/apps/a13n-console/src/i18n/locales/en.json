@@ -4546,5 +4546,19 @@
   "Resource ID": "Resource ID",
   "Rotate secret": "Rotate secret",
   "Create": "Create",
-  "Active Sessions update asynchronously; idle Sessions update on next use.": "Active Sessions update asynchronously; idle Sessions update on next use."
+  "Active Sessions update asynchronously; idle Sessions update on next use.": "Active Sessions update asynchronously; idle Sessions update on next use.",
+  "Ask your Service operator to finish setup.": "Ask your Service operator to finish setup.",
+  "Couldn’t load sign-in options.": "Couldn’t load sign-in options.",
+  "No roles have been assigned here yet.": "No roles have been assigned here yet.",
+  "Or use your password": "Or use your password",
+  "Restore SSO default": "Restore SSO default",
+  "Role source": "Role source",
+  "SSO": "SSO",
+  "Set role manually": "Set role manually",
+  "Sign in with {{provider}}": "Sign in with {{provider}}",
+  "Sign-in didn’t complete. Try again or contact your administrator.": "Sign-in didn’t complete. Try again or contact your administrator.",
+  "Sign-in provider": "Sign-in provider",
+  "This Service uses an identity provider. Go to sign in to continue.": "This Service uses an identity provider. Go to sign in to continue.",
+  "Use SSO default": "Use SSO default",
+  "Your identity provider manages your sign-in details.": "Your identity provider manages your sign-in details."
 }

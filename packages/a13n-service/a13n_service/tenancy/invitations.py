@@ -83,6 +83,8 @@ async def create_invitation(
     body: InvitationCreate,
 ) -> InvitationReceipt:
     require_login_session(actor)
+    if not settings.auth.password_enabled:
+        raise ServiceError("forbidden", "Password invitations are disabled")
     token = new_secret()
     async with administering(storage, access, actor, path, action="invitation.create") as (session, scope):
         access.check_role(body.role)
@@ -139,6 +141,8 @@ async def resend_invitation(
 ) -> InvitationReceipt:
     """Replace the link and renew the expiry; the previous link stops working."""
     require_login_session(actor)
+    if not settings.auth.password_enabled:
+        raise ServiceError("forbidden", "Password invitations are disabled")
     token = new_secret()
     async with administering(storage, access, actor, path, action="invitation.resend") as (session, scope):
         row = await _lock_pending(session, scope, invitation_id, if_match)

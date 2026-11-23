@@ -3,6 +3,14 @@
     "Authentication": {
       "additionalProperties": false,
       "properties": {
+        "password_enabled": {
+          "default": true,
+          "title": "Password Enabled",
+          "type": "boolean"
+        },
+        "oidc": {
+          "$ref": "#/$defs/OIDC"
+        },
         "session_seconds": {
           "default": 43200,
           "maximum": 604800,
@@ -1403,6 +1411,264 @@
         "query_endpoint"
       ],
       "title": "MonitoringPreset",
+      "type": "object"
+    },
+    "OIDC": {
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "patternProperties": {
+            "^[a-z][a-z0-9-]{0,31}$": {
+              "$ref": "#/$defs/OIDCProvider"
+            }
+          },
+          "title": "Providers",
+          "type": "object"
+        },
+        "defaults": {
+          "items": {
+            "$ref": "#/$defs/OIDCGrantSpec"
+          },
+          "title": "Defaults",
+          "type": "array"
+        },
+        "session_seconds": {
+          "default": 43200,
+          "maximum": 604800,
+          "minimum": 60,
+          "title": "Session Seconds",
+          "type": "integer"
+        },
+        "start_limit": {
+          "default": 30,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Start Limit",
+          "type": "integer"
+        },
+        "start_window_seconds": {
+          "default": 60,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Start Window Seconds",
+          "type": "integer"
+        }
+      },
+      "title": "OIDC",
+      "type": "object"
+    },
+    "OIDCBrand": {
+      "enum": [
+        "generic",
+        "google",
+        "microsoft"
+      ],
+      "type": "string"
+    },
+    "OIDCGrantSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "organization_id": {
+          "anyOf": [
+            {
+              "maxLength": 72,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Organization Id"
+        },
+        "workspace_id": {
+          "anyOf": [
+            {
+              "maxLength": 72,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workspace Id"
+        },
+        "role": {
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role"
+      ],
+      "title": "OIDCGrantSpec",
+      "type": "object"
+    },
+    "OIDCProvider": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "brand": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OIDCBrand"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "issuer": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Issuer",
+          "type": "string"
+        },
+        "client_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Client Id",
+          "type": "string"
+        },
+        "client_secret": {
+          "format": "password",
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Client Secret",
+          "type": "string",
+          "writeOnly": true
+        },
+        "token_endpoint_auth_method": {
+          "default": "client_secret_basic",
+          "enum": [
+            "client_secret_basic",
+            "client_secret_post"
+          ],
+          "title": "Token Endpoint Auth Method",
+          "type": "string"
+        },
+        "extra_scopes": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$",
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Extra Scopes",
+          "type": "array"
+        },
+        "defaults": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/OIDCGrantSpec"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Defaults"
+        },
+        "role_rules": {
+          "items": {
+            "$ref": "#/$defs/OIDCRoleRule"
+          },
+          "title": "Role Rules",
+          "type": "array"
+        }
+      },
+      "required": [
+        "label",
+        "issuer",
+        "client_id",
+        "client_secret"
+      ],
+      "title": "OIDCProvider",
+      "type": "object"
+    },
+    "OIDCRoleRule": {
+      "additionalProperties": false,
+      "properties": {
+        "organization_id": {
+          "anyOf": [
+            {
+              "maxLength": 72,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Organization Id"
+        },
+        "workspace_id": {
+          "anyOf": [
+            {
+              "maxLength": 72,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workspace Id"
+        },
+        "role": {
+          "pattern": "^[a-z][a-z0-9_]{0,31}$",
+          "title": "Role",
+          "type": "string"
+        },
+        "match": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "items": {
+                  "maxLength": 512,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              }
+            ]
+          },
+          "minProperties": 1,
+          "propertyNames": {
+            "maxLength": 512,
+            "minLength": 1
+          },
+          "title": "Match",
+          "type": "object"
+        }
+      },
+      "required": [
+        "role",
+        "match"
+      ],
+      "title": "OIDCRoleRule",
       "type": "object"
     },
     "ObjectStoreSettings": {

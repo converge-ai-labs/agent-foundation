@@ -2716,9 +2716,22 @@
           "initialized": {
             "title": "Initialized",
             "type": "boolean"
+          },
+          "oidc_providers": {
+            "items": {
+              "$ref": "#/components/schemas/OIDCSignIn"
+            },
+            "title": "Oidc Providers",
+            "type": "array"
+          },
+          "password_enabled": {
+            "title": "Password Enabled",
+            "type": "boolean"
           }
         },
         "required": [
+          "password_enabled",
+          "oidc_providers",
           "email_delivery",
           "initialized"
         ],
@@ -11081,11 +11094,26 @@
             "title": "Organization Id",
             "type": "string"
           },
+          "overrides_sso": {
+            "default": false,
+            "description": "The manual grant overrides an SSO default at this scope.",
+            "title": "Overrides Sso",
+            "type": "boolean"
+          },
           "principal": {
             "$ref": "#/components/schemas/PrincipalSummary"
           },
           "role": {
             "title": "Role",
+            "type": "string"
+          },
+          "source": {
+            "default": "manual",
+            "enum": [
+              "manual",
+              "oidc"
+            ],
+            "title": "Source",
             "type": "string"
           },
           "workspace_id": {
@@ -16667,6 +16695,36 @@
         "title": "OAuthSettings",
         "type": "object"
       },
+      "OIDCBrand": {
+        "enum": [
+          "generic",
+          "google",
+          "microsoft"
+        ],
+        "type": "string"
+      },
+      "OIDCSignIn": {
+        "properties": {
+          "brand": {
+            "$ref": "#/components/schemas/OIDCBrand"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "brand"
+        ],
+        "title": "OIDCSignIn",
+        "type": "object"
+      },
       "Observation": {
         "properties": {
           "age_ms": {
@@ -19056,6 +19114,17 @@
             "title": "Name",
             "type": "string"
           },
+          "oidc_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oidc Email"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -19173,6 +19242,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "oidc_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oidc Email"
           },
           "status": {
             "title": "Status",
@@ -31777,6 +31857,70 @@
           }
         ],
         "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/oidc/{provider_id}/callback": {
+      "get": {
+        "description": "Consume a browser-bound OIDC callback and establish an ordinary Service browser session.",
+        "operationId": "finish_oidc_sign_in",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Finish Oidc Sign In",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/oidc/{provider_id}/start": {
+      "get": {
+        "description": "Start sign-in at the configured identity provider in the top-level browser window.",
+        "operationId": "start_oidc_sign_in",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Start Oidc Sign In",
         "tags": [
           "auth"
         ]
