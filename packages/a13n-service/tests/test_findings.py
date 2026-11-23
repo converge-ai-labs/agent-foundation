@@ -303,6 +303,15 @@ async def test_native_analysis_validates_evidence_and_derives_counts(service, sc
     tools = {tool["function"]["name"]: tool["function"] for tool in last_request["tools"]}
     operations = {tool.key for tool in PLATFORM_TOOLS}
     assert set(tools) & operations == preset.TOOLS
+    # Check the guidance as delivered to the model, after MCP expands and serializes each input schema.
+    for name, field, term in (
+        (submit, "evidence", "get_trace"),
+        ("list_tool_executions", "run_id", "Run"),
+        ("search_traces", "session_id", "Session"),
+        ("search_traces", "min_duration_seconds", "seconds"),
+        ("read_content", "reference", "continuation"),
+    ):
+        assert term in tools[name]["parameters"]["properties"][field]["description"]
     assert all(f'"{category}"' in json.dumps(tools[submit]["parameters"]) for category in get_args(Category.__value__))
     results = {
         message["tool_call_id"]: message["content"] for message in last_request["messages"] if message["role"] == "tool"
@@ -704,7 +713,7 @@ async def test_feedback_input_is_frozen_on_retry_and_scripted_diagnosis_uses_cor
     while not scripted_model.requests.empty():
         model_request = scripted_model.requests.get_nowait()
     assert row["assessment_note"] in str(model_request["messages"])
-    assert "permanent category suppression" in str(model_request["messages"])
+    assert "what new evidence supports a different conclusion" in str(model_request["messages"])
     assert (await service.client.get("/api/v1/findings", params={"closed": "false"})).json()["items"] == []
     newer = await service.client.post(
         "/api/v1/finding-analyses", json=request, headers={"Idempotency-Key": "feedback-2"}
@@ -870,7 +879,8 @@ async def test_unreviewed_diagnosis_is_context_not_confirmation_and_retry_keeps_
         request = scripted_model.requests.get_nowait()
     messages = str(request["messages"])
     assert row["id"] in messages
-    assert "not human confirmation" in messages and "instead of submitting it again" in messages
+    assert "earlier diagnosis" in messages
+    assert "Cite an existing Finding for equivalent evidence" in messages
     stored = (await service.client.get("/api/v1/findings")).json()["items"]
     assert [entry["id"] for entry in stored] == [row["id"]]
     assert stored[0]["assessment"] == "unreviewed" and stored[0]["closed"]

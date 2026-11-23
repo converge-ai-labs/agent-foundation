@@ -435,7 +435,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_run",
-    "summary": "Read Run status and previews with version-bound references for its complete sections."
+    "summary": "Read Run status and previews. Pass content.input or content.output to read_content for the full request or answer."
   },
   {
     "effect": "read",
@@ -447,7 +447,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_run_configuration",
-    "summary": "Read the frozen original/effective configuration and override references. These are immutable execution facts, not editable Agent configuration."
+    "summary": "Inspect the executed configuration. Read the selected part using the original, effective or overrides reference in content."
   },
   {
     "effect": "read",
@@ -483,7 +483,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_trace",
-    "summary": "Read a redacted observation summary and version-bound content references."
+    "summary": "Read the trace root summary. Use read_content or search_content on a returned content field for its detail."
   },
   {
     "effect": "read",
@@ -495,7 +495,7 @@
     "effect": "read",
     "group": "execution",
     "key": "get_trace_span",
-    "summary": "Read a redacted observation summary and version-bound content references."
+    "summary": "Read one span summary. Its content fields are references for read_content or search_content."
   },
   {
     "effect": "read",
@@ -603,7 +603,7 @@
     "effect": "read",
     "group": "execution",
     "key": "search_traces",
-    "summary": "Rank and filter the entire root-start window before paging. Costs sum reported span costs, not billing.\n\nProviders execute each query without a result cache; pages may reflect updates between requests.\nKeyset cursors bind the ordering, filters and last sort value with trace/span IDs.\nIncomplete queries fail without a partial rank."
+    "summary": "Rank traces in a time window. Scope filters intersect: use session_id across Threads, thread_id across Runs,\nor run_id across attempts. Apply the requested metric bounds and order_by (duration or cost) before paging.\nKeep filters fixed with the cursor. Costs sum reported span costs."
   },
   {
     "effect": "write",

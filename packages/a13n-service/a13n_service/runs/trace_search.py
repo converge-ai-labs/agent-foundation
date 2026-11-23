@@ -24,7 +24,7 @@ Nonnegative = Annotated[Decimal, Field(ge=0, allow_inf_nan=False, max_digits=30,
 class TraceSearch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    session_id: ObjectId | None = None
+    session_id: ObjectId | None = Field(default=None, description="Scope a comparison across Threads to this Session.")
     thread_id: ObjectId | None = None
     run_id: ObjectId | None = None
     attribute: list[str] = Field(default_factory=list, max_length=8)
@@ -32,7 +32,9 @@ class TraceSearch(BaseModel):
     started_before: datetime
     order_by: Literal["started", "duration", "cost"] = "started"
     direction: Literal["asc", "desc"] = "desc"
-    min_duration_seconds: Nonnegative | None = None
+    min_duration_seconds: Nonnegative | None = Field(
+        default=None, description="Inclusive lower bound on trace duration in seconds, applied before ranking."
+    )
     max_duration_seconds: Nonnegative | None = None
     min_cost_usd: Nonnegative | None = None
     max_cost_usd: Nonnegative | None = None

@@ -9175,7 +9175,10 @@ export interface components {
       created_at: string;
       /** Created By Id */
       created_by_id: string;
-      /** Evidence */
+      /**
+       * Evidence
+       * @description Pair each trace with its owning Run. In an analysis, first read every cited trace with get_trace, get_trace_span or a list_trace_spans call that returns spans.
+       */
       evidence: components["schemas"]["Evidence"][];
       /** Explanation */
       explanation: string;
@@ -9214,7 +9217,10 @@ export interface components {
       agent_revision_id: string | null;
       /** @description One primary issue type for the central evidenced claim, separate from analysis presets, impact and review. Put uncertainty in explanation/limitations; do not invent categories. */
       category: components["schemas"]["Category"];
-      /** Evidence */
+      /**
+       * Evidence
+       * @description Pair each trace with its owning Run. In an analysis, first read every cited trace with get_trace, get_trace_span or a list_trace_spans call that returns spans.
+       */
       evidence: components["schemas"]["Evidence"][];
       /** Explanation */
       explanation: string;
@@ -25958,6 +25964,7 @@ export interface operations {
   search_traces: {
     parameters: {
       query: {
+        /** @description Scope a comparison across Threads to this Session. */
         session_id?: string | null;
         thread_id?: string | null;
         run_id?: string | null;
@@ -25966,6 +25973,7 @@ export interface operations {
         started_before: string;
         order_by?: "started" | "duration" | "cost";
         direction?: "asc" | "desc";
+        /** @description Inclusive lower bound on trace duration in seconds, applied before ranking. */
         min_duration_seconds?: number | string | null;
         max_duration_seconds?: number | string | null;
         min_cost_usd?: number | string | null;

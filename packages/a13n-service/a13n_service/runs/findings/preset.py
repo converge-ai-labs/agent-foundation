@@ -14,12 +14,20 @@ RULES = {
 # Workspace diagnostic reads and Finding submission.
 TOOLS = frozenset(
     {
+        "list_traces",
+        "search_traces",
         "get_trace",
         "list_trace_spans",
         "get_trace_span",
         "read_content",
         "search_content",
+        "get_run",
+        "list_run_items",
+        "list_run_attempts",
+        "list_tool_executions",
+        "get_tool_execution_result",
         "get_run_configuration",
+        "list_findings",
         "get_finding",
         "create_finding",
     }
@@ -38,7 +46,7 @@ def configuration(model: str) -> AgentConfig:
             "files": ToolsetSelection(enabled=False),
             "shell": ToolsetSelection(enabled=False),
             "memory": ToolsetSelection(enabled=False),
-            # Unattended, so its few tools, including the submission, need no approval.
+            # Unattended analysis can read evidence and submit a Finding without approval.
             "execution": ToolsetSelection(
                 tools={
                     tool.key: ToolSelection(enabled=True, permission="allow")

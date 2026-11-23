@@ -45,7 +45,12 @@ class FindingCreate(_Input):
     severity: Severity = "warning"
     explanation: str = Field(min_length=1, max_length=8192)
     suggestion: str = Field(min_length=1, max_length=8192)
-    evidence: list[Evidence] = Field(min_length=1, max_length=20)
+    evidence: list[Evidence] = Field(
+        min_length=1,
+        max_length=20,
+        description="Pair each trace with its owning Run. In an analysis, first read every cited trace with "
+        "get_trace, get_trace_span or a list_trace_spans call that returns spans.",
+    )
     limitations: str = Field(default="", max_length=4096)
     # Stable caller-supplied identity for retry-safe submission; it never changes a reviewed finding.
     source_key: str = Field(min_length=1, max_length=128)
