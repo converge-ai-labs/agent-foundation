@@ -32,6 +32,20 @@ Call `POST /api/v1/threads` with a unique `Idempotency-Key` header to create a t
 
 Search past conversations across `/sessions`, `/threads`, and `/runs` with `?text_query=...`.
 
+## Start a realtime conversation from an app
+
+Enable `server.realtime_preview` on a single Service process in the `all` role and select a realtime model as the Agent's primary model.
+
+1. From your app's backend, call `POST /api/v1/realtime/sessions` using a workspace API key with `run` permission. Send `{"agent_id":"…"}` to start a new conversation or include `thread_id` to continue an existing Thread. Set `audio: false` for text-only input with spoken output.
+2. Give the response to the client. Use `new WebSocket(url, [subprotocol, ticket])` in a browser, where `url` is the returned `websocket_path` resolved against the Service origin with the `wss:` scheme. Loopback development can use `ws:`. The ticket is single-use and expires after 30 seconds. Keep the long-lived API key on your backend.
+3. Read the `accepted` frame for the `session_id`, `thread_id`, and `run_id`. Start sending input after `ready`. No separate start frame is needed for a ticket connection.
+
+With the default `"transport":"websocket"`, the socket carries raw mono 24 kHz signed 16-bit little-endian PCM in both directions.
+
+For OpenAI Realtime and GPT-Live you can request `"transport":"webrtc"` with audio enabled. Add a muted microphone track to an `RTCPeerConnection` and send its complete audio-only SDP as `{"type":"offer","sdp":"…"}` over the socket. Apply the SDP from the `answer` frame. Enable the microphone after the peer connects and Service reports `ready`. Audio then goes directly between the client and OpenAI. `GET /api/v1/realtime` reports the available transports. Grok Voice uses `"transport":"websocket"`.
+
+On either transport, send `{"type":"text","text":"Hello"}` for a text turn and read `transcript` frames for subtitles. When you receive `approval_required`, show the pending call to the user and return their decision as `{"type":"approval","call_id":"…","approve":true}` or with `approve: false`. Send `{"type":"stop"}` to end the call and let Service save the Run before it closes the socket.
+
 ## Submit a message
 
 Send follow-ups to `POST /api/v1/threads/{thread_id}/inbox` with `agent_id`, `payload`, optional `delivery`, and a fresh `Idempotency-Key`:

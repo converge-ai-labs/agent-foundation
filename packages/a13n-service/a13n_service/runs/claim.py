@@ -20,6 +20,7 @@ from a13n_service.resources.subscriptions.delivery import Transition, prepare_we
 from a13n_service.runs import checkpoints
 from a13n_service.runs.attempts import Lease, lock_lease
 from a13n_service.runs.environments import contexts
+from a13n_service.runs.realtime import LABEL as REALTIME_LABEL
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.tables import OccurrenceRow
 from a13n_service.runs.schemas import ScheduleOrigin
@@ -158,6 +159,7 @@ async def claim(runtime: Runtime, *, worker_id: str, worker_build: str, limit: i
                     number=attempt.number,
                     worker_id=worker_id,
                     token=token,
+                    realtime_id=run.options.get("labels", {}).get(REALTIME_LABEL),
                 )
             )
         await session.execute(insert(AttemptRow).values(attempts))

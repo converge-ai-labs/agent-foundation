@@ -46,6 +46,7 @@ export function EntryPane({
     return <ModelPane entry={entry} runId={scope.run.id} />;
   if (
     entry.kind === "reasoning" ||
+    entry.kind === "user_input" ||
     entry.kind === "guidance" ||
     entry.kind === "hidden" ||
     entry.kind === "reply"

@@ -26,7 +26,7 @@ vi.mock("react-i18next", () => ({
 }));
 afterEach(cleanup);
 
-function mount(submit: (input: unknown, key: string) => Promise<unknown>) {
+function mount(submit: (input: unknown, key: string) => Promise<void | false>) {
   render(
     <QueryClientProvider
       client={
@@ -101,7 +101,7 @@ it("retains message and attachment drafts when closing the attachment dialog", a
   });
 });
 
-it("replaces the realtime send arrow with the voice action only while the draft is empty", () => {
+it("keeps the waveform action with and without a realtime draft", () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <RealtimeComposer
@@ -118,13 +118,111 @@ it("replaces the realtime send arrow with the voice action only while the draft 
   expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
 
   fireEvent.change(input, { target: { value: "Typed input" } });
-  const send = screen.getByRole("button", { name: "Send" });
-  expect(send.className).toBe(voice.className);
-  expect((send as HTMLButtonElement).disabled).toBe(false);
-  expect(screen.queryByRole("button", { name: "Start voice chat" })).toBeNull();
+  const withDraft = screen.getByRole("button", { name: "Start voice chat" });
+  expect(withDraft.className).toBe(voice.className);
+  expect(withDraft.querySelector("svg")?.outerHTML).toBe(
+    voice.querySelector("svg")?.outerHTML,
+  );
+  expect((withDraft as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+});
 
-  fireEvent.change(input, { target: { value: "" } });
-  expect(
-    screen.getByRole("button", { name: "Start voice chat" }).className,
-  ).toBe(send.className);
+it("keeps an unsent draft when opening the microphone is cancelled", async () => {
+  let finishPermission!: (stream: MediaStream) => void;
+  const permission = new Promise<MediaStream>((resolve) => {
+    finishPermission = resolve;
+  });
+  const getUserMedia = vi.fn(() => permission);
+  const track = { stop: vi.fn() };
+  const close = vi.fn(async () => {});
+  const originalMedia = Object.getOwnPropertyDescriptor(
+    navigator,
+    "mediaDevices",
+  );
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: { getUserMedia },
+  });
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      resume = async () => {};
+      close = close;
+    },
+  );
+  const connect = vi.fn();
+  vi.stubGlobal(
+    "WebSocket",
+    class {
+      constructor() {
+        connect();
+      }
+    },
+  );
+  try {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <RealtimeComposer
+          agentId="agent"
+          initial={{ content: [{ type: "text", text: "Keep this draft" }] }}
+          availability={{ realtime: true, can_start: true, accepts_text: true }}
+          onFinished={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    const input = screen.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Message",
+    });
+    const start = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Start voice chat",
+    });
+    fireEvent.click(start);
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "End realtime chat" }));
+    finishPermission({ getTracks: () => [track] } as unknown as MediaStream);
+    await waitFor(() => {
+      expect(start.disabled).toBe(false);
+      expect(track.stop).toHaveBeenCalledOnce();
+    });
+    expect(close).toHaveBeenCalledOnce();
+    expect(connect).not.toHaveBeenCalled();
+    expect(input.value).toBe("Keep this draft");
+    expect(screen.queryByRole("alert")).toBeNull();
+  } finally {
+    vi.unstubAllGlobals();
+    if (originalMedia)
+      Object.defineProperty(navigator, "mediaDevices", originalMedia);
+    else Reflect.deleteProperty(navigator, "mediaDevices");
+  }
+});
+
+it("uses Enter to open a voice session or submit its draft while preserving IME and Shift+Enter", async () => {
+  const submit = vi.fn(async (_payload: unknown) => {});
+  const open = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Composer
+        submit={submit}
+        submitOnEnter
+        emptyAction={{
+          label: "Start voice chat",
+          icon: <span />,
+          onClick: open,
+        }}
+      />
+    </QueryClientProvider>,
+  );
+  const input = screen.getByRole("textbox", { name: "Message" });
+  fireEvent.keyDown(input, { key: "Enter" });
+  expect(open).toHaveBeenCalledOnce();
+
+  fireEvent.change(input, { target: { value: "Typed input" } });
+  fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+  fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Enter" });
+  await waitFor(() => expect(submit).toHaveBeenCalledOnce());
+  expect(submit.mock.calls[0]![0]).toEqual({
+    content: [{ type: "text", text: "Typed input" }],
+  });
 });

@@ -597,7 +597,7 @@ async def _accepted(run_id: str, thread_id: str, trigger: Trigger) -> None:
 
 async def _source(
     session: AsyncSession, runtime: Runtime, thread: ThreadRow, entry: InboxEntryRow, explicit: Source | None
-) -> Source | Failure:
+) -> Source | Failure | None:
     if explicit is not None and entry is explicit.entry:
         return explicit
     if entry.kind == "message":
@@ -617,6 +617,10 @@ async def _source(
     # The thread is idle, so the origin is sealed; it committed its spawning call before the child could exist.
     origin = await session.get_one(RunRow, entry.origin_run_id)
     assert entry.kind in {"tool_result", "child_result", "child_message"}
+    from a13n_service.runs.realtime import LABEL
+
+    if LABEL in stored.require(RunOptions, origin.options, kind="run", id=origin.id).labels:
+        return None  # A new browser connection owns delivery of outstanding realtime notices.
     return await Source.inherited(session, runtime, origin, cast(Trigger, entry.kind), entry=entry)
 
 
@@ -632,7 +636,9 @@ async def accept(
     last = await _run(session, thread.last_run_id)
     if not eligible(thread, last):
         return None
-    if paused(last):
+    from a13n_service.runs.realtime import LABEL
+
+    if paused(last) or (explicit is not None and LABEL in explicit.options.labels):
         # An explicit submission may start that new message; unrelated pending entries never replace it.
         entries = [explicit.entry] if explicit is not None and explicit.entry is not None else []
     else:
@@ -640,6 +646,8 @@ async def accept(
     for entry in entries:
         try:
             source = await _source(session, runtime, thread, entry, explicit)
+            if source is None:
+                continue
             if isinstance(source, Source):
                 # A savepoint makes one entry's rejection its own; database errors still abort the transaction.
                 async with session.begin_nested():

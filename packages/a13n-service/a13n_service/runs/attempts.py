@@ -36,6 +36,7 @@ class Lease:
     number: int
     worker_id: str
     token: str = field(repr=False)
+    realtime_id: str | None = field(default=None, repr=False)
 
 
 @dataclass

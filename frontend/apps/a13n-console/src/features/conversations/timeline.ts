@@ -1,3 +1,4 @@
+import { isRealtimeRun } from "./request";
 import type { ContentPart } from "@ag-ui/core";
 import { structuredPatch } from "diff";
 import { sumCosts } from "../../shared/cost";
@@ -93,8 +94,9 @@ export interface ActionEntry extends EntryBase {
 
 export interface ContentEntry extends EntryBase {
   /** `hidden` is input the model read that its producer hid from Chat. */
-  kind: "reasoning" | "reply" | "guidance" | "hidden";
+  kind: "reasoning" | "reply" | "user_input" | "guidance" | "hidden";
   text: string;
+  speech?: boolean;
   /** `a13n.steering-source` provenance for a Harness-enqueued notice. */
   steeringSource: string | null;
   sourceId?: string;
@@ -229,6 +231,7 @@ export function runTimeline({
 
   // Content a model request emitted directly: reasoning and replies. Items a
   // tool-family step already represents are that step, not a second entry.
+  const realtime = isRealtimeRun(run);
   let firstUserText = true;
   for (const item of [...items].sort((a, b) =>
     comparePositions(a.firstPosition, b.firstPosition),
@@ -249,7 +252,7 @@ export function runTimeline({
       });
       continue;
     }
-    const content = contentEntry(item, () => {
+    const content = contentEntry(item, realtime, () => {
       const first = firstUserText;
       firstUserText = false;
       return first;
@@ -460,14 +463,12 @@ function retainedAction(item: PresentedItem): ActionEntry {
 }
 
 /**
- * A content Item becomes an entry only when it is the Agent's own output,
- * guidance sent into a working Run, or input hidden from Chat, such as where a
- * file was placed or which mounts changed. The Run's own input and injected
- * context are not timeline actions. `first` reports, once, whether this is the
- * Run's leading user text, which is the request itself rather than steering.
+ * Render output, realtime conversation input, guidance and hidden input.
+ * An ordinary Run's leading user text is already displayed as its request.
  */
 function contentEntry(
   item: PresentedItem,
+  realtime: boolean,
   first: () => boolean,
 ): ContentEntry | null {
   const base = {
@@ -491,11 +492,12 @@ function contentEntry(
   if (item.kind !== "text_message") return null;
   if (item.role === "assistant") return { kind: "reply", ...base };
   if (item.role !== "user") return null;
+  const steering = item.steeringSource || item.inputSource === "steering";
+  if (realtime && !steering)
+    return { kind: "user_input", speech: item.speech, ...base };
   if (item.speech) return { kind: "guidance", ...base };
   const leading = first();
-  return item.steeringSource || item.inputSource === "steering" || !leading
-    ? { kind: "guidance", ...base }
-    : null;
+  return steering || !leading ? { kind: "guidance", ...base } : null;
 }
 
 function otherEntry(observations: readonly ExecutionObservation[]): OtherEntry {

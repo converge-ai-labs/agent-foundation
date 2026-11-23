@@ -44,11 +44,12 @@ from a13n_harness import (
 from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.steering import steering_input_ids, without_input
 from a13n_harness.compaction import CompactionResult
+from a13n_harness.content import request_input_content
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
 from a13n_harness.environment.models import EnvironmentInvocationError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
-from a13n_harness.live import HarnessLiveStream
+from a13n_harness.live import HarnessLiveStream, LiveWebRTC
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.recovery import normalize_interrupted_history
 from a13n_harness.state import encode_messages
@@ -56,7 +57,7 @@ from a13n_harness.tool_execution import RetainedScope
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
-from pydantic_ai.messages import ModelMessage, TextContent, UserContent
+from pydantic_ai.messages import ModelMessage, ModelRequest, TextContent, ToolCallPart, UserContent
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.realtime import RealtimeModelSettings
 from pydantic_ai.usage import UsageLimits
@@ -101,10 +102,11 @@ from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
 from a13n_service.runs.host import Host, HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
+from a13n_service.runs.mailbox import REALTIME_NOTICE_KINDS
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.notices import KINDS as NOTICE_KINDS
 from a13n_service.runs.notices import StaleNotice, require_notices
-from a13n_service.runs.realtime import LABEL, Channel
+from a13n_service.runs.realtime import BUDGET_RESTRICTION, INBOX_METADATA, Channel
 from a13n_service.runs.realtime_transcript import LiveTranscripts
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
@@ -172,35 +174,33 @@ class _Plan:
     committed: Committed | None
     seq: int
     obsolete_notice: bool = False
-    realtime_id: str | None = None
     realtime_audio: bool = True
 
 
 async def execute(runtime: Runtime, lease: Lease, control: AttemptControl) -> None:
     """The worker's execution of one leased attempt. Without the lease nothing is written: `LeaseLost` escapes."""
+    channel = (runtime.realtime_channels or {}).get(lease.realtime_id or "")
+    failed = True
     try:
-        plan = await _plan(runtime, lease)
-    except LeaseLost:
-        raise
-    except Exception as error:
-        outcome = _failure(lease, error)
-        if outcome is None:
-            await _release(runtime, lease, error)
-        else:
-            await seal_attempt(runtime, lease, outcome)
-        return
-    channel = (runtime.realtime_channels or {}).get(plan.realtime_id or "")
-    try:
+        try:
+            plan = await _plan(runtime, lease)
+        except LeaseLost:
+            raise
+        except Exception as error:
+            outcome = _failure(lease, error)
+            if outcome is None:
+                await _release(runtime, lease, error)
+            else:
+                await seal_attempt(runtime, lease, outcome)
+            return
         await _Attempt(runtime, lease, control, plan).run()
+        if channel is not None:
+            async with short_session(runtime.storage) as session:
+                row = await session.get(RunRow, lease.run_id)
+                failed = row is None or row.status not in {"completed", "cancelled"}
     finally:
         if channel is not None:
-            try:
-                async with short_session(runtime.storage) as session:
-                    row = await session.get(RunRow, lease.run_id)
-                    if row is not None and row.status == "failed" and not channel.outgoing.full():
-                        channel.outgoing.put_nowait({"type": "error", "message": "The realtime run failed"})
-            finally:
-                channel.finished.set()
+            channel.finish(failed=failed)
 
 
 # Provider failures that a later attempt may not repeat; the others need a changed mount or configuration.
@@ -367,7 +367,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
             )
         input_text = (
             MessagePayload.model_validate(source.payload).text()
-            if source is not None and source.kind == "message"
+            if lease.realtime_id is None and source is not None and source.kind == "message"
             else answers.input.text()
             if answers is not None and answers.input is not None
             else ""
@@ -437,7 +437,6 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         committed=committed,
         seq=own.seq if own is not None else 0,
         obsolete_notice=obsolete_notice,
-        realtime_id=options.labels.get(LABEL),
         realtime_audio=options.labels.get("realtime-audio") != "no",
     )
 
@@ -479,7 +478,8 @@ def _initial(
 class _Offers:
     """Entries offered to this attempt's Harness run, until a checkpoint commit consumes them."""
 
-    def __init__(self, initial: list[Offered]):
+    def __init__(self, initial: list[Offered], *, realtime: bool = False):
+        self.realtime = realtime
         self.initial = {entry.id for entry in initial}
         self.open = {entry.id: entry for entry in initial}
         # Assigned steers the Harness could not take yet: between its native attempts none is active.
@@ -489,6 +489,14 @@ class _Offers:
 
     def incorporated(self, messages: Sequence[ModelMessage]) -> list[str]:
         ids = set(steering_input_ids(messages))
+        if self.realtime:
+            ids.update(
+                item.metadata.source_id
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for item in request_input_content(message)
+                if item.metadata.source_id and (item.metadata.model_extra or {}).get(INBOX_METADATA) is True
+            )
         if self.requested:
             ids |= self.initial
         return [entry_id for entry_id in self.open if entry_id in ids]
@@ -563,7 +571,7 @@ class _Attempt:
         )
         if plan.tail.position.attempt != lease.number:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))
-        self.offers = _Offers(plan.assigned)
+        self.offers = _Offers(plan.assigned, realtime=lease.realtime_id is not None)
         self.app_captures = Captures(lease.run_id)
         self.offer_lock = asyncio.Lock()
         self.incoming: asyncio.Task[None] | None = None
@@ -811,7 +819,7 @@ class _Attempt:
             )
             if root.model.config.model_api in PROTOCOLS:
                 return await self._realtime(executable, bindings, output)
-            if self.plan.realtime_id is not None:
+            if self.lease.realtime_id is not None:
                 raise ServiceError("conflict", "The Agent's primary model no longer uses a realtime API")
             start = partial(
                 executable.stream,
@@ -850,7 +858,7 @@ class _Attempt:
     async def _realtime(
         self, executable: ExecutableAgent, bindings: RunBindings, output: Coalescer
     ) -> HarnessRunResult:
-        channel = (self.runtime.realtime_channels or {}).get(self.plan.realtime_id or "")
+        channel = (self.runtime.realtime_channels or {}).get(self.lease.realtime_id or "")
         if (
             channel is None
             or channel.attached
@@ -858,44 +866,51 @@ class _Attempt:
             or channel.principal_id != self.plan.principal.id
             or channel.workspace_id != self.lease.workspace_id
         ):
-            raise ServiceError("unavailable", "The realtime connection is no longer available")
+            raise ServiceError("conflict", "The realtime connection is no longer available")
         if self.plan.resume is not None or self.lease.number != 1:
             raise ServiceError("conflict", "Start a new browser connection to continue this realtime Thread")
         if self.runtime.admission is not None or self.plan.limit is not None:
-            raise ServiceError("unavailable", "Realtime preview requires a deployment without per-call reservations")
+            raise ServiceError("conflict", BUDGET_RESTRICTION)
         channel.attached = True
         await prove(self.runtime.storage, self.lease)
         model_api = self.plan.agent.model.config.model_api
         transcripts = LiveTranscripts(group_user_speech=model_api == "openai.live")
+        webrtc = LiveWebRTC(channel.webrtc_offer, channel.answer_webrtc) if channel.webrtc_offer is not None else None
         settings: RealtimeModelSettings = {}
-        if not self.plan.realtime_audio and model_api == "openai.live":
+        if webrtc is None and not self.plan.realtime_audio and model_api == "openai.live":
             settings = {"openai_live_idle_audio": True}  # type: ignore[typeddict-unknown-key]
         elif self.plan.realtime_audio and model_api == "openai.realtime":
             settings = {"turn_detection": {"silence_duration_ms": 850}}
         async with (
-            asyncio.timeout(300),
             agent.open_realtime(
                 self.runtime,
                 self.plan.agent,
                 executable,
                 bindings=replace(bindings, model_call_check=None),
+                approval_handler=partial(self._realtime_approval, channel),
                 previous_state=self.plan.state,
                 model_settings=settings,
+                webrtc=webrtc,
             ) as stream,
             self.boundaries.process(partial(self._boundary, stream=stream, output=output)),
             asyncio.TaskGroup() as tasks,
         ):
             await claim.start(self.runtime, self.lease, harness_run_id=stream.run_id)
             self.offers.requested = True
-            await channel.outgoing.put({"type": "ready", "audio_hz": 24000, "accepts_text": True})
+            await channel.outgoing.put(
+                {"type": "ready", "transport": "webrtc", "accepts_text": True}
+                if webrtc is not None
+                else {"type": "ready", "audio_hz": 24000, "accepts_text": True}
+            )
             receive = tasks.create_task(self._realtime_input(stream, channel, output))
-            audio = tasks.create_task(self._realtime_audio(stream, channel))
+            audio = tasks.create_task(self._realtime_audio(stream, channel)) if webrtc is None else None
             stop = tasks.create_task(self._close_realtime(stream, channel))
+            notices = tasks.create_task(self._receive_realtime_notices(stream, channel))
             try:
                 async for item in stream:
                     await self._observe(item, output)
-                    if isinstance(item, HarnessEvent) and item.run_id == stream.run_id and not channel.closed.is_set():
-                        if (transcript := transcripts.observe(item)) is not None:
+                    if isinstance(item, HarnessEvent) and item.run_id == stream.run_id:
+                        if not channel.closed.is_set() and (transcript := transcripts.observe(item)) is not None:
                             await channel.outgoing.put(
                                 {
                                     "type": "transcript",
@@ -908,11 +923,56 @@ class _Attempt:
             finally:
                 receive.cancel()
                 stop.cancel()
-                if channel.closed.is_set():
+                notices.cancel()
+                if audio is not None and channel.closed.is_set():
                     audio.cancel()
         if stream.result is None:
             raise ServiceError("unavailable", "The realtime run ended before it completed")
         return stream.result
+
+    async def _receive_realtime_notices(self, stream: HarnessLiveStream, channel: Channel) -> None:
+        """Assign durable completion notices and consume them only after native delivery."""
+        async with self.runtime.mailbox.listen(self.lease.thread_id, realtime=True) as ready:
+            while not channel.closed.is_set():
+                await ready.wait()
+                ready.clear()
+                try:
+                    async with transaction(self.runtime.storage) as session:
+                        thread, run, _, _ = await lock_thread_lease(session, self.lease)
+                        await authorize_execution(session, self.runtime.access, run)
+                        rows = await inbox.assign_steers(
+                            session,
+                            thread,
+                            run,
+                            max_count=self.runtime.settings.worker.delivery_count,
+                            max_bytes=self.runtime.settings.worker.delivery_bytes,
+                            scan=self.runtime.settings.control.inbox_count,
+                            kinds=REALTIME_NOTICE_KINDS,
+                        )
+                        entries = [Offered.of(row) for row in rows]
+                except ServiceError as error:
+                    if error.code != "unavailable":
+                        raise
+                    continue  # The next mailbox scan retries the still-pending rows.
+                for entry in entries:
+                    content = await self._read(entry, stream.context.environment)
+                    if not content or channel.closed.is_set():
+                        continue
+                    texts = [
+                        replace(part, metadata={**(part.metadata or {}), INBOX_METADATA: True})
+                        for part in content
+                        if isinstance(part, TextContent)
+                    ]
+                    if stream.enqueue_notice(texts) is not None:
+                        self.offers.open[entry.id] = entry
+
+    async def _realtime_approval(self, channel: Channel, call: ToolCallPart) -> bool:
+        approved = await channel.approve(call.tool_call_id, call.tool_name, call.args_as_json_str())
+        if approved:
+            async with transaction(self.runtime.storage) as session:
+                _, run, _, _ = await lock_thread_lease(session, self.lease)
+                await authorize_execution(session, self.runtime.access, run)
+        return approved and not channel.closed.is_set()
 
     async def _realtime_input(self, stream: HarnessLiveStream, channel: Channel, output: Coalescer) -> None:
         while True:
@@ -921,8 +981,8 @@ class _Attempt:
                 if self.plan.realtime_audio:
                     await stream.send_audio(payload)
             else:
-                output.realtime_input(payload)
                 await stream.send(payload, respond=True)
+                output.realtime_input(payload)
 
     async def _realtime_audio(self, stream: HarnessLiveStream, channel: Channel) -> None:
         async for chunk in stream.stream_audio():
@@ -1142,7 +1202,7 @@ class _Attempt:
                     if self.incoming is not None:
                         self.incoming.cancel()
                     await seal(session, self.runtime, thread, run, attempt, outcome, at=current)
-                else:
+                elif self.lease.realtime_id is None:
                     entries = await inbox.assign_steers(
                         session,
                         thread,
@@ -1350,7 +1410,9 @@ class _Attempt:
         inputs = [
             (entry.id, MessagePayload.model_validate(entry.payload).text())
             for key in consumed
-            if (entry := self.offers.open.get(key)) is not None and entry.kind == "message"
+            if (entry := self.offers.open.get(key)) is not None
+            and entry.kind == "message"
+            and (self.lease.realtime_id is None or entry.id != self.plan.source_entry_id)
         ]
         items = [item for page in snapshot.pages for item in page.items] + snapshot.tail.items
         search = await asyncio.to_thread(self.search.prepare, items, inputs)
@@ -1415,7 +1477,9 @@ class _Attempt:
 
     def _operator(self, node: ResolvedAgent) -> ChildRuns:
         """The child runs one async agent of the graph starts through its own edges."""
-        return ChildRuns(self.runtime, self.lease, self.control, node.subagents)
+        return ChildRuns(
+            self.runtime, self.lease, self.control, node.subagents, include_output=self.lease.realtime_id is not None
+        )
 
     def _bindings(self, resolver: RunModelResolver) -> RunBindings:
         lease = self.lease

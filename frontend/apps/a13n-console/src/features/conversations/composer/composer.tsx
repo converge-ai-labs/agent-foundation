@@ -23,8 +23,8 @@ interface Attachment {
 
 /**
  * The composer floats over the end of the transcript: a borderless text area,
- * the attachment and option affordances at the left, and one round send button
- * whose label always names the action it performs.
+ * the attachment and option affordances at the left, and send controls at the
+ * right. The round send button's label always names the action it performs.
  */
 export function Composer({
   initial,
@@ -33,28 +33,39 @@ export function Composer({
   placeholder,
   disabled = false,
   submitDisabled = false,
+  submitIcon,
+  submitOnEnter = false,
   agentName,
   textInput = true,
   attachmentsEnabled = true,
   options,
+  actionBeforeSubmit,
   emptyAction,
   stop,
   stopping = false,
 }: {
   /** A message to start from, such as one being submitted again. */
   initial?: Schema["MessagePayload"];
-  submit: (payload: Schema["MessagePayload"], key: string) => Promise<unknown>;
+  /** Return false when a cancelled submission should keep the draft. */
+  submit: (
+    payload: Schema["MessagePayload"],
+    key: string,
+  ) => Promise<void | false>;
   /** Names the action: Send, Add guidance, Send message. */
   label?: string;
   placeholder?: string;
   disabled?: boolean;
   /** Block sending while keeping configuration controls available for correction. */
   submitDisabled?: boolean;
+  submitIcon?: ReactNode;
+  submitOnEnter?: boolean;
   agentName?: string;
   textInput?: boolean;
   attachmentsEnabled?: boolean;
   /** Option chips shown beside the attachment control. */
   options?: ReactNode;
+  /** An action beside the primary send button. */
+  actionBeforeSubmit?: ReactNode;
   /** Replaces the send arrow when there is no draft. */
   emptyAction?: {
     label: string;
@@ -141,7 +152,7 @@ export function Composer({
         structuredContent === undefined
       )
         throw new Error(t("Write a message or attach content first."));
-      await submit(
+      return await submit(
         {
           content: [
             ...(text.trim() ? [{ type: "text" as const, text }] : []),
@@ -154,7 +165,8 @@ export function Composer({
         key,
       );
     },
-    onSuccess: () => {
+    onSuccess: (submitted) => {
+      if (submitted === false) return;
       setText("");
       setAttachments([]);
       setStructured("");
@@ -178,14 +190,12 @@ export function Composer({
       className={styles.composer}
       onSubmit={(event) => {
         event.preventDefault();
-        if (
-          !disabled &&
-          !submitDisabled &&
-          !busy &&
-          !alternate &&
-          (textInput || !empty)
-        )
+        if (disabled || submitDisabled || busy) return;
+        if (alternate) {
+          if (!alternate.disabled) alternate.onClick();
+        } else if (!empty || (textInput && !submitOnEnter)) {
           mutation.mutate();
+        }
       }}
     >
       <fieldset disabled={disabled || busy} className={styles.fields}>
@@ -196,7 +206,11 @@ export function Composer({
             unstyled
             className={styles.messageInput}
             aria-label={t("Message")}
-            aria-keyshortcuts="Meta+Enter Control+Enter"
+            aria-keyshortcuts={
+              submitOnEnter
+                ? "Enter Meta+Enter Control+Enter"
+                : "Meta+Enter Control+Enter"
+            }
             placeholder={
               placeholder ??
               (agentName
@@ -216,7 +230,7 @@ export function Composer({
               }
               if (
                 event.key !== "Enter" ||
-                !(event.metaKey || event.ctrlKey) ||
+                !(submitOnEnter || event.metaKey || event.ctrlKey) ||
                 event.shiftKey ||
                 event.altKey ||
                 event.nativeEvent.isComposing
@@ -278,13 +292,22 @@ export function Composer({
           {options}
         </div>
       </fieldset>
-      {(textInput || stopMode || alternate) && (
+      {(textInput ||
+        stopMode ||
+        alternate ||
+        submitIcon ||
+        actionBeforeSubmit) && (
         <div className={styles.send}>
-          {!alternate && (
+          {!alternate && (textInput || stopMode) && (
             <span className={styles.hint}>
-              {stopMode ? t("Esc stops") : t("⌘ / Ctrl + Enter to send")}
+              {stopMode
+                ? t("Esc stops")
+                : submitOnEnter
+                  ? t("Enter to send")
+                  : t("⌘ / Ctrl + Enter to send")}
             </span>
           )}
+          {actionBeforeSubmit}
           {stopMode ? (
             <Button
               type="button"
@@ -320,9 +343,9 @@ export function Composer({
               aria-label={action}
               title={action}
               disabled={empty || disabled || submitDisabled || busy}
-              loading={mutation.isPending}
+              loading={mutation.isPending && !submitIcon}
             >
-              <ArrowUpIcon size={15} />
+              {submitIcon ?? <ArrowUpIcon size={15} />}
             </Button>
           )}
         </div>

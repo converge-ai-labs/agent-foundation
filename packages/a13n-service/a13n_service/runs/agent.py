@@ -47,7 +47,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.capabilities.web import WebCapability
 from a13n_harness.compaction import CompactionOperator
 from a13n_harness.environment import DynamicEnvironmentCapability
-from a13n_harness.live import HarnessLiveStream
+from a13n_harness.live import HarnessLiveStream, LiveWebRTC, RealtimeApprovalHandler
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
@@ -264,10 +264,10 @@ async def open_realtime(
     bindings: RunBindings,
     previous_state: HarnessState | None = None,
     model_settings: RealtimeModelSettings | None = None,
+    approval_handler: RealtimeApprovalHandler | None = None,
+    webrtc: LiveWebRTC | None = None,
 ) -> AsyncIterator[HarnessLiveStream]:
     """Open the Agent's primary model for a caller that owns admission and continuation."""
-    if agent.model.config.defaults() or agent.config.model_settings:
-        raise ServiceError("invalid_argument", "Configured model settings are unavailable for realtime execution")
     async with (
         open_realtime_model(
             agent.model,
@@ -276,8 +276,13 @@ async def open_realtime(
             policy=runtime.endpoint_policy.for_run(bindings.configuration),
             settings=runtime.settings.providers,
         ) as model,
-        executable.realtime(
-            model=model, model_settings=model_settings, bindings=bindings, previous_state=previous_state
+        executable.live(
+            model=model,
+            model_settings=model_settings,
+            bindings=bindings,
+            previous_state=previous_state,
+            approval_handler=approval_handler,
+            webrtc=webrtc,
         ) as stream,
     ):
         yield stream

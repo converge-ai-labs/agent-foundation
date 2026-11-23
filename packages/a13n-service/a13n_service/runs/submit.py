@@ -41,7 +41,7 @@ from a13n_service.runs.environments.schemas import MountCreate
 from a13n_service.runs.inbox import Request, append_message, check_replay, find_request
 from a13n_service.runs.memories.mounts import mount_memories, shared_memory_mounts
 from a13n_service.runs.memories.session_memory import configure
-from a13n_service.runs.realtime import LABEL
+from a13n_service.runs.realtime import BUDGET_RESTRICTION, LABEL
 from a13n_service.runs.runs import run_view
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import (
@@ -114,17 +114,20 @@ async def validate_message(
             message.options.overrides,
             authority=authority,
         )
-    if runtime.realtime_channels is not None or LABEL in options.labels:
-        effective = stored.require_effective(revision.config, overrides, revision_id=revision.definition_id)
-        selected = await resolve_model(session, principal, scope, effective.model, authority=authority)
+    effective = stored.require_effective(revision.config, overrides, revision_id=revision.definition_id)
+    selected = await resolve_model(session, principal, scope, effective.model, authority=authority)
+    if selected.config.model_api in PROTOCOLS:
         channel = (runtime.realtime_channels or {}).get(options.labels.get(LABEL, ""))
-        if selected.config.model_api in PROTOCOLS:
-            if channel is None or channel.principal_id != principal.id or channel.workspace_id != scope.workspace_id:
-                raise invalid("model", "This model requires a realtime conversation")
-            if thread.current_run_id is not None:
-                raise conflict("thread", thread.id, "run_in_progress")
-        elif LABEL in options.labels:
-            raise invalid("model", "The Agent's primary model does not use a realtime API")
+        if channel is None or channel.principal_id != principal.id or channel.workspace_id != scope.workspace_id:
+            raise invalid("model", "This model requires a realtime conversation")
+        if channel.webrtc_offer is not None and not PROTOCOLS[selected.config.model_api].webrtc:
+            raise invalid("transport", "The Agent's primary model does not support WebRTC; use websocket")
+        if runtime.admission is not None:
+            raise invalid("model", BUDGET_RESTRICTION)
+        if thread.current_run_id is not None:
+            raise conflict("thread", thread.id, "run_in_progress")
+    elif LABEL in options.labels:
+        raise invalid("model", "The Agent's primary model does not use a realtime API")
     if initial_environments:
         # Acceptance can share-lock another existing primary. Lock it together with the initial mounts
         # so another Thread taking exclusive locks in ID order (desktop handback) cannot deadlock.

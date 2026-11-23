@@ -11,6 +11,7 @@ import { workState, type WorkState } from "./entry-language";
  */
 export type TranscriptBlock =
   | { kind: "message"; id: string; entry: ContentEntry }
+  | { kind: "user_input"; id: string; entry: ContentEntry }
   | { kind: "guidance"; id: string; entry: ContentEntry }
   | { kind: "publication"; id: string; asset: PublishedAsset; legacy: boolean }
   | { kind: "work"; id: string; entries: WorkEntry[] };
@@ -55,6 +56,10 @@ export function transcriptBlocks(
     if (entry.kind === "hidden") continue;
     if (entry.kind === "reply" && !entry.subagentRunId) {
       blocks.push({ kind: "message", id: entry.id, entry });
+      continue;
+    }
+    if (entry.kind === "user_input" && !entry.subagentRunId) {
+      blocks.push({ kind: "user_input", id: entry.id, entry });
       continue;
     }
     if (entry.kind === "guidance" && !entry.subagentRunId) {

@@ -351,9 +351,13 @@ async def reorder(session: AsyncSession, thread: ThreadRow, entry_ids: Sequence[
     await session.flush()
 
 
-async def pending_entries(session: AsyncSession, thread_id: str, *, limit: int) -> Sequence[InboxEntryRow]:
-    """The first `limit` pending entries in position order."""
+async def pending_entries(
+    session: AsyncSession, thread_id: str, *, limit: int, kinds: frozenset[str] | None = None
+) -> Sequence[InboxEntryRow]:
+    """The first `limit` eligible pending entries in position order."""
     query = select(InboxEntryRow).where(InboxEntryRow.thread_id == thread_id, InboxEntryRow.status == "pending")
+    if kinds is not None:
+        query = query.where(InboxEntryRow.kind.in_(kinds))
     return (await session.scalars(query.order_by(InboxEntryRow.position).limit(limit).with_for_update())).all()
 
 
@@ -430,13 +434,20 @@ def steers_into(entry: InboxEntryRow, run: RunRow, origin: RunRow | None) -> boo
 
 
 async def assign_steers(
-    session: AsyncSession, thread: ThreadRow, run: RunRow, *, max_count: int, max_bytes: int, scan: int
+    session: AsyncSession,
+    thread: ThreadRow,
+    run: RunRow,
+    *,
+    max_count: int,
+    max_bytes: int,
+    scan: int,
+    kinds: frozenset[str] | None = None,
 ) -> list[InboxEntryRow]:
     """A bounded FIFO batch of compatible pending entries for the next model request of `run`.
 
     Incompatible entries stay pending for a later run and take no part in the batch's budget.
     """
-    candidates = await pending_entries(session, thread.id, limit=scan)
+    candidates = await pending_entries(session, thread.id, limit=scan, kinds=kinds)
     origins = await _origins(session, candidates)
     chosen: list[InboxEntryRow] = []
     size = 0

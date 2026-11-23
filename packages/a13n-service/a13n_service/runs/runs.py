@@ -20,6 +20,7 @@ from a13n_service.runs.checkpoints import PageRef, TailPointer
 from a13n_service.runs.contents import MAX_IMAGE_BYTES, ContentObject, decode
 from a13n_service.runs.display import Page, Tail
 from a13n_service.runs.findings.tables import AnalysisRow
+from a13n_service.runs.realtime import LABEL as REALTIME_LABEL
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules.origin import origins
 from a13n_service.runs.schemas import (
@@ -78,7 +79,9 @@ async def run_views(session: AsyncSession, runs: Sequence[RunRow]) -> list[RunVi
         stored.batch_item(
             lambda run=run: stored.read(RunView, run, kind="run", id=run.id).model_copy(
                 update={
-                    "input": payloads.get(run.source_entry_id or ""),
+                    "input": None
+                    if REALTIME_LABEL in run.options.get("labels", {})
+                    else payloads.get(run.source_entry_id or ""),
                     "schedule_origin": schedule_origins.get(run.id),
                     "finding_analysis_id": analyses.get(run.id),
                 }

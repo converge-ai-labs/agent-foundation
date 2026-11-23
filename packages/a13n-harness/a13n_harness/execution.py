@@ -19,7 +19,7 @@ from a13n_harness.environment.sources import EnvironmentEntry
 from a13n_harness.errors import RunError
 from a13n_harness.events import HarnessRunResultEvent
 from a13n_harness.input import RunInputFactory, RunInputValue
-from a13n_harness.live import HarnessLiveStream
+from a13n_harness.live import HarnessLiveStream, LiveWebRTC, RealtimeApprovalHandler
 from a13n_harness.models.binding import RunModelResolver
 from a13n_harness.observation import _ObservationRuntime
 from a13n_harness.plugins import AbstractHarnessPlugin, PluginActivation
@@ -301,7 +301,7 @@ class ExecutableAgent[OutputT]:
             usage_limits=usage_limits,
         )
 
-    def realtime(
+    def live(
         self,
         *,
         model: RealtimeModel,
@@ -312,6 +312,8 @@ class ExecutableAgent[OutputT]:
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
         audio_retention: AudioRetention = "transcript_only",
+        approval_handler: RealtimeApprovalHandler | None = None,
+        webrtc: LiveWebRTC | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> HarnessLiveStream:
@@ -326,9 +328,8 @@ class ExecutableAgent[OutputT]:
             bindings=bindings,
             previous_state=previous_state,
             audio_retention=audio_retention,
+            approval_handler=approval_handler,
+            webrtc=webrtc,
             usage=usage,
             usage_limits=usage_limits,
         )
-
-    # Compatibility alias for callers of the original public entry point.
-    live = realtime

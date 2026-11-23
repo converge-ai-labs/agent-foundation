@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterable, AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from contextlib import AsyncExitStack
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
 
+import anyio
 from pydantic import TypeAdapter
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapperCapability
@@ -34,6 +36,7 @@ from pydantic_ai.realtime import (
     AudioRetention,
     RealtimeModel,
     RealtimeModelSettings,
+    RealtimeProviderSession,
     RealtimeSession,
     RealtimeSessionInput,
 )
@@ -65,6 +68,17 @@ if TYPE_CHECKING:
     from a13n_harness.execution import ExecutableAgent
 
 
+RealtimeApprovalHandler = Callable[[ToolCallPart], Awaitable[bool]]
+
+
+@dataclass(frozen=True, slots=True)
+class LiveWebRTC:
+    """An audio offer from the host and the callback that delivers its answer."""
+
+    offer: str
+    deliver_answer: Callable[[str], Awaitable[None]]
+
+
 def _semantic_event(event: Any) -> Any | None:
     """Keep media on native playback, never in the Harness observation channel."""
     if isinstance(event, PartDeltaEvent) and isinstance(event.delta, SpeechPartDelta):
@@ -82,6 +96,7 @@ class _LiveCapability(AbstractCapability[AgentContext]):
         self.stream = stream
         self.initial = ModelContextProjection()
         self._initial_instructions: str | None = None
+        self.prepare_dispatcher = True
         self.delivered = ModelContextProjection()
         self.pending: dict[str, ModelContextProjection] = {}
         self.ambiguous: set[tuple[str, str | None]] = set()
@@ -146,25 +161,46 @@ class _LiveCapability(AbstractCapability[AgentContext]):
             ctx.cancel()
         # Native realtime re-resolves instructions before tool results. Keep the
         # connection baseline and its dispatcher adapter stable across refreshes.
+        if self.prepare_dispatcher:
+            manager = ctx.tool_manager
+            assert manager is not None and manager.root_capability is not None
+            # Run-step managers retain the wrapper installed on the live dispatcher.
+            manager.root_capability = _LiveDeferredResults(manager.root_capability, self)
+            self.prepare_dispatcher = False
         if self._initial_instructions is not None:
             return self._initial_instructions
-        manager = ctx.tool_manager
-        assert manager is not None and manager.root_capability is not None
-        # Decorate only the prepared native tool dispatcher, not the Agent's
-        # registered capability tree. This stateless adapter adds no lifecycle,
-        # tools, or ordering requirements; run-step managers retain the wrapper.
-        if not isinstance(manager.root_capability, _LiveDeferredResults):
-            manager.root_capability = _LiveDeferredResults(manager.root_capability, self)
         projection = await _project_model_context(
             ctx,
             ModelContextProjectionRequest(
                 kind=ModelContextRequestKind.INPUT,
-                input_origin=ModelContextInputOrigin.USER,
+                input_origin=ModelContextInputOrigin.REALTIME_SESSION,
             ),
         )
         self.initial = projection
-        self._initial_instructions = "\n\n".join(block.content for block in projection.blocks)
+        self._initial_instructions = "\n\n".join(
+            block.content for block in projection.blocks if block.memory_mount is None
+        )
         return self._initial_instructions
+
+    async def recall(self, text: str) -> None:
+        ctx = self.stream._native_context
+        if ctx is None or not text.strip():
+            return
+        projection = await _project_model_context(
+            ctx,
+            ModelContextProjectionRequest(
+                kind=ModelContextRequestKind.INPUT,
+                input_origin=ModelContextInputOrigin.REALTIME_TURN,
+                realtime_text=text,
+                history=self.history,
+            ),
+        )
+        blocks = tuple(block for block in projection.blocks if block.memory_mount is not None)
+        for block in blocks:
+            await self.stream._send_context(block.content)
+        projection._confirm(blocks)
+        latest = {(block.source_id, block.key): block for block in (*self.delivered.blocks, *blocks)}
+        self.delivered = ModelContextProjection(tuple(latest.values()))
 
     async def wrap_tool_execute(
         self,
@@ -227,7 +263,21 @@ class _LiveDeferredResults(WrapperCapability[AgentContext]):
     async def handle_deferred_tool_calls(
         self, ctx: RunContext[AgentContext], *, requests: DeferredToolRequests
     ) -> DeferredToolResults | None:
-        results = await self.wrapped.handle_deferred_tool_calls(ctx, requests=requests)
+        approve = self.bridge.stream._approval_handler if ctx.run_id == self.bridge.stream.run_id else None
+        if approve is not None and requests.approvals:
+            decisions = await asyncio.gather(*(approve(call) for call in requests.approvals))
+            results = DeferredToolResults(
+                approvals={
+                    call.tool_call_id: decision for call, decision in zip(requests.approvals, decisions, strict=True)
+                }
+            )
+            remaining = requests.remaining(results)
+            if remaining is not None:
+                resolved = await self.wrapped.handle_deferred_tool_calls(ctx, requests=remaining)
+                if resolved is not None:
+                    results.update(resolved)
+        else:
+            results = await self.wrapped.handle_deferred_tool_calls(ctx, requests=requests)
         if results is not None and ctx.run_id == self.bridge.stream.run_id:
             for call in requests.calls:
                 if call.tool_call_id not in results.calls:
@@ -263,6 +313,8 @@ class HarnessLiveStream(HarnessRunStream[None]):
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
         audio_retention: AudioRetention = "transcript_only",
+        approval_handler: RealtimeApprovalHandler | None = None,
+        webrtc: LiveWebRTC | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> None:
@@ -270,6 +322,10 @@ class HarnessLiveStream(HarnessRunStream[None]):
             raise TypeError("live model must be a native RealtimeModel instance")
         if audio_retention not in {"transcript_only", "input_audio", "output_audio", "all"}:
             raise ValueError("audio_retention must be a native AudioRetention value")
+        if webrtc is not None and (audio_retention != "transcript_only" or not model.profile.get("supports_webrtc")):
+            raise RunError(
+                "WebRTC requires a compatible model and transcript-only retention.", code="live_webrtc_unsupported"
+            )
         super().__init__(
             executable=executable,
             environment=environment,
@@ -284,9 +340,12 @@ class HarnessLiveStream(HarnessRunStream[None]):
         self._live_model = model
         self._live_model_settings = deepcopy(model_settings)
         self._audio_retention: AudioRetention = audio_retention
+        self._approval_handler = approval_handler
+        self._webrtc = webrtc
         self._result_output_adapter = TypeAdapter(type(None))
         self._session: RealtimeSession | None = None
         self._native_context: RunContext[AgentContext] | None = None
+        self._bridge: _LiveCapability | None = None
         self._session_ready = asyncio.Event()
         self._response_records: dict[int, ModelUsageRecord] = {}
         self._usage_refusal: UsageLimitExceeded | None = None
@@ -328,7 +387,29 @@ class HarnessLiveStream(HarnessRunStream[None]):
         *,
         respond: bool | None = None,
     ) -> None:
-        await self._active_session().send(content, respond=respond)
+        session = self._active_session()
+        if respond is not False and isinstance(content, str) and self._bridge is not None:
+            await self._bridge.recall(content)
+        await session.send(content, respond=respond)
+
+    async def _send_context(self, text: str) -> None:
+        from pydantic_ai.realtime.openai_live import OpenAILiveModel
+
+        session = self._active_session()
+        if not isinstance(self._live_model, OpenAILiveModel):
+            await session.send(text, respond=False)
+            return
+        # GPT-Live limits each context append to 500 tokens. A UTF-8 byte bound
+        # is conservative for its tokenizer and preserves every character.
+        source = text.encode("utf-8")
+        while source:
+            chunk = source[:500].decode("utf-8", errors="ignore")
+            await session.send(chunk, respond=False)
+            source = source[len(chunk.encode("utf-8")) :]
+
+    def enqueue_notice(self, content: Sequence[TextContent]) -> str | None:
+        """Queue trusted host text at the next idle turn boundary with its source metadata."""
+        return self._active_session().enqueue(*content, priority="when_idle")
 
     async def send_audio(self, data: bytes | AsyncIterable[bytes]) -> None:
         await self._active_session().send_audio(data)
@@ -441,27 +522,55 @@ class HarnessLiveStream(HarnessRunStream[None]):
             raise RunError("Live plugin input must be text.", code="live_input_unsupported")
         self.context.usage_attribution.model_usage_coverage = "responses_only"
         self._latest_messages = await self.context._storage.resolve_messages(self._initial_history)
-        bridge = _LiveCapability(self)
+        bridge = self._bridge = _LiveCapability(self)
         status = "completed"
         try:
-            async with self._executable._agent.realtime(
-                self._live_model,
-                deps=self.context,
-                model_settings=self._live_model_settings,
-                instructions=self._executable._system_prompt,
-                capabilities=(bridge, *self._bindings.capabilities),
-                usage=self._usage,
-                usage_limits=self._usage_limits,
-                run_id=self.run_id,
-                conversation_id=self.thread_id,
-                message_history=list(self._latest_messages),
-            ).session(audio_retention=self._audio_retention) as session:
+            async with AsyncExitStack() as transport:
+                native = self._executable._agent.realtime(
+                    self._live_model,
+                    deps=self.context,
+                    model_settings=self._live_model_settings,
+                    instructions=self._executable._system_prompt,
+                    capabilities=(bridge, *self._bindings.capabilities),
+                    usage=self._usage,
+                    usage_limits=self._usage_limits,
+                    run_id=self.run_id,
+                    conversation_id=self.thread_id,
+                    message_history=list(self._latest_messages),
+                )
+                provider_session: RealtimeProviderSession | None = None
+                if self._webrtc is not None:
+                    # Signaling resolves instructions and tool definitions. The sideband gets its own dispatcher.
+                    bridge.prepare_dispatcher = False
+                    answer = await native.answer_webrtc_offer(self._webrtc.offer)
+                    provider_session = answer.session
+
+                    async def hang_up() -> None:
+                        with anyio.CancelScope(shield=True):
+                            await native.hang_up(answer.session)
+
+                    transport.push_async_callback(hang_up)
+                    await self._webrtc.deliver_answer(answer.sdp)
+                    bridge.prepare_dispatcher = True
+                session = await transport.enter_async_context(
+                    native.session(audio_retention=self._audio_retention, provider_session=provider_session)
+                )
                 self._session = session
+                for block in bridge.initial.blocks:
+                    if block.memory_mount is not None:
+                        await self._send_context(block.content)
                 bridge.connected()
                 self._session_ready.set()
                 if initial_input is not None:
-                    await session.send(initial_input)
+                    await self.send(initial_input)
                 async for event in session:
+                    if (
+                        isinstance(event, PartEndEvent)
+                        and isinstance(event.part, SpeechPart)
+                        and event.part.speaker == "user"
+                        and event.part.transcript
+                    ):
+                        await bridge.recall(event.part.transcript)
                     # Native session result events follow wire send. Capability
                     # observations and prepared results are not delivery receipts.
                     if isinstance(event, RealtimeSessionReconnectEvent):
@@ -503,4 +612,4 @@ class HarnessLiveStream(HarnessRunStream[None]):
         )
 
 
-__all__ = ["HarnessLiveStream"]
+__all__ = ["HarnessLiveStream", "LiveWebRTC"]

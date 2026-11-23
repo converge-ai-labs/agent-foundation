@@ -533,12 +533,13 @@ def build_app(
         if serves_api:
             app.include_router(router)
     if serves_api:
+        from a13n_service.runs.realtime import CONNECT_PATH
         from a13n_service.runs.realtime import connect as connect_realtime
         from a13n_service.runs.realtime import router as realtime_router
 
         app.include_router(realtime_router)
         if config.server.realtime_preview and role == "all":
-            app.add_api_websocket_route("/api/v1/workspaces/{workspace_id}/realtime", connect_realtime)
+            app.add_api_websocket_route(CONNECT_PATH, connect_realtime)
         from a13n_service.runs.browsers.tables import BrowserRow
         from a13n_service.runs.browsers.viewer import relay as browser_viewer_relay
         from a13n_service.runs.devices.tables import DeviceRow

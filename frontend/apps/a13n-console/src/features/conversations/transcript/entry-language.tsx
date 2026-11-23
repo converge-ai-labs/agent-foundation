@@ -14,12 +14,14 @@ import {
   GitBranchIcon,
   HandPalmIcon,
   MagnifyingGlassIcon,
+  MicrophoneIcon,
   PauseIcon,
   PencilSimpleIcon,
   QuestionIcon,
   SparkleIcon,
   SquareIcon,
   TerminalWindowIcon,
+  TextTIcon,
   UsersThreeIcon,
   WarningCircleIcon,
   WrenchIcon,
@@ -103,6 +105,11 @@ export function entryLabel(entry: TimelineEntry, t: TFunction): EntryLabel {
       return { name: t("Reasoning"), mono: false };
     case "reply":
       return { name: t("Reply"), mono: false };
+    case "user_input":
+      return {
+        name: entry.speech ? t("Voice input") : t("Text input"),
+        mono: false,
+      };
     case "guidance":
       return {
         name:
@@ -212,6 +219,8 @@ export function entryGlyph(entry: TimelineEntry): Icon {
       return SparkleIcon;
     case "reply":
       return ArrowBendUpRightIcon;
+    case "user_input":
+      return entry.speech ? MicrophoneIcon : TextTIcon;
     case "guidance":
       return ArrowElbowDownRightIcon;
     case "hidden":

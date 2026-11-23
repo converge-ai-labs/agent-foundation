@@ -32,6 +32,20 @@ description: 掌握 Service 执行 API：固定智能体版本、幂等提交收
 
 可通过 `/sessions`、`/threads` 与 `/runs` 上的 `?text_query=...` 检索历史对话文本。
 
+## 从 App 发起实时会话
+
+在单进程 `all` 模式的 Service 上开启 `server.realtime_preview`，并为 Agent 选择一个实时模型作为主模型。
+
+1. 从 App 后端用具备工作区 `run` 权限的 API Key 调用 `POST /api/v1/realtime/sessions`。传入 `{"agent_id":"…"}` 开始新会话，或者加上 `thread_id` 继续已有 Thread。仅发送文字、仍接收语音时，可以设置 `audio: false`。
+2. 把响应交给客户端。浏览器用 `new WebSocket(url, [subprotocol, ticket])` 建连，`url` 由 Service 地址和返回的 `websocket_path` 拼成 `wss:` URL。本机回环开发可用 `ws:`。票据 30 秒内有效且只能使用一次，长期 API Key 留在 App 后端。
+3. 从 `accepted` 帧读取 `session_id`、`thread_id` 和 `run_id`，收到 `ready` 后再发输入。票据建连时无需额外发送启动帧。
+
+默认的 `"transport":"websocket"` 通过 WebSocket 双向传输 24 kHz、单声道、有符号 16 位小端 PCM。
+
+OpenAI Realtime 和 GPT-Live 可以在开启音频输入的情况下指定 `"transport":"webrtc"`。先向 `RTCPeerConnection` 添加静音的麦克风轨道，再通过 WebSocket 发送完整的纯音频 SDP，格式为 `{"type":"offer","sdp":"…"}`。应用 `answer` 帧中的 SDP，等媒体连接就绪且 Service 发出 `ready` 后再打开麦克风。音频在客户端与 OpenAI 之间直传。`GET /api/v1/realtime` 会列出可用传输方式。Grok Voice 使用 `"transport":"websocket"`。
+
+两种传输方式都用 `{"type":"text","text":"你好"}` 发送文字，从 `transcript` 帧读取字幕。收到 `approval_required` 时，把待审批的调用展示给用户，再发送对应的决定 `{"type":"approval","call_id":"…","approve":true}`，拒绝时使用 `approve: false`。挂断时发 `{"type":"stop"}`，Service 保存 Run 后会关闭连接。
+
 ## 提交消息
 
 向 `POST /api/v1/threads/{thread_id}/inbox` 发送 `agent_id`、`payload`、可选 `delivery` 与新的 `Idempotency-Key` 继续对话：

@@ -43,7 +43,7 @@ if TYPE_CHECKING:
     from a13n_service.runs.environments.clients.sessions import Sessions
     from a13n_service.runs.environments.contexts import Contexts
     from a13n_service.runs.environments.monitoring.proxy import Proxy
-    from a13n_service.runs.realtime import Channel
+    from a13n_service.runs.realtime import Channel, ConnectionTicket
     from a13n_service.runs.tool_executions.owner import Executions
 
 
@@ -117,6 +117,10 @@ class Runtime:
     @cached_property
     def seal_publish_tasks(self) -> set[asyncio.Task[None]]:
         return set()
+
+    @cached_property
+    def realtime_tickets(self) -> dict[str, ConnectionTicket]:
+        return {}
 
     @cached_property
     def mailbox(self) -> Mailbox:
