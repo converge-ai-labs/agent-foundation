@@ -59,7 +59,7 @@ class DraftCommand(SurfaceModel):
 
 class CachedInputPrediction(SurfaceModel):
     continuation_id: str = Field(min_length=1, max_length=128)
-    text: str = Field(min_length=1, max_length=500)
+    text: str = Field(min_length=1)
 
 
 class DraftFrame(SurfaceModel):
@@ -247,6 +247,15 @@ class SharedDraft:
             if reset_mode and "mode" in selected.get("options", type=Map):
                 del selected.get("options", type=Map)["mode"]
                 options_clear = selected.get_update()
+        if self.prediction is not None:
+            # Only consume the host-owned prediction present before admission.
+            # A fast Run can publish its successor before this update is applied.
+            captured_options = options_document(prediction=True)
+            captured_options.apply_update(self._options_update)
+            del captured_options.get("options", type=Map)["prediction"]
+            if options_clear is not None:
+                captured_options.apply_update(options_clear)
+            options_clear = captured_options.get_update()
         del captured.get("text", type=Text)[:]
         return captured.get_update(), options_clear
 
@@ -262,9 +271,6 @@ class SharedDraft:
             options.apply_update(self._options_update)
             if updates[1] is not None:
                 options.apply_update(updates[1])
-            fields = options.get("options", type=Map)
-            if "prediction" in fields:
-                del fields["prediction"]
             return await self._publish(candidate, options)
 
     async def _publish(self, candidate: Doc, options: Doc) -> bool:

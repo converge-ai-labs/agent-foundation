@@ -29000,7 +29000,6 @@
             "type": "string"
           },
           "text": {
-            "maxLength": 500,
             "minLength": 1,
             "title": "Text",
             "type": "string"

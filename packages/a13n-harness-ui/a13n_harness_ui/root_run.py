@@ -29,7 +29,7 @@ from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.goal import GoalView
-from a13n_harness_ui.input_prediction import InputPredictions
+from a13n_harness_ui.input_prediction import PredictionSnapshot
 from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.memory import MemoryOrganizationRun
@@ -136,6 +136,7 @@ class RootRunCoordinator:
         on_human_admitted: Callable[[RootRunAdmission, RootOperationView], Awaitable[None]] | None = None,
         restart_coordinator: GracefulRestart | None = None,
         on_input_admitted: Callable[[str | None], None] | None = None,
+        generate_prediction: Callable[[str, str, str, PredictionSnapshot], Awaitable[None]] | None = None,
         tool_executions: ToolExecutions | None = None,
         browser_handback: BrowserHandback | None = None,
     ) -> None:
@@ -146,7 +147,8 @@ class RootRunCoordinator:
         self._observation = observation or UiObservation()
         self._restart = restart_coordinator
         self._executor = executor
-        self.input_predictions = InputPredictions()
+        self._generate_prediction = generate_prediction
+        self._predictions: dict[str, CancelScope] = {}
         self._touch_thread = touch_thread
         self._save_execution = save_execution
         self._summary_hub = summary_hub
@@ -187,7 +189,26 @@ class RootRunCoordinator:
         """Reject new fence users without waiting for caller-owned captures."""
         async with self._lock:
             self._accepting = False
-            self.input_predictions.clear()
+            for thread_id in tuple(self._predictions):
+                self.cancel_prediction(thread_id)
+
+    def cancel_prediction(self, thread_id: str) -> None:
+        if (scope := self._predictions.pop(thread_id, None)) is not None:
+            scope.cancel()
+
+    async def _run_prediction(
+        self, scope: CancelScope, thread_id: str, execution_id: str, continuation_id: str, snapshot: PredictionSnapshot
+    ) -> None:
+        assert self._generate_prediction is not None
+        try:
+            with scope:
+                if not scope.cancel_called:
+                    await self._generate_prediction(thread_id, execution_id, continuation_id, snapshot)
+        except Exception as exc:
+            get_logger(__name__).info("Input prediction unavailable", extra={"error_type": type(exc).__name__})
+        finally:
+            if self._predictions.get(thread_id) is scope:
+                del self._predictions[thread_id]
 
     async def stop_admission(self) -> None:
         await self.seal_admission()
@@ -484,7 +505,7 @@ class RootRunCoordinator:
                 if self._restart is not None and organization is None:
                     self._restart.register(thread_id)
                 self._operations[receipt.receipt_id] = operation
-                self.input_predictions.evict(thread_id)
+                self.cancel_prediction(thread_id)
                 self._active_by_thread[thread_id] = receipt.receipt_id
                 if human_input and self._browser_handback is not None:
                     self._browser_handback.user_input(thread_id)
@@ -818,6 +839,8 @@ class RootRunCoordinator:
                 self._active_by_thread.pop(thread_id, None)
             if (
                 self._accepting
+                and self._generate_prediction is not None
+                and self._task_group is not None
                 and not operation.observation_only
                 and operation.status is RootOperationStatus.completed
                 and outcome is not None
@@ -829,7 +852,15 @@ class RootRunCoordinator:
                     prediction.resolver.configured_models[prediction.prefix.model_id].model_id == account.model_id
                 ):
                     prediction = replace(prediction, account_id=account.account_id)
-                self.input_predictions.retain(thread_id, reference.logical_digest, prediction)
+                scope = self._predictions[thread_id] = CancelScope()
+                self._task_group.start_soon(
+                    self._run_prediction,
+                    scope,
+                    thread_id,
+                    operation.receipt.receipt_id,
+                    reference.logical_digest,
+                    prediction,
+                )
             operation.done.set()
             if self._tool_executions is not None:
                 self._tool_executions.run_settled(thread_id)

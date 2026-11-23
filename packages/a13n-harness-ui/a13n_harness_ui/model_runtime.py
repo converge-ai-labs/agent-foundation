@@ -15,6 +15,7 @@ from a13n_harness.configuration import RunConfiguration
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
+from a13n_harness.models.transport import DEFAULT_MODEL_HTTP_RETRY_CONFIG
 from a13n_harness.pricing import PricingCatalog, get_current_pricing_catalog
 from a13n_harness.providers.model.credentials import ApiKeyCredential
 from a13n_harness.providers.model.oauth import (
@@ -153,7 +154,11 @@ class HarnessUiModelResolver:
             )
         authentication = recipe.authentication
         if isinstance(authentication, ApiKeyAuthentication):
-            model = await self._api_key_model(recipe, authentication)
+            model = (
+                await self._api_key_model(recipe, authentication, retry_http=False)
+                if prediction
+                else await self._api_key_model(recipe, authentication)
+            )
             header = recipe.model_configuration.get("session_affinity_header")
             if isinstance(header, str):
                 return RequestHeadersModel(model, common_headers={header: derive_model_affinity_id(thread_id)})
@@ -272,7 +277,9 @@ class HarnessUiModelResolver:
 
         return SubscriptionGroupModel(group, source.accounts, source.usage, factory, selected=selected)
 
-    async def _api_key_model(self, recipe: ResolvedModelRecipe, authentication: ApiKeyAuthentication) -> Model:
+    async def _api_key_model(
+        self, recipe: ResolvedModelRecipe, authentication: ApiKeyAuthentication, *, retry_http: bool = True
+    ) -> Model:
         api_key = (
             os.environ.get(authentication.env)
             if authentication.env is not None
@@ -295,6 +302,7 @@ class HarnessUiModelResolver:
                 ApiKeyCredential.model_validate({"api_key": api_key}),
                 base_url=base_url,
                 configuration=self.configuration,
+                http_retry=DEFAULT_MODEL_HTTP_RETRY_CONFIG if retry_http else None,
             )
         except Exception as exc:
             raise ModelResolutionError(

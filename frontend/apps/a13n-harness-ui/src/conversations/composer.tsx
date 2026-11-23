@@ -635,9 +635,7 @@ export function Composer({
     local ||
     (draft.status === "Connected" && !draft.replacement && !draft.error);
   const { prediction, setComposing } = useInputPrediction(
-    transport,
     draft,
-    threadId,
     continuationId,
     predictionEnabled &&
       canRun &&

@@ -177,6 +177,7 @@ from a13n_harness_ui.host_files import (
 from a13n_harness_ui.host_git import GitCaptureRequest, GitDiff, GitDiffRequest, GitDiscovery, GitStatus, HostGit
 from a13n_harness_ui.host_terminal import HostTerminal, TerminalCreate, TerminalSession, TerminalView
 from a13n_harness_ui.inbox import InboxController
+from a13n_harness_ui.input_prediction import PredictionSnapshot
 from a13n_harness_ui.live import (
     HarnessUiLiveHub,
     HarnessUiSummaryHub,
@@ -628,48 +629,49 @@ class HarnessUiApp:
             model, recipe = await self._utility_model(source, model_id, request.thread_id or "dictation")
             return DictationResult(text=await transcribe_audio(request, model, recipe.settings))
 
+    async def _prediction_eligible(self, thread_id: str, continuation_id: str, execution_id: str | None = None) -> bool:
+        source = await self._configurations.current()
+        if source is None or not source.document.input_prediction.enabled or thread_id == BOT_THREAD_ID:
+            return False
+        thread = await self._threads.get(thread_id)
+        return (
+            not thread.archived
+            and thread.memory_scope is None
+            and thread.parent_thread_id is None
+            and thread.last_execution is not None
+            and thread.last_execution.status == "completed"
+            and (execution_id is None or thread.last_execution.execution_id == execution_id)
+            and thread.continuation is not None
+            and thread.continuation.logical_digest == continuation_id
+            and await self._root_runs.active(thread_id) is None
+        )
+
     async def predict_input(self, thread_id: str, continuation_id: str) -> str | None:
-        """Pull a warm suggestion without claiming the Thread Run slot."""
+        """Read a published suggestion without starting or waiting on inference."""
         async with self._operation():
-
-            async def eligible() -> bool:
-                source = await self._configurations.current()
-                if source is None or not source.document.input_prediction.enabled or thread_id == BOT_THREAD_ID:
-                    return False
-                thread = await self._threads.get(thread_id)
-                return (
-                    not thread.archived
-                    and thread.memory_scope is None
-                    and thread.parent_thread_id is None
-                    and thread.last_execution is not None
-                    and thread.last_execution.status == "completed"
-                    and thread.continuation is not None
-                    and thread.continuation.logical_digest == continuation_id
-                    and await self._root_runs.active(thread_id) is None
-                )
-
-            if not await eligible():
+            if not await self._prediction_eligible(thread_id, continuation_id):
                 return None
             async with self._shared_drafts_lock:
                 draft = await self._load_shared_draft(thread_id)
-            if (cached := draft.prediction) is not None and cached.continuation_id == continuation_id:
-                return cached.text if await eligible() else None
-            text = await self._root_runs.input_predictions.get(thread_id, continuation_id)
-            if text is None:
-                return None
-            try:
-                async with self._root_runs.require_inactive(thread_id, clear_interaction=False):
-                    if not await eligible():
-                        return None
-                    await draft.set_prediction(CachedInputPrediction(continuation_id=continuation_id, text=text))
-            except RunCoordinationError as exc:
-                if exc.code != "thread_run_active":
-                    raise
-                return None
-            except ValueError:
-                # A full options document does not make predictions or drafts unusable.
-                return None
-            return text
+                cached = draft.prediction
+            if cached is not None and cached.continuation_id == continuation_id:
+                return cached.text if await self._prediction_eligible(thread_id, continuation_id) else None
+            return None
+
+    async def _generate_prediction(
+        self, thread_id: str, execution_id: str, continuation_id: str, snapshot: PredictionSnapshot
+    ) -> None:
+        if not await self._prediction_eligible(thread_id, continuation_id, execution_id):
+            return
+        text = await snapshot.sample(thread_id)
+        if text is None:
+            return
+        async with self._root_runs.require_inactive(thread_id, clear_interaction=False):
+            if not await self._prediction_eligible(thread_id, continuation_id, execution_id):
+                return
+            async with self._shared_drafts_lock:
+                draft = await self._load_shared_draft(thread_id)
+                await draft.set_prediction(CachedInputPrediction(continuation_id=continuation_id, text=text))
 
     async def _utility_model(
         self, source: LoadedHarnessUiConfiguration, model_id: str, thread_id: str
@@ -2082,7 +2084,7 @@ class HarnessUiApp:
                 await self._threads.clear_context(
                     thread_id=thread_id, expected_continuation_id=expected_continuation_id
                 )
-                self._root_runs.input_predictions.evict(thread_id)
+                self._root_runs.cancel_prediction(thread_id)
                 draft = None
                 async with self._shared_drafts_lock:
                     if thread_id in self._shared_drafts or await self._store.drafts.get(thread_id) is not None:
@@ -2112,7 +2114,7 @@ class HarnessUiApp:
                             busy_thread_ids=self._tool_executions.busy_thread_ids(),
                         )
                     for removed in deleted:
-                        self._root_runs.input_predictions.evict(removed)
+                        self._root_runs.cancel_prediction(removed)
                         self._tool_executions.forget(removed)
                         self._tool_executions.clear_state(removed)
                         if (draft := self._shared_drafts.pop(removed, None)) is not None:
@@ -2136,6 +2138,7 @@ class HarnessUiApp:
             if mutation.patch.archived is True:
                 async with self._root_runs.require_inactive(thread_id):
                     await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
+                    self._root_runs.cancel_prediction(thread_id)
                     if self._browsers is not None:
                         self._browsers.handback.suppress(thread_id)
                 await self._retire_mcp_owners()
@@ -4433,6 +4436,12 @@ async def open_harness_ui_app(
                 if app is not None:
                     await app._title_new_chat(admission)
 
+            async def generate_prediction(
+                thread_id: str, execution_id: str, continuation_id: str, snapshot: PredictionSnapshot
+            ) -> None:
+                assert app is not None
+                await app._generate_prediction(thread_id, execution_id, continuation_id, snapshot)
+
             root_runs = RootRunCoordinator(
                 root_executor,
                 tool_executions=tool_executions,
@@ -4442,6 +4451,7 @@ async def open_harness_ui_app(
                 on_input_admitted=memory_organizer.offer if host_mode == "webui" else None,
                 on_human_admitted=human_admitted if host_mode == "webui" else None,
                 on_settled=notify_settled if host_mode == "webui" else None,
+                generate_prediction=generate_prediction if host_mode == "webui" else None,
                 summary_hub=summary_hub,
                 observation=observation,
                 touch_thread=store.threads.touch,
