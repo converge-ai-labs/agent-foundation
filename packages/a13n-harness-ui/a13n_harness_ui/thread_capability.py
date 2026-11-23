@@ -20,6 +20,7 @@ from a13n_harness.model_context import (
     ModelContextPlacement,
     ModelContextProjection,
     ModelContextProjectionRequest,
+    ModelContextRequestKind,
 )
 from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.toolsets.output import disclose_mapping_field
@@ -49,6 +50,19 @@ from a13n_harness_ui.voice import VoiceController
 
 _THREAD_CAPABILITY_ID = "a13n.harness-ui.thread-collaboration"
 _MAX_OUTPUT_CHARS = 64 * 1024
+_INBOX_REMINDER_SOURCE = "a13n-harness-ui.inbox-reminder"
+_INBOX_REMINDER = (
+    "<inbox-reminder>Before you end this turn: if it delivers the user's requested result or waits for the "
+    "user's decision, call post_to_inbox once (result or needs_human). A chat reply or ask_user_question does "
+    "not replace it. Skip ordinary short answers.</inbox-reminder>"
+)
+# A Run that works this long without posting is likely unattended work.
+_INBOX_LONG_RUN_SECONDS = 600
+_INBOX_LONG_RUN_REMINDER = (
+    "<inbox-reminder>This Run has worked for over 10 minutes without an Inbox item, so the user is probably "
+    "away. When you finish or need the user's decision, call post_to_inbox before you end the turn."
+    "</inbox-reminder>"
+)
 
 
 class ThreadCreator(Protocol):
@@ -477,6 +491,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
     composition: ResolvedRunComposition | None = None
     id: str | None = _THREAD_CAPABILITY_ID
     _toolset: FunctionToolset[AgentContext] | None = field(default=None, init=False, repr=False, compare=False)
+    _inbox_posted: bool = field(default=False, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if self.id != _THREAD_CAPABILITY_ID:
@@ -502,6 +517,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             and self.composition is not None
             and self.composition.coordinator_thread_id is None
             and self.composition.root.source_kind not in {"live", "memory"}
+            and self.composition.inbox_enabled
         )
 
     def _guidance(self, name: str) -> str:
@@ -541,9 +557,12 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 instructions += "\nNo models are allowed for new agents. Use existing chats for collaboration."
         if self._inbox_available:
             instructions += (
-                "\nThe user reads important outcomes in one Inbox instead of opening every chat. Call post_to_inbox only "
-                "for a final result, a question or decision the user must answer, or a major milestone; never for routine "
-                "progress, acknowledgements or repeats. After a needs_human item, also ask in chat and end your turn."
+                "\nThe user reads important outcomes in one Inbox instead of opening every chat. Before you end a turn "
+                "that delivers the user's requested result or waits for the user's decision, call post_to_inbox once "
+                "with kind result or needs_human; use milestone for a major checkpoint in long work. A chat reply or "
+                "ask_user_question does not replace the Inbox item, and the item does not duplicate the chat reply. "
+                "Post once per outcome; skip routine progress, acknowledgements and ordinary short answers. After a "
+                "needs_human item, also ask in chat and end your turn."
             )
         if self._notes_available and self.source_thread_id != BOT_THREAD_ID:
             instructions += (
@@ -567,8 +586,46 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         self, ctx: RunContext[AgentContext], request: ModelContextProjectionRequest, handler: ModelContextNext
     ) -> ModelContextProjection:
         projection = await handler(request)
-        if not self._notes_available or self.source_thread_id == BOT_THREAD_ID:
+        owned = list(self._inbox_reminders(ctx, request))
+        if self._notes_available and self.source_thread_id != BOT_THREAD_ID:
+            owned.extend(await self._bot_note_blocks(ctx, request))
+        if not owned:
             return projection
+        return ModelContextProjection(blocks=(*projection.blocks, *owned))
+
+    def _inbox_reminders(
+        self, ctx: RunContext[AgentContext], request: ModelContextProjectionRequest
+    ) -> tuple[ModelContextBlock, ...]:
+        if not self._inbox_available:
+            return ()
+        self._require_context(ctx)
+        reminder = ModelContextBlock(
+            source_id=_INBOX_REMINDER_SOURCE,
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=_INBOX_REMINDER,
+        )
+        # Every new input carries it; compaction or handoff can drop it mid-Run.
+        if request.kind is ModelContextRequestKind.INPUT or not request.history.contains(reminder):
+            return (reminder,)
+        long_run = ModelContextBlock(
+            source_id=_INBOX_REMINDER_SOURCE,
+            key="long-run",
+            context_group="runtime_state",
+            placement=ModelContextPlacement.REQUEST_EPILOGUE,
+            content=_INBOX_LONG_RUN_REMINDER,
+        )
+        if (
+            not self._inbox_posted
+            and ctx.deps.elapsed_seconds >= _INBOX_LONG_RUN_SECONDS
+            and not request.history.contains(long_run)
+        ):
+            return (long_run,)
+        return ()
+
+    async def _bot_note_blocks(
+        self, ctx: RunContext[AgentContext], request: ModelContextProjectionRequest
+    ) -> tuple[ModelContextBlock, ...]:
         self._require_context(ctx)
         assert self.controller.bot is not None
         status = await self.controller.bot.collaboration_status()
@@ -587,9 +644,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 content=f'<bot-note thread_id="{escape(self.source_thread_id, quote=True)}">\n{escape(note.content, quote=False) if note.content else "No Bot Note."}\n</bot-note>',
             ),
         )
-        return ModelContextProjection(
-            blocks=(*projection.blocks, *(block for block in owned if not request.history.matches_latest(block)))
-        )
+        return tuple(block for block in owned if not request.history.matches_latest(block))
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         # Native construction and Run preparation request the same static tools.
@@ -678,12 +733,14 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         title: str = Field(min_length=1, max_length=120),
         message: str = Field(min_length=1, max_length=4096),
     ) -> dict[str, Any]:
-        """Post one important item to the user's Inbox, where they read outcomes without opening each chat.
+        """Post one item to the user's Inbox, where they read outcomes without opening each chat.
 
-        kind: `result` for a final result or deliverable; `needs_human` for a question, decision, approval or
-        confirmation the user must give; `milestone` for a major checkpoint in long work. Do not post routine
-        progress, acknowledgements or duplicates. Write `message` in Markdown so it stands alone: the conclusion,
-        key evidence and exactly what the user must do. The item links back to this point in the chat.
+        Call it before you end a turn that delivers the user's requested result or waits for the user's decision.
+        A chat reply or ask_user_question does not replace it. kind: `result` for a final result or deliverable;
+        `needs_human` for a question, decision, approval or confirmation the user must give; `milestone` for a
+        major checkpoint in long work. Post once per outcome; skip routine progress, acknowledgements and ordinary
+        short answers. Write `message` in Markdown so it stands alone: the conclusion, key evidence and exactly
+        what the user must do. The item links back to this point in the chat.
         """
         self._require_context(ctx)
         assert self.controller.inbox is not None and ctx.tool_call_id is not None
@@ -697,6 +754,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
             )
         except HarnessUiError as exc:
             return thread_tool_failure(exc, "inbox_post_failed")
+        self._inbox_posted = True
         return {"ok": True, "item_id": item.item_id}
 
     async def read_bot_note(self, ctx: RunContext[AgentContext]) -> dict[str, Any]:

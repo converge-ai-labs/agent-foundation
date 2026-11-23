@@ -218,6 +218,8 @@ class ResolvedRunComposition(CompositionModel):
     )
     # Missing in old captures means memory was not attached to that Run.
     memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
+    # Missing in old captures keeps the Inbox tool those Runs already had.
+    inbox_enabled: bool = Field(default=True, exclude_if=lambda value: value)
     run_configuration: RunConfiguration = Field(
         default_factory=RunConfiguration, exclude_if=lambda value: value == RunConfiguration()
     )

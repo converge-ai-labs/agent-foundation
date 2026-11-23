@@ -421,6 +421,8 @@ On a desktop, point to a row to show quick actions for read state, **Open in cha
 
 In the chat, each post appears as a compact **Sent to Inbox** card; its Inbox link opens Inbox. Agents post with `post_to_inbox(kind, title, message)`, where `kind` is `result`, `needs_human` or `milestone`. After a `needs_human` item, the Agent also asks in the chat and waits, so reply in the chat.
 
+Inbox posting is on by default. To stop it, turn off **Settings → Chats → Inbox → Let agents post to Inbox** (`inbox.enabled: false` in `a13n-harness-ui.yaml`). Runs that start after the change get no Inbox tool, instructions or reminders. Existing items stay in Inbox.
+
 ## Find unfinished input
 
 Conversation rows, including Coordinators, show a pencil mark while they hold unfinished shared input. The mark appears beside running and unread state.
