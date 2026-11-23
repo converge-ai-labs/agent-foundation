@@ -73,6 +73,19 @@ it("prefers an explicit remote logo before the MCP fallback", () => {
   expect(container.querySelector("img")?.src).toBe(brands.mcp.icon);
 });
 
+it("resolves Service browser, environment and memory provider types", () => {
+  for (const type of [
+    "browserbase",
+    "browser_use",
+    "kernel",
+    "kubernetes",
+    "boxd",
+  ])
+    expect(resolveBrand({ identity: type, alias: type })?.icon).toBeTruthy();
+  for (const type of ["mem0_oss", "mem0_platform"])
+    expect(resolveBrand({ identity: type, alias: type })).toBe(brands.mem0);
+});
+
 it("resolves every built-in Web provider identity while keeping unknown providers generic", () => {
   for (const identity of [
     "duckduckgo",

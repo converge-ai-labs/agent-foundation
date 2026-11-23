@@ -8,4 +8,6 @@ Use `BrandIcon` for product and provider identities shared across applications. 
 
 `typesafe.svg` preserves the inline vector symbol published on [TypeSafe's website](https://typesafe.ai/), retrieved on September 30, 2026. The source SVG's DOM ID and overflow attribute are omitted, the SVG namespace is added for standalone rendering, and its white fill is changed to black for light backgrounds; `BrandIcon` inverts it in dark mode. The mark remains subject to its owner's trademark terms. TinyFish uses its vendor-hosted favicon, an SVG containing the vendor's PNG mark.
 
+`boxd.svg` preserves the geometry of [boxd's official favicon](https://boxd.sh/favicon.svg). Its near-white fill is inverted for light backgrounds; dark mode restores the original color.
+
 The registry includes the complete LobeHub Icons catalog through version-pinned jsDelivr URLs; SVG files are not copied into this repository. `lobe-brands.generated.ts` records the generated mappings from `@lobehub/icons@5.18.0` to `@lobehub/icons-static-svg@1.95.0`. Run `pnpm --dir frontend --filter a13n-ui sync:brands` after updating the pinned versions in the generator, then review and test the generated diff. LobeHub Icons is distributed under the MIT License; its product and provider marks remain subject to their owners' trademark terms.

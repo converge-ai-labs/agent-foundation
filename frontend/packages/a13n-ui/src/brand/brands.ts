@@ -1,4 +1,5 @@
 import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
+import boxdIcon from "./boxd.svg";
 import typesafeIcon from "./typesafe.svg";
 
 /** Display identities only. These mappings never select an endpoint or account. */
@@ -182,6 +183,11 @@ const curatedBrands: Record<string, Brand> = {
     aliases: ["fly", "fly.io", "sprites"],
     hosts: ["fly.io"],
   },
+  browserbase: { icon: "https://www.browserbase.com/favicon.svg" },
+  browser_use: { icon: "https://browser-use.com/favicon-32x32.png" },
+  kernel: { icon: "https://www.onkernel.com/favicon.svg" },
+  kubernetes: { icon: "https://kubernetes.io/icons/favicon-64.png" },
+  boxd: { icon: boxdIcon, invertInDark: true },
   mem0: {
     icon: "https://framerusercontent.com/images/2ys67ADJdvcyGmQnhp8vKWSq8.svg",
     aliases: [
@@ -189,6 +195,8 @@ const curatedBrands: Record<string, Brand> = {
       "a13n.mem0-platform",
       "mem0-oss",
       "mem0-platform",
+      "mem0_oss",
+      "mem0_platform",
     ],
     hosts: ["mem0.ai", "app.mem0.ai", "api.mem0.ai"],
   },
