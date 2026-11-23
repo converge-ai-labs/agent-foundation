@@ -38,6 +38,7 @@ export function AnnotationChip() {
           <button
             type="button"
             className={styles.clearChip}
+            disabled={ctx.dictating && !!ctx.active}
             title={t("Clear annotations")}
             aria-label={t("Clear annotations")}
             onClick={() => {
@@ -66,6 +67,7 @@ export function AnnotationChip() {
                   <Button
                     size="icon-xs"
                     variant="ghost"
+                    disabled={ctx.dictating}
                     aria-label={t("Edit annotation {{number}}", {
                       number: index + 1,
                     })}
@@ -80,6 +82,7 @@ export function AnnotationChip() {
                   <Button
                     size="icon-xs"
                     variant="ghost"
+                    disabled={ctx.dictating && ctx.active === note.id}
                     aria-label={t("Delete annotation {{number}}", {
                       number: index + 1,
                     })}

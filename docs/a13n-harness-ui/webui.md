@@ -136,6 +136,8 @@ In **Settings → Chats → Dictation**, select **Codex subscription**, then cho
 
 Click the microphone in the composer or an **Add to chat** comment, then click Stop. The backend generates the final text, using the draft, chat title and nearby authored conversation as context. Codex subscription dictation runs ASR followed by text correction; intermediate text is not shown. The final fragment is inserted once at the current input selection without a preview or confirmation step. Nothing is sent automatically. If correction fails, the original transcript is inserted with a warning. After a recognition error, Retry uses the same recording and captured context. Cancel discards it. Microphone capture requires localhost or HTTPS.
 
+You can keep working elsewhere in the same chat while recording or waiting for the transcript. An **Add to chat** comment stays open: the text or retry prompt appears there without moving your cursor out of another input. Use **Cancel voice input** to discard the recording.
+
 ## Agent and Model settings
 
 Open the current Model in the composer footer to choose an Agent, Model, Reasoning mode, Thinking level, or Speed. Each choice opens inside the same panel; Default restores inherited settings. Chat options contains Goal, Coordinate agents, Environment, and Clear context on desktop and phones.

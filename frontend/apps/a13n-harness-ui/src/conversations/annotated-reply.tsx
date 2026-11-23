@@ -136,6 +136,7 @@ export function AnnotatedReply({
             type="button"
             className={styles.marker}
             style={{ top: mark.top, left: mark.left }}
+            disabled={ctx.dictating}
             data-reply-marker={mark.id}
             data-active={ctx.active === mark.id || undefined}
             aria-label={label}
