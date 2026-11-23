@@ -13,22 +13,28 @@ Read the owning specification under `spec/`, the implementation or schema, and e
 
 Check whether the target page is covered by content regression assertions in `scripts/tests/test_docs.py`, `packages/a13n-harness-ui/tests/test_builtin_skills.py`, or `packages/a13n-service/tests/test_documentation.py`.
 
-## 2. Target the Audience and Disclose Progressively
+## 2. Write for Users, Not as an Implementation Spec
 
-Tailor tone, examples, and entry points to the product surface defined in [Documentation Changes](../../../CONTRIBUTING.md#documentation-changes):
+Documentation exists to help users understand concepts and accomplish tasks—not to mirror internal architecture, state machines, or every edge-case invariant from `spec/`.
 
-| Surface                                                       | Target audience                             | Primary focus                                                                                                                                                                                                |
-| ------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `docs/a13n-harness/`, `docs/a13n-stream-protocol/`            | Python developers                           | Three-lifetime architecture (`AgentSpec` / `RunBindings` / `HarnessState`), runnable Python code, typed tools, subagents, CodeAct, and AG-UI event streams                                                   |
-| `docs/a13n-harness-ui/`                                       | Terminal/WebUI users & DIY builders         | Fast repository onboarding, TUI/WebUI controls, Live voice, Host Browser, Bot, Coordinator workers, YAML recipes, Markdown subagents, `SKILL.md`, and Content Plugins                                        |
-| `docs/a13n-service/`                                          | Platform engineers, team admins & app teams | Self-hosted deployment, RBAC and credentials, Agent Composer, Memory Spaces (Dreams-style extraction and candidate diff review), MCP/OAuth & tool discovery, Schedules, SDK/HTTP integration, and operations |
-| `docs/environments/`, `docs/a13n-envd/`, `docs/a13n-logging/` | Infrastructure & sandbox integrators        | Native vs. Envd EIP execution, OS sandboxing, egress policies, computer use, and `EnvironmentProvider` / `EnvironmentConnector` / `EnvironmentExecution` separation                                          |
+Apply three structural rules to every page:
 
-Organize each page from shallow to deep without omitting material technical details:
+1. **Shallow to deep, big to small:**
+   - **Lead with the mental model and fast path:** Open with what the feature does in 1–3 sentences, followed immediately by the shortest working example or numbered procedure.
+   - **Expand core workflows next:** Cover the 80% tasks users actually perform, using concise tables, short config snippets, or a simple Mermaid diagram where relationships matter.
+   - **Push advanced options and edge cases to the bottom:** Put specialized modes (e.g., custom transport, recovery retries, low-level tuning) and troubleshooting at the end, never before the main workflow.
+2. **Cut implementation details that do not change user action:**
+   - Omit internal storage layouts, background garbage-collection mechanics, internal queue/transport plumbing (e.g., Redis Streams), and exhaustive negative disclaimers unless the user must configure or act on them.
+   - If a behavior is an internal invariant owned by `spec/`, leave it in `spec/` instead of repeating it in user docs.
+   - Keep paragraphs short (2–4 sentences). Prefer a compact table or bulleted list over a dense wall of prose.
+3. **Target the audience for each surface** (defined in [Documentation Changes](../../../CONTRIBUTING.md#documentation-changes)):
 
-1. **Outcome and fast path:** Start with what the user accomplishes and a minimal, self-contained runnable example or numbered procedure.
-2. **Signature capability depth:** Expand distinctive features in concrete detail—complete signatures, parameter tables, configuration fragments, and Mermaid lifecycle diagrams where visual flow clarifies relationships.
-3. **Contracts, edge cases, and troubleshooting:** Group concurrency rules (`ETag` / `If-Match`, `Idempotency-Key`), state recovery, limits, and troubleshooting into structured tables or callouts (`> [!NOTE]`, `> [!IMPORTANT]`, `> [!WARNING]`) after the main workflow.
+| Surface                                                       | Target audience                             | Primary focus                                                                                                                                   |
+| ------------------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/a13n-harness/`, `docs/a13n-stream-protocol/`            | Python developers                           | Core mental model (`AgentSpec` / `RunBindings` / `HarnessState`), runnable Python examples, tools, subagents, CodeAct, and event streams        |
+| `docs/a13n-harness-ui/`                                       | Terminal/WebUI users & DIY builders         | Quick setup, TUI/WebUI workflows, Live voice, Host Browser, Bot, Coordinator, YAML recipes, Markdown subagents, `SKILL.md`, and Content Plugins |
+| `docs/a13n-service/`                                          | Platform engineers, team admins & app teams | Deployment, RBAC & credentials, Agents, Environments, Memory, MCP & tools, Schedules, SDK/HTTP integration, and day-2 operations                |
+| `docs/environments/`, `docs/a13n-envd/`, `docs/a13n-logging/` | Infrastructure & sandbox integrators        | Native vs. Envd execution, OS sandboxing, egress policies, computer use, and provider configuration                                             |
 
 ## 3. Write Direct, Anti-Defensive Prose
 

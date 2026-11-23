@@ -1,56 +1,14 @@
 ---
-title: Envd 守护进程配置与传输层
+title: 守护进程配置与传输
 sidebarTitle: 配置与传输
-description: 配置 Envd 的 stdio、HTTP 与反向 WebSocket 传输通道、会话默认参数、命令执行开关以及系统资源采样策略。
+description: 配置 Envd 的 stdio、HTTP 和反向 WebSocket 传输、会话默认值、命令启用以及系统遥测采集。
 ---
 
-在启动时配置 Envd，选择连接方式、执行账号、文件系统隔离和网络模式。Host 负责部署、凭据和守护进程生命周期。随后，每个 EIP 会话通过 `session.open.configuration` 在部署权限内选择工作目录、Sandbox、出站网络模式、生命周期和命令可用性。省略的选项继承启动默认值。
+在启动 `a13n-envd` 时配置传输方式、允许执行的命令以及运行所用的系统账号。如需开箱即用的沙箱容器镜像，请参阅[沙箱镜像](sandbox.md)。
 
-本页的 JSON 和环境变量用于守护进程。Harness UI YAML 和 `EnvironmentProviderSpec` 配置 Host 侧适配器，包括必需方法及带秘密引用的可选会话出站策略。需要预置账号、shell 和 sudo 的容器时，使用[沙箱镜像](sandbox.md)。
+## 连接到 Service
 
-## 守护进程生命周期与重启
-
-为守护进程选择一个重启责任方：
-
-| 部署方式                                       | 命令                                   | 重启责任方            |
-| ---------------------------------------------- | -------------------------------------- | --------------------- |
-| 外部 service manager                           | `a13n-envd daemon [daemon options]`    | 外部 service manager  |
-| 缺少可靠 manager 的 HTTP 或反向 WebSocket 环境 | `a13n-envd supervise [daemon options]` | Envd 独立的原生父进程 |
-| Host 管理的 stdio                              | `a13n-envd daemon [daemon options]`    | Host 及其协议管道     |
-
-两个命令使用相同的可信守护进程选项、JSON 和环境配置。省略子命令时保留前台守护进程行为。`connect` 和 `connect-service` 仍是供外部 service manager 管理的前台注册启动器；`supervise` 接受独立守护进程选项，不接受注册命令。
-
-子进程每次退出都会触发原生 supervisor 替换，包括退出码为零的情况。整个父进程生命周期最多替换三次，退避时间依次为 1、2、4 秒。预算耗尽后以失败状态退出。运维停止会取消退避、请求优雅排空，并在三秒后强制终止所拥有的进程树，最后最多等待一秒完成回收。Unix 接受 SIGINT、SIGTERM 和 SIGHUP；Windows 接受 Ctrl+C、Ctrl+Break 和控制台关闭。私有父进程生命周期管道也能在没有 Windows 控制台时请求排空；Windows 另有句柄关闭即终止的 Job 所有权。Unix 子进程能响应时，会在父进程消失后排空退出。
-
-此模式监督进程退出，不检测活进程卡死，也不替代认证 EIP 就绪检查。它拒绝 stdio；stdio 的 EOF 和协议生命周期由调用方负责。普通前台 HTTP 和反向 WebSocket 启动不受 stdin EOF 影响。
-
-替换会保留安装的 Device ID、工作区文件和已有凭据文件，并启动新的 generation。旧会话和句柄失效。客户端必须打开并探测新会话；中断的命令不会重放。客户端会话替换与守护进程监督相互独立。
-
-## 配置层级
-
-Envd 按五层配置启动，后面的层优先：
-
-1. 内置默认值。
-2. `--config` 选择的守护进程 JSON 文件。
-3. `A13N_ENVD_CONFIG_JSON`，使用相同 schema 校验。
-4. 标量 `A13N_ENVD_*` 环境变量。
-5. 显式 CLI 参数。
-
-对象递归合并，数组和标量替换已有值。每个 JSON 层必须先通过校验，再参与合并。启动者可完全通过环境变量提供嵌套设置：
-
-```bash
-export A13N_ENVD_RUNTIME_DIR=/run/a13n-envd-state
-export A13N_ENVD_DEVICE_ID=device-sandbox
-export A13N_ENVD_FULL_CONTROL=true
-export A13N_ENVD_CONFIG_JSON='{"default_working_directory":"/workspace","limits":{"max_file_bytes":104857600}}'
-a13n-envd
-```
-
-标量设置覆盖身份、执行、发现、元数据和生命周期：`A13N_ENVD_ALLOW_SUDO`、`A13N_ENVD_EXECUTION_UID`、`A13N_ENVD_EXECUTION_GID`、`A13N_ENVD_EGRESS_MODE`、`A13N_ENVD_FULL_CONTROL`、`A13N_ENVD_COMPUTER_USE`、`A13N_ENVD_COMPUTER_USE_PERMISSION_TIMEOUT_MS`、`A13N_ENVD_DIRECTORY_DISCOVERY`、`A13N_ENVD_DEVICE_ID`、`A13N_ENVD_NAME`、`A13N_ENVD_DESCRIPTION`、`A13N_ENVD_DEFAULT_WORKING_DIRECTORY`、`A13N_ENVD_IDLE_TIMEOUT_MS`、`A13N_ENVD_MAX_LIFETIME_MS` 和 `A13N_ENVD_VM_STARTUP_TIMEOUT_MS`。布尔值接受 `true`、`false`、`1` 和 `0`。
-
-## 连接 Service
-
-使用拥有工作空间 `write` 权限的普通 Service API token 登记电脑。登记后，该工作空间中拥有 `run` 权限的用户和服务账号都能使用它，无需与登记账号相同。将 token 保存为私有文件，然后运行：
+使用具备工作区 `write` 权限的 Service API Token（保存在权限为 `0600` 的文件中）注册计算机：
 
 ```sh
 a13n-envd connect-service https://control.example.com --host work \
@@ -58,127 +16,46 @@ a13n-envd connect-service https://control.example.com --host work \
   --default-working-directory /path/to/project
 ```
 
-首次接入时，如果当前所有者和工作空间下没有这个设备的环境，Service 会创建它。Envd 将环境 ID 和专用设备凭据保存在本地。后续运行 `a13n-envd connect-service work`，不再需要 API token 文件。首次启动可加 `--environment-id env_example`，要求使用已有环境。`--device-id` 会忽略本地身份文件；后续启动继续传相同的值。仍可使用 `--computer-use` 等通用 daemon 参数。
+首次运行会完成注册，并将专用设备凭据保存到 `--state-dir`（默认 `~/.a13n-envd`）。后续重启只需运行 `a13n-envd connect-service work`，不再需要 API Token 文件。
 
-Service 配置保存在 `--state-dir` 下的 `instances/<instance>/services/<name>`，默认根目录为 `~/.a13n-envd`（Windows 使用平台状态目录）。不同账号或工作空间请使用不同名称。禁用、删除或撤销凭据的环境不会自动重建。如需在对话中使用已注册的设备，请将其显式[挂载到目标线程](../a13n-service/environments.md#mount-environments-on-a-thread)。
+若本地设备凭据丢失，调用 `POST /api/v1/client-environments/{id}/rotate-credential?workspace_id=…`（携带 `If-Match`）轮换凭据，将新 Token 写入私密文件后，通过 `--credential-file /private/path/device-token` 重启即可。
 
-如果登记成功但凭据丢失，envd 会提示 `client_credential_required` 和环境 ID。先读取环境的当前 ETag，再使用普通 API token 和 `If-Match` 调用 `POST /api/v1/client-environments/{id}/rotate-credential?workspace_id=…`。将返回的 `token` 保存到私有文件，再运行 `a13n-envd connect-service work --credential-file /private/path/device-token`。启动过程不会自动轮换。凭据文件应保持私有（Unix 权限 `0600`）；API token 不会写入配置，也不会用于 WebSocket 鉴权。
+## 连接到 Harness UI
 
-## 连接 Harness UI
-
-在实际执行工作的计算机上发起出站连接：
+从执行任务的计算机发起出站连接：
 
 ```console
 a13n-envd connect https://host.example.com --host work
 ```
 
-1. 打开打印的批准地址，并登录 Host。
-2. 批准匹配的验证码。
-3. 保持 Envd 运行。后续启动用 `a13n-envd connect work` 复用注册。
+1. 打开终端打印的审批地址并登录宿主。
+2. 核对并批准验证码。
+3. 保持 Envd 运行；后续重启执行 `a13n-envd connect work` 即可复用注册。
 
-Envd 在设备上生成凭据，因此浏览器配对只需验证码。带已保存状态的重连会复用批准。Service 请使用[首次接入](#connect-to-service)。
+除回环地址（如 `http://127.0.0.1:8765`）外均要求 HTTPS。私有 CA 使用 `--ca-file`，显示名称使用 `--name`，默认工作目录使用 `--default-working-directory`。
 
-使用本机可访问的 Host URL。除 `http://127.0.0.1:8765` 等回环 HTTP 外，必须使用 HTTPS。私有 CA 通过 `--ca-file /path/to/ca.pem` 添加，证书验证保持开启。用 `--name` 设置批准页面的显示名，`--default-working-directory` 选择已有原生目录，`--config` 提供守护进程 JSON 设置。
+### 已保存的实例与宿主
 
-### 保存的实例与 Host
+Envd 将设备 ID 与各宿主凭据保存在 `--state-dir`（`A13N_ENVD_STATE_DIR`，Unix 默认 `~/.a13n-envd`，Windows 默认 `%LOCALAPPDATA%/.a13n-envd`）。
 
-跨重启保留状态目录，并像账号凭据一样保护它。Unix 默认位置为 `~/.a13n-envd`；Windows 为 `%LOCALAPPDATA%/.a13n-envd`，不可用时回退到 `%USERPROFILE%/.a13n-envd`。用 `--state-dir` 或 `A13N_ENVD_STATE_DIR` 覆盖。
-
-实例将设备 ID 保存在 `instances/<instance>/device-id`。各 Host 的配置、凭据和私有运行时位于 `instances/<instance>/hosts/<host>/`。默认实例为 `default`；省略 `--host` 时会从 URL 派生稳定别名。
-
-为每个 Host 运行独立进程。同一台计算机连接两个 Host 时：
+如需在同一台机器上连接两个不同宿主，请分别使用独立的 `--instance` 与 `--host` 启动两个进程：
 
 ```console
 a13n-envd connect https://personal.example.com --instance personal --host personal
 a13n-envd connect https://team.example.com --instance team --host team
 ```
 
-重启各进程时，使用原来的实例和 Host 别名。每个进程都有独立注册和会话。`connect` 在前台运行；需要自动启动时，在服务管理器中配置相同的账号、状态目录和命令环境。
-
-认证被拒绝时，Envd 停止并保留凭据。检查 Host 地址、注册状态和挂载的状态目录。真正的新安装应使用新实例并显式批准。
-
-## 独立运行的最小配置
-
-启动由 Host 管理的 stdio 守护进程：
-
-1. 创建并保护绝对路径的运行时父目录。
-2. 将下方 JSON 保存为 `/absolute/path/to/a13n-envd.json`，把工作目录路径替换为已有目录。
-3. 由 Host 通过 stdin/stdout 管道启动 Envd：
-
-```bash
-export A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime
-export A13N_ENVD_DEVICE_ID=device-my-machine
-a13n-envd --config /absolute/path/to/a13n-envd.json
-```
-
-Envd 为当前代次创建不可预测的私有子目录，并持有独占运行时锁。管道承载 EIP 消息帧，诊断信息写入 stderr。
-
-```json
-{
-  "default_working_directory": "/absolute/path/to/workspace",
-  "directory_discovery": true,
-  "limits": {
-    "max_file_bytes": 104857600
-  }
-}
-```
-
-`configuration.working_directory` 省略或为 null 时，默认工作目录作为该会话的初始 cwd。省略时，Envd 记录启动 cwd。目录不存在会导致会话打开失败，而非守护进程启动失败。文件访问遵循执行账号、Sandbox 授权及外层沙箱的边界，不以 cwd 为边界。目录发现可在会话创建前读取有界的一层目录。
-
-用 `--device-id`、JSON `device_id` 或 `A13N_ENVD_DEVICE_ID` 指定稳定设备 ID，或让安装状态目录保留生成的 ID。CLI 元数据选项覆盖 JSON。目录发现通过 JSON 或 `A13N_ENVD_DIRECTORY_DISCOVERY` 设置。Windows 启动路径使用原生格式，EIP 路径使用 `/C:/...` 或 `/UNC/server/share/...`。
-
-## 可选健康探针
-
-部署平台需要时，可以开启独立 HTTP 存活探针。默认关闭；开启后的默认监听地址为 `127.0.0.1:8080`：
-
-```bash
-export A13N_ENVD_HEALTH_ENABLED=true
-export A13N_ENVD_HEALTH_BIND=0.0.0.0:8080
-# 保留已有的传输、凭据和运行时配置。
-a13n-envd daemon
-```
-
-等价 JSON 为 `{"health":{"enabled":true,"bind":"0.0.0.0:8080"}}`，环境变量覆盖 JSON。监听地址接受数字 IPv4 或方括号包围的 IPv6 地址及端口。已开启的探针绑定失败会导致启动失败。
-
-使用 `GET /healthz` 或 `GET /ping`；本地 daemon 正常响应时，两者均返回 HTTP 200 和 `ok`。也支持 HEAD。探针适用于 stdio、HTTP 和 outbound WebSocket，outbound 重连期间仍保持存活。daemon 退出时关闭探针，原生 supervisor 启动替代 daemon 后重新监听。
-
-探针表示本地存活。Device／会话就绪及 Service 连通性仍通过认证 EIP 检查。探针使用无认证明文 HTTP，不暴露执行接口或 Device 详情。请按部署网络选择监听地址和访问范围；Service 不会自动开启它。
-
-## 系统信息与资源监控
-
-配置与数据解释见 [Device 监控与指标](monitoring.md#system-information-and-resource-monitoring)。
-
-## Prometheus 与 OpenTelemetry
-
-配置与数据解释见 [Device 监控与指标](monitoring.md#prometheus-and-opentelemetry)。
-
-### 原生 OTLP 推送
-
-配置与数据解释见 [Device 监控与指标](monitoring.md#native-otlp-push)。
-
-### Prometheus 抓取配置
-
-配置与数据解释见 [Device 监控与指标](monitoring.md#prometheus-scrape-configuration)。
-
-### OpenTelemetry Collector
-
-配置与数据解释见 [Device 监控与指标](monitoring.md#opentelemetry-collector)。
-
-### 指标与新鲜度
-
-配置与数据解释见 [Device 监控与指标](monitoring.md#metrics-and-freshness)。
+重启时请保留状态目录，并将其视同账号凭据妥善保护。
 
 ## 启用命令
 
-启用 Full Control，以执行账号的权限运行原生 shell：
+默认情况下 Envd 仅开放文件操作。启用 Full Control 可直接以执行账号权限开放 `/bin/sh`（Unix）或 PowerShell（Windows）：
 
 ```bash
 A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://host.example.com
 ```
 
-JSON `"full_control": true` 选择相同模式，标量环境设置优先。Full Control 在 Unix 提供 `/bin/sh`，在 Windows 提供 PowerShell，并继承启动者环境和 `PATH` 顺序。它排除守护进程启动变量（`A13N_ENVD_*`、`EIP_*`）及 OTLP 指标设置。Shell 别名和未导出变量留在启动 shell 中。逐命令覆盖只影响该命令。
-
-Envd `full_control` 启用执行能力，不提供隔离，并且独立于 Harness UI 的本地模式。Full Control 与手动可执行文件根目录/shell 配置二选一，不能组合。显式命令配置示例：
+也可以保持 `full_control` 关闭，在守护进程 JSON 中显式声明 `trusted_executable_roots` 与 `shell_profiles`：
 
 ```json
 {
@@ -190,82 +67,39 @@ Envd `full_control` 启用执行能力，不提供隔离，并且独立于 Harne
       "display_name": "POSIX shell",
       "native_executable": "/bin/sh",
       "fixed_arguments": ["-c"],
-      "safe_base_environment": {},
       "executable_search_roots": ["/usr/local/bin", "/usr/bin", "/bin"],
-      "max_script_bytes": 1048576,
-      "allow_login_mode": false
+      "max_script_bytes": 1048576
     }
   ]
 }
 ```
 
-关闭 Full Control，且根目录和配置都为空时，Envd 不声明命令方法。根目录和配置选择可信可执行文件；Host 外层边界及[执行隔离](isolation.md)决定访问范围。[受控会话出站网络](egress.md)添加目标限制和凭据注入。
+## 配置层级
 
-检查设备声明的执行功能，确认信号、限制和可执行位支持。子进程环境由可继承值和显式命令输入组合而成；守护进程控制变量仍属于启动配置。
+<span id="minimal-standalone-configuration"></span>
 
-## 原生身份与 sudo
+Envd 按优先级从低到高合并五层配置（对象递归合并，标量与数组直接覆盖）：
 
-> [!IMPORTANT]
-> 默认允许原生 sudo。禁用 Sandbox 时，经过授权的软件包安装和系统文件修改会作用于外层沙箱的原始文件系统，并跨会话保留。
+1. 内置默认值
+2. `--config /path/to/a13n-envd.json`
+3. `A13N_ENVD_CONFIG_JSON`
+4. 标量环境变量 `A13N_ENVD_*`（如 `A13N_ENVD_FULL_CONTROL=true`、`A13N_ENVD_DEVICE_ID=...`、`A13N_ENVD_ALLOW_SUDO=false`）
+5. 显式 CLI 参数
 
-Linux 上省略执行 UID/GID 会保留启动者身份，包括 root。Root 启动者切换账号前，先预置账号及 home/工作目录权限，再同时设置 `execution.uid`/`execution.gid`、两个环境变量或两个 CLI 选项。显式 `0:0` 选择 root。对于预置的 `sandbox` 账号：
+## 传输配置
 
-```bash
-# Replace sandbox with the account provisioned by your image or deployment.
-export A13N_ENVD_EXECUTION_UID="$(id -u sandbox)"
-export A13N_ENVD_EXECUTION_GID="$(id -g sandbox)"
-a13n-envd
-```
+通过 `A13N_ENVD_TRANSPORT` 选择传输模式：
 
-命令、文件 RPC、工作目录访问和目录发现使用所选账号的原生权限。文件 RPC 在权限不足时报告错误，不调用 sudo。命令中的 sudo 影响该命令及其后代，不影响后续文件 RPC。凭据加载和 broker 管理仍由守护进程负责。
+| 模式                | 连接方向          | 典型场景                        |
+| ------------------- | ----------------- | ------------------------------- |
+| `stdio`             | 父进程管道        | 宿主托管的本地守护进程（默认）  |
+| `http`              | 宿主直连 Envd     | HTTPS 或回环 HTTP 守护进程      |
+| `reverse_websocket` | Envd 主动连接宿主 | NAT/防火墙后的出站连接（`wss`） |
 
-切换账号会初始化附加组和账号环境默认值。保留启动者身份会保留原生 capability 继承。从 root 切换用户时，执行命令前移除 Envd 为 supervisor 保留的信号 capability。外层平台和受控出站限制仍然适用；非特权启动者不能选择其他账号。
-
-在镜像或部署中安装 sudo 并配置 sudoers。`allow_sudo` 允许原生提权，但仍受该授权及外层 `no_new_privs`/`nosuid` 限制。Envd 不提供免密码规则。
-
-用以下任一启动设置禁用额外提权：
+本地回环 HTTP 启动示例：
 
 ```bash
-# Environment variable
-A13N_ENVD_ALLOW_SUDO=false a13n-envd
-
-# CLI, including the connect command
-a13n-envd --allow-sudo false
-a13n-envd connect work --allow-sudo false
-
-# Same nested setting without a file
-A13N_ENVD_CONFIG_JSON='{"execution":{"allow_sudo":false}}' a13n-envd
-```
-
-等价的 JSON 设置为：
-
-```json
-{
-  "execution": {"allow_sudo": false}
-}
-```
-
-Linux 会对 worker 及其后代应用 `no_new_privs`，阻止通过 sudo、setuid 二进制和文件 capabilities 提权。包括 root 在内的已有权限保留。启动优先级仍然适用（`--allow-sudo true` 覆盖环境变量 `false`）；命令不能通过自身环境改变此策略。不支持该实现的平台拒绝 `false`。UID/GID 选择仅限 Linux，其他平台保留原生启动身份。
-
-## 传输通道配置
-
-按 Host 所需的连接方向选择：
-
-| 配置                | 启动设置                                         | 用途                                   |
-| ------------------- | ------------------------------------------------ | -------------------------------------- |
-| `stdio`             | 父进程提供的进程管道                             | Host 管理的本地守护进程                |
-| `http`              | 绑定地址、受保护凭据文件、TLS 或显式可信明文范围 | Host 主动连接设备                      |
-| `reverse_websocket` | 出站 URL 和受保护凭据文件                        | 设备主动连接经过身份验证的 Host 监听器 |
-
-将 `A13N_ENVD_TRANSPORT` 设为所选通道。使用本地 HTTP 客户端时：
-
-1. 准备受保护的 token 文件和已有工作目录。
-2. 替换下方命令中的对应路径。命令会创建私有运行时父目录并绑定回环 HTTP。
-3. 启动 Envd：
-
-```bash
-mkdir -p "$HOME/.a13n-envd-runtime"
-chmod 700 "$HOME/.a13n-envd-runtime"
+mkdir -p "$HOME/.a13n-envd-runtime" && chmod 700 "$HOME/.a13n-envd-runtime"
 export A13N_ENVD_RUNTIME_DIR="$HOME/.a13n-envd-runtime"
 export A13N_ENVD_DEVICE_ID=device-http-example
 export A13N_ENVD_TRANSPORT=http
@@ -275,69 +109,54 @@ export A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback
 a13n-envd --default-working-directory /absolute/path/to/workspace
 ```
 
-Python 客户端使用相同凭据和预期设备 ID，连接基础 origin `http://127.0.0.1:8787`。客户端会选择经过认证的 `/eip/control` 和 `/eip/transfer` 路由。
+启用 HTTPS 时，取消 `A13N_ENVD_HTTP_PLAINTEXT_SCOPE`，改为设置 `A13N_ENVD_HTTP_TLS_CERT_FILE` 和 `A13N_ENVD_HTTP_TLS_KEY_FILE`。使用 `reverse_websocket` 时，设置 `A13N_ENVD_REVERSE_WS_URL` 和 `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`。
 
-使用 HTTPS 时，取消设置 `A13N_ENVD_HTTP_PLAINTEXT_SCOPE`，设置 `A13N_ENVD_HTTP_TLS_CERT_FILE` 和 `A13N_ENVD_HTTP_TLS_KEY_FILE`，连接前配置客户端信任。Provider 私网路径使用 `provider_private_link`，并要求客户端显式启用。公共端点要求 HTTPS。代理路由和 TLS 见 [Python 传输选项](python-client.md#http-options)。
+## 守护进程生命周期与重启
 
-出站反向 WebSocket 设置 `A13N_ENVD_REVERSE_WS_URL` 和 `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`；用 `A13N_ENVD_REVERSE_WS_CA_FILE` 添加私有信任。WebSocket 监听器由 Host 管理。
+<span id="lifecycle-and-ownership"></span>
 
-将凭据保存在受保护文件中，不放入 argv、URL、描述符、日志或可移植环境状态。凭据授予设备访问权，会话隔离由执行边界提供。
+| 部署方式                         | 命令                            | 重启负责方                    |
+| -------------------------------- | ------------------------------- | ----------------------------- |
+| 外部服务管理器或宿主托管 `stdio` | `a13n-envd daemon [options]`    | 服务管理器或宿主              |
+| 独立 HTTP / 反向 WebSocket       | `a13n-envd supervise [options]` | 内置监管进程（最多重启 3 次） |
 
-## 生命周期与归属
+重启会保留 Device ID、工作区文件和凭据，但会开启新世代——客户端需要重新打开 Session。
 
-先初始化设备连接，再为每个资源范围打开会话。一个守护进程代次服务多个会话，各会话记录 cwd 并管理自己的操作。`session.close` 关闭该范围。保活只续期调用者自己的所有权，因此发现流量不会保留已放弃的会话。
+## 原生身份与 sudo
 
-消息帧传输断开后，所有者可在会话原有的空闲期限或最大生命周期到期前，于同一代次中显式重新附加。附加恢复对已有资源的访问，不重放命令或恢复传输。过期后应打开新会话并丢弃旧引用。
+在 Linux 上，Envd 默认以启动用户身份运行。若要从 root 降权至已预置的非 root 账号，需同时设置 `execution.uid` 与 `execution.gid`（或 `A13N_ENVD_EXECUTION_UID` 与 `A13N_ENVD_EXECUTION_GID`）。
 
-关闭时，Host 关闭自己的连接，只终止由它管理生命周期的守护进程。会话清理回收进程及私有输出/暂存存储，同时保留工作目录文件。报告清理失败时，应视为回收未完成。
+> [!IMPORTANT]
+> `execution.allow_sudo` 默认为 `true`（仍受镜像 sudoers 约束）。在 Linux 上传入 `--allow-sudo false` 或设置 `A13N_ENVD_ALLOW_SUDO=false` 可通过 `no_new_privs` 禁止提权。
 
-## 接纳工作前检查
+## 健康探针与监控
 
-检查守护进程版本：
+### 可选健康探针
+
+启用无鉴权的 HTTP 存活探针（`GET /healthz` 或 `/ping`，返回 `200 ok`）：
 
 ```bash
-a13n-envd --version
+A13N_ENVD_HEALTH_ENABLED=true A13N_ENVD_HEALTH_BIND=127.0.0.1:8080 a13n-envd daemon
 ```
 
-1. 匹配 Python 客户端的精确版本。
-2. 从守护进程子环境中移除仅供 Host 使用的 `A13N_ENVD_EXECUTABLE`。未知的 `A13N_ENVD_*` 变量和 JSON 字段会使配置失败。
-3. 初始化设备，验证协议和身份，再检查所选会话范围的就绪状态。
-4. 通过部署自己的启动者和检查测试外层执行边界。Envd 没有 `isolation probe` 或逐命令隔离模式。
+### 系统信息与资源监控
 
-## 独立字段参考
+Envd 支持采集宿主机/容器的 CPU、内存与磁盘指标，并通过 Prometheus 或 OpenTelemetry 导出。配置方式见[监控与指标](monitoring.md)。
 
-在守护进程 JSON 中使用以下字段：
+## 独立配置字段参考
 
-| 根字段                                       | 默认值或含义                                                                                                         |
-| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `device_id`                                  | 显式稳定身份，否则使用安装身份                                                                                       |
-| `installation_state_directory`               | 未提供显式设备 ID 时用于持久保存身份                                                                                 |
-| `name`, `description`                        | 可选显示元数据                                                                                                       |
-| `default_working_directory`                  | 未设置时使用启动 cwd                                                                                                 |
-| `directory_discovery`                        | `true`                                                                                                               |
-| `idle_timeout_ms`                            | 默认会话空闲寿命：`3600000`（一小时）                                                                                |
-| `vm_startup_timeout_ms`                      | `120000`；设备级 VM 启动准入预算，必须为正数，单位为毫秒                                                             |
-| `max_lifetime_ms`                            | 可选正数最大会话寿命；省略表示无限                                                                                   |
-| `execution.uid`, `execution.gid`             | 可选、成对的 Linux 原生 ID；省略时保留启动者身份，包括 root                                                          |
-| `execution.allow_sudo`                       | `true`；原生 sudoers 仍控制授权                                                                                      |
-| `sandbox`                                    | `{"mode":"disabled"}`；或包含目录 `grants` 的 `restricted`                                                           |
-| `egress`                                     | `{"mode":"inherit"}`；或 `deny` / `controlled`                                                                       |
-| `full_control`                               | `false`；启用时自动配置原生 shell 并继承命令环境                                                                     |
-| `computer_use`                               | `false`；主动启用 macOS/X11/Windows 截图与输入方法，要求禁用 Sandbox 并继承出站网络；参见[电脑操作](computer-use.md) |
-| `computer_use_permission_timeout_ms`         | `120000`；开始任何 EIP 传输前，等待 macOS 权限或 X11/Windows 桌面就绪的正数启动期限                                  |
-| `trusted_executable_roots`, `shell_profiles` | 空；除非启用 Full Control，否则命令方法禁用                                                                          |
-| `limits`                                     | 设备总限制和逐会话限制                                                                                               |
-
-`vm_startup_timeout_ms` 默认为 `120000`，必须为正数。它设置一个设备级 VM 准入预算，覆盖准备、镜像获取、VM 启动和 worker 连接。冷缓存镜像拉取较慢时，使用更大的值，例如在 `--config` 文件中设置 `{"vm_startup_timeout_ms":600000}`，或设置 `A13N_ENVD_VM_STARTUP_TIMEOUT_MS=600000`。将客户端打开 Session 的就绪超时设置为高于此预算，以接收守护进程按阶段区分的超时错误。超时后，正在进行的 SDK 调用仍保持受管理状态；清理完成后才释放容量。此设置不改变原生 Session 准入或 Session 生命周期。
-
-`session.open.configuration.lifecycle` 省略或为 null 时，使用 `idle_timeout_ms` 和 `max_lifetime_ms` 默认值。显式会话生命周期覆盖这些默认值，并在该会话内保持不变。
-
-默认容量为 128 个会话、设备 256 个并发操作、每个会话 128 个并发操作、设备 4 GiB spool、会话 1 GiB spool、每条输出流 256 MiB 及 2 MiB 预览。会话容量应不超过设备总额，预览不超过流容量，spool 为两条流保留足够容量。
-
-### Shell 配置字段
-
-提供 `profile_id`、`display_name`、`native_executable`、`executable_search_roots` 和正数 `max_script_bytes`。可执行文件和根目录使用已存在的原生绝对路径。可选默认值为 `fixed_arguments: []`、`safe_base_environment: {}` 和 `allow_login_mode: false`。
-
-## 受控会话出站网络
-
-在 Linux 上为各会话限制目标并注入 HTTPS 凭据，请按[会话出站网络](egress.md)操作。启动守护进程时配置受控模式，再通过 EIP 提交策略和秘密值。
+| JSON 字段                                    | 默认值 / 说明                                                           |
+| -------------------------------------------- | ----------------------------------------------------------------------- |
+| `device_id`                                  | 稳定设备标识（默认由安装状态目录持久化生成）                            |
+| `default_working_directory`                  | 会话初始工作目录（默认继承守护进程启动目录）                            |
+| `directory_discovery`                        | `true` —— 允许在打开会话前进行受限目录浏览                              |
+| `idle_timeout_ms` / `max_lifetime_ms`        | 会话默认空闲超时（`3600000` 毫秒）与最大存活时间                        |
+| `vm_startup_timeout_ms`                      | `120000` 毫秒 —— VM 启动准入超时                                        |
+| `execution.uid`、`execution.gid`             | 可选的成对 Linux UID/GID                                                |
+| `execution.allow_sudo`                       | `true` —— 在 Linux 上设为 `false` 可强制启用 `no_new_privs`             |
+| `sandbox`                                    | `{"mode":"disabled"}` 或带目录 `grants` 的 `restricted`                 |
+| `egress`                                     | `{"mode":"inherit"}`、`deny` 或 `controlled`（见[会话出站](egress.md)） |
+| `full_control`                               | `false` —— 启用原生 Shell 与继承环境                                    |
+| `computer_use`                               | `false` —— 按需启用桌面控制（见[计算机使用](computer-use.md)）          |
+| `trusted_executable_roots`、`shell_profiles` | `full_control` 为 `false` 时的显式命令白名单                            |
+| `limits`                                     | 设备与单会话并发数、文件大小及输出缓存上限                              |
