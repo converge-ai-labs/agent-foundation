@@ -48,10 +48,12 @@ function invitationState(item: Schema["Invitation"]) {
 export function Invitations({
   scope,
   actions,
+  canResend,
 }: {
   scope: MembershipScope;
   /** The page's member actions, offered again when there is nothing to list. */
   actions: ReactNode;
+  canResend: boolean;
 }) {
   const client = useClient(),
     { t } = useTranslation(),
@@ -95,16 +97,18 @@ export function Invitations({
             rowMenu={(item) =>
               item.accepted_at || item.revoked_at ? null : (
                 <>
-                  <InvitationEditor
-                    scope={scope}
-                    invitation={item}
-                    triggerElement={
-                      <MenuItem closeOnClick={false}>
-                        <PaperPlaneTiltIcon size={14} />
-                        {t("Resend")}
-                      </MenuItem>
-                    }
-                  />
+                  {canResend && (
+                    <InvitationEditor
+                      scope={scope}
+                      invitation={item}
+                      triggerElement={
+                        <MenuItem closeOnClick={false}>
+                          <PaperPlaneTiltIcon size={14} />
+                          {t("Resend")}
+                        </MenuItem>
+                      }
+                    />
+                  )}
                   <Confirm
                     subject={item.email}
                     title={t("Revoke invitation")}

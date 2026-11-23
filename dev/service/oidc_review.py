@@ -50,8 +50,10 @@ def wait_for(url: str, process: subprocess.Popen | None = None) -> None:
 
 
 @contextmanager
-def service(directory: Path, config: Path, port: int):
+def service(directory: Path, config: Path, port: int, *, password_enabled: bool | None = None):
     environment = {name: value for name, value in os.environ.items() if not name.startswith(("A13N_", "OTEL_"))}
+    if password_enabled is not None:
+        environment["A13N_AUTH__PASSWORD_ENABLED"] = str(password_enabled).lower()
     with (directory / "service.log").open("ab") as log:
         process = subprocess.Popen(
             [sys.executable, "-m", "dev.service.oidc_review", "--serve", str(config), "--port", str(port)],
@@ -107,7 +109,7 @@ def write_dex(directory: Path, issuer: str, origin: str) -> Path:
 
 
 def oidc_settings(issuer: str, workspace_id: str, phase: str) -> str:
-    password_enabled = phase == "mixed"
+    password_enabled = phase != "recovery"  # Exercise env precedence in both directions.
     result = f"\n[auth]\npassword_enabled = {str(password_enabled).lower()}\n[auth.oidc]\ndefault_workspace_id = {json.dumps(workspace_id)}\nsession_seconds = 900\n"
     providers = {name: (label, issuer) for name, label in DEX_CLIENTS.items()}
     if phase == "mixed":
@@ -167,9 +169,10 @@ def run(directory: Path, *, manual: bool) -> None:
             "longLabel": LONG_LABEL,
         }
         (directory / "fixture.json").write_text(json.dumps(fixture))
-        for phase in ("mixed", "oidc-only", "single"):
+        for phase in ("mixed", "oidc-only", "single", "recovery"):
             config.write_text(base + oidc_settings(issuer, workspace, phase))
-            with service(directory, config, port):
+            override = None if phase == "mixed" else phase == "recovery"
+            with service(directory, config, port, password_enabled=override):
                 if manual:
                     print(
                         f"Console: {origin}/login\nDex: {EMAIL} / {DEX_PASSWORD}\nPassword: {EMAIL} / {LOCAL_PASSWORD}",

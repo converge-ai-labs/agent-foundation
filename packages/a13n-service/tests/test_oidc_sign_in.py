@@ -2,8 +2,11 @@
 
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
+from urllib.parse import urlencode
 
 import jwt
 import pytest
@@ -11,14 +14,16 @@ from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.settings import OIDC, Authentication, OIDCProvider, Settings
-from a13n_service.tenancy import oidc
+from a13n_service.tenancy import oidc, routes
 from a13n_service.tenancy.authenticate import authenticate_secret
 from a13n_service.tenancy.credentials import new_secret
-from a13n_service.tenancy.tables import GrantRow, PrincipalRow, TokenRow
+from a13n_service.tenancy.tables import GrantRow, PrincipalRow, TokenRow, WorkspaceRow
 from a13n_service.tenancy.users import set_account_status
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import SecretStr, ValidationError
+from redis.exceptions import RedisError
 from sqlalchemy import delete, select, update
+from starlette.requests import Request
 
 pytestmark = pytest.mark.anyio
 
@@ -35,7 +40,7 @@ NONCE = "fixture-nonce"
 def signing_key():
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     public = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
-    return key, {"keys": [{**public, "kid": "fixture", "use": "sig", "alg": "RS256"}]}
+    return key, jwt.PyJWKSet.from_dict({"keys": [{**public, "kid": "fixture", "use": "sig", "alg": "RS256"}]}).keys
 
 
 def id_token(key: Any, **overrides: object) -> str:
@@ -79,6 +84,23 @@ def test_token_rejects_wrong_claims(signing_key, claims) -> None:
     key, jwks = signing_key
     with pytest.raises(jwt.PyJWTError):
         oidc._identity(id_token(key, **claims), jwks, PROVIDER, NONCE)
+
+
+@pytest.mark.parametrize("claim,direction", [("iat", 1), ("nbf", 1), ("exp", -1)])
+def test_token_clock_skew_is_bounded(signing_key, claim, direction) -> None:
+    key, jwks = signing_key
+    current = datetime.now(UTC)
+    within = id_token(key, **{claim: current + timedelta(seconds=direction * 25)})
+    outside = id_token(key, **{claim: current + timedelta(seconds=direction * 35)})
+    assert oidc._identity(within, jwks, PROVIDER, NONCE).subject == "opaque-subject"
+    expected = jwt.ExpiredSignatureError if claim == "exp" else jwt.ImmatureSignatureError
+    with pytest.raises(expected):
+        oidc._identity(outside, jwks, PROVIDER, NONCE)
+
+
+def test_token_accepts_only_the_configured_audience(signing_key) -> None:
+    key, jwks = signing_key
+    assert oidc._identity(id_token(key, aud=[PROVIDER.client_id]), jwks, PROVIDER, NONCE).subject == "opaque-subject"
 
 
 def test_token_rejects_untrusted_signature(signing_key) -> None:
@@ -237,3 +259,190 @@ async def test_oidc_sessions_require_the_original_provider_and_client(service) -
         with pytest.raises(ServiceError) as error:
             await authenticate(providers)
         assert error.value.code == "unauthenticated"
+
+
+@pytest.mark.parametrize(
+    "case,stage,reason,idp_error",
+    [
+        ("unknown_provider", "callback_state", "unknown_provider", None),
+        ("missing_cookie", "callback_state", "missing_cookie", None),
+        ("duplicate_state", "callback_state", "invalid_state", None),
+        ("expired_state", "callback_state", "state_not_found", None),
+        ("known_error", "callback_error", "provider_error", "access_denied"),
+        ("unknown_error", "callback_error", "provider_error", "unknown"),
+        ("issuer_mismatch", "callback_error", "issuer_mismatch", None),
+        ("missing_code", "callback_error", "invalid_code", None),
+        ("exception", "token_exchange", "internal", None),
+    ],
+)
+async def test_callback_diagnostics_are_bounded(service, caplog, monkeypatch, case, stage, reason, idp_error):
+    caplog.set_level(logging.INFO, logger=oidc.__name__)
+    sentinel = "private-sentinel"
+    runtime = service.runtime
+    settings = runtime.settings.model_copy(
+        update={
+            "auth": Authentication(
+                oidc=OIDC(
+                    providers={"team": PROVIDER},
+                    default_workspace_id=service.tenant.workspace_id,
+                )
+            )
+        }
+    )
+    oidc_runtime = SimpleNamespace(settings=settings, redis=runtime.redis)
+    provider_id = sentinel if case == "unknown_provider" else "team"
+    state, browser = new_secret(), new_secret()
+    params = [("state", state), ("code", f"{sentinel}-code"), ("error_description", f"{sentinel}-email@example.test")]
+    if case == "duplicate_state":
+        params.append(("state", f"{sentinel}-other-state"))
+    if case in {"known_error", "unknown_error"}:
+        params.append(("error", "access_denied" if case == "known_error" else sentinel))
+    if case == "issuer_mismatch":
+        params.append(("iss", f"https://{sentinel}.example.test"))
+    if case == "missing_code":
+        params = [(key, value) for key, value in params if key != "code"]
+    cookie = routes._oidc_cookie_name(settings, "team")
+    request = Request(
+        {
+            "type": "http",
+            "query_string": urlencode(params).encode(),
+            "headers": ([] if case == "missing_cookie" else [(b"cookie", f"{cookie}={browser}".encode())]),
+        }
+    )
+    if case not in {"unknown_provider", "missing_cookie", "duplicate_state"}:
+        redirect = routes._oidc_callback_url(settings, "team")
+        key = oidc._flow_key("team", PROVIDER, redirect, state, browser)
+        await runtime.redis.set(key, json.dumps([f"{sentinel}-nonce", f"{sentinel}-verifier", "auth", "token", "jwks"]))
+        if case == "expired_state":
+            await runtime.redis.expire(key, 0)
+
+    async def explode(*args, **kwargs):
+        raise ValueError(f"{sentinel}-token-client-secret")
+
+    monkeypatch.setattr(oidc, "exchange", explode)
+    caplog.clear()
+    response = await routes.finish_oidc_sign_in(request, provider_id, oidc_runtime)
+    assert response.status_code == 303 and response.headers["location"] == "/login?oidc=failed"
+    assert ("set-cookie" in response.headers) == (
+        case
+        in {
+            "known_error",
+            "unknown_error",
+            "issuer_mismatch",
+            "missing_code",
+            "exception",
+        }
+    )
+    (record,) = [record for record in caplog.records if record.name == oidc.__name__]
+    assert record.stage == stage and record.reason == reason
+    assert record.provider_id == (None if case == "unknown_provider" else "team")
+    assert record.__dict__.get("provider_error") == idp_error
+    for secret in (sentinel, state, browser):
+        assert secret not in repr(record.__dict__)
+    assert record.exc_info is None
+
+
+async def test_oidc_start_budget_is_per_peer_separate_and_fail_closed(service, caplog, monkeypatch):
+    caplog.set_level(logging.INFO, logger=oidc.__name__)
+    runtime = service.runtime
+    settings = runtime.settings.model_copy(
+        update={
+            "auth": Authentication(
+                oidc=OIDC(
+                    providers={"team": PROVIDER, "other": PROVIDER},
+                    default_workspace_id=service.tenant.workspace_id,
+                    start_limit=1,
+                )
+            )
+        }
+    )
+    oidc_runtime = SimpleNamespace(settings=settings, redis=runtime.redis, storage=runtime.storage)
+    starts = []
+
+    async def start(redis, name, provider, **kwargs):
+        starts.append(name)
+        return "https://identity.example.test/authorize", new_secret()
+
+    monkeypatch.setattr(oidc, "start", start)
+
+    def browser(address, forwarded):
+        return Request(
+            {"type": "http", "client": (address, 2020), "headers": [(b"x-forwarded-for", forwarded.encode())]}
+        )
+
+    first = await routes.start_oidc_sign_in(browser("192.0.2.1", "192.0.2.99"), "team", oidc_runtime)
+    assert first.headers["location"] == "https://identity.example.test/authorize"
+    other_provider = await routes.start_oidc_sign_in(browser("192.0.2.1", "192.0.2.98"), "other", oidc_runtime)
+    assert other_provider.headers["location"] == "/login?oidc=failed"
+    assert caplog.records[-1].reason == "rate_limited"
+    assert (
+        await service.client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "admin@example.com",
+                "password": "test-password-1234",
+            },
+        )
+    ).is_success
+    await routes.start_oidc_sign_in(browser("192.0.2.2", "192.0.2.99"), "other", oidc_runtime)
+    assert starts == ["team", "other"]
+
+    async def unavailable(*args):
+        raise RedisError("private-sentinel")
+
+    oidc_runtime.redis = SimpleNamespace(eval=unavailable)
+    failed = await routes.start_oidc_sign_in(browser("192.0.2.3", "192.0.2.99"), "other", oidc_runtime)
+    assert failed.headers["location"] == "/login?oidc=failed" and starts == ["team", "other"]
+    assert caplog.records[-1].reason == "rate_limit_unavailable"
+    assert "private-sentinel" not in caplog.text
+
+
+@pytest.mark.parametrize("state,reason", [("missing", "workspace_missing"), ("archived", "workspace_archived")])
+async def test_first_sign_in_requires_active_default_workspace(service, state, reason):
+    runtime = service.runtime
+    workspace_id = service.tenant.workspace_id if state == "archived" else "ws_missing"
+    if state == "archived":
+        async with transaction(runtime.storage) as session:
+            await session.execute(
+                update(WorkspaceRow).where(WorkspaceRow.id == workspace_id).values(archived_at=await now(session))
+            )
+    settings = runtime.settings.model_copy(
+        update={
+            "auth": Authentication(
+                oidc=OIDC(
+                    providers={"team": PROVIDER},
+                    default_workspace_id=workspace_id,
+                )
+            )
+        }
+    )
+    with pytest.raises(oidc.Failure) as failure:
+        await oidc.sign_in(
+            runtime.storage, runtime.access, settings, "team", PROVIDER, oidc.Identity("fresh", "User", None)
+        )
+    assert failure.value.stage == "provision" and failure.value.reason == reason
+
+
+async def test_http_transport_logs_do_not_expose_oidc_query_or_response_headers(caplog):
+    sentinel = "private-sentinel"
+    requests = []
+
+    async def respond(reader, writer):
+        requests.append(await reader.readuntil(b"\r\n\r\n"))
+        writer.write((f"HTTP/1.1 400 {sentinel}\r\nX-Fixture: {sentinel}\r\nContent-Length: 0\r\n\r\n").encode())
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    async with await asyncio.start_server(respond, "127.0.0.1", 0) as server:
+        port = server.sockets[0].getsockname()[1]
+        provider = PROVIDER.model_copy(update={"issuer": f"http://127.0.0.1:{port}"})
+        endpoint = f"{provider.issuer}/token?private={sentinel}"
+        caplog.set_level(logging.DEBUG, logger="httpx2")
+        caplog.set_level(logging.DEBUG, logger="httpcore2")
+        flow = oidc.Flow("nonce", "verifier", "authorize", endpoint, endpoint)
+        with pytest.raises(oidc.Failure) as failure:
+            await oidc.exchange(provider, flow, redirect_uri="https://service.test/callback", code="fixture-code")
+    assert requests and b"accept-encoding: identity" in requests[0].lower()
+    assert failure.value.stage == "token_exchange" and failure.value.status == 400
+    assert sentinel not in repr([record.__dict__ for record in caplog.records])

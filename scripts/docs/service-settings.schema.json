@@ -1445,6 +1445,20 @@
           "minimum": 60,
           "title": "Session Seconds",
           "type": "integer"
+        },
+        "start_limit": {
+          "default": 30,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Start Limit",
+          "type": "integer"
+        },
+        "start_window_seconds": {
+          "default": 60,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Start Window Seconds",
+          "type": "integer"
         }
       },
       "title": "OIDC",

@@ -134,32 +134,45 @@ HTTPS cookie 名为 `__Host-a13n_session`，带有 `Secure`、`HttpOnly` 和 `Sa
 
 1. 先升级所有 Service API 副本，再启用 OIDC。初始化本地管理员，并复制新用户要加入的工作空间 ID。
 2. 在身份提供方注册机密 Web OIDC 客户端。将回调地址设为 `{server.public_url}/api/v1/auth/oidc/{provider_id}/callback`（省略 `server.public_url` 末尾的斜杠）。选用 `team` 等提供方 ID，并在配置与回调路径中使用同一 ID。除本机开发环境外，请使用 HTTPS。
-3. 将提供方与工作空间写入 `service.toml`，然后重启 Service API 副本。通过部署的机密配置提供客户端密钥。
+3. 在部署的 Secret 中将 `A13N_AUTH__OIDC` 设为下面的 JSON，然后重启 Service API 副本。把工作空间 ID、签发方、客户端 ID 和客户端密钥替换为实际值。
 
-```toml
-[auth.oidc]
-default_workspace_id = "ws_replace_with_your_workspace_id"
-
-[auth.oidc.providers.team]
-label = "Team Identity"
-issuer = "https://identity.example.com/realms/team"
-client_id = "a13n-console"
-client_secret = "replace-at-deploy-time"
+```json
+{
+  "default_workspace_id": "ws_replace_with_your_workspace_id",
+  "providers": {
+    "team": {
+      "label": "Team Identity",
+      "issuer": "https://identity.example.com/realms/team",
+      "client_id": "a13n-console",
+      "client_secret": "replace-at-deploy-time"
+    }
+  }
+}
 ```
+
+`A13N_AUTH__OIDC` 会替换 `service.toml` 中整段 `[auth.oidc]`。请在 JSON 中填入全部提供方及所有非默认的 OIDC 设置。`[auth]` 中的其他字段仍由各自的环境变量或 TOML 提供。如果改用 TOML 配置，则把工作空间 ID 写在 `[auth.oidc]`，把提供方配置写在 `[auth.oidc.providers.team]`。
 
 每增加一个 `[auth.oidc.providers.<id>]` 表，登录页就会多一个按钮。提供方须支持 Discovery、带 PKCE S256 的授权码流程、签名 ID token（`RS256` 或 `ES256`）以及 `openid profile email` 权限范围。默认使用 HTTP Basic；如果提供方要求 `client_secret_post`，请设置 `token_endpoint_auth_method = "client_secret_post"`。签发方为 `https://accounts.google.com` 时，Console 显示内置的 Google 图标；签发方为 `https://login.microsoftonline.com/<租户 UUID>/v2.0` 时显示 Microsoft 图标；其他签发方显示盾牌。如果受信任的身份代理始终将用户转到同一家提供方，可以将 `brand` 设为 `"google"`、`"microsoft"` 或 `"generic"` 来指定图标。请为各提供方设置易于辨认、互不重复的标签。
 
+Service 接受两种 `aud` 格式：配置的客户端 ID 字符串，或只包含该 ID 的数组。如果 ID token 提供 `azp`，它也必须匹配同一个 ID。ID token 的 `iat`、`nbf` 可比当前时间晚最多 30 秒，`exp` 也有 30 秒的到期宽限。请允许 Service 出站访问签发方的 Discovery 端点，以及 Discovery 返回的 token 和 JWKS 端点。除本机开发外，这些请求必须使用 HTTPS，不跟随重定向，只接受 `Content-Encoding: identity` 或不带内容编码的响应。浏览器需要访问 Discovery 返回的授权端点。请将反向代理访问日志配置为省略回调 URL 的查询字符串。
+
+OIDC 发起请求有独立的 Redis 限流预算：同一客户端地址访问各提供方共用 `auth.oidc` 下的 `start_limit`（默认 30 次）和 `start_window_seconds`（默认 60 秒）。共享一个 NAT 地址的客户端共用预算；反向代理部署请配置 `server.trusted_proxies`，按可信代理转发的客户端地址计数。Redis 无法限流时，Service 不会发起 Discovery 请求。
+
 凡是身份提供方允许向该客户端授权的用户，都可以登录。请先在身份提供方设置应用访问规则，再发布登录按钮。对于 Google Workspace，请在组织拥有的项目中创建 Web 客户端，并将 **Google Auth Platform → Audience → Internal** 设为仅本组织可用（参见 [Google 的受众指南](https://support.google.com/cloud/answer/15549945)）。External 应用可以允许组织外用户登录；Service 不会按邮箱域名限制准入。
+
+在 Microsoft Entra 员工租户中，`email` 是提供方报告的邮箱，`xms_edov` 验证的是域名所有者，并不验证用户邮箱。[可选声明参考](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference)没有把 `email_verified` 列为 Entra 的标准可选声明，另见 [ID token 声明参考](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference)。如果身份提供方或受信任的上游支持标准 `email_verified` 声明，应仅在实际验证用户邮箱后签发布尔值 `true`。没有该声明时，Service 仍使用签名 token 中的主体标识和显示名，邮箱留空。
+
+如需在 Entra 中限制应用访问，请[启用分配要求并分配指定用户或组](https://learn.microsoft.com/en-us/entra/identity-platform/howto-restrict-your-app-to-a-set-of-users)。Entra 全局管理员不受此分配要求限制。
 
 首次登录会创建独立的 Service 用户，并授予其指定工作空间的 `runner` 角色。身份提供方验证过的邮箱仅用于显示，即使某个密码账号也使用同一邮箱。请通过[成员与授权](identity.md#members-and-grants)管理权限。以后登录时，Service 会保留现有授权，不会恢复已移除的角色。
 
 ### 切换到仅 OIDC 登录
 
-1. 先通过身份提供方登录一次，再由本地管理员把组织级 `admin` 角色授予新用户。
-2. 在独立的浏览器会话中再次通过身份提供方登录，确认可以管理组织。
-3. 在 `[auth]` 下设置 `password_enabled = false`，并重启所有 Service API 副本。现有密码会话会失效，密码登录、密码邀请和密码找回也会停用。API 密钥继续有效。
+1. 让预定的管理员通过身份提供方登录一次。使用本地管理员会话打开 **组织 → 成员 → 添加成员**，选中新账户并授予**管理员**角色。选择列表也包含只有工作空间角色的成员。修改或撤销现有角色时，使用该成员所在行的操作菜单。
+2. 在独立的浏览器会话中通过身份提供方登录，确认新管理员可以打开 **组织 → 成员** 并管理成员。
+3. 将 Service API 副本的环境变量设为 `A13N_AUTH__PASSWORD_ENABLED=false`，然后重启各副本。这会覆盖 `service.toml` 中的 `password_enabled`。现有密码会话失效，密码登录、创建和重发邀请以及密码找回停用。管理员仍可查看和撤销邀请，API 密钥继续有效。
 
-OIDC 会话在 `auth.oidc.session_seconds` 后到期（默认 12 小时），操作不会延长有效期。移除某人的身份提供方访问权时，如需立即撤销本地访问，还要使用 `--principal-id` 禁用对应的 Service 用户。需要恢复运维访问时，将 `password_enabled` 改回 `true` 并重启 API 副本；原来的密码账号仍然保留。
+OIDC 会话在 `auth.oidc.session_seconds` 后到期（默认 12 小时），操作不会延长有效期。移除某人的身份提供方访问权时，如需立即撤销本地访问，还要使用 `--principal-id` 禁用对应的 Service 用户。需要恢复密码登录时，将环境变量设为 `A13N_AUTH__PASSWORD_ENABLED=true`，然后重启 API 副本。原有密码账户仍然保留。
 
 ## 你的账号
 

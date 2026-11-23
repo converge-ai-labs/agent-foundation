@@ -6,7 +6,8 @@ import {
   ShieldCheckIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useAuthConfiguration } from "./configuration";
 import {
   Alert,
   AlertAction,
@@ -171,11 +172,7 @@ export function AuthPage() {
     navigate = useNavigate();
   const { invitationId } = useParams();
   const { t } = useTranslation();
-  const configuration = useQuery({
-    queryKey: ["auth-configuration"],
-    queryFn: ({ signal }) =>
-      client.http.GET("/api/v1/auth/configuration", { signal }).then(data),
-  });
+  const configuration = useAuthConfiguration();
   const routeMode: Mode = invitationId
     ? "invite"
     : location.pathname === "/forgot-password"

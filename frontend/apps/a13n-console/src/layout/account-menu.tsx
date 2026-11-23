@@ -1,3 +1,4 @@
+import { displayEmail } from "../shared/identity/display-email";
 import {
   Button,
   Menu,
@@ -40,6 +41,7 @@ export function AccountMenu({
   const { workspace } = useAccess();
   const { theme, setTheme } = useAppearance();
   const user = auth.data!.user.value;
+  const email = displayEmail(user);
   const logout = useSignOut();
   const open = (path: string) => {
     onNavigate();
@@ -91,7 +93,7 @@ export function AccountMenu({
             <UserAvatar name={user.name} url={user.image_url} />
             <span className={styles.accountCopy}>
               <strong title={user.name}>{user.name}</strong>
-              <small title={user.email ?? undefined}>{user.email}</small>
+              {email && <small title={email}>{email}</small>}
             </span>
           </div>
           <MenuSeparator />

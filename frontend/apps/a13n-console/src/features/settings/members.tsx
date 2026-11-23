@@ -2,6 +2,7 @@ import {
   Button,
   ChoiceField,
   FormField,
+  Input,
   MenuItem,
   ModalFrame,
   SearchPicker,
@@ -22,6 +23,8 @@ import {
   UserSwitchIcon,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { useAuthConfiguration } from "../../auth/configuration";
+import { displayEmail } from "../../shared/identity/display-email";
 import { useClient } from "../../auth/context";
 import { UserAvatar } from "../../layout/avatar";
 import { useAccess } from "../../layout/workspace";
@@ -40,22 +43,39 @@ import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import settings from "./settings.module.css";
 import { InvitationEditor, Invitations } from "./invitations";
-import { roles, type MembershipScope, type Role } from "./roles";
+import {
+  roles,
+  rolesIncluding,
+  type MembershipScope,
+  type Role,
+} from "./roles";
 
 export type { MembershipScope };
 
 /** Members and invitations share one navigation entry and scoped header. */
 export function MemberSettings({ scope }: { scope: MembershipScope }) {
   const { t } = useTranslation(),
-    { organization, organizationCan } = useAccess();
+    { organization, workspace, can, organizationCan } = useAccess();
+  const config = useAuthConfiguration(true);
+  // Confirm the deployment policy on entry; background refreshes keep open forms mounted.
+  const passwords =
+    config.isFetchedAfterMount && config.data?.password_enabled === true;
+  const organizationAdmin = organizationCan("admin");
+  const canManage =
+    scope.kind === "organization" ? organizationAdmin : can("admin");
+  const canAdd =
+    canManage && (scope.kind === "organization" || !workspace?.archived_at);
   const [tab, setTab] = useTabParam(["members", "invitations"]);
   // Both tabs offer the same actions, so the header holds still between them.
   const actions = (
     <>
-      {scope.kind === "workspace" && organizationCan("admin") && (
-        <AddMember scope={scope} organizationId={organization.id} />
+      {canAdd && (
+        <AddMember
+          scope={scope}
+          organizationId={organizationAdmin ? organization.id : undefined}
+        />
       )}
-      <InvitationEditor scope={scope} />
+      {canAdd && passwords && <InvitationEditor scope={scope} />}
     </>
   );
   return (
@@ -72,12 +92,15 @@ export function MemberSettings({ scope }: { scope: MembershipScope }) {
           key={`${scope.kind}:${scope.id}`}
           scope={scope}
           actions={actions}
+          canResend={canAdd && passwords}
         />
       ) : (
         <Members
           key={`${scope.kind}:${scope.id}`}
           scope={scope}
           actions={actions}
+          canManage={canManage}
+          canChange={canAdd}
         />
       )}
     </div>
@@ -105,16 +128,16 @@ function grants(
         })
         .then(data);
 }
-function roleOf(grant: Schema["GrantView"]): Role {
-  return roles.find((role) => role === grant.role) ?? "viewer";
-}
-
 function Members({
   scope,
   actions,
+  canManage,
+  canChange,
 }: {
   scope: MembershipScope;
   actions: ReactNode;
+  canManage: boolean;
+  canChange: boolean;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -137,69 +160,78 @@ function Members({
             items={items}
             caption={t("Members")}
             rowMenuLabel={t("Member actions")}
-            rowMenu={(item) => (
-              <>
-                <ChangeRole
-                  item={item}
-                  scope={scope}
-                  triggerElement={
-                    <MenuItem closeOnClick={false}>
-                      <UserSwitchIcon size={14} />
-                      {t("Change role")}
-                    </MenuItem>
-                  }
-                />
-                <Confirm
-                  subject={`${item.principal.name} · ${t(`role.${item.role}`, {
-                    defaultValue: item.role,
-                  })}`}
-                  title={t("Remove member")}
-                  description={
-                    // A service account is granted only in its home workspace,
-                    // so this is its last grant.
-                    item.principal.kind === "service_account"
-                      ? t(
-                          "This removes the service account's only role, which disables it and revokes its keys.",
-                        )
-                      : t(
-                          "This removes the selected role. Other explicit grants may still allow access.",
-                        )
-                  }
-                  triggerElement={
-                    <MenuItem closeOnClick={false} variant="destructive">
-                      <UserMinusIcon size={14} />
-                      {t("Remove")}
-                    </MenuItem>
-                  }
-                  danger
-                  action={() =>
-                    scope.kind === "organization"
-                      ? client.http.DELETE(
-                          "/api/v1/organizations/{organization_id}/grants/{grant_id}",
+            rowMenu={
+              canManage
+                ? (item) => (
+                    <>
+                      {canChange && (
+                        <ChangeRole
+                          item={item}
+                          scope={scope}
+                          triggerElement={
+                            <MenuItem closeOnClick={false}>
+                              <UserSwitchIcon size={14} />
+                              {t("Change role")}
+                            </MenuItem>
+                          }
+                        />
+                      )}
+                      <Confirm
+                        subject={`${item.principal.name} · ${t(
+                          `role.${item.role}`,
                           {
-                            params: {
-                              path: {
-                                organization_id: scope.id,
-                                grant_id: item.id,
-                              },
-                            },
+                            defaultValue: item.role,
                           },
-                        )
-                      : client.http.DELETE(
-                          "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
-                          {
-                            params: {
-                              path: {
-                                workspace_id: scope.id,
-                                grant_id: item.id,
-                              },
-                            },
-                          },
-                        )
-                  }
-                />
-              </>
-            )}
+                        )}`}
+                        title={t("Remove member")}
+                        description={
+                          // A service account is granted only in its home workspace,
+                          // so this is its last grant.
+                          item.principal.kind === "service_account"
+                            ? t(
+                                "This removes the service account's only role, which disables it and revokes its keys.",
+                              )
+                            : t(
+                                "This removes the selected role. Other explicit grants may still allow access.",
+                              )
+                        }
+                        triggerElement={
+                          <MenuItem closeOnClick={false} variant="destructive">
+                            <UserMinusIcon size={14} />
+                            {t("Remove")}
+                          </MenuItem>
+                        }
+                        danger
+                        action={() =>
+                          scope.kind === "organization"
+                            ? client.http.DELETE(
+                                "/api/v1/organizations/{organization_id}/grants/{grant_id}",
+                                {
+                                  params: {
+                                    path: {
+                                      organization_id: scope.id,
+                                      grant_id: item.id,
+                                    },
+                                  },
+                                },
+                              )
+                            : client.http.DELETE(
+                                "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
+                                {
+                                  params: {
+                                    path: {
+                                      workspace_id: scope.id,
+                                      grant_id: item.id,
+                                    },
+                                  },
+                                },
+                              )
+                        }
+                      />
+                    </>
+                  )
+                : undefined
+            }
             columns={[
               {
                 label: t("Member"),
@@ -218,9 +250,7 @@ function Members({
                     description={
                       item.principal.kind === "service_account"
                         ? t("Service account")
-                        : (item.principal.email ??
-                          item.principal.oidc_email ??
-                          undefined)
+                        : displayEmail(item.principal)
                     }
                     resourceId={item.principal.id}
                   />
@@ -259,7 +289,7 @@ function Members({
         <Empty
           icon={<UsersIcon aria-hidden="true" />}
           title={t("No members")}
-          description={t("Invite a teammate to start collaborating.")}
+          description={t("No roles have been assigned here yet.")}
           action={actions}
         />
       )}
@@ -283,7 +313,7 @@ function ChangeRole({
     client = useClient(),
     cache = useQueryClient();
   const [basis, setBasis] = useState(item),
-    [role, setRole] = useState<Role>(roleOf(item)),
+    [role, setRole] = useState(item.role),
     [open, setOpen] = useState(false);
   const change = useMutation({
     mutationFn: () =>
@@ -322,7 +352,7 @@ function ChangeRole({
     },
     onSuccess: (latest) => {
       setBasis(latest);
-      setRole(roleOf(latest));
+      setRole(latest.role);
       change.reset();
     },
   });
@@ -335,7 +365,7 @@ function ChangeRole({
         if (!change.isPending) {
           if (value) {
             setBasis(item);
-            setRole(roleOf(item));
+            setRole(item.role);
           }
           change.reset();
           reload.reset();
@@ -365,11 +395,10 @@ function ChangeRole({
           value={role}
           className="min-w-0"
           onValueChange={(value) => {
-            const role = roles.find((role) => role === value);
-            if (role) setRole(role);
+            if (value) setRole(value);
           }}
           label={t("Role")}
-          options={roles.map((value) => ({
+          options={rolesIncluding(basis.role).map((value) => ({
             value,
             label: t(`role.${value}`, { defaultValue: value }),
           }))}
@@ -405,7 +434,7 @@ function AddMember({
   organizationId,
 }: {
   scope: MembershipScope;
-  organizationId: string;
+  organizationId?: string;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -415,13 +444,13 @@ function AddMember({
     [role, setRole] = useState<Role>("viewer");
   const users = useQuery({
     queryKey: ["organization-users", organizationId],
-    enabled: open,
+    enabled: open && !!organizationId,
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         client.http
           .GET("/api/v1/organizations/{organization_id}/members", {
             params: {
-              path: { organization_id: organizationId },
+              path: { organization_id: organizationId! },
               query: { kind: "user", cursor, limit: 100 },
             },
             signal,
@@ -429,12 +458,40 @@ function AddMember({
           .then(data),
       ),
   });
+  const existing = useQuery({
+    queryKey: ["bindings", scope.kind, scope.id, "existing"],
+    enabled: open && !!organizationId,
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        grants(client, scope, { cursor, limit: 100 }, signal),
+      ),
+  });
+  const candidates =
+    users.data &&
+    existing.data &&
+    (() => {
+      const granted = new Set(existing.data.map((item) => item.principal.id));
+      return users.data.filter(
+        (user) => user.status === "active" && !granted.has(user.id),
+      );
+    })();
+  const principalId = userId.trim();
+  const canSubmit =
+    !!principalId &&
+    (!organizationId || !!candidates?.some((user) => user.id === principalId));
   const add = useMutation({
-    mutationFn: () =>
-      client.http.POST("/api/v1/workspaces/{workspace_id}/grants", {
-        params: { path: { workspace_id: scope.id } },
-        body: { principal_id: userId, role },
-      }),
+    mutationFn: () => {
+      const body = { principal_id: principalId, role };
+      return scope.kind === "organization"
+        ? client.http.POST("/api/v1/organizations/{organization_id}/grants", {
+            params: { path: { organization_id: scope.id } },
+            body,
+          })
+        : client.http.POST("/api/v1/workspaces/{workspace_id}/grants", {
+            params: { path: { workspace_id: scope.id } },
+            body,
+          });
+    },
     onSuccess: () => {
       void cache.invalidateQueries();
       setOpen(false);
@@ -442,7 +499,14 @@ function AddMember({
   });
   return (
     <ModalFrame
-      onOpenChange={setOpen}
+      onOpenChange={(value) => {
+        if (value && !add.isPending) {
+          setUserId("");
+          setRole("viewer");
+          add.reset();
+        }
+        setOpen(value);
+      }}
       trigger={
         <Button variant="outline" type="button">
           <PlusIcon size={14} />
@@ -461,29 +525,39 @@ function AddMember({
         className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
-          if (userId) add.mutate();
+          if (canSubmit && !add.isPending) add.mutate();
         }}
       >
-        <FormField label={t("Member")}>
-          <SearchPicker
-            label={t("Member")}
-            placeholder={t("Choose a member…")}
-            emptyMessage={t("No members found")}
-            value={userId}
-            groups={[
-              {
-                label: t("Organization members"),
-                options:
-                  users.data?.map((user) => ({
-                    value: user.id,
-                    label: user.name,
-                    description: user.email ?? undefined,
-                  })) ?? [],
-              },
-            ]}
-            onValueChange={setUserId}
-          />
-        </FormField>
+        {organizationId ? (
+          <FormField label={t("Member")}>
+            <SearchPicker
+              label={t("Member")}
+              placeholder={t("Choose a member…")}
+              emptyMessage={t("No members found")}
+              value={userId}
+              groups={[
+                {
+                  label: t("Organization members"),
+                  options:
+                    candidates?.map((user) => ({
+                      value: user.id,
+                      label: user.name,
+                      description: displayEmail(user) ?? user.id,
+                    })) ?? [],
+                },
+              ]}
+              onValueChange={setUserId}
+            />
+          </FormField>
+        ) : (
+          <FormField label={t("Principal ID")}>
+            <Input
+              value={userId}
+              onChange={(event) => setUserId(event.target.value)}
+              required
+            />
+          </FormField>
+        )}
         <ChoiceField
           placeholder={t("Select role")}
           value={role}
@@ -498,10 +572,11 @@ function AddMember({
             label: t(`role.${value}`, { defaultValue: value }),
           }))}
         />
-        <ErrorNotice error={users.error ?? add.error} />
+        <ErrorNotice error={users.error ?? existing.error ?? add.error} />
         <FormActions
           onCancel={() => setOpen(false)}
           pending={add.isPending}
+          disabled={!canSubmit}
           label={t("Add member")}
         />
       </form>

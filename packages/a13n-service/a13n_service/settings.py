@@ -252,6 +252,8 @@ class OIDC(Section):
     )
     default_workspace_id: str | None = Field(default=None, min_length=1, max_length=72)
     session_seconds: int = Field(default=43200, ge=60, le=604800)
+    start_limit: int = Field(default=30, ge=1, le=1000)
+    start_window_seconds: int = Field(default=60, ge=1, le=3600)
 
     @model_validator(mode="after")
     def require_workspace(self) -> "OIDC":

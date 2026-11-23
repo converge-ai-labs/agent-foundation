@@ -8,7 +8,7 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.settings import Settings
 from a13n_service.tenancy import api_keys, oidc, users
-from a13n_service.tenancy.access import Authenticated, login_session_required, unauthenticated
+from a13n_service.tenancy.access import Authenticated, login_session_required
 from a13n_service.tenancy.audit import list_account_events
 from a13n_service.tenancy.authenticate import (
     Login,
@@ -20,7 +20,7 @@ from a13n_service.tenancy.authenticate import (
 )
 from a13n_service.tenancy.bootstrap import AlreadyBootstrapped, BootstrapInput, bootstrap, initialized
 from a13n_service.tenancy.invitations import accept_invitation
-from a13n_service.tenancy.requests import Actor, Credential, CurrentRuntime, ImageBody, limit_guessing
+from a13n_service.tenancy.requests import Actor, Credential, CurrentRuntime, ImageBody, limit_guessing, limit_oidc_start
 from a13n_service.tenancy.schemas import (
     AccountDisable,
     ApiKey,
@@ -166,14 +166,22 @@ async def start_oidc_sign_in(request: Request, provider_id: str, runtime: Curren
     """Start sign-in at the configured identity provider in the top-level browser window."""
     settings = runtime.settings
     provider = settings.auth.oidc.providers.get(provider_id)
+    stage = oidc.Stage.START
     try:
-        await limit_guessing(request, "oidc_start")
-        if provider is None or not await initialized(runtime.storage):
-            raise unauthenticated()
+        try:
+            await limit_oidc_start(request, runtime)
+        except ServiceError as error:
+            reason = oidc.Reason.RATE_LIMITED if error.code == "rate_limited" else oidc.Reason.RATE_LIMIT_UNAVAILABLE
+            raise oidc.Failure(stage, reason) from None
+        if provider is None:
+            raise oidc.Failure(stage, oidc.Reason.UNKNOWN_PROVIDER)
+        if not await initialized(runtime.storage):
+            raise oidc.Failure(stage, oidc.Reason.NOT_INITIALIZED)
         target, browser = await oidc.start(
             runtime.redis, provider_id, provider, redirect_uri=_oidc_callback_url(settings, provider_id)
         )
-    except ServiceError:
+    except Exception as error:
+        oidc.log_failure(provider_id if provider is not None else None, stage, error)
         return _oidc_redirect("/login?oidc=failed")
     response = _oidc_redirect(target)
     response.set_cookie(
@@ -193,35 +201,49 @@ async def finish_oidc_sign_in(request: Request, provider_id: str, runtime: Curre
     """Consume a browser-bound OIDC callback and establish an ordinary Service browser session."""
     settings = runtime.settings
     provider = settings.auth.oidc.providers.get(provider_id)
-    cookie = _oidc_cookie_name(settings, provider_id)
-    browser = request.cookies.get(cookie)
-    states = request.query_params.getlist("state")
-    codes = request.query_params.getlist("code")
-    failure = _oidc_redirect("/login?oidc=failed")
-    if provider is None or browser is None or len(states) != 1:
-        return failure
-    redirect_uri = _oidc_callback_url(settings, provider_id)
+    stage = oidc.Stage.CALLBACK_STATE
+    cookie = _oidc_cookie_name(settings, provider_id) if provider is not None else None
+    consumed = False
     try:
+        if provider is None or cookie is None:
+            raise oidc.Failure(stage, oidc.Reason.UNKNOWN_PROVIDER)
+        browser = request.cookies.get(cookie)
+        if browser is None:
+            raise oidc.Failure(stage, oidc.Reason.MISSING_COOKIE)
+        states = request.query_params.getlist("state")
+        if len(states) != 1:
+            raise oidc.Failure(stage, oidc.Reason.INVALID_STATE)
+        redirect_uri = _oidc_callback_url(settings, provider_id)
         flow = await oidc.consume(
             runtime.redis, provider_id, provider, redirect_uri=redirect_uri, state=states[0], browser=browser
         )
-    except ServiceError:
-        return failure
-    response = failure
-    try:
-        if "error" in request.query_params or len(codes) != 1 or not 0 < len(codes[0]) <= 4096:
-            raise unauthenticated()
+        consumed = True
+
+        stage = oidc.Stage.CALLBACK_ERROR
+        errors = request.query_params.getlist("error")
+        if errors:
+            raise oidc.Failure(
+                stage, oidc.Reason.PROVIDER_ERROR, provider_error=oidc.ProviderError.from_callback(errors)
+            )
+        codes = request.query_params.getlist("code")
+        if len(codes) != 1 or not 0 < len(codes[0]) <= 4096:
+            raise oidc.Failure(stage, oidc.Reason.INVALID_CODE)
         issuers = request.query_params.getlist("iss")
         if issuers and issuers != [provider.issuer]:
-            raise unauthenticated()
+            raise oidc.Failure(stage, oidc.Reason.ISSUER_MISMATCH)
+
+        stage = oidc.Stage.TOKEN_EXCHANGE
         identity = await oidc.exchange(provider, flow, redirect_uri=redirect_uri, code=codes[0])
+        stage = oidc.Stage.PROVISION
         result = await oidc.sign_in(runtime.storage, runtime.access, settings, provider_id, provider, identity)
-    except ServiceError:
-        pass
-    else:
         response = _oidc_redirect("/")
         set_session_cookie(response, result.secret, settings, seconds=settings.auth.oidc.session_seconds)
-    response.delete_cookie(cookie, secure=settings.server.https, httponly=True, samesite="lax", path="/")
+    except Exception as error:
+        # Do not let callback data reach the general exception logger (or a server traceback).
+        oidc.log_failure(provider_id if provider is not None else None, stage, error)
+        response = _oidc_redirect("/login?oidc=failed")
+    if consumed and cookie is not None:
+        response.delete_cookie(cookie, secure=settings.server.https, httponly=True, samesite="lax", path="/")
     return response
 
 

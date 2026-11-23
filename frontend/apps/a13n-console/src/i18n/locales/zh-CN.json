@@ -1474,6 +1474,7 @@
   "No matching settings": "没有匹配的设置",
   "No members": "暂无成员",
   "No members found": "未找到成员",
+  "No roles have been assigned here yet.": "此处还没有分配任何角色。",
   "No messages in this inbox state.": "此收件箱状态下没有消息。",
   "No models available. Configure a provider and model first.": "没有可用模型。请先配置供应商和模型。",
   "No models found. You can still add a model manually.": "未找到模型，你仍可手动添加。",

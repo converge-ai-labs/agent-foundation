@@ -194,16 +194,68 @@ try {
       ({ id }) => id === remote.user.id,
     );
     assert.equal(person.oidc_email, config.email);
-    const promote = await admin.context.request.post(grants, {
-      headers: { "X-CSRF-Token": local.csrf_token },
-      data: { principal_id: remote.user.id, role: "admin" },
-    });
-    assert.equal(promote.status(), 201, await promote.text());
+    const membersPage = `${config.origin}/organization/settings/members`;
+    await member.page.goto(membersPage);
+    await member.page.getByText("Access unavailable").waitFor();
+    assert.equal(
+      await member.page.getByRole("button", { name: "Add member" }).count(),
+      0,
+    );
+    await admin.page.goto(membersPage);
+    const chosen = admin.page
+      .getByRole("row")
+      .filter({ hasText: "Alex Rivera" });
+    async function chooseRole(dialog, role) {
+      await dialog.getByRole("combobox", { name: "Role" }).click();
+      await admin.page.getByRole("option", { name: role, exact: true }).click();
+    }
+    async function addRole(role, evidence) {
+      await admin.page
+        .getByRole("button", { name: "Add member", exact: true })
+        .click();
+      const dialog = admin.page.getByRole("dialog", {
+        name: "Add existing member",
+      });
+      await dialog
+        .getByRole("combobox", { name: "Member", exact: true })
+        .click();
+      const user = admin.page.getByRole("option", { name: /Alex Rivera/ });
+      await user.getByText(config.email).waitFor();
+      await user.click();
+      await chooseRole(dialog, role);
+      if (evidence)
+        await screenshot(admin.page, "organization-add-oidc-member");
+      await dialog
+        .getByRole("button", { name: "Add member", exact: true })
+        .click();
+      await chosen.getByText(role, { exact: true }).waitFor();
+    }
+    await addRole("Viewer");
+    await chosen.getByRole("button", { name: "Member actions" }).click();
+    await admin.page.getByRole("menuitem", { name: "Change role" }).click();
+    const editor = admin.page.getByRole("dialog", { name: "Change role" });
+    await chooseRole(editor, "Builder");
+    await editor.getByRole("button", { name: "Save" }).click();
+    await chosen.getByText("Builder", { exact: true }).waitFor();
+    await chosen.getByRole("button", { name: "Member actions" }).click();
+    await admin.page
+      .getByRole("menuitem", { name: "Remove", exact: true })
+      .click();
+    await admin.page
+      .getByRole("dialog", { name: "Remove member" })
+      .getByRole("button", { name: "Remove member" })
+      .click();
+    await chosen.waitFor({ state: "detached" });
+    await addRole("Admin", true);
 
     const verified = await opened();
     await signInWithDex(verified.page, "Engineering SSO");
     assert.equal((await session(verified.context)).user.id, remote.user.id);
     assert.equal((await verified.context.request.get(grants)).status(), 200);
+    await verified.page.goto(membersPage);
+    await verified.page
+      .getByRole("button", { name: "Add member", exact: true })
+      .waitFor();
     const headers = { "X-CSRF-Token": local.csrf_token };
     const invitation = await admin.context.request.post(
       `${api}/organizations/${config.organization}/invitations`,
@@ -361,6 +413,31 @@ try {
       "Password invitations are disabled",
     );
 
+    await local.page.goto(
+      `${config.origin}/organization/settings/members?tab=invitations`,
+    );
+    const invitee = local.page
+      .getByRole("row")
+      .filter({ hasText: "invitee@example.com" });
+    await invitee.waitFor();
+    assert.equal(
+      await local.page
+        .getByRole("button", { name: "Invite", exact: true })
+        .count(),
+      0,
+    );
+    await invitee.getByRole("button", { name: "Invitation actions" }).click();
+    assert.equal(
+      await local.page.getByRole("menuitem", { name: "Resend" }).count(),
+      0,
+    );
+    await local.page.getByRole("menuitem", { name: "Revoke" }).click();
+    await local.page
+      .getByRole("dialog", { name: "Revoke invitation" })
+      .getByRole("button", { name: "Revoke invitation" })
+      .click();
+    await invitee.getByText("Revoked", { exact: true }).waitFor();
+
     const logout = await request.post(`${api}/auth/logout`, { headers: csrf });
     assert.equal(logout.status(), 204);
     assert.equal(
@@ -391,6 +468,18 @@ try {
       }),
     );
     await screenshot(page, "single-provider-mobile-dark");
+  } else if (phase === "recovery") {
+    const { context, page } = await opened();
+    await page.getByLabel("Email address", { exact: true }).fill(config.email);
+    await page
+      .getByLabel("Password", { exact: true })
+      .fill(config.localPassword);
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
+    await page.waitForURL((url) => url.pathname !== "/login");
+    assert.equal(
+      (await session(context, { absolute: false })).user.email,
+      config.email,
+    );
   } else {
     throw new Error(`Unknown phase: ${phase}`);
   }

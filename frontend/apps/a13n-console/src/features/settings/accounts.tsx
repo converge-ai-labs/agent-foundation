@@ -26,6 +26,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
+import { rolesIncluding } from "./roles";
 import { data, ifMatch, rowTag, type Schema } from "../../shared/api";
 import {
   CollectionFooter,
@@ -334,22 +335,14 @@ function AccountEditor({
   const [basis, setBasis] = useState(account),
     [open, setOpen] = useState(false),
     [name, setName] = useState(account?.name ?? ""),
-    [role, setRole] = useState<"viewer" | "runner" | "builder">(
-      account?.role === "runner" || account?.role === "builder"
-        ? account.role
-        : "viewer",
-    ),
+    [role, setRole] = useState(account?.role ?? "viewer"),
     [status, setStatus] = useState<"active" | "disabled">(
       account?.status === "disabled" ? "disabled" : "active",
     );
   function load(value: Schema["ServiceAccount"] | undefined) {
     setBasis(value);
     setName(value?.name ?? "");
-    setRole(
-      value?.role === "runner" || value?.role === "builder"
-        ? value.role
-        : "viewer",
-    );
+    setRole(value?.role ?? "viewer");
     setStatus(value?.status === "disabled" ? "disabled" : "active");
   }
   const reload = useMutation({
@@ -446,11 +439,10 @@ function AccountEditor({
           value={role}
           className="min-w-0"
           onValueChange={(value) => {
-            if (value === "viewer" || value === "runner" || value === "builder")
-              setRole(value);
+            if (value) setRole(value);
           }}
           label={t("Role")}
-          options={["viewer", "runner", "builder"].map((value) => ({
+          options={rolesIncluding(basis?.role).map((value) => ({
             value,
             label: t(`role.${value}`, { defaultValue: value }),
           }))}

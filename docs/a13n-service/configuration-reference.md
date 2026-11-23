@@ -88,6 +88,8 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `auth.oidc.providers`            | `A13N_AUTH__OIDC` (JSON field `providers`)            | object            | —                                             |
 | `auth.oidc.default_workspace_id` | `A13N_AUTH__OIDC` (JSON field `default_workspace_id`) | string or null    | minLength=1; maxLength=72; default=null       |
 | `auth.oidc.session_seconds`      | `A13N_AUTH__OIDC` (JSON field `session_seconds`)      | integer           | minimum=60; maximum=604800; default=43200     |
+| `auth.oidc.start_limit`          | `A13N_AUTH__OIDC` (JSON field `start_limit`)          | integer           | minimum=1; maximum=1000; default=30           |
+| `auth.oidc.start_window_seconds` | `A13N_AUTH__OIDC` (JSON field `start_window_seconds`) | integer           | minimum=1; maximum=3600; default=60           |
 | `auth.session_seconds`           | `A13N_AUTH__SESSION_SECONDS`                          | integer           | minimum=60; maximum=604800; default=43200     |
 | `auth.login_limit`               | `A13N_AUTH__LOGIN_LIMIT`                              | integer           | minimum=1; maximum=1000; default=10           |
 | `auth.login_window_seconds`      | `A13N_AUTH__LOGIN_WINDOW_SECONDS`                     | integer           | minimum=1; maximum=3600; default=60           |

@@ -7,13 +7,14 @@ import {
   SettingsRow,
 } from "a13n-ui";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
+import { useAuthConfiguration } from "../../auth/configuration";
 import { useId, useRef, useState } from "react";
 
 import { InfoIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../../auth/context";
-import { data, ifMatch } from "../../shared/api";
+import { ifMatch } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import styles from "./security.module.css";
@@ -31,11 +32,7 @@ export function Security() {
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
-  const config = useQuery({
-    queryKey: ["auth-configuration"],
-    queryFn: ({ signal }) =>
-      client.http.GET("/api/v1/auth/configuration", { signal }).then(data),
-  });
+  const config = useAuthConfiguration();
   const changeEmail = useMutation({
     mutationFn: () =>
       client.http.PATCH("/api/v1/users/me", {

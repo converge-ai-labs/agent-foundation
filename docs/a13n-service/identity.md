@@ -134,32 +134,45 @@ The HTTPS cookie is `__Host-a13n_session` with `Secure`, `HttpOnly` and `SameSit
 
 1. Upgrade every Service API replica before enabling OIDC. Bootstrap your local administrator and copy the ID of the workspace that new users should join.
 2. Register a confidential web OIDC client with your identity provider. Use the exact callback `{server.public_url}/api/v1/auth/oidc/{provider_id}/callback` (omit any trailing slash on `server.public_url`). Choose a provider ID such as `team` for the last configuration segment and the matching callback path. Use HTTPS outside loopback development.
-3. Add the provider and the workspace to `service.toml`, then restart the Service API replicas. Keep the client secret in your deployment's secret configuration.
+3. In your deployment's Secret, set `A13N_AUTH__OIDC` to the JSON below and restart the Service API replicas. Replace the workspace ID, issuer, client ID and client secret with the values from your deployment.
 
-```toml
-[auth.oidc]
-default_workspace_id = "ws_replace_with_your_workspace_id"
-
-[auth.oidc.providers.team]
-label = "Team Identity"
-issuer = "https://identity.example.com/realms/team"
-client_id = "a13n-console"
-client_secret = "replace-at-deploy-time"
+```json
+{
+  "default_workspace_id": "ws_replace_with_your_workspace_id",
+  "providers": {
+    "team": {
+      "label": "Team Identity",
+      "issuer": "https://identity.example.com/realms/team",
+      "client_id": "a13n-console",
+      "client_secret": "replace-at-deploy-time"
+    }
+  }
+}
 ```
+
+`A13N_AUTH__OIDC` replaces the entire `[auth.oidc]` value from `service.toml`. Include every provider and all non-default OIDC settings in the JSON. Other `[auth]` fields still come from their own environment variables or TOML. If you configure OIDC in TOML instead, use `[auth.oidc]` for the workspace ID and `[auth.oidc.providers.team]` for the provider.
 
 Add more `[auth.oidc.providers.<id>]` tables to show more sign-in buttons. A provider must support Discovery, authorization code with PKCE S256, signed ID tokens (`RS256` or `ES256`), and the `openid profile email` scopes. If the provider requires `client_secret_post`, set `token_endpoint_auth_method = "client_secret_post"`; the default uses HTTP Basic. Console shows the bundled Google mark for `https://accounts.google.com` and the Microsoft mark for `https://login.microsoftonline.com/<tenant UUID>/v2.0`. Other issuers get a shield. Set `brand` to `"google"`, `"microsoft"`, or `"generic"` to override the mark, for example when a trusted broker always redirects to one provider. Choose distinct labels that users will recognize.
 
+Service accepts `aud` as the configured client ID or an array containing only that ID. If present, `azp` must match that client ID as well. ID tokens allow 30 seconds of clock skew for future `iat` and `nbf`, and for expiry (`exp`). Allow Service outbound access to the issuer's Discovery endpoint and the discovered token and JWKS endpoints. These requests use HTTPS outside loopback development, do not follow redirects, and require `Content-Encoding: identity` (or no content encoding). The browser must reach the discovered authorization endpoint. Configure any reverse proxy access log to omit the callback query string.
+
+OIDC start requests have a separate Redis budget per client address across providers: `start_limit` is 30 and `start_window_seconds` is 60 by default, both under `auth.oidc`. Clients behind one NAT address share the budget. Behind a reverse proxy, configure `server.trusted_proxies` to count the forwarded client address. Service does not start Discovery when it cannot enforce this budget.
+
 Any user your provider lets authorize this client can sign in. Configure application access at the IdP before publishing a button. For Google Workspace, create the web client in a project owned by your organization and set **Google Auth Platform → Audience → Internal** to limit admission to that organization ([Google's audience guide](https://support.google.com/cloud/answer/15549945)). An External app can admit users outside your organization; a domain-looking email address is not an admission rule in Service.
+
+For Microsoft Entra workforce tenants, `email` is a reported address and `xms_edov` covers verification of the domain owner, not verification of the user's address. The [optional claims reference](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference) does not list `email_verified` as a standard Entra optional claim; see also the [ID token claims reference](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference). If your IdP or trusted upstream supports the standard `email_verified` claim, configure it to issue boolean `true` only after verifying the user's address. Without that claim, Service still uses the signed subject and display name, and leaves the email blank.
+
+To limit app access in Entra, [require assignment and assign the intended users or groups](https://learn.microsoft.com/en-us/entra/identity-platform/howto-restrict-your-app-to-a-set-of-users). Entra exempts Global Administrators from this requirement.
 
 The first sign-in creates a separate Service user with `runner` access to the designated workspace. It keeps any verified provider email as display metadata, even if a password account has the same address. Use [members and grants](#members-and-grants) to change access. Returning sign-ins preserve existing grants and do not re-add a removed role.
 
 ### Switch to OIDC-only sign-in
 
-1. Sign in with the IdP once, then use the local administrator to grant the new principal the organization `admin` role.
-2. In a separate browser session, sign in with the IdP again and verify that you can manage the organization.
-3. Set `password_enabled = false` under `[auth]` and restart every Service API replica. Password sessions stop working; new password logins, password invitations and password recovery stop. API keys keep working.
+1. Have the intended administrator sign in with the IdP once. In a local administrator session, open **Organization → Members → Add member**, select the new account, and assign **Admin**. The picker includes workspace-only members. To edit or revoke an existing role, use that member's row menu.
+2. In a separate browser session, sign in with the IdP and verify that the new administrator can open **Organization → Members** and manage members.
+3. Set `A13N_AUTH__PASSWORD_ENABLED=false` in the Service API replicas' environment and restart them. This overrides `password_enabled` in `service.toml`. Password sessions stop working; password sign-in, new invitations, resends, and password recovery stop. Administrators can still list and revoke invitations, and API keys keep working.
 
-OIDC sessions expire after `auth.oidc.session_seconds` (12 hours by default), even during activity. When removing someone's IdP access, also disable the Service principal for immediate local revocation. Use `--principal-id` for an OIDC account. To recover operator access, restore `password_enabled = true` and restart the API replicas; the original password accounts are retained.
+OIDC sessions expire after `auth.oidc.session_seconds` (12 hours by default), even during activity. When removing someone's IdP access, also disable the Service principal for immediate local revocation. Use `--principal-id` for an OIDC account. To recover password sign-in, set `A13N_AUTH__PASSWORD_ENABLED=true` and restart the API replicas. The original password accounts are retained.
 
 ## Your account
 

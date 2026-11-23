@@ -1,14 +1,14 @@
 """add oidc principal identities
 
-Revision ID: 23cdd22ade64
-Revises: 3d51b520f762
+Revision ID: 3c661732f50f
+Revises: ddc9c71ce4de
 """
 
 import sqlalchemy as sa
 from alembic import op
 
-revision = "23cdd22ade64"
-down_revision = "3d51b520f762"
+revision = "3c661732f50f"
+down_revision = "ddc9c71ce4de"
 branch_labels = None
 depends_on = None
 

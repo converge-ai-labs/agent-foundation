@@ -1,3 +1,4 @@
+import { displayEmail } from "../../shared/identity/display-email";
 import { useQuery } from "@tanstack/react-query";
 import { GearSixIcon, PulseIcon } from "@phosphor-icons/react";
 
@@ -161,7 +162,7 @@ function AuditActor({ item }: { item: AuditEvent }) {
           />
         }
         name={user.name}
-        description={user.email ?? undefined}
+        description={displayEmail(user)}
         resourceId={user.id}
       />
     );

@@ -1,3 +1,4 @@
+import { displayEmail } from "../../shared/identity/display-email";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Badge,
@@ -394,7 +395,7 @@ function useAuthors() {
     const person =
       id === me?.id ? me : members.data?.find((member) => member.id === id);
     return (
-      <span className={styles.author} title={person?.email ?? id}>
+      <span className={styles.author} title={displayEmail(person) ?? id}>
         {person && (
           <UserAvatar
             name={person.name}

@@ -91,6 +91,19 @@ async def limit_guessing(request: Request, flow: str, *identities: str) -> None:
         )
 
 
+async def limit_oidc_start(request: Request, runtime: Runtime) -> None:
+    # Uvicorn resolves the client only through configured trusted proxies; never read forwarded headers here.
+    peer = request.client.host if request.client else "unknown"
+    config = runtime.settings.auth.oidc
+    await rate_limit(
+        runtime.redis,
+        f"oidc_start:peer:{peer}",
+        limit=config.start_limit,
+        window_seconds=config.start_window_seconds,
+        fail_closed=True,
+    )
+
+
 async def limit_uploads(request: Request, principal_id: str) -> None:
     """One per-principal budget for workspace uploads and images, since stored bytes are never reclaimed."""
     runtime = await current_runtime(request)
