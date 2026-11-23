@@ -6,6 +6,13 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import yaml
+from a13n_harness.model_context import (
+    ModelContextHistory,
+    ModelContextProjection,
+    ModelContextProjectionRequest,
+    ModelContextRequestKind,
+)
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.errors import HarnessUiError
@@ -102,6 +109,73 @@ async def test_post_tool_belongs_to_roots_that_report_to_the_human(tmp_path: Pat
         assert posted["ok"] is True
         item = (await app.inbox().page(state="open", before=None, limit=10)).items[0]
         assert (item.item_id, item.thread_id, item.kind) == (posted["item_id"], ordinary.thread_id, "needs_human")
+
+
+def _ordinary_tools(app) -> ThreadToolController:
+    return ThreadToolController(
+        threads=app._store.threads,
+        projections=app._projections,
+        root_runs=app._root_runs,
+        create_thread=app.create_thread,
+        configurations=app._configurations,
+        inbox=app.inbox(),
+    )
+
+
+async def _no_context(request: ModelContextProjectionRequest) -> ModelContextProjection:
+    return ModelContextProjection()
+
+
+async def test_reminder_follows_inputs_lost_context_and_long_unposted_runs(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        thread = await app.create_thread()
+        captured = await app._root_runs._executor.capture(thread_id=thread.thread_id, prompt="Work")
+        tools = ThreadCollaborationCapability(
+            controller=_ordinary_tools(app), source_thread_id=thread.thread_id, composition=captured.published.value
+        )
+        deps = SimpleNamespace(thread_id=thread.thread_id, elapsed_seconds=5.0)
+        context: Any = SimpleNamespace(deps=deps, tool_call_id="call-done")
+        inputs, results = ModelContextRequestKind.INPUT, ModelContextRequestKind.TOOL_RESULTS
+
+        async def project(kind: ModelContextRequestKind, retained: tuple = ()) -> tuple:
+            request = ModelContextProjectionRequest(kind=kind, history=ModelContextHistory.from_blocks(retained))
+            return (await tools.wrap_model_context(context, request, _no_context)).blocks
+
+        first = await project(inputs)
+        assert len(first) == 1 and "post_to_inbox" in first[0].content
+        # Every input repeats it; tool rounds add nothing while it is retained.
+        assert await project(inputs, first) == first
+        assert await project(results, first) == ()
+        # Compaction or handoff replaced the history that held it.
+        assert await project(results) == first
+
+        deps.elapsed_seconds = 601.0
+        long_run = await project(results, first)
+        assert len(long_run) == 1 and "10 minutes" in long_run[0].content
+        assert await project(results, (*first, *long_run)) == ()
+        posted = await tools.post_to_inbox(context, "result", "Done", "Finished.")
+        assert posted["ok"] is True
+        assert await project(results, first) == ()
+
+
+async def test_disabled_setting_removes_tool_guidance_and_reminders(tmp_path: Path) -> None:
+    root = _write_configuration(tmp_path)
+    document = yaml.safe_load(root.read_text())
+    document["inbox"] = {"enabled": False}
+    root.write_text(yaml.safe_dump(document))
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        thread = await app.create_thread()
+        captured = await app._root_runs._executor.capture(thread_id=thread.thread_id, prompt="Work")
+        assert captured.published.value.inbox_enabled is False
+        tools = ThreadCollaborationCapability(
+            controller=_ordinary_tools(app), source_thread_id=thread.thread_id, composition=captured.published.value
+        )
+        assert "post_to_inbox" not in tools.get_toolset().tools
+        assert "post_to_inbox" not in tools.get_instructions()
+        context: Any = SimpleNamespace(deps=SimpleNamespace(thread_id=thread.thread_id, elapsed_seconds=900.0))
+        request = ModelContextProjectionRequest(kind=ModelContextRequestKind.INPUT)
+        assert (await tools.wrap_model_context(context, request, _no_context)).blocks == ()
 
 
 async def test_http_routes_list_update_and_locate_items(tmp_path: Path) -> None:

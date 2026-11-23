@@ -257,6 +257,10 @@ The optional root field `chat_title_model` references a configured Model for aut
 
 `input_prediction.enabled` is an opt-in boolean that defaults to `false`. Predictions use the settled chat's Model and provider request prefix; there is no separate Model selection. The [Workbench interaction contract](webui/04-workbench-interaction.md#composer-input-predictions) defines when the extra request is allowed and how its result is retained.
 
+## Inbox
+
+`inbox.enabled` defaults to `true`. Each Run captures the value when it resolves its composition. A Run that captured `false` exposes no `post_to_inbox` tool, no Inbox instructions, and no Inbox reminders to any agent, including Coordinators and Bot. The setting does not delete or hide existing Inbox items, and the Inbox API and WebUI view remain available. [Inbox Posting](05-runtime-subagents-and-surfaces.md#inbox-posting) defines the agent-facing behavior when the setting is on.
+
 ## Dictation
 
 Root `dictation` configures private WebUI draft transcription independently of the conversation Model. `backend` is `model` by default: a non-null `model` selects an audio-input Model resource; null disables dictation. Existing `dictation.model` configurations retain this behavior. Native subscription login alone never selects or enables the Codex backend.

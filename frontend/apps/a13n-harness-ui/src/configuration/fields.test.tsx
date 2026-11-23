@@ -667,3 +667,16 @@ it("keeps predictions opt-in and automatic titles independently enabled by defau
     screen.getByRole("combobox", { name: "Title generation model" }),
   ).toBeTruthy();
 });
+
+it("keeps Inbox posting enabled by default and writes the opt-out", () => {
+  renderFields('schema_version: "1"\n');
+  const inbox = screen.getByRole("switch", {
+    name: "Let agents post to Inbox",
+  });
+  expect(inbox.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(inbox);
+  expect(parse(screen.getByTestId("source").textContent!)).toMatchObject({
+    inbox: { enabled: false },
+  });
+  expect(inbox.getAttribute("aria-checked")).toBe("false");
+});

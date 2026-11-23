@@ -469,6 +469,24 @@ export function ResourceFields({
                     />
                   </SettingsRow>
                 </SettingsSection>
+                <SettingsSection variant="grouped" title={t("Inbox")}>
+                  <SettingsRow
+                    label={t("Let agents post to Inbox")}
+                    controlId="inbox-enabled"
+                    stackOnNarrow={false}
+                    description={t(
+                      "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.",
+                    )}
+                  >
+                    <Switch
+                      id="inbox-enabled"
+                      checked={get(["inbox", "enabled"]) !== false}
+                      onCheckedChange={(enabled) =>
+                        set(["inbox", "enabled"], enabled)
+                      }
+                    />
+                  </SettingsRow>
+                </SettingsSection>
                 <DictationFields source={source} onChange={onChange} />
                 {group === "chats" && (
                   <SettingsSection title={t("Archived chats")}>

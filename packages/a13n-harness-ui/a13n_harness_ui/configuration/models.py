@@ -446,6 +446,10 @@ class InputPredictionConfiguration(ConfigurationModel):
     enabled: bool = False
 
 
+class InboxConfiguration(ConfigurationModel):
+    enabled: bool = True
+
+
 class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
@@ -469,6 +473,7 @@ class HarnessUiDocument(ConfigurationModel):
     input_prediction: InputPredictionConfiguration = Field(
         default_factory=InputPredictionConfiguration, exclude_if=lambda value: not value.enabled
     )
+    inbox: InboxConfiguration = Field(default_factory=InboxConfiguration, exclude_if=lambda value: value.enabled)
     chat_title_model: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
     dictation: DictationConfiguration = Field(
         default_factory=DictationConfiguration, exclude_if=lambda v: v == DictationConfiguration()
