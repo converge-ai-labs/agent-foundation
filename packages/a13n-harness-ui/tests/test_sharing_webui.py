@@ -66,6 +66,12 @@ async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):
         response = await client.get(prefix + f"/threads/{thread.thread_id}", headers=headers)
         assert response.status_code == 200
         assert "run" not in response.json()["available_actions"]
+        prediction = await client.post(
+            prefix + f"/threads/{thread.thread_id}/input-prediction",
+            headers=headers,
+            json={"continuation_id": "stale"},
+        )
+        assert prediction.status_code == 403
         assert (await client.get(prefix + f"/threads/{private.thread_id}", headers=headers)).status_code == 401
         for path in ("/api/status", "/api/shares", "/api/configuration/sources", "/api/host/files", "/api/presence"):
             assert (await client.get(path, headers=headers)).status_code == 401

@@ -57,12 +57,18 @@ class DraftCommand(SurfaceModel):
     presence: DraftPresence | None = None
 
 
+class CachedInputPrediction(SurfaceModel):
+    continuation_id: str = Field(min_length=1, max_length=128)
+    text: str = Field(min_length=1, max_length=500)
+
+
 class DraftFrame(SurfaceModel):
     kind: Literal["draft"] = "draft"
     draft_id: str
     participant_id: str
     update_base64: str
     options_update_base64: str | None = None
+    prediction: CachedInputPrediction | None = None
     participants: dict[str, DraftPresence]
     closed: bool = False
 
@@ -77,14 +83,19 @@ class ComposerOptions(SurfaceModel):
     model: ComposerModelOptions | None = None
     environment: EnvironmentSelectionPatch | None = None
     mode: Literal["normal", "goal"] = "normal"
+    prediction: CachedInputPrediction | None = None
 
 
 def composer_document() -> Doc:
     return Doc({"text": Text(), "attachments": Map[str]()})
 
 
-def options_document() -> Doc:
-    return Doc({"options": Map()})
+# Keep Host prediction writes distinguishable from participant run-choice history.
+PREDICTION_CLIENT_ID = 1
+
+
+def options_document(*, prediction: bool = False) -> Doc:
+    return Doc({"options": Map()}, client_id=PREDICTION_CLIENT_ID if prediction else None)
 
 
 def composer_options(document: Doc) -> ComposerOptions:
@@ -181,9 +192,28 @@ class SharedDraft:
             participant_id=participant,
             update_base64=self._update_base64,
             options_update_base64=self._options_update_base64 if include_options else None,
+            prediction=None if include_options else self.prediction,
             participants=dict(self.participants),
             closed=self.closed,
         )
+
+    @property
+    def prediction(self) -> CachedInputPrediction | None:
+        raw = self.options.get("options", type=Map).get("prediction")
+        return CachedInputPrediction.model_validate(raw) if raw is not None else None
+
+    async def set_prediction(self, prediction: CachedInputPrediction | None) -> None:
+        async with self._lock:
+            if self.closed or self.prediction == prediction:
+                return
+            options = options_document(prediction=True)
+            options.apply_update(self._options_update)
+            fields = options.get("options", type=Map)
+            if prediction is None:
+                del fields["prediction"]
+            else:
+                fields["prediction"] = prediction.model_dump()
+            await self._publish(self.document, options)
 
     def prepare_clear(self, capture: DraftCapture, *, reset_mode: bool = False) -> tuple[bytes, bytes | None]:
         """Validate a synchronized capture without changing the shared draft."""
@@ -232,6 +262,9 @@ class SharedDraft:
             options.apply_update(self._options_update)
             if updates[1] is not None:
                 options.apply_update(updates[1])
+            fields = options.get("options", type=Map)
+            if "prediction" in fields:
+                del fields["prediction"]
             return await self._publish(candidate, options)
 
     async def _publish(self, candidate: Doc, options: Doc) -> bool:
@@ -316,7 +349,8 @@ class SharedDraft:
                     if len(options_update) > MAX_DRAFT_BYTES:
                         raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
                     options.apply_update(options_update)
-                composer_options(options)
+                if composer_options(options).prediction != self.prediction:
+                    raise ValueError("The Host owns the composer prediction.")
                 accepted_update = candidate.get_update()
                 if len(accepted_update) > MAX_DRAFT_BYTES:
                     raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")

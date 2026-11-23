@@ -3597,5 +3597,14 @@
   "Uses local DuckDuckGo search and HTML scraping. Add a Web provider to use another service.": "使用本地 DuckDuckGo 搜索和 HTML 抓取。添加 Web 服务商即可使用其他服务。",
   "{{field}} environment variable": "{{field}} 环境变量",
   "Agent creation": "创建智能体",
-  "Allowed models": "可用模型"
+  "Allowed models": "可用模型",
+  "Automatically generate chat titles": "自动生成聊天标题",
+  "Use an extra model request to name new chats. You can still generate a title manually when this is off.": "为新聊天命名会额外请求一次模型。关闭后仍可手动生成标题。",
+  "Input predictions": "输入预测",
+  "Input prediction": "输入预测",
+  "Suggest follow-ups": "建议后续消息",
+  "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.": "回复结束后，输入框为空时可额外请求一次当前聊天模型来建议后续消息。接受建议只会填入输入框，不会自动发送。",
+  "Tab": "Tab",
+  "Use suggested follow-up": "填入建议的后续消息",
+  "Use suggestion": "填入建议"
 }

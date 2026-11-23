@@ -40,6 +40,7 @@ class ShareCreated(SurfaceModel):
 
 
 class ShareAccess(SurfaceModel):
+    input_prediction_enabled: bool = False
     grant: ShareGrant
     title: str
 

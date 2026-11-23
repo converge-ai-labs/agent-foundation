@@ -26,6 +26,8 @@ import {
   type LoadSkills,
 } from "./skill-references";
 import skillStyles from "./skill-chip.module.css";
+import predictionStyles from "./composer-prediction.module.css";
+import { emptyForPrediction } from "./input-prediction";
 import { composerSkills, refreshSkills } from "./composer-skills";
 import { composerWordKeymap } from "./composer-word-motion";
 import { defaultKeymap, insertNewline } from "@codemirror/commands";
@@ -61,6 +63,8 @@ export function ComposerEditor({
   local = false,
   loadSkills,
   skillContext,
+  prediction,
+  onComposition,
 }: {
   draft: ThreadDraft;
   profile: Profile;
@@ -72,6 +76,8 @@ export function ComposerEditor({
   local?: boolean;
   loadSkills?: LoadSkills;
   skillContext?: string;
+  prediction?: { text: string; dismiss: () => void };
+  onComposition?: (composing: boolean) => void;
 }) {
   const { t } = useTranslation();
   const translate = useRef(t);
@@ -79,6 +85,32 @@ export function ComposerEditor({
   const pickerHost = useRef<HTMLDivElement>(null);
   const host = useRef<HTMLDivElement>(null);
   const attributes = useRef(new Compartment());
+  const placeholderSlot = useRef(new Compartment());
+  const predictionRef = useRef(prediction);
+  predictionRef.current = prediction;
+  const compositionRef = useRef(onComposition);
+  compositionRef.current = onComposition;
+  const acceptRef = useRef<(view: EditorView) => boolean>(undefined);
+  acceptRef.current = (view) => {
+    const text = predictionRef.current?.text;
+    if (
+      !text ||
+      view.compositionStarted ||
+      view.dom.classList.contains(predictionStyles.composing) ||
+      view.state.doc.length ||
+      !emptyForPrediction(draft) ||
+      currentCompletions(view.state).length
+    )
+      return false;
+    draft.undo.stopCapturing();
+    view.dispatch({
+      changes: { from: 0, insert: text },
+      selection: { anchor: text.length },
+      userEvent: "input.complete",
+    });
+    draft.undo.stopCapturing();
+    return true;
+  };
   const skills = useRef(new Compartment());
   const load = useRef(loadSkills);
   load.current = loadSkills;
@@ -92,7 +124,6 @@ export function ComposerEditor({
       );
   const contentAttributes = useMemo(
     () => [
-      placeholder(t("Ask anything, or describe a task…")),
       EditorView.contentAttributes.of({
         "aria-label": local ? t("Message") : t("Shared prompt"),
         "data-composer-editor": "",
@@ -199,6 +230,14 @@ export function ComposerEditor({
           pointerdown: activate,
           input: activate,
           blur: clearCursor,
+          compositionstart: (_event, editor) => {
+            editor.dom.classList.add(predictionStyles.composing);
+            compositionRef.current?.(true);
+          },
+          compositionend: (_event, editor) => {
+            editor.dom.classList.remove(predictionStyles.composing);
+            compositionRef.current?.(false);
+          },
         }),
         ...(attachments
           ? [
@@ -211,6 +250,7 @@ export function ComposerEditor({
           : []),
         attributes.current.of(currentAttributes.current),
         skills.current.of([]),
+        placeholderSlot.current.of([]),
         keymap.of([
           ...["Enter", "Mod-Enter"].map((key) => ({
             key,
@@ -221,10 +261,27 @@ export function ComposerEditor({
                 currentCompletions(editor.state).length > 0
               )
                 return true;
-              if (!editor.compositionStarted) send.current();
+              if (
+                !editor.compositionStarted &&
+                !(predictionRef.current && !editor.state.doc.length)
+              )
+                send.current();
               return true;
             },
           })),
+          { key: "Tab", run: (view) => acceptRef.current?.(view) ?? false },
+          {
+            key: "Escape",
+            run: (view) => {
+              if (
+                currentCompletions(view.state).length ||
+                !predictionRef.current
+              )
+                return false;
+              predictionRef.current.dismiss();
+              return true;
+            },
+          },
           { key: "Shift-Enter", run: insertNewline },
           ...yUndoManagerKeymap,
           ...composerWordKeymap,
@@ -327,6 +384,24 @@ export function ComposerEditor({
       });
     };
   }, [draft, doc, editor]);
+  useEffect(() => {
+    const text = prediction?.text;
+    currentView.current?.dispatch({
+      effects: placeholderSlot.current.reconfigure(
+        text
+          ? placeholder((view) => {
+              const ghost = view.dom.ownerDocument.createElement("span");
+              ghost.className = predictionStyles.ghost;
+              ghost.textContent = text;
+              const key = view.dom.ownerDocument.createElement("kbd");
+              key.textContent = t("Tab");
+              ghost.append(key);
+              return ghost;
+            })
+          : placeholder(t("Ask anything, or describe a task…")),
+      ),
+    });
+  }, [prediction?.text, draft, doc, t]);
   useEffect(() => {
     currentView.current?.requestMeasure();
   }, [appearance.sizes.composer]);
@@ -460,7 +535,22 @@ export function ComposerEditor({
         </div>
         <div ref={pickerHost} />
       </div>
-      <div ref={host} data-presence-anchor="composer" />
+      <div className={predictionStyles.editor}>
+        <div ref={host} data-presence-anchor="composer" />
+        {prediction && (
+          <button
+            type="button"
+            className={predictionStyles.touch}
+            aria-label={t("Use suggested follow-up")}
+            onClick={() => {
+              const view = currentView.current;
+              if (view && acceptRef.current?.(view)) view.focus();
+            }}
+          >
+            {t("Use suggestion")}
+          </button>
+        )}
+      </div>
     </>
   );
 }

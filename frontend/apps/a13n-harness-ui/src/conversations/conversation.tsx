@@ -29,6 +29,7 @@ import { result, type Schema } from "../transport/client";
 import {
   useGuestAccess,
   useSelectors,
+  useStatus,
   useTransport,
 } from "../transport/context";
 import { SharePanel } from "../sharing";
@@ -154,6 +155,7 @@ function ConversationContent({
   );
   const selectors = useSelectors();
   const guest = useGuestAccess();
+  const status = useStatus();
   const mcpInputs = useMcpInputRequests(threadId, !guest && !!detail.data);
   const readOnly = !!detail.data?.thread.memory_scope;
   const connectorOffers = useConnectorOffers(
@@ -1202,6 +1204,17 @@ function ConversationContent({
               (detail.data?.available_actions?.includes("run") ?? false)
             }
             continuationId={detail.data?.continuation_id}
+            predictionEnabled={
+              (guest
+                ? guest.input_prediction_enabled
+                : status.data?.app.input_prediction_enabled) &&
+              !isBot &&
+              !readOnly &&
+              !thread?.archived &&
+              thread?.last_execution?.status === "completed" &&
+              thread?.configuration.agent_source.kind === "agent" &&
+              !detail.data?.deferred_requests?.length
+            }
             canClearContext={
               !detail.isError &&
               (detail.data?.available_actions?.includes("clear_context") ??
