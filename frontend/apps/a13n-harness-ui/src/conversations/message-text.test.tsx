@@ -10,8 +10,7 @@ import {
 } from "@testing-library/react";
 import { MessageText } from "./message-text";
 import { GuestAccessContext } from "../transport/context";
-import { renderDiagram } from "./mermaid-render";
-import { closedFence } from "./markdown-block";
+import { renderDiagram } from "a13n-ui/mermaid-render";
 import { OpenHostFile } from "./tool-call";
 const highlights = vi.hoisted(() => vi.fn());
 vi.mock("lowlight", async (importOriginal) => {
@@ -29,7 +28,7 @@ vi.mock("lowlight", async (importOriginal) => {
     },
   };
 });
-vi.mock("./mermaid-render", () => ({ renderDiagram: vi.fn() }));
+vi.mock("a13n-ui/mermaid-render", () => ({ renderDiagram: vi.fn() }));
 // Preview HTTP and decoding have their own integration tests; these cases own
 // Markdown rendering and workbench navigation independently of native access.
 vi.mock("./linked-media-preview", () => ({ LinkedMediaPreview: () => null }));
@@ -378,13 +377,6 @@ it("falls back to exact source for invalid diagrams without hiding the rest of t
   await screen.findByText(/Diagram preview unavailable/);
   expect(screen.getByText("invalid syntax")).toBeTruthy();
   expect(screen.getByText("Still readable")).toBeTruthy();
-});
-
-it("matches fence type and length instead of mistaking partial or nested backticks for completion", () => {
-  expect(closedFence("```mermaid\nflowchart LR\n```")).toBe(true);
-  expect(closedFence("~~~~mermaid\nflowchart LR\n~~~~")).toBe(true);
-  expect(closedFence("````mermaid\nflowchart LR\n```")).toBe(false);
-  expect(closedFence("```mermaid\nflowchart LR\n~~~")).toBe(false);
 });
 
 it("highlights declared code without changing its source bytes and leaves unknown languages as text", () => {

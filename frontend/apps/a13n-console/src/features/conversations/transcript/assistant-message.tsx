@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { CopyButton } from "../../../shared/identity";
 import { JsonView } from "../../../shared/forms";
+import { MarkdownContent } from "../../../shared/markdown";
 import { AgentAvatar } from "../../agents/avatar";
 import { formatDuration } from "../format";
 import type { ContentEntry } from "../timeline";
@@ -105,6 +106,14 @@ export function AgentTurn({
   );
 }
 
+function renderReply(value: unknown) {
+  return typeof value === "string" ? (
+    <MarkdownContent text={value} agentReply />
+  ) : (
+    <JsonView value={value} />
+  );
+}
+
 function AgentMessage({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
   const streaming = entry.state === "in_progress";
@@ -116,7 +125,12 @@ function AgentMessage({ entry }: { entry: ContentEntry }) {
       data-streaming={streaming || undefined}
     >
       {entry.text ? (
-        <StoredContent itemId={entry.id} field="text" value={entry.text} />
+        <StoredContent
+          itemId={entry.id}
+          field="text"
+          value={entry.text}
+          renderValue={renderReply}
+        />
       ) : (
         <p className={styles.thinking}>
           {streaming ? t("Thinking…") : t("No text content")}
