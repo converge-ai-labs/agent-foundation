@@ -83,8 +83,9 @@ async def list_traces(
 async def search_traces(
     ctx: ToolContext, *, filters: Annotated[trace_search.TraceSearch, Query()]
 ) -> trace_search.TraceSearchPage:
-    """Rank traces in the requested time window. Pass the Session, Thread or Run scope and any duration or cost bounds.
-    Filters apply before sorting and paging. Keep them fixed with the cursor. Costs sum reported span costs.
+    """Rank traces in a time window. Scope filters intersect: use session_id across Threads, thread_id across Runs,
+    or run_id across attempts. Apply the requested metric bounds and order_by (duration or cost) before paging.
+    Keep filters fixed with the cursor. Costs sum reported span costs.
     """
     return await trace_search.search(ctx.runtime, ctx.actor, ctx.workspace_id, filters)
 

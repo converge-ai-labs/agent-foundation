@@ -603,7 +603,7 @@
     "effect": "read",
     "group": "execution",
     "key": "search_traces",
-    "summary": "Rank traces in the requested time window. Pass the Session, Thread or Run scope and any duration or cost bounds.\nFilters apply before sorting and paging. Keep them fixed with the cursor. Costs sum reported span costs."
+    "summary": "Rank traces in a time window. Scope filters intersect: use session_id across Threads, thread_id across Runs,\nor run_id across attempts. Apply the requested metric bounds and order_by (duration or cost) before paging.\nKeep filters fixed with the cursor. Costs sum reported span costs."
   },
   {
     "effect": "write",
