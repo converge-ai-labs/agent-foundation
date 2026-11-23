@@ -2,6 +2,7 @@ import type { Extension as FromMarkdownExtension } from "mdast-util-from-markdow
 import type { Code, State, Tokenizer } from "micromark-util-types";
 import type { Processor } from "unified";
 import type {} from "remark-parse";
+import type {} from "mdast-util-math";
 
 // Recognize LaTeX delimiters before CommonMark's character escapes. Keeping
 // this in the parser leaves code, link destinations and source offsets intact.

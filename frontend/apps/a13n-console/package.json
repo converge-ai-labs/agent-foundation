@@ -55,6 +55,7 @@
     "fflate": "^0.8.3",
     "i18next": "^25.0.0",
     "jsonc-parser": "^3.3.1",
+    "katex": "^0.16.47",
     "openapi-fetch": "0.17.0",
     "p-limit": "^7.3.3",
     "react": "^19.2.8",
@@ -65,7 +66,10 @@
     "react-markdown": "^10.1.0",
     "react-router": "^8.3.1",
     "rehype-highlight": "^7.0.2",
+    "rehype-katex": "^7.0.1",
+    "remark-cjk-friendly": "^2.3.4",
     "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "uplot": "^1.6.32",
     "yaml": "^2.9.1"
   }

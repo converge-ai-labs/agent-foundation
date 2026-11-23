@@ -3,7 +3,21 @@ import { useTranslation } from "react-i18next";
 import { CopyButton } from "../identity";
 import styles from "../markdown.module.css";
 
-export function CodeBlock({ children }: { children: ReactNode }) {
+export function CodeBlock({
+  children,
+  actions,
+  preview,
+  hideSource = false,
+  copyLabel,
+  sourceLabel,
+}: {
+  children: ReactNode;
+  actions?: ReactNode;
+  preview?: ReactNode;
+  hideSource?: boolean;
+  copyLabel?: string;
+  sourceLabel?: string;
+}) {
   const { t } = useTranslation();
   const content = useRef<HTMLPreElement>(null);
   const code = Children.toArray(children).find(
@@ -17,13 +31,24 @@ export function CodeBlock({ children }: { children: ReactNode }) {
       <div className={styles.codeToolbar}>
         <span>{language ?? t("Text")}</span>
         {/* The toolbar names the language; copying is a quiet control beside it. */}
-        <CopyButton
-          value={() => content.current?.textContent ?? ""}
-          iconOnly
-          copyLabel={t("Copy code")}
-        />
+        <div className={styles.codeActions}>
+          {actions}
+          <CopyButton
+            value={() => content.current?.textContent ?? ""}
+            iconOnly
+            copyLabel={copyLabel ?? t("Copy code")}
+          />
+        </div>
       </div>
-      <pre ref={content} className="a13n-scrollbar">
+      {preview}
+      <pre
+        ref={content}
+        hidden={hideSource}
+        className="a13n-scrollbar"
+        {...(sourceLabel
+          ? { role: "region", "aria-label": sourceLabel, tabIndex: 0 }
+          : {})}
+      >
         {children}
       </pre>
     </div>

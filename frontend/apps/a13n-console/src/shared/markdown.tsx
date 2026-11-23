@@ -12,8 +12,14 @@ import { markdownResourceLink } from "./markdown-links";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
+import remarkCjkFriendly from "remark-cjk-friendly";
+import remarkMath from "remark-math";
+import { remarkClosedDiagram, remarkLatex } from "a13n-ui/markdown-extensions";
+import "katex/dist/katex.min.css";
 import styles from "./markdown.module.css";
 import { CodeBlock } from "./forms";
+import { MarkdownDiagram } from "./markdown-diagram";
 
 function MarkdownLink({
   href,
@@ -111,29 +117,88 @@ const compactComponents: Components = {
   img: (props) => <ImageLink {...props} compact />,
 };
 
+function MathRegion(props: ComponentPropsWithoutRef<"span">) {
+  const { t } = useTranslation();
+  return (
+    <span
+      {...props}
+      role="region"
+      aria-label={t("Math formula")}
+      tabIndex={0}
+    />
+  );
+}
+
+const replyComponents: Components = {
+  ...components,
+  pre: ({ node, children }) => {
+    const code = node?.children.find(
+      (child) => child.type === "element" && child.tagName === "code",
+    );
+    const source = code?.type === "element" ? code.children[0] : undefined;
+    return code?.type === "element" &&
+      code.properties.dataClosedDiagram === true &&
+      source?.type === "text" ? (
+      <MarkdownDiagram source={source.value}>{children}</MarkdownDiagram>
+    ) : (
+      <CodeBlock>{children}</CodeBlock>
+    );
+  },
+  span: ({ node: _node, ...props }) =>
+    props.className === "katex-display" ? (
+      <MathRegion {...props} />
+    ) : (
+      <span {...props} />
+    ),
+};
+
 /** Unchanged messages do not parse Markdown again when their Thread updates. */
 export const MarkdownContent = memo(function MarkdownContent({
   text,
   literalHtml = false,
   highlight = true,
   compactLinks = false,
+  agentReply = false,
 }: {
   text: string;
   literalHtml?: boolean;
   highlight?: boolean;
   compactLinks?: boolean;
+  agentReply?: boolean;
 }) {
   return (
     <div className={styles.markdown}>
       <Markdown
         skipHtml={!literalHtml}
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={
-          highlight && text.length <= 100_000
-            ? [[rehypeHighlight, { detect: false }]]
-            : []
+        remarkPlugins={
+          agentReply
+            ? [
+                remarkGfm,
+                remarkCjkFriendly,
+                remarkMath,
+                remarkLatex,
+                remarkClosedDiagram,
+              ]
+            : [remarkGfm]
         }
-        components={compactLinks ? compactComponents : components}
+        rehypePlugins={[
+          ...(agentReply ? [rehypeKatex] : []),
+          ...(highlight && text.length <= 100_000
+            ? [
+                [rehypeHighlight, { detect: false }] as [
+                  typeof rehypeHighlight,
+                  { detect: boolean },
+                ],
+              ]
+            : []),
+        ]}
+        components={
+          agentReply
+            ? replyComponents
+            : compactLinks
+              ? compactComponents
+              : components
+        }
       >
         {text}
       </Markdown>
