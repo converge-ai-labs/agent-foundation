@@ -6,31 +6,15 @@ from collections import defaultdict
 from collections.abc import Mapping
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Annotated, Literal, Self
+from typing import Literal, Self
 
-from a13n_harness.usage import ModelUsageRecord, UsageRecord
-from anyio.to_thread import run_sync
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
-from sqlalchemy import select, text
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sqlalchemy import select
 
-from .database import DatabaseSessions, short_session
-from .models import ThreadConfigurationRecord, ThreadRecord, ThreadUsageRecord
-from .usage import _Totals, configured_usage_models, usage_model
-
-
-class _SnapshotRecords(BaseModel):
-    # Writes validate the complete UsageSnapshot, including its serialized size.
-    # Reads need only the typed records, without reserializing the whole snapshot.
-    records: tuple[UsageRecord, ...]
-
-
-class _SnapshotEnvelope(BaseModel):
-    kind: Literal["snapshot"]
-    snapshot: _SnapshotRecords
-    observed_through: datetime
-
-
-_ENVELOPE = TypeAdapter(Annotated[_SnapshotEnvelope | UsageRecord, Field(discriminator="kind")])
+from .database import DatabaseSessions
+from .models import ThreadConfigurationRecord, ThreadRecord, ThreadUsageRecord, UsageFactRecord
+from .usage import _Totals, configured_usage_models
+from .usage_index import configured_model, indexed_usage_session
 
 
 class UsageQuery(BaseModel):
@@ -146,10 +130,10 @@ class UsageAnalyticsRepository:
         models: dict[str, str] = {}
         first: datetime | None = None
         last: datetime | None = None
-        async with short_session(self._sessions) as session:
-            # Pin metadata and mutable usage snapshots to the same read transaction.
-            await session.execute(text("BEGIN"))
-            configured = await configured_usage_models(session)
+        async with indexed_usage_session(self._sessions) as session:
+            configured = {
+                recipe: configured_model(name) for recipe, name in (await configured_usage_models(session)).items()
+            }
             metadata = (
                 await session.execute(
                     select(
@@ -177,62 +161,66 @@ class UsageAnalyticsRepository:
                     label = "Live"
                 threads[thread_id] = UsageThreadOption(key=thread_id, label=label, project_id=project_id)
 
+            f = UsageFactRecord
             rows = await session.stream(
-                select(ThreadUsageRecord.root_thread_id, ThreadUsageRecord.payload_json, ThreadUsageRecord.observed_at)
-                .where(ThreadUsageRecord.root_thread_id.in_(roots))
-                .order_by(ThreadUsageRecord.root_thread_id, ThreadUsageRecord.sequence)
+                select(
+                    f.root_thread_id,
+                    f.day,
+                    f.recipe_id,
+                    f.model_key,
+                    f.model_label,
+                    f.input_tokens,
+                    f.output_tokens,
+                    f.cache_read_tokens,
+                    f.cache_write_tokens,
+                    f.cost,
+                    ThreadUsageRecord.observed_at,
+                    ThreadUsageRecord.indexed_through,
+                )
+                .join(ThreadUsageRecord, ThreadUsageRecord.sequence == f.sequence)
+                .where(f.root_thread_id.in_(roots), f.day >= query.start, f.day < query.end)
             )
-            previous_root: str | None = None
-            seen: set[str] = set()
-            # Stream one scope at a time: a single payload can contain many records.
-            # This avoids SQLite's per-record JSON expansion and window-sort spool.
-            async for root_id, payload, observed in rows.yield_per(1):
-                if previous_root != root_id:
-                    seen.clear()
-                    previous_root = root_id
-                envelope = await run_sync(_ENVELOPE.validate_json, payload)
-                if isinstance(envelope, _SnapshotEnvelope):
-                    records = envelope.snapshot.records
-                    observed_through = envelope.observed_through.astimezone(UTC)
+            async for (
+                root_id,
+                day,
+                recipe,
+                fallback_key,
+                fallback_label,
+                inputs,
+                outputs,
+                reads,
+                writes,
+                cost,
+                observed,
+                observed_through,
+            ) in rows.yield_per(512):
+                selected_model, model_label = configured.get(recipe, (fallback_key, fallback_label))
+                models[selected_model] = model_label
+                if query.model is not None and query.model != selected_model:
+                    continue
+                first = observed if first is None else min(first, observed)
+                last = observed_through if last is None else max(last, observed_through)
+                owner = threads[root_id]
+                if query.group_by == "project":
+                    key = owner.project_id or ""
+                    identity = (project_label(owner.project_id), owner.project_id, None, None)
+                elif query.group_by == "thread":
+                    key = root_id
+                    identity = (owner.label, owner.project_id, root_id, None)
                 else:
-                    records = (envelope,)
-                    observed_through = observed.replace(tzinfo=UTC)
-                for record in records:
-                    # Match the ledger's first (sequence, ordinal) winner per root,
-                    # including provider receipts, before applying any filters.
-                    if record.record_id in seen:
-                        continue
-                    seen.add(record.record_id)
-                    if not isinstance(record, ModelUsageRecord):
-                        continue
-                    day = record.response_timestamp.astimezone(UTC).date()
-                    # Date and model selection happen after contribution deduplication.
-                    if not query.start <= day < query.end:
-                        continue
-                    selected_model, model_label = usage_model(
-                        record, configured.get(record.model_id) if record.model_id else None
-                    )
-                    models[selected_model] = model_label
-                    if query.model is not None and query.model != selected_model:
-                        continue
-                    observed = observed.replace(tzinfo=UTC)
-                    observed_through = observed_through.replace(tzinfo=UTC)
-                    first = observed if first is None else min(first, observed)
-                    last = observed_through if last is None else max(last, observed_through)
-                    owner = threads[root_id]
-                    if query.group_by == "project":
-                        key = owner.project_id or ""
-                        identity = (project_label(owner.project_id), owner.project_id, None, None)
-                    elif query.group_by == "thread":
-                        key = root_id
-                        identity = (owner.label, owner.project_id, root_id, None)
+                    key = selected_model
+                    identity = (model_label, None, None, selected_model)
+                identities[key] = identity
+                for bucket in (totals, days[day], groups[key]):
+                    bucket.requests += 1
+                    bucket.tokens["input_tokens"] += inputs
+                    bucket.tokens["output_tokens"] += outputs
+                    bucket.tokens["cache_read_tokens"] += reads
+                    bucket.tokens["cache_write_tokens"] += writes
+                    if cost is None:
+                        bucket.unknown += 1
                     else:
-                        key = selected_model
-                        identity = (model_label, None, None, selected_model)
-                    identities[key] = identity
-                    totals.add(record)
-                    days[day].add(record)
-                    groups[key].add(record)
+                        bucket.cost += Decimal(cost)
 
         def order(key: str) -> tuple[bool, Decimal | int, str]:
             value = groups[key]
