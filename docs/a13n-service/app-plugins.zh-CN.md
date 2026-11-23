@@ -98,6 +98,8 @@ def definition() -> AppDefinition:
 
 已安装的插件可通过 `a13n_service.app_sdk` 使用原生 Thread、项目资源、Agent 修订版本、Schedule、出口凭据和模型用量接口。接收 session 参数的操作使用 `app_sdk.transaction(runtime.storage)`。要在同一事务中创建 Thread 或提交消息，先调用 `threads.prepare_admission(session, runtime, workspace_id, principal_id, app_id=...)`，再锁定 App 状态，并将返回值传给 `threads.create_thread_in_transaction` 或 `threads.submit_message_in_transaction`。执行身份是具有 `run` 权限的工作区服务账号。为每个请求使用带 App 前缀的稳定幂等键，将受理回执和业务状态写入同一个事务。
 
+使用 `threads.update_thread_resources` 更新根 Thread 和共享 Environment 的后代 Thread，包括动态子 Thread。传入 `environment_template_id` 会将替换环境的创建操作入队，并通过 `UpdatedThreadResources` 返回新环境的 `environment_id` 和根 Thread 的 `browser_id`。可在同一事务内将这些 ID 与 App 状态一起保存。同一工作区有多个 App 实例时，在列出 Schedule 和统计活跃 Schedule 时均传入实例的 `labels`。匹配的 Schedule 即使已归档，只要还有待处理的触发记录，也计入活跃数。
+
 App 自己维护的令牌通过 `egress.create_app_credential`、`rotate_app_credential` 和 `revoke_app_credential` 管理。操作归因于组织内当前有效的身份，工作区 Runner 账号无需提升为 `write`。运维人员可以在 Console 查看凭据所有者并请求同步 Session。**滚动升级时，先升级所有提供 API 的副本，再启用会创建 App 凭据的功能。** 旧副本不会执行新的修改限制。
 
 ## 持久化业务数据

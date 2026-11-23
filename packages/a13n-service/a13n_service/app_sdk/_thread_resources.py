@@ -1,6 +1,7 @@
 """Change desired resources while preserving historical Run bindings."""
 
 from collections import deque
+from dataclasses import dataclass
 from enum import Enum
 
 from a13n_harness.environment.models import EnvironmentPermissionSet
@@ -12,9 +13,11 @@ from a13n_service.resources.egress_credentials.service import validate_reference
 from a13n_service.resources.environment_instances.access import lock_environments
 from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.browsers.service import replace_binding
+from a13n_service.runs.browsers.tables import ThreadBrowserRow
 from a13n_service.runs.environments import bindings, mounts
+from a13n_service.runs.environments.access import audit
 from a13n_service.runs.environments.desktop.delivery import suppress
-from a13n_service.runs.environments.lifecycle import reserve
+from a13n_service.runs.environments.lifecycle import begin, reserve
 from a13n_service.runs.environments.schemas import MountCreate, SessionConfiguration
 from a13n_service.runs.environments.tables import ThreadEnvironmentRow, ThreadSessionBindingRow
 from a13n_service.runs.runtime import Runtime
@@ -45,14 +48,17 @@ async def _lock_shared_tree(session: AsyncSession, root: ThreadRow) -> list[Thre
                     ThreadRow.workspace_id == root.workspace_id,
                     ThreadRow.origin_thread_id == parent.id,
                     ThreadRow.origin == "child",
-                    ThreadRow.agent_snapshot.is_(None),
                 )
                 .order_by(ThreadRow.id)
             )
         ).all()
         for child_id in children:
             child = await get_thread(session, root.workspace_id, child_id, lock="acceptance", history=False)
-            if (await mounts.child_environment_policy(session, child)).mode == "shared":
+            # Dynamic children always inherit their parent Run's mounts and have no named edge.
+            if (
+                child.agent_snapshot is not None
+                or (await mounts.child_environment_policy(session, child)).mode == "shared"
+            ):
                 queue.append(child)
     return selected
 
@@ -143,6 +149,14 @@ async def _replace_primary(
         await mounts.mount_environments(session, thread, [mount], principal=actor)
 
 
+@dataclass(frozen=True, slots=True)
+class UpdatedThreadResources:
+    """Resolved desired primary Environment and Browser for the root Thread."""
+
+    environment_id: str | None
+    browser_id: str | None
+
+
 async def update_thread_resources(
     session: AsyncSession,
     runtime: Runtime,
@@ -156,11 +170,12 @@ async def update_thread_resources(
     session_configuration: SessionConfiguration | _Omitted | None = _Omitted.VALUE,
     browser_id: str | _Omitted | None = _Omitted.VALUE,
     template_name: str | None = None,
-) -> None:
+) -> UpdatedThreadResources:
     """Replace desired primary mounts for the native shared subtree; Browser edits affect only the root.
 
     Omitted values preserve the corresponding selection; None clears a Browser or Environment, or resets
-    the Session configuration. A template reserves a new primary Environment shared by the selected Threads.
+    the Session configuration. A template queues creation of a new primary Environment shared by the selected
+    Threads. The returned IDs are the root's desired bindings in the caller's transaction.
     """
     scope = await app_workspace(session, runtime, workspace_id, app_id)
     actor = await run_actor(session, runtime, scope, principal_id)
@@ -176,12 +191,17 @@ async def update_thread_resources(
     threads = await _lock_shared_tree(session, root) if environment_edit else []
     if environment_edit:
         await _require_quiescent(session, threads)
-    if not isinstance(browser_id, _Omitted):
-        await replace_binding(
+    if isinstance(browser_id, _Omitted):
+        binding = await session.get(ThreadBrowserRow, root.id, populate_existing=True)
+        resolved_browser_id = binding.browser_id if binding is not None else None
+    else:
+        changed = await replace_binding(
             session, actor, scope, root, BrowserBinding(browser_id=browser_id) if browser_id else None
         )
+        resolved_browser_id = changed.browser_id if changed is not None else None
     if not environment_edit:
-        return
+        primary = await session.get(ThreadEnvironmentRow, (root.id, mounts.PRIMARY), populate_existing=True)
+        return UpdatedThreadResources(primary.environment_id if primary is not None else None, resolved_browser_id)
     if isinstance(environment_template_id, str):
         row = await reserve(
             session,
@@ -191,6 +211,9 @@ async def update_thread_resources(
             limit=runtime.settings.environments.managed_count,
             name=template_name,
         )
+        await begin(session, row, "creating")
+        await session.flush()
+        audit(session, actor, row, "create")
         environment_id = row.id
     elif environment_template_id is None and isinstance(environment_id, _Omitted):
         environment_id = None
@@ -213,3 +236,4 @@ async def update_thread_resources(
     for thread, target in zip(threads, targets, strict=True):
         await _replace_primary(session, actor, thread, target, session_configuration)
     await session.flush()
+    return UpdatedThreadResources(targets[0], resolved_browser_id)

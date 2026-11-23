@@ -1,6 +1,8 @@
 """Native Schedules that start a fresh Thread at each occurrence."""
 
-from sqlalchemy import func, select
+from collections.abc import Mapping
+
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
@@ -69,11 +71,11 @@ async def create_fresh_schedule(
     )
 
 
-def _fresh(workspace_id: str, app_id: str):
+def _fresh(workspace_id: str, app_id: str, labels: Mapping[str, str] | None):
     return (
         ScheduleRow.workspace_id == workspace_id,
         ScheduleRow.thread_id.is_(None),
-        ScheduleRow.labels.contains({"app": app_id}),
+        ScheduleRow.labels.contains({**(labels or {}), "app": app_id}),
     )
 
 
@@ -82,18 +84,23 @@ async def list_app_schedules(
     workspace_id: str,
     *,
     app_id: str,
+    labels: Mapping[str, str] | None = None,
     limit: int = 50,
     cursor: str | None = None,
 ) -> SchedulePage:
-    """Page fresh Schedules labeled for an App-authorized workspace."""
+    """Page fresh Schedules by App and optional instance labels."""
     if not 1 <= limit <= 200:
         raise invalid("limit", "must_be_between_1_and_200")
     rows, next_cursor = await cursors.keyset_page(
         session,
-        select(ScheduleRow).where(*_fresh(workspace_id, app_id)),
+        select(ScheduleRow).where(*_fresh(workspace_id, app_id, labels)),
         (ScheduleRow.created_at, ScheduleRow.id),
         kind="app_fresh_schedules",
-        owner=cursors.query_owner(workspace_id, app_id),
+        owner=(
+            cursors.query_owner(workspace_id, app_id, sorted(labels.items()))
+            if labels
+            else cursors.query_owner(workspace_id, app_id)
+        ),
         cursor=cursor,
         limit=limit,
         newest_first=True,
@@ -101,15 +108,21 @@ async def list_app_schedules(
     return SchedulePage(items=[queries.view(row) for row in rows], next_cursor=next_cursor)
 
 
-async def count_active_fresh_schedules(session: AsyncSession, workspace_id: str, *, app_id: str) -> int:
-    """Count fresh Schedules that have not reached a terminal state."""
+async def count_active_fresh_schedules(
+    session: AsyncSession,
+    workspace_id: str,
+    *,
+    app_id: str,
+    labels: Mapping[str, str] | None = None,
+) -> int:
+    """Count enabled or paused fresh Schedules, plus any with a pending occurrence."""
     return (
         await session.scalar(
             select(func.count())
             .select_from(ScheduleRow)
             .where(
-                *_fresh(workspace_id, app_id),
-                ScheduleRow.state.in_(("enabled", "paused")),
+                *_fresh(workspace_id, app_id, labels),
+                or_(ScheduleRow.state.in_(("enabled", "paused")), ScheduleRow.pending_occurrence_id.is_not(None)),
             )
         )
         or 0

@@ -21,6 +21,7 @@ from a13n_service.runs.schemas import ThreadView as ThreadView
 from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow, ThreadRow
 
 from ._access import app_workspace, run_actor
+from ._thread_resources import UpdatedThreadResources as UpdatedThreadResources
 from ._thread_resources import update_thread_resources as update_thread_resources
 
 
