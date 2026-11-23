@@ -1,16 +1,24 @@
 """Change desired resources while preserving historical Run bindings."""
 
 from collections import deque
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
+from a13n_envd_client.eip.v1 import EgressMode, PublicDestinations
 from a13n_harness.environment.models import EnvironmentPermissionSet
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import load_only
 
-from a13n_service.infra.errors import conflict, invalid
+from a13n_service.infra.audit import record
+from a13n_service.infra.errors import conflict, invalid, not_found
+from a13n_service.resources.egress_credentials.schemas import SecretReference
 from a13n_service.resources.egress_credentials.service import validate_references
+from a13n_service.resources.egress_credentials.tables import CredentialRow
 from a13n_service.resources.environment_instances.access import lock_environments
+from a13n_service.resources.environment_instances.session_configuration import EgressConfiguration
 from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.browsers.service import replace_binding
 from a13n_service.runs.browsers.tables import ThreadBrowserRow
@@ -65,7 +73,11 @@ async def _lock_shared_tree(session: AsyncSession, root: ThreadRow) -> list[Thre
 
 async def _require_quiescent(session: AsyncSession, threads: list[ThreadRow]) -> None:
     for thread in threads:
-        last = await session.get(RunRow, thread.last_run_id) if thread.last_run_id is not None else None
+        last_status = (
+            await session.scalar(select(RunRow.status).where(RunRow.id == thread.last_run_id))
+            if thread.last_run_id is not None
+            else None
+        )
         pending = (
             select(InboxEntryRow.id)
             .where(
@@ -74,11 +86,7 @@ async def _require_quiescent(session: AsyncSession, threads: list[ThreadRow]) ->
             )
             .exists()
         )
-        if (
-            thread.current_run_id
-            or (last is not None and last.status == "waiting")
-            or await session.scalar(select(pending))
-        ):
+        if thread.current_run_id or last_status == "waiting" or await session.scalar(select(pending)):
             raise conflict("thread", thread.id, "thread_resources_busy")
 
 
@@ -237,3 +245,132 @@ async def update_thread_resources(
         await _replace_primary(session, actor, thread, target, session_configuration)
     await session.flush()
     return UpdatedThreadResources(targets[0], resolved_browser_id)
+
+
+async def update_app_egress_secrets(
+    session: AsyncSession,
+    runtime: Runtime,
+    workspace_id: str,
+    *,
+    app_id: str,
+    principal_id: str,
+    root_thread_id: str,
+    set_secrets: Sequence[SecretReference] = (),
+    remove_envs: Sequence[str] = (),
+) -> None:
+    """Patch only this App's references in each desired primary binding of a quiescent shared subtree."""
+    scope = await app_workspace(session, runtime, workspace_id, app_id)
+    actor = await run_actor(session, runtime, scope, principal_id)
+    upserts = {reference.env: reference for reference in set_secrets}
+    removals = set(remove_envs)
+    if len(upserts) != len(set_secrets) or upserts.keys() & removals:
+        raise invalid("set_secrets", "Credential names must be unique and cannot also be removed")
+    root = await get_thread(session, workspace_id, root_thread_id, lock="acceptance", history=False)
+    require_open(root)
+    if not upserts and not removals:
+        return
+    threads = await _lock_shared_tree(session, root)
+    await _require_quiescent(session, threads)
+
+    desired = []
+    changed_envs = upserts.keys() | removals
+    owned_ids = {reference.credential_id for reference in set_secrets}
+    for thread in threads:
+        primary = await session.get(ThreadEnvironmentRow, (thread.id, mounts.PRIMARY), populate_existing=True)
+        if primary is None:
+            if thread.id == root.id and upserts:
+                raise invalid("set_secrets", "requires_primary_environment")
+            continue
+        binding = await session.get_one(
+            ThreadSessionBindingRow,
+            (thread.id, primary.environment_id, primary.session_binding),
+            populate_existing=True,
+        )
+        configuration = SessionConfiguration.model_validate(binding.configuration)
+        desired.append((thread, binding, configuration))
+        owned_ids.update(ref.credential_id for ref in configuration.credential_references if ref.env in changed_envs)
+
+    await lock_environments(
+        session, workspace_id, [binding.environment_id for _, binding, _ in desired], principal_id=actor.id
+    )
+    # An App may have loaded credentials before taking the organization lock. Refresh their
+    # metadata under the lock and keep the rows alive through native reference validation.
+    owned = {}
+    if owned_ids:
+        owned = {
+            row.id: row
+            for row in await session.scalars(
+                select(CredentialRow)
+                .where(
+                    CredentialRow.workspace_id == workspace_id,
+                    CredentialRow.owner_app_id == app_id,
+                    CredentialRow.id.in_(owned_ids),
+                )
+                .options(load_only(CredentialRow.id, CredentialRow.state, CredentialRow.allowed_hosts))
+                .execution_options(populate_existing=True)
+            )
+        }
+    for reference in set_secrets:
+        if reference.credential_id not in owned:
+            raise not_found(CredentialRow.KIND, reference.credential_id)
+    await validate_references(session, actor, scope, set_secrets)
+
+    # Validate all edits before changing any row; a descendant conflict must not apply a partial patch.
+    changes = []
+    for thread, binding, configuration in desired:
+        current = {reference.env: reference for reference in configuration.credential_references}
+        if any(current[env].credential_id not in owned for env in current.keys() & changed_envs):
+            raise conflict("session_binding", binding.name, "egress_secret_owner_conflict", thread_id=thread.id)
+        next_configuration = _patch_secrets(configuration, upserts, removals)
+        if configuration != next_configuration:
+            await bindings.require_idle(
+                session,
+                thread.id,
+                EnvironmentMount(
+                    name=mounts.PRIMARY,
+                    environment_id=binding.environment_id,
+                    session_binding=binding.name,
+                ),
+            )
+            changes.append((thread, binding, next_configuration))
+
+    for thread, binding, configuration in changes:
+        binding.configuration = configuration.model_dump(mode="json")
+        binding.version += 1
+        thread.version += 1
+        record(
+            session,
+            scope,
+            actor_id=actor.id,
+            action="thread_session_binding.update",
+            target_kind="thread",
+            target_id=thread.id,
+            details={
+                "app_id": app_id,
+                "environment_id": binding.environment_id,
+                "name": binding.name,
+                "version": binding.version,
+            },
+        )
+    await session.flush()
+
+
+def _patch_secrets(
+    configuration: SessionConfiguration, upserts: dict[str, SecretReference], removals: set[str]
+) -> SessionConfiguration:
+    egress = configuration.egress
+    mode = configuration.egress_mode
+    if not upserts and not any(ref.env in removals for ref in configuration.credential_references):
+        return configuration
+    if mode is None and egress is None:
+        mode = EgressMode.CONTROLLED
+        egress = EgressConfiguration(destinations=PublicDestinations(mode="public"))
+    if mode != EgressMode.CONTROLLED or egress is None:
+        raise invalid("set_secrets", "Credential injection requires controlled egress with a destination policy")
+    secrets = {ref.env: ref for ref in egress.secrets if ref.env not in removals}
+    secrets.update(upserts)
+    try:
+        egress = EgressConfiguration(destinations=egress.destinations, secrets=tuple(secrets.values()))
+    except ValidationError as error:
+        raise invalid("set_secrets", error.errors(include_input=False, include_url=False)[0]["msg"]) from None
+    return configuration.model_copy(update={"egress_mode": mode, "egress": egress})
