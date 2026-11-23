@@ -15,7 +15,9 @@
     "./brand/brands": "./src/brand/brands.ts",
     "./brand/logo.svg": "./src/brand/a13n-logo.svg",
     "./brand/mark": "./src/brand/mark.ts",
-    "./brand/wordmark": "./src/brand/wordmark.tsx"
+    "./brand/wordmark": "./src/brand/wordmark.tsx",
+    "./mermaid-render": "./src/mermaid-render.ts",
+    "./markdown-extensions": "./src/markdown-extensions.ts"
   },
   "sideEffects": [
     "**/*.css"
@@ -43,7 +45,13 @@
     "@phosphor-icons/react": "^2.1.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^3.4.0"
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-math": "^3.0.0",
+    "mermaid": "^12.0.0",
+    "micromark-util-types": "^2.0.2",
+    "remark-parse": "^11.0.0",
+    "tailwind-merge": "^3.4.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",

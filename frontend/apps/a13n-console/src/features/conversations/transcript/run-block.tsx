@@ -95,7 +95,7 @@ export function RunBlock({
         }
       >
         {!reply && typeof run.output === "string" && run.output && (
-          <MarkdownContent text={run.output} />
+          <MarkdownContent text={run.output} agentReply />
         )}
         {children}
       </AgentTurn>

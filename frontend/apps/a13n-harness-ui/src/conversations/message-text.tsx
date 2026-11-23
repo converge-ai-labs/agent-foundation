@@ -5,10 +5,10 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
 import remarkMath from "remark-math";
-import { remarkLatex } from "./remark-latex";
+import { remarkClosedDiagram, remarkLatex } from "a13n-ui/markdown-extensions";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import { MarkdownPre, MarkdownSource, MarkdownTable } from "./markdown-block";
+import { MarkdownPre, MarkdownTable } from "./markdown-block";
 import styles from "./markdown.module.css";
 import { linkedHostFile } from "../shell/page-links";
 import { OpenHostFile } from "./tool-call";
@@ -107,29 +107,28 @@ export const MessageText = memo(function MessageText({
 }) {
   const guest = useGuestAccess();
   return (
-    <MarkdownSource value={text}>
-      <div className={styles.markdown}>
-        <Markdown
-          remarkPlugins={[
-            remarkGfm,
-            remarkCjkFriendly,
-            remarkMath,
-            remarkLatex,
-          ]}
-          rehypePlugins={
-            guest
-              ? [rehypeKatex]
-              : [
-                  rehypeKatex,
-                  [linkedMediaPreviews, { currentHref: window.location.href }],
-                ]
-          }
-          skipHtml
-          components={components}
-        >
-          {text}
-        </Markdown>
-      </div>
-    </MarkdownSource>
+    <div className={styles.markdown}>
+      <Markdown
+        remarkPlugins={[
+          remarkGfm,
+          remarkCjkFriendly,
+          remarkMath,
+          remarkLatex,
+          remarkClosedDiagram,
+        ]}
+        rehypePlugins={
+          guest
+            ? [rehypeKatex]
+            : [
+                rehypeKatex,
+                [linkedMediaPreviews, { currentHref: window.location.href }],
+              ]
+        }
+        skipHtml
+        components={components}
+      >
+        {text}
+      </Markdown>
+    </div>
   );
 });

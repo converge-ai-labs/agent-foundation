@@ -1,7 +1,5 @@
 import { useTranslation } from "../i18n";
 import {
-  createContext,
-  useContext,
   useEffect,
   useState,
   type ComponentProps,
@@ -11,30 +9,17 @@ import type { ExtraProps } from "react-markdown";
 import { Button } from "a13n-ui";
 import { ArrowsOut, Copy, Code } from "@phosphor-icons/react";
 import { ImagePreview } from "../shell/image-preview";
-import { renderDiagram } from "./mermaid-render";
+import { renderDiagram } from "a13n-ui/mermaid-render";
 import { SyntaxCode } from "./syntax-code";
 import styles from "./markdown.module.css";
 import { copyText } from "../platform";
 
-export const MarkdownSource = createContext("");
 type Node = { type: string; value?: string; children?: Node[] };
 function nodeText(node?: Node): string {
   return node?.type === "text"
     ? (node.value ?? "")
     : (node?.children?.map(nodeText).join("") ?? "");
 }
-export function closedFence(source: string) {
-  const lines = source.trimEnd().split("\n");
-  const fence = /^ {0,3}(`{3,}|~{3,})/.exec(lines[0]);
-  if (!fence || lines.length < 2) return false;
-  const closing = /^ {0,3}(`{3,}|~{3,})\s*$/.exec(lines.at(-1)!);
-  return (
-    !!closing &&
-    closing[1][0] === fence[1][0] &&
-    closing[1].length >= fence[1].length
-  );
-}
-
 function Diagram({
   source,
   header,
@@ -149,7 +134,6 @@ export function MarkdownPre({
   children,
 }: ComponentProps<"pre"> & ExtraProps) {
   const { t } = useTranslation();
-  const markdown = useContext(MarkdownSource);
   const code = node?.children.find(
     (item) => item.type === "element" && item.tagName === "code",
   );
@@ -161,13 +145,9 @@ export function MarkdownPre({
       ).replace("language-", "")
     : "";
   const source = nodeText(code);
-  const start = node?.position?.start.offset;
-  const end = node?.position?.end.offset;
   const diagram = language.toLowerCase() === "mermaid";
   const complete =
-    start !== undefined &&
-    end !== undefined &&
-    closedFence(markdown.slice(start, end));
+    code?.type === "element" && code.properties.dataClosedDiagram === true;
   const [copied, setCopied] = useState(false);
   const [copyError, setCopyError] = useState(false);
   useEffect(() => {

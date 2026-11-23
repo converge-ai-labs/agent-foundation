@@ -27,20 +27,38 @@ export function intrinsicSize(svg: string) {
   root.style.removeProperty("max-width");
   return new XMLSerializer().serializeToString(root);
 }
+const maxTextSize = 50_000;
+const staticDiagram =
+  /^(?:flowchart|graph|sequenceDiagram|stateDiagram-v2)(?=\s|;|$)/;
+const authoredSettings = /^\s*---|%%\s*\{/m;
+const authoredAssets = /@\s*\{|\b(?:style|classDef|linkStyle)\b/i;
+const sequenceAssets = /\b(?:properties|details|rect)\b/i;
+const richLabels = /<\/?[a-z!]|\$\$|&(?:lt|#0*60|#x0*3c)|#(?:lt|60|x3c);/i;
+
+function supportsStaticLayout(source: string) {
+  const body = source.replace(/^\s*(?:%%[^\r\n]*(?:\r\n?|\n)\s*)*/, "");
+  return (
+    staticDiagram.test(body) &&
+    !authoredSettings.test(source) &&
+    !authoredAssets.test(source) &&
+    !(body.startsWith("sequenceDiagram") && sequenceAssets.test(body)) &&
+    !richLabels.test(body.replace(/<<(?:fork|join|choice)>>/gi, ""))
+  );
+}
+
 export function renderDiagram(source: string, dark: boolean): Promise<string> {
+  // Strict sanitizes the serialized SVG, but Mermaid lays it out in the live
+  // document first. Admit only the reviewed text diagram types, without
+  // directives, custom styles, assets, actor metadata or rich labels.
+  if (source.length > maxTextSize || !supportsStaticLayout(source))
+    return Promise.reject(new Error("Diagram requires source view."));
   const render = queue.then(async () => {
-    // Diagram-authored configuration and image assets would bypass the workbench's
-    // no-remote-media policy. Keep their exact source available instead.
-    if (/^\s*---|%%\s*\{|\b(?:img|image)\s*:/m.test(source))
-      throw new Error(
-        "Diagram configuration and image assets are not supported.",
-      );
     const { default: mermaid } = await import("mermaid");
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
       suppressErrorRendering: true,
-      maxTextSize: 50000,
+      maxTextSize,
       maxEdges: 500,
       theme: "base",
       htmlLabels: false,
