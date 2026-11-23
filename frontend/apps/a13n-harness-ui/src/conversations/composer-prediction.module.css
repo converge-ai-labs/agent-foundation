@@ -3,10 +3,15 @@
   min-width: 0;
 }
 
+.editor :global(.cm-scroller) {
+  container-type: inline-size;
+}
+
 .ghost {
   display: inline-flex;
   align-items: baseline;
-  max-width: 100%;
+  /* CodeMirror's line can grow to fit the widget. Use the scrollport width instead. */
+  max-width: calc(100cqi - 2 * var(--composer-text-inset, 0px));
   color: var(--harness-placeholder);
   font-style: italic;
   pointer-events: none;
@@ -51,7 +56,7 @@
   }
 
   .editor:has(.touch) .ghost {
-    max-width: 60%;
+    max-width: 60cqi;
   }
 
   .touch {
