@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from a13n_envd_client.eip.v1 import AllowlistDestinations, PublicDestinations
 from a13n_service.app_plugins import AppCatalog, AppManifest
 from a13n_service.app_sdk import agents, egress, projects, schedules, threads, usage
 from a13n_service.infra.audit import AuditEventRow
@@ -728,12 +729,22 @@ def test_app_secret_upsert_never_expands_configured_egress(policy):
     cfg = threads.SessionConfiguration.model_validate(policy)
     ref = egress.SecretReference(env="APP_TOKEN", credential_id="ecred_" + "a" * 24, inject_hosts=("example.org",))
     with pytest.raises(ServiceError) as denied:
-        _patch_secrets(cfg, {ref.env: ref}, set())
+        _patch_secrets(cfg, {ref.env: ref}, set(), PublicDestinations(mode="public"))
     assert denied.value.code == "invalid_argument"
-    assert _patch_secrets(cfg, {}, {ref.env}) == cfg
+    assert _patch_secrets(cfg, {}, {ref.env}, PublicDestinations(mode="public")) == cfg
 
 
-async def test_patch_app_egress_secrets_in_each_shared_binding(service, app_runtime, runner, scripted_model, runs_kit):
+@pytest.mark.parametrize(
+    "initialize_destinations",
+    [
+        PublicDestinations(mode="public"),
+        AllowlistDestinations(mode="allowlist", hosts=("api.github.com", "example.org")),
+    ],
+    ids=["public", "allowlist"],
+)
+async def test_patch_app_egress_secrets_in_each_shared_binding(
+    service, app_runtime, runner, scripted_model, runs_kit, initialize_destinations
+):
     from a13n_service.app_sdk._access import run_actor
     from a13n_service.resources.egress_credentials.tables import CredentialRow
     from a13n_service.runs.environments import mounts
@@ -764,7 +775,7 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(service, app_runt
         root, receipt = await threads.create_thread_in_transaction(db, runtime, admission, ws, body, request_key="root")
         assert receipt.run is not None
     args = dict(**inputs, root_thread_id=root.id)
-    create_args = dict(actor_id=runner, allowed_hosts=["api.github.com"], value="synthetic")
+    create_args = dict(actor_id=runner, allowed_hosts=["api.github.com", "example.org"], value="synthetic")
     other = await egress.create_app_credential(runtime, ws, app_id="other", name="Other", **create_args)
     operator = threads.SessionConfiguration.model_validate(
         {**selection(other.id, env="OPERATOR_TOKEN"), "working_directory": "/child", "commands": False}
@@ -823,7 +834,9 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(service, app_runt
         assert cached_child.configuration == operator.model_dump(mode="json")
         for changes in ({"set_secrets": [ref]}, {"remove_envs": [ref.env]}):
             with pytest.raises(ServiceError) as conflict:
-                await threads.update_app_egress_secrets(db, runtime, ws, **args, **changes)
+                await threads.update_app_egress_secrets(
+                    db, runtime, ws, **args, initialize_destinations=initialize_destinations, **changes
+                )
             assert conflict.value.details["reason"] == "egress_secret_owner_conflict"
         assert (await saved(db, root.id)).version == 1
     undone = await service.client.put(
@@ -831,9 +844,23 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(service, app_runt
     )
     assert undone.status_code == 200, undone.text
 
+    async with transaction(runtime.storage) as db:
+        with pytest.raises(ServiceError) as missing_policy:
+            await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[ref])
+        assert missing_policy.value.code == "invalid_argument"
+        for edits in ({}, {"remove_envs": [ref.env]}):
+            await threads.update_app_egress_secrets(
+                db, runtime, ws, **args, initialize_destinations=initialize_destinations, **edits
+            )
+        root_binding = await saved(db, root.id)
+        assert root_binding.version == 1
+        assert threads.SessionConfiguration.model_validate(root_binding.configuration) == threads.SessionConfiguration()
+
     with pytest.raises(RuntimeError, match="rollback bindings"):
         async with transaction(runtime.storage) as db:
-            await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[ref])
+            await threads.update_app_egress_secrets(
+                db, runtime, ws, **args, set_secrets=[ref], initialize_destinations=initialize_destinations
+            )
             assert (await saved(db, root.id)).version == 2
             raise RuntimeError("rollback bindings")
     async with transaction(runtime.storage) as db:
@@ -843,10 +870,12 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(service, app_runt
         with pytest.raises(ServiceError) as denied:
             await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[other_ref])
         assert denied.value.code == "not_found"
-        await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[ref])
+        await threads.update_app_egress_secrets(
+            db, runtime, ws, **args, set_secrets=[ref], initialize_destinations=initialize_destinations
+        )
         root_cfg = threads.SessionConfiguration.model_validate((await saved(db, root.id)).configuration)
         child_cfg = threads.SessionConfiguration.model_validate((await saved(db, shared_id)).configuration)
-        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations.mode == "public"
+        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations == initialize_destinations
         assert root_cfg.credential_references == (ref,)
         assert child_cfg.credential_references == (*operator.credential_references, ref)
         assert child_cfg.model_dump(exclude={"egress"}) == operator.model_dump(exclude={"egress"})
@@ -857,6 +886,40 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(service, app_runt
         assert (await db.get_one(RunRow, receipt.run.id)).environment_mounts[0]["session_configuration"][
             "egress"
         ] is None
+    # The root would accept this host, but supplying initialization must not widen the child's existing allowlist.
+    wide_ref = ref.model_copy(update={"env": "EXTRA_TOKEN", "inject_hosts": ("example.org",)})
+    async with transaction(runtime.storage) as db:
+        with pytest.raises(ServiceError) as narrow:
+            await threads.update_app_egress_secrets(
+                db, runtime, ws, **args, set_secrets=[wide_ref], initialize_destinations=initialize_destinations
+            )
+        assert narrow.value.code == "invalid_argument"
+        assert (await saved(db, root.id)).version == 2
+
+    async def set_child_policy(configuration):
+        current = await service.client.get(path)
+        changed = await service.client.put(
+            path, json={"configuration": configuration}, headers={"if-match": current.headers["etag"]}
+        )
+        assert changed.status_code == 200, changed.text
+
+    # With the configured root visited first, a later child refusal must leave both bindings unchanged.
+    for policy in ({}, {"egress_mode": "deny"}, {"egress_mode": "inherit"}):
+        await set_child_policy(policy)
+        async with transaction(runtime.storage) as db:
+            child_version = (await saved(db, shared_id)).version
+            init = {"initialize_destinations": initialize_destinations} if policy else {}
+            with pytest.raises(ServiceError) as refused:
+                await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[wide_ref], **init)
+            assert refused.value.code == "invalid_argument"
+            assert (await saved(db, root.id)).version == 2
+            child_binding = await saved(db, shared_id)
+            assert child_binding.version == child_version
+            assert threads.SessionConfiguration.model_validate(child_binding.configuration) == (
+                threads.SessionConfiguration.model_validate(policy)
+            )
+    await set_child_policy(child_cfg.model_dump(mode="json"))
+
     async with transaction(runtime.storage) as db:
         cached_credential = await db.get_one(CredentialRow, owned.id)
         # Revoke in a separate committed Service transaction before this caller takes its organization lock.
@@ -872,6 +935,6 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(service, app_runt
         assert (await saved(db, shared_id)).version == child_before
         await threads.update_app_egress_secrets(db, runtime, ws, **args, remove_envs=[ref.env])
         root_cfg = threads.SessionConfiguration.model_validate((await saved(db, root.id)).configuration)
-        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations.mode == "public"
+        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations == initialize_destinations
         assert root_cfg.credential_references == ()
         assert (await saved(db, shared_id)).configuration == operator.model_dump(mode="json")

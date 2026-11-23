@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 
-from a13n_envd_client.eip.v1 import EgressMode, PublicDestinations
+from a13n_envd_client.eip.v1 import EgressDestinations, EgressMode
 from a13n_harness.environment.models import EnvironmentPermissionSet
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -257,8 +257,12 @@ async def update_app_egress_secrets(
     root_thread_id: str,
     set_secrets: Sequence[SecretReference] = (),
     remove_envs: Sequence[str] = (),
+    initialize_destinations: EgressDestinations | None = None,
 ) -> None:
-    """Patch only this App's references in each desired primary binding of a quiescent shared subtree."""
+    """Patch this App's references in each desired primary binding of a quiescent shared subtree.
+
+    An addition may initialize a binding with both egress fields unset only when destinations are supplied.
+    """
     scope = await app_workspace(session, runtime, workspace_id, app_id)
     actor = await run_actor(session, runtime, scope, principal_id)
     upserts = {reference.env: reference for reference in set_secrets}
@@ -321,7 +325,7 @@ async def update_app_egress_secrets(
         current = {reference.env: reference for reference in configuration.credential_references}
         if any(current[env].credential_id not in owned for env in current.keys() & changed_envs):
             raise conflict("session_binding", binding.name, "egress_secret_owner_conflict", thread_id=thread.id)
-        next_configuration = _patch_secrets(configuration, upserts, removals)
+        next_configuration = _patch_secrets(configuration, upserts, removals, initialize_destinations)
         if configuration != next_configuration:
             await bindings.require_idle(
                 session,
@@ -356,21 +360,25 @@ async def update_app_egress_secrets(
 
 
 def _patch_secrets(
-    configuration: SessionConfiguration, upserts: dict[str, SecretReference], removals: set[str]
+    configuration: SessionConfiguration,
+    upserts: dict[str, SecretReference],
+    removals: set[str],
+    initialize_destinations: EgressDestinations | None,
 ) -> SessionConfiguration:
     egress = configuration.egress
     mode = configuration.egress_mode
     if not upserts and not any(ref.env in removals for ref in configuration.credential_references):
         return configuration
-    if mode is None and egress is None:
-        mode = EgressMode.CONTROLLED
-        egress = EgressConfiguration(destinations=PublicDestinations(mode="public"))
-    if mode != EgressMode.CONTROLLED or egress is None:
+    if mode is None and egress is None and upserts and initialize_destinations is not None:
+        destinations = initialize_destinations
+    elif mode == EgressMode.CONTROLLED and egress is not None:
+        destinations = egress.destinations
+    else:
         raise invalid("set_secrets", "Credential injection requires controlled egress with a destination policy")
-    secrets = {ref.env: ref for ref in egress.secrets if ref.env not in removals}
+    secrets = {ref.env: ref for ref in configuration.credential_references if ref.env not in removals}
     secrets.update(upserts)
     try:
-        egress = EgressConfiguration(destinations=egress.destinations, secrets=tuple(secrets.values()))
+        egress = EgressConfiguration(destinations=destinations, secrets=tuple(secrets.values()))
     except ValidationError as error:
         raise invalid("set_secrets", error.errors(include_input=False, include_url=False)[0]["msg"]) from None
-    return configuration.model_copy(update={"egress_mode": mode, "egress": egress})
+    return configuration.model_copy(update={"egress_mode": EgressMode.CONTROLLED, "egress": egress})
