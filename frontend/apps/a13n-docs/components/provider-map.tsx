@@ -475,6 +475,16 @@ export function ProviderMap({
               viewBox={markGeometry.viewBox}
               aria-hidden
             >
+              <g transform="translate(54 46)">
+                {markGeometry.angles.map((angle) => (
+                  <rect
+                    key={angle}
+                    {...markGeometry.bar}
+                    transform={`rotate(${angle} 512 512)`}
+                    className={styles.markUnderlay}
+                  />
+                ))}
+              </g>
               {markGeometry.angles.map((angle) => (
                 <rect
                   key={angle}

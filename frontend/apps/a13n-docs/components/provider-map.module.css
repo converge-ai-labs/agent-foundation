@@ -8,6 +8,7 @@
   --rule: #d4d6dd;
   --signal: #5036d3;
   --processor: #5036d3;
+  --mark-underlay: color-mix(in srgb, white 55%, #5036d3);
   --dots: #cec9ef;
   --model-wire: #f45632;
   --connection-wire: #70629d;
@@ -24,6 +25,7 @@
   --rule: #495159;
   --signal: var(--a13n-signal);
   --processor: #5338c5;
+  --mark-underlay: color-mix(in srgb, white 55%, #5338c5);
   --dots: #4b535d;
   --model-wire: #ff8667;
   --connection-wire: #a094c5;
@@ -149,6 +151,11 @@
 
 .processor {
   fill: var(--processor);
+}
+
+/* The mark's offset underlay stays light so it reads against the tile. */
+.markUnderlay {
+  fill: var(--mark-underlay);
 }
 
 .wordmark {
