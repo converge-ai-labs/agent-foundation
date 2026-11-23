@@ -24,6 +24,7 @@
     "@types/react-dom": "^19.2.7",
     "jsdom": "^29.1.1",
     "openapi-typescript": "7.13.0",
+    "playwright": "1.59.1",
     "rollup": "^4.68.7",
     "rollup-plugin-dts": "^6.5.1",
     "typescript": "^5.9.3",

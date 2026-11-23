@@ -65,6 +65,21 @@ export function Security() {
     setPassword("");
     changePassword.reset();
   };
+  if (auth.data!.user.value.email === null) {
+    return (
+      <SettingsSection
+        variant="outlined"
+        title={t("Sign-in provider")}
+        description={t("Your identity provider manages your sign-in details.")}
+      >
+        {auth.data!.user.value.oidc_email && (
+          <SettingsRow label={auth.data!.user.value.oidc_email}>
+            {null}
+          </SettingsRow>
+        )}
+      </SettingsSection>
+    );
+  }
   return (
     <div className={settings.sections}>
       <SettingsSection

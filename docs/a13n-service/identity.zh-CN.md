@@ -130,6 +130,37 @@ HTTPS cookie 名为 `__Host-a13n_session`，带有 `Secure`、`HttpOnly` 和 `Sa
 
 `GET /api/v1/auth/session` 读取当前登录会话和 CSRF token；`POST /api/v1/auth/logout` 结束当前登录会话，两者都需要会话 cookie。`GET /api/v1/users/me/login-sessions` 列出你的登录会话供管理。这些操作拒绝 API 密钥，返回 `403 forbidden`。
 
+### 配置 OIDC 登录
+
+1. 先升级所有 Service API 副本，再启用 OIDC。初始化本地管理员，并复制新用户要加入的工作空间 ID。
+2. 在身份提供方注册机密 Web OIDC 客户端。将回调地址设为 `{server.public_url}/api/v1/auth/oidc/{provider_id}/callback`（省略 `server.public_url` 末尾的斜杠）。选用 `team` 等提供方 ID，并在配置与回调路径中使用同一 ID。除本机开发环境外，请使用 HTTPS。
+3. 将提供方与工作空间写入 `service.toml`，然后重启 Service API 副本。通过部署的机密配置提供客户端密钥。
+
+```toml
+[auth.oidc]
+default_workspace_id = "ws_replace_with_your_workspace_id"
+
+[auth.oidc.providers.team]
+label = "Team Identity"
+issuer = "https://identity.example.com/realms/team"
+client_id = "a13n-console"
+client_secret = "replace-at-deploy-time"
+```
+
+每增加一个 `[auth.oidc.providers.<id>]` 表，登录页就会多一个按钮。提供方须支持 Discovery、带 PKCE S256 的授权码流程、签名 ID token（`RS256` 或 `ES256`）以及 `openid profile email` 权限范围。默认使用 HTTP Basic；如果提供方要求 `client_secret_post`，请设置 `token_endpoint_auth_method = "client_secret_post"`。将 `brand` 设为 `"google"` 或 `"microsoft"` 可显示内置品牌图标，默认显示盾牌。
+
+凡是身份提供方允许向该客户端授权的用户，都可以登录。请先在身份提供方设置应用访问规则，再发布登录按钮。对于 Google Workspace，请在组织拥有的项目中创建 Web 客户端，并将 **Google Auth Platform → Audience → Internal** 设为仅本组织可用（参见 [Google 的受众指南](https://support.google.com/cloud/answer/15549945)）。External 应用可以允许组织外用户登录；Service 不会按邮箱域名限制准入。
+
+首次登录会创建独立的 Service 用户，并授予其指定工作空间的 `runner` 角色。身份提供方验证过的邮箱仅用于显示，即使某个密码账号也使用同一邮箱。请通过[成员与授权](identity.md#members-and-grants)管理权限。以后登录时，Service 会保留现有授权，不会恢复已移除的角色。
+
+### 切换到仅 OIDC 登录
+
+1. 先通过身份提供方登录一次，再由本地管理员把组织级 `admin` 角色授予新用户。
+2. 在独立的浏览器会话中再次通过身份提供方登录，确认可以管理组织。
+3. 在 `[auth]` 下设置 `password_enabled = false`，并重启所有 Service API 副本。现有密码会话会失效，密码登录、密码邀请和密码找回也会停用。API 密钥继续有效。
+
+OIDC 会话在 `auth.oidc.session_seconds` 后到期（默认 12 小时），操作不会延长有效期。移除某人的身份提供方访问权时，如需立即撤销本地访问，还要使用 `--principal-id` 禁用对应的 Service 用户。需要恢复运维访问时，将 `password_enabled` 改回 `true` 并重启 API 副本；原来的密码账号仍然保留。
+
 ## 你的账号
 
 修改个人资料、密码和邮箱，管理登录会话以及禁用账号，都使用登录会话。API 密钥可以读取其主体的个人资料，但不能执行这些账号修改。

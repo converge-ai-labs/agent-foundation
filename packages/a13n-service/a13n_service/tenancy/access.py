@@ -66,6 +66,7 @@ class Authenticated:
     kind: str
     authority: ExecutionAuthority | None = None
     platform: PlatformAccess | None = None
+    rolling_session: bool = False
 
     def constrain(self, principal: Principal) -> Principal:
         """Keep the acceptance ceiling when current grants are loaded or refreshed."""

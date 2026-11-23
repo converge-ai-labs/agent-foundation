@@ -4525,5 +4525,12 @@
   "This connection remains usable while you complete the new authorization. Starting again replaces the previous request.": "完成新授权期间，此连接仍可使用。重新发起授权会替换之前的请求。",
   "Complete authorization on the provider's page. Starting again replaces the previous request.": "请在供应商页面完成授权。重新发起授权会替换之前的请求。",
   "Authorize": "授权",
-  "Sessions for this agent in the selected period, sorted by spend (highest first).": "当前时间范围内该 Agent 的会话用量，按费用从高到低排列。"
+  "Sessions for this agent in the selected period, sorted by spend (highest first).": "当前时间范围内该 Agent 的会话用量，按费用从高到低排列。",
+  "Sign in with {{provider}}": "使用 {{provider}} 登录",
+  "Or use your password": "或使用密码",
+  "Sign-in didn’t complete. Choose a provider to try again.": "登录未完成。请选择身份提供方重试。",
+  "Ask your Service operator to finish setup.": "请联系 Service 运维人员完成初始配置。",
+  "This Service uses an identity provider. Go to sign in to continue.": "此 Service 通过身份提供方验证登录。请返回登录页继续。",
+  "Sign-in provider": "登录身份提供方",
+  "Your identity provider manages your sign-in details.": "你的登录信息由身份提供方管理。"
 }

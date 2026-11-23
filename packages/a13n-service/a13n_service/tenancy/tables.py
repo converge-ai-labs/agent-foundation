@@ -21,8 +21,8 @@ from a13n_service.infra.db import Base, Stamped, identity_guarded, rules, trigge
 _GUARD_PRINCIPAL = """
 CREATE FUNCTION guard_principal() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    IF ROW(NEW.id, NEW.kind, NEW.home_workspace_id, NEW.created_at)
-        IS DISTINCT FROM ROW(OLD.id, OLD.kind, OLD.home_workspace_id, OLD.created_at)
+    IF ROW(NEW.id, NEW.kind, NEW.home_workspace_id, NEW.created_at, NEW.oidc_issuer, NEW.oidc_subject)
+        IS DISTINCT FROM ROW(OLD.id, OLD.kind, OLD.home_workspace_id, OLD.created_at, OLD.oidc_issuer, OLD.oidc_subject)
     THEN RAISE EXCEPTION 'principal identity and home workspace are immutable'; END IF;
     RETURN NEW;
 END $$
@@ -55,7 +55,14 @@ class PrincipalRow(Stamped, Base):
     __table_args__ = (
         CheckConstraint("kind IN ('user', 'service_account')", name="kind"),
         CheckConstraint("status IN ('active', 'disabled')", name="status"),
-        CheckConstraint("(kind = 'user') = (email IS NOT NULL)", name="user_email"),
+        CheckConstraint(
+            "(oidc_issuer IS NULL) = (oidc_subject IS NULL) AND "
+            "(oidc_email IS NULL OR oidc_issuer IS NOT NULL) AND "
+            "((kind = 'user' AND (email IS NOT NULL) <> (oidc_issuer IS NOT NULL)) OR "
+            "(kind = 'service_account' AND email IS NULL AND oidc_issuer IS NULL))",
+            name="sign_in_identity",
+        ),
+        UniqueConstraint("oidc_issuer", "oidc_subject"),
         CheckConstraint("(kind = 'service_account') = (home_workspace_id IS NOT NULL)", name="account_home"),
         CheckConstraint("(kind = 'service_account') = (description IS NOT NULL)", name="account_description"),
         Index("ix_principals_home_workspace_id", "home_workspace_id"),
@@ -65,6 +72,9 @@ class PrincipalRow(Stamped, Base):
     kind: Mapped[str]
     name: Mapped[str]
     email: Mapped[str | None] = mapped_column(unique=True)
+    oidc_issuer: Mapped[str | None]
+    oidc_subject: Mapped[str | None]
+    oidc_email: Mapped[str | None]
     home_workspace_id: Mapped[str | None] = mapped_column(ForeignKey("workspaces.id"))
     status: Mapped[str] = mapped_column(server_default="active")
     description: Mapped[str | None]

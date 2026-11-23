@@ -4525,5 +4525,12 @@
   "This connection remains usable while you complete the new authorization. Starting again replaces the previous request.": "This connection remains usable while you complete the new authorization. Starting again replaces the previous request.",
   "Complete authorization on the provider's page. Starting again replaces the previous request.": "Complete authorization on the provider's page. Starting again replaces the previous request.",
   "Authorize": "Authorize",
-  "Sessions for this agent in the selected period, sorted by spend (highest first).": "Sessions for this agent in the selected period, sorted by spend (highest first)."
+  "Sessions for this agent in the selected period, sorted by spend (highest first).": "Sessions for this agent in the selected period, sorted by spend (highest first).",
+  "Sign in with {{provider}}": "Sign in with {{provider}}",
+  "Or use your password": "Or use your password",
+  "Sign-in didn’t complete. Choose a provider to try again.": "Sign-in didn’t complete. Choose a provider to try again.",
+  "Ask your Service operator to finish setup.": "Ask your Service operator to finish setup.",
+  "This Service uses an identity provider. Go to sign in to continue.": "This Service uses an identity provider. Go to sign in to continue.",
+  "Sign-in provider": "Sign-in provider",
+  "Your identity provider manages your sign-in details.": "Your identity provider manages your sign-in details."
 }

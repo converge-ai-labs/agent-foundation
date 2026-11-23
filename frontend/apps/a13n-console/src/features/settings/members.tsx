@@ -218,7 +218,9 @@ function Members({
                     description={
                       item.principal.kind === "service_account"
                         ? t("Service account")
-                        : (item.principal.email ?? undefined)
+                        : (item.principal.email ??
+                          item.principal.oidc_email ??
+                          undefined)
                     }
                     resourceId={item.principal.id}
                   />

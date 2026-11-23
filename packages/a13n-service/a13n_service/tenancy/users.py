@@ -55,6 +55,7 @@ def profile_view(row: PrincipalRow) -> Profile:
         kind=row.kind,
         name=row.name,
         email=row.email,
+        oidc_email=row.oidc_email,
         status=row.status,
         image_url=avatar_url(row),
         version=row.version,
@@ -130,7 +131,7 @@ async def confirm_email_change(storage: Storage, token: str) -> None:
     async with transaction(storage) as session:
         consumed = await consume_link(session, "email_change", token)
         principal = await lock(session, PrincipalRow, consumed.principal_id) if consumed else None
-        if consumed is None or principal is None or principal.status != "active":
+        if consumed is None or principal is None or principal.status != "active" or principal.email is None:
             raise invalid("token", "invalid_or_expired")
         email = str((consumed.data or {})["new_email"])
         principal.email = email
@@ -168,7 +169,9 @@ async def request_password_reset(storage: Storage, keys: KeyRing, settings: Sett
         return
     async with transaction(storage) as session:
         principal = await session.scalar(
-            select(PrincipalRow).where(PrincipalRow.email == email, PrincipalRow.status == "active")
+            select(PrincipalRow)
+            .join(PasswordRow, PasswordRow.principal_id == PrincipalRow.id)
+            .where(PrincipalRow.email == email, PrincipalRow.status == "active")
         )
         if principal is None:
             return
@@ -197,7 +200,7 @@ async def confirm_password_reset(storage: Storage, body: PasswordResetConfirm) -
     async with transaction(storage) as session:
         consumed = await consume_link(session, "password_reset", body.token)
         principal = await lock(session, PrincipalRow, consumed.principal_id) if consumed else None
-        if consumed is None or principal is None or principal.status != "active":
+        if consumed is None or principal is None or principal.status != "active" or principal.email is None:
             raise invalid("token", "invalid_or_expired")
         await set_password(session, principal.id, new_hash)
         await revoke_tokens(session, principal.id)
@@ -236,18 +239,19 @@ async def disable_account(storage: Storage, access: Access, actor: Principal, bo
         record(session, None, actor_id=actor.id, action="user.disable", target_kind="user", target_id=actor.id)
 
 
-async def set_account_status(storage: Storage, email: str, status: Literal["active", "disabled"]) -> str:
+async def set_account_status(
+    storage: Storage, email: str | None, status: Literal["active", "disabled"], *, principal_id: str | None = None
+) -> str:
     """The deployment operator's switch for a user account, outside any tenant's authority; returns the user ID.
 
     Disabling ends every login session and outstanding link, so enabling never revives one issued before; grants
     and keys stay, so enabling restores what disabling suspended.
     """
+    selector = PrincipalRow.id == principal_id if principal_id is not None else PrincipalRow.email == email
     async with transaction(storage) as session:
-        row = await session.scalar(
-            select(PrincipalRow).where(PrincipalRow.kind == "user", PrincipalRow.email == email).with_for_update()
-        )
+        row = await session.scalar(select(PrincipalRow).where(PrincipalRow.kind == "user", selector).with_for_update())
         if row is None:
-            raise not_found("user", email)
+            raise not_found("user", principal_id or email or "")
         if row.status != status:
             row.status = status
             if status == "disabled":

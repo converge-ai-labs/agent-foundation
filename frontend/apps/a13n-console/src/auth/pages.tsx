@@ -1,7 +1,11 @@
 import {
   ArrowLeftIcon,
+  ArrowUpRightIcon,
   CheckCircleIcon,
   InfoIcon,
+  GoogleLogoIcon,
+  ShieldCheckIcon,
+  WindowsLogoIcon,
   WarningCircleIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -42,6 +46,12 @@ type Mode = "login" | "setup" | "invite" | "forgot" | "reset" | "email";
 type Translate = (value: string) => string;
 /** A failure the reader can act on: beside the fields, or above the button. */
 type Failure = { field?: boolean; message: string };
+
+const identityIcons = {
+  generic: ShieldCheckIcon,
+  google: GoogleLogoIcon,
+  microsoft: WindowsLogoIcon,
+};
 
 const passwordFieldId = "auth-password";
 const passwordErrorId = `${passwordFieldId}-error`;
@@ -181,9 +191,24 @@ export function AuthPage() {
         : location.pathname === "/confirm-email"
           ? "email"
           : "login";
+  const passwords = configuration.data?.password_enabled !== false;
+  const providers = configuration.data?.initialized
+    ? (configuration.data.oidc_providers ?? [])
+    : [];
+  const hasProviders = routeMode === "login" && providers.length > 0;
+  const oidcFailed =
+    routeMode === "login" &&
+    new URLSearchParams(location.search).get("oidc") === "failed";
+  const linkUnavailable = !passwords && routeMode !== "login";
+  const needsBootstrap =
+    !passwords &&
+    configuration.data?.initialized === false &&
+    routeMode === "login";
   /** Until the first administrator exists, whoever signs in first creates it. */
   const mode: Mode =
-    routeMode === "login" && configuration.data?.initialized === false
+    routeMode === "login" &&
+    passwords &&
+    configuration.data?.initialized === false
       ? "setup"
       : routeMode;
   const returnTo: To =
@@ -308,7 +333,7 @@ export function AuthPage() {
   };
   if (mode === "login" && auth.data && !auth.anonymous)
     return <Navigate to={returnTo} replace />;
-  if (routeMode === "login" && configuration.isPending) return <Loading />;
+  if (configuration.isPending) return <Loading />;
   function submit(event: FormEvent) {
     event.preventDefault();
     setAttempted(true);
@@ -332,7 +357,7 @@ export function AuthPage() {
   }
   const links = (
     <div className={styles.links}>
-      {mode === "login" && configuration.data?.email_delivery && (
+      {mode === "login" && passwords && configuration.data?.email_delivery && (
         <Link
           className={styles.link}
           to="/forgot-password"
@@ -341,13 +366,13 @@ export function AuthPage() {
           {t("Forgot password")}
         </Link>
       )}
-      {(mode === "forgot" || mode === "reset") && (
+      {(linkUnavailable || mode === "forgot" || mode === "reset") && (
         <Link className={styles.link} to="/login" state={location.state}>
           <ArrowLeftIcon size={13} aria-hidden="true" />
           {t("Back to sign in")}
         </Link>
       )}
-      {mode === "email" && auth.anonymous && (
+      {mode === "email" && !linkUnavailable && auth.anonymous && (
         <a
           className={styles.link}
           href="/login"
@@ -367,10 +392,60 @@ export function AuthPage() {
           <Wordmark />
         </div>
         <h1 className={styles.title}>{titles[mode]}</h1>
-        {!withoutDelivery && (
+        {!withoutDelivery && !linkUnavailable && !needsBootstrap && (
           <p className={styles.description}>{descriptions[mode]}</p>
         )}
-        {withoutDelivery ? (
+        {hasProviders && (
+          <div className={styles.providers}>
+            {oidcFailed && (
+              <Notice>
+                {t("Sign-in didn’t complete. Choose a provider to try again.")}
+              </Notice>
+            )}
+            {providers.map((provider) => {
+              const Icon = identityIcons[provider.brand] ?? ShieldCheckIcon;
+              return (
+                <Button
+                  key={provider.id}
+                  variant="outline"
+                  size="lg"
+                  className={styles.provider}
+                  render={
+                    <a
+                      href={`/api/v1/auth/oidc/${encodeURIComponent(provider.id)}/start`}
+                    />
+                  }
+                >
+                  <Icon size={19} aria-hidden="true" />
+                  <span>
+                    {t("Sign in with {{provider}}", {
+                      provider: provider.label,
+                    })}
+                  </span>
+                  <ArrowUpRightIcon
+                    className={styles.providerArrow}
+                    size={14}
+                    aria-hidden="true"
+                  />
+                </Button>
+              );
+            })}
+            {passwords && (
+              <div className={styles.divider}>{t("Or use your password")}</div>
+            )}
+          </div>
+        )}
+        {needsBootstrap ? (
+          <p className={styles.unavailable}>
+            {t("Ask your Service operator to finish setup.")}
+          </p>
+        ) : linkUnavailable ? (
+          <p className={styles.unavailable}>
+            {t(
+              "This Service uses an identity provider. Go to sign in to continue.",
+            )}
+          </p>
+        ) : !passwords ? null : withoutDelivery ? (
           <p className={styles.unavailable}>
             <InfoIcon size={16} aria-hidden="true" />
             {t(

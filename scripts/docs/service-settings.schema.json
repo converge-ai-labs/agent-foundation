@@ -3,6 +3,14 @@
     "Authentication": {
       "additionalProperties": false,
       "properties": {
+        "password_enabled": {
+          "default": true,
+          "title": "Password Enabled",
+          "type": "boolean"
+        },
+        "oidc": {
+          "$ref": "#/$defs/OIDC"
+        },
         "session_seconds": {
           "default": 43200,
           "maximum": 604800,
@@ -1403,6 +1411,103 @@
         "query_endpoint"
       ],
       "title": "MonitoringPreset",
+      "type": "object"
+    },
+    "OIDC": {
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "patternProperties": {
+            "^[a-z][a-z0-9-]{0,31}$": {
+              "$ref": "#/$defs/OIDCProvider"
+            }
+          },
+          "title": "Providers",
+          "type": "object"
+        },
+        "default_workspace_id": {
+          "anyOf": [
+            {
+              "maxLength": 72,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default Workspace Id"
+        },
+        "session_seconds": {
+          "default": 43200,
+          "maximum": 604800,
+          "minimum": 60,
+          "title": "Session Seconds",
+          "type": "integer"
+        }
+      },
+      "title": "OIDC",
+      "type": "object"
+    },
+    "OIDCBrand": {
+      "enum": [
+        "generic",
+        "google",
+        "microsoft"
+      ],
+      "type": "string"
+    },
+    "OIDCProvider": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "brand": {
+          "$ref": "#/$defs/OIDCBrand",
+          "default": "generic"
+        },
+        "issuer": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Issuer",
+          "type": "string"
+        },
+        "client_id": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Client Id",
+          "type": "string"
+        },
+        "client_secret": {
+          "format": "password",
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Client Secret",
+          "type": "string",
+          "writeOnly": true
+        },
+        "token_endpoint_auth_method": {
+          "default": "client_secret_basic",
+          "enum": [
+            "client_secret_basic",
+            "client_secret_post"
+          ],
+          "title": "Token Endpoint Auth Method",
+          "type": "string"
+        }
+      },
+      "required": [
+        "label",
+        "issuer",
+        "client_id",
+        "client_secret"
+      ],
+      "title": "OIDCProvider",
       "type": "object"
     },
     "ObjectStoreSettings": {

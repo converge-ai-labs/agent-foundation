@@ -369,6 +369,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/auth/oidc/{provider_id}/callback": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Finish Oidc Sign In
+     * @description Consume a browser-bound OIDC callback and establish an ordinary Service browser session.
+     */
+    get: operations["finish_oidc_sign_in"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/oidc/{provider_id}/start": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Start Oidc Sign In
+     * @description Start sign-in at the configured identity provider in the top-level browser window.
+     */
+    get: operations["start_oidc_sign_in"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/auth/password-reset": {
     parameters: {
       query?: never;
@@ -6266,6 +6306,10 @@ export interface components {
       email_delivery: boolean;
       /** Initialized */
       initialized: boolean;
+      /** Oidc Providers */
+      oidc_providers: components["schemas"]["OIDCSignIn"][];
+      /** Password Enabled */
+      password_enabled: boolean;
     };
     /** Authentication */
     Authentication: {
@@ -11330,6 +11374,16 @@ export interface components {
       /** @default none */
       token_endpoint_auth_method?: components["schemas"]["ClientAuthentication"];
     };
+    /** @enum {string} */
+    OIDCBrand: "generic" | "google" | "microsoft";
+    /** OIDCSignIn */
+    OIDCSignIn: {
+      brand: components["schemas"]["OIDCBrand"];
+      /** Id */
+      id: string;
+      /** Label */
+      label: string;
+    };
     /** Observation */
     Observation: {
       /** Age Ms */
@@ -12119,6 +12173,8 @@ export interface components {
       kind: string;
       /** Name */
       name: string;
+      /** Oidc Email */
+      oidc_email?: string | null;
       /** Status */
       status: string;
     };
@@ -12152,6 +12208,8 @@ export interface components {
       kind: string;
       /** Name */
       name: string;
+      /** Oidc Email */
+      oidc_email?: string | null;
       /** Status */
       status: string;
       /**
@@ -16511,6 +16569,50 @@ export interface operations {
         };
         content?: never;
       };
+      default: components["responses"]["Error"];
+    };
+  };
+  finish_oidc_sign_in: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      303: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  start_oidc_sign_in: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      303: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
       default: components["responses"]["Error"];
     };
   };

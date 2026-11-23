@@ -1,13 +1,14 @@
 """The public account flows and the caller's own account over HTTP."""
 
 from fastapi import APIRouter, Request, Response
+from starlette.responses import RedirectResponse
 
 from a13n_service.infra import images
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.settings import Settings
-from a13n_service.tenancy import api_keys, users
-from a13n_service.tenancy.access import Authenticated, login_session_required
+from a13n_service.tenancy import api_keys, oidc, users
+from a13n_service.tenancy.access import Authenticated, login_session_required, unauthenticated
 from a13n_service.tenancy.audit import list_account_events
 from a13n_service.tenancy.authenticate import (
     Login,
@@ -32,6 +33,7 @@ from a13n_service.tenancy.schemas import (
     LoginInput,
     LoginOutput,
     LoginSessionPage,
+    OIDCSignIn,
     PasswordChange,
     PasswordReset,
     PasswordResetConfirm,
@@ -42,6 +44,11 @@ from a13n_service.tenancy.schemas import (
 )
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
+
+
+def _require_passwords(settings: Settings) -> None:
+    if not settings.auth.password_enabled:
+        raise ServiceError("forbidden", "Password sign-in is disabled")
 
 
 async def _limit_password_check(request: Request, actor_id: str) -> None:
@@ -63,6 +70,7 @@ def _signed_in(response: Response, result: Login, settings: Settings) -> LoginOu
 async def password_login(
     request: Request, response: Response, body: LoginInput, runtime: CurrentRuntime
 ) -> LoginOutput:
+    _require_passwords(runtime.settings)
     check_origin(request, runtime.settings)
     await limit_guessing(request, "login", f"email:{body.email}")
     result = await login(
@@ -80,6 +88,7 @@ async def bootstrap_administrator(
     request: Request, response: Response, body: BootstrapInput, runtime: CurrentRuntime
 ) -> LoginOutput:
     """Public only until initialized: creates the first administrator, as the `bootstrap` command does, signed in."""
+    _require_passwords(runtime.settings)
     check_origin(request, runtime.settings)
     await limit_guessing(request, "bootstrap")
     already = ServiceError("already_exists", "The Service is already initialized", {"kind": "organization"})
@@ -122,15 +131,103 @@ async def session_profile(request: Request, credential: Credential, runtime: Cur
 
 
 @router.get("/auth/configuration", response_model=AuthConfiguration)
-async def auth_configuration(runtime: CurrentRuntime) -> AuthConfiguration:
+async def auth_configuration(response: Response, runtime: CurrentRuntime) -> AuthConfiguration:
+    auth = runtime.settings.auth
+    response.headers["Cache-Control"] = "no-store"
     return AuthConfiguration(
-        email_delivery=runtime.settings.auth.mail.smtp_host is not None,
+        password_enabled=auth.password_enabled,
+        oidc_providers=[
+            OIDCSignIn(id=name, label=provider.label, brand=provider.brand)
+            for name, provider in auth.oidc.providers.items()
+        ],
+        email_delivery=auth.password_enabled and auth.mail.smtp_host is not None,
         initialized=await initialized(runtime.storage),
     )
 
 
+_OIDC_HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+
+
+def _oidc_redirect(target: str) -> RedirectResponse:
+    return RedirectResponse(target, status_code=303, headers=_OIDC_HEADERS)
+
+
+def _oidc_callback_url(settings: Settings, provider_id: str) -> str:
+    return f"{settings.server.public_origin}/api/v1/auth/oidc/{provider_id}/callback"
+
+
+def _oidc_cookie_name(settings: Settings, provider_id: str) -> str:
+    # __Host- prevents a sibling subdomain from setting a fixed browser-binding cookie.
+    return f"{'__Host-' if settings.server.https else ''}a13n_oidc_{provider_id}"
+
+
+@router.get("/auth/oidc/{provider_id}/start", response_class=RedirectResponse, status_code=303)
+async def start_oidc_sign_in(request: Request, provider_id: str, runtime: CurrentRuntime) -> RedirectResponse:
+    """Start sign-in at the configured identity provider in the top-level browser window."""
+    settings = runtime.settings
+    provider = settings.auth.oidc.providers.get(provider_id)
+    try:
+        await limit_guessing(request, "oidc_start")
+        if provider is None or not await initialized(runtime.storage):
+            raise unauthenticated()
+        target, browser = await oidc.start(
+            runtime.redis, provider_id, provider, redirect_uri=_oidc_callback_url(settings, provider_id)
+        )
+    except ServiceError:
+        return _oidc_redirect("/login?oidc=failed")
+    response = _oidc_redirect(target)
+    response.set_cookie(
+        _oidc_cookie_name(settings, provider_id),
+        browser,
+        max_age=oidc.FLOW_SECONDS,
+        secure=settings.server.https,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
+@router.get("/auth/oidc/{provider_id}/callback", response_class=RedirectResponse, status_code=303)
+async def finish_oidc_sign_in(request: Request, provider_id: str, runtime: CurrentRuntime) -> RedirectResponse:
+    """Consume a browser-bound OIDC callback and establish an ordinary Service browser session."""
+    settings = runtime.settings
+    provider = settings.auth.oidc.providers.get(provider_id)
+    cookie = _oidc_cookie_name(settings, provider_id)
+    browser = request.cookies.get(cookie)
+    states = request.query_params.getlist("state")
+    codes = request.query_params.getlist("code")
+    failure = _oidc_redirect("/login?oidc=failed")
+    if provider is None or browser is None or len(states) != 1:
+        return failure
+    redirect_uri = _oidc_callback_url(settings, provider_id)
+    try:
+        flow = await oidc.consume(
+            runtime.redis, provider_id, provider, redirect_uri=redirect_uri, state=states[0], browser=browser
+        )
+    except ServiceError:
+        return failure
+    response = failure
+    try:
+        if "error" in request.query_params or len(codes) != 1 or not 0 < len(codes[0]) <= 4096:
+            raise unauthenticated()
+        issuers = request.query_params.getlist("iss")
+        if issuers and issuers != [provider.issuer]:
+            raise unauthenticated()
+        identity = await oidc.exchange(provider, flow, redirect_uri=redirect_uri, code=codes[0])
+        result = await oidc.sign_in(runtime.storage, runtime.access, settings, provider_id, provider, identity)
+    except ServiceError:
+        pass
+    else:
+        response = _oidc_redirect("/")
+        set_session_cookie(response, result.secret, settings, seconds=settings.auth.oidc.session_seconds)
+    response.delete_cookie(cookie, secure=settings.server.https, httponly=True, samesite="lax", path="/")
+    return response
+
+
 @router.post("/auth/password-reset", status_code=204)
 async def request_password_reset(request: Request, body: PasswordReset, runtime: CurrentRuntime) -> None:
+    _require_passwords(runtime.settings)
     check_origin(request, runtime.settings)
     await limit_guessing(request, "password_reset", f"email:{body.email}")
     await users.request_password_reset(runtime.storage, runtime.keys, runtime.settings, body.email)
@@ -138,6 +235,7 @@ async def request_password_reset(request: Request, body: PasswordReset, runtime:
 
 @router.post("/auth/password-reset/confirm", status_code=204)
 async def confirm_password_reset(request: Request, body: PasswordResetConfirm, runtime: CurrentRuntime) -> None:
+    _require_passwords(runtime.settings)
     check_origin(request, runtime.settings)
     await limit_guessing(request, "password_reset_confirm")
     await users.confirm_password_reset(runtime.storage, body)
@@ -145,6 +243,7 @@ async def confirm_password_reset(request: Request, body: PasswordResetConfirm, r
 
 @router.post("/auth/email-change/confirm", status_code=204)
 async def confirm_email_change(request: Request, body: EmailChangeConfirm, runtime: CurrentRuntime) -> None:
+    _require_passwords(runtime.settings)
     check_origin(request, runtime.settings)
     await limit_guessing(request, "email_change_confirm")
     await users.confirm_email_change(runtime.storage, body.token)
@@ -155,6 +254,7 @@ async def accept(
     request: Request, response: Response, invitation_id: str, body: InvitationAccept, runtime: CurrentRuntime
 ) -> LoginOutput:
     """Public by token: creates or joins the invited account and starts a login session."""
+    _require_passwords(runtime.settings)
     check_origin(request, runtime.settings)
     await limit_guessing(request, "invitation_accept", f"invitation:{invitation_id}")
     result = await accept_invitation(runtime.storage, runtime.access, runtime.settings, invitation_id, body)
@@ -176,6 +276,7 @@ async def update_profile(
     if_match: IfMatch = None,
 ) -> Profile:
     if body.email is not None:
+        _require_passwords(runtime.settings)
         await _limit_password_check(request, actor.id)
     return tagged(
         response,
@@ -214,6 +315,7 @@ async def list_account_audit_events(
 async def change_password(
     request: Request, body: PasswordChange, credential: Credential, runtime: CurrentRuntime
 ) -> None:
+    _require_passwords(runtime.settings)
     await _limit_password_check(request, credential.principal.id)
     await users.change_password(runtime.storage, credential.principal, body, current_session_id=_session_id(credential))
 

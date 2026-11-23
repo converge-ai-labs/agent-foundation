@@ -226,24 +226,35 @@ def user() -> None:
 
 
 @user.command("disable")
-@click.option("--email", required=True)
+@click.option("--email")
+@click.option("--principal-id")
 @click.pass_obj
-def disable_user(settings: Settings, email: str) -> None:
+def disable_user(settings: Settings, email: str | None, principal_id: str | None) -> None:
     """Refuse the user's authentication; accepted work stops at its next authority refresh."""
-    _set_status(settings, email, "disabled")
+    _set_status(settings, email, principal_id, "disabled")
 
 
 @user.command("enable")
-@click.option("--email", required=True)
+@click.option("--email")
+@click.option("--principal-id")
 @click.pass_obj
-def enable_user(settings: Settings, email: str) -> None:
+def enable_user(settings: Settings, email: str | None, principal_id: str | None) -> None:
     """Restore a disabled user with the grants and keys it had."""
-    _set_status(settings, email, "active")
+    _set_status(settings, email, principal_id, "active")
 
 
-def _set_status(settings: Settings, email: str, status: Literal["active", "disabled"]) -> None:
+def _set_status(
+    settings: Settings, email: str | None, principal_id: str | None, status: Literal["active", "disabled"]
+) -> None:
+    if bool(email) == bool(principal_id):
+        raise click.UsageError("Specify exactly one of --email or --principal-id")
     try:
-        user_id = _with_storage(settings, partial(set_account_status, email=email.lower(), status=status))
+        user_id = _with_storage(
+            settings,
+            partial(
+                set_account_status, email=email.lower() if email else None, principal_id=principal_id, status=status
+            ),
+        )
     except ServiceError as error:
         raise click.ClickException(error.message) from None
     click.echo(json.dumps({"id": user_id, "status": status}))

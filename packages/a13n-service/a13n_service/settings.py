@@ -201,7 +201,52 @@ class Mail(Section):
         return self
 
 
+type OIDCBrand = Literal["generic", "google", "microsoft"]
+
+
+def oidc_endpoint_policy(issuer: str) -> EndpointPolicy:
+    parts = urlsplit(issuer)
+    hostname = parts.hostname or ""
+    local = parts.scheme == "http" and (hostname in (*LOOPBACK_NAMES, "::1") or hostname.endswith(".localhost"))
+    return EndpointPolicy.from_http_origins(
+        require_https=True, http_origins=(f"http://{parts.netloc}",) if local else ()
+    )
+
+
+class OIDCProvider(Section):
+    label: str = Field(min_length=1, max_length=64)
+    brand: OIDCBrand = "generic"
+    issuer: str = Field(min_length=1, max_length=1024)
+    client_id: str = Field(min_length=1, max_length=512)
+    client_secret: SecretStr = Field(min_length=1, max_length=4096)
+    token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] = "client_secret_basic"
+
+    @field_validator("issuer")
+    @classmethod
+    def valid_issuer(cls, value: str) -> str:
+        if "?" in value or "#" in value or any(c.isspace() or c == "\\" for c in value):
+            raise ValueError("issuer must be an absolute URL without a query or fragment")
+        oidc_endpoint_policy(value).validate_syntax(value)
+        return value
+
+
+class OIDC(Section):
+    providers: dict[Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,31}$")], OIDCProvider] = Field(
+        default_factory=dict
+    )
+    default_workspace_id: str | None = Field(default=None, min_length=1, max_length=72)
+    session_seconds: int = Field(default=43200, ge=60, le=604800)
+
+    @model_validator(mode="after")
+    def require_workspace(self) -> "OIDC":
+        if self.providers and self.default_workspace_id is None:
+            raise ValueError("auth.oidc.default_workspace_id is required with OIDC providers")
+        return self
+
+
 class Authentication(Section):
+    password_enabled: bool = True
+    oidc: OIDC = Field(default_factory=OIDC)
     session_seconds: int = Field(default=43200, ge=60, le=604800)
     login_limit: int = Field(default=10, ge=1, le=1000)
     login_window_seconds: int = Field(default=60, ge=1, le=3600)
@@ -210,6 +255,12 @@ class Authentication(Section):
     link_seconds: int = Field(default=3600, ge=300, le=86400)
     expiry_scan_seconds: float = Field(default=60, gt=0, le=3600)
     mail: Mail = Field(default_factory=Mail)
+
+    @model_validator(mode="after")
+    def require_sign_in(self) -> "Authentication":
+        if not self.password_enabled and not self.oidc.providers:
+            raise ValueError("disabling passwords requires at least one OIDC provider")
+        return self
 
 
 class Encryption(Section):
@@ -748,6 +799,15 @@ class Settings(Section):
     monitoring: Monitoring = Field(default_factory=Monitoring)
     # Sections a distribution declares, validated by their own types.
     extensions: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def oidc_requires_secure_origin(self) -> "Settings":
+        if self.auth.oidc.providers:
+            url = urlsplit(self.server.public_url)
+            if url.path not in ("", "/") or url.query or url.fragment:
+                raise ValueError("OIDC requires server.public_url to be an origin")
+            oidc_endpoint_policy(self.server.public_url).validate_syntax(self.server.public_url)
+        return self
 
     @model_validator(mode="after")
     def metrics_port_is_free(self) -> "Settings":

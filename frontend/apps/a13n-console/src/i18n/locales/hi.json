@@ -4525,5 +4525,12 @@
   "a13n will stop using this connection and cancel any authorization in progress. Its settings will be kept. The result reports whether authorization was also removed from the provider.": "a13n इस कनेक्शन का इस्तेमाल बंद कर देगा और जारी ऑथराइज़ेशन रद्द कर देगा। इसकी सेटिंग्स रखी जाएँगी। नतीजे में बताया जाएगा कि प्रदाता के यहाँ भी ऑथराइज़ेशन हटाया गया या नहीं।",
   "This connection remains usable while you complete the new authorization. Starting again replaces the previous request.": "नया ऑथराइज़ेशन पूरा करने के दौरान यह कनेक्शन इस्तेमाल किया जा सकता है। फिर से शुरू करने पर पिछला अनुरोध बदल दिया जाएगा।",
   "Complete authorization on the provider's page. Starting again replaces the previous request.": "प्रदाता के पेज पर ऑथराइज़ेशन पूरा करें। फिर से शुरू करने पर पिछला अनुरोध बदल दिया जाएगा।",
-  "Authorize": "ऑथराइज़ करें"
+  "Authorize": "ऑथराइज़ करें",
+  "Sign in with {{provider}}": "{{provider}} से साइन इन करें",
+  "Or use your password": "या अपना पासवर्ड इस्तेमाल करें",
+  "Sign-in didn’t complete. Choose a provider to try again.": "साइन-इन पूरा नहीं हुआ। दोबारा कोशिश करने के लिए कोई पहचान प्रदाता चुनें।",
+  "Ask your Service operator to finish setup.": "सेटअप पूरा करने के लिए Service ऑपरेटर से संपर्क करें।",
+  "This Service uses an identity provider. Go to sign in to continue.": "यह Service एक पहचान प्रदाता इस्तेमाल करती है। जारी रखने के लिए साइन-इन पेज पर जाएँ।",
+  "Sign-in provider": "साइन-इन प्रदाता",
+  "Your identity provider manages your sign-in details.": "आपकी साइन-इन जानकारी आपका पहचान प्रदाता प्रबंधित करता है।"
 }

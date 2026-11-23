@@ -43,7 +43,7 @@ it("asks for the existing account's password when the invited email already has 
     </QueryClientProvider>,
   );
   const user = userEvent.setup();
-  await user.type(screen.getByLabelText("Your name"), "Ada");
+  await user.type(await screen.findByLabelText("Your name"), "Ada");
   await user.type(screen.getByLabelText("Password"), "not-my-password");
   await user.click(screen.getByRole("button", { name: "Accept invitation" }));
 

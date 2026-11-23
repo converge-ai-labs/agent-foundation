@@ -16,6 +16,7 @@ from pydantic import (
 )
 
 from a13n_service.infra.ids import ObjectId
+from a13n_service.settings import OIDCBrand
 from a13n_service.tenancy.authorize import Verb
 
 # Addresses compare case-insensitively everywhere: login, invitations, reset and email change.
@@ -41,6 +42,7 @@ class PrincipalSummary(_View):
     kind: str
     name: str
     email: str | None
+    oidc_email: str | None = None
     status: str
     # A user's profile image; it changes whenever the image does.
     image_url: str | None
@@ -232,6 +234,7 @@ class Profile(_View):
     kind: str
     name: str
     email: str | None
+    oidc_email: str | None = None
     status: str
     image_url: str | None
     version: int
@@ -297,7 +300,15 @@ class SessionProfile(BaseModel):
     csrf_token: str
 
 
+class OIDCSignIn(BaseModel):
+    id: str
+    label: str
+    brand: OIDCBrand
+
+
 class AuthConfiguration(BaseModel):
+    password_enabled: bool
+    oidc_providers: list[OIDCSignIn]
     email_delivery: bool
     # False until the first administrator is created, which the public bootstrap route then allows.
     initialized: bool

@@ -82,21 +82,25 @@ The tables are generated from `Settings`. Contributors updating those definition
 
 ## `auth`
 
-| Setting                     | Environment variable                           | Type / choices    | Constraints and default                       |
-| --------------------------- | ---------------------------------------------- | ----------------- | --------------------------------------------- |
-| `auth.session_seconds`      | `A13N_AUTH__SESSION_SECONDS`                   | integer           | minimum=60; maximum=604800; default=43200     |
-| `auth.login_limit`          | `A13N_AUTH__LOGIN_LIMIT`                       | integer           | minimum=1; maximum=1000; default=10           |
-| `auth.login_window_seconds` | `A13N_AUTH__LOGIN_WINDOW_SECONDS`              | integer           | minimum=1; maximum=3600; default=60           |
-| `auth.invitation_seconds`   | `A13N_AUTH__INVITATION_SECONDS`                | integer           | minimum=3600; maximum=2592000; default=604800 |
-| `auth.link_seconds`         | `A13N_AUTH__LINK_SECONDS`                      | integer           | minimum=300; maximum=86400; default=3600      |
-| `auth.expiry_scan_seconds`  | `A13N_AUTH__EXPIRY_SCAN_SECONDS`               | number            | maximum=3600; exclusiveMinimum=0; default=60  |
-| `auth.mail.smtp_host`       | `A13N_AUTH__MAIL` (JSON field `smtp_host`)     | string or null    | maxLength=253; default=null                   |
-| `auth.mail.smtp_port`       | `A13N_AUTH__MAIL` (JSON field `smtp_port`)     | integer           | minimum=1; maximum=65535; default=587         |
-| `auth.mail.smtp_security`   | `A13N_AUTH__MAIL` (JSON field `smtp_security`) | "starttls", "tls" | default="starttls"                            |
-| `auth.mail.smtp_username`   | `A13N_AUTH__MAIL` (JSON field `smtp_username`) | string or null    | maxLength=320; default=null                   |
-| `auth.mail.smtp_password`   | `A13N_AUTH__MAIL` (JSON field `smtp_password`) | string or null    | format="password"; default=null               |
-| `auth.mail.sender`          | `A13N_AUTH__MAIL` (JSON field `sender`)        | string or null    | maxLength=320; default=null                   |
-| `auth.mail.timeout`         | `A13N_AUTH__MAIL` (JSON field `timeout`)       | number            | maximum=60; exclusiveMinimum=0; default=10    |
+| Setting                          | Environment variable                                  | Type / choices    | Constraints and default                       |
+| -------------------------------- | ----------------------------------------------------- | ----------------- | --------------------------------------------- |
+| `auth.password_enabled`          | `A13N_AUTH__PASSWORD_ENABLED`                         | boolean           | default=true                                  |
+| `auth.oidc.providers`            | `A13N_AUTH__OIDC` (JSON field `providers`)            | object            | —                                             |
+| `auth.oidc.default_workspace_id` | `A13N_AUTH__OIDC` (JSON field `default_workspace_id`) | string or null    | minLength=1; maxLength=72; default=null       |
+| `auth.oidc.session_seconds`      | `A13N_AUTH__OIDC` (JSON field `session_seconds`)      | integer           | minimum=60; maximum=604800; default=43200     |
+| `auth.session_seconds`           | `A13N_AUTH__SESSION_SECONDS`                          | integer           | minimum=60; maximum=604800; default=43200     |
+| `auth.login_limit`               | `A13N_AUTH__LOGIN_LIMIT`                              | integer           | minimum=1; maximum=1000; default=10           |
+| `auth.login_window_seconds`      | `A13N_AUTH__LOGIN_WINDOW_SECONDS`                     | integer           | minimum=1; maximum=3600; default=60           |
+| `auth.invitation_seconds`        | `A13N_AUTH__INVITATION_SECONDS`                       | integer           | minimum=3600; maximum=2592000; default=604800 |
+| `auth.link_seconds`              | `A13N_AUTH__LINK_SECONDS`                             | integer           | minimum=300; maximum=86400; default=3600      |
+| `auth.expiry_scan_seconds`       | `A13N_AUTH__EXPIRY_SCAN_SECONDS`                      | number            | maximum=3600; exclusiveMinimum=0; default=60  |
+| `auth.mail.smtp_host`            | `A13N_AUTH__MAIL` (JSON field `smtp_host`)            | string or null    | maxLength=253; default=null                   |
+| `auth.mail.smtp_port`            | `A13N_AUTH__MAIL` (JSON field `smtp_port`)            | integer           | minimum=1; maximum=65535; default=587         |
+| `auth.mail.smtp_security`        | `A13N_AUTH__MAIL` (JSON field `smtp_security`)        | "starttls", "tls" | default="starttls"                            |
+| `auth.mail.smtp_username`        | `A13N_AUTH__MAIL` (JSON field `smtp_username`)        | string or null    | maxLength=320; default=null                   |
+| `auth.mail.smtp_password`        | `A13N_AUTH__MAIL` (JSON field `smtp_password`)        | string or null    | format="password"; default=null               |
+| `auth.mail.sender`               | `A13N_AUTH__MAIL` (JSON field `sender`)               | string or null    | maxLength=320; default=null                   |
+| `auth.mail.timeout`              | `A13N_AUTH__MAIL` (JSON field `timeout`)              | number            | maximum=60; exclusiveMinimum=0; default=10    |
 
 ## `encryption`
 

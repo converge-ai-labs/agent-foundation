@@ -143,3 +143,13 @@ The unified `subagents` policy and dynamic Thread snapshots require an offline S
 - Docker unavailable: start it and retry; nothing is switched or started implicitly.
 
 `make dev-state-check` lints and type-checks this directory and runs its tests, including one that seeds a disposable instance with its own Compose project (Docker required). `make db-migrate msg="..."` generates migrations against a separate disposable database (`db-migrate.sh`). `make service-e2e` and `make console-review` use their own stores and never touch this checkout's instance.
+
+## OIDC sign-in with Dex
+
+```sh
+make a13n-console-build
+pnpm --dir frontend --filter a13n-console exec playwright install chromium
+uv run --locked python -m dev.service.oidc_review --directory "$(mktemp -d)/oidc"
+```
+
+This runs the stock Console against the Service with disposable PostgreSQL, Redis and Dex containers. Chromium signs in through Dex's real form, verifies a same-email password account stays distinct, promotes the OIDC user, then tests the OIDC-only cutover after a Service restart. Screenshots and logs stay in the supplied directory. Add `--manual` to keep the mixed-mode stack open instead; the command prints the Console URL and the public fixture credentials. Docker must run locally so the browser and Service can both reach the same loopback issuer. The fixture uses no external identity credentials.

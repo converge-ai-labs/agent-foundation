@@ -8,7 +8,7 @@ Route paths and request/response shapes belong to [10: API](10-api.md); this cha
 
 - An **organization** is the administration boundary. Organizations are created only by [bootstrap](#bootstrap); no API creates or deletes one. A deployment normally has one, and every table allows many.
 - A **workspace** belongs to one organization and is the resource and work boundary. Sessions, threads, runs and every resource they use belong to exactly one workspace ([04](04-resources.md)).
-- A **principal** is a user or a service account. Users are people identified by an email address and are not owned by any organization. Service accounts are program identities with an immutable home workspace.
+- A **principal** is a user or a service account. Users authenticate with a local sign-in email or a configured OpenID Connect (OIDC) provider and are not owned by any organization. Service accounts are program identities with an immutable home workspace.
 - A **credential** proves that a request comes from a principal. There are three kinds: a password (one per user, verified, never looked up), an API key (long-lived, named, confined to one workspace) and a token (a login session or a one-use password-reset or email-change link: short-lived and looked up by hash).
 - A **grant** gives a principal a role at an organization or at one of its workspaces. A **role** is a named set of verbs.
 - An **invitation** is a pending grant for an email address, accepted through a one-use link.
@@ -24,14 +24,16 @@ workspaces
 
 principals
   id  kind  name  description NULL  email NULL  home_workspace_id NULL  status  image NULL
+  oidc_issuer NULL  oidc_subject NULL  oidc_email NULL
   version  created_at  updated_at
   kind   IN ('user', 'service_account')
   status IN ('active', 'disabled')
   UNIQUE (email)
-  CHECK ((kind = 'user') = (email IS NOT NULL))
+  UNIQUE (oidc_issuer, oidc_subject)
+  -- users have either a local email or an OIDC issuer and subject; service accounts have neither
   CHECK ((kind = 'service_account') = (home_workspace_id IS NOT NULL))
   CHECK ((kind = 'service_account') = (description IS NOT NULL))
-  -- trigger: id, kind, home_workspace_id and created_at never change
+  -- trigger: id, kind, home_workspace_id, OIDC issuer and subject, and created_at never change
 
 passwords
   principal_id  hash  updated_at
@@ -73,7 +75,7 @@ Notes on the shape:
 - Rows with a `version` are mutable; a database trigger increments `version` and `updated_at` on every update, and the strong ETag of their API views is derived from identity and version ([10](10-api.md#preconditions)). Recording `api_keys.last_used_at` is exempt: it keeps the key's version and ETag.
 - Email addresses are compared in lowercase everywhere: login, invitations, reset, email change and the operator commands.
 - `passwords` holds one Argon2id hash per user, replaced in place, never expired and never looked up by hash. It shares no table with anything the [expiry sweep](#expiry) deletes.
-- `tokens.data` holds the one value a kind needs: `{"new_email": ...}` for `email_change`, nothing otherwise.
+- `tokens.data` holds the one value a kind needs: `{"new_email": ...}` for `email_change`, the named provider, issuer, and client ID for OIDC sessions, and nothing for other tokens.
 - `grants.workspace_id IS NULL` is an organization-scope grant; it applies to every workspace of the organization. `role` is validated text, not a database CHECK, because distributions add roles ([Roles and grant sources](#roles-and-grant-sources)). A role change replaces the row.
 - `workspaces.settings` holds workspace-wide defaults that are not resources; today only the media-understanding model defaults under `media`, owned by [04](04-resources.md). `organizations.settings.app_plugins` holds organization desired App enablement, owned by [15: App plugins](15-app-plugins.md#organization-policy-and-management).
 - `image` holds the reference to an organization's or workspace's icon or a user's avatar ([Images](#images)); service accounts have none. `description` is a service account's free text (at most 2048 characters, default empty).
@@ -94,7 +96,7 @@ Browsers accept a `Secure` cookie, and with it the `__Host-` and `__Secure-` pre
 
 When an `Authorization` header is present the cookie is ignored; a scheme other than `Bearer` or a secret longer than 512 characters is `unauthenticated`. A request without either credential is `unauthenticated` on every protected route. Authentication reads the credential and then the principal's current status and grants; a disabled principal is `unauthenticated`. The resulting principal value carries its grants and its confinement: an API key's workspace, and always the home workspace for a service account. Authenticated responses are never cached ([10](10-api.md#authentication)).
 
-Login sessions expire after `auth.session_seconds` and roll forward: each authenticated cookie request resets the cookie lifetime, and the server extends `expires_at` when more than a minute of it has elapsed. `api_keys.last_used_at` is written at most once per minute per key. Renewal and last-use touches recheck liveness and the due-time predicate in a single SQL statement, selecting the candidate with `FOR UPDATE SKIP LOCKED`. A credential row held by another transaction skips only the optional timestamp update; it does not skip authentication or authorize an unusable credential. The next request may try again. A stale read cannot repeat a touch already committed by another request, extend an expired session, or touch a revoked credential. The touch commits in the short authentication transaction, before business work or external I/O. Requests already authenticated before concurrent revocation retain the existing in-flight request semantics; subsequent authentication and authority rechecks observe committed revocation.
+Password login sessions expire after `auth.session_seconds` and roll forward: each authenticated cookie request resets the cookie lifetime, and the server extends `expires_at` when more than a minute of it has elapsed. `api_keys.last_used_at` is written at most once per minute per key. Renewal and last-use touches recheck liveness and the due-time predicate in a single SQL statement, selecting the candidate with `FOR UPDATE SKIP LOCKED`. A credential row held by another transaction skips only the optional timestamp update; it does not skip authentication or authorize an unusable credential. The next request may try again. A stale read cannot repeat a touch already committed by another request, extend an expired session, or touch a revoked credential. The touch commits in the short authentication transaction, before business work or external I/O. Requests already authenticated before concurrent revocation retain the existing in-flight request semantics; subsequent authentication and authority rechecks observe committed revocation.
 
 **Browser protection.** A cookie-authenticated request with a method other than GET, HEAD or OPTIONS must carry `X-CSRF-Token` equal to the session's CSRF token, and an `Origin` header, when present, must be a public origin: the origin of `server.public_url` and, when its host is `localhost` or `127.0.0.1`, the same origin under the other of those names, which reaches the same server. The request's own Host is never trusted as a public origin. The CSRF token is an HMAC-SHA256 keyed by the session secret, stable for the session, derivable from the cookie and stored nowhere. Login, invitation acceptance and the session-restore read return it. The public account flows (login, bootstrap, password-reset request and confirmation, email-change confirmation, invitation acceptance) check `Origin` the same way. A failed check is `forbidden`. Bearer requests need neither check.
 
@@ -182,7 +184,17 @@ What each verb covers, by example (the owning chapters name the verb of each ope
 
 **Account operations** (profile and avatar changes, email and password change, login sessions, logout, self-disable, the account's audit trail), every [API-key issuance](#api-keys), every [invitation](#invitations) creation or resend and every browser authorization of a connection ([04](04-resources.md#connections)) or hosted Model Provider flow ([04](04-resources.md#model-provider-oauth)) require a user's own login session, or a replacement authenticator's unconfined user credential. An API key can read its principal's profile but never changes the account behind it or mints anything that would outlive it; each of these operations refuses it with 403 `forbidden`.
 
-### Roles and grant sources
+#### OpenID Connect sign-in
+
+Operators can configure multiple named OIDC providers. The Service discovers endpoints from each exact issuer. Console gets provider labels and local icon brands from the public sign-in configuration and starts sign-in by redirecting the top-level browser. A callback must consume a short-lived, one-use state bound to its browser, provider, and client. Service exchanges an authorization code with PKCE S256 and validates the signed ID token against the provider's JWKS, exact issuer, client audience, expiry, and nonce before creating a session. HTTPS is required except on loopback development origins.
+
+The admission policy is the configured provider's policy for this client. The first sign-in for an `(issuer, sub)` pair creates a distinct ordinary principal and grants `runner` in the configured default workspace in the same transaction. First sign-in fails if that workspace does not exist or is archived. A later sign-in never grants or restores a role. An email verified by the issuer is optional display metadata (`oidc_email`), independent of the unique local sign-in `email`; it cannot link accounts, accept an invitation, or recover a password. Administrators manage grants through ordinary IAM; the operator can disable either kind of user by principal ID.
+
+OIDC establishes the same Service session and CSRF contract as password sign-in. The OIDC session expires absolutely after `auth.oidc.session_seconds`. The Service checks the named provider, issuer and client are still configured and the principal is still active on every authentication. Logout and session revocation end the local session. Upstream account removal prevents future sign-ins once the provider enforces it; existing Service sessions end on local revocation or expiry. Service keeps no upstream access or refresh tokens from this flow.
+
+When the operator disables password sign-in, existing password sessions stop authenticating and password login, browser bootstrap, password recovery, email change, and password invitation creation, resend and acceptance are unavailable. API keys and OIDC sessions retain their own validity rules. Re-enable password sign-in as an operator recovery action; local credentials remain stored.
+
+## Roles and grant sources
 
 Roles are data. The role registry is fixed at assembly: the four built-ins plus the roles a distribution declares ([09](09-runtime.md#extension-points)). A role name matches `^[a-z][a-z0-9_]{0,31}$` and maps to a non-empty subset of the four verbs; an invalid definition or a duplicate name fails assembly. Grant and invitation creation accept only registered roles (`invalid_argument`, reason `unknown_role`). A stored or sourced grant naming a role the registry does not define fails closed: its principal is refused with `forbidden` on every request until the grant is removed.
 
