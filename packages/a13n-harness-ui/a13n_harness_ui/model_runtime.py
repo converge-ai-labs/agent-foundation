@@ -15,7 +15,6 @@ from a13n_harness.configuration import RunConfiguration
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
-from a13n_harness.models.transport import DEFAULT_MODEL_HTTP_RETRY_CONFIG
 from a13n_harness.pricing import PricingCatalog, get_current_pricing_catalog
 from a13n_harness.providers.model.credentials import ApiKeyCredential
 from a13n_harness.providers.model.oauth import (
@@ -297,12 +296,13 @@ class HarnessUiModelResolver:
         if base_url is not None and not isinstance(base_url, str):
             raise ModelResolutionError("Invalid Model base URL.", code="model_reconstruction_failed")
         try:
+            credential = ApiKeyCredential.model_validate({"api_key": api_key})
+            if retry_http:
+                return await build_api_key_model(
+                    recipe.route, credential, base_url=base_url, configuration=self.configuration
+                )
             return await build_api_key_model(
-                recipe.route,
-                ApiKeyCredential.model_validate({"api_key": api_key}),
-                base_url=base_url,
-                configuration=self.configuration,
-                http_retry=DEFAULT_MODEL_HTTP_RETRY_CONFIG if retry_http else None,
+                recipe.route, credential, base_url=base_url, configuration=self.configuration, http_retry=None
             )
         except Exception as exc:
             raise ModelResolutionError(
