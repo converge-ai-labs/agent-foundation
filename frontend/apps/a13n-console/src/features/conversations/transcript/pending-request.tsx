@@ -20,6 +20,7 @@ import { ErrorNotice } from "../../../shared/feedback";
 import { CopyButton } from "../../../shared/identity";
 import { JsonView, SwitchField, TextAreaField } from "../../../shared/forms";
 import { QuestionResponse, readQuestions } from "./questions";
+import { PrivateConfiguration } from "./private-configuration";
 import { ProviderConfiguration } from "./provider-configuration";
 import { callWait } from "../lifecycle";
 import { waitingLabel } from "./entry-language";
@@ -204,6 +205,25 @@ export function RunFeedback({
                 />
               </ActionCard>
             );
+          if (
+            action.category === "call" &&
+            (action.tool_name === "configure_webhook" ||
+              action.tool_name === "configure_egress_credential")
+          )
+            return (
+              <ActionCard key={action.tool_call_id} action={action}>
+                <PrivateConfiguration
+                  tool={action.tool_name}
+                  arguments={action.arguments}
+                  onResolved={(value) =>
+                    change(action.tool_call_id, {
+                      action: "returned",
+                      value: JSON.stringify(value),
+                    })
+                  }
+                />
+              </ActionCard>
+            );
           if (questions)
             return (
               <ActionCard key={action.tool_call_id} action={action}>
@@ -360,6 +380,11 @@ function ActionCard({
   const approval = action.category === "approval";
   const question = !approval && action.tool_name === "ask_user_question";
   const provider = !approval && action.tool_name === "configure_provider";
+  const configuration =
+    !approval &&
+    ["configure_webhook", "configure_egress_credential"].includes(
+      action.tool_name,
+    );
   const risk = approval ? approvalDetails(action.presentation).risk : undefined;
   return (
     <section className={styles.card}>
@@ -380,9 +405,15 @@ function ActionCard({
               ? t("The agent has a question")
               : provider
                 ? t("Configure provider")
-                : waitingLabel(callWait(action.tool_name), t)}
+                : configuration
+                  ? t(
+                      action.tool_name === "configure_webhook"
+                        ? "Configure Webhook"
+                        : "Configure credential",
+                    )
+                  : waitingLabel(callWait(action.tool_name), t)}
         </h3>
-        {action.tool_name && !provider && (
+        {action.tool_name && !provider && !configuration && (
           <code className={styles.cardTool}>{action.tool_name}</code>
         )}
         {highRisk(risk) && (

@@ -93,8 +93,8 @@ class SubscriptionFilter(BaseModel):
     schedule_id: ObjectId | None = None
 
 
-class SubscriptionCreate(BaseModel):
-    """Without `signing_secret` the service generates one; either way it is returned only by this request."""
+class SubscriptionConfiguration(BaseModel):
+    """Nonsecret subscription configuration."""
 
     model_config = ConfigDict(extra="forbid")
     name: Name
@@ -102,7 +102,6 @@ class SubscriptionCreate(BaseModel):
     kinds: Kinds
     filter: SubscriptionFilter = Field(default_factory=SubscriptionFilter)
     enabled: bool = True
-    signing_secret: SigningSecret | None = None
 
     @field_validator("kinds")
     @classmethod
@@ -110,8 +109,14 @@ class SubscriptionCreate(BaseModel):
         return list(dict.fromkeys(value))
 
 
-class SubscriptionUpdate(BaseModel):
-    """`signing_secret` replaces the secret for deliveries queued after this change."""
+class SubscriptionCreate(SubscriptionConfiguration):
+    """The supplied or generated signing secret is returned only at creation."""
+
+    signing_secret: SigningSecret | None = None
+
+
+class SubscriptionChanges(BaseModel):
+    """Nonsecret changes shared by HTTP and reviewed platform operations."""
 
     model_config = ConfigDict(extra="forbid")
     name: Name | None = None
@@ -119,12 +124,17 @@ class SubscriptionUpdate(BaseModel):
     kinds: Kinds | None = None
     filter: SubscriptionFilter | None = None
     enabled: bool | None = None
-    signing_secret: SigningSecret | None = None
 
     @field_validator("kinds")
     @classmethod
     def unique_kinds(cls, value: list[LifecycleKind] | None) -> list[LifecycleKind] | None:
         return None if value is None else list(dict.fromkeys(value))
+
+
+class SubscriptionUpdate(SubscriptionChanges):
+    """Secret replacement applies only to newly queued deliveries."""
+
+    signing_secret: SigningSecret | None = None
 
 
 class Subscription(BaseModel):

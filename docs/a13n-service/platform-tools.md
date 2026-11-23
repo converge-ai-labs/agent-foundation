@@ -14,3 +14,9 @@ For older saved agents, follow the [platform-tool cutover](upgrade-notes.md#inte
 For Agent configuration deltas, naming `base_revision_id` also requires an explicit `make_default`; omission returns `invalid_argument`. Missing required versions fail validation and stale versions return `precondition_failed`. A conflict requires rereading and reviewing a new change, not silently refreshing an approved version.
 
 External clients use [management MCP](mcp.md), with HTTP envelopes and `request_body` arguments.
+
+## Usage, Webhooks and environment credentials
+
+The `usage` toolset exposes nine existing query operations, with workspace read access and admin checks for member attribution. The `subscriptions` toolset exposes three reads and three reviewed nonsecret writes; all require admin within the accepted Run authority. The `egress_credentials` toolset exposes only four metadata/application reads. They are opt-in for ordinary Agents and enabled in the current Composer definition.
+
+Composer's native `configure_webhook` and `configure_egress_credential` client tools pause the Run for private Console forms. The current user executes writes through existing HTTP APIs; keys and tokens never enter tool arguments or results. Credential writes remain excluded from both internal and external MCP. Read [Composer](agent-composer.md#configure-webhooks-and-credentials) for the user flow, version conflicts and asynchronous application semantics.

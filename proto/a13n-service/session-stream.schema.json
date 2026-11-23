@@ -3176,7 +3176,10 @@
         "environment_templates",
         "providers",
         "execution",
-        "schedules"
+        "schedules",
+        "usage",
+        "subscriptions",
+        "egress_credentials"
       ],
       "type": "string"
     },

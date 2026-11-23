@@ -14,9 +14,34 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 pytestmark = pytest.mark.anyio
 
 
-async def test_provider_configuration_suspends_and_accepts_only_the_client_result():
-    arguments = {"action": "create", "kind": "model", "type": "openai", "name": "Research", "config": {}}
-    result = {"status": "saved", "provider_id": "mp_fixture"}
+@pytest.mark.parametrize(
+    "name,arguments,result",
+    [
+        (
+            "configure_provider",
+            {"action": "create", "kind": "model", "type": "openai", "name": "Research", "config": {}},
+            {"status": "saved", "provider_id": "mp_fixture"},
+        ),
+        (
+            "configure_webhook",
+            {
+                "request": {
+                    "action": "create",
+                    "name": "Runs",
+                    "url": "https://example.com/hook",
+                    "kinds": ["run.completed"],
+                }
+            },
+            {"status": "saved", "subscription_id": "sub_fixture", "version": 1},
+        ),
+        (
+            "configure_egress_credential",
+            {"request": {"action": "create", "name": "GitHub", "allowed_hosts": ["api.github.com"]}},
+            {"status": "saved", "credential_id": "cred_fixture", "version": 1, "credential_version": 1},
+        ),
+    ],
+)
+async def test_private_configuration_suspends_and_accepts_only_the_client_result(name, arguments, result):
 
     async def model(messages, info):
         returns = [
@@ -30,8 +55,12 @@ async def test_provider_configuration_suspends_and_accepts_only_the_client_resul
             assert returns[-1].content == result
             yield "Configured"
         else:
-            assert [tool.name for tool in info.function_tools] == ["configure_provider"]
-            yield {0: DeltaToolCall(name="configure_provider", json_args=json.dumps(arguments), tool_call_id="card")}
+            assert {tool.name for tool in info.function_tools} == {
+                "configure_provider",
+                "configure_webhook",
+                "configure_egress_credential",
+            }
+            yield {0: DeltaToolCall(name=name, json_args=json.dumps(arguments), tool_call_id="card")}
 
     toolset = client_toolset(configuration("model"))
     assert toolset is not None
@@ -47,7 +76,7 @@ async def test_provider_configuration_suspends_and_accepts_only_the_client_resul
     assert waiting.deferred.approvals == []
     [entry] = waiting.deferred.calls
     call = entry.target_call
-    assert call.tool_name == "configure_provider" and call.args_as_dict() == arguments
+    assert call.tool_name == name and call.args_as_dict() == arguments
     resumed = await executable.run(
         bindings=RunBindings.embedded(),
         previous_state=waiting.state,

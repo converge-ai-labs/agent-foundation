@@ -1,3 +1,4 @@
+import { ComposerAction } from "../../agents/composer-action";
 import { PlusIcon, WebhooksLogoIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
@@ -64,7 +65,10 @@ export function Webhooks() {
           opener.current?.isConnected ? opener.current : headerAction.current
         }
       />
-      <PageActions>{create(true)}</PageActions>
+      <PageActions>
+        <ComposerAction target={{ kind: "webhooks" }} />
+        {create(true)}
+      </PageActions>
       {query.isPending ? (
         <Loading variant="table" columns={4} rows={4} />
       ) : query.error ? (

@@ -16012,9 +16012,14 @@
           "requests": {
             "title": "Requests",
             "type": "integer"
+          },
+          "unpriced_requests": {
+            "title": "Unpriced Requests",
+            "type": "integer"
           }
         },
         "required": [
+          "unpriced_requests",
           "model",
           "requests",
           "input_tokens",
@@ -18522,7 +18527,10 @@
           "environment_templates",
           "providers",
           "execution",
-          "schedules"
+          "schedules",
+          "usage",
+          "subscriptions",
+          "egress_credentials"
         ],
         "type": "string"
       },
@@ -25883,7 +25891,7 @@
       },
       "SubscriptionCreate": {
         "additionalProperties": false,
-        "description": "Without `signing_secret` the service generates one; either way it is returned only by this request.",
+        "description": "The supplied or generated signing secret is returned only at creation.",
         "properties": {
           "enabled": {
             "default": true,
@@ -26028,7 +26036,7 @@
       },
       "SubscriptionUpdate": {
         "additionalProperties": false,
-        "description": "`signing_secret` replaces the secret for deliveries queued after this change.",
+        "description": "Secret replacement applies only to newly queued deliveries.",
         "properties": {
           "enabled": {
             "anyOf": [

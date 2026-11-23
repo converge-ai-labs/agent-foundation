@@ -22,6 +22,7 @@ def test_export_matches_service_http_and_existing_wire_models() -> None:
         contract.TARGET / "session-stream.schema.json",
         contract.TARGET / "thread-stream.schema.json",
         contract.PLATFORM_TOOLS,
+        contract.COMPOSER_TOOLS,
     }
     assert set(exported[contract.TARGET / "session-stream.schema.json"]["frames"]) == {
         "thread",

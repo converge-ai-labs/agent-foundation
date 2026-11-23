@@ -379,7 +379,7 @@ async def administering[S: Scoped](
         if not reading:
             await lock_organization(session, scope.organization_id)
         current = await principal_for(session, access, actor.id, confinement=actor.confinement, share=not reading)
-        if "admin" in allowed_verbs(current, scope):
+        if "admin" in allowed_verbs(actor, scope) and "admin" in allowed_verbs(current, scope):
             if not reading and require_active and workspace is not None:
                 # Archiving serializes on the organization lock too; see the state it left.
                 await session.refresh(workspace)

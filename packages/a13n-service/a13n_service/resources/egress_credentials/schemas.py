@@ -65,11 +65,14 @@ class SecretReference(BaseModel):
         return value
 
 
-class CredentialCreate(BaseModel):
+class CredentialDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: Name
     description: Description = ""
     allowed_hosts: Hosts
+
+
+class CredentialCreate(CredentialDefinition):
     value: CredentialValue = Field(repr=False)
 
 
