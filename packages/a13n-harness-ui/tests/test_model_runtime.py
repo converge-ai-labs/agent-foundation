@@ -266,3 +266,30 @@ def test_review_uses_its_selected_recipe_even_with_the_same_gateway_response():
         expected = catalog.resolve(model, provider=provider).quote(value, source="catalog", revision=catalog.revision)
         assert pricing.quote(replace(value, selected_model_id=selected)).cost_usd == expected.cost_usd
     assert pricing.quote(replace(value, selected_model_id="missing")) is None
+
+
+@pytest.mark.parametrize("previous_account", [None, "acct-codex-removed", "acct-codex-default"])
+async def test_prediction_never_falls_back_to_another_subscription_account(previous_account):
+    from unittest.mock import AsyncMock
+
+    from a13n_harness_ui.model_runtime import ManagedSubscriptionSource
+
+    account = Mock(provider="codex")
+    accounts = Mock(get=AsyncMock(return_value=account))
+    usage = Mock(tier=AsyncMock(return_value=None))
+    source = ManagedSubscriptionSource(accounts, usage)
+    recipe = _recipe(CodexSubscriptionAuthentication(kind="codex_subscription"))
+    resolver = HarnessUiModelResolver({recipe.model_id: recipe}, subscription_sources={"codex_subscription": source})
+
+    with pytest.raises(ModelResolutionError) as denied:
+        await resolver.resolve(
+            recipe.model_id, thread_id="thread-test", prediction=True, prediction_account=previous_account
+        )
+    assert denied.value.code == "subscription_group_unavailable"
+    if previous_account == "acct-codex-default":
+        accounts.get.assert_awaited_once_with(previous_account, available=True)
+        usage.tier.assert_awaited_once_with(account, "model-name", allow_credits=False)
+    else:
+        accounts.get.assert_not_awaited()
+        usage.tier.assert_not_awaited()
+    accounts.store.assert_not_called()

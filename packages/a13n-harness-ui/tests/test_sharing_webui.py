@@ -360,3 +360,62 @@ async def test_bot_cannot_be_shared_and_existing_bot_grants_cannot_read_history(
         with pytest.raises(HarnessUiError) as error:
             await app.sharing.thread(project.grant.share_id, BOT_THREAD_ID)
         assert error.value.code == "share_unavailable"
+
+
+async def test_prompt_guest_can_pull_and_receive_a_prediction_only_in_the_shared_thread(tmp_path, monkeypatch):
+    import json
+
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from a13n_harness_ui.share_models import ShareCreate
+    from a13n_harness_ui.shared_drafts import DraftFrame
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from pydantic_ai.messages import ModelResponse, TextPart
+    from pydantic_ai.models.function import FunctionModel
+    from websockets.asyncio.client import connect
+
+    from .test_interactive_protocol import frame_until, listener_with_app
+
+    configuration = _write_configuration(tmp_path)
+    with configuration.open("a") as config:
+        config.write("auto_chat_title: false\ninput_prediction: {enabled: true}\n")
+
+    async def stream(_messages, _info):
+        yield "Here is a first draft."
+
+    async def run_model(self, context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    async def prediction_model(self, model_id, *, thread_id, prediction=False, prediction_account=None):
+        return FunctionModel(function=lambda _messages, _info: ModelResponse(parts=[TextPart("Add an example.")]))
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", run_model)
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", prediction_model)
+    async with listener_with_app(tmp_path, configuration_path=configuration) as (http, ws, app):
+        thread_id = (await app.create_thread()).thread_id
+        other = (await app.create_thread()).thread_id
+        receipt = await app.submit_thread(thread_id=thread_id, prompt="Draft a note.")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        continuation_id = (await app.get_thread(thread_id)).continuation_id
+        assert continuation_id is not None
+        share = await app.sharing.create(ShareCreate(scope="thread", target_id=thread_id, permission="prompt"))
+        prefix = f"/api/shared/{share.grant.share_id}"
+        path = f"{prefix}/threads/{thread_id}"
+        request = {"continuation_id": continuation_id}
+        async with (
+            httpx.AsyncClient(base_url=http, headers={"Authorization": f"Bearer {share.key}"}) as client,
+            connect(ws + path + "/draft/connect", proxy=None, origin=http) as guest,
+        ):
+            access = await client.get(prefix + "/access")
+            assert access.status_code == 200, access.text
+            assert access.json()["input_prediction_enabled"] is True
+            await guest.send(json.dumps({"api_key": share.key}))
+            initial = await frame_until(guest, lambda frame: frame.get("kind") == "draft")
+            assert DraftFrame.model_validate(initial).prediction is None
+            response = await client.post(path + "/input-prediction", json=request)
+            assert response.status_code == 200, response.text
+            expected = {**request, "text": "Add an example."}
+            assert response.json() == expected
+            frame = DraftFrame.model_validate(await frame_until(guest, lambda frame: frame.get("prediction")))
+            assert frame.prediction is not None and frame.prediction.model_dump() == expected
+            denied = await client.post(f"{prefix}/threads/{other}/input-prediction", json=request)
+            assert denied.status_code == 401, denied.text

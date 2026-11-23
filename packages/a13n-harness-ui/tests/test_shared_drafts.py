@@ -743,3 +743,41 @@ async def test_clearing_prediction_keeps_shared_run_options_uninitialized() -> N
     # The browser considers the options pristine when only the Host prediction
     # replica has contributed history, including after the prediction is deleted.
     assert cleared.get_state() == prediction_state == bytes((1, 1, 1))
+
+
+@pytest.mark.parametrize("change", ["set", "delete", "invalid-type", "guest-options"])
+async def test_shared_draft_prediction_remains_host_owned(change: str) -> None:
+    from a13n_harness_ui.shared_drafts import CachedInputPrediction, options_document
+
+    draft = SharedDraft()
+    participant = draft.attach()
+    prediction = CachedInputPrediction(continuation_id="head", text="Keep going.")
+    if change != "set":
+        await draft.set_prediction(prediction)
+    before = draft.frame(participant)
+    authored = composer_document()
+    authored.get("text", type=Text).insert(0, "Uncommitted input")
+    options = options_document()
+    options.apply_update(draft.options.get_update())
+    fields = options.get("options", type=Map)
+    if change == "set":
+        fields["prediction"] = prediction.model_dump()
+    elif change == "delete":
+        del fields["prediction"]
+    elif change == "invalid-type":
+        fields["prediction"] = Map()
+    else:
+        fields["mode"] = "goal"
+    command = sync(draft, authored).model_copy(
+        update={"options_update_base64": base64.b64encode(options.get_update()).decode()}
+    )
+
+    if change == "guest-options":
+        with pytest.raises(HarnessUiError) as denied:
+            await draft.command(participant, command, valid, edit_options=False)
+        assert denied.value.code == "share_forbidden"
+    else:
+        with pytest.raises(ValueError, match="The Host owns the composer prediction"):
+            await draft.command(participant, command, valid)
+    assert draft.frame(participant) == before
+    assert draft.prediction == (None if change == "set" else prediction)

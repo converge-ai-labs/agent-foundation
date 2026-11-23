@@ -6,11 +6,14 @@ from types import SimpleNamespace
 import pytest
 from a13n_harness_ui import input_prediction
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.input_prediction import PREDICTION_PROMPT, InputPredictions
+from a13n_harness_ui.input_prediction import PREDICTION_PROMPT, InputPredictions, PredictionCapture
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+from a13n_harness_ui.shared_drafts import composer_options, options_document
 from a13n_harness_ui.surfaces import RootOperationStatus
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.native_tools import WebSearchTool
 
 from .test_app import _settings, _write_configuration
 
@@ -57,11 +60,18 @@ async def test_prediction_replays_settled_prefix_and_persists_only_text(tmp_path
 
         monkeypatch.setattr(app, "_generate_chat_title", manual_title)
         assert await app.suggest_chat_title(thread_id, model_id="model-primary") == "Manual title"
+        latest_root = await app._store.usage.latest_root_request(thread_id=thread_id)
+        assert latest_root is not None and latest_root.source == "agent"
         assert await app.predict_input(thread_id, "stale") is None
         assert not samples
         assert await app.predict_input(thread_id, continuation_id) == expected
         assert await app.predict_input(thread_id, continuation_id) == expected
         assert len(samples) == 1
+        usage = await app.thread_usage(thread_id=thread_id)
+        prediction_groups = [group for group in usage.groups if group.source == "input_prediction"]
+        assert len(prediction_groups) == 1
+        assert prediction_groups[0].totals.model_requests == 1
+        assert await app._store.usage.latest_root_request(thread_id=thread_id) == latest_root
         messages, info = samples[0]
         assert messages[:-2] == foreground[0][0]
         assert messages[-2].parts[0].content == "I wrote the draft."
@@ -74,9 +84,73 @@ async def test_prediction_replays_settled_prefix_and_persists_only_text(tmp_path
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         assert await app.predict_input(thread_id, continuation_id) == expected
         assert len(samples) == 1
+        usage = await app.thread_usage(thread_id=thread_id)
+        assert any(group.source == "input_prediction" for group in usage.groups)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        if expected is not None:
+            stored = await app._store.drafts.get(thread_id)
+            assert stored is not None and stored.options_update is not None
+            options = options_document()
+            options.apply_update(stored.options_update)
+            assert (prediction := composer_options(options).prediction) is not None
+            assert prediction.text == expected
         await app.clear_thread_context(thread_id=thread_id, expected_continuation_id=continuation_id)
-        assert (await app.shared_draft(thread_id)).prediction is None
+        if expected is not None:
+            stored = await app._store.drafts.get(thread_id)
+            assert stored is not None and stored.options_update is not None
+            options = options_document()
+            options.apply_update(stored.options_update)
+            assert composer_options(options).prediction is None
         assert await app.predict_input(thread_id, continuation_id) is None
+
+
+@pytest.mark.parametrize(
+    ("native_tools", "settings", "part"),
+    [
+        ([WebSearchTool()], None, TextPart("Reply")),
+        ([], {"openai_conversation_id": "conv-test"}, TextPart("Reply")),
+        ([], {"openai_background": True}, TextPart("Reply")),
+        ([], {"extra_body": {"conversation": "conv-test"}}, TextPart("Reply")),
+        ([], {"extra_body": {"tools": []}}, TextPart("Reply")),
+        ([], {"extra_body": {"background": True}}, TextPart("Reply")),
+        ([], None, ToolCallPart("test_tool", {})),
+    ],
+    ids=[
+        "native-tools",
+        "conversation",
+        "background",
+        "body-conversation",
+        "body-tools",
+        "body-background",
+        "tool-call",
+    ],
+)
+async def test_prediction_capture_discards_unreplayable_requests(native_tools, settings, part):
+    capture = PredictionCapture()
+    ctx = SimpleNamespace(run_id="run-test")
+    request = ModelRequestContext(
+        model=FunctionModel(function=lambda _messages, _info: ModelResponse(parts=[TextPart("Reply")])),
+        model_id="model-test",
+        messages=[],
+        model_settings=None,
+        model_request_parameters=ModelRequestParameters(),
+    )
+
+    async def run():
+        await capture.after_model_request(
+            ctx, request_context=request, response=ModelResponse(parts=[TextPart("Reply")])
+        )
+        assert capture.prefix is not None
+        excluded = replace(
+            request,
+            model_settings=settings,
+            model_request_parameters=ModelRequestParameters(native_tools=native_tools),
+        )
+        response = ModelResponse(parts=[part])
+        assert await capture.after_model_request(ctx, request_context=excluded, response=response) is response
+        assert capture.prefix is None
+
+    await capture.wrap_run(ctx, handler=run)
 
 
 async def test_warm_predictions_share_a_call_until_the_last_waiter_cancels(monkeypatch):

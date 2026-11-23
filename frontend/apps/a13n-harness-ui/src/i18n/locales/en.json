@@ -3637,6 +3637,6 @@
   "Suggest follow-ups": "Suggest follow-ups",
   "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.": "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.",
   "Tab": "Tab",
-  "Use suggested follow-up": "Use suggested follow-up",
+  "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.": "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.",
   "Use suggestion": "Use suggestion"
 }

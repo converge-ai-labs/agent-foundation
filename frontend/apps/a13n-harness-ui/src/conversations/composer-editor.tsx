@@ -122,17 +122,28 @@ export function ComposerEditor({
     : t(
         "Shared draft. Lost if the server restarts. Enter to send, Shift+Enter for a new line.",
       );
+  const predictionDescription = prediction
+    ? t(
+        "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.",
+        {
+          text: prediction.text,
+        },
+      )
+    : undefined;
   const contentAttributes = useMemo(
     () => [
-      EditorView.contentAttributes.of({
+      EditorView.contentAttributes.compute(["doc"], (state) => ({
         "aria-label": local ? t("Message") : t("Shared prompt"),
         "data-composer-editor": "",
         "aria-multiline": "true",
-        "aria-description": description,
+        "aria-description":
+          !state.doc.length && predictionDescription
+            ? `${predictionDescription} ${description}`
+            : description,
         role: "textbox",
-      }),
+      })),
     ],
-    [description, local, t],
+    [description, local, predictionDescription, t],
   );
   const currentAttributes = useRef(contentAttributes);
   currentAttributes.current = contentAttributes;
@@ -543,7 +554,6 @@ export function ComposerEditor({
           <button
             type="button"
             className={predictionStyles.touch}
-            aria-label={t("Use suggested follow-up")}
             onClick={() => {
               const view = currentView.current;
               if (view && acceptRef.current?.(view)) view.focus();

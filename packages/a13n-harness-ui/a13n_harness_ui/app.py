@@ -2076,7 +2076,11 @@ class HarnessUiApp:
                     thread_id=thread_id, expected_continuation_id=expected_continuation_id
                 )
                 self._root_runs.input_predictions.evict(thread_id)
-                if (draft := self._shared_drafts.get(thread_id)) is not None:
+                draft = None
+                async with self._shared_drafts_lock:
+                    if thread_id in self._shared_drafts or await self._store.drafts.get(thread_id) is not None:
+                        draft = await self._load_shared_draft(thread_id)
+                if draft is not None:
                     await draft.set_prediction(None)
                 self._tool_executions.clear_state(thread_id)
                 if self._browsers is not None:

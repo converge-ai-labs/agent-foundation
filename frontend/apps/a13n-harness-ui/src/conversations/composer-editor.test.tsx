@@ -917,6 +917,9 @@ it("keeps a prediction out of shared text until Tab fills it as one undoable edi
     "Add an example.",
   );
   expect(screen.getByText("Tab")).toBeTruthy();
+  expect(textbox.getAttribute("aria-description")).toContain(
+    "Suggested follow-up: Add an example. Press Tab to fill or Escape to dismiss.",
+  );
   expect(draft.doc.getText("text").length).toBe(0);
   expect(draft.undo.undoStack).toHaveLength(0);
   fireEvent.keyDown(textbox, { key: "Enter" });
@@ -925,6 +928,9 @@ it("keeps a prediction out of shared text until Tab fills it as one undoable edi
   expect(dismiss).toHaveBeenCalledTimes(1);
   fireEvent.keyDown(textbox, { key: "Tab" });
   expect(draft.doc.getText("text").toString()).toBe("Add an example.");
+  expect(textbox.getAttribute("aria-description")).not.toContain(
+    "Suggested follow-up:",
+  );
   expect(draft.undo.undoStack).toHaveLength(1);
   act(() => draft.undo.undo());
   expect(draft.doc.getText("text").length).toBe(0);
@@ -959,8 +965,6 @@ it("offers a button to fill the prediction without a keyboard", () => {
       prediction={{ text: "Add an example.", dismiss: () => {} }}
     />,
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Use suggested follow-up" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Use suggestion" }));
   expect(draft.doc.getText("text").toString()).toBe("Add an example.");
 });

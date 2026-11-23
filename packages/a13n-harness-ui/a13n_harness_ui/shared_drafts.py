@@ -349,7 +349,10 @@ class SharedDraft:
                     if len(options_update) > MAX_DRAFT_BYTES:
                         raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
                     options.apply_update(options_update)
-                if composer_options(options).prediction != self.prediction:
+                raw_prediction = options.get("options", type=Map).get("prediction")
+                if (raw_prediction is not None and not isinstance(raw_prediction, dict)) or (
+                    composer_options(options).prediction != self.prediction
+                ):
                     raise ValueError("The Host owns the composer prediction.")
                 accepted_update = candidate.get_update()
                 if len(accepted_update) > MAX_DRAFT_BYTES:

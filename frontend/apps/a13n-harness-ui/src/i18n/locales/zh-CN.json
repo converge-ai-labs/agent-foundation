@@ -3605,6 +3605,6 @@
   "Suggest follow-ups": "建议后续消息",
   "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.": "回复结束后，输入框为空时可额外请求一次当前聊天模型来建议后续消息。接受建议只会填入输入框，不会自动发送。",
   "Tab": "Tab",
-  "Use suggested follow-up": "填入建议的后续消息",
+  "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.": "后续消息建议：{{text}}。按 Tab 填入，或按 Escape 关闭建议。",
   "Use suggestion": "填入建议"
 }

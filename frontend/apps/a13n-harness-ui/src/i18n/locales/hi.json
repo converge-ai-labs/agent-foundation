@@ -3637,6 +3637,6 @@
   "Suggest follow-ups": "अगला संदेश सुझाएँ",
   "An empty composer can use one extra request to the chat’s model after a reply. Accept a suggestion to fill the composer; nothing is sent automatically.": "जवाब के बाद, संदेश बॉक्स खाली होने पर चैट के मॉडल को एक अतिरिक्त अनुरोध भेजा जा सकता है। सुझाव स्वीकार करने से वह बॉक्स में भरेगा; कुछ भी अपने आप नहीं भेजा जाएगा।",
   "Tab": "Tab",
-  "Use suggested follow-up": "सुझाया गया अगला संदेश भरें",
+  "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.": "सुझाया गया अगला संदेश: {{text}} भरने के लिए Tab या हटाने के लिए Escape दबाएँ।",
   "Use suggestion": "सुझाव इस्तेमाल करें"
 }

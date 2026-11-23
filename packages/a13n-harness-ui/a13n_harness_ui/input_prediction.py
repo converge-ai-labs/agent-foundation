@@ -245,6 +245,7 @@ class InputPredictions:
         except Exception as exc:
             # This is a best-effort helper; do not log model text or prompt data.
             get_logger(__name__).info("Input prediction unavailable", extra={"error_type": type(exc).__name__})
+            # Cache transient failures for the rest of the warm window to avoid retry storms.
             text = None
         entry.result = text
         entry.sampled = True
