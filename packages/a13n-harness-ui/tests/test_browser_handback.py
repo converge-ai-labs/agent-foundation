@@ -402,17 +402,36 @@ async def test_app_retake_while_native_steering_waits_preserves_notice(tmp_path,
             operation = app._root_runs._operations[receipt.receipt_id]
             bridge = operation.stream.context._steering
             notices = app._browsers.handback
+            steer_started = Event()
+            delivery_finished = Event()
+            steer = bridge.steer
+            deliver = notices.deliver
+            assert deliver is not None
+
+            async def observe_steer(*args, **kwargs):
+                steer_started.set()
+                return await steer(*args, **kwargs)
+
+            async def observe_delivery(*args, **kwargs):
+                try:
+                    return await deliver(*args, **kwargs)
+                finally:
+                    delivery_finished.set()
+
+            monkeypatch.setattr(bridge, "steer", observe_steer)
+            monkeypatch.setattr(notices, "deliver", observe_delivery)
             notices.takeover()
             notices.blocked(thread.thread_id)
             async with bridge._lock:
                 notices.released()
-                await wait_all_tasks_blocked()
+                await steer_started.wait()
                 notices.takeover()
-            await wait_all_tasks_blocked()
+            await delivery_finished.wait()
             assert not bridge._pending_requests
             assert thread.thread_id in notices._pending
+            delivery_finished = Event()
             notices.released()
-            await wait_all_tasks_blocked()
+            await delivery_finished.wait()
             assert len(bridge._pending_requests) == 1
             assert thread.thread_id not in notices._pending
             proceed.set()
