@@ -1125,8 +1125,8 @@ it("ignores superseded animation updates during a drag and ends on pointer cance
 it("uses tabs in narrow windows without replacing the saved desktop layout", async () => {
   setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
   await screen.findByText("Editor /native/first.txt");
-  vi.stubGlobal("matchMedia", () => ({
-    matches: true,
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === "(max-width: 999px)",
     addEventListener() {},
     removeEventListener() {},
   }));
@@ -1149,6 +1149,21 @@ it("uses tabs in narrow windows without replacing the saved desktop layout", asy
   expect(
     screen.getByRole("button", { name: "Close supporting panel" }),
   ).toBeTruthy();
+});
+
+it("keeps one view on phones even after the side-by-side toggle", async () => {
+  setup("/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt");
+  await screen.findByText("Editor /native/first.txt");
+  vi.stubGlobal("matchMedia", () => ({
+    matches: true,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
+  restoreSideBySide();
+  expect(screen.getByRole("tab", { name: "Chat" })).toBeTruthy();
+  expect(screen.queryByRole("separator")).toBeNull();
+  expect(localStorage.getItem("a13n-harness-ui.native-layout")).toBe("sidebar");
 });
 
 it("retains resource tabs through Settings and direct Chat interaction updates focus", async () => {

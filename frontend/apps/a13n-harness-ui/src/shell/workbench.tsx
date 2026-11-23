@@ -79,6 +79,7 @@ import { useDebug } from "./debug";
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
 import { WorkbenchSidebar } from "./sidebar";
+import { useSwipeDismiss } from "./swipe-dismiss";
 import { ConnectionNotice, ConnectionNoticeContext } from "./connection";
 
 const profileColors = [
@@ -152,6 +153,7 @@ function WorkbenchContent({
   const sources = useSources();
   const [displayName, setDisplayName] = useState(profile.display_name);
   const [menu, setMenu] = useState(false);
+  const swipeMenuClosed = useSwipeDismiss(() => setMenu(false));
   const mobileMenuButton = useRef<HTMLButtonElement>(null);
   const menuLocation = useRef("");
   const live = useLiveWorkbench(
@@ -301,6 +303,7 @@ function WorkbenchContent({
       <Sheet open={menu} onOpenChange={setMenu}>
         <SheetPopup
           id="workbench-navigation"
+          ref={swipeMenuClosed}
           finalFocus={() => {
             if (
               location.key !== menuLocation.current &&
@@ -314,7 +317,10 @@ function WorkbenchContent({
           }}
           side="left"
           className={styles.mobileNavigation}
-          closeProps={{ "aria-label": t("Close navigation") }}
+          closeProps={{
+            "aria-label": t("Close navigation"),
+            className: styles.mobileNavigationClose,
+          }}
         >
           <header className={styles.mobileNavigationHeader}>
             <SheetTitle>Harness UI</SheetTitle>

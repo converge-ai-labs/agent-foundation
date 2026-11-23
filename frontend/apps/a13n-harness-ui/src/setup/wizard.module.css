@@ -244,6 +244,9 @@
     max-width: none;
     max-height: 100dvh;
     border: 0;
+    /* Clear the status bar; the absolute close button sits inside the border. */
+    border-top: env(safe-area-inset-top, 0px) solid transparent;
+    background-clip: border-box;
     border-radius: 0;
   }
   .steps {

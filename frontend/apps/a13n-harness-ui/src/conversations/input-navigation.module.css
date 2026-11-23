@@ -147,11 +147,19 @@
     position: absolute;
     inset: 0 auto auto 0;
     z-index: 2;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 160ms ease-out;
+  }
+  .mobile:is([data-revealed], :has(:focus-visible)) {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 @media (prefers-reduced-motion: reduce) {
   .tick span,
-  .preview {
+  .preview,
+  .mobile {
     transition: none;
   }
 }

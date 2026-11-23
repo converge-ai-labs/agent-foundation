@@ -260,7 +260,7 @@
 .reader {
   min-height: 0;
   flex: 1;
-  overflow: auto;
+  overflow: hidden auto;
   padding: 8px 20px 24px;
 }
 .reader h3 {

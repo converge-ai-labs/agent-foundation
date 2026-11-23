@@ -45,6 +45,8 @@ export function InputNavigation({
   const [hovered, setHovered] = useState<number>();
   const [focused, setFocused] = useState<number>();
   const [open, setOpen] = useState(false);
+  // On phones the trigger floats over prose, so it appears while reading moves.
+  const [scrolling, setScrolling] = useState(false);
   const waveOrigin = hovered ?? focused;
   const query = useInfiniteQuery({
     queryKey: ["thread", threadId, "inputs", continuation],
@@ -125,6 +127,23 @@ export function InputNavigation({
       resize?.disconnect();
     };
   }, [reader, threadId, update]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Scroll does not bubble; capture at the document so a remounted reader
+    // element (for example after a workspace layout change) still reveals.
+    const reveal = (event: Event) => {
+      if (event.target !== reader.current) return;
+      setScrolling(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => setScrolling(false), 2000);
+    };
+    const options = { capture: true, passive: true };
+    document.addEventListener("scroll", reveal, options);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("scroll", reveal, options);
+    };
+  }, [reader]);
   const select = (id: string) => {
     setOpen(false);
     setActive(id);
@@ -209,7 +228,10 @@ export function InputNavigation({
           </Button>
         )}
       </nav>
-      <div className={styles.mobile}>
+      <div
+        className={styles.mobile}
+        data-revealed={scrolling || open || undefined}
+      >
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
             render={

@@ -105,6 +105,7 @@
   max-width: 100%;
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior-x: contain;
   /* KaTeX's positioned glyph boxes extend beyond its line box. */
   padding-block: 0.5em;
   overflow-wrap: normal;
@@ -126,6 +127,7 @@
   padding: 12px 16px;
   max-height: 440px;
   overflow: auto;
+  overscroll-behavior-x: contain;
   white-space: pre;
   overflow-wrap: normal;
   font-family: var(--a13n-mono);
@@ -213,6 +215,7 @@
 .tableScroll {
   max-width: 100%;
   overflow: auto;
+  overscroll-behavior-x: contain;
   margin: 16px 0;
   border: 1px solid var(--a13n-border);
   border-radius: 10px;

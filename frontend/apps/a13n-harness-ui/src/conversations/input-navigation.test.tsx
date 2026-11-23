@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -222,4 +223,50 @@ it("keeps one reader observer while streaming revisions update the active input"
   expect(disconnect).toHaveBeenCalledTimes(1);
   client.clear();
   vi.unstubAllGlobals();
+});
+
+it("reveals the phone history trigger while the reader scrolls", () => {
+  vi.useFakeTimers();
+  const client = new QueryClient();
+  const reader = createRef<HTMLDivElement>();
+  const rendered = render(
+    <QueryClientProvider client={client}>
+      <TransportContext
+        value={{ client: { GET: vi.fn() } } as unknown as Transport}
+      >
+        <InputNavigation
+          threadId="one"
+          reader={reader}
+          revision={0}
+          onSelect={() => {}}
+          localInputs={(["first", "second"] as const).map((id) => ({
+            id,
+            action: "send" as const,
+            state: "accepted" as const,
+            parts: previewInput(id, [id]),
+          }))}
+        />
+        <div ref={reader}>
+          <section data-turn-id="first" />
+        </div>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  const trigger = screen
+    .getByRole("button", { name: "Input history" })
+    .closest("[data-revealed], div")!;
+  expect(trigger.hasAttribute("data-revealed")).toBe(false);
+  fireEvent.scroll(document);
+  expect(trigger.hasAttribute("data-revealed")).toBe(false);
+  fireEvent.scroll(reader.current!);
+  expect(trigger.hasAttribute("data-revealed")).toBe(true);
+  act(() => vi.advanceTimersByTime(1900));
+  fireEvent.scroll(reader.current!);
+  act(() => vi.advanceTimersByTime(1900));
+  expect(trigger.hasAttribute("data-revealed")).toBe(true);
+  act(() => vi.advanceTimersByTime(200));
+  expect(trigger.hasAttribute("data-revealed")).toBe(false);
+  rendered.unmount();
+  client.clear();
+  vi.useRealTimers();
 });

@@ -79,6 +79,10 @@ export class AppearanceStore {
   private paint() {
     const root = this.host.document.documentElement;
     root.classList.toggle("dark", this.snapshot.dark);
+    // Mobile browser chrome and installed-app status bars follow the canvas.
+    this.host.document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", this.snapshot.dark ? "#1c1c1c" : "#fbfbfd");
     for (const region of Object.keys(variables) as SizeRegion[]) {
       root.style.setProperty(
         variables[region],

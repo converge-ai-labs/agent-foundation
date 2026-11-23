@@ -102,7 +102,7 @@
 .inspectorBody {
   min-height: 0;
   max-height: min(560px, 65dvh);
-  overflow-y: auto;
+  overflow: hidden auto;
   overscroll-behavior: contain;
   padding: 24px;
 }

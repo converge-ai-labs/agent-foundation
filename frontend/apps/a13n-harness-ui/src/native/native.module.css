@@ -346,12 +346,15 @@
   height: 12px;
 }
 .workspaceTabs > .panelTools {
-  padding: 2px 4px 0;
+  /* Leave room for the active tab's reversed corners so the strip only
+     scrolls when tabs actually overflow. */
+  padding: 2px 6px 0;
   gap: 2px;
   align-self: stretch;
   flex: 0 1 auto;
   min-width: 0;
-  overflow-x: auto;
+  overflow: auto hidden;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
   mask-image: linear-gradient(
     to right,

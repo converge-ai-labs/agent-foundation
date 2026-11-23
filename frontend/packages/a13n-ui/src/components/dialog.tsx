@@ -90,7 +90,7 @@ export function DialogPopup({
           className={cn(
             "group/dialog relative grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-3rem)] min-h-0 w-full min-w-0 max-w-[32.5rem] origin-center overflow-hidden rounded-[12px] border-0 bg-popover not-dark:bg-clip-padding text-popover-foreground opacity-[calc(1-var(--nested-dialogs))] shadow-floating outline-none transition-opacity duration-[var(--a13n-overlay-duration)] ease-out motion-reduce:transition-none data-ending-style:opacity-0 data-starting-style:opacity-0 sm:scale-[calc(1-0.1*var(--nested-dialogs))]",
             bottomStickOnMobile &&
-              "max-sm:max-w-none max-sm:max-h-[calc(100dvh-3rem)] max-sm:origin-bottom max-sm:rounded-none",
+              "max-sm:max-w-none max-sm:max-h-[calc(100dvh-3rem)] max-sm:origin-bottom max-sm:rounded-none max-sm:pb-[env(safe-area-inset-bottom)]",
             placement === "top" &&
               "max-h-[calc(100dvh-2rem)] sm:max-h-[calc(100dvh-6.5rem)]",
             className,

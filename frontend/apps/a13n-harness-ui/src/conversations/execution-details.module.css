@@ -100,7 +100,7 @@
 }
 .fullscreen > [data-execution-reader] {
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden auto;
   max-height: none;
   margin: 0;
   border-radius: 0;

@@ -26,6 +26,7 @@ it("fits keyboard resize and pan without replacing content, and releases listene
   const close = fitVisualViewport(shell);
   vi.runAllTimers();
   expect(shell.style.getPropertyValue("--visible-height")).toBe("800px");
+  expect(shell.hasAttribute("data-keyboard-open")).toBe(false);
   viewport.height = 430;
   viewport.offsetTop = 18;
   viewport.dispatchEvent(new Event("resize"));
@@ -33,6 +34,7 @@ it("fits keyboard resize and pan without replacing content, and releases listene
   vi.runAllTimers();
   expect(shell.style.getPropertyValue("--visible-height")).toBe("430px");
   expect(shell.style.getPropertyValue("--visible-top")).toBe("18px");
+  expect(shell.hasAttribute("data-keyboard-open")).toBe(true);
   expect(shell.firstChild).toBe(editor);
   expect(editor.value).toBe("Shared draft remains here");
   viewport.scale = 2;
@@ -44,6 +46,7 @@ it("fits keyboard resize and pan without replacing content, and releases listene
   window.dispatchEvent(new Event("resize"));
   vi.runAllTimers();
   expect(shell.style.getPropertyValue("--visible-top")).toBe("");
+  expect(shell.hasAttribute("data-keyboard-open")).toBe(false);
   close();
   vi.stubGlobal("innerWidth", 390);
   viewport.dispatchEvent(new Event("resize"));

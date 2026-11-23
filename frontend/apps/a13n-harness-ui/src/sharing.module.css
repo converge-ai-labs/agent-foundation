@@ -147,6 +147,9 @@
   height: 100dvh;
   display: flex;
   flex-direction: column;
+  /* The viewport extends under device cutouts; .conversation owns the bottom. */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0
+    env(safe-area-inset-left, 0px);
   color: var(--a13n-text);
   background: var(--a13n-canvas);
 }
@@ -224,7 +227,7 @@
   font-weight: 500;
 }
 .threadList {
-  overflow-y: auto;
+  overflow: hidden auto;
   display: flex;
   flex-direction: column;
   gap: 4px;

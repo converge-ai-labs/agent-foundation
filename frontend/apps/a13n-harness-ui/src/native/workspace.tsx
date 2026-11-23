@@ -209,8 +209,10 @@ export function NativeWorkspace({
     writePreference(panelKey, collapsed ? "closed" : "open");
   };
   const narrow = useMediaQuery("(max-width: 999px)");
+  // Phones cannot fit Chat beside a supporting view, so they always show one.
+  const compact = useMediaQuery("(max-width: 700px)");
   const [narrowSidebar, setNarrowSidebar] = useState(false);
-  const showOneView = tabLayout || (narrow && !narrowSidebar);
+  const showOneView = tabLayout || compact || (narrow && !narrowSidebar);
   const singleView = hasSupportingViews && !sidebarCollapsed && showOneView;
   const supportingExpanded =
     hasSupportingViews && !sidebarCollapsed && (!singleView || nativeActive);

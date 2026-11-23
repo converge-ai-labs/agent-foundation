@@ -7,7 +7,6 @@
 .sheet {
   grid-template-rows: auto minmax(0, 1fr);
   border-radius: 16px 16px 0 0;
-  padding-bottom: env(safe-area-inset-bottom);
 }
 .header {
   display: flex;
@@ -29,7 +28,7 @@
   min-width: 0;
   min-height: 0;
   max-height: min(65dvh, 540px);
-  overflow: auto;
+  overflow: hidden auto;
   overscroll-behavior: contain;
   padding: 4px;
 }

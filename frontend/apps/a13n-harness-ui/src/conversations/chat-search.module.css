@@ -56,7 +56,7 @@
 }
 .results {
   max-height: min(420px, 55dvh);
-  overflow: auto;
+  overflow: hidden auto;
   padding: 8px;
   border-top: 1px solid var(--a13n-border);
 }

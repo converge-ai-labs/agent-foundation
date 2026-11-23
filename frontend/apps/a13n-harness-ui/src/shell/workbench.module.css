@@ -703,7 +703,9 @@
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: max(24px, env(safe-area-inset-top))
+    max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
   background: var(--a13n-canvas);
 }
 .accessCard {
@@ -746,10 +748,33 @@
   gap: 16px;
   overflow: hidden;
   max-width: 300px;
+  padding-top: max(24px, env(safe-area-inset-top));
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  padding-left: max(16px, env(safe-area-inset-left));
+  transition-property: opacity, translate;
+}
+/* The drawer slides from its edge and follows a horizontal dismiss drag. */
+.mobileNavigation:is([data-starting-style], [data-ending-style]) {
+  translate: -100% 0;
+}
+.mobileNavigation,
+.mobileNavigation * {
+  touch-action: pan-y;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobileNavigation:is([data-starting-style], [data-ending-style]) {
+    translate: none;
+  }
 }
 .mobileNavigation[data-nested-dialog-open] {
   opacity: 0;
   pointer-events: none;
+}
+/* Center the 44px close button on the title row below the status bar. */
+.mobileNavigationClose {
+  position: absolute;
+  top: calc(max(24px, env(safe-area-inset-top)) - 12px);
+  right: 8px;
 }
 .mobileNavigationHeader {
   display: flex;
@@ -830,7 +855,7 @@
   align-content: start;
   gap: 2px;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden auto;
 }
 .settingsNav .activeNav {
   background: var(--a13n-selected);
@@ -864,7 +889,7 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden auto;
   padding: 24px clamp(24px, 5vw, 64px) 48px;
   scrollbar-gutter: stable both-edges;
 }
@@ -1056,7 +1081,7 @@ body:has(.settingsContent) [data-slot="select-list"] {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
   gap: 4px 16px;
   max-height: 240px;
-  overflow: auto;
+  overflow: hidden auto;
 }
 .selectionOption {
   display: flex;
