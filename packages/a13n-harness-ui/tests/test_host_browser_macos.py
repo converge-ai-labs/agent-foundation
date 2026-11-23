@@ -35,6 +35,53 @@ def isolated_user_home():
     pass
 
 
+async def test_reconnect_preserves_process_tabs_and_never_replays_pending_command(tmp_path, monkeypatch):
+    from a13n_harness.capabilities.browser import BrowserError
+    from a13n_harness_ui.browser_macos import MacDesktop
+
+    monkeypatch.setattr(MacDesktop, "chromium_arguments", ("--headless=new", "--use-mock-keychain"))
+    host = HostBrowsers(
+        root=tmp_path,
+        available=True,
+        authorize=AsyncMock(),
+        configuration=BrowserConfiguration(executable=os.environ["A13N_TEST_MACOS_BROWSER"]),
+    )
+    try:
+        await host.prepare()
+        assert host.runtime_ready, host.startup_error
+        runtime, process = host.runtime, host.process
+        bindings = {}
+        for thread in ("first", "second"):
+            identity = await host.admit(thread)
+            item = host.bindings[thread]
+            page = await runtime.create(new_window=True)
+            await item.scope.attach(page.target)
+            bindings[thread] = (identity, page.target)
+        backend = host.backend("second", bindings["second"][0])
+        await backend.observe()
+        pending = asyncio.create_task(backend.js("window.count = (window.count || 0) + 1; new Promise(() => {})"))
+        async with asyncio.timeout(10):
+            while not await runtime.evaluate(page, "window.count"):
+                await asyncio.sleep(0.01)
+        await runtime.client.ws.close()
+        with pytest.raises(BrowserError) as error:
+            await pending
+        assert error.value.dispatch == "unknown"
+        async with asyncio.timeout(10):
+            while host.runtime is runtime or not host.runtime_ready:
+                assert not host.runtime_failed, host.startup_error
+                await asyncio.sleep(0.01)
+        assert host.process is process and process.returncode is None
+        for thread, (identity, target) in bindings.items():
+            item = host.bindings[thread]
+            assert item.identity == identity and item.scope.targets == {target}
+            assert item.page.target == target and item.page.requires_observation
+        await backend.observe()
+        assert await backend.js("window.count") == 1
+    finally:
+        await host.close()
+
+
 async def test_native_window_capture_static_live_pause_and_close(tmp_path):
     host = HostBrowsers(
         root=tmp_path / "profile",

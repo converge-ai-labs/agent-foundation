@@ -172,6 +172,10 @@ class Chromium:
                 raise
             raise BrowserError("Cannot connect to the browser CDP endpoint.") from None
 
+    async def wait_disconnected(self) -> None:
+        """Wait for this connection to close without polling or sending a command."""
+        await self.client.ws.wait_closed()
+
     @property
     def connected(self) -> bool:
         socket = self.client.ws

@@ -21,6 +21,7 @@ pytestmark = pytest.mark.anyio
 def browsers(tmp_path):
     host = HostBrowsers(root=tmp_path, available=True, authorize=AsyncMock())
     runtime = host.runtime = Chromium(Mock())
+    runtime.client.ws.wait_closed = asyncio.Event().wait
     host.runtime_ready = True
     runtime.closed = host.page_closed
     runtime.opened = host.opened
@@ -683,6 +684,18 @@ async def test_chromium_launch_storage_and_sandbox_policy(tmp_path, monkeypatch,
     assert ("--ozone-platform=x11" in spawn.call_args.args) is (platform == "linux")
     desktop.close.assert_awaited_once()
     assert host.desktop is None and host.process is None
+
+
+async def test_reconnect_failure_retires_bindings_and_offers_retry(browsers, monkeypatch):
+    browsers.runtime.wait_disconnected = AsyncMock()
+    connect = AsyncMock(side_effect=BrowserError("endpoint unavailable"))
+    monkeypatch.setattr(Chromium, "connect", connect)
+    await browsers.watch_connection("ws://original-endpoint")
+    connect.assert_awaited_once_with("ws://original-endpoint")
+    assert browsers.runtime_state().status == "failed"
+    assert "endpoint unavailable" in browsers.startup_error
+    assert all(item.closed.is_set() for item in browsers.bindings.values())
+    browsers.runtime.close_browser.assert_not_awaited()
 
 
 @pytest.mark.parametrize("action", ["reset", "start"])
