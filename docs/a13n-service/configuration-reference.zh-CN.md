@@ -86,7 +86,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | -------------------------------- | ----------------------------------------------------- | ----------------- | --------------------------------------------- |
 | `auth.password_enabled`          | `A13N_AUTH__PASSWORD_ENABLED`                         | 布尔值            | default=true                                  |
 | `auth.oidc.providers`            | `A13N_AUTH__OIDC`（JSON 字段 `providers`）            | 对象              | —                                             |
-| `auth.oidc.default_workspace_id` | `A13N_AUTH__OIDC`（JSON 字段 `default_workspace_id`） | 字符串或 null     | minLength=1; maxLength=72; default=null       |
+| `auth.oidc.defaults`             | `A13N_AUTH__OIDC`（JSON 字段 `defaults`）             | 对象数组          | 默认 `[]`                                     |
 | `auth.oidc.session_seconds`      | `A13N_AUTH__OIDC`（JSON 字段 `session_seconds`）      | 整数              | minimum=60; maximum=604800; default=43200     |
 | `auth.oidc.start_limit`          | `A13N_AUTH__OIDC`（JSON 字段 `start_limit`）          | 整数              | minimum=1; maximum=1000; default=30           |
 | `auth.oidc.start_window_seconds` | `A13N_AUTH__OIDC`（JSON 字段 `start_window_seconds`） | 整数              | minimum=1; maximum=3600; default=60           |

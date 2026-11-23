@@ -138,7 +138,7 @@ HTTPS cookie 名为 `__Host-a13n_session`，带有 `Secure`、`HttpOnly` 和 `Sa
 
 ```json
 {
-  "default_workspace_id": "ws_replace_with_your_workspace_id",
+  "defaults": [{"workspace_id": "ws_replace_with_your_workspace_id", "role": "runner"}],
   "providers": {
     "team": {
       "label": "Team Identity",
@@ -156,7 +156,7 @@ HTTPS cookie 名为 `__Host-a13n_session`，带有 `Secure`、`HttpOnly` 和 `Sa
 
 Service 接受两种 `aud` 格式：配置的客户端 ID 字符串，或只包含该 ID 的数组。如果 ID token 提供 `azp`，它也必须匹配同一个 ID。ID token 的 `iat`、`nbf` 可比当前时间晚最多 30 秒，`exp` 也有 30 秒的到期宽限。请允许 Service 出站访问签发方的 Discovery 端点，以及 Discovery 返回的 token 和 JWKS 端点。除本机开发外，这些请求必须使用 HTTPS，不跟随重定向，只接受 `Content-Encoding: identity` 或不带内容编码的响应。浏览器需要访问 Discovery 返回的授权端点。请将反向代理访问日志配置为省略回调 URL 的查询字符串。
 
-OIDC 发起请求有独立的 Redis 限流预算：同一客户端地址访问各提供方共用 `auth.oidc` 下的 `start_limit`（默认 30 次）和 `start_window_seconds`（默认 60 秒）。共享一个 NAT 地址的客户端共用预算；反向代理部署请配置 `server.trusted_proxies`，按可信代理转发的客户端地址计数。Redis 无法限流时，Service 不会发起 Discovery 请求。
+OIDC 发起请求有独立的 Redis 限流预算：同一客户端地址访问各提供方共用 `auth.oidc` 下的 `start_limit`（默认 30 次）和 `start_window_seconds`（默认 60 秒）。共享一个 NAT 地址的客户端共用预算；反向代理部署请配置 `server.trusted_proxies`，按可信代理转发的客户端地址计数。Redis 不可用时，Service 会跳过限流检查，但仍须先保存一次性流程才能发起浏览器登录。
 
 凡是身份提供方允许向该客户端授权的用户，都可以登录。请先在身份提供方设置应用访问规则，再发布登录按钮。对于 Google Workspace，请在组织拥有的项目中创建 Web 客户端，并将 **Google Auth Platform → Audience → Internal** 设为仅本组织可用（参见 [Google 的受众指南](https://support.google.com/cloud/answer/15549945)）。External 应用可以允许组织外用户登录；Service 不会按邮箱域名限制准入。
 
@@ -164,15 +164,15 @@ OIDC 发起请求有独立的 Redis 限流预算：同一客户端地址访问�
 
 如需在 Entra 中限制应用访问，请[启用分配要求并分配指定用户或组](https://learn.microsoft.com/en-us/entra/identity-platform/howto-restrict-your-app-to-a-set-of-users)。Entra 全局管理员不受此分配要求限制。
 
-首次登录会创建独立的 Service 用户，并授予其指定工作空间的 `runner` 角色。身份提供方验证过的邮箱仅用于显示，即使某个密码账号也使用同一邮箱。请通过[成员与授权](identity.md#members-and-grants)管理权限。以后登录时，Service 会保留现有授权，不会恢复已移除的角色。
+未设置规则的提供方会在首次登录时创建独立的 Service 用户，并写入 `defaults` 指定的普通授权。身份提供方验证过的邮箱仅用于显示，即使某个密码账号也使用同一邮箱。请通过[成员与授权](identity.md#members-and-grants)管理权限。以后登录时，Service 会保留现有授权，不会恢复已移除的角色。
 
-### 将身份提供方角色映射为组织管理员
+### 按 ID token 声明同步角色
 
-在 `A13N_AUTH__OIDC` JSON 的提供方配置中添加 `org_admin`。以下示例请求 `groups` scope，并映射 `console-admins` 组。请选择由身份提供方管理、用户不能自行修改的角色或组声明。
+在提供方配置中添加 `role_rules`，按组织或工作区同步角色。每个授权目标填写 `organization_id` 或 `workspace_id`（二选一）以及已注册的角色。以下示例给 `console-admins` 组组织管理员权限，其他人则获得默认工作区的 Runner 权限。请选择由身份提供方控制、用户不能自行修改的声明。
 
 ```json
 {
-  "default_workspace_id": "ws_replace_with_your_workspace_id",
+  "defaults": [{"workspace_id": "ws_replace_with_your_workspace_id", "role": "runner"}],
   "providers": {
     "team": {
       "label": "Team Identity",
@@ -180,19 +180,21 @@ OIDC 发起请求有独立的 Redis 限流预算：同一客户端地址访问�
       "client_id": "a13n-console",
       "client_secret": "replace-at-deploy-time",
       "extra_scopes": ["groups"],
-      "org_admin": {"claim": "groups", "value": "console-admins"}
+      "role_rules": [
+        {"match": {"groups": "console-admins"}, "organization_id": "org_replace_with_your_org_id", "role": "admin"}
+      ]
     }
   }
 }
 ```
 
-每次成功登录，Service 都会从已验证的 ID token 中读取指定的顶层声明。声明本身可以是字符串，也可以是字符串数组；字符串或其中一个成员须完全匹配，包括大小写。声明缺失、格式错误或需要另行查询（例如 Entra 组数量超限）时，视为不匹配。额外 scope 会加到 `openid profile email` 后；请在提供方配置里将该声明写入 ID token。
+一条规则里的所有声明都要匹配；单个声明可配置一个字符串或多个候选字符串。Service 优先查找同名顶层键，找不到才按点分路径查找嵌套声明，例如 `realm_access.roles`。比较区分大小写；token 中的值须是字符串或全由字符串组成的数组。缺失、格式错误或标明分布式的声明不匹配。请用 `extra_scopes` 请求所需 scope，并在提供方配置中把声明写入 ID token。
 
-匹配时，管理员成为默认工作区所属组织的单点登录默认角色；之后成功登录但不再匹配时，Service 会撤掉该提供方的默认角色。在**组织 → 成员 → 更改角色**中，选择**手动设置角色**来覆盖该组织的默认角色。选择**使用单点登录默认角色**，然后点击**恢复单点登录默认角色**，即可清除手动覆盖；最近同步的默认角色立即生效。若没有默认角色，该用户便没有组织级角色。工作区角色仍然有效。请保留至少一名活跃的手动授权管理员，用于恢复访问。
+启用规则后，Service 每次成功登录都会同步该提供方的授权：有匹配时只使用匹配规则；无匹配时使用默认授权。提供方省略 `defaults` 会继承全局值，设置 `defaults: []` 则禁用回退；没有规则命中、也没有可回退的授权时，拒绝登录并保留上一次同步结果。每个提供方至少要有可用默认授权或一条规则。配置的组织或工作区不存在时，本次登录失败且原授权不变。首次登录不能授予已归档工作区的权限。
 
-角色在登录时同步。停用映射时，可移除 `org_admin` 并保留提供方，让用户下次登录时清除这一来源的授权。移除整个提供方会阻止通过该提供方登录，但不会清除已授予的角色。如需立即撤销某位用户的访问，在 Service 中停用该用户。
+在组织或工作区的**成员 → 更改角色**中，选择**手动设置角色**可以覆盖当前范围的单点登录默认角色。选择**使用单点登录默认角色 → 恢复单点登录默认角色**，可清除手动覆盖，让最近同步的授权立即生效。没有单点登录默认角色的普通授权仍可直接更改或移除。请保留至少一名活跃的手动授权组织管理员，以便恢复访问。
 
-已有的浏览器会话和用户工作区 API 密钥在下次鉴权时使用用户当前的角色。服务账号密钥按自身账号的角色授权，签发者的角色变化不影响该密钥。
+已有浏览器会话、用户 API 密钥和 Worker 在下次鉴权时使用最新角色。服务账号密钥继续使用其自身账号的授权。去掉提供方的全部规则并保留可用默认授权，用户再次登录后会清除该提供方以前同步的授权；直接删除提供方不会清除现有授权。
 
 ### 切换到仅 OIDC 登录
 

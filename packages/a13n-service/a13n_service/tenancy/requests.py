@@ -100,7 +100,6 @@ async def limit_oidc_start(request: Request, runtime: Runtime) -> None:
         f"oidc_start:peer:{peer}",
         limit=config.start_limit,
         window_seconds=config.start_window_seconds,
-        fail_closed=True,
     )
 
 

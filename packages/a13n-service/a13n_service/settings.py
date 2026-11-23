@@ -222,16 +222,30 @@ def oidc_endpoint_policy(issuer: str) -> EndpointPolicy:
 _OIDC_SCOPE = r"^[\x21\x23-\x5B\x5D-\x7E]+$"
 
 
-class OIDCOrgAdmin(Section):
-    claim: str = Field(min_length=1, max_length=512)
-    value: str = Field(min_length=1, max_length=512)
+class OIDCGrantSpec(Section):
+    organization_id: str | None = Field(default=None, min_length=1, max_length=72)
+    workspace_id: str | None = Field(default=None, min_length=1, max_length=72)
+    role: str = Field(pattern=r"^[a-z][a-z0-9_]{0,31}$")
 
-    @field_validator("claim")
+    @model_validator(mode="after")
+    def one_scope(self) -> "OIDCGrantSpec":
+        if (self.organization_id is None) == (self.workspace_id is None):
+            raise ValueError("each OIDC grant requires exactly one of organization_id and workspace_id")
+        return self
+
+
+_OIDCClaim = Annotated[str, Field(min_length=1, max_length=512)]
+
+
+class OIDCRoleRule(OIDCGrantSpec):
+    match: dict[_OIDCClaim, _OIDCClaim | Annotated[list[_OIDCClaim], Field(min_length=1)]] = Field(min_length=1)
+
+    @field_validator("match")
     @classmethod
-    def role_claim(cls, value: str) -> str:
-        if not value.isprintable() or value.isspace():
+    def printable_claims(cls, match: dict[str, str | list[str]]) -> dict[str, str | list[str]]:
+        if any(not claim.isprintable() or claim.isspace() for claim in match):
             raise ValueError("claim must be a printable name")
-        return value
+        return match
 
 
 class OIDCProvider(Section):
@@ -244,7 +258,8 @@ class OIDCProvider(Section):
     extra_scopes: list[Annotated[str, Field(min_length=1, max_length=256, pattern=_OIDC_SCOPE)]] = Field(
         default_factory=list, max_length=20
     )
-    org_admin: OIDCOrgAdmin | None = None
+    defaults: list[OIDCGrantSpec] | None = None
+    role_rules: list[OIDCRoleRule] = Field(default_factory=list)
 
     @property
     def scopes(self) -> tuple[str, ...]:
@@ -274,15 +289,19 @@ class OIDC(Section):
     providers: dict[Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,31}$")], OIDCProvider] = Field(
         default_factory=dict
     )
-    default_workspace_id: str | None = Field(default=None, min_length=1, max_length=72)
+    defaults: list[OIDCGrantSpec] = Field(default_factory=list)
     session_seconds: int = Field(default=43200, ge=60, le=604800)
     start_limit: int = Field(default=30, ge=1, le=1000)
     start_window_seconds: int = Field(default=60, ge=1, le=3600)
 
+    def defaults_for(self, provider: OIDCProvider) -> list[OIDCGrantSpec]:
+        return self.defaults if provider.defaults is None else provider.defaults
+
     @model_validator(mode="after")
-    def require_workspace(self) -> "OIDC":
-        if self.providers and self.default_workspace_id is None:
-            raise ValueError("auth.oidc.default_workspace_id is required with OIDC providers")
+    def require_grants(self) -> "OIDC":
+        for name, provider in self.providers.items():
+            if not self.defaults_for(provider) and not provider.role_rules:
+                raise ValueError(f"OIDC provider {name!r} requires effective defaults or role_rules")
         return self
 
 

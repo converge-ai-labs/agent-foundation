@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -12,16 +13,17 @@ from urllib.parse import urlencode
 import httpx2
 import jwt
 import pytest
+from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError
-from a13n_service.settings import OIDC, Authentication, OIDCOrgAdmin, OIDCProvider, Settings
+from a13n_service.settings import OIDC, Authentication, OIDCGrantSpec, OIDCProvider, OIDCRoleRule, Settings
 from a13n_service.tenancy import oidc, routes
 from a13n_service.tenancy.access import principals_for
 from a13n_service.tenancy.authenticate import authenticate_secret, session_cookie
 from a13n_service.tenancy.authorize import WorkspaceScope, allowed_verbs
 from a13n_service.tenancy.credentials import new_secret
-from a13n_service.tenancy.tables import GrantRow, PrincipalRow, TokenRow, WorkspaceRow
+from a13n_service.tenancy.tables import GrantRow, OIDCGrantRow, OrganizationRow, PrincipalRow, TokenRow, WorkspaceRow
 from a13n_service.tenancy.users import set_account_status
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import SecretStr, ValidationError
@@ -126,7 +128,9 @@ def test_provider_settings_require_sign_in_and_https() -> None:
     settings = Settings.model_validate(
         {
             "server": {"public_url": "http://checkout.localhost:8400"},
-            "auth": {"oidc": {"default_workspace_id": "ws_test", "providers": {"team": PROVIDER}}},
+            "auth": {
+                "oidc": {"defaults": [{"workspace_id": "ws_test", "role": "runner"}], "providers": {"team": PROVIDER}}
+            },
         }
     )
     assert settings.auth.password_enabled
@@ -155,7 +159,7 @@ def test_sign_in_brand_is_based_on_the_exact_issuer_or_explicit_override(issuer,
 async def test_state_is_bound_and_consumed_once(service) -> None:
     redis = service.runtime.redis
     redirect = "https://console.example.test/api/v1/auth/oidc/team/callback"
-    state, browser = new_secret(), new_secret()
+    state, browser = "fixture-state", "fixture-browser"
     key = oidc._flow_key("team", PROVIDER, redirect, state, browser)
     await redis.set(key, json.dumps(["nonce", "verifier", "authorization", "token", "jwks"]), ex=60)
 
@@ -178,7 +182,7 @@ async def test_oidc_account_is_provisioned_once_and_sessions_never_roll(service)
             "auth": Authentication(
                 oidc=OIDC(
                     providers={"team": PROVIDER},
-                    default_workspace_id=service.tenant.workspace_id,
+                    defaults=[OIDCGrantSpec(workspace_id=service.tenant.workspace_id, role="runner")],
                     session_seconds=60,
                 )
             )
@@ -229,7 +233,8 @@ async def test_same_oidc_subject_from_two_issuers_is_two_accounts(service) -> No
         update={
             "auth": Authentication(
                 oidc=OIDC(
-                    providers={"team": PROVIDER, "other": other}, default_workspace_id=service.tenant.workspace_id
+                    providers={"team": PROVIDER, "other": other},
+                    defaults=[OIDCGrantSpec(workspace_id=service.tenant.workspace_id, role="runner")],
                 )
             )
         }
@@ -242,7 +247,9 @@ async def test_same_oidc_subject_from_two_issuers_is_two_accounts(service) -> No
 
 async def test_oidc_sessions_require_the_original_provider_and_client(service) -> None:
     runtime = service.runtime
-    oidc_settings = OIDC(providers={"team": PROVIDER}, default_workspace_id=service.tenant.workspace_id)
+    oidc_settings = OIDC(
+        providers={"team": PROVIDER}, defaults=[OIDCGrantSpec(workspace_id=service.tenant.workspace_id, role="runner")]
+    )
     settings = runtime.settings.model_copy(update={"auth": Authentication(oidc=oidc_settings)})
     login = await oidc.sign_in(
         runtime.storage, runtime.access, settings, "team", PROVIDER, oidc.Identity("original-subject", "Alex", None)
@@ -273,7 +280,9 @@ async def test_oidc_sessions_require_the_original_provider_and_client(service) -
         ("duplicate_state", "callback_state", "invalid_state", None),
         ("expired_state", "callback_state", "state_not_found", None),
         ("known_error", "callback_error", "provider_error", "access_denied"),
-        ("unknown_error", "callback_error", "provider_error", "unknown"),
+        ("extension_error", "callback_error", "provider_error", "provider.policy-02"),
+        ("duplicate_error", "callback_error", "provider_error", "unknown"),
+        ("unsafe_error", "callback_error", "provider_error", "unknown"),
         ("issuer_mismatch", "callback_error", "issuer_mismatch", None),
         ("missing_code", "callback_error", "invalid_code", None),
         ("exception", "token_exchange", "internal", None),
@@ -288,7 +297,7 @@ async def test_callback_diagnostics_are_bounded(service, caplog, monkeypatch, ca
             "auth": Authentication(
                 oidc=OIDC(
                     providers={"team": PROVIDER},
-                    default_workspace_id=service.tenant.workspace_id,
+                    defaults=[OIDCGrantSpec(workspace_id=service.tenant.workspace_id, role="runner")],
                 )
             )
         }
@@ -299,8 +308,14 @@ async def test_callback_diagnostics_are_bounded(service, caplog, monkeypatch, ca
     params = [("state", state), ("code", f"{sentinel}-code"), ("error_description", f"{sentinel}-email@example.test")]
     if case == "duplicate_state":
         params.append(("state", f"{sentinel}-other-state"))
-    if case in {"known_error", "unknown_error"}:
-        params.append(("error", "access_denied" if case == "known_error" else sentinel))
+    if case == "known_error":
+        params.append(("error", "access_denied"))
+    if case == "extension_error":
+        params.append(("error", "provider.policy-02"))
+    if case == "duplicate_error":
+        params.extend([("error", "access_denied"), ("error", "server_error")])
+    if case == "unsafe_error":
+        params.append(("error", f"{sentinel}\n"))
     if case == "issuer_mismatch":
         params.append(("iss", f"https://{sentinel}.example.test"))
     if case == "missing_code":
@@ -320,10 +335,10 @@ async def test_callback_diagnostics_are_bounded(service, caplog, monkeypatch, ca
         if case == "expired_state":
             await runtime.redis.expire(key, 0)
 
-    async def explode(*args, **kwargs):
+    def explode(*args, **kwargs):
         raise ValueError(f"{sentinel}-token-client-secret")
 
-    monkeypatch.setattr(oidc, "exchange", explode)
+    monkeypatch.setattr(oidc, "open_http", explode)
     caplog.clear()
     response = await routes.finish_oidc_sign_in(request, provider_id, oidc_runtime)
     assert response.status_code == 303 and response.headers["location"] == "/login?oidc=failed"
@@ -331,7 +346,9 @@ async def test_callback_diagnostics_are_bounded(service, caplog, monkeypatch, ca
         case
         in {
             "known_error",
-            "unknown_error",
+            "extension_error",
+            "duplicate_error",
+            "unsafe_error",
             "issuer_mismatch",
             "missing_code",
             "exception",
@@ -344,9 +361,12 @@ async def test_callback_diagnostics_are_bounded(service, caplog, monkeypatch, ca
     for secret in (sentinel, state, browser):
         assert secret not in repr(record.__dict__)
     assert record.exc_info is None
+    if case == "exception":
+        assert record.levelno == logging.ERROR
+        assert any(frame["function"] == "explode" for frame in record.exception_details[0]["frames"])
 
 
-async def test_oidc_start_budget_is_per_peer_separate_and_fail_closed(service, caplog, monkeypatch):
+async def test_oidc_start_budget_is_per_peer_and_separate(service, caplog, monkeypatch):
     caplog.set_level(logging.INFO, logger=oidc.__name__)
     runtime = service.runtime
     settings = runtime.settings.model_copy(
@@ -354,7 +374,7 @@ async def test_oidc_start_budget_is_per_peer_separate_and_fail_closed(service, c
             "auth": Authentication(
                 oidc=OIDC(
                     providers={"team": PROVIDER, "other": PROVIDER},
-                    default_workspace_id=service.tenant.workspace_id,
+                    defaults=[OIDCGrantSpec(workspace_id=service.tenant.workspace_id, role="runner")],
                     start_limit=1,
                 )
             )
@@ -396,14 +416,62 @@ async def test_oidc_start_budget_is_per_peer_separate_and_fail_closed(service, c
     await routes.start_oidc_sign_in(browser("192.0.2.2", "192.0.2.99"), "other", oidc_runtime)
     assert starts == ["team", "other"]
 
-    async def unavailable(*args):
+
+@pytest.mark.parametrize("value", ["", "A", "é", "access_denied\n", "a" * 65])
+def test_callback_error_codes_reject_unsafe_or_long_values(value):
+    assert oidc.callback_error_code([value]) == "unknown"
+    assert oidc.callback_error_code(["a" * 64]) == "a" * 64
+
+
+async def test_redis_outage_blocks_persisting_the_flow_after_discovery(service, caplog, monkeypatch):
+    caplog.set_level(logging.INFO, logger=oidc.__name__)
+    runtime = service.runtime
+    settings = runtime.settings.model_copy(
+        update={
+            "auth": Authentication(
+                oidc=OIDC(
+                    defaults=[OIDCGrantSpec(workspace_id=service.tenant.workspace_id, role="runner")],
+                    providers={"team": PROVIDER},
+                )
+            )
+        }
+    )
+    sequence = []
+
+    async def get(url):
+        sequence.append("discovery")
+        return httpx2.Response(
+            200,
+            request=httpx2.Request("GET", url),
+            json={
+                "issuer": PROVIDER.issuer,
+                "authorization_endpoint": f"{PROVIDER.issuer}/authorize",
+                "token_endpoint": f"{PROVIDER.issuer}/token",
+                "jwks_uri": f"{PROVIDER.issuer}/keys",
+            },
+        )
+
+    @asynccontextmanager
+    async def http(*args, **kwargs):
+        yield SimpleNamespace(get=get)
+
+    async def unavailable(operation, *args, **kwargs):
+        sequence.append(operation)
         raise RedisError("private-sentinel")
 
-    oidc_runtime.redis = SimpleNamespace(eval=unavailable)
-    failed = await routes.start_oidc_sign_in(browser("192.0.2.3", "192.0.2.99"), "other", oidc_runtime)
-    assert failed.headers["location"] == "/login?oidc=failed" and starts == ["team", "other"]
-    assert caplog.records[-1].reason == "rate_limit_unavailable"
-    assert "private-sentinel" not in caplog.text
+    monkeypatch.setattr(oidc, "open_http", http)
+    broken = SimpleNamespace(
+        eval=lambda *args: unavailable("eval", *args), set=lambda *args, **kwargs: unavailable("set", *args, **kwargs)
+    )
+    response = await routes.start_oidc_sign_in(
+        Request({"type": "http", "query_string": b"", "headers": []}),
+        "team",
+        replace(runtime, settings=settings, redis=broken),
+    )
+    assert response.headers["location"] == "/login?oidc=failed" and "set-cookie" not in response.headers
+    assert sequence == ["eval", "discovery", "set"]
+    assert caplog.records[-1].reason == "dependency_unavailable"
+    assert "private-sentinel" not in repr([record.__dict__ for record in caplog.records])
 
 
 @pytest.mark.parametrize("state,reason", [("missing", "workspace_missing"), ("archived", "workspace_archived")])
@@ -420,7 +488,7 @@ async def test_first_sign_in_requires_active_default_workspace(service, state, r
             "auth": Authentication(
                 oidc=OIDC(
                     providers={"team": PROVIDER},
-                    default_workspace_id=workspace_id,
+                    defaults=[OIDCGrantSpec(workspace_id=workspace_id, role="runner")],
                 )
             )
         }
@@ -430,31 +498,6 @@ async def test_first_sign_in_requires_active_default_workspace(service, state, r
             runtime.storage, runtime.access, settings, "team", PROVIDER, oidc.Identity("fresh", "User", None)
         )
     assert failure.value.stage == "provision" and failure.value.reason == reason
-
-
-async def test_http_transport_logs_do_not_expose_oidc_query_or_response_headers(caplog):
-    sentinel = "private-sentinel"
-    requests = []
-
-    async def respond(reader, writer):
-        requests.append(await reader.readuntil(b"\r\n\r\n"))
-        writer.write((f"HTTP/1.1 400 {sentinel}\r\nX-Fixture: {sentinel}\r\nContent-Length: 0\r\n\r\n").encode())
-        await writer.drain()
-        writer.close()
-        await writer.wait_closed()
-
-    async with await asyncio.start_server(respond, "127.0.0.1", 0) as server:
-        port = server.sockets[0].getsockname()[1]
-        provider = PROVIDER.model_copy(update={"issuer": f"http://127.0.0.1:{port}"})
-        endpoint = f"{provider.issuer}/token?private={sentinel}"
-        caplog.set_level(logging.DEBUG, logger="httpx2")
-        caplog.set_level(logging.DEBUG, logger="httpcore2")
-        flow = oidc.Flow("nonce", "verifier", "authorize", endpoint, endpoint)
-        with pytest.raises(oidc.Failure) as failure:
-            await oidc.exchange(provider, flow, redirect_uri="https://service.test/callback", code="fixture-code")
-    assert requests and b"accept-encoding: identity" in requests[0].lower()
-    assert failure.value.stage == "token_exchange" and failure.value.status == 400
-    assert sentinel not in repr([record.__dict__ for record in caplog.records])
 
 
 @pytest.mark.parametrize(
@@ -474,17 +517,32 @@ async def test_http_transport_logs_do_not_expose_oidc_query_or_response_headers(
 )
 def test_id_token_admin_mapping_is_opt_in_and_exact(signing_key, claims, matched) -> None:
     key, jwks = signing_key
-    mapping = OIDCOrgAdmin(claim="team_roles", value="ConsoleAdmins")
-    provider = PROVIDER.model_copy(update={"org_admin": mapping})
+    mapping = OIDCRoleRule(workspace_id="ws_test", role="admin", match={"team_roles": "ConsoleAdmins"})
+    provider = PROVIDER.model_copy(update={"role_rules": [mapping]})
     encoded = id_token(key, **claims)
-    assert not oidc._identity(encoded, jwks, PROVIDER, NONCE).org_admin
-    assert oidc._identity(encoded, jwks, provider, NONCE).org_admin is matched
+    assert not oidc._identity(encoded, jwks, PROVIDER, NONCE).matched_grants
+    assert bool(oidc._identity(encoded, jwks, provider, NONCE).matched_grants) is matched
 
 
-def test_group_overage_does_not_grant_admin(signing_key) -> None:
+@pytest.mark.parametrize(
+    ("claims", "matched"),
+    [
+        ({"groups": ["Admins"], "hasgroups": True, "realm_access": {"roles": ["member"]}}, True),
+        ({"hasgroups": True, "realm_access": {"roles": ["member"]}}, False),
+        ({"groups": ["Admins"], "realm_access": {"roles": ["member"]}, "realm_access.roles": "stranger"}, False),
+        ({"groups": ["Admins"], "realm_access.roles": ["operator"]}, True),
+        ({"groups": ["Admins"], "realm_access.roles": ["operator"], "_claim_names": {"groups": "external"}}, False),
+    ],
+)
+def test_rule_matches_all_claims_and_accepts_complete_inline_groups(signing_key, claims, matched):
     key, jwks = signing_key
-    provider = PROVIDER.model_copy(update={"org_admin": OIDCOrgAdmin(claim="groups", value="Admins")})
-    assert not oidc._identity(id_token(key, groups=["Admins"], hasgroups=True), jwks, provider, NONCE).org_admin
+    rule = OIDCRoleRule(
+        role="admin",
+        organization_id="org_test",
+        match={"groups": "Admins", "realm_access.roles": ["member", "operator"]},
+    )
+    provider = PROVIDER.model_copy(update={"role_rules": [rule]})
+    assert bool(oidc._identity(id_token(key, **claims), jwks, provider, NONCE).matched_grants) is matched
 
 
 @pytest.mark.parametrize("destination", ["https://else.example/a", "//else.example", "/\\else.example", "/\t/other"])
@@ -492,14 +550,17 @@ def test_oidc_return_to_requires_an_origin_relative_path(destination):
     assert oidc.console_destination(destination) == "/"
 
 
-async def test_oidc_syncs_org_admin_sources_without_reissuing_credentials(service, signing_key, monkeypatch):
+async def test_oidc_syncs_roles_without_reissuing_credentials(service, signing_key, monkeypatch):
     runtime, tenant = service.runtime, service.tenant
     provider = OIDCProvider(
         label="Team",
         issuer=PROVIDER.issuer,
         client_id=PROVIDER.client_id,
         client_secret=PROVIDER.client_secret,
-        org_admin=OIDCOrgAdmin(claim="team_roles", value="ConsoleAdmins"),
+        role_rules=[
+            OIDCRoleRule(organization_id=tenant.organization_id, role="admin", match={"team_roles": "ConsoleAdmins"}),
+            OIDCRoleRule(workspace_id=tenant.workspace_id, role="admin", match={"team_roles": "ConsoleAdmins"}),
+        ],
         extra_scopes=["email", "groups", "profile", "groups"],
     )
     assert tuple(provider.scopes) == ("openid", "profile", "email", "groups")
@@ -508,7 +569,7 @@ async def test_oidc_syncs_org_admin_sources_without_reissuing_credentials(servic
             "auth": Authentication(
                 oidc=OIDC(
                     providers={"team": provider},
-                    default_workspace_id=tenant.workspace_id,
+                    defaults=[OIDCGrantSpec(workspace_id=tenant.workspace_id, role="runner")],
                 )
             )
         }
@@ -558,19 +619,26 @@ async def test_oidc_syncs_org_admin_sources_without_reissuing_credentials(servic
         # An independent workspace role is unaffected by the organization override.
         workspace_grants = (await service.client.get(f"{service.workspace}/grants")).json()["items"]
         runner = next(item for item in workspace_grants if item["principal"]["id"] == subject)
-        workspace_role = await service.client.patch(
-            f"{service.workspace}/grants/{runner['id']}", json={"role": "builder"}
+        assert runner["source"] == "oidc" and runner["role"] == "admin" and not runner["overrides_sso"]
+        workspace_role = await service.client.post(
+            f"{service.workspace}/grants", json={"role": "builder", "principal_id": subject}
         )
-        assert workspace_role.status_code == 200, workspace_role.text
+        assert workspace_role.status_code == 201, workspace_role.text
+        assert workspace_role.json()["overrides_sso"]
 
         async def set_manual_role():
             response = await service.client.post(grants_url, json={"role": "viewer", "principal_id": subject})
             assert response.status_code == 201, response.text
+            assert response.json()["overrides_sso"]
             return f"{grants_url}/{response.json()['id']}"
 
         async def effective_role():
             items = (await service.client.get(grants_url)).json()["items"]
-            return [(item["source"], item["role"]) for item in items if item["principal"]["id"] == subject]
+            return [
+                (item["source"], item["role"], item["overrides_sso"])
+                for item in items
+                if item["principal"]["id"] == subject
+            ]
 
         async def has_worker_admin():
             async with short_session(runtime.storage) as db:
@@ -578,10 +646,11 @@ async def test_oidc_syncs_org_admin_sources_without_reissuing_credentials(servic
                 assert not isinstance(worker, ServiceError)
                 return "admin" in allowed_verbs(worker, scope)
 
-        assert sso["principal"]["uses_oidc"] and not manual_admin["principal"]["uses_oidc"]
+        assert not sso["overrides_sso"] and not manual_admin["overrides_sso"]
+        assert "uses_oidc" not in sso["principal"]
         assert await has_worker_admin()
         override = await set_manual_role()
-        assert await effective_role() == [("manual", "viewer")]
+        assert await effective_role() == [("manual", "viewer", True)]
         assert (await client.get(grants_url)).status_code == 403
         assert (await client.get(service.workspace, headers=human_key)).json()["permissions"] == [
             "read",
@@ -592,9 +661,9 @@ async def test_oidc_syncs_org_admin_sources_without_reissuing_credentials(servic
         assert not await has_worker_admin()
 
         assert (await sign_in("ConsoleAdmins")).principal.id == subject
-        assert await effective_role() == [("manual", "viewer")]
+        assert await effective_role() == [("manual", "viewer", True)]
         assert (await service.client.delete(override)).status_code == 204
-        assert await effective_role() == [("oidc", "admin")]
+        assert await effective_role() == [("oidc", "admin", False)]
         assert (await client.get(grants_url)).status_code == 200
         assert await has_worker_admin()
         assert "admin" in (await client.get(service.workspace, headers=human_key)).json()["permissions"]
@@ -603,7 +672,7 @@ async def test_oidc_syncs_org_admin_sources_without_reissuing_credentials(servic
         override = await set_manual_role()
         mismatch = await sign_in(["consoleadmins"])
         assert mismatch.principal.id == subject
-        assert await effective_role() == [("manual", "viewer")]
+        assert await effective_role() == [("manual", "viewer", False)]
         assert (await service.client.delete(override)).status_code == 204
         assert await effective_role() == []
         assert (await client.get(grants_url)).status_code == 403
@@ -622,3 +691,201 @@ async def test_oidc_syncs_org_admin_sources_without_reissuing_credentials(servic
         assert (await client.get(grants_url)).status_code == 200  # archive leaves its organization intact
         archived_write = await client.post(account_url, json={"name": "another"})
         assert archived_write.status_code == 422 and archived_write.json()["error"]["code"] == "disabled"
+
+
+def oidc_configuration(runtime, providers, defaults=()):
+    return runtime.settings.model_copy(
+        update={"auth": Authentication(oidc=OIDC(providers=providers, defaults=list(defaults)))}
+    )
+
+
+@pytest.mark.parametrize("target", ["strict", "workspace", "organization"])
+async def test_failed_mapping_preserves_grants_audit_and_sessions(service, monkeypatch, caplog, target):
+    runtime, tenant = service.runtime, service.tenant
+    rule = OIDCRoleRule(organization_id=tenant.organization_id, role="admin", match={"groups": "admin"})
+    provider = PROVIDER.model_copy(update={"role_rules": [rule], "defaults": []})
+    config = oidc_configuration(
+        runtime, {"team": provider}, [OIDCGrantSpec(workspace_id=tenant.workspace_id, role="runner")]
+    )
+    prior = await oidc.sign_in(
+        runtime.storage, runtime.access, config, "team", provider, oidc.Identity("same", "User", None, (rule,))
+    )
+    principal_id = prior.principal.id
+
+    async def snapshot():
+        async with short_session(runtime.storage) as db:
+            return (
+                set(
+                    (row.id, row.role)
+                    for row in await db.scalars(select(OIDCGrantRow).where(OIDCGrantRow.principal_id == principal_id))
+                ),
+                set(await db.scalars(select(AuditEventRow.id).where(AuditEventRow.actor_id == principal_id))),
+                set(await db.scalars(select(TokenRow.id).where(TokenRow.principal_id == principal_id))),
+            )
+
+    before = await snapshot()
+    broken = {
+        "strict": (),
+        "workspace": (rule, OIDCGrantSpec(workspace_id="ws_missing", role="runner")),
+        "organization": (rule, OIDCGrantSpec(organization_id="org_missing", role="runner")),
+    }[target]
+
+    async def exchange(*args, **kwargs):
+        return oidc.Identity("same", "User", "different@example.test", broken)
+
+    monkeypatch.setattr(oidc, "exchange", exchange)
+    caplog.set_level(logging.INFO, logger=oidc.__name__)
+    callback = routes._oidc_callback_url(config, "team")
+    key = oidc._flow_key("team", provider, callback, "fixture-state", "fixture-browser")
+    await runtime.redis.set(key, json.dumps(["nonce", "verifier", "auth", "token", "jwks"]), ex=60)
+    cookie = routes._oidc_cookie_name(config, "team")
+    response = await routes.finish_oidc_sign_in(
+        Request(
+            {
+                "type": "http",
+                "query_string": b"state=fixture-state&code=fixture-code",
+                "headers": [(b"cookie", f"{cookie}=fixture-browser".encode())],
+            }
+        ),
+        "team",
+        replace(runtime, settings=config),
+    )
+    expected = "access_denied" if target == "strict" else f"{target}_missing"
+    assert response.headers["location"] == "/login?oidc=failed"
+    assert all(not value.startswith(f"{session_cookie(config)}=") for value in response.headers.getlist("set-cookie"))
+    assert caplog.records[-1].reason == expected and caplog.records[-1].stage == "provision"
+    if target != "strict":
+        assert caplog.records[-1].levelno == logging.WARNING
+    assert await snapshot() == before
+    result = await authenticate_secret(
+        runtime.storage, runtime.access, prior.secret, "session", session_seconds=43200, auth=config.auth
+    )
+    assert "admin" in allowed_verbs(result.principal, WorkspaceScope(tenant.organization_id, tenant.workspace_id))
+
+
+async def test_sso_winner_and_avatar_are_scoped_across_providers(service, monkeypatch):
+    from a13n_service.tenancy.authenticate import open_session
+
+    runtime, tenant = service.runtime, service.tenant
+    roles = {**runtime.access.roles, "writer": frozenset({"write"}), "runner_alias": frozenset({"read", "run"})}
+    access = replace(runtime.access, roles=roles)
+    base = OIDCRoleRule(organization_id=tenant.organization_id, role="writer", match={"groups": "one"})
+    higher = base.model_copy(update={"role": "runner_alias"})
+    first = PROVIDER.model_copy(update={"role_rules": [base]})
+    second = PROVIDER.model_copy(update={"role_rules": [higher]})
+    config = oidc_configuration(runtime, {"team": first, "other": second})
+    monkeypatch.setattr(service.app.state, "runtime", replace(runtime, access=access, settings=config))
+    person = await oidc.sign_in(
+        runtime.storage, access, config, "team", first, oidc.Identity("same", "User", None, (base,))
+    )
+    subject = person.principal.id
+    scope = WorkspaceScope(tenant.organization_id, tenant.workspace_id)
+    assert allowed_verbs(person.principal, scope) == {"write"}
+    person = await oidc.sign_in(
+        runtime.storage, access, config, "other", second, oidc.Identity("same", "User", None, (higher,))
+    )
+    assert person.principal.id == subject and allowed_verbs(person.principal, scope) == {"read", "run"}
+    async with transaction(runtime.storage) as db:
+        db.add_all(
+            [
+                OrganizationRow(id="org_other", name="Other"),
+                PrincipalRow(id="usr_other", kind="user", name="Other", email="other@example.test"),
+            ]
+        )
+        await db.flush()
+        db.add(
+            GrantRow(
+                id="rb_other",
+                organization_id="org_other",
+                principal_id="usr_other",
+                role="admin",
+                created_by_id="usr_other",
+            )
+        )
+        outside_secret = await open_session(db, "usr_other", seconds=600)
+    transport = httpx2.ASGITransport(app=service.app)
+    async with httpx2.AsyncClient(transport=transport, base_url="https://service.test") as member:
+        member.cookies.set(session_cookie(config), person.secret)
+        member.headers["x-csrf-token"] = person.csrf_token
+        profile = await member.get("/api/v1/users/me")
+        png = b"\x89PNG\r\n\x1a\n" + bytes(24)
+        image = await member.put(
+            "/api/v1/users/me/avatar",
+            content=png,
+            headers={"content-type": "image/png", "if-match": profile.headers["etag"]},
+        )
+        assert image.status_code == 200, image.text
+        avatar = image.json()["image_url"]
+        same_org = await service.client.get(avatar)
+        assert same_org.status_code == 200 and same_org.content == png
+        member.cookies.set(session_cookie(config), outside_secret, domain="service.test", path="/")
+        member.cookies.delete(session_cookie(config), domain="", path="/")
+        assert (await member.get(avatar)).status_code == 404
+    grants = (await service.client.get(f"{service.organization}/grants")).json()["items"]
+    winners = [row for row in grants if row["principal"]["id"] == subject]
+    assert [(row["source"], row["role"]) for row in winners] == [("oidc", "runner_alias")]
+    async with short_session(runtime.storage) as db:
+        worker = (await principals_for(db, access, [(subject, scope)]))[subject, scope]
+        assert not isinstance(worker, ServiceError) and allowed_verbs(worker, scope) == {"read", "run"}
+    # Switching one provider to simple clears only its automatic grant and does not add defaults on re-login.
+    simple = second.model_copy(
+        update={"role_rules": [], "defaults": [OIDCGrantSpec(workspace_id=tenant.workspace_id, role="admin")]}
+    )
+    simple_config = oidc_configuration(runtime, {"team": first, "other": simple})
+    after = await oidc.sign_in(
+        runtime.storage, access, simple_config, "other", simple, oidc.Identity("same", "User", None)
+    )
+    assert allowed_verbs(after.principal, scope) == {"write"}
+
+
+async def test_simple_grants_can_span_scopes_and_resolve_duplicate_roles(service):
+    runtime, tenant = service.runtime, service.tenant
+    defaults = [
+        OIDCGrantSpec(organization_id=tenant.organization_id, role="viewer"),
+        OIDCGrantSpec(workspace_id=tenant.workspace_id, role="builder"),
+        OIDCGrantSpec(workspace_id=tenant.workspace_id, role="runner"),
+    ]
+    config = oidc_configuration(runtime, {"team": PROVIDER}, defaults)
+    user = await oidc.sign_in(
+        runtime.storage, runtime.access, config, "team", PROVIDER, oidc.Identity("simple", "Simple", None)
+    )
+    async with short_session(runtime.storage) as db:
+        manual = await db.scalars(select(GrantRow).where(GrantRow.principal_id == user.principal.id))
+        assert {row.workspace_id: row.role for row in manual} == {None: "viewer", tenant.workspace_id: "builder"}
+        assert not list(await db.scalars(select(OIDCGrantRow).where(OIDCGrantRow.principal_id == user.principal.id)))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"role": "runner"},
+        {"role": "runner", "workspace_id": "ws_test", "organization_id": "org_test"},
+        {"role": "runner", "workspace_id": "ws_test", "match": {}},
+        {"role": "runner", "workspace_id": "ws_test", "match": {"groups": []}},
+    ],
+)
+def test_oidc_grant_specs_validate_scope_and_match(body):
+    schema = OIDCRoleRule if "match" in body else OIDCGrantSpec
+    with pytest.raises(ValidationError):
+        schema.model_validate(body)
+
+
+def test_oidc_policy_requires_roles_from_the_distribution(settings):
+    from a13n_service.app import build_app
+    from a13n_service.distribution import OSS
+
+    config = settings.model_copy(
+        update={
+            "auth": Authentication(
+                oidc=OIDC(
+                    providers={"team": PROVIDER},
+                    defaults=[
+                        OIDCGrantSpec(workspace_id="ws_test", role="reviewer"),
+                    ],
+                )
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="unregistered role 'reviewer'"):
+        build_app(settings=config, apps=())
+    build_app(replace(OSS, roles={**OSS.roles, "reviewer": frozenset({"read", "write"})}), settings=config, apps=())

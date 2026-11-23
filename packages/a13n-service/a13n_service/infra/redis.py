@@ -26,16 +26,12 @@ return {count, redis.call('TTL', KEYS[1])}
 """
 
 
-async def rate_limit(
-    client: Redis, identity: str, *, limit: int, window_seconds: int, fail_closed: bool = False
-) -> None:
-    """Refuse `identity` past `limit` calls per window, optionally requiring Redis to enforce the budget."""
+async def rate_limit(client: Redis, identity: str, *, limit: int, window_seconds: int) -> None:
+    """Refuse `identity` past `limit` calls per window when Redis is available."""
     key = "a13n:rate:" + hashlib.sha256(identity.encode()).hexdigest()
     try:
         count, remaining = await client.eval(_RATE_LIMIT, 1, key, window_seconds)
     except RedisError as error:
-        if fail_closed:
-            raise ServiceError("unavailable", "Rate limit unavailable") from None
         logger.warning(
             "Rate limit not enforced: Redis unavailable",
             extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},

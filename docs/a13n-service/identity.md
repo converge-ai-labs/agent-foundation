@@ -138,7 +138,7 @@ The HTTPS cookie is `__Host-a13n_session` with `Secure`, `HttpOnly` and `SameSit
 
 ```json
 {
-  "default_workspace_id": "ws_replace_with_your_workspace_id",
+  "defaults": [{"workspace_id": "ws_replace_with_your_workspace_id", "role": "runner"}],
   "providers": {
     "team": {
       "label": "Team Identity",
@@ -150,13 +150,13 @@ The HTTPS cookie is `__Host-a13n_session` with `Secure`, `HttpOnly` and `SameSit
 }
 ```
 
-`A13N_AUTH__OIDC` replaces the entire `[auth.oidc]` value from `service.toml`. Include every provider and all non-default OIDC settings in the JSON. Other `[auth]` fields still come from their own environment variables or TOML. If you configure OIDC in TOML instead, use `[auth.oidc]` for the workspace ID and `[auth.oidc.providers.team]` for the provider.
+`A13N_AUTH__OIDC` replaces the entire `[auth.oidc]` value from `service.toml`. Include every provider and all non-default OIDC settings in the JSON. Other `[auth]` fields still come from their own environment variables or TOML. If you configure OIDC in TOML instead, use `defaults` under `[auth.oidc]` for the initial grants and `[auth.oidc.providers.team]` for the provider.
 
 Add more `[auth.oidc.providers.<id>]` tables to show more sign-in buttons. A provider must support Discovery, authorization code with PKCE S256, signed ID tokens (`RS256` or `ES256`), and the `openid profile email` scopes. If the provider requires `client_secret_post`, set `token_endpoint_auth_method = "client_secret_post"`; the default uses HTTP Basic. Console shows the bundled Google mark for `https://accounts.google.com` and the Microsoft mark for `https://login.microsoftonline.com/<tenant UUID>/v2.0`. Other issuers get a shield. Set `brand` to `"google"`, `"microsoft"`, or `"generic"` to override the mark, for example when a trusted broker always redirects to one provider. Choose distinct labels that users will recognize.
 
 Service accepts `aud` as the configured client ID or an array containing only that ID. If present, `azp` must match that client ID as well. ID tokens allow 30 seconds of clock skew for future `iat` and `nbf`, and for expiry (`exp`). Allow Service outbound access to the issuer's Discovery endpoint and the discovered token and JWKS endpoints. These requests use HTTPS outside loopback development, do not follow redirects, and require `Content-Encoding: identity` (or no content encoding). The browser must reach the discovered authorization endpoint. Configure any reverse proxy access log to omit the callback query string.
 
-OIDC start requests have a separate Redis budget per client address across providers: `start_limit` is 30 and `start_window_seconds` is 60 by default, both under `auth.oidc`. Clients behind one NAT address share the budget. Behind a reverse proxy, configure `server.trusted_proxies` to count the forwarded client address. Service does not start Discovery when it cannot enforce this budget.
+OIDC start requests have a separate Redis budget per client address across providers: `start_limit` is 30 and `start_window_seconds` is 60 by default, both under `auth.oidc`. Clients behind one NAT address share the budget. Behind a reverse proxy, configure `server.trusted_proxies` to count the forwarded client address. When Redis is unavailable, Service skips the rate-limit check but cannot start a browser login without saving the one-use flow.
 
 Any user your provider lets authorize this client can sign in. Configure application access at the IdP before publishing a button. For Google Workspace, create the web client in a project owned by your organization and set **Google Auth Platform → Audience → Internal** to limit admission to that organization ([Google's audience guide](https://support.google.com/cloud/answer/15549945)). An External app can admit users outside your organization; a domain-looking email address is not an admission rule in Service.
 
@@ -164,15 +164,15 @@ For Microsoft Entra workforce tenants, `email` is a reported address and `xms_ed
 
 To limit app access in Entra, [require assignment and assign the intended users or groups](https://learn.microsoft.com/en-us/entra/identity-platform/howto-restrict-your-app-to-a-set-of-users). Entra exempts Global Administrators from this requirement.
 
-The first sign-in creates a separate Service user with `runner` access to the designated workspace. It keeps any verified provider email as display metadata, even if a password account has the same address. Use [members and grants](#members-and-grants) to change access. Returning sign-ins preserve existing grants and do not re-add a removed role.
+For a provider without rules, the first sign-in creates a separate Service user and writes the configured defaults as manual grants. It keeps any verified provider email as display metadata, even if a password account has the same address. Use [members and grants](#members-and-grants) to change access. Returning sign-ins preserve existing grants and do not re-add a removed role.
 
-### Map an identity provider role to organization Admin
+### Synchronize roles from ID token claims
 
-Add `org_admin` to a provider in the `A13N_AUTH__OIDC` JSON. For example, this provider requests the `groups` scope and maps the `console-admins` group. Use a role or group claim managed by your identity provider that users cannot edit.
+Add `role_rules` to a provider to synchronize roles at organization or workspace scope. Each grant names exactly one `organization_id` or `workspace_id` and a registered role. This example gives the `console-admins` group organization Admin and grants other users Runner in the default workspace. Use claims that your identity provider controls and users cannot edit.
 
 ```json
 {
-  "default_workspace_id": "ws_replace_with_your_workspace_id",
+  "defaults": [{"workspace_id": "ws_replace_with_your_workspace_id", "role": "runner"}],
   "providers": {
     "team": {
       "label": "Team Identity",
@@ -180,19 +180,21 @@ Add `org_admin` to a provider in the `A13N_AUTH__OIDC` JSON. For example, this p
       "client_id": "a13n-console",
       "client_secret": "replace-at-deploy-time",
       "extra_scopes": ["groups"],
-      "org_admin": {"claim": "groups", "value": "console-admins"}
+      "role_rules": [
+        {"match": {"groups": "console-admins"}, "organization_id": "org_replace_with_your_org_id", "role": "admin"}
+      ]
     }
   }
 }
 ```
 
-After a successful sign-in, Service reads the configured top-level claim from the validated ID token. A string or an entry in an array of strings must match exactly, including case. Missing claims, malformed values, and distributed claims such as Entra group overage count as no match. Extra scopes are added to `openid profile email`; configure the provider to include the claim in its ID token.
+All claims in a rule must match. Each claim accepts one string or a list of alternatives. Service checks an exact top-level key first, then tries a dotted path such as `realm_access.roles`. A match is case-sensitive and accepts a string or a complete array of strings. Missing, malformed, or distributed claims do not match. Request any extra scopes the provider needs and configure it to include the claims in the ID token.
 
-A match makes Admin the SSO default in the organization that owns the default workspace. A later successful sign-in without a match removes that provider’s default. In **Organization → Members → Change role**, choose **Set role manually** to override the default for that organization. Choose **Use SSO default** and select **Restore SSO default** to remove the override. The most recent synchronized default applies immediately; if none exists, the user has no organization-level role. Workspace roles remain in effect. Keep an active administrator with a manual grant for recovery.
+With rules enabled, each successful sign-in synchronizes the provider's grants: matching rules take precedence and defaults are used only when no rule matches. Omit a provider's `defaults` to inherit the global defaults, or use `defaults: []` to disable fallback. With no match and no fallback, sign-in is refused and the last synchronized grants remain unchanged. Each provider needs effective defaults or at least one rule. A selected organization or workspace that does not exist also stops sign-in without changing grants. A first sign-in cannot grant access to an archived workspace.
 
-Role changes are picked up on sign-in, not pushed from the provider. To retire a mapping, remove `org_admin` and keep the provider enabled so its grants clear as users sign in. Removing the entire provider stops sign-in through it; it does not clear its existing grants. Disable the user in Service who must lose access immediately.
+In the organization or workspace **Members → Change role** dialog, choose **Set role manually** to override SSO at that scope. Choose **Use SSO default → Restore SSO default** to clear the override and apply the latest synchronized role immediately. A manual grant with no SSO default keeps the usual change and remove actions. Keep an active manually granted organization administrator for recovery.
 
-An existing browser session and a user’s workspace API key use the user’s current roles on their next authorized request. A service-account key uses its own service account’s roles; role changes for the person who issued it do not alter that key’s access.
+Existing browser sessions, user API keys, and workers use updated roles on their next authorization check. Service-account keys follow their own grants. To retire synchronized roles, remove all of the provider's rules and retain effective defaults; its old synchronized grants clear as users sign in again. Removing the provider entirely leaves its existing grants in place.
 
 ### Switch to OIDC-only sign-in
 

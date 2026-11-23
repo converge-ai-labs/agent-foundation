@@ -11092,6 +11092,12 @@
             "title": "Organization Id",
             "type": "string"
           },
+          "overrides_sso": {
+            "default": false,
+            "description": "The manual grant overrides an SSO default at this scope.",
+            "title": "Overrides Sso",
+            "type": "boolean"
+          },
           "principal": {
             "$ref": "#/components/schemas/PrincipalSummary"
           },
@@ -19096,11 +19102,6 @@
           "status": {
             "title": "Status",
             "type": "string"
-          },
-          "uses_oidc": {
-            "default": false,
-            "title": "Uses Oidc",
-            "type": "boolean"
           }
         },
         "required": [

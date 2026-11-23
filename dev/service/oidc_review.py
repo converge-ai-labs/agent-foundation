@@ -115,9 +115,9 @@ def write_dex(directory: Path, issuer: str, origin: str) -> Path:
     return config
 
 
-def oidc_settings(issuer: str, workspace_id: str, phase: str) -> str:
+def oidc_settings(issuer: str, organization_id: str, workspace_id: str, phase: str) -> str:
     password_enabled = phase != "recovery"  # Exercise env precedence in both directions.
-    result = f"\n[auth]\npassword_enabled = {str(password_enabled).lower()}\n[auth.oidc]\ndefault_workspace_id = {json.dumps(workspace_id)}\nsession_seconds = 900\n"
+    result = f"\n[auth]\npassword_enabled = {str(password_enabled).lower()}\n[auth.oidc]\ndefaults = [{{ workspace_id = {json.dumps(workspace_id)}, role = 'runner' }}]\nsession_seconds = 900\n"
     providers = {name: (label, issuer) for name, label in DEX_CLIENTS.items()}
     if phase == "mixed":
         # Brand rendering only: these issuers are not contacted in the browser flow.
@@ -131,7 +131,15 @@ def oidc_settings(issuer: str, workspace_id: str, phase: str) -> str:
         )
         if name == "team" and phase in {"mapped", "oidc-only", "single"}:
             group = "other-group" if phase == "single" else "console-admins"
-            result += f"extra_scopes = ['groups']\norg_admin = {{claim = 'groups', value = '{group}'}}\n"
+            targets = [
+                {"organization_id": organization_id, "role": "admin"},
+                {"workspace_id": workspace_id, "role": "admin"},
+            ]
+            result += "extra_scopes = ['groups']\n"
+            for target in targets:
+                result += f"[[auth.oidc.providers.{name}.role_rules]]\n"
+                result += "".join(f"{key} = {json.dumps(value)}\n" for key, value in target.items())
+                result += f"match = {{ groups = {json.dumps(group)} }}\n"
 
     return result
 
@@ -181,7 +189,7 @@ def run(directory: Path, *, manual: bool) -> None:
         }
         (directory / "fixture.json").write_text(json.dumps(fixture))
         for phase in ("mixed", "mapped", "oidc-only", "single", "recovery"):
-            config.write_text(base + oidc_settings(issuer, workspace, phase))
+            config.write_text(base + oidc_settings(issuer, org, workspace, phase))
             override = None if phase in {"mixed", "mapped"} else phase == "recovery"
             with service(directory, config, port, password_enabled=override):
                 if manual:

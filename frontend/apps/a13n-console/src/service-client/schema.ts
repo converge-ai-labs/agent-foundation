@@ -9511,6 +9511,12 @@ export interface components {
       id: string;
       /** Organization Id */
       organization_id: string;
+      /**
+       * Overrides Sso
+       * @description The manual grant overrides an SSO default at this scope.
+       * @default false
+       */
+      overrides_sso?: boolean;
       principal: components["schemas"]["PrincipalSummary"];
       /** Role */
       role: string;
@@ -12183,11 +12189,6 @@ export interface components {
       oidc_email?: string | null;
       /** Status */
       status: string;
-      /**
-       * Uses Oidc
-       * @default false
-       */
-      uses_oidc?: boolean;
     };
     /** ProcessStatusProjection */
     ProcessStatusProjection: {

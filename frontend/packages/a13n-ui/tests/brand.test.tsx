@@ -102,7 +102,12 @@ it.each(["google", "microsoft"])(
     );
     const icon = container.querySelector("img")!;
     expect(icon.getAttribute("src")).toBe(brands[identity].icon);
-    expect(new URL(icon.src).origin).toBe(location.origin);
+    const url = new URL(icon.src);
+    expect(
+      /^data:image\/svg\+xml[;,]/.test(icon.src) ||
+        (["http:", "https:"].includes(url.protocol) &&
+          url.origin === location.origin),
+    ).toBe(true);
     expect(icon.alt).toBe("");
     fireEvent.error(icon);
     expect(container.querySelector("img")).toBeNull();

@@ -43,7 +43,6 @@ class PrincipalSummary(_View):
     name: str
     email: str | None
     oidc_email: str | None = None
-    uses_oidc: bool = False
     status: str
     # A user's profile image; it changes whenever the image does.
     image_url: str | None
@@ -103,6 +102,7 @@ class GrantView(_View):
     principal: PrincipalSummary
     role: str
     source: Literal["manual", "oidc"] = "manual"
+    overrides_sso: bool = Field(default=False, description="The manual grant overrides an SSO default at this scope.")
     created_by_id: str
     created_at: datetime
 

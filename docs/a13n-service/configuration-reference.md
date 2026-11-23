@@ -86,7 +86,7 @@ The tables are generated from `Settings`. Contributors updating those definition
 | -------------------------------- | ----------------------------------------------------- | ----------------- | --------------------------------------------- |
 | `auth.password_enabled`          | `A13N_AUTH__PASSWORD_ENABLED`                         | boolean           | default=true                                  |
 | `auth.oidc.providers`            | `A13N_AUTH__OIDC` (JSON field `providers`)            | object            | —                                             |
-| `auth.oidc.default_workspace_id` | `A13N_AUTH__OIDC` (JSON field `default_workspace_id`) | string or null    | minLength=1; maxLength=72; default=null       |
+| `auth.oidc.defaults`             | `A13N_AUTH__OIDC` (JSON field `defaults`)             | array of object   | —                                             |
 | `auth.oidc.session_seconds`      | `A13N_AUTH__OIDC` (JSON field `session_seconds`)      | integer           | minimum=60; maximum=604800; default=43200     |
 | `auth.oidc.start_limit`          | `A13N_AUTH__OIDC` (JSON field `start_limit`)          | integer           | minimum=1; maximum=1000; default=30           |
 | `auth.oidc.start_window_seconds` | `A13N_AUTH__OIDC` (JSON field `start_window_seconds`) | integer           | minimum=1; maximum=3600; default=60           |

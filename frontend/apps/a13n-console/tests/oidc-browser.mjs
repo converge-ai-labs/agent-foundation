@@ -66,13 +66,14 @@ async function signInWithDex(page, provider = "Team Identity") {
 try {
   if (phase === "mixed") {
     const admin = await opened();
-    const externalImages = [];
+    const externalRequests = [];
     admin.page.on("request", (request) => {
+      const url = new URL(request.url());
       if (
-        request.resourceType() === "image" &&
-        new URL(request.url()).origin !== config.origin
+        ["http:", "https:"].includes(url.protocol) &&
+        url.origin !== config.origin
       ) {
-        externalImages.push(request.url());
+        externalRequests.push(request.url());
       }
     });
     await admin.page.reload();
@@ -85,15 +86,16 @@ try {
         .getByRole("link", { name: `Sign in with ${brand}` })
         .locator("img");
       assert.ok(
-        await image.evaluate(async (img, name) => {
+        await image.evaluate(async (img) => {
           await img.decode();
           const source = new URL(img.currentSrc);
           return (
-            source.origin === location.origin &&
-            source.pathname.startsWith(`/assets/${name}-`) &&
+            (/^data:image\/svg\+xml[;,]/.test(img.currentSrc) ||
+              (["http:", "https:"].includes(source.protocol) &&
+                source.origin === location.origin)) &&
             img.alt === ""
           );
-        }, brand.toLowerCase()),
+        }),
       );
     }
     assert.equal(
@@ -119,15 +121,15 @@ try {
     assert.ok(await keyboardFocused(microsoft));
     await admin.page.locator("h1").click();
     await screenshot(admin.page, "mixed-sign-in");
-    assert.deepEqual(externalImages, []);
+    assert.deepEqual(externalRequests, []);
 
     const retry = await opened();
-    await retry.page.route(`${config.origin}/assets/google-*.svg`, (route) =>
-      route.abort(),
-    );
-    await retry.page.reload();
     const degraded = retry.page.getByRole("link", {
       name: "Sign in with Google",
+    });
+    // Trigger a real decode error regardless of whether Vite inlines the original SVG.
+    await degraded.locator("img").evaluate((img) => {
+      img.src = "data:image/svg+xml,invalid";
     });
     await degraded.locator('span[aria-hidden="true"] svg.size-5').waitFor();
     assert.equal(await degraded.locator("img").count(), 0);
@@ -230,16 +232,21 @@ try {
     await chosen.getByRole("button", { name: "Member actions" }).click();
     await admin.page.getByRole("menuitem", { name: "Change role" }).click();
     const editor = admin.page.getByRole("dialog", { name: "Change role" });
+    assert.equal(
+      await editor.getByRole("combobox", { name: "Role source" }).count(),
+      0,
+    );
     await chooseRole(editor, "Builder");
     await editor.getByRole("button", { name: "Save" }).click();
     await chosen.getByText("Builder", { exact: true }).waitFor();
     await chosen.getByRole("button", { name: "Member actions" }).click();
-    await admin.page.getByRole("menuitem", { name: "Change role" }).click();
-    await editor.getByRole("combobox", { name: "Role source" }).click();
     await admin.page
-      .getByRole("option", { name: "Use SSO default", exact: true })
+      .getByRole("menuitem", { name: "Remove", exact: true })
       .click();
-    await editor.getByRole("button", { name: "Restore SSO default" }).click();
+    await admin.page
+      .getByRole("dialog", { name: "Remove member" })
+      .getByRole("button", { name: "Remove member" })
+      .click();
     await chosen.waitFor({ state: "detached" });
     await addRole("Admin", true);
 
@@ -317,6 +324,15 @@ try {
       assert.equal((await remote.context.request.get(grants)).status(), 200);
     }
     await member.getByText("Manual", { exact: true }).waitFor();
+    await member.getByRole("button", { name: "Member actions" }).click();
+    await local.page.getByRole("menuitem", { name: "Change role" }).waitFor();
+    assert.equal(
+      await local.page
+        .getByRole("menuitem", { name: "Remove", exact: true })
+        .count(),
+      0,
+    );
+    await local.page.keyboard.press("Escape");
     await restore();
     dialog = await editor(member);
     await source(dialog, "Set role manually");
@@ -333,6 +349,60 @@ try {
     const relogin = await opened();
     await signInWithDex(relogin.page);
     assert.equal((await relogin.context.request.get(grants)).status(), 403);
+    const workspaceMembers = `${config.origin}/workspace/${config.workspace}/settings/members`;
+    const workspaceGrants = `${api}/workspaces/${config.workspace}/grants`;
+    await local.page.goto(workspaceMembers);
+    await member.getByText("Manual", { exact: true }).waitFor();
+    // The rule applies independently at workspace scope. The preexisting Runner is a manual override.
+    const restoreWorkspace = async () => {
+      const dialog = await editor(member);
+      await source(dialog, "Use SSO default");
+      await dialog.getByRole("button", { name: "Restore SSO default" }).click();
+      await member.getByText("SSO", { exact: true }).waitFor();
+    };
+    assert.equal(
+      (await remote.context.request.get(workspaceGrants)).status(),
+      403,
+    );
+    await restoreWorkspace();
+    assert.equal(
+      (await remote.context.request.get(workspaceGrants)).status(),
+      200,
+    );
+    assert.equal((await remote.context.request.get(grants)).status(), 403);
+    await remote.page.goto(workspaceMembers);
+    await remote.page
+      .getByRole("button", { name: "Add member", exact: true })
+      .waitFor();
+    async function manualWorkspaceRole(role) {
+      const dialog = await editor(member);
+      await source(dialog, "Set role manually");
+      await dialog.getByRole("combobox", { name: "Role", exact: true }).click();
+      await local.page.getByRole("option", { name: role, exact: true }).click();
+      await dialog.getByRole("button", { name: "Save" }).click();
+      await member.getByText(role, { exact: true }).waitFor();
+    }
+    await manualWorkspaceRole("Builder");
+    await member.getByText("Manual", { exact: true }).waitFor();
+    assert.equal(
+      (await remote.context.request.get(workspaceGrants)).status(),
+      403,
+    );
+    await remote.page.reload();
+    assert.equal(
+      await remote.page
+        .getByRole("button", { name: "Add member", exact: true })
+        .count(),
+      0,
+    );
+    await manualWorkspaceRole("Viewer");
+    await screenshot(local.page, "workspace-oidc-role-override");
+    await restoreWorkspace();
+    assert.equal(
+      (await remote.context.request.get(workspaceGrants)).status(),
+      200,
+    );
+    await local.page.goto(`${config.origin}/organization/settings/members`);
     await restore();
     await screenshot(local.page, "organization-oidc-role-sources");
   } else if (phase === "oidc-only") {

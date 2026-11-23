@@ -168,11 +168,7 @@ async def start_oidc_sign_in(request: Request, provider_id: str, runtime: Curren
     provider = settings.auth.oidc.providers.get(provider_id)
     stage = oidc.Stage.START
     try:
-        try:
-            await limit_oidc_start(request, runtime)
-        except ServiceError as error:
-            reason = oidc.Reason.RATE_LIMITED if error.code == "rate_limited" else oidc.Reason.RATE_LIMIT_UNAVAILABLE
-            raise oidc.Failure(stage, reason) from None
+        await limit_oidc_start(request, runtime)
         if provider is None:
             raise oidc.Failure(stage, oidc.Reason.UNKNOWN_PROVIDER)
         if not await initialized(runtime.storage):
@@ -227,9 +223,7 @@ async def finish_oidc_sign_in(request: Request, provider_id: str, runtime: Curre
         stage = oidc.Stage.CALLBACK_ERROR
         errors = request.query_params.getlist("error")
         if errors:
-            raise oidc.Failure(
-                stage, oidc.Reason.PROVIDER_ERROR, provider_error=oidc.ProviderError.from_callback(errors)
-            )
+            raise oidc.Failure(stage, oidc.Reason.PROVIDER_ERROR, provider_error=oidc.callback_error_code(errors))
         codes = request.query_params.getlist("code")
         if len(codes) != 1 or not codes[0]:
             raise oidc.Failure(stage, oidc.Reason.INVALID_CODE)

@@ -126,11 +126,8 @@ function grants(
         })
         .then(data);
 }
-function hasSSODefault(scope: MembershipScope, item: Schema["GrantView"]) {
-  return (
-    scope.kind === "organization" &&
-    (item.source === "oidc" || item.principal.uses_oidc === true)
-  );
+function hasSSODefault(item: Schema["GrantView"]) {
+  return item.source === "oidc" || item.overrides_sso === true;
 }
 
 function Members({
@@ -181,7 +178,7 @@ function Members({
                           }
                         />
                       )}
-                      {!hasSSODefault(scope, item) && (
+                      {!hasSSODefault(item) && (
                         <Confirm
                           subject={`${item.principal.name} · ${t(
                             `role.${item.role}`,
@@ -273,7 +270,7 @@ function Members({
                     <span className={settings.chip}>
                       {t(`role.${item.role}`, { defaultValue: item.role })}
                     </span>
-                    {hasSSODefault(scope, item) && (
+                    {hasSSODefault(item) && (
                       <span className="text-xs text-muted-foreground">
                         {item.source === "oidc" ? t("SSO") : t("Manual")}
                       </span>
@@ -331,7 +328,7 @@ function ChangeRole({
     [role, setRole] = useState(item.role),
     [mode, setMode] = useState(item.source ?? "manual"),
     [open, setOpen] = useState(false);
-  const choosingSSO = hasSSODefault(scope, basis);
+  const choosingSSO = hasSSODefault(basis);
   const restoreDefault = choosingSSO && mode === "oidc";
   const noChange = restoreDefault && basis.source === "oidc";
   const change = useMutation({
@@ -361,13 +358,26 @@ function ChangeRole({
           );
         }
       } else {
-        await client.http.PATCH(
-          "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
-          {
-            params: { path: { workspace_id: scope.id, grant_id: basis.id } },
-            body: { role },
-          },
-        );
+        const path = { workspace_id: scope.id, grant_id: basis.id };
+        if (restoreDefault) {
+          await client.http.DELETE(
+            "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
+            { params: { path } },
+          );
+        } else if (basis.source === "oidc") {
+          await client.http.POST("/api/v1/workspaces/{workspace_id}/grants", {
+            params: { path: { workspace_id: scope.id } },
+            body: { principal_id: basis.principal.id, role },
+          });
+        } else {
+          await client.http.PATCH(
+            "/api/v1/workspaces/{workspace_id}/grants/{grant_id}",
+            {
+              params: { path },
+              body: { role },
+            },
+          );
+        }
       }
     },
     onSuccess: () => {

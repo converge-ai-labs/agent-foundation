@@ -355,7 +355,16 @@ def build_app(
         raise ValueError(f"Unknown process role: {role}")
     # Invalid providers or roles fail here, before anything is served.
     _registry(distribution, config)
-    distribution.access()
+    access = distribution.access()
+    oidc = config.auth.oidc
+    policies = [
+        oidc.defaults,
+        *(grant for provider in oidc.providers.values() for grant in (provider.defaults or [], provider.role_rules)),
+    ]
+    for policy in policies:
+        for grant in policy:
+            if grant.role not in access.roles:
+                raise ValueError(f"OIDC grant uses unregistered role {grant.role!r}")
     expected = heads(distribution)
     databases = app_databases(apps)
     app_heads = {database.app_id: app_migrations.heads(database) for database in databases}

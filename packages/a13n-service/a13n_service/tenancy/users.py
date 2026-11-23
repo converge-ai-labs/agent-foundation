@@ -10,7 +10,7 @@ from typing import Literal
 
 from a13n_logging import get_logger
 from pydantic import JsonValue, SecretStr
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors, images
@@ -32,7 +32,7 @@ from a13n_service.tenancy.credentials import (
     set_password,
     verify_password,
 )
-from a13n_service.tenancy.grants import other_administrator
+from a13n_service.tenancy.grants import member_of, other_administrator
 from a13n_service.tenancy.mail import Mail, link, queue_mail
 from a13n_service.tenancy.principals import avatar_url
 from a13n_service.tenancy.schemas import (
@@ -118,11 +118,17 @@ async def change_avatar(
 async def get_avatar(storage: Storage, actor: Principal, user_id: str) -> dict[str, JsonValue] | None:
     """A user's profile image, for the user and for anyone who can read an organization the user belongs to;
     anyone else finds no such user."""
+    organizations = {grant.organization_id for grant in actor.grants}
+    readable = [organization for organization in organizations if "read" in allowed_verbs(actor, Scope(organization))]
     async with short_session(storage) as session:
-        row = await session.get(PrincipalRow, user_id)
-        organizations = await session.scalars(select(GrantRow.organization_id).where(GrantRow.principal_id == user_id))
-        shared = any("read" in allowed_verbs(actor, Scope(organization)) for organization in organizations)
-    if row is None or row.kind != "user" or (row.id != actor.id and not shared):
+        row = await session.scalar(
+            select(PrincipalRow).where(
+                PrincipalRow.id == user_id,
+                PrincipalRow.kind == "user",
+                or_(PrincipalRow.id == actor.id, member_of(*readable)),
+            )
+        )
+    if row is None:
         raise not_found("user", user_id)
     return row.image
 
