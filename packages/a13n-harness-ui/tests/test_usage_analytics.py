@@ -328,3 +328,66 @@ async def test_gateway_aliases_share_configured_price_and_usage_group(tmp_path, 
             await session.execute(update(UsageModelRecord).values(route=None))
         await app._store.repair_usage_models()
         assert await app.thread_usage(thread_id=thread.thread_id) == usage
+
+
+async def test_historical_backfill_is_atomic_resumable_and_not_repeated(tmp_path, monkeypatch):
+    from a13n_harness_ui.storage import usage_index
+    from a13n_harness_ui.storage.database import short_session
+    from a13n_harness_ui.storage.models import UsageFactRecord
+    from sqlalchemy import select
+
+    async with open_database(tmp_path / "db.sqlite", StorageSettings(data_root=tmp_path)) as db:
+        async with transaction(db.sessions) as session:
+            session.add(_thread("root"))
+            await session.flush()
+            for i in range(3):
+                record = _model(i)
+                session.add(
+                    ThreadUsageRecord(
+                        root_thread_id="root",
+                        origin_thread_id="root",
+                        record_id=record.record_id,
+                        run_id=record.run_id,
+                        descendant=False,
+                        payload_json=record.model_dump_json(),
+                        observed_at=datetime.now(UTC),
+                    )
+                )
+        original = usage_index.index_facts
+        visited = []
+
+        async def interrupt(session, sequence, root, facts):
+            await original(session, sequence, root, facts)
+            visited.append(sequence)
+            if len(visited) == 2:
+                raise RuntimeError("interrupted before commit")
+
+        reader = UsageAnalyticsRepository(db.sessions)
+        monkeypatch.setattr(usage_index, "index_facts", interrupt)
+        with pytest.raises(RuntimeError, match="interrupted"):
+            await reader.snapshot(_query(), project_names={})
+        async with short_session(db.sessions) as session:
+            assert list(await session.scalars(select(UsageFactRecord.sequence))) == [visited[0]]
+        result = await reader.snapshot(_query(), project_names={})
+        assert result.summary.model_requests == 3
+        assert visited == [1, 2, 2, 3]
+        await reader.snapshot(_query(group_by="model"), project_names={})
+        assert len(visited) == 4
+
+
+async def test_earlier_scope_can_acquire_a_later_scopes_record(tmp_path):
+    from .test_thread_usage import _snapshot
+
+    async with open_database(tmp_path / "db.sqlite", StorageSettings(data_root=tmp_path)) as db:
+        async with transaction(db.sessions) as session:
+            session.add(_thread("root"))
+        writer = ThreadUsageRepository(db.sessions)
+        first = _model(0)
+        later = _model(1, cost=Decimal("0.2"))
+        await writer.save(thread_id="root", snapshot=_snapshot(first, thread_id="root"))
+        await writer.save(thread_id="root", snapshot=_snapshot(later, usage_id="second", thread_id="root"))
+        earlier = _model(1, cost=Decimal("0.1"))
+        await writer.save(thread_id="root", snapshot=_snapshot(first, earlier, sequence=2, thread_id="root"))
+        view = await UsageAnalyticsRepository(db.sessions).snapshot(_query(), project_names={})
+        assert view.summary.model_requests == 2
+        assert view.summary.model_cost_usd == "0.1"
