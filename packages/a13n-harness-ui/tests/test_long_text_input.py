@@ -347,6 +347,25 @@ async def test_hidden_text_and_existing_references_are_not_converted(tmp_path):
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("source", ["async_subagent", "tool_execution"])
+async def test_long_background_input_stays_inline(tmp_path, source):
+    from a13n_harness_ui.background_input import background_input
+
+    files = ThreadFiles(tmp_path / "thread-files")
+    environment = Mock(spec=BoundEnvironment)
+    inputs = RootInputFiles(files, "thread-test", InputConfiguration(), view_enabled=True)
+    text = "Full result detail. " * 500
+    parts = background_input(text, ("execution-child",), source=source)
+
+    try:
+        assert await inputs.prepare(parts, environment) == parts
+        environment.resolve_files.assert_not_called()
+        assert not files.root.exists()
+    finally:
+        await files.close()
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("kind", ["count", "file_bytes", "total_bytes"])
 async def test_generated_input_files_obey_attachment_limits_before_writing(tmp_path, monkeypatch, kind):
     observed = []
