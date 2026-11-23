@@ -34,6 +34,7 @@ import {
   type NotificationScope,
 } from "./push";
 import { PageHeader } from "./ui";
+import { inboxTarget } from "../inbox-target";
 import styles from "./notifications.module.css";
 
 type Permission = NotificationPermission | "unavailable" | "install-required";
@@ -350,6 +351,33 @@ function NotificationState({ children }: { children: ReactNode }) {
     (event: SummaryEvent) => {
       const notice = event.notice;
       const threadId = event.root_thread_id;
+      if (alive.current && event.kind === "inbox" && event.inbox && threadId) {
+        const item = event.inbox;
+        const id = `${event.epoch}:${item.item_id}`;
+        if (seen.current.has(id)) return;
+        seen.current.add(id);
+        const { scope, viewedThread } = current.current;
+        if (scope === "bot" && threadId !== "thread_bot") return;
+        if (viewedThread === threadId) return;
+        current.current.toast.add({
+          id,
+          title: (
+            <>
+              {t("New in Inbox")} -{" "}
+              {Array.from(item.title).slice(0, 80).join("")}
+            </>
+          ),
+          description: item.brief,
+          type: item.kind === "needs_human" ? "warning" : "info",
+          timeout: item.kind === "needs_human" ? 0 : 8000,
+          actionProps: {
+            children: <NoticeActionLabel message />,
+            onClick: () =>
+              current.current.navigate(inboxTarget(threadId, item.item_id)),
+          },
+        });
+        return;
+      }
       if (
         !alive.current ||
         !notice ||
@@ -364,6 +392,7 @@ function NotificationState({ children }: { children: ReactNode }) {
       seen.current.add(id);
       if (seen.current.size > 256)
         seen.current.delete(seen.current.values().next().value!);
+      if (current.current.scope === "inbox") return;
       if (current.current.scope === "bot" && !bot) return;
       // The viewed conversation owns its feedback. Consume the identity above
       // so navigation cannot replay a suppressed notice; server Push is independent.
@@ -401,7 +430,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         },
       });
     },
-    [queries],
+    [queries, t],
   );
   const test = () => {
     setError("");
@@ -569,7 +598,7 @@ export function NotificationSettings({
         <PageHeader
           title={t("Notifications")}
           description={t(
-            "Bot messages, task results and requests for your input on this browser.",
+            "Bot messages, Inbox items, task results and requests for your input on this browser.",
           )}
         />
       )}
@@ -601,11 +630,12 @@ export function NotificationSettings({
             label={t("Notification scope")}
             value={notifications.scope}
             onValueChange={(value) => {
-              if (value === "all" || value === "bot")
+              if (value === "all" || value === "bot" || value === "inbox")
                 notifications.setScope(value);
             }}
             options={[
               { value: "all", label: t("All") },
+              { value: "inbox", label: t("Inbox only") },
               { value: "bot", label: t("Bot only") },
             ]}
           />

@@ -464,6 +464,7 @@ list_models(query=None, cursor=None, limit=20)
 create_thread(prompt, title=None, agent_id=None, project_id="current", model=None, thinking=None)
 create_worker(prompt, title=None, agent_id=None, model=None, thinking=None)
 send_thread_message(thread_id, message, kind="task")
+post_to_inbox(kind, title, message)
 ```
 
 Listing and search cover the server's accepted root Threads with bounded retained history and process-local activity, optionally filtered by Project and including archived history. `get_thread()` defaults to the calling root. Its `current_run` identifies that Run's captured Project, roots, Agent, Model, generation, `role`, and nullable worker `coordinator_thread_id`; the detached Thread configuration remains the next-Run selection, not evidence that a running Environment changed. Target inspection also exposes `next_model_id` and the available captured Model separately, including when inspecting another root.
@@ -487,6 +488,12 @@ Creation returns an admission receipt. Callers inspect subsequent activity throu
 A child uses the existing parent-scoped delegation controls, not cross-root tools. Scope checks bind every tool invocation to its source root. Tool results remain bounded detached values with safe errors and explicit pending, unavailable, or failed status.
 
 The capability calls the same in-memory `HarnessUiApp` services as other adapters. There is no localhost HTTP client, IPC bridge, agent daemon, or supervisor. App shutdown remains the execution boundary; restart does not reacquire old receipts or automatically replay input.
+
+### Inbox Posting
+
+`post_to_inbox(kind, title, message)` delivers one item to the person's [Inbox](webui/04-workbench-interaction.md#entry-and-navigation). WebUI adds it to ordinary roots, Coordinators and Bot. Managed workers, children, and Live and Memory roots never receive it; they report to their owner, parent or Live surface. Terminal mode has no Inbox. `kind` is `result` for a final result or deliverable, `needs_human` for a question, decision, approval or confirmation that the person must give, and `milestone` for a major checkpoint in long work. `title` has 1–120 characters and `message` has 1–4096 characters of standalone Markdown. Root instructions tell the Agent to post only these cases, never routine progress, acknowledgements or repeats, and after a `needs_human` item also to ask in chat and end its turn. Posting does not suspend the Run and is not a deferred request; the chat remains the place to answer.
+
+An item records the calling root Thread and the tool call ID. One tool call creates at most one item: a replayed call returns the original item without a second notice. Posting publishes an App-wide summary `inbox` event and offers Web Push to subscriptions in scope; the tool result returns `item_id`. The human API lists items with `GET /api/inbox` (`state=open|done`, `before` cursor, `limit` 1–100, and the open unread count), changes `read` and `done` with `PATCH /api/inbox/{item_id}`, and resolves `GET /api/inbox/{item_id}/location` to the continuation and turn that contain the tool call in the Thread's currently selected history, or null values when that history no longer contains it. These routes are human-facing and not model tools; guests cannot use them. Inbox is not a delivery queue for other Agents and does not change Thread unread state.
 
 ### Coordinator instructions
 

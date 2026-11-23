@@ -111,6 +111,81 @@ The changes are ready to review. I would keep the retry behavior explicit so a f
 """  # noqa: RUF001 - Fullwidth punctuation exercises CJK emphasis boundaries.
 
 
+# Scripted post_to_inbox calls: key -> (kind, title, message, lead, closing).
+INBOX_POSTS = {
+    "checkout": (
+        "result",
+        "Checkout retry fix is ready for review",
+        "The duplicate-submit bug is fixed on branch `fix/checkout-retry`.\n\n"
+        "- **Place order** is disabled while payment is pending.\n"
+        "- Retries reuse the original order ID, so the provider deduplicates them.\n"
+        "- Form input stays after a failed payment.\n\n"
+        "Checks: `pnpm test checkout`, 3 passed.",
+        "The fix and its checks are done. I'm sending the result to your Inbox.\n\n",
+        "The fix is ready. The summary is in your Inbox; the diff is above.",
+    ),
+    "timeout": (
+        "needs_human",
+        "Choose the payment provider timeout",
+        "I need one decision before I continue the retry work.\n\n"
+        "| Option | Timeout | Effect |\n| :--- | :--- | :--- |\n"
+        "| A | 8 s | Faster feedback; about 2% of slow payments show a retry prompt |\n"
+        "| B | 15 s | Fewer retry prompts; customers wait longer on a stuck request |\n\n"
+        "Reply in the chat with **A** or **B**.",
+        "I measured both timeouts. One choice is yours, so I'm asking through your Inbox.\n\n",
+        "Which timeout do you want: **A (8 s)** or **B (15 s)**? I'll wait for your answer here.",
+    ),
+    "migration": (
+        "milestone",
+        "订单历史迁移：已完成 3/5 张表",  # noqa: RUF001
+        "`orders`、`order_items` 和 `payments` 已迁移，行数校验通过。\n\n"  # noqa: RUF001
+        "剩余 `refunds` 和 `shipments`，预计还需约 40 分钟。迁移期间旧接口保持只读，可以正常查询。",  # noqa: RUF001
+        "前三张表已迁移完成，我把这个阶段进展发到你的收件箱。\n\n",  # noqa: RUF001
+        "继续迁移剩余两张表。",
+    ),
+    "notes": (
+        "result",
+        "0.35 版本发布说明草稿已完成",
+        "草稿已写入 `docs/release-notes/0.35.md`：\n\n"  # noqa: RUF001
+        "1. 结账重试不再产生重复订单\n2. 支付失败后保留表单内容\n3. 慢速网络下显示支付进度",
+        "发布说明已经写好，我把结果发到你的收件箱。\n\n",  # noqa: RUF001
+        "草稿已完成，全文见 `docs/release-notes/0.35.md`。",  # noqa: RUF001
+    ),
+    "audit-keyboard": (
+        "milestone",
+        "Accessibility audit: keyboard pass complete",
+        "Every checkout step works with the keyboard alone. Focus now returns to the first invalid field after an "
+        "error. Screen-reader checks are next.",
+        "The keyboard pass is complete. I'm posting this milestone to your Inbox.\n\n",
+        "Keyboard checks are done; I'll start the screen-reader pass next.",
+    ),
+    "audit-done": (
+        "result",
+        "Accessibility audit finished: 4 issues, 2 fixed",
+        "The checkout accessibility audit is complete.\n\n"
+        "**Fixed**\n\n"
+        "1. The payment error was not announced. It now uses a polite live region.\n"
+        "2. The promo-code field had no label. It now has a visible label and an accessible name.\n\n"
+        "**Open (needs design input)**\n\n"
+        "3. The order summary toggle has a 3.1:1 contrast ratio; WCAG AA needs 4.5:1 for its text.\n"
+        "4. The delivery-date picker traps focus in Safari when it opens from the keyboard.\n\n"
+        "All fixes have regression tests. The open issues have tickets with reproduction steps and screenshots.",
+        "The audit is finished. I'm sending the final result to your Inbox.\n\n",
+        "The audit is complete. Two issues are fixed and two need design input; details are in your Inbox.",
+    ),
+    "bot-digest": (
+        "result",
+        "今日摘要：2 项完成，1 项等你决定",  # noqa: RUF001
+        "- 结账重试修复已可评审（Atlas storefront）\n"  # noqa: RUF001
+        "- 0.35 发布说明草稿已完成\n"
+        "- 支付超时方案等待你选择\n\n"
+        "其余工作仍在进行，没有新的失败。",  # noqa: RUF001
+        "我汇总了今天的工作，发到你的收件箱。\n\n",  # noqa: RUF001
+        "今日摘要已发到收件箱。",
+    ),
+}
+
+
 def seed_workspace(workspace: Path) -> None:
     """Create a fictional repository with readable files and reviewable changes."""
     workspace.mkdir(exist_ok=True)
@@ -175,6 +250,17 @@ def configuration(root: Path) -> Path:
             },
             "tools": {"execution": {"mode": "auto", "foreground_wait_seconds": 0.1}},
             "memory": {"auto_organize": {"enabled": False}},
+            "webui": {
+                "bot": {
+                    # Scripted view/shell_exec tools replace Bot's native workspace tools.
+                    "enabled": True,
+                    "files_enabled": False,
+                    "shell_enabled": False,
+                    "computer_enabled": False,
+                    "heartbeat_enabled": False,
+                    "connector_interval_seconds": 86400,
+                }
+            },
         },
         "subscription_groups/review.yaml": {
             "schema_version": "1",
@@ -476,6 +562,18 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
         if isinstance(part, ToolReturnPart)
     ]
     returned = bool(returns)
+    if "[inbox:" in prompt:
+        kind, title, message, lead, closing = INBOX_POSTS[prompt.partition("[inbox:")[2].partition("]")[0]]
+        if not returned:
+            yield lead
+            yield {
+                0: DeltaToolCall(
+                    name="post_to_inbox", json_args=json.dumps({"kind": kind, "title": title, "message": message})
+                )
+            }
+            return
+        yield closing
+        return
     if "[failure]" in prompt:
         yield "I'm checking the deployment configuration.\n\n"
         raise UsageLimitExceeded("The review model reached its request limit. Your chat and input are saved.")
@@ -851,6 +949,45 @@ async def serve(root: Path, port: int):
                 )
             )
             print(f"  Connector setup: /threads/{connection_chat.thread_id}", flush=True)
+            from a13n_harness_ui.bot_models import BotSubmit
+            from a13n_harness_ui.inbox_models import InboxItemMutation
+
+            async def inbox_chat(title: str, project: str, *prompts: str) -> None:
+                thread = await app.create_thread(title=title, defaults=NewThreadDefaults(project_id=project))
+                for prompt in prompts:
+                    receipt = await app.submit_thread(thread_id=thread.thread_id, prompt=prompt)
+                    if (await app.wait_root_operation(receipt.receipt_id, timeout_seconds=60)).status != "completed":
+                        raise RuntimeError(f"Inbox fixture {title!r} did not finish")
+                print(f"  {title}: /threads/{thread.thread_id}", flush=True)
+
+            await inbox_chat("撰写 0.35 发布说明", "project-research", "[inbox:notes] 整理 0.35 版本的发布说明。")
+            await inbox_chat("迁移订单历史", "project-atlas", "[inbox:migration] 把订单历史迁移到新的存储。")
+            await inbox_chat(
+                "Checkout accessibility audit",
+                "project-atlas",
+                "[inbox:audit-keyboard] Start the accessibility audit of checkout with a keyboard pass.",
+                "[long] Describe the screen-reader findings in detail.",
+                "[inbox:audit-done] Finish the audit and report the result.",
+                "[long] Write the full remediation plan for the open issues.",
+            )
+            await inbox_chat(
+                "Fix duplicate checkout submissions",
+                "project-atlas",
+                "[inbox:checkout] Fix the duplicate-submit bug and run the checks.",
+            )
+            assert app._bot is not None
+            digest = await app._bot.submit(
+                BotSubmit(input_id="input-inbox-review", text="[inbox:bot-digest] 汇总今天的工作。")
+            )
+            if digest.receipt_id is not None:
+                await app.wait_root_operation(digest.receipt_id, timeout_seconds=60)
+            await inbox_chat(
+                "Tune the payment timeout", "project-atlas", "[inbox:timeout] Tune the payment provider timeout."
+            )
+            posted = {item.title: item for item in (await app.inbox().page(state="open", before=None, limit=100)).items}
+            await app.inbox().update(posted[INBOX_POSTS["notes"][1]].item_id, InboxItemMutation(done=True))
+            await app.inbox().update(posted[INBOX_POSTS["migration"][1]].item_id, InboxItemMutation(read=True))
+            print(f"  Inbox ({len(posted)} items): /inbox", flush=True)
             question = await app.create_thread(
                 title="Choose the review scope", defaults=NewThreadDefaults(project_id="project-research")
             )

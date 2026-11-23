@@ -408,13 +408,26 @@ Choose **… → Star conversation** on a hovered/focused row; touch screens exp
 
 Starred roots precede the five ordinary **Recent** rows; running and unread **New results** take priority without duplicates. Stars do not change visit time. Archive hides a conversation while retaining its star, and workers stay nested under their Coordinator.
 
+## Read your Inbox
+
+Agents send what you need to read to **Inbox**, below conversation search: final results, questions or decisions that need you, and major milestones. Routine progress stays in the chat. Ordinary chats, Coordinators and Bot can post; subagents and Coordinator workers report to their parent.
+
+1. Open **Inbox**. The count beside it shows unread open items. Questions for you lead under **Needs you**; results and milestones follow under **Updates**.
+2. Scan the rows. Each row shows the title, time and source chat, with a one-line preview of the message. Bold titles are unread. Select a row to read the full message in place; this marks it read.
+3. Choose **Open in chat** to open the source conversation at the turn that posted the item. The chat scrolls to the item's card, highlights it and marks the item read.
+4. Choose **Mark as done** after you handle the item. Switch to **Done** to see handled items, and choose **Move back to Open** to restore one.
+
+On a desktop, point to a row to show quick actions for read state, **Open in chat** and **Mark as done** without opening it. On a touch screen, each row shows **Mark as done**; tap the row for the other actions. Inbox state is shared by everyone using this WebUI instance and is separate from the unread marks on chat rows. Archiving a chat keeps its items; permanently deleting the chat removes them. If the chat's current history no longer contains the posting turn, for example after **Clear context**, the chat shows a notice and the item stays readable in Inbox.
+
+In the chat, each post appears as a compact **Sent to Inbox** card; its Inbox link opens Inbox. Agents post with `post_to_inbox(kind, title, message)`, where `kind` is `result`, `needs_human` or `milestone`. After a `needs_human` item, the Agent also asks in the chat and waits, so reply in the chat.
+
 ## Find unfinished input
 
-Open **Drafts** below conversation search for saved conversations with unfinished shared input, including collapsed Projects and older roots. Each row identifies its Project; ordinary navigation also shows a **Draft** marker alongside running/unread state.
+Conversation rows, including Coordinators, show a pencil mark while they hold unfinished shared input. The mark appears beside running and unread state.
 
-Opening a conversation does not clear the marker. Send successfully or remove its text/attachments; concurrent additions keep it marked. Pending/failed uploads count, whitespace and settings changes do not. Archive removes the entry without discarding the draft.
+Opening a conversation does not clear the mark. Send successfully or remove its text/attachments; concurrent additions keep it marked. Pending/failed uploads count, whitespace and settings changes do not. Archiving keeps the draft.
 
-Synchronized shared drafts can be rediscovered while the same server runs; restart drops them. For a not-yet-created conversation, return to the separate browser-local draft through **Home**.
+Shared drafts stay available across browser reloads and server restarts; a draft unchanged for 30 days is removed. For a not-yet-created conversation, return to the separate browser-local draft through **Home**.
 
 ## Observe Memory
 
@@ -469,7 +482,9 @@ Follow/read state belongs to this browser/site address and synchronizes across t
 
 ## Task notifications
 
-Choose **All** or **Bot only** under **Notify me about** in Notifications settings. The default is All. This browser-local choice filters both in-app notices and background notifications without affecting other devices, unread markers, or the explicit delivery test. Bot only includes Bot messages and requests for your input, while excluding ordinary Chat results.
+Choose **All**, **Bot only** or **Inbox only** under **Notify me about** in Notifications settings. The default is All. This browser-local choice filters both in-app notices and background notifications without affecting other devices, unread markers, or the explicit delivery test. Bot only includes Bot messages, Bot Inbox items and requests for your input, while excluding ordinary Chat results. Inbox only includes only new Inbox items.
+
+New Inbox items show **New in Inbox** with the item title and a message preview. Choose **View message**, or click the system notification, to open the item in its chat. **Needs you** items stay on screen until you dismiss them. An item from the chat you are viewing shows no in-app notice.
 
 Bot publications show **New message from Bot** and a preview of the actual message. Choose **View message**, or click the system notification, to open Bot. Different messages from the same Run remain distinct. Bot input requests use **Bot needs your response** and open the decision in Activity. System notification titles follow the display language last synchronized by that browser; authored message text stays unchanged.
 

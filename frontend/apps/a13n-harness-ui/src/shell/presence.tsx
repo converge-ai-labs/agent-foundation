@@ -130,6 +130,9 @@ export function useLiveWorkbench(
           results?.invalidate(
             event.root_thread_id ?? event.thread_id ?? undefined,
           );
+        if (!event || event.kind === "inbox")
+          scheduleRefresh(queries, (query) => query.queryKey[0] === "inbox");
+        if (event?.kind === "inbox") return;
         if (event?.kind === "draft") {
           scheduleRefresh(
             queries,
@@ -137,14 +140,6 @@ export function useLiveWorkbench(
           );
           return;
         }
-        if (
-          event &&
-          ["thread", "root_operation", "child_execution"].includes(event.kind)
-        )
-          scheduleRefresh(
-            queries,
-            (query) => query.queryKey[0] === "unsent-threads",
-          );
         if (event?.kind === "thread_work") {
           scheduleRefresh(queries, (query) =>
             ["bot-note", "bot-notes"].includes(String(query.queryKey[0])),
@@ -169,13 +164,9 @@ export function useLiveWorkbench(
             );
           } else
             scheduleRefresh(queries, (query) =>
-              [
-                "bot",
-                "thread",
-                "threads",
-                "unsent-drafts",
-                "unsent-threads",
-              ].includes(String(query.queryKey[0])),
+              ["bot", "thread", "threads", "unsent-drafts"].includes(
+                String(query.queryKey[0]),
+              ),
             );
         } else {
           // Open/reset reconcile all observations. Configuration changes do not
@@ -198,13 +189,9 @@ export function useLiveWorkbench(
       if (document.visibilityState === "visible") {
         results?.invalidate();
         scheduleRefresh(queries, (query) =>
-          [
-            "bot",
-            "thread",
-            "threads",
-            "unsent-drafts",
-            "unsent-threads",
-          ].includes(String(query.queryKey[0])),
+          ["bot", "thread", "threads", "unsent-drafts"].includes(
+            String(query.queryKey[0]),
+          ),
         );
       }
     }, 15000);

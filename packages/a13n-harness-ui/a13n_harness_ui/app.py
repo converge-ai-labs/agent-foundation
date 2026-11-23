@@ -176,6 +176,7 @@ from a13n_harness_ui.host_files import (
 )
 from a13n_harness_ui.host_git import GitCaptureRequest, GitDiff, GitDiffRequest, GitDiscovery, GitStatus, HostGit
 from a13n_harness_ui.host_terminal import HostTerminal, TerminalCreate, TerminalSession, TerminalView
+from a13n_harness_ui.inbox import InboxController
 from a13n_harness_ui.live import (
     HarnessUiLiveHub,
     HarnessUiSummaryHub,
@@ -506,6 +507,7 @@ class HarnessUiApp:
         self._memory_organizer = memory_organizer
         self._voice: VoiceController | None = None
         self._bot: BotController | None = None
+        self._inbox: InboxController | None = None
         self._thread_tools: ThreadToolController | None = None
         self._connectors: Connectors | None = None
         self._web_push = web_push
@@ -604,6 +606,11 @@ class HarnessUiApp:
         if self._bot is None:
             raise HarnessUiError("Bot is available only in WebUI.", code="bot_unavailable")
         return self._bot
+
+    def inbox(self) -> InboxController:
+        if self._inbox is None:
+            raise HarnessUiError("Inbox is available only in WebUI.", code="inbox_unavailable")
+        return self._inbox
 
     def voice(self) -> VoiceController:
         if self._voice is None:
@@ -4520,6 +4527,12 @@ async def open_harness_ui_app(
                         projections=projections,
                         model=app._voice_model,
                     )
+                app._inbox = InboxController(
+                    store=store,
+                    projections=projections,
+                    summaries=summary_hub,
+                    notify=web_push.enqueue if web_push is not None else None,
+                )
                 thread_tools = ThreadToolController(
                     threads=store.threads,
                     projections=projections,
@@ -4531,6 +4544,7 @@ async def open_harness_ui_app(
                     bot=app._bot,
                     create_project=app.create_project,
                     read_project_memory=app.read_project_memory,
+                    inbox=app._inbox,
                 )
                 app._thread_tools = thread_tools
                 root_executor.set_root_capability_factory(

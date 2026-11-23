@@ -674,6 +674,167 @@
         }
       }
     },
+    "/api/inbox": {
+      "get": {
+        "summary": "Inbox Items",
+        "operationId": "inbox_items_api_inbox_get",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "open",
+                "done"
+              ],
+              "type": "string",
+              "default": "open",
+              "title": "State"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inbox/{item_id}": {
+      "patch": {
+        "summary": "Inbox Update",
+        "operationId": "inbox_update_api_inbox__item_id__patch",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxItemMutation"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/inbox/{item_id}/location": {
+      "get": {
+        "summary": "Inbox Location",
+        "operationId": "inbox_location_api_inbox__item_id__location_get",
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Item Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxLocation"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/push/configuration": {
       "get": {
         "summary": "Push Configuration",
@@ -17996,6 +18157,178 @@
         "title": "ImageInputPolicy",
         "description": "Preparation limits for one model's image input, not native ModelSettings."
       },
+      "InboxItem": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "title": "Item Id"
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "tool_call_id": {
+            "type": "string",
+            "title": "Tool Call Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "result",
+              "needs_human",
+              "milestone"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "read_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read At"
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done At"
+          },
+          "thread_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Title"
+          },
+          "thread_archived": {
+            "type": "boolean",
+            "title": "Thread Archived",
+            "default": false
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "thread_id",
+          "tool_call_id",
+          "kind",
+          "title",
+          "message",
+          "created_at"
+        ],
+        "title": "InboxItem"
+      },
+      "InboxLocation": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "continuation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation Id"
+          },
+          "turn_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turn Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id"
+        ],
+        "title": "InboxLocation",
+        "description": "Where the posting tool call sits in the Thread's currently selected history."
+      },
+      "InboxPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InboxItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "unread_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Unread Count"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "items",
+          "unread_count"
+        ],
+        "title": "InboxPage"
+      },
       "Instance": {
         "properties": {
           "connector_id": {
@@ -27359,6 +27692,46 @@
         "title": "FocusSnapshotFrame",
         "type": "object"
       },
+      "InboxNotice": {
+        "additionalProperties": false,
+        "properties": {
+          "item_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Item Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "result",
+              "needs_human",
+              "milestone"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "brief": {
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Brief",
+            "type": "string"
+          }
+        },
+        "required": [
+          "item_id",
+          "kind",
+          "title",
+          "brief"
+        ],
+        "title": "InboxNotice",
+        "type": "object"
+      },
       "ItemKind": {
         "enum": [
           "text_message",
@@ -27924,7 +28297,8 @@
               "root_operation",
               "child_execution",
               "thread_work",
-              "draft"
+              "draft",
+              "inbox"
             ],
             "title": "Kind",
             "type": "string"
@@ -27975,6 +28349,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RootOperationNotice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "inbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InboxNotice"
               },
               {
                 "type": "null"
@@ -28927,6 +29312,35 @@
         ],
         "title": "BotPause"
       },
+      "InboxItemMutation": {
+        "additionalProperties": false,
+        "properties": {
+          "read": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Read"
+          },
+          "done": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done"
+          }
+        },
+        "title": "InboxItemMutation",
+        "type": "object"
+      },
       "PushKeys": {
         "properties": {
           "p256dh": {
@@ -28967,7 +29381,8 @@
             "type": "string",
             "enum": [
               "all",
-              "bot"
+              "bot",
+              "inbox"
             ],
             "title": "Scope",
             "default": "all"

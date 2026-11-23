@@ -51,7 +51,7 @@ import {
   useNavigationObservations,
   type NavigationRow,
 } from "./navigation-observations";
-import { DraftNavigation } from "./draft-navigation";
+import { InboxNavigation } from "../inbox";
 import { BotNavigation } from "../bot";
 import { ChatSearch } from "./chat-search";
 
@@ -229,7 +229,7 @@ export function ConversationNavigation() {
               drag.cancel();
             }}
           />
-          <DraftNavigation />
+          <InboxNavigation />
           <BotNavigation />
         </nav>
         <div className={styles.navigationHeading}>

@@ -51,7 +51,7 @@ Reserve space for appearing actions and carets. Hover, loading and expansion nev
 
 ## Navigation
 
-**New** has one leading plus; **Search** and **Drafts** share its text start. Project and chat rows retain the thin gap between fills. Brand, page title and header actions share a vertical center.
+**New** has one leading plus; **Search** and **Inbox** share its text start; the Inbox unread count is a neutral trailing count. Project and chat rows retain the thin gap between fills. Brand, page title and header actions share a vertical center.
 
 A Project's leading folder becomes a small caret only while hovered; pointer leave restores the folder even when expanded, selected or focused. Focus uses the normal ring. Coordinators retain their distinct leading worker disclosure, medium title and indented guide under [Coordinator Entry](04-workbench-interaction.md#coordinator-entry).
 

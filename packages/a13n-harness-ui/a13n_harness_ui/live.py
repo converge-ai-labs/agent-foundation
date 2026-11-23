@@ -654,6 +654,19 @@ class HarnessUiLiveHub:
                 subscriber.receive.close()
 
 
+SummaryKind = Literal[
+    "configuration",
+    "catalog",
+    "project",
+    "thread",
+    "root_operation",
+    "child_execution",
+    "thread_work",
+    "draft",
+    "inbox",
+]
+
+
 class SummaryCursor(_StreamModel):
     epoch: str = Field(min_length=1, max_length=80)
     sequence: int = Field(ge=0)
@@ -666,23 +679,22 @@ class RootOperationNotice(_StreamModel):
     brief: str = Field(min_length=1, max_length=320)
 
 
+class InboxNotice(_StreamModel):
+    item_id: str = Field(min_length=1, max_length=80)
+    kind: Literal["result", "needs_human", "milestone"]
+    title: str = Field(min_length=1, max_length=120)
+    brief: str = Field(min_length=1, max_length=320)
+
+
 class SummaryInvalidation(_StreamModel):
     epoch: str = Field(min_length=1, max_length=80)
     sequence: int = Field(ge=1)
-    kind: Literal[
-        "configuration",
-        "catalog",
-        "project",
-        "thread",
-        "root_operation",
-        "child_execution",
-        "thread_work",
-        "draft",
-    ]
+    kind: SummaryKind
     root_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     execution_id: str | None = Field(default=None, min_length=1, max_length=80)
     notice: RootOperationNotice | None = None
+    inbox: InboxNotice | None = None
     work_sections: tuple[Literal["tasks", "notes", "children"], ...] = ()
     work_revision: int | None = None
     run_id: str | None = None
@@ -760,20 +772,12 @@ class HarnessUiSummaryHub:
     async def publish(
         self,
         *,
-        kind: Literal[
-            "configuration",
-            "catalog",
-            "project",
-            "thread",
-            "root_operation",
-            "child_execution",
-            "thread_work",
-            "draft",
-        ],
+        kind: SummaryKind,
         root_thread_id: str | None = None,
         thread_id: str | None = None,
         execution_id: str | None = None,
         notice: RootOperationNotice | None = None,
+        inbox: InboxNotice | None = None,
         work_sections: tuple[Literal["tasks", "notes", "children"], ...] = (),
         work_revision: int | None = None,
         run_id: str | None = None,
@@ -784,6 +788,7 @@ class HarnessUiSummaryHub:
             thread_id=thread_id,
             execution_id=execution_id,
             notice=notice,
+            inbox=inbox,
             work_sections=work_sections,
             work_revision=work_revision,
             run_id=run_id,
@@ -792,20 +797,12 @@ class HarnessUiSummaryHub:
     def publish_nowait(
         self,
         *,
-        kind: Literal[
-            "configuration",
-            "catalog",
-            "project",
-            "thread",
-            "root_operation",
-            "child_execution",
-            "thread_work",
-            "draft",
-        ],
+        kind: SummaryKind,
         root_thread_id: str | None = None,
         thread_id: str | None = None,
         execution_id: str | None = None,
         notice: RootOperationNotice | None = None,
+        inbox: InboxNotice | None = None,
         work_sections: tuple[Literal["tasks", "notes", "children"], ...] = (),
         work_revision: int | None = None,
         run_id: str | None = None,
@@ -821,6 +818,7 @@ class HarnessUiSummaryHub:
             thread_id=thread_id,
             execution_id=execution_id,
             notice=notice,
+            inbox=inbox,
             work_sections=work_sections,
             work_revision=work_revision,
             run_id=run_id,

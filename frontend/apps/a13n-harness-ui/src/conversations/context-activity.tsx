@@ -1,19 +1,16 @@
 import { useTranslation } from "../i18n";
 import { MessageText } from "./message-text";
+import { markdownPreview } from "./markdown-preview";
 import type { ContextState } from "./stream";
 import styles from "./conversation.module.css";
 
-function preview(text: string) {
-  return text
-    .replace(/^#{1,6}\s+(?:context summary|summary|compact summary)\s*$/gim, "")
-    .replace(/!?(?:\[([^\]]*)\])\([^)]*\)/g, "$1")
-    .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+\.\s+)/gm, "")
-    .replace(/```[^\n]*\n?/g, "")
-    .replace(/[*_`~]/g, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 240);
-}
+const preview = (text: string) =>
+  markdownPreview(
+    text.replace(
+      /^#{1,6}\s+(?:context summary|summary|compact summary)\s*$/gim,
+      "",
+    ),
+  );
 
 export function ContextActivity({
   context,

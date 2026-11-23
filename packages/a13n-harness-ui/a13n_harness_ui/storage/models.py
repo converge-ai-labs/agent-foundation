@@ -213,6 +213,29 @@ class BotNoteRecord(Base):
     last_writer_thread_id: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
+class InboxItemRecord(Base):
+    """One intentional human-facing message posted by an ordinary root Run."""
+
+    __tablename__ = "inbox_item"
+    __table_args__ = (
+        CheckConstraint("kind IN ('result', 'needs_human', 'milestone')", name="kind"),
+        UniqueConstraint("thread_id", "tool_call_id", name="uq_inbox_item_tool_call"),
+        Index("ix_inbox_item_open", "done_at", "created_at", "item_id"),
+    )
+
+    item_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=False
+    )
+    tool_call_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+    kind: Mapped[Literal["result", "needs_human", "milestone"]] = mapped_column(String(16), nullable=False)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    read_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+
+
 class BotStateRecord(Base):
     __tablename__ = "bot_state"
     __table_args__ = (CheckConstraint("singleton_id = 1", name="singleton"),)
@@ -265,7 +288,7 @@ class WebPushSubscriptionRecord(Base):
     p256dh: Mapped[str] = mapped_column(Text, nullable=False)
     auth: Mapped[str] = mapped_column(Text, nullable=False)
     origin: Mapped[str] = mapped_column(Text, nullable=False)
-    scope: Mapped[Literal["all", "bot"]] = mapped_column(String(8), nullable=False, server_default="all")
+    scope: Mapped[Literal["all", "bot", "inbox"]] = mapped_column(String(8), nullable=False, server_default="all")
     language: Mapped[Literal["en", "zh-CN", "hi"]] = mapped_column(String(8), nullable=False, server_default="en")
     last_active_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)

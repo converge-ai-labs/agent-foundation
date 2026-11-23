@@ -18,7 +18,7 @@ from py_vapid import Vapid
 
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.errors import HarnessUiError
-from a13n_harness_ui.live import RootOperationNotice
+from a13n_harness_ui.live import InboxNotice, RootOperationNotice
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushTestResult, decode_key
 from a13n_harness_ui.storage import LocalStore
 from a13n_harness_ui.storage.push import PushRepository
@@ -29,6 +29,7 @@ _LOG = get_logger("a13n_harness_ui.web_push")
 _TEXT: dict[str, dict[str, str]] = {
     "en": {
         "bot_message": "New message from Bot",
+        "inbox": "New in Inbox",
         "bot_attention": "Bot needs your response",
         "completed": "Task completed",
         "failed": "Task failed",
@@ -41,6 +42,7 @@ _TEXT: dict[str, dict[str, str]] = {
     },
     "zh-CN": {
         "bot_message": "Bot 给你发了消息",
+        "inbox": "收件箱新消息",
         "bot_attention": "Bot 需要你的回应",
         "completed": "任务已完成",
         "failed": "任务失败",
@@ -53,6 +55,7 @@ _TEXT: dict[str, dict[str, str]] = {
     },
     "hi": {
         "bot_message": "Bot से नया संदेश",
+        "inbox": "Inbox में नया",
         "bot_attention": "Bot को आपके जवाब की ज़रूरत है",
         "completed": "टास्क पूरा हुआ",
         "failed": "टास्क विफल",
@@ -70,11 +73,35 @@ def _text(language: str) -> dict[str, str]:
     return _TEXT.get(language, _TEXT["en"])
 
 
+def inbox_path(thread_id: str, item_id: str) -> str:
+    """Open the posting conversation at the item's location."""
+    base = "/bot" if thread_id == BOT_THREAD_ID else f"/threads/{quote(thread_id, safe='')}"
+    return f"{base}?inbox={quote(item_id, safe='')}"
+
+
+_BOT_PATHS = {"/bot", f"/threads/{BOT_THREAD_ID}", "/settings/notifications"}
+
+
+def in_scope(scope: str, thread_id: str, notice: RootOperationNotice | InboxNotice) -> bool:
+    if scope == "inbox":
+        return isinstance(notice, InboxNotice)
+    if scope == "bot":
+        return thread_id == BOT_THREAD_ID
+    return True
+
+
 def notice_payload(
-    thread_id: str, thread_title: str | None, notice: RootOperationNotice, *, language: str
+    thread_id: str, thread_title: str | None, notice: RootOperationNotice | InboxNotice, *, language: str
 ) -> dict[str, str]:
     """Present messages as messages, keeping execution outcomes distinct."""
     text = _text(language)
+    if isinstance(notice, InboxNotice):
+        return {
+            "title": f"{text['inbox']} · {notice.title[:80]}",
+            "body": notice.brief[:180],
+            "tag": f"a13n-harness-ui.{notice.item_id}",
+            "path": inbox_path(thread_id, notice.item_id),
+        }
     bot = thread_id == BOT_THREAD_ID
     if bot and notice.message_id is not None:
         title = text["bot_message"]
@@ -96,7 +123,7 @@ class WebPush:
         self.repository = PushRepository(store.database.sessions)
         self._store = store
         self._client = client
-        self._send, self._receive = create_memory_object_stream[tuple[str, RootOperationNotice]](128)
+        self._send, self._receive = create_memory_object_stream[tuple[str, RootOperationNotice | InboxNotice]](128)
         self._limiter = CapacityLimiter(4)
 
     async def _key(self) -> ec.EllipticCurvePrivateKey:
@@ -113,7 +140,7 @@ class WebPush:
         )
         return PushConfiguration(public_key=base64.urlsafe_b64encode(public_key).rstrip(b"=").decode())
 
-    def enqueue(self, thread_id: str, notice: RootOperationNotice) -> None:
+    def enqueue(self, thread_id: str, notice: RootOperationNotice | InboxNotice) -> None:
         # A full queue loses a reminder, never blocks or fails a Run settlement.
         try:
             self._send.send_nowait((thread_id, notice))
@@ -129,10 +156,10 @@ class WebPush:
                         continue
                     async with create_task_group() as deliveries:
                         for subscription in await self.repository.recipients():
-                            if subscription.scope == "bot" and thread_id != BOT_THREAD_ID:
+                            if not in_scope(subscription.scope, thread_id, notice):
                                 continue
                             payload = notice_payload(thread_id, thread.title, notice, language=subscription.language)
-                            deliveries.start_soon(self._deliver, subscription, payload)
+                            deliveries.start_soon(self._deliver, subscription, payload, (thread_id, notice))
                 except Exception:
                     # Provider failures are diagnostics, not execution failures.
                     # Never log exception strings containing endpoints or payloads.
@@ -154,18 +181,22 @@ class WebPush:
         )
         return PushTestResult(accepted=accepted)
 
-    async def _deliver(self, subscription: PushSubscriptionInput, payload: dict[str, str]) -> bool:
+    async def _deliver(
+        self,
+        subscription: PushSubscriptionInput,
+        payload: dict[str, str],
+        source: tuple[str, RootOperationNotice | InboxNotice] | None = None,
+    ) -> bool:
         async with self._limiter:
             # Do not deliver a queued snapshot after its subscription was removed.
             current = await self.repository.get(subscription.subscription_id)
             if current is None or current.keys != subscription.keys:
                 return False
-            if current.scope == "bot" and payload["path"] not in {
-                "/bot",
-                f"/threads/{BOT_THREAD_ID}",
-                "/settings/notifications",
-            }:
+            if source is not None and not in_scope(current.scope, *source):
                 # Scope may change while this delivery waits for capacity.
+                return False
+            if source is None and current.scope == "bot" and payload["path"] not in _BOT_PATHS:
+                # A test or replayed payload has no notice; its path carries the scope.
                 return False
             try:
                 key = await self._key()

@@ -116,6 +116,7 @@ from a13n_harness_ui.host_git import (
     GitStatus,
 )
 from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
+from a13n_harness_ui.inbox_models import InboxItem, InboxItemMutation, InboxLocation, InboxPage
 from a13n_harness_ui.interactive_transport import (
     InteractiveAuthentication,
     InteractiveOutput,
@@ -665,6 +666,22 @@ def create_webui(
     async def bot_pause(request: Request) -> BotSnapshot:
         command = await _document(request, BotPause)
         return await app().bot().pause(command.paused)
+
+    @server.get("/api/inbox", response_model=InboxPage)
+    async def inbox_items(
+        state: Literal["open", "done"] = "open",
+        before: Annotated[str | None, Query(max_length=80)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> InboxPage:
+        return await app().inbox().page(state=state, before=before, limit=limit)
+
+    @server.patch("/api/inbox/{item_id}", response_model=InboxItem, openapi_extra=_body(InboxItemMutation))
+    async def inbox_update(item_id: str, request: Request) -> InboxItem:
+        return await app().inbox().update(item_id, await _document(request, InboxItemMutation))
+
+    @server.get("/api/inbox/{item_id}/location", response_model=InboxLocation)
+    async def inbox_location(item_id: str) -> InboxLocation:
+        return await app().inbox().location(item_id)
 
     @server.middleware("http")
     async def response_headers(request: Request, call_next: Any) -> Any:
