@@ -53,7 +53,7 @@ class InboxRepository:
     ) -> tuple[InboxItem, bool]:
         """Insert once per tool call; a replayed call returns the original item."""
         async with transaction(self._sessions) as session:
-            result = await session.execute(
+            inserted = await session.scalar(
                 insert(InboxItemRecord)
                 .values(
                     item_id=f"inbox_{token_hex(8)}",
@@ -65,8 +65,9 @@ class InboxRepository:
                     created_at=datetime.now(UTC),
                 )
                 .on_conflict_do_nothing(index_elements=["thread_id", "tool_call_id"])
+                .returning(InboxItemRecord.item_id)
             )
-            created = bool(result.rowcount)
+            created = inserted is not None
             row = (
                 await session.execute(
                     _joined().where(

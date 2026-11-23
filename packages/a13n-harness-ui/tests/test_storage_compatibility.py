@@ -99,6 +99,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
                 "webui_draft",
                 "usage_model",
                 "envd_session_binding",
+                "inbox_item",
                 "tool_execution",
                 "compaction",
                 "coordinator",
