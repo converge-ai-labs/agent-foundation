@@ -15,6 +15,7 @@ import { emptyExecution, runExecution } from "./execution";
 import { presentItems } from "./projection";
 import { runTimeline, type ModelEntry, type TimelineEntry } from "./timeline";
 import { fixtureAttempt } from "./transcript/fixture";
+import { transcriptBlocks } from "./transcript/items";
 
 const run = {
   id: "run",
@@ -534,4 +535,71 @@ it("shows context recovery warnings in a completed run and retains their raw dia
   expect(entries.find((entry) => entry.kind === "other")).toMatchObject({
     observations: [{ detail: { payload: { before_chars: 100000 } } }],
   });
+});
+
+it("shows one publication at its recorded position, independent of the model-facing tool name", () => {
+  const publication = { asset_id: "ast_report" };
+  const fact = () =>
+    custom("a13n.harness.tool.asset_published", {
+      tool_id: "service.publish_asset",
+      tool_call_id: "call_target",
+      value: publication,
+    });
+  const direct = tool("publish_asset", "call_direct");
+  const proxy = tool("call_tools", "call_proxy");
+  const run = timeline(
+    proxy,
+    fact(),
+    finish(proxy, { result: JSON.stringify(publication) }),
+    direct,
+    finish(direct, { result: JSON.stringify(publication) }),
+    fact(),
+    text("reply", "assistant", "Here is the report."),
+  );
+  const blocks = transcriptBlocks(run.entries);
+  expect(blocks.map((block) => block.kind)).toEqual([
+    "work",
+    "publication",
+    "work",
+    "message",
+  ]);
+  expect(blocks[1]).toMatchObject({
+    asset: { assetId: publication.asset_id, toolCallId: "call_target" },
+    legacy: false,
+  });
+});
+
+it("only treats a completed direct call as a candidate for older saved displays", () => {
+  const direct = tool("publish_asset", "call_direct");
+  const failed = tool("publish_asset", "call_failed");
+  const mimic = tool("lookup", "call_mimic");
+  const nestedNative = tool("publish_asset", "call_native", {
+    provider: "provider",
+  });
+  const result = JSON.stringify({ asset_id: "ast_report" });
+  const run = timeline(
+    direct,
+    finish(direct, { result }),
+    failed,
+    finish(failed, { state: "failed", result }),
+    mimic,
+    finish(mimic, { result }),
+    nestedNative,
+    finish(nestedNative, { result }),
+    custom("a13n.harness.tool.asset_published", {
+      tool_id: "unrelated",
+      tool_call_id: "call_mimic",
+      value: { asset_id: "ast_report" },
+    }),
+  );
+  expect(
+    transcriptBlocks(run.entries).filter(
+      (block) => block.kind === "publication",
+    ),
+  ).toMatchObject([
+    {
+      asset: { assetId: "ast_report", toolCallId: "call_direct" },
+      legacy: true,
+    },
+  ]);
 });

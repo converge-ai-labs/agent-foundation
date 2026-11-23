@@ -1,3 +1,5 @@
+import { isRecord } from "../../../service-client";
+import { isAssetId, type PublishedAsset } from "../projection";
 import type { ActionEntry, ContentEntry, TimelineEntry } from "../timeline";
 import { workState, type WorkState } from "./entry-language";
 
@@ -10,6 +12,7 @@ import { workState, type WorkState } from "./entry-language";
 export type TranscriptBlock =
   | { kind: "message"; id: string; entry: ContentEntry }
   | { kind: "guidance"; id: string; entry: ContentEntry }
+  | { kind: "publication"; id: string; asset: PublishedAsset; legacy: boolean }
   | { kind: "work"; id: string; entries: WorkEntry[] };
 
 /** One compact row: the timeline entry itself, read against its own Run. */
@@ -28,7 +31,26 @@ export function transcriptBlocks(
   runState?: string,
 ): TranscriptBlock[] {
   const blocks: TranscriptBlock[] = [];
-  for (const entry of flatten(entries)) {
+  const ordered = flatten(entries);
+  const observedAssets = new Set(
+    ordered.flatMap((entry) =>
+      entry.kind === "publication" ? [entry.asset.assetId] : [],
+    ),
+  );
+  const shownAssets = new Set<string>();
+  for (const entry of ordered) {
+    if (entry.kind === "publication") {
+      if (!shownAssets.has(entry.asset.assetId)) {
+        blocks.push({
+          kind: "publication",
+          id: entry.id,
+          asset: entry.asset,
+          legacy: false,
+        });
+        shownAssets.add(entry.asset.assetId);
+      }
+      continue;
+    }
     // Input hidden from Chat stays a Debug record.
     if (entry.kind === "hidden") continue;
     if (entry.kind === "reply" && !entry.subagentRunId) {
@@ -44,8 +66,32 @@ export function transcriptBlocks(
     const last = blocks.at(-1);
     if (last?.kind === "work") last.entries.push(work);
     else blocks.push({ kind: "work", id: work.id, entries: [work] });
+    const asset = legacyPublication(entry);
+    if (asset && !observedAssets.has(asset.assetId))
+      blocks.push({
+        kind: "publication",
+        id: `publication:${entry.id}`,
+        asset,
+        legacy: true,
+      });
   }
   return blocks;
+}
+
+// Older displays only kept direct calls and their result. The attachment
+// confirms the asset's run and call from workspace metadata before showing it.
+function legacyPublication(entry: TimelineEntry): PublishedAsset | undefined {
+  if (
+    entry.kind === "tool" &&
+    entry.name === "publish_asset" &&
+    entry.state === "completed" &&
+    entry.failure == null &&
+    !entry.subagentRunId &&
+    entry.toolCallId &&
+    isRecord(entry.result) &&
+    isAssetId(entry.result.asset_id)
+  )
+    return { assetId: entry.result.asset_id, toolCallId: entry.toolCallId };
 }
 
 /**

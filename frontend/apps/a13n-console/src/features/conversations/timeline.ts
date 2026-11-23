@@ -4,7 +4,11 @@ import { sumCosts } from "../../shared/cost";
 import { isRecord } from "../../service-client";
 import type { Schema } from "../../shared/api";
 import { comparePositions } from "./display";
-import { parseItemValue, type PresentedItem } from "./projection";
+import {
+  parseItemValue,
+  type PresentedItem,
+  type PublishedAsset,
+} from "./projection";
 import type {
   Execution,
   ExecutionCoverage,
@@ -69,6 +73,7 @@ type ActionKind = Exclude<ExecutionStep["kind"], "llm"> | "native";
 export interface ActionEntry extends EntryBase {
   kind: ActionKind;
   name: string | null;
+  toolCallId?: string;
   arguments: unknown;
   result: unknown;
   resultParts?: ContentPart[];
@@ -108,8 +113,18 @@ export interface OtherEntry extends EntryBase {
   observations: ExecutionObservation[];
 }
 
+interface PublicationEntry extends EntryBase {
+  kind: "publication";
+  asset: PublishedAsset;
+}
+
 export type TimelineEntry =
-  ModelEntry | ActionEntry | ContentEntry | EventEntry | OtherEntry;
+  | ModelEntry
+  | ActionEntry
+  | ContentEntry
+  | PublicationEntry
+  | EventEntry
+  | OtherEntry;
 
 interface RunTotals {
   modelCalls: number;
@@ -218,6 +233,21 @@ export function runTimeline({
     comparePositions(a.firstPosition, b.firstPosition),
   )) {
     if (ownerOfItem.has(item.id)) continue;
+    if (item.publication) {
+      place(null, {
+        position: item.firstPosition,
+        entry: {
+          kind: "publication",
+          id: item.id,
+          asset: item.publication,
+          state: item.state,
+          startedAt: item.startedAt,
+          endedAt: item.endedAt,
+          durationMs: null,
+        },
+      });
+      continue;
+    }
     const content = contentEntry(item, () => {
       const first = firstUserText;
       firstUserText = false;
@@ -366,6 +396,7 @@ function actionEntry(
     itemId: item?.id,
     subagentRunId: step.subagentRunId,
     name: step.name ?? null,
+    toolCallId: item?.toolCallId,
     arguments: item
       ? parseItemValue(item.arguments, item.incomplete)
       : parseItemValue(detail.arguments),
@@ -404,6 +435,7 @@ function retainedAction(item: PresentedItem): ActionEntry {
     id: item.id,
     subagentRunId: item.subagentRunId,
     name: item.toolName || null,
+    toolCallId: item.toolCallId,
     arguments: parseItemValue(item.arguments, item.incomplete),
     result: parseItemValue(item.result, item.incomplete),
     resultParts: item.resultParts,

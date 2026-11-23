@@ -12,6 +12,7 @@ import {
   LegacyTruncation,
   useStoredReference,
 } from "../stored-content";
+import { AssetAttachment } from "./attachment";
 import { GuidanceMessage } from "./user-message";
 import { WorkLine } from "./work-line";
 import styles from "./transcript.module.css";
@@ -23,6 +24,7 @@ import styles from "./transcript.module.css";
  */
 export function AgentTurn({
   blocks,
+  runId,
   durationMs,
   agentName,
   agentId,
@@ -33,6 +35,7 @@ export function AgentTurn({
   children,
 }: {
   blocks: readonly TranscriptBlock[];
+  runId: string;
   /** How long a completed run took; the transcript shows every other state. */
   durationMs?: number | null;
   agentName?: string;
@@ -72,6 +75,16 @@ export function AgentTurn({
               key={block.id}
               entries={block.entries}
               childPath={childPath}
+            />
+          ) : block.kind === "publication" ? (
+            <AssetAttachment
+              key={block.id}
+              assetId={block.asset.assetId}
+              publication={{
+                runId,
+                toolCallId: block.asset.toolCallId,
+                legacy: block.legacy,
+              }}
             />
           ) : block.kind === "guidance" ? (
             <GuidanceMessage

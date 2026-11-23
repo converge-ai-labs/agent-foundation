@@ -18,6 +18,8 @@ from a13n_harness import (
     AgentSpec,
     EnvironmentMount,
     HarnessBuilder,
+    HarnessEvent,
+    HarnessExtensionEvent,
     HarnessRunResult,
     RunBindings,
     RunConfiguration,
@@ -461,16 +463,41 @@ async def test_publish_asset_attributes_the_run_and_bounds_the_file(
     actor = Principal(tenant.principal_id, "user", (Grant(tenant.organization_id, None, BUILT_IN_ROLES["builder"]),))
     scope = WorkspaceScope(tenant.organization_id, tenant.workspace_id)
 
+    events: list[HarnessEvent] = []
+
     async def publish(runtime: Any, path: str, *, verbs: frozenset[Any] | None = None) -> Any:
+        events.clear()
         authority = execution_authority(actor, scope)
         if verbs is not None:
             authority = authority.model_copy(update={"verbs": verbs})
         script = Script([("publish_asset", {"path": path}, "call_publish"), "done"])
-        result = await run(script, [AssetsCapability(runtime, lease, actor, authority)], environment=mount(tmp_path))
+        result = await run(
+            script,
+            [AssetsCapability(runtime, lease, actor, authority)],
+            environment=mount(tmp_path),
+            producer_observer=events.append,
+        )
         assert result.output == "done"
         return script.results[0]
 
+    def publications() -> list[object]:
+        return [
+            event.event.payload
+            for event in events
+            if isinstance(event.event, HarnessExtensionEvent) and event.event.kind == "tool"
+        ]
+
     published = await publish(runtime, "/workspace/report.txt")
+    assert publications() == [
+        {
+            "type": "tool_extra",
+            "tool_call_id": "call_publish",
+            "tool_name": "publish_asset",
+            "tool_id": "service.publish_asset",
+            "name": "asset_published",
+            "value": {"asset_id": published["asset_id"]},
+        }
+    ]
     asset = await get_asset(runtime.storage, actor, tenant.workspace_id, published["asset_id"])
     assert (asset.name, asset.content_type, asset.size, asset.created_by_id) == (
         "report.txt",
@@ -488,6 +515,7 @@ async def test_publish_asset_attributes_the_run_and_bounds_the_file(
     objects = runtime.settings.objects.model_copy(update={"max_bytes": 65536})
     bounded = replace(runtime, settings=runtime.settings.model_copy(update={"objects": objects}))
     assert "exceeds the 65536-byte asset limit" in str(await publish(bounded, "/workspace/large.bin"))
+    assert not publications()
     assert "does not cover" in str(await publish(runtime, "/workspace/report.txt", verbs=frozenset({"read", "run"})))
     assert "regular file" in str(await publish(runtime, "/workspace"))
     outside = await publish(runtime, "/unmounted/report.txt")

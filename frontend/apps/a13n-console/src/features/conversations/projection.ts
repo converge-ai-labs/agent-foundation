@@ -21,6 +21,8 @@ export interface PresentedItem {
   text: string;
   role: string;
   toolName: string;
+  toolCallId?: string;
+  publication?: PublishedAsset;
   arguments: string;
   incomplete?: boolean;
   result?: unknown;
@@ -33,6 +35,39 @@ export interface PresentedItem {
   steeringSource?: string;
   sourceId?: string;
   inputSource?: string;
+}
+
+export interface PublishedAsset {
+  assetId: string;
+  toolCallId: string;
+}
+
+export function isAssetId(value: unknown): value is string {
+  return typeof value === "string" && /^ast_[a-zA-Z0-9]+$/.test(value);
+}
+
+function publishedAsset(item: DisplayItem): PublishedAsset | undefined {
+  const { content } = item;
+  if (
+    item.kind !== "observation" ||
+    content.name !== "a13n.harness.tool.asset_published" ||
+    !isRecord(content.value) ||
+    !isRecord(content.value.event)
+  )
+    return;
+  const { payload } = content.value.event;
+  if (
+    isRecord(payload) &&
+    payload.tool_id === "service.publish_asset" &&
+    isRecord(payload.value) &&
+    isAssetId(payload.value.asset_id) &&
+    typeof payload.tool_call_id === "string" &&
+    payload.tool_call_id
+  )
+    return {
+      assetId: payload.value.asset_id,
+      toolCallId: payload.tool_call_id,
+    };
 }
 
 const text = (value: unknown) => (typeof value === "string" ? value : "");
@@ -56,6 +91,9 @@ export function presentItem(item: DisplayItem): PresentedItem {
     text: text(content.text),
     role: text(content.role) || "assistant",
     toolName: text(content.toolCallName),
+    toolCallId: content.provider
+      ? undefined
+      : text(content.toolCallId) || undefined,
     arguments: text(content.arguments),
     ...(content.incomplete === true || item.content_refs?.arguments
       ? { incomplete: true }
@@ -77,9 +115,11 @@ export function presentItem(item: DisplayItem): PresentedItem {
 
 /** The display's messages and tool calls in order; observations are execution facts. */
 export function presentItems(items: Iterable<DisplayItem>): PresentedItem[] {
-  return inDisplayOrder(items)
-    .filter((item) => item.kind !== "observation")
-    .map(presentItem);
+  return inDisplayOrder(items).flatMap((item) => {
+    if (item.kind !== "observation") return [presentItem(item)];
+    const publication = publishedAsset(item);
+    return publication ? [{ ...presentItem(item), publication }] : [];
+  });
 }
 
 export function parseItemValue(value: unknown, incomplete = false): unknown {

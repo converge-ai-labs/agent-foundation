@@ -39,7 +39,13 @@ export function AttachmentChip({
   );
 }
 
-export function AssetAttachment({ assetId }: { assetId: string }) {
+export function AssetAttachment({
+  assetId,
+  publication,
+}: {
+  assetId: string;
+  publication?: { runId: string; toolCallId: string; legacy: boolean };
+}) {
   const { t } = useTranslation(),
     client = useClient(),
     { workspace, can } = useWorkspace();
@@ -58,6 +64,8 @@ export function AssetAttachment({ assetId }: { assetId: string }) {
         .then(data),
   });
   const name = asset.data?.name || assetId;
+  const retired = !!asset.data?.retired_at;
+  const source = asset.data?.source;
   const download = useMutation({
     mutationFn: async () => {
       const blob = data(
@@ -73,17 +81,27 @@ export function AssetAttachment({ assetId }: { assetId: string }) {
       downloadBlob(blob, name);
     },
   });
+  if (
+    publication &&
+    (asset.data
+      ? source?.run_id !== publication.runId ||
+        source.tool_call_id !== publication.toolCallId
+      : publication.legacy)
+  )
+    return null;
   return (
     <>
       <AttachmentChip
         icon={<FileIcon size={13} aria-hidden="true" />}
         label={name}
         secondary={
-          asset.data
-            ? `${asset.data.content_type} · ${asset.data.size.toLocaleString()} B`
-            : asset.isError
-              ? t("File details unavailable")
-              : undefined
+          retired
+            ? t("File retired")
+            : asset.data
+              ? `${asset.data.content_type} · ${asset.data.size.toLocaleString()} B`
+              : asset.isError || !can("read")
+                ? t("File details unavailable")
+                : undefined
         }
         actions={
           <>
@@ -94,7 +112,7 @@ export function AssetAttachment({ assetId }: { assetId: string }) {
                 variant="ghost"
                 aria-label={`${t("Download")} ${name}`}
                 title={`${t("Download")} ${name}`}
-                disabled={!!asset.data?.retired_at}
+                disabled={!asset.data || retired}
                 loading={download.isPending}
                 onClick={() => download.mutate()}
               >
