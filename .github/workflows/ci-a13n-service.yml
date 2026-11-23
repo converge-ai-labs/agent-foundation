@@ -148,7 +148,8 @@ jobs:
           from pathlib import Path
           from scripts.run_python_tests import balanced_shards
 
-          matrix = [{"name": "checks", "runner": "ubuntu-latest", "targets": ""}]
+          # The locked Playwright Chromium build supports Ubuntu 24.04.
+          matrix = [{"name": "checks", "runner": "ubuntu-24.04", "targets": ""}]
           if os.environ["TESTS_CHANGED"] == "true":
               root = Path("packages/a13n-service/tests")
               # Keep whole files together, matching loadgroup's file-local fixture isolation.

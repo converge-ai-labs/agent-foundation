@@ -518,7 +518,12 @@ async def test_only_a_login_session_sends_invitations(service) -> None:  # type:
 
 async def test_identity_mail_is_queued_encrypted(mailing) -> None:  # type: ignore[no-untyped-def]
     client = mailing.client
-    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": True, "initialized": True}
+    assert (await client.get("/api/v1/auth/configuration")).json() == {
+        "password_enabled": True,
+        "oidc_providers": [],
+        "email_delivery": True,
+        "initialized": True,
+    }
     receipt = await client.post(
         f"{mailing.workspace}/invitations", json={"email": "mail@example.com", "role": "runner"}
     )
@@ -756,7 +761,12 @@ async def test_profile_password_and_login_sessions(service) -> None:  # type: ig
         json={"email": "x@example.com", "current_password": PASSWORD},
     )
     assert unavailable.status_code == 503
-    assert (await client.get("/api/v1/auth/configuration")).json() == {"email_delivery": False, "initialized": True}
+    assert (await client.get("/api/v1/auth/configuration")).json() == {
+        "password_enabled": True,
+        "oidc_providers": [],
+        "email_delivery": False,
+        "initialized": True,
+    }
     async with new_client(service) as anonymous:
         assert (await anonymous.post("/api/v1/auth/password-reset", json={"email": ADMIN})).status_code == 204
     async with new_client(service) as other:
