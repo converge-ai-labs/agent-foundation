@@ -862,8 +862,18 @@ it("switches onboarding languages without losing choices, focus selection, or re
 });
 
 it("keeps an unsaved provider key in memory when switching language without saving or persisting it", async () => {
+  saveWizardDraft(status.draft_scope!, {
+    version: 2,
+    step: 0,
+    threadId: `thread_${"a".repeat(32)}`,
+    selection: { ...status.defaults!, default_agent: "agent-primary" },
+    modelDraft: {
+      connection: "openai-responses",
+      modelId: "gpt-5.4",
+      baseUrl: "https://api.openai.com/v1",
+    },
+  });
   mount();
-  await selectApi();
   const field = await screen.findByLabelText("Provider API key");
   fireEvent.change(field, {
     target: { value: "test-only-unsaved-provider-key" },
