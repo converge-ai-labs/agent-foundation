@@ -958,7 +958,7 @@ function ConversationContent({
           </div>
         )}
         <div className={styles.readerFrame}>
-          <ReaderFades />
+          <ReaderFades reader={reader} />
           {!publication && (
             <InputNavigation
               threadId={threadId}
