@@ -102,6 +102,10 @@ def definition() -> AppDefinition:
 
 App 自己维护的令牌通过 `egress.create_app_credential`、`rotate_app_credential` 和 `revoke_app_credential` 管理。操作归因于组织内当前有效的身份，工作区 Runner 账号无需提升为 `write`。运维人员可以在 Console 查看凭据所有者并请求同步 Session。**滚动升级时，先升级所有提供 API 的副本，再启用会创建 App 凭据的功能。** 旧副本不会执行新的修改限制。
 
+要让凭据变更和 App 状态一起提交，请在同一个 Service 事务内调用 `egress.create_app_credential_in_transaction`、`egress.rotate_app_credential_in_transaction` 或 `egress.revoke_app_credential_in_transaction`。轮换和撤销只在事务提交后通知活跃 Session。
+
+使用 `threads.update_app_egress_secrets` 修改空闲的共享 Thread 子树的主绑定。`set_secrets` 接收 App 自有凭据的 `egress.SecretReference`，`remove_envs` 接收要移除的环境变量名。每个 Thread 保留自己的出口目标策略和其他所有者的引用。如果绑定既没有出口模式，也没有出口策略，添加引用时必须显式传入 `initial_destinations`。例如，使用 `a13n_envd_client.eip.v1` 中的 `AllowlistDestinations(mode="allowlist", hosts=("api.example.com",))`，即可为该主机初始化受控出口。只有明确允许访问公网目标时，才使用 `PublicDestinations(mode="public")`。这两种设置都不会覆盖现有策略。移除引用会保留出口目标策略；要让活跃 Session 中的凭据失效，请撤销该凭据。
+
 ## 持久化业务数据
 
 App 需要在宿主 PostgreSQL 数据库中建表时，使用 `AppDatabase`。每个 App 在 `public` 中拥有独立的迁移历史。App 使用普通 SQLAlchemy 模型和现有 Runtime Storage，可以直接关联查询原生 Service ORM 行，无需另建连接池。前缀划分迁移归属；App 代码仍需执行租户范围限制和授权。

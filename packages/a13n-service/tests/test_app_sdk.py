@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from a13n_envd_client.eip.v1 import AllowlistDestinations, PublicDestinations
 from a13n_service.app_plugins import AppCatalog, AppManifest
 from a13n_service.app_sdk import agents, egress, projects, schedules, threads, usage
 from a13n_service.infra.audit import AuditEventRow
@@ -191,6 +192,41 @@ async def test_native_thread_create_replay_submit_rollback_and_quiescence(
                 session, runtime, ws, app_id="claw", principal_id=runner, root_thread_id=thread.id, environment_id=None
             )
     assert busy.value.details["reason"] == "thread_resources_busy"
+
+
+async def test_app_egress_patch_checks_current_wait_for_run_without_primary(
+    service, app_runtime, runner, scripted_model, runs_kit
+):
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.execute import execute
+    from a13n_service.runs.tables import RunRow
+
+    await runs_kit.pause_sweeps(service)
+    runtime, ws = app_runtime, service.tenant.workspace_id
+    agent = await runs_kit.create_agent(service, scripted_model, user_questions=True)
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_ask")
+    async with transaction(runtime.storage) as db:
+        admission = await threads.prepare_admission(db, runtime, ws, runner, app_id="claw")
+        body = threads.NewThread.model_validate(runs_kit.message(agent, "first"))
+        thread, receipt = await threads.create_thread_in_transaction(
+            db, runtime, admission, ws, body, request_key="root"
+        )
+        assert receipt.run is not None and not receipt.run.environment_mounts
+
+    (lease,) = await claim(runtime, worker_id="waiting", worker_build="test", limit=1)
+    async with transaction(runtime.storage) as db:
+        cached_run = await db.get_one(RunRow, receipt.run.id)
+        await execute(runtime, lease, AttemptControl())
+        current = await db.get_one(ThreadRow, thread.id)
+        assert current.current_run_id is None and current.last_run_id == cached_run.id
+        assert await db.scalar(select(RunRow.status).where(RunRow.id == cached_run.id)) == "waiting"
+        assert cached_run.status == "running"
+        with pytest.raises(ServiceError) as busy:
+            await threads.update_app_egress_secrets(
+                db, runtime, ws, app_id="claw", principal_id=runner, root_thread_id=thread.id, remove_envs=["OLD_TOKEN"]
+            )
+        assert busy.value.details["reason"] == "thread_resources_busy"
 
 
 async def test_native_project_revision_and_schedule_facades(service, app_runtime, runner, scripted_model, runs_kit):
@@ -629,3 +665,276 @@ async def test_fresh_schedules_filter_instance_labels_and_count_archived_pending
         idle.state, idle.pause_reason, idle.archived_at = "archived", None, current
         await db.flush()
         assert await schedules.count_active_fresh_schedules(db, ws, app_id="claw", labels={"instance": "idle"}) == 0
+
+
+async def test_app_credential_mutations_follow_outer_commit(service, app_runtime, runner):
+    runtime, ws = app_runtime, service.tenant.workspace_id
+    owner = dict(app_id="claw", actor_id=runner)
+    definition = dict(name="Connector", allowed_hosts=["example.com"], value="original")
+    async with short_session(runtime.storage) as db:
+        with pytest.raises(RuntimeError, match="outer Service transaction"):
+            await egress.create_app_credential_in_transaction(db, runtime, ws, **owner, **definition)
+
+    with pytest.raises(RuntimeError, match="abort generation"):
+        async with transaction(runtime.storage) as db:
+            orphan = await egress.create_app_credential_in_transaction(db, runtime, ws, **owner, **definition)
+            raise RuntimeError("abort generation")
+    assert await egress.get_app_credential(runtime, ws, app_id="claw", credential_id=orphan.id) is None
+    async with short_session(runtime.storage) as db:
+        assert await db.scalar(select(AuditEventRow.id).where(AuditEventRow.target_id == orphan.id)) is None
+
+    async with transaction(runtime.storage) as db:
+        created = await egress.create_app_credential_in_transaction(db, runtime, ws, **owner, **definition)
+    target = dict(**owner, credential_id=created.id)
+    async with runtime.redis.pubsub() as subscriber:
+        await subscriber.subscribe(CHANNEL)
+        assert (await subscriber.get_message(timeout=2))["type"] == "subscribe"
+        for command, extra in [
+            (egress.rotate_app_credential_in_transaction, {"value": "new"}),
+            (egress.revoke_app_credential_in_transaction, {}),
+        ]:
+            with pytest.raises(RuntimeError, match="abort generation"):
+                async with transaction(runtime.storage) as db:
+                    assert (await command(db, runtime, ws, **target, **extra)).credential_version == 2
+                    raise RuntimeError("abort generation")
+            assert await subscriber.get_message(timeout=0.1) is None
+            assert await egress.get_app_credential(runtime, ws, app_id="claw", credential_id=created.id) == created
+        async with transaction(runtime.storage) as db:
+            assert (
+                await egress.rotate_app_credential_in_transaction(db, runtime, ws, **target, value="new")
+            ).credential_version == 2
+            assert await subscriber.get_message(timeout=0.1) is None
+        event = await subscriber.get_message(timeout=2)
+        assert json.loads(event["data"]) == {"credential_id": created.id, "version": 2}
+        async with transaction(runtime.storage) as db:
+            assert (await egress.revoke_app_credential_in_transaction(db, runtime, ws, **target)).state == "revoked"
+            assert await subscriber.get_message(timeout=0.1) is None
+        event = await subscriber.get_message(timeout=2)
+        assert json.loads(event["data"]) == {"credential_id": created.id, "version": 3}
+
+
+@pytest.mark.parametrize(
+    "policy",
+    [
+        {"egress_mode": "deny"},
+        {"egress_mode": "inherit"},
+        {"egress_mode": "controlled"},
+        {"egress": {"destinations": {"mode": "public"}}},
+        {"egress_mode": "controlled", "egress": {"destinations": {"mode": "allowlist", "hosts": ["example.com"]}}},
+    ],
+)
+def test_app_secret_upsert_never_expands_configured_egress(policy):
+    from a13n_service.app_sdk._thread_resources import _patch_secrets
+
+    cfg = threads.SessionConfiguration.model_validate(policy)
+    ref = egress.SecretReference(env="APP_TOKEN", credential_id="ecred_" + "a" * 24, inject_hosts=("example.org",))
+    with pytest.raises(ServiceError) as denied:
+        _patch_secrets(cfg, {ref.env: ref}, set(), PublicDestinations(mode="public"))
+    assert denied.value.code == "invalid_argument"
+    assert _patch_secrets(cfg, {}, {ref.env}, PublicDestinations(mode="public")) == cfg
+
+
+@pytest.mark.parametrize(
+    "initial_destinations",
+    [
+        PublicDestinations(mode="public"),
+        AllowlistDestinations(mode="allowlist", hosts=("api.github.com", "example.org")),
+    ],
+    ids=["public", "allowlist"],
+)
+async def test_patch_app_egress_secrets_in_each_shared_binding(
+    service, app_runtime, runner, scripted_model, runs_kit, initial_destinations
+):
+    from a13n_service.app_sdk._access import run_actor
+    from a13n_service.resources.egress_credentials.tables import CredentialRow
+    from a13n_service.runs.environments import mounts
+    from a13n_service.runs.environments.schemas import MountCreate
+    from a13n_service.runs.environments.tables import ThreadSessionBindingRow
+    from a13n_service.runs.schemas import Outcome
+    from a13n_service.runs.seal import seal
+    from a13n_service.runs.tables import RunRow, SessionRow
+    from a13n_service.runs.threads import new_thread
+    from a13n_service.tenancy.authorize import WorkspaceScope
+
+    from .environments_support import with_fake_providers
+    from .test_session_credentials import selection
+
+    env = await with_fake_providers(service)
+    runtime = replace(env.runtime, apps=app_runtime.apps)
+    ws = service.tenant.workspace_id
+    agent = await runs_kit.delegating(service, scripted_model, "async")
+    inputs = dict(app_id="claw", principal_id=runner)
+    async with transaction(runtime.storage) as db:
+        env_id = await projects.reserve_environment(
+            db, runtime, ws, **inputs, template_id=env.template["id"], name="App"
+        )
+        admission = await threads.prepare_admission(db, runtime, ws, runner, app_id="claw")
+        body = threads.NewThread.model_validate(
+            runs_kit.message(agent, "first", environments=[{"name": "workspace", "environment_id": env_id}])
+        )
+        root, receipt = await threads.create_thread_in_transaction(db, runtime, admission, ws, body, request_key="root")
+        assert receipt.run is not None
+    args = dict(**inputs, root_thread_id=root.id)
+    create_args = dict(actor_id=runner, allowed_hosts=["api.github.com", "example.org"], value="synthetic")
+    other = await egress.create_app_credential(runtime, ws, app_id="other", name="Other", **create_args)
+    operator = threads.SessionConfiguration.model_validate(
+        {**selection(other.id, env="OPERATOR_TOKEN"), "working_directory": "/child", "commands": False}
+    )
+    async with transaction(runtime.storage) as db:
+        owned = await egress.create_app_credential_in_transaction(
+            db, runtime, ws, app_id="claw", name="App", **create_args
+        )
+        ref = egress.SecretReference.model_validate(selection(owned.id)["egress"]["secrets"][0])
+    with pytest.raises(ServiceError) as busy:
+        async with transaction(runtime.storage) as db:
+            await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[ref])
+    assert busy.value.details["reason"] == "thread_resources_busy"
+
+    async with transaction(runtime.storage) as db:
+        origin = await db.get_one(RunRow, receipt.run.id)
+        parent = await db.get_one(ThreadRow, root.id)
+        await seal(db, runtime, parent, origin, None, Outcome.cancelled(), at=datetime.now(UTC))
+        owner = await db.get_one(SessionRow, root.session_id)
+        shared = new_thread(
+            owner,
+            mcp_headers={},
+            origin="child",
+            origin_thread_id=root.id,
+            origin_run_id=origin.id,
+            origin_tool_call_id="shared",
+            subagent="helper",
+        )
+        fork = new_thread(owner, mcp_headers={}, origin="fork", origin_thread_id=root.id, origin_run_id=origin.id)
+        db.add_all([shared, fork])
+        await db.flush()
+        shared_id, fork_id = shared.id, fork.id
+        actor = await run_actor(db, runtime, WorkspaceScope(parent.organization_id, ws), runner)
+        for thread in (shared, fork):
+            await mounts.mount_environments(
+                db,
+                thread,
+                [MountCreate(name="workspace", environment_id=env_id, session_configuration=operator)],
+                principal=actor,
+            )
+
+    async def saved(db, thread_id):
+        return await db.get_one(ThreadSessionBindingRow, (thread_id, env_id, "default"), populate_existing=True)
+
+    # Use the native HTTP editor to claim a name on the child after the App's earlier read of the tree.
+    path = f"{service.api}/threads/{shared_id}/session-bindings/{env_id}/default"
+    before = await service.client.get(path)
+    claimed = operator.model_dump(mode="json")
+    claimed["egress"]["secrets"].append({**claimed["egress"]["secrets"][0], "env": ref.env})
+    async with transaction(runtime.storage) as db:
+        cached_child = await saved(db, shared_id)
+        edited = await service.client.put(
+            path, json={"configuration": claimed}, headers={"if-match": before.headers["etag"]}
+        )
+        assert edited.status_code == 200, edited.text
+        assert cached_child.configuration == operator.model_dump(mode="json")
+        for changes in ({"set_secrets": [ref]}, {"remove_envs": [ref.env]}):
+            with pytest.raises(ServiceError) as conflict:
+                await threads.update_app_egress_secrets(
+                    db, runtime, ws, **args, initial_destinations=initial_destinations, **changes
+                )
+            assert conflict.value.details["reason"] == "egress_secret_owner_conflict"
+        assert (await saved(db, root.id)).version == 1
+    undone = await service.client.put(
+        path, json={"configuration": operator.model_dump(mode="json")}, headers={"if-match": edited.headers["etag"]}
+    )
+    assert undone.status_code == 200, undone.text
+
+    async with transaction(runtime.storage) as db:
+        with pytest.raises(ServiceError) as missing_policy:
+            await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[ref])
+        assert missing_policy.value.code == "invalid_argument"
+        for edits in ({}, {"remove_envs": [ref.env]}):
+            await threads.update_app_egress_secrets(
+                db, runtime, ws, **args, initial_destinations=initial_destinations, **edits
+            )
+        root_binding = await saved(db, root.id)
+        assert root_binding.version == 1
+        assert threads.SessionConfiguration.model_validate(root_binding.configuration) == threads.SessionConfiguration()
+
+    with pytest.raises(RuntimeError, match="rollback bindings"):
+        async with transaction(runtime.storage) as db:
+            await threads.update_app_egress_secrets(
+                db, runtime, ws, **args, set_secrets=[ref], initial_destinations=initial_destinations
+            )
+            assert (await saved(db, root.id)).version == 2
+            raise RuntimeError("rollback bindings")
+    async with transaction(runtime.storage) as db:
+        root_before = await saved(db, root.id)
+        assert root_before.version == 1
+        other_ref = ref.model_copy(update={"credential_id": other.id})
+        with pytest.raises(ServiceError) as denied:
+            await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[other_ref])
+        assert denied.value.code == "not_found"
+        await threads.update_app_egress_secrets(
+            db, runtime, ws, **args, set_secrets=[ref], initial_destinations=initial_destinations
+        )
+        root_cfg = threads.SessionConfiguration.model_validate((await saved(db, root.id)).configuration)
+        child_cfg = threads.SessionConfiguration.model_validate((await saved(db, shared_id)).configuration)
+        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations == initial_destinations
+        assert root_cfg.credential_references == (ref,)
+        assert child_cfg.credential_references == (*operator.credential_references, ref)
+        assert child_cfg.model_dump(exclude={"egress"}) == operator.model_dump(exclude={"egress"})
+        assert child_cfg.egress.destinations == operator.egress.destinations
+        assert (await saved(db, fork_id)).configuration == operator.model_dump(mode="json")
+        await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[ref])
+        assert (await saved(db, root.id)).version == 2
+        assert (await db.get_one(RunRow, receipt.run.id)).environment_mounts[0]["session_configuration"][
+            "egress"
+        ] is None
+    # The root would accept this host, but supplying initialization must not widen the child's existing allowlist.
+    wide_ref = ref.model_copy(update={"env": "EXTRA_TOKEN", "inject_hosts": ("example.org",)})
+    async with transaction(runtime.storage) as db:
+        with pytest.raises(ServiceError) as narrow:
+            await threads.update_app_egress_secrets(
+                db, runtime, ws, **args, set_secrets=[wide_ref], initial_destinations=initial_destinations
+            )
+        assert narrow.value.code == "invalid_argument"
+        assert (await saved(db, root.id)).version == 2
+
+    async def set_child_policy(configuration):
+        current = await service.client.get(path)
+        changed = await service.client.put(
+            path, json={"configuration": configuration}, headers={"if-match": current.headers["etag"]}
+        )
+        assert changed.status_code == 200, changed.text
+
+    # With the configured root visited first, a later child refusal must leave both bindings unchanged.
+    for policy in ({}, {"egress_mode": "deny"}, {"egress_mode": "inherit"}):
+        await set_child_policy(policy)
+        async with transaction(runtime.storage) as db:
+            child_version = (await saved(db, shared_id)).version
+            init = {"initial_destinations": initial_destinations} if policy else {}
+            with pytest.raises(ServiceError) as refused:
+                await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[wide_ref], **init)
+            assert refused.value.code == "invalid_argument"
+            assert (await saved(db, root.id)).version == 2
+            child_binding = await saved(db, shared_id)
+            assert child_binding.version == child_version
+            assert threads.SessionConfiguration.model_validate(child_binding.configuration) == (
+                threads.SessionConfiguration.model_validate(policy)
+            )
+    await set_child_policy(child_cfg.model_dump(mode="json"))
+
+    async with transaction(runtime.storage) as db:
+        cached_credential = await db.get_one(CredentialRow, owned.id)
+        # Revoke in a separate committed Service transaction before this caller takes its organization lock.
+        await egress.revoke_app_credential(runtime, ws, app_id="claw", actor_id=runner, credential_id=owned.id)
+        assert cached_credential.state == "active"
+        root_before, child_before = (await saved(db, root.id)).version, (await saved(db, shared_id)).version
+        alias = ref.model_copy(update={"env": "SECOND_APP_TOKEN"})
+        with pytest.raises(ServiceError) as revoked:
+            await threads.update_app_egress_secrets(db, runtime, ws, **args, set_secrets=[alias])
+        assert revoked.value.details["reason"] == "credential_revoked"
+        assert cached_credential.state == "revoked"
+        assert (await saved(db, root.id)).version == root_before
+        assert (await saved(db, shared_id)).version == child_before
+        await threads.update_app_egress_secrets(db, runtime, ws, **args, remove_envs=[ref.env])
+        root_cfg = threads.SessionConfiguration.model_validate((await saved(db, root.id)).configuration)
+        assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations == initial_destinations
+        assert root_cfg.credential_references == ()
+        assert (await saved(db, shared_id)).configuration == operator.model_dump(mode="json")
