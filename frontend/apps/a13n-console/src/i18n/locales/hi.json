@@ -10,6 +10,7 @@
   "Non-root overrides the Envd egress default. Sessions that explicitly require controlled or denied egress are rejected. Kubernetes NetworkPolicy still applies.": "गैर-रूट मोड Envd की डिफ़ॉल्ट आउटबाउंड सेटिंग बदल देता है। नियंत्रित या बंद आउटबाउंड ट्रैफ़िक की स्पष्ट माँग करने वाले सेशन अस्वीकार किए जाते हैं। Kubernetes NetworkPolicy लागू रहती है।",
   "Envd startup": "Envd स्टार्टअप",
   "Non-root": "गैर-root",
+  "Root user": "root उपयोगकर्ता",
   "From Pod template": "Pod टेम्पलेट से",
   "Run Files and Shell in a Restricted Pod. Outbound traffic follows Kubernetes network policy.": "Restricted Pod में Files और Shell चलाएँ। आउटबाउंड ट्रैफ़िक Kubernetes नेटवर्क नीति का पालन करता है।",
   "Start Envd as root. Use a namespace that permits root containers.": "Envd को root के रूप में शुरू करें। root कंटेनरों की अनुमति वाला नेमस्पेस चुनें।",

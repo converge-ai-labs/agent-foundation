@@ -66,7 +66,7 @@ function EnvdStartupHelp() {
               <td>{t("Inherits Pod networking")}</td>
             </tr>
             <tr>
-              <th scope="row">{t("Root")}</th>
+              <th scope="row">{t("Root user")}</th>
               <td>{t("Not allowed")}</td>
               <td>
                 {t("Depends on Envd configuration and runtime permissions")}
@@ -229,7 +229,7 @@ export function KubernetesConfiguration({
                       disabled={readOnly}
                       options={[
                         { value: "non_root", label: t("Non-root") },
-                        { value: "root", label: t("Root") },
+                        { value: "root", label: t("Root user") },
                         { value: "template", label: t("From Pod template") },
                       ]}
                       onValueChange={(envd_launcher) => {

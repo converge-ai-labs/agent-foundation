@@ -144,10 +144,10 @@ Console 新模板的预设使用 `envd_launcher: non_root`。执行容器可选�
 | Envd 启动模式                   | Restricted Pod Security                                                                               | Envd 出站管控                                                                                                 |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | **非 root**（`non_root`）       | Service 按 Restricted 配置执行容器。自行添加的 init 容器、sidecar 和其他 Pod 设置也必须符合准入要求。 | Envd 强制使用 `inherit`，覆盖镜像和守护进程的启动默认值。Session 显式要求 `controlled` 或 `deny` 时会被拒绝。 |
-| **Root**（`root`）              | 要求命名空间允许 root 容器。                                                                          | 取决于 Envd 配置和运行时权限。以 root 启动不会自动开启出站管控。                                              |
+| **root 用户**（`root`）         | 要求命名空间允许 root 容器。                                                                          | 取决于 Envd 配置和运行时权限。以 root 启动不会自动开启出站管控。                                              |
 | **沿用 Pod 模板**（省略该字段） | 取决于自定义 Pod 配置和镜像。                                                                         | 沿用原行为，取决于 Envd 配置和运行时权限。                                                                    |
 
-Kubernetes NetworkPolicy 独立于 Envd 启动模式，仍然生效。非 root 模式下，Envd 与 Agent 的 Files 和 Shell 共用 UID/GID 1000，不提供桌面或 sudo。镜像需要包含对应账号，且该账号要能写入工作目录。Pod 是信任边界：Agent 可以读取本实例的 Envd 连接令牌并写入其 Envd 状态；该令牌不授予 Service API 访问权限。使用官方沙箱镜像时，即使 Envd 以 root 启动，Agent 操作仍以镜像内的非 root 账号执行。
+Kubernetes NetworkPolicy 独立于 Envd 启动模式，仍然生效。非 root 模式下，Envd 与 Agent 的 Files 和 Shell 共用 UID/GID 1000，不提供桌面或 sudo。镜像需要包含对应账号，且该账号要能写入工作目录；如果同时开启 `readOnlyRootFilesystem: true`，还需为 `/tmp`（Envd 会话状态目录必需）、工作目录以及工具依赖的可写 `$HOME` 路径挂载可写卷。Pod 是信任边界：Agent 可以读取本实例的 Envd 连接令牌并写入其 Envd 状态；该令牌不授予 Service API 访问权限。使用官方沙箱镜像时，即使 Envd 以 root 启动，Agent 操作仍以镜像内的非 root 账号执行。
 
 显式启动模式由 Service 管理所选容器的启动安全字段，并拒绝冲突配置。Pod 级 `fsGroup` 由运维决定；只有存储确实需要，而且该组适用于整个卷时才设置它。省略 `envd_launcher` 可保留现有启动行为。请在所有 Service 组件升级后再保存显式模式；旧版本不识别该字段。
 

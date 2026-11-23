@@ -978,6 +978,7 @@ def test_envd_launch_modes_preserve_native_configuration(native, launcher):
         ("non_root", {"runAsUser": 42}, "runAsUser"),
         ("non_root", {"capabilities": {"add": ["NET_ADMIN"]}}, "capabilities"),
         ("root", {"runAsNonRoot": True}, "runAsNonRoot"),
+        ("root", {"runAsUser": False}, "runAsUser"),
     ],
 )
 def test_explicit_envd_launcher_rejects_conflicting_container_security(launcher, security, field):
@@ -1010,6 +1011,19 @@ def test_only_non_root_reserves_envd_data_bindings():
         recipe(envd_launcher="non_root", storage=storage)
     with pytest.raises(ValidationError, match="data volume name is platform-owned"):
         recipe(envd_launcher="non_root", storage=[{**storage[0], "name": "a13n-envd-data", "mount_path": "/data"}])
+    for container_list in ("containers", "initContainers"):
+        spec: dict[str, object] = {"containers": [{"name": "agent", "image": "sandbox:test"}]}
+        helper = {
+            "name": "helper",
+            "image": "helper:test",
+            "volumeMounts": [{"name": "a13n-envd-data", "mountPath": "/shared"}],
+        }
+        if container_list == "containers":
+            spec["containers"] = [*spec["containers"], helper]
+        else:
+            spec["initContainers"] = [helper]
+        with pytest.raises(ValidationError, match="Only the execution container receives the Envd data volume"):
+            recipe(envd_launcher="non_root", pod_template={"spec": spec})
 
 
 @pytest.mark.parametrize("bootstrap", [False, True])

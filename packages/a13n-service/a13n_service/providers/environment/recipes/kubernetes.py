@@ -164,6 +164,8 @@ class KubernetesRecipe(KubernetesEnvironmentConfiguration):
             for mount in mounts:
                 if mount.get("name") == CREDENTIAL_VOLUME:
                     raise ValueError("Only the execution container receives the private credential")
+                if self.envd_launcher == "non_root" and mount.get("name") == ENVD_DATA_VOLUME:
+                    raise ValueError("Only the execution container receives the Envd data volume")
                 if not isinstance(mount.get("mountPath"), str):
                     raise ValueError("volumeMounts require string mountPath values")
                 private_path(mount["mountPath"])
@@ -171,7 +173,9 @@ class KubernetesRecipe(KubernetesEnvironmentConfiguration):
                 if self.envd_launcher is not None:
                     security = native_object(container, "securityContext")
                     for field, required in ENVD_LAUNCHER_SECURITY[self.envd_launcher].items():
-                        if field in security and security[field] != required:
+                        if field in security and (
+                            type(security[field]) is not type(required) or security[field] != required
+                        ):
                             raise ValueError(
                                 f"Execution container securityContext.{field} conflicts with envd_launcher"
                             )

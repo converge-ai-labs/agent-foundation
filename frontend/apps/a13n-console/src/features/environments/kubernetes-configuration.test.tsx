@@ -119,8 +119,8 @@ it("builds a port-forward sandbox with resource and persistent storage forms, wi
 });
 
 it.each([
-  [undefined, "From Pod template", "Root", "root"],
-  ["root", "Root", "From Pod template", undefined],
+  [undefined, "From Pod template", "Root user", "root"],
+  ["root", "Root user", "From Pod template", undefined],
 ])(
   "changes an explicit or inherited Envd startup choice (%s)",
   async (initial, current, choice, next) => {
@@ -133,7 +133,7 @@ it.each([
     const startup = screen.getByRole("combobox", { name: "Envd startup" });
     expect(startup.textContent).toContain(current);
     await user.click(startup);
-    await user.click(screen.getByRole("option", { name: choice }));
+    await user.click(await screen.findByRole("option", { name: choice }));
     expect(recipe()).toEqual(
       next ? { ...direct, envd_launcher: next } : direct,
     );
@@ -149,6 +149,9 @@ it("opens the startup comparison beside the launcher without editing the recipe"
   const matrix = await screen.findByRole("table");
   expect(
     within(matrix).getByRole("rowheader", { name: "Non-root" }),
+  ).toBeDefined();
+  expect(
+    within(matrix).getByRole("rowheader", { name: "Root user" }),
   ).toBeDefined();
   expect(within(matrix).getByText("Inherits Pod networking")).toBeDefined();
   expect(
