@@ -506,12 +506,16 @@ it.each([
       await user.click(
         within(row).getByRole("button", { name: "Member actions" }),
       );
+      const menu = await screen.findByRole("menu", { name: "Member actions" });
       await user.click(
-        await screen.findByRole("menuitem", { name: "Reset password" }),
+        within(menu).getByRole("menuitem", { name: "Reset password" }),
       );
-      return screen.findByRole("dialog", { name: "Reset member password?" });
+      const dialog = await screen.findByRole("dialog", {
+        name: "Reset member password?",
+      });
+      return { dialog, menu };
     }
-    const dialog = await openReset();
+    const { dialog, menu } = await openReset();
     expect(within(dialog).getByText("Ada")).toBeTruthy();
     expect(within(dialog).getByText("ada@example.com")).toBeTruthy();
     expect(within(dialog).queryByRole("combobox")).toBeNull();
@@ -528,6 +532,8 @@ it.each([
       emailDelivery,
     );
     await user.click(screen.getByRole("button", { name: "Done" }));
+    // ModalFrame closes the parent menu after the dialog's exit completes.
+    await waitFor(() => expect(menu.isConnected).toBe(false));
     await openReset();
     expect(
       screen.queryByRole("button", { name: "Copy reset link" }),
