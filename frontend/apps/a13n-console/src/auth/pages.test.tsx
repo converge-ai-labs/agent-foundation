@@ -115,6 +115,33 @@ it("retries unavailable sign-in configuration without showing a password form", 
   expect(screen.queryByLabelText("Password")).toBeNull();
 });
 
+it.each([true, false])(
+  "offers the configured OIDC provider when password sign-in is %s",
+  async (passwordEnabled) => {
+    http.GET.mockResolvedValue({
+      data: {
+        initialized: true,
+        password_enabled: passwordEnabled,
+        email_delivery: true,
+        oidc_providers: [
+          { id: "team", label: "Team Identity", brand: "generic" },
+        ],
+      },
+      response: new Response(),
+    });
+    renderAuthPage("/login");
+
+    const provider = await screen.findByRole("link", {
+      name: "Sign in with {{provider}}",
+    });
+    expect(provider.getAttribute("href")).toBe("/api/v1/auth/oidc/team/start");
+    expect(Boolean(screen.queryByLabelText("Password"))).toBe(passwordEnabled);
+    expect(
+      Boolean(screen.queryByRole("link", { name: "Forgot password" })),
+    ).toBe(passwordEnabled);
+  },
+);
+
 it("validates sign-in under each field instead of sending an empty request", async () => {
   const user = renderAt("/login", { email_delivery: true });
   await user.click(await screen.findByRole("button", { name: "Sign in" }));

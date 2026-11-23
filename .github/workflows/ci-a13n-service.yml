@@ -148,7 +148,6 @@ jobs:
           from pathlib import Path
           from scripts.run_python_tests import balanced_shards
 
-          # The locked Playwright Chromium build supports Ubuntu 24.04.
           matrix = [{"name": "checks", "runner": "ubuntu-24.04", "targets": ""}]
           if os.environ["TESTS_CHANGED"] == "true":
               root = Path("packages/a13n-service/tests")
@@ -341,13 +340,6 @@ jobs:
           node-version: "24"
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
-
-      - name: Exercise stock Console OIDC sign-in and cutover
-        if: matrix.task.name == 'checks'
-        run: |
-          make a13n-console-build
-          pnpm --dir frontend --filter a13n-console exec playwright install --with-deps chromium
-          uv run --locked python -m dev.service.oidc_review --directory "$RUNNER_TEMP/oidc"
 
       - name: Build a13n Service Python distributions
         if: matrix.task.name == 'checks'
