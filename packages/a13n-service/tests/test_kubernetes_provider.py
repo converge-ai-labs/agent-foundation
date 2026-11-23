@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.environment.kubernetes.configuration import (
+    CREDENTIAL_FILE,
     CREDENTIAL_VOLUME,
     ClusterProfile,
     KubernetesConnectionConfiguration,
@@ -919,7 +920,65 @@ def test_kubernetes_catalog_starters_are_valid_native_recipes():
     for name, value in definition.environment_model.model_json_schema()["x-environment-presets"].items():
         recipe = definition.environment_model.model_validate(value)
         assert recipe.connection == name
+        assert recipe.envd_launcher == "non_root"
         assert recipe.pod_template.spec["containers"][0]["image"] == "a13n-sandbox:local"
+
+
+@pytest.mark.parametrize("launcher", [None, "root", "non_root"])
+def test_envd_launch_modes_preserve_native_configuration(native, launcher):
+    config = recipe(envd_launcher=launcher, envd={"limits": {"max_concurrent_file_transfers": 12}})
+    state = initial(config, native.runtime.connection, "env_startup")
+    pod = render(config, native.runtime.profile, state, state.resources[-1])["spec"]
+    container = pod["containers"][0]
+    env = {entry["name"]: entry["value"] for entry in container["env"]}
+    assert "command" not in container
+    assert json.loads(env["A13N_ENVD_CONFIG_JSON"])["limits"]["max_concurrent_file_transfers"] == 12
+    assert env["A13N_ENVD_HTTP_CREDENTIAL_FILE"] == CREDENTIAL_FILE
+    assert container["volumeMounts"][-1] == {
+        "name": CREDENTIAL_VOLUME,
+        "mountPath": CREDENTIAL_FILE,
+        "subPath": "token",
+        "readOnly": True,
+    }
+    assert pod["volumes"][-1]["secret"]["defaultMode"] == (0o440 if launcher == "non_root" else 0o400)
+    if launcher is None:
+        assert "envd_launcher" not in config.model_dump()
+        omitted = recipe(envd=config.envd)
+        assert initial(omitted, native.runtime.connection, "env_startup").recipe_fingerprint == state.recipe_fingerprint
+        assert "securityContext" not in pod and "securityContext" not in container
+        assert len(pod["volumes"]) == 1
+    elif launcher == "root":
+        assert container["securityContext"] == {"runAsNonRoot": False, "runAsUser": 0, "runAsGroup": 0}
+        assert "A13N_ENVD_EXECUTION_UID" not in env
+        assert "A13N_ENVD_EGRESS_MODE" not in env
+        assert len(pod["volumes"]) == 1
+    else:
+        assert pod["securityContext"] == {"fsGroup": 1000}
+        assert container["securityContext"] == {
+            "runAsNonRoot": True,
+            "runAsUser": 1000,
+            "runAsGroup": 1000,
+            "allowPrivilegeEscalation": False,
+            "privileged": False,
+            "capabilities": {"drop": ["ALL"]},
+            "seccompProfile": {"type": "RuntimeDefault"},
+        }
+        assert pod["volumes"][0] == {"name": "a13n-envd-data", "emptyDir": {}}
+        assert container["volumeMounts"][0] == {"name": "a13n-envd-data", "mountPath": "/var/lib/a13n-envd"}
+        assert env["A13N_ENVD_EXECUTION_UID"] == env["A13N_ENVD_EXECUTION_GID"] == "1000"
+        assert env["A13N_ENVD_EGRESS_MODE"] == "inherit"
+        assert env["A13N_ENVD_ALLOW_SUDO"] == env["A13N_ENVD_COMPUTER_USE"] == "false"
+        assert env["A13N_ENVD_STATE_DIR"] == "/var/lib/a13n-envd/state"
+        assert env["A13N_ENVD_RUNTIME_DIR"] == "/var/lib/a13n-envd/runtime"
+
+
+def test_only_non_root_reserves_envd_data_bindings():
+    storage = [{"name": "application", "mount_path": "/var/lib/a13n-envd/state", "existing_claim": "data"}]
+    assert recipe(storage=storage).storage
+    with pytest.raises(ValidationError, match="overlap the Envd data directory"):
+        recipe(envd_launcher="non_root", storage=storage)
+    with pytest.raises(ValidationError, match="data volume name is platform-owned"):
+        recipe(envd_launcher="non_root", storage=[{**storage[0], "name": "a13n-envd-data", "mount_path": "/data"}])
 
 
 @pytest.mark.parametrize("bootstrap", [False, True])

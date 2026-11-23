@@ -66,6 +66,7 @@ export function KubernetesConfiguration({
   function changeSpec(next: NativeObject) {
     change({ ...recipe, pod_template: { ...template, spec: next } });
   }
+  const launcher = string(recipe?.envd_launcher) || "template";
   const connectionOptions = [
     { value: "direct", label: t("Direct Pod connection") },
     { value: "port_forward", label: t("Local port forwarding") },
@@ -159,6 +160,32 @@ export function KubernetesConfiguration({
                         change({ ...recipe, execution_container })
                       }
                     />
+                    <ChoiceField
+                      label={t("Envd startup")}
+                      value={launcher}
+                      disabled={readOnly}
+                      options={[
+                        { value: "non_root", label: t("Non-root") },
+                        { value: "root", label: t("Root") },
+                        { value: "template", label: t("From Pod template") },
+                      ]}
+                      onValueChange={(envd_launcher) => {
+                        const next = { ...recipe };
+                        if (envd_launcher === "template")
+                          delete next.envd_launcher;
+                        else next.envd_launcher = envd_launcher;
+                        change(next);
+                      }}
+                    />
+                    <p className={styles.hint}>
+                      {t(
+                        launcher === "non_root"
+                          ? "Run Files and Shell in a Restricted Pod. Outbound traffic follows Kubernetes network policy."
+                          : launcher === "root"
+                            ? "Start Envd as root. Use a namespace that permits root containers."
+                            : "Use the startup identity defined by the existing Pod template.",
+                      )}
+                    </p>
                     <DisclosureSection title={t("Execution settings")}>
                       <Fields
                         properties={{

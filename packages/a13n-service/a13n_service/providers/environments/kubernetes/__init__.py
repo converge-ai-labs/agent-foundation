@@ -59,6 +59,7 @@ def kubernetes(profiles: Mapping[str, ClusterProfile]) -> EnvironmentManagementD
                 "x-environment-presets": {
                     connection: {
                         "execution_container": "envd",
+                        "envd_launcher": "non_root",
                         "connection": connection,
                         "pod_template": {
                             "spec": {

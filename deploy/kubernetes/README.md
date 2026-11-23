@@ -190,7 +190,7 @@ export K8S_CLUSTER=a13n-sandbox-smoke K8S_PORT=18081 K8S_ENVIRONMENTS=1
 make k8s-up k8s-smoke
 ```
 
-This opt-in path builds and loads both current-source images under a fresh tag, then applies `helm/values-environments-smoke.yaml` over the local values. The overlay enables the in-cluster profile, namespace RBAC and plaintext Envd on this local network. Its provider policy permits only the scripted model's HTTP origin; normal HTTPS requirements remain enabled.
+This opt-in path builds and loads both current-source images under a fresh tag, then applies `helm/values-environments-smoke.yaml` over the local values. The overlay enables the in-cluster profile, namespace RBAC and plaintext Envd on this local network. The launcher gives sandbox Pods a separate `a13n-sandboxes` namespace that enforces Restricted Pod Security. The overlay's provider policy permits only the scripted model's HTTP origin; normal HTTPS requirements remain enabled.
 
 The smoke journey mounts `dev/fixtures/scripted_model.py` into a temporary fixture Pod. It signs in, creates a separate workspace, submits a fresh-environment Run, and verifies that the deployed Worker writes a file through `shell_exec` and reads it through `view`. It checks native diagnostics, logs, the sandbox ServiceAccount and exact resource disappearance after retirement. Worker-to-model and Worker-to-Envd traffic stays inside the cluster; only fixture controls use a local port-forward. Fixture resources are removed after the journey. The Service deployment and its smoke workspace remain available for inspection.
 

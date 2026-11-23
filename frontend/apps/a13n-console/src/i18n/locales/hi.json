@@ -1,4 +1,10 @@
 {
+  "Envd startup": "Envd स्टार्टअप",
+  "Non-root": "गैर-root",
+  "From Pod template": "Pod टेम्पलेट से",
+  "Run Files and Shell in a Restricted Pod. Outbound traffic follows Kubernetes network policy.": "Restricted Pod में Files और Shell चलाएँ। आउटबाउंड ट्रैफ़िक Kubernetes नेटवर्क नीति का पालन करता है।",
+  "Start Envd as root. Use a namespace that permits root containers.": "Envd को root के रूप में शुरू करें। root कंटेनरों की अनुमति वाला नेमस्पेस चुनें।",
+  "Use the startup identity defined by the existing Pod template.": "मौजूदा Pod टेम्पलेट में तय स्टार्टअप पहचान इस्तेमाल करें।",
   "Apps": "Apps",
   "App plugins": "App प्लगइन",
   "Enable installed apps for this organization.": "इस संगठन के लिए इंस्टॉल किए गए Apps चालू करें।",

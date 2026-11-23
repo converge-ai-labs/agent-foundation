@@ -140,13 +140,14 @@ async def journey(api: Workspace, model: ScriptedModel, image: str) -> None:
             json={
                 "type": "kubernetes",
                 "name": "In-cluster",
-                "config": {"cluster": "in-cluster", "namespace": k8s.NAMESPACE},
+                "config": {"cluster": "in-cluster", "namespace": k8s.SANDBOX_NAMESPACE},
             },
         ),
         201,
     )
     recipe = {
         "execution_container": "envd",
+        "envd_launcher": "non_root",
         "connection": "direct",
         "pod_template": {
             "spec": {
@@ -169,7 +170,15 @@ async def journey(api: Workspace, model: ScriptedModel, image: str) -> None:
         201,
     )
     agent = await api.create_agent("Deployment smoke", await api.create_model(MODEL_URL))
-    await model.call("shell_exec", {"command": "echo cluster-direct-$((6 * 7)) > proof.txt"}, call_id="call_write")
+    await model.call(
+        "shell_exec",
+        {
+            "command": "test $(id -u):$(id -g) = 1000:1000 && "
+            "test -r /var/lib/a13n-envd/credential/token && "
+            "echo cluster-direct-$((6 * 7)) > proof.txt"
+        },
+        call_id="call_write",
+    )
     await model.call("view", {"file_path": "/workspace/proof.txt"}, call_id="call_read")
     await model.say("Verified direct Sandbox execution.")
     receipt = await api.start(
@@ -193,7 +202,9 @@ async def journey(api: Workspace, model: ScriptedModel, image: str) -> None:
         assert native["connection"] == "direct" and native["envd"] == "previously_ready"
         references = [item["reference"] for item in native["resources"] if item["reference"]["disposition"] == "delete"]
         assert {ref["kind"] for ref in references} == {"Pod", "Secret"}
-        pod = json.loads(k8s.kubectl("get", "pod", native["pod_name"], "-o", "json", capture=True))
+        pod = json.loads(
+            k8s.kubectl("get", "pod", native["pod_name"], "-o", "json", capture=True, namespace=k8s.SANDBOX_NAMESPACE)
+        )
         assert pod["metadata"]["uid"] == native["pod_uid"]
         assert pod["spec"]["serviceAccountName"] == "a13n-a13n-sandbox"
         assert pod["spec"]["automountServiceAccountToken"] is False
@@ -203,7 +214,14 @@ async def journey(api: Workspace, model: ScriptedModel, image: str) -> None:
         await retire(api, identifier)
         for reference in references:
             assert not k8s.kubectl(
-                "get", reference["kind"], reference["name"], "--ignore-not-found", "-o", "name", capture=True
+                "get",
+                reference["kind"],
+                reference["name"],
+                "--ignore-not-found",
+                "-o",
+                "name",
+                capture=True,
+                namespace=k8s.SANDBOX_NAMESPACE,
             ).strip()
         print(
             f"{identifier}: deployed Worker executed shell + file read over direct Envd; diagnostics, logs and native retirement verified",

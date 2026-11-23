@@ -22,7 +22,13 @@ from a13n_harness.providers.environment.kubernetes.configuration import (
 from a13n_harness.providers.environment.kubernetes.runtime import labels, profile_fingerprint
 
 from a13n_service.providers.environment.envd import envd_environment
-from a13n_service.providers.environment.recipes.kubernetes import KubernetesRecipe, Metadata, borrowed_resources
+from a13n_service.providers.environment.recipes.kubernetes import (
+    ENVD_DATA_DIRECTORY,
+    ENVD_DATA_VOLUME,
+    KubernetesRecipe,
+    Metadata,
+    borrowed_resources,
+)
 
 
 def recipe_fingerprint(recipe: KubernetesRecipe) -> str:
@@ -111,24 +117,51 @@ def render(
         spec.setdefault("restartPolicy", "Never")
         container = next(c for c in spec["containers"] if c["name"] == recipe.execution_container)
         container["workingDir"] = recipe.working_directory
+        variables = {
+            "A13N_ENVD_DEVICE_ID": state.environment_id,
+            "A13N_ENVD_TRANSPORT": "http",
+            "A13N_ENVD_HTTP_BIND": f"0.0.0.0:{recipe.envd_port}",
+            "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
+            "A13N_ENVD_HTTP_CREDENTIAL_FILE": CREDENTIAL_FILE,
+        }
+        secret_mode = 0o400
+        spec.setdefault("volumes", [])
+        container.setdefault("volumeMounts", [])
+        if recipe.envd_launcher == "non_root":
+            pod_security = spec.setdefault("securityContext", {})
+            if pod_security.get("fsGroup") is None:
+                pod_security["fsGroup"] = 1000
+            container.setdefault("securityContext", {}).update(
+                runAsNonRoot=True,
+                runAsUser=1000,
+                runAsGroup=1000,
+                allowPrivilegeEscalation=False,
+                privileged=False,
+                capabilities={"drop": ["ALL"]},
+                seccompProfile={"type": "RuntimeDefault"},
+            )
+            spec["volumes"].append({"name": ENVD_DATA_VOLUME, "emptyDir": {}})
+            container["volumeMounts"].append({"name": ENVD_DATA_VOLUME, "mountPath": ENVD_DATA_DIRECTORY})
+            variables.update(
+                A13N_ENVD_EXECUTION_UID="1000",
+                A13N_ENVD_EXECUTION_GID="1000",
+                A13N_ENVD_ALLOW_SUDO="false",
+                A13N_ENVD_EGRESS_MODE="inherit",
+                A13N_ENVD_COMPUTER_USE="false",
+                A13N_ENVD_STATE_DIR=f"{ENVD_DATA_DIRECTORY}/state",
+                A13N_ENVD_RUNTIME_DIR=f"{ENVD_DATA_DIRECTORY}/runtime",
+            )
+            secret_mode = 0o440
+        elif recipe.envd_launcher == "root":
+            container.setdefault("securityContext", {}).update(runAsNonRoot=False, runAsUser=0, runAsGroup=0)
         container.setdefault("env", []).extend(
-            {"name": key, "value": value}
-            for key, value in envd_environment(
-                {
-                    "A13N_ENVD_DEVICE_ID": state.environment_id,
-                    "A13N_ENVD_TRANSPORT": "http",
-                    "A13N_ENVD_HTTP_BIND": f"0.0.0.0:{recipe.envd_port}",
-                    "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "provider_private_link",
-                    "A13N_ENVD_HTTP_CREDENTIAL_FILE": CREDENTIAL_FILE,
-                },
-                recipe.envd,
-            ).items()
+            {"name": key, "value": value} for key, value in envd_environment(variables, recipe.envd).items()
         )
-        spec.setdefault("volumes", []).append(
-            {"name": CREDENTIAL_VOLUME, "secret": {"secretName": state.pod_name + "-envd", "defaultMode": 0o400}}
+        spec["volumes"].append(
+            {"name": CREDENTIAL_VOLUME, "secret": {"secretName": state.pod_name + "-envd", "defaultMode": secret_mode}}
         )
         # An immutable Secret subPath is a regular file, matching Envd's bootstrap contract.
-        container.setdefault("volumeMounts", []).append(
+        container["volumeMounts"].append(
             {"name": CREDENTIAL_VOLUME, "mountPath": CREDENTIAL_FILE, "subPath": "token", "readOnly": True}
         )
         for binding in recipe.storage:

@@ -111,7 +111,12 @@ def borrowed_resources(spec: dict[str, Any]) -> list[Resource]:
     return refs
 
 
+ENVD_DATA_VOLUME = "a13n-envd-data"
+ENVD_DATA_DIRECTORY = "/var/lib/a13n-envd"
+
+
 class KubernetesRecipe(KubernetesEnvironmentConfiguration):
+    envd_launcher: Literal["non_root", "root"] | None = Field(default=None, exclude_if=lambda value: value is None)
     pod_template: NativeTemplate
     storage: tuple[StorageBinding, ...] = ()
     network_policy: NativeTemplate | None = None
@@ -128,12 +133,17 @@ class KubernetesRecipe(KubernetesEnvironmentConfiguration):
         if any(field in spec for field in ("serviceAccount", "serviceAccountName", "automountServiceAccountToken")):
             raise ValueError("The operator profile owns the sandbox ServiceAccount and token mounting")
         storage_names = [binding.name for binding in self.storage]
+        if self.envd_launcher == "non_root" and ENVD_DATA_VOLUME in storage_names:
+            raise ValueError("The Envd data volume name is platform-owned in non-root mode")
         if len(set(storage_names)) != len(storage_names):
             raise ValueError("Storage binding names must be unique")
         volumes = native_objects(spec, "volumes")
         if not all(isinstance(v.get("name"), str) for v in volumes):
             raise ValueError("Volumes require string names")
-        if any(v.get("name") in {*storage_names, CREDENTIAL_VOLUME} for v in volumes):
+        reserved_volumes = {*storage_names, CREDENTIAL_VOLUME}
+        if self.envd_launcher == "non_root":
+            reserved_volumes.add(ENVD_DATA_VOLUME)
+        if any(v.get("name") in reserved_volumes for v in volumes):
             raise ValueError("Native volumes conflict with injected volume bindings")
         for container in [*containers, *native_objects(spec, "initContainers")]:
             mounts = native_objects(container, "volumeMounts")
@@ -144,6 +154,14 @@ class KubernetesRecipe(KubernetesEnvironmentConfiguration):
                     raise ValueError("volumeMounts require string mountPath values")
                 private_path(mount["mountPath"])
             if container.get("name") == self.execution_container:
+                if self.envd_launcher == "non_root":
+                    native_object(spec, "securityContext")
+                    native_object(container, "securityContext")
+                    paths = [mount["mountPath"] for mount in mounts] + [binding.mount_path for binding in self.storage]
+                    if any(PurePosixPath(path).is_relative_to(ENVD_DATA_DIRECTORY) for path in paths):
+                        raise ValueError("Mounts must not overlap the Envd data directory in non-root mode")
+                elif self.envd_launcher == "root":
+                    native_object(container, "securityContext")
                 if "workingDir" in container:
                     raise ValueError("Use working_directory for the execution container")
                 variables = native_objects(container, "env")

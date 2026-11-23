@@ -19,8 +19,12 @@ const direct = {
 };
 const schema = {
   "x-environment-presets": {
-    direct,
-    port_forward: { ...direct, connection: "port_forward" },
+    direct: { ...direct, envd_launcher: "non_root" },
+    port_forward: {
+      ...direct,
+      connection: "port_forward",
+      envd_launcher: "non_root",
+    },
   },
 };
 function Editor({
@@ -76,6 +80,7 @@ it("builds a port-forward sandbox with resource and persistent storage forms, wi
   });
   expect(recipe()).toMatchObject({
     connection: "port_forward",
+    envd_launcher: "non_root",
     execution_container: "envd",
     pod_template: {
       spec: {
@@ -106,6 +111,28 @@ it("builds a port-forward sandbox with resource and persistent storage forms, wi
     screen.queryByRole("textbox", { name: "Native recipe JSON" }),
   ).toBeNull();
 });
+
+it.each([
+  [undefined, "From Pod template", "Root", "root"],
+  ["root", "Root", "From Pod template", undefined],
+])(
+  "changes an explicit or inherited Envd startup choice (%s)",
+  async (initial, current, choice, next) => {
+    render(
+      <Editor
+        initial={JSON.stringify({ ...direct, envd_launcher: initial })}
+      />,
+    );
+    const user = userEvent.setup();
+    const startup = screen.getByRole("combobox", { name: "Envd startup" });
+    expect(startup.textContent).toContain(current);
+    await user.click(startup);
+    await user.click(screen.getByRole("option", { name: choice }));
+    expect(recipe()).toEqual(
+      next ? { ...direct, envd_launcher: next } : direct,
+    );
+  },
+);
 
 it("requires an explicit execution selection after removing its container", async () => {
   const initial = {

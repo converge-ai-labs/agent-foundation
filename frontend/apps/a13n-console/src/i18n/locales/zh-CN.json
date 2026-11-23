@@ -1,4 +1,10 @@
 {
+  "Envd startup": "Envd 启动身份",
+  "Non-root": "非 root",
+  "From Pod template": "沿用 Pod 模板",
+  "Run Files and Shell in a Restricted Pod. Outbound traffic follows Kubernetes network policy.": "在 Restricted Pod 中使用文件和终端。出站流量遵循 Kubernetes 网络策略。",
+  "Start Envd as root. Use a namespace that permits root containers.": "以 root 身份启动 Envd。请选择允许 root 容器的命名空间。",
+  "Use the startup identity defined by the existing Pod template.": "使用现有 Pod 模板定义的启动身份。",
   "Apps": "应用",
   "App plugins": "App 插件",
   "Enable installed apps for this organization.": "为当前组织启用已安装的 App。",
