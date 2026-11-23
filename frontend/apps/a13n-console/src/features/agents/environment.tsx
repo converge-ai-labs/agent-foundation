@@ -19,6 +19,7 @@ export function AgentEnvironment({
   onEnvironmentChange,
   disabled,
   readOnly = false,
+  composer = false,
   sessionConfiguration,
   onSessionConfigurationChange,
   sessionInvalid = false,
@@ -29,6 +30,7 @@ export function AgentEnvironment({
   onChange: (value: string | null) => void;
   disabled: boolean;
   readOnly?: boolean;
+  composer?: boolean;
   sessionConfiguration: AgentConfig["default_session_configuration"];
   onSessionConfigurationChange: (
     value: AgentConfig["default_session_configuration"],
@@ -68,6 +70,7 @@ export function AgentEnvironment({
   });
   const instances = (environments.data ?? []).filter(
     (item) =>
+      (!composer || item.kind !== "external_http") &&
       !["disabled", "deleting", "deleted"].includes(item.status) &&
       !item.failure?.permanent,
   );
@@ -82,6 +85,7 @@ export function AgentEnvironment({
     return {
       value: item.id,
       label: item.name,
+      disabled: item.enabled === false,
       hint: ["local", "direct_local"].includes(type)
         ? t("Local directory")
         : (definition?.display_name ?? provider?.type),
@@ -103,9 +107,15 @@ export function AgentEnvironment({
         />
       }
       titleLink={{ href: `${basePath}/environments`, label: t("Environments") }}
-      description={t(
-        "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.",
-      )}
+      description={
+        composer
+          ? t(
+              "This default applies to everyone in the workspace when a thread has no primary environment. Composer can read files in the selected environment.",
+            )
+          : t(
+              "Optional. When a session has no primary environment, use an existing environment or create one from a template. Saving the agent does not connect or start an environment.",
+            )
+      }
     >
       <ChoiceField
         label={t("Environment")}
@@ -157,7 +167,7 @@ export function AgentEnvironment({
       <AgentSessionConfiguration
         value={sessionConfiguration}
         onChange={onSessionConfigurationChange}
-        readOnly={readOnly || disabled}
+        readOnly={composer || readOnly || disabled}
         invalid={sessionInvalid}
       />
     </Section>

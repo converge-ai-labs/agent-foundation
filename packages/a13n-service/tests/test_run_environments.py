@@ -47,6 +47,25 @@ async def test_run_allocation_preserves_desired_mounts_and_allocates_for_each_ne
     assert primary(response.json()["run"]) == primary(original["run"])
 
 
+async def test_skip_primary_preserves_named_mounts_and_returns_to_thread_default(env, runs_kit):
+    named = await reserve(env, env.template["id"])
+    skip = {"environment": {"mode": "none"}}
+    first = await start(env, environments=[{"name": "data", "environment_id": named["id"]}], options=skip)
+    assert [m["name"] for m in first["run"]["environment_mounts"]] == ["data"]
+    assert len((await env.client.get(f"{env.api}/environments")).json()["items"]) == 1
+    thread = first["thread"]["id"]
+    await interrupt(env, first["run"]["id"])
+    inherited = (await runs_kit.submit(env, thread, runs_kit.message(env.agent, "Inherit"))).json()["run"]
+    assert primary(inherited) != named["id"]
+    await interrupt(env, inherited["id"])
+    omitted = (await runs_kit.submit(env, thread, runs_kit.message(env.agent, "Skip again", options=skip))).json()[
+        "run"
+    ]
+    assert [m["name"] for m in omitted["environment_mounts"]] == ["data"]
+    desired = (await env.client.get(f"{env.api}/threads/{thread}/environments")).json()["items"]
+    assert {m["environment_id"] for m in desired} == {primary(inherited), named["id"]}
+
+
 async def test_fresh_allocation_is_idempotent_and_does_not_install_a_thread_mount(env) -> None:  # type: ignore[no-untyped-def]
     body = {
         "agent_id": env.agent["id"],
@@ -162,11 +181,15 @@ async def test_run_policy_override_preserves_desired_binding_and_next_run_return
     assert (await env.client.get(binding_path)).json() == desired
 
 
-async def test_resume_reuses_the_run_only_primary(env, scripted_model, runs_kit) -> None:  # type: ignore[no-untyped-def]
+@pytest.mark.parametrize("mode", ["fresh", "none"])
+async def test_resume_reuses_the_run_only_primary(env, scripted_model, runs_kit, mode) -> None:  # type: ignore[no-untyped-def]
     review = {"name": "review", "description": "Review", "parameters_json_schema": {"type": "object"}}
     agent = await runs_kit.create_agent(env, scripted_model, client_tools=[review])
     started = await runs_kit.start_thread(
-        env, agent, "review", options={"environment": {"mode": "fresh", "template_id": env.template["id"]}}
+        env,
+        agent,
+        "review",
+        options={"environment": {"mode": mode, **({"template_id": env.template["id"]} if mode == "fresh" else {})}},
     )
     scripted_model.call("review", {}, call_id="review")
     await (await runs_kit.attempt(env))
@@ -178,5 +201,5 @@ async def test_resume_reuses_the_run_only_primary(env, scripted_model, runs_kit)
         headers=runs_kit.fresh_key(),
     )
     assert response.status_code == 201, response.text
-    assert primary(response.json()) == primary(started["run"])
-    assert len((await env.client.get(f"{env.api}/environments")).json()["items"]) == 1
+    assert response.json()["environment_mounts"] == started["run"]["environment_mounts"]
+    assert len((await env.client.get(f"{env.api}/environments")).json()["items"]) == (1 if mode == "fresh" else 0)

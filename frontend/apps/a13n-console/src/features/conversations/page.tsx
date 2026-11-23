@@ -18,14 +18,23 @@ import { ChatsIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
+import {
+  allPages,
+  commandHeaders,
+  data,
+  representation,
+  type Schema,
+} from "../../shared/api";
 import { Empty } from "../../shared/collection";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { IconTile } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
 import { AgentAvatar } from "../agents/avatar";
 import { prepareConversationAgent } from "../agents/prepare";
-import { createManagedEnvironment } from "../environments/api";
+import {
+  createManagedEnvironment,
+  environmentQuery,
+} from "../environments/api";
 import {
   CONSOLE_SESSION_LABELS,
   conversationQueries,
@@ -60,6 +69,49 @@ export function ConversationsPage() {
   ) : (
     <SessionList />
   );
+}
+
+/** Show the environment of the revision that the new Composer conversation will use. */
+function useComposerDefaultEnvironment(
+  agentId?: string,
+  revisionId?: string | null,
+) {
+  const client = useClient();
+  const { workspace } = useWorkspace();
+  const revision = useQuery({
+    queryKey: ["agent-revision", workspace.id, revisionId],
+    enabled: !!agentId && !!revisionId,
+    queryFn: ({ signal }) =>
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/agents/{agent_id}/revisions/{revision_id}", {
+          params: { path: { agent_id: agentId!, revision_id: revisionId! } },
+          signal,
+        })
+        .then(data),
+  });
+  const config = agentId ? revision.data?.config : undefined;
+  const instanceId = config?.default_environment_id;
+  const templateId = config?.default_environment_template_id;
+  const instance = useQuery({
+    ...environmentQuery(client, workspace.id, instanceId ?? ""),
+    enabled: !!instanceId,
+  });
+  const template = useQuery({
+    queryKey: ["environment-template", workspace.id, templateId],
+    enabled: !!templateId,
+    queryFn: ({ signal }) =>
+      client
+        .workspace(workspace.id)
+        .GET("/api/v1/environment-templates/{template_id}", {
+          params: { path: { template_id: templateId! } },
+          signal,
+        })
+        .then(representation),
+  });
+  return instanceId
+    ? (instance.data?.value.name ?? instanceId)
+    : (template.data?.value.name ?? templateId ?? undefined);
 }
 
 /** The mount a Thread's primary sandbox is known by. */
@@ -133,6 +185,10 @@ export function NewConversation() {
     (agent) => agent.preset_kind !== "finding",
   );
   const selected = enabled.find((agent) => agent.id === agentId);
+  const defaultEnvironment = useComposerDefaultEnvironment(
+    selected?.preset_kind === "composer" ? selected.id : undefined,
+    options.revision || selected?.default_revision_id,
+  );
   return (
     <div className={styles.startPage}>
       <div className={styles.startColumn}>
@@ -182,6 +238,7 @@ export function NewConversation() {
                 options={options}
                 showAgent={false}
                 agentId={agentId}
+                defaultEnvironment={defaultEnvironment}
               />
               {can("run") && (
                 <SessionMemoryControl

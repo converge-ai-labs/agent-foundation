@@ -74,6 +74,7 @@ If no models are currently configured in the workspace, initialization returns a
 Composer is implemented as a versioned built-in agent. You can customize its operating parameters:
 
 - Navigate to Composer's Agent settings page to adjust reasoning effort, temperature, or maximum token limits.
+- To give everyone in the workspace a default environment, save a shared instance or a template in Composer’s settings. A thread without a primary mount uses this default. Composer can read project files, including `AGENTS.md`. Choose **No primary environment** in Run options to skip it for one run.
 - Add **Supplemental Instructions** in the configuration editor to enforce organization-wide standards (e.g., *"Always enforce snake_case for tool identifiers"*).
 - Supplemental rules are merged with official system guidance at execution time.
 - To maintain an auditable environment, you can duplicate Composer into an entirely custom workspace agent if you need unrestricted prompt modifications.
