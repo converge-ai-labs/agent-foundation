@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from sqlalchemy import (
@@ -569,7 +569,13 @@ class ThreadUsageRecord(Base):
     """First observed canonical usage contribution within one root Thread family."""
 
     __tablename__ = "thread_usage"
-    __table_args__ = (UniqueConstraint("root_thread_id", "record_id", name="identity"),)
+    __table_args__ = (
+        UniqueConstraint("root_thread_id", "record_id", name="identity"),
+        Index("ix_thread_usage_unindexed", "sequence", sqlite_where=text("indexed_through IS NULL")),
+    )
+
+    # NULL means this retained envelope still needs projection after an upgrade.
+    indexed_through: Mapped[datetime | None] = mapped_column(UtcDateTime())
 
     sequence: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     root_thread_id: Mapped[str] = mapped_column(
@@ -583,6 +589,26 @@ class ThreadUsageRecord(Base):
     descendant: Mapped[bool] = mapped_column(Boolean, nullable=False)
     payload_json: Mapped[str] = mapped_column(Text, nullable=False)
     observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
+class UsageFactRecord(Base):
+    """Winning contribution; receipt identities have no response day and are not charged here."""
+
+    __tablename__ = "usage_fact"
+    __table_args__ = (Index("ix_usage_fact_root_day", "root_thread_id", "day"),)
+
+    root_thread_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    record_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    sequence: Mapped[int] = mapped_column(ForeignKey("thread_usage.sequence", ondelete="CASCADE"), index=True)
+    day: Mapped[date | None] = mapped_column(index=True)
+    recipe_id: Mapped[str | None]
+    model_key: Mapped[str | None]
+    model_label: Mapped[str | None]
+    input_tokens: Mapped[int]
+    output_tokens: Mapped[int]
+    cache_read_tokens: Mapped[int]
+    cache_write_tokens: Mapped[int]
+    cost: Mapped[str | None]
 
 
 class EnvdSessionBindingRecord(Base):
