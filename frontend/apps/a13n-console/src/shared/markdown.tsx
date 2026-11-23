@@ -13,7 +13,7 @@ import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
-import remarkCjkFriendly from "remark-cjk-friendly";
+import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
 import remarkMath from "remark-math";
 import { remarkClosedDiagram, remarkLatex } from "a13n-ui/markdown-extensions";
 import "katex/dist/katex.min.css";

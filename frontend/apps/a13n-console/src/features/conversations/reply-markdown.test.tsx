@@ -1,17 +1,18 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { renderDiagram } from "a13n-ui/mermaid-render";
 import { MarkdownContent } from "../../shared/markdown";
-import "../../i18n";
+import { i18n } from "../../i18n";
 
 vi.mock("a13n-ui/mermaid-render", () => ({ renderDiagram: vi.fn() }));
 const source = 'flowchart LR\nA["开始"] --> B["完成"]';
 const svg = "data:image/svg+xml,%3Csvg%2F%3E";
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   vi.resetAllMocks();
   document.documentElement.classList.remove("dark");
+  await i18n.changeLanguage("en");
 });
 
 it("renders both math syntaxes alongside Chinese Markdown without consuming code or remote images", () => {
@@ -33,6 +34,38 @@ it("renders both math syntaxes alongside Chinese Markdown without consuming code
   expect(view.container.querySelector("img, script")).toBeNull();
   view.rerender(<MarkdownContent text={text} />);
   expect(view.container.querySelector(".katex")).toBeNull();
+});
+
+it("treats paired dollars as math and honors escaped currency signs", () => {
+  const { container } = render(
+    <MarkdownContent
+      agentReply
+      text={String.raw`It costs $5 to $10; write \$5 to \$10 for literal prices.`}
+    />,
+  );
+  expect(container.querySelector(".katex annotation")?.textContent).toBe(
+    "5 to ",
+  );
+  expect(container.textContent).toContain(
+    "write $5 to $10 for literal prices.",
+  );
+});
+
+it("translates mounted diagram controls and math regions without re-rendering the diagram", async () => {
+  vi.mocked(renderDiagram).mockResolvedValue(svg);
+  render(
+    <MarkdownContent
+      agentReply
+      text={`\`\`\`mermaid\n${source}\n\`\`\`\n\n\\[x^2\\]`}
+    />,
+  );
+  const image = await screen.findByRole("img", { name: "Mermaid diagram" });
+  await act(() => i18n.changeLanguage("zh-CN"));
+  expect(screen.getByRole("img", { name: "Mermaid 图表" })).toBe(image);
+  expect(screen.getByRole("button", { name: "源码" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "复制图表源码" })).toBeTruthy();
+  expect(screen.getByRole("region", { name: "数学公式" })).toBeTruthy();
+  expect(renderDiagram).toHaveBeenCalledTimes(1);
 });
 
 it("keeps incomplete streamed fences as code, then shows a copyable diagram once the fence closes", async () => {
