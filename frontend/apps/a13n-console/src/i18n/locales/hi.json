@@ -4317,6 +4317,7 @@
   "Manage tokens for authenticated HTTPS requests from agent environments.": "Agent एनवायरनमेंट से भेजे जाने वाले ऑथेंटिकेटेड HTTPS अनुरोधों के टोकन मैनेज करें।",
   "Search credentials": "क्रेडेंशियल खोजें",
   "Credential": "क्रेडेंशियल",
+  "Managed by {{appId}}": "{{appId}} द्वारा प्रबंधित",
   "Credential version": "क्रेडेंशियल वर्शन",
   "{{count}} credentials on this page": "इस पेज पर {{count}} क्रेडेंशियल",
   "No matching credentials": "कोई मेल खाता क्रेडेंशियल नहीं है",

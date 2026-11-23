@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 from a13n_service.distribution import OSS, Distribution
-from a13n_service.migrations.runner import check, migration_connection, upgrade
+from a13n_service.migrations.runner import check, heads, migration_connection, upgrade
 from a13n_service.settings import Database
 from alembic import command
 from sqlalchemy import MetaData, create_engine, text
@@ -111,7 +111,6 @@ def test_run_usage_index_retries_after_invalid_concurrent_build(empty_database: 
 
 def test_child_message_upgrade_retries_after_conflicting_lock(empty_database: Database) -> None:
     previous = "9d1cfd9c1a34"
-    revision = "3d51b520f762"
     with migration_connection(empty_database, OSS) as config:
         command.upgrade(config, previous)
     before = rows(empty_database, RULES)
@@ -127,7 +126,7 @@ def test_child_message_upgrade_retries_after_conflicting_lock(empty_database: Da
     finally:
         engine.dispose()
     upgrade(empty_database, OSS)
-    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [(revision,)]
+    assert rows(empty_database, "SELECT version_num FROM alembic_version") == [(head,) for head in heads(OSS)]
     check(empty_database, OSS)
 
 

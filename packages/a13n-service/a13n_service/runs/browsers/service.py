@@ -249,21 +249,32 @@ async def bind(
         thread = await get_thread(session, workspace_id, thread_id, lock=True)
         require_open(thread)
         require_match(if_match, thread.id, thread.version)
-        previous = await session.get(ThreadBrowserRow, thread_id)
-        if body is not None:
-            await _binding_target(session, actor, scope, body)
-        if previous is not None:
-            await session.delete(previous)
-            await session.flush()
-        if body is not None:
-            session.add(ThreadBrowserRow(thread_id=thread_id, workspace_id=workspace_id, **body.model_dump()))
-        # Rebinding ends pending auto-continuation, but never closes borrowed tabs.
-        await session.execute(
-            update(BrowserBlockedRow).where(BrowserBlockedRow.thread_id == thread_id).values(suppressed=True)
-        )
-        thread.updated_at = await now(session)
+        return await replace_binding(session, actor, scope, thread, body)
+
+
+async def replace_binding(
+    session: AsyncSession,
+    actor: Principal,
+    scope: WorkspaceScope,
+    thread: ThreadRow,
+    body: BrowserBinding | None,
+) -> BrowserBinding | None:
+    thread_id, workspace_id = thread.id, scope.workspace_id
+    previous = await session.get(ThreadBrowserRow, thread_id)
+    if body is not None:
+        await _binding_target(session, actor, scope, body)
+    if previous is not None:
+        await session.delete(previous)
         await session.flush()
-        return body
+    if body is not None:
+        session.add(ThreadBrowserRow(thread_id=thread_id, workspace_id=workspace_id, **body.model_dump()))
+    # Rebinding ends pending auto-continuation, but never closes borrowed tabs.
+    await session.execute(
+        update(BrowserBlockedRow).where(BrowserBlockedRow.thread_id == thread_id).values(suppressed=True)
+    )
+    thread.updated_at = await now(session)
+    await session.flush()
+    return body
 
 
 async def freeze(

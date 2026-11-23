@@ -82,6 +82,27 @@ An installed Harness factory can export named native output handlers. A Run expo
 
 A new resume successor can encounter an unfinished target from an App now disabled. Harness validates the restored exact deferred target against its current dispatcher before effects and reports `deferred_surface_mismatch`; Service preserves that failure code. Disabling never re-enables a historical target or erases recorded results.
 
+## App SDK
+
+Trusted installed Apps use `a13n_service.app_sdk` as Service's supported in-process integration boundary. The SDK exposes native value models and delegates to Service's existing lifecycles; ORM tables, runtime internals and private helpers are not part of the compatibility contract. There is no new HTTP surface. Apps pin a compatible Service version and keep authority for their own product resources at their entry points.
+
+Writes check the installed App inventory and current organization enablement under the organization lock before taking App or resource locks. Every target is confined to the selected workspace. Thread admission and other execution operations use a current workspace Service Account with `run`; native management operations retain their own resource permissions. Read projections without an App or principal parameter consume IDs already authorized by the App and constrain their queries to the workspace. The SDK is a compatibility and data-authority boundary for trusted code, not a Python sandbox.
+
+| Facade      | Contract                                                                                                                                                                                                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `egress`    | Own the lifecycle of [App-managed credentials](04-resources.md#egress-credentials). An active principal in the target organization supplies attribution, without workspace `write`. The App may never read or mutate another App's or an operator's credentials through this facade. |
+| `threads`   | Admit a workspace Service Account before App state locks; create a Thread with its first accepted Run or submit to its native Inbox inside the caller transaction. Read activity and page native child Threads.                                                                      |
+| `projects`  | Reserve native managed Environments, create Memory Spaces and check native Environment and Browser selections.                                                                                                                                                                       |
+| `agents`    | Read an Agent's default revision or derive an immutable revision from it without changing the default. An unchanged configuration returns the existing default.                                                                                                                      |
+| `schedules` | Ensure a conversation Session and create, page or count native fresh-Thread Schedules by their App label and optional instance labels. Labels are filters, not authorization.                                                                                                        |
+| `usage`     | Read native model usage for resources already authorized by the App.                                                                                                                                                                                                                 |
+
+Transaction-taking commands participate in the outer Service transaction, never commit it, and require the caller to roll it back on failure. Thread admission is valid only in the transaction that issued it. Inbox receipts are durable only after commit; retry with the same request key and body using the native idempotency contract.
+
+Desired primary Environment or Session configuration changes lock the root and its shared-Environment descendants (named shared edges and dynamic children) in parent-first breadth-first order. A current Run, waiting Run or pending Inbox entry prevents the change. Independent child and fork selections are unchanged. Browser-only updates affect the root without imposing Environment quiescence. Historical Runs keep their frozen bindings; later Runs admit the new desired configuration through normal Session versioning. A template queues creation of the replacement Environment and records its create audit event in the caller transaction. `update_thread_resources` returns the root’s resolved desired Environment and Browser IDs, including preserved bindings.
+
+Schedule list cursors are bound to the App and instance labels. The active Schedule count includes enabled or paused Schedules and Schedules with a pending occurrence, even if the Schedule is archived.
+
 ## Packaged browser assets
 
 An App frontend names an importable Python package, package-relative asset directory, ESM entry, style paths and supported bridge version (currently `1`). Assembly resolves the complete resource directory with `importlib.resources` and keeps any extracted directory alive on the host exit stack. Missing declared entry/styles or unsupported bridge versions fail startup.

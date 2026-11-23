@@ -305,6 +305,20 @@ async def submit_app_message(
         )
 
 
+def submission_actor(session: AsyncSession, runtime: Runtime, admission: AppSubmission, workspace_id: str) -> Principal:
+    if (
+        not session.info.get("a13n.transaction")
+        or not session.in_transaction()
+        or session.in_nested_transaction()
+        or session.info.get("a13n.app_submission") is not admission
+        or admission._session is not session
+        or admission._runtime is not runtime
+        or admission._workspace_id != workspace_id
+    ):
+        raise RuntimeError("Call prepare_app_submission in the same Service transaction before locking the Thread")
+    return admission._actor
+
+
 async def submit_message_in_transaction(
     session: AsyncSession,
     runtime: Runtime,
@@ -322,17 +336,7 @@ async def submit_message_in_transaction(
     The receipt is committed only if the caller commits; abort and retry the whole transaction on contention.
     """
     _message_key(request_key)
-    if (
-        not session.info.get("a13n.transaction")
-        or not session.in_transaction()
-        or session.in_nested_transaction()
-        or session.info.get("a13n.app_submission") is not admission
-        or admission._session is not session
-        or admission._runtime is not runtime
-        or admission._workspace_id != workspace_id
-    ):
-        raise RuntimeError("Call prepare_app_submission in the same Service transaction before locking the Thread")
-    actor = admission._actor
+    actor = submission_actor(session, runtime, admission, workspace_id)
     scope, request, found = await _lookup(
         session, actor, workspace_id, lambda _: Request.of(request_key, "message", thread_id, message)
     )
@@ -354,6 +358,7 @@ async def prepare_thread(
     request: Request | None,
     authority: ExecutionAuthority,
     schedule_occurrence_id: str | None = None,
+    require_first_run: bool = False,
 ) -> tuple[ThreadRow, Source]:
     """Create a new Thread and validated first Entry in the caller's transaction, ready for ordinary acceptance."""
     await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)
@@ -379,7 +384,11 @@ async def prepare_thread(
         from a13n_service.runs.browsers.service import bind_initial
 
         await bind_initial(session, actor, thread, body.browser_binding, authority=authority)
-    atomic = body.browser_binding is not None or (schedule_occurrence_id is not None and bool(body.environments))
+    atomic = (
+        require_first_run
+        or body.browser_binding is not None
+        or (schedule_occurrence_id is not None and bool(body.environments))
+    )
     if not atomic:
         await mount_environments(session, thread, body.environments, principal=actor)
     await mount_memories(session, thread, body.memories, limit=runtime.settings.memory.mounts_per_thread)
@@ -398,6 +407,40 @@ async def prepare_thread(
     if atomic:
         source = replace(source, atomic_initial_acceptance=True)
     return thread, source
+
+
+async def create_thread_in_transaction(
+    session: AsyncSession,
+    runtime: Runtime,
+    admission: AppSubmission,
+    workspace_id: str,
+    body: NewThread,
+    *,
+    request_key: str,
+) -> Submitted:
+    """Commit the new Thread only with its first accepted Run."""
+    _message_key(request_key)
+    actor = submission_actor(session, runtime, admission, workspace_id)
+    scope, request, found = await _lookup(
+        session, actor, workspace_id, lambda scope: Request.of(request_key, "thread", scope.workspace_id, body)
+    )
+    if found is not None:
+        return await _replay(session, found, request)
+    thread, source = await prepare_thread(
+        session,
+        runtime,
+        actor,
+        scope,
+        body,
+        request=request,
+        authority=execution_authority(actor, scope),
+        require_first_run=True,
+    )
+    run = await accept(session, runtime, thread, explicit=source)
+    if run is None:
+        raise conflict("thread", thread.id, "initial_run_not_accepted")
+    assert source.entry is not None
+    return await receipt(session, thread, source.entry)
 
 
 async def create_thread(

@@ -52,9 +52,23 @@ export function CredentialDetail() {
               <KeyIcon size={22} aria-hidden="true" />
             </IconTile>
           }
-          status={<StatePill state={credential.state} />}
+          status={
+            <>
+              <StatePill state={credential.state} />
+              {credential.owner_app_id && (
+                <span className={shared.muted}>
+                  {t("Managed by {{appId}}", {
+                    appId: credential.owner_app_id,
+                  })}
+                </span>
+              )}
+            </>
+          }
           actions={
-            can("write") && <CredentialActions credential={credential} />
+            can("write") &&
+            !credential.owner_app_id && (
+              <CredentialActions credential={credential} />
+            )
           }
         />
       }
@@ -195,18 +209,20 @@ function CredentialConfiguration({ credential }: { credential: Credential }) {
           </SettingsRow>
         )}
       </SettingsSection>
-      {can("write") && credential.state === "active" && (
-        <SettingsSection variant="outlined" title={t("Revoke credential")}>
-          <SettingsRow
-            label={t("Revoke credential")}
-            description={t(
-              "Prevents new use and removes the stored token. Active Sessions remove it asynchronously. This cannot be undone.",
-            )}
-          >
-            <RevokeCredential credential={credential} />
-          </SettingsRow>
-        </SettingsSection>
-      )}
+      {can("write") &&
+        !credential.owner_app_id &&
+        credential.state === "active" && (
+          <SettingsSection variant="outlined" title={t("Revoke credential")}>
+            <SettingsRow
+              label={t("Revoke credential")}
+              description={t(
+                "Prevents new use and removes the stored token. Active Sessions remove it asynchronously. This cannot be undone.",
+              )}
+            >
+              <RevokeCredential credential={credential} />
+            </SettingsRow>
+          </SettingsSection>
+        )}
     </div>
   );
 }

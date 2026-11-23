@@ -92,6 +92,7 @@ class Credential(BaseModel):
     name: str
     description: str
     allowed_hosts: tuple[str, ...]
+    owner_app_id: str | None = None
     state: Literal["active", "revoked"]
     credential_version: int
     version: int

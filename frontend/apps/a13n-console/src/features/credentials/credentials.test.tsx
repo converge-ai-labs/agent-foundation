@@ -46,8 +46,8 @@ vi.mock("../../layout/workspace", () => ({
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) =>
-      options?.defaultValue ?? key,
+    t: (key: string, options?: { defaultValue?: string; appId?: string }) =>
+      options?.defaultValue ?? key.replace("{{appId}}", options?.appId ?? ""),
     i18n: { resolvedLanguage: "en" },
   }),
 }));
@@ -588,4 +588,25 @@ it("shows zero counts for an empty collection and hides them when refresh fails"
     screen.queryByRole("region", { name: "All Session bindings" }),
   ).toBeNull();
   expect(screen.queryByText("No Session references")).toBeNull();
+});
+
+it("shows App ownership and preserves inspection and sync without editing controls", async () => {
+  const user = userEvent.setup();
+  fetcher.mockImplementation(async (request) =>
+    new URL(request.url).pathname.endsWith("/sessions")
+      ? sessionPage([])
+      : json({ ...credential, owner_app_id: "claw" }),
+  );
+  detail();
+  await screen.findByText("Managed by claw");
+  expect(
+    screen.getByRole("button", { name: "Sync active Sessions" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Edit credential" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Rotate credential" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("tab", { name: "Configuration" }));
+  expect(screen.getByText("api.github.com")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Revoke" })).toBeNull();
 });

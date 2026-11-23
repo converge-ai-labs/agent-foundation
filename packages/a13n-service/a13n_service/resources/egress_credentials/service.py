@@ -82,21 +82,44 @@ async def create_credential(
 ) -> Credential:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        row = CredentialRow(
-            id=new_object_id("ecred"),
-            organization_id=scope.organization_id,
-            workspace_id=scope.workspace_id,
-            name=body.name,
-            description=body.description,
-            allowed_hosts=list(body.allowed_hosts),
-            created_by_id=actor.id,
-            updated_by_id=actor.id,
-        )
-        row.value = keys.protect(body.value.get_secret_value().encode(), location(row)).model_dump(mode="json")
-        session.add(row)
-        audit_row(session, actor, row, "create", {"credential_version": 1})
-        await session.flush()
-        return Credential.model_validate(row)
+        return await insert_credential(session, keys, actor, scope, body)
+
+
+async def insert_credential(
+    session: AsyncSession,
+    keys: KeyRing,
+    actor: Principal,
+    scope: WorkspaceScope,
+    body: CredentialCreate,
+    *,
+    owner_app_id: str | None = None,
+) -> Credential:
+    row = CredentialRow(
+        id=new_object_id("ecred"),
+        organization_id=scope.organization_id,
+        workspace_id=scope.workspace_id,
+        name=body.name,
+        description=body.description,
+        allowed_hosts=list(body.allowed_hosts),
+        owner_app_id=owner_app_id,
+        created_by_id=actor.id,
+        updated_by_id=actor.id,
+    )
+    row.value = keys.protect(body.value.get_secret_value().encode(), location(row)).model_dump(mode="json")
+    session.add(row)
+    audit_credential(session, actor, row, "create", version=1)
+    await session.flush()
+    return Credential.model_validate(row)
+
+
+def audit_credential(session: AsyncSession, actor: Principal, row: CredentialRow, verb: str, *, version: int) -> None:
+    details = {"app_id": row.owner_app_id} if row.owner_app_id is not None else {}
+    audit_row(session, actor, row, verb, {**details, "credential_version": version})
+
+
+def require_operator_managed(row: CredentialRow) -> None:
+    if row.owner_app_id is not None:
+        raise conflict(row.KIND, row.id, "app_managed_credential")
 
 
 async def list_credentials(
@@ -136,6 +159,7 @@ async def update_credential(
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         row = await find_row(session, actor, CredentialRow, scope, credential_id, "write", lock=True)
+        require_operator_managed(row)
         require_match(if_match, row.id, row.version)
         if record_update(session, actor, row, assign(row, given(body, "name", "description"))):
             await session.flush()
@@ -156,15 +180,23 @@ async def rotate_credential(
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         row = await find_row(session, actor, CredentialRow, scope, credential_id, "write", lock=True)
+        require_operator_managed(row)
         require_match(if_match, row.id, row.version)
-        require_active(row)
-        row.value = keys.protect(body.value.get_secret_value().encode(), location(row)).model_dump(mode="json")
-        row.credential_version += 1
-        row.updated_by_id = actor.id
-        audit_row(session, actor, row, "rotate", {"credential_version": row.credential_version})
-        after_commit(session, partial(notify, redis, row.id, row.credential_version))
-        await session.flush()
-        return Credential.model_validate(row)
+        return await rotate_locked(session, keys, actor, row, body, redis=redis)
+
+
+async def rotate_locked(
+    session: AsyncSession,
+    keys: KeyRing,
+    actor: Principal,
+    row: CredentialRow,
+    body: CredentialRotation,
+    *,
+    redis: Redis,
+) -> Credential:
+    require_active(row)
+    row.value = keys.protect(body.value.get_secret_value().encode(), location(row)).model_dump(mode="json")
+    return await record_value_change(session, actor, row, "rotate", redis=redis)
 
 
 async def revoke_credential(
@@ -173,17 +205,28 @@ async def revoke_credential(
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         row = await find_row(session, actor, CredentialRow, scope, credential_id, "write", lock=True)
+        require_operator_managed(row)
         require_match(if_match, row.id, row.version)
-        require_active(row)
-        row.value = None
-        row.state = "revoked"
-        row.revoked_at = datetime.now(UTC)
-        row.credential_version += 1
-        row.updated_by_id = actor.id
-        audit_row(session, actor, row, "revoke", {"credential_version": row.credential_version})
-        after_commit(session, partial(notify, redis, row.id, row.credential_version))
-        await session.flush()
-        return Credential.model_validate(row)
+        return await revoke_locked(session, actor, row, redis=redis)
+
+
+async def revoke_locked(session: AsyncSession, actor: Principal, row: CredentialRow, *, redis: Redis) -> Credential:
+    require_active(row)
+    row.value = None
+    row.state = "revoked"
+    row.revoked_at = datetime.now(UTC)
+    return await record_value_change(session, actor, row, "revoke", redis=redis)
+
+
+async def record_value_change(
+    session: AsyncSession, actor: Principal, row: CredentialRow, verb: str, *, redis: Redis
+) -> Credential:
+    row.credential_version += 1
+    row.updated_by_id = actor.id
+    audit_credential(session, actor, row, verb, version=row.credential_version)
+    after_commit(session, partial(notify, redis, row.id, row.credential_version))
+    await session.flush()
+    return Credential.model_validate(row)
 
 
 async def request_sync(

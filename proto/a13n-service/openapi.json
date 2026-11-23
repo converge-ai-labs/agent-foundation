@@ -6245,6 +6245,17 @@
             "title": "Organization Id",
             "type": "string"
           },
+          "owner_app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner App Id"
+          },
           "revoked_at": {
             "anyOf": [
               {
