@@ -92,3 +92,37 @@ it("resolves every built-in Web provider identity while keeping unknown provider
     expect(resolveBrand({ identity })?.icon).toBeTruthy();
   expect(resolveBrand({ identity: "future-web-provider" })).toBeUndefined();
 });
+
+it.each(["google", "microsoft"])(
+  "uses the bundled %s mark and custom fallback on failure",
+  (identity) => {
+    const fallback = <svg data-testid="shield" aria-hidden />;
+    const { container, getByTestId } = render(
+      <BrandIcon identity={identity} bundledOnly fallback={fallback} />,
+    );
+    const icon = container.querySelector("img")!;
+    expect(icon.getAttribute("src")).toBe(brands[identity].icon);
+    expect(new URL(icon.src).origin).toBe(location.origin);
+    expect(icon.alt).toBe("");
+    fireEvent.error(icon);
+    expect(container.querySelector("img")).toBeNull();
+    expect(getByTestId("shield")).toBeTruthy();
+  },
+);
+
+it.each(["generic", "github"])(
+  "never uses remote or caller-supplied images in bundled-only mode (%s)",
+  (identity) => {
+    const { container, getByTestId } = render(
+      <BrandIcon
+        identity={identity}
+        bundledOnly
+        logo="https://logos.example/icon.svg"
+        fallbackIdentity="microsoft"
+        fallback={<svg aria-hidden data-testid="shield" />}
+      />,
+    );
+    expect(container.querySelector("img")).toBeNull();
+    expect(getByTestId("shield")).toBeTruthy();
+  },
+);

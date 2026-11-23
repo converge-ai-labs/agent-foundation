@@ -11,6 +11,7 @@ import {
   Alert,
   AlertAction,
   AlertDescription,
+  BrandIcon,
   Button,
   FormField,
   Input,
@@ -38,8 +39,6 @@ import {
 import { ApiError } from "../service-client";
 import { data } from "../shared/api";
 import { Loading } from "../shared/feedback";
-import googleMark from "./brands/google.png";
-import microsoftMark from "./brands/microsoft.svg";
 import { useAuth, useClient } from "./context";
 import styles from "./pages.module.css";
 
@@ -411,17 +410,13 @@ export function AuthPage() {
               </Notice>
             )}
             {providers.map((provider) => {
-              const mark =
-                provider.brand === "google"
-                  ? googleMark
-                  : provider.brand === "microsoft"
-                    ? microsoftMark
-                    : undefined;
               return (
                 <Button
                   key={provider.id}
                   variant={
-                    !passwords && providers.length === 1 && !mark
+                    !passwords &&
+                    providers.length === 1 &&
+                    provider.brand === "generic"
                       ? "default"
                       : "outline"
                   }
@@ -449,19 +444,12 @@ export function AuthPage() {
                   }
                 >
                   <span className={styles.providerMark} aria-hidden="true">
-                    {mark ? (
-                      <img
-                        src={mark}
-                        alt=""
-                        className={
-                          provider.brand === "google"
-                            ? styles.googleMark
-                            : undefined
-                        }
-                      />
-                    ) : (
-                      <ShieldCheckIcon className="size-5" />
-                    )}
+                    <BrandIcon
+                      identity={provider.brand}
+                      bundledOnly
+                      size={22}
+                      fallback={<ShieldCheckIcon className="size-5" />}
+                    />
                   </span>
                   <span>
                     {t("Sign in with {{provider}}", {

@@ -1,9 +1,12 @@
+import googleIcon from "./google.svg?no-inline";
 import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
+import microsoftIcon from "./microsoft.svg?no-inline";
 import typesafeIcon from "./typesafe.svg";
 
 /** Display identities only. These mappings never select an endpoint or account. */
 export interface Brand {
   icon: string;
+  bundled?: boolean;
   darkIcon?: string;
   invertInDark?: boolean;
   aliases?: readonly string[];
@@ -13,6 +16,8 @@ export interface Brand {
 
 const svgl = "https://svgl.app/library/";
 const curatedBrands: Record<string, Brand> = {
+  google: { icon: googleIcon, bundled: true },
+  microsoft: { icon: microsoftIcon, bundled: true },
   github: {
     icon: `${svgl}github_light.svg`,
     darkIcon: `${svgl}github_dark.svg`,

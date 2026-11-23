@@ -66,6 +66,16 @@ async function signInWithDex(page, provider = "Team Identity") {
 try {
   if (phase === "mixed") {
     const admin = await opened();
+    const externalImages = [];
+    admin.page.on("request", (request) => {
+      if (
+        request.resourceType() === "image" &&
+        new URL(request.url()).origin !== config.origin
+      ) {
+        externalImages.push(request.url());
+      }
+    });
+    await admin.page.reload();
     await admin.page
       .getByRole("link", { name: "Sign in with Engineering SSO" })
       .waitFor();
@@ -75,13 +85,15 @@ try {
         .getByRole("link", { name: `Sign in with ${brand}` })
         .locator("img");
       assert.ok(
-        await image.evaluate(async (img) => {
+        await image.evaluate(async (img, name) => {
           await img.decode();
+          const source = new URL(img.currentSrc);
           return (
-            img.currentSrc.startsWith("data:image/") ||
-            new URL(img.currentSrc).origin === location.origin
+            source.origin === location.origin &&
+            source.pathname.startsWith(`/assets/${name}-`) &&
+            img.alt === ""
           );
-        }),
+        }, brand.toLowerCase()),
       );
     }
     assert.equal(
@@ -107,8 +119,18 @@ try {
     assert.ok(await keyboardFocused(microsoft));
     await admin.page.locator("h1").click();
     await screenshot(admin.page, "mixed-sign-in");
+    assert.deepEqual(externalImages, []);
 
     const retry = await opened();
+    await retry.page.route(`${config.origin}/assets/google-*.svg`, (route) =>
+      route.abort(),
+    );
+    await retry.page.reload();
+    const degraded = retry.page.getByRole("link", {
+      name: "Sign in with Google",
+    });
+    await degraded.locator('span[aria-hidden="true"] svg.size-5').waitFor();
+    assert.equal(await degraded.locator("img").count(), 0);
     const team = retry.page.getByRole("link", {
       name: "Sign in with Team Identity",
     });

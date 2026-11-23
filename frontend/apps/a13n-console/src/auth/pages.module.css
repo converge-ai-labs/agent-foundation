@@ -201,20 +201,27 @@
   text-align: start;
   overflow-wrap: anywhere;
 }
+/* The sole generic entry is still primary, without a bright slab in dark mode. */
+:global(.dark) .provider[data-variant="default"] {
+  background: color-mix(in srgb, var(--a13n-elevated), var(--a13n-text) 9%);
+  border-color: var(--a13n-input-border);
+  color: var(--a13n-text);
+  box-shadow: none;
+}
+:global(.dark) .provider[data-variant="default"]:hover {
+  background: color-mix(in srgb, var(--a13n-elevated), var(--a13n-text) 14%);
+}
+:global(.dark) .provider[data-variant="default"]:active {
+  background: color-mix(in srgb, var(--a13n-elevated), var(--a13n-text) 18%);
+}
+:global(.dark) .provider[data-variant="default"]:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+}
 .providerMark,
 .providerEnd {
   display: grid;
   place-items: center;
-}
-.providerMark img {
-  width: 22px;
-  height: 22px;
-  object-fit: contain;
-}
-.providerMark .googleMark {
-  background: white;
-  border-radius: 4px;
-  padding: 2px;
 }
 .providerEnd {
   opacity: 0.75;
