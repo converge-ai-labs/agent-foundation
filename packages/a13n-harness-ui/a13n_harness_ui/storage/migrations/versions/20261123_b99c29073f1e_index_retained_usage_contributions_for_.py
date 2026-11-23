@@ -51,9 +51,15 @@ def upgrade() -> None:
             "ix_thread_usage_unindexed", ["sequence"], unique=False, sqlite_where=sa.text("indexed_through IS NULL")
         )
 
+    # Older compatible Apps can replace a retained snapshot without knowing the index.
+    op.execute("""CREATE TRIGGER invalidate_usage_fact AFTER UPDATE OF payload_json ON thread_usage
+        WHEN OLD.indexed_through IS NOT NULL AND NEW.indexed_through IS OLD.indexed_through
+        BEGIN UPDATE thread_usage SET indexed_through = NULL WHERE sequence = NEW.sequence; END""")
+
 
 def downgrade() -> None:
     """Reverse the schema change when it is safe to do so."""
+    op.execute("DROP TRIGGER invalidate_usage_fact")
     op.drop_table("usage_fact")
     with op.batch_alter_table("thread_usage", schema=None) as batch_op:
         batch_op.drop_index("ix_thread_usage_unindexed", sqlite_where=sa.text("indexed_through IS NULL"))

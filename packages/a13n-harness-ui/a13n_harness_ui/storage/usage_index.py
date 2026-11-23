@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
 from a13n_harness.usage import ModelUsageRecord, UsageRecord
 from anyio.to_thread import run_sync
 from pydantic import BaseModel, Field, TypeAdapter
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -118,3 +119,19 @@ async def backfill_usage_index(sessions: DatabaseSessions) -> None:
             )
             if claimed is not None:
                 await index_facts(session, sequence, root, facts)
+
+
+@asynccontextmanager
+async def indexed_usage_session(sessions: DatabaseSessions) -> AsyncIterator[AsyncSession]:
+    # An old App may write even between the last backfill commit and this read.
+    # Verify coverage in the same SQLite snapshot used to read the report.
+    while True:
+        async with short_session(sessions) as session:
+            await session.execute(text("BEGIN"))
+            pending = await session.scalar(
+                select(ThreadUsageRecord.sequence).where(ThreadUsageRecord.indexed_through.is_(None)).limit(1)
+            )
+            if pending is None:
+                yield session
+                return
+        await backfill_usage_index(sessions)

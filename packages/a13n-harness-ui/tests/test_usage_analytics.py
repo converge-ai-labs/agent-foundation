@@ -391,3 +391,22 @@ async def test_earlier_scope_can_acquire_a_later_scopes_record(tmp_path):
         view = await UsageAnalyticsRepository(db.sessions).snapshot(_query(), project_names={})
         assert view.summary.model_requests == 2
         assert view.summary.model_cost_usd == "0.1"
+
+
+async def test_older_writer_can_replace_an_indexed_snapshot(tmp_path):
+    from a13n_harness_ui.storage.usage import _StoredSnapshot
+    from sqlalchemy import update
+
+    from .test_thread_usage import _snapshot
+
+    async with open_database(tmp_path / "db.sqlite", StorageSettings(data_root=tmp_path)) as db:
+        async with transaction(db.sessions) as session:
+            session.add(_thread("root"))
+        await ThreadUsageRepository(db.sessions).save(thread_id="root", snapshot=_snapshot(_model(0), thread_id="root"))
+        replaced = _StoredSnapshot(
+            snapshot=_snapshot(_model(0), _model(1), thread_id="root", sequence=2), observed_through=datetime.now(UTC)
+        )
+        async with transaction(db.sessions) as session:
+            await session.execute(update(ThreadUsageRecord).values(payload_json=replaced.model_dump_json()))
+        result = await UsageAnalyticsRepository(db.sessions).snapshot(_query(), project_names={})
+        assert result.summary.model_requests == 2

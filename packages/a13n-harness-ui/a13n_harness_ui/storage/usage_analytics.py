@@ -9,12 +9,12 @@ from decimal import Decimal
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import select, text
+from sqlalchemy import select
 
-from .database import DatabaseSessions, short_session
+from .database import DatabaseSessions
 from .models import ThreadConfigurationRecord, ThreadRecord, ThreadUsageRecord, UsageFactRecord
 from .usage import _Totals, configured_usage_models
-from .usage_index import backfill_usage_index, configured_model
+from .usage_index import configured_model, indexed_usage_session
 
 
 class UsageQuery(BaseModel):
@@ -130,10 +130,7 @@ class UsageAnalyticsRepository:
         models: dict[str, str] = {}
         first: datetime | None = None
         last: datetime | None = None
-        await backfill_usage_index(self._sessions)
-        async with short_session(self._sessions) as session:
-            # Pin metadata and mutable usage snapshots to the same read transaction.
-            await session.execute(text("BEGIN"))
+        async with indexed_usage_session(self._sessions) as session:
             configured = {
                 recipe: configured_model(name) for recipe, name in (await configured_usage_models(session)).items()
             }
