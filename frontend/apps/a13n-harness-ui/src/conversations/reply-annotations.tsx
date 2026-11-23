@@ -48,6 +48,7 @@ export function ReplyAnnotations({
 }) {
   const notes = useSyncExternalStore(draft.subscribe, draft.getAnnotations);
   const [session, setSession] = useState<Session>();
+  const [dictating, setDictating] = useState(false);
   const editing = !!session && session.stage !== "selection";
   useEffect(() => {
     if (!enabled || editing) return;
@@ -112,7 +113,7 @@ export function ReplyAnnotations({
   }
   function remove(id: string) {
     draft.setAnnotations(draft.annotations.filter((n) => n.id !== id));
-    setSession(undefined);
+    if (!dictating) setSession(undefined);
   }
   function save(comment: string) {
     if (!session) return;
@@ -140,11 +141,12 @@ export function ReplyAnnotations({
           ? {
               notes,
               active: session?.note?.id,
+              dictating,
               edit,
               remove,
               clear: () => {
                 draft.setAnnotations([]);
-                setSession(undefined);
+                if (!dictating) setSession(undefined);
               },
             }
           : null
@@ -155,6 +157,8 @@ export function ReplyAnnotations({
         <SelectionPopup
           key={session.note?.id ?? "new"}
           dictation={dictation}
+          dictating={dictating}
+          onDictatingChange={setDictating}
           session={session}
           onStart={() => setSession({ ...session, stage: "new" })}
           onClose={() => setSession(undefined)}
@@ -176,6 +180,8 @@ function layoutComment(field: HTMLTextAreaElement) {
 
 function SelectionPopup({
   dictation,
+  dictating,
+  onDictatingChange,
   session,
   onStart,
   onClose,
@@ -183,6 +189,8 @@ function SelectionPopup({
   onDelete,
 }: {
   dictation?: DictationTarget;
+  dictating: boolean;
+  onDictatingChange: (active: boolean) => void;
   session: Session;
   onStart: () => void;
   onClose: () => void;
@@ -190,7 +198,6 @@ function SelectionPopup({
   onDelete: () => void;
 }) {
   const { t } = useTranslation();
-  const [dictating, setDictating] = useState(false);
   const [comment, setComment] = useState(session.note?.comment ?? "");
   const input = useRef<HTMLTextAreaElement>(null);
   const focusComment = useCallback((field: HTMLTextAreaElement | null) => {
@@ -253,7 +260,7 @@ function SelectionPopup({
     <Dictation
       target={dictation}
       quote={session.quote}
-      onActive={setDictating}
+      onActive={onDictatingChange}
       readDraft={() => {
         const field = input.current;
         if (!field) return;
@@ -263,7 +270,7 @@ function SelectionPopup({
           after: field.value.slice(field.selectionEnd),
         };
       }}
-      insert={(text) => {
+      insert={(text, restoreFocus) => {
         const field = input.current;
         if (!field) return;
         field.setRangeText(
@@ -273,7 +280,8 @@ function SelectionPopup({
           "end",
         );
         setComment(field.value);
-        requestAnimationFrame(() => field.focus());
+        if (restoreFocus)
+          requestAnimationFrame(() => field.focus({ preventScroll: true }));
       }}
     />
   );
@@ -281,12 +289,15 @@ function SelectionPopup({
     <Popover
       key={stage}
       open
-      onOpenChange={(open) => {
-        if (!open) onClose();
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (dictating) details.cancel();
+        else onClose();
       }}
     >
       <PopoverPopup
         anchor={anchor}
+        sticky={stage !== "selection"}
         side="top"
         align={stage === "edit" && range ? "center" : "start"}
         sideOffset={6}

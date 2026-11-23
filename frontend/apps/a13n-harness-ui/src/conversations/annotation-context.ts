@@ -4,6 +4,7 @@ import type { ReplyAnnotation } from "./reply-quote";
 export const AnnotationContext = createContext<{
   notes: ReplyAnnotation[];
   active?: string;
+  dictating: boolean;
   edit: (note: ReplyAnnotation, trigger: HTMLElement) => void;
   clear: () => void;
   remove: (id: string) => void;
