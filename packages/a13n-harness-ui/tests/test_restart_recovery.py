@@ -1,10 +1,11 @@
 """Planned update pauses preserve work without accepting a durable input queue."""
 
+import asyncio
 import json
 
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.errors import RunCoordinationError
+from a13n_harness_ui.errors import AppStateError, RunCoordinationError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.storage import StoredContinuation, open_local_store
@@ -617,6 +618,80 @@ async def test_cancelled_task_is_excluded_from_planned_handoff(tmp_path, monkeyp
         assert await store.restarts.claim() is None
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         assert not app._restart.restoring
+    assert calls == 1
+
+
+@pytest.mark.parametrize("interrupted_by", ["app", "server"])
+async def test_shutdown_does_not_restore_a_run_after_an_interrupted_stop(tmp_path, monkeypatch, interrupted_by):
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state").model_copy(update={"shutdown_timeout_seconds": 0.01})
+    started, withdrawing, release_writer, stop_finished = Event(), Event(), Event(), Event()
+    stop_task = None
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        started.set()
+        if calls == 1:
+            await Event().wait()
+        return ModelResponse(parts=[TextPart("Unexpected restart")])
+
+    install_model(monkeypatch, model)
+    async with create_task_group() as group:
+        async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+            thread = await app.create_thread()
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Wait")
+            with fail_after(10):
+                await started.wait()
+            restart = app._restart
+            lock_held = Event()
+            invalidate = restart.invalidate
+            cancel_operations = app._cancel_operations
+
+            async def hold_candidate_writer():
+                async with restart._candidate_lock:
+                    lock_held.set()
+                    await release_writer.wait()
+
+            async def observe_stop(thread_id, *, suppress=False):
+                if suppress:
+                    withdrawing.set()
+                return await invalidate(thread_id, suppress=suppress)
+
+            def release_writer_at_shutdown_deadline():
+                cancel_operations()
+                release_writer.set()
+
+            async def stop():
+                nonlocal stop_task
+                stop_task = asyncio.current_task()
+                try:
+                    await app.cancel_root_operation(receipt.receipt_id)
+                except AppStateError as exc:
+                    assert exc.code == "app_stopping"
+                except asyncio.CancelledError:
+                    assert interrupted_by == "server"
+                finally:
+                    stop_finished.set()
+
+            monkeypatch.setattr(restart, "invalidate", observe_stop)
+            monkeypatch.setattr(app, "_cancel_operations", release_writer_at_shutdown_deadline)
+            group.start_soon(hold_candidate_writer)
+            with fail_after(10):
+                await lock_held.wait()
+            group.start_soon(stop)
+            with fail_after(10):
+                await withdrawing.wait()
+                if interrupted_by == "server":
+                    # Uvicorn can cancel a request before starting App shutdown.
+                    assert stop_task is not None
+                    stop_task.cancel()
+                    await stop_finished.wait()
+                    release_writer.set()
+
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        assert await app._root_runs.active_count() == 0
     assert calls == 1
 
 

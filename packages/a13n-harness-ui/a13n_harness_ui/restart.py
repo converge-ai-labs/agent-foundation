@@ -99,9 +99,11 @@ class GracefulRestart:
         """Withdraw before response processing, explicit Stop, or terminal retirement."""
         if not self.enabled:
             return
+        # Record explicit Stop before the request can be cancelled while
+        # waiting to withdraw the durable process-loss candidate.
+        if suppress:
+            self._suppressed.add(thread_id)
         async with self._candidate_lock:
-            if suppress:
-                self._suppressed.add(thread_id)
             previous = self._candidates.pop(thread_id, None)
             if previous is not None:
                 try:
@@ -129,6 +131,7 @@ class GracefulRestart:
             self.committing
             and entry is not None
             and (entry.state is not None or thread_id in self._candidates)
+            and thread_id not in self._suppressed
             and thread_id not in self.finalized
         ):
             self.errors[thread_id] = "Final checkpoint or Environment cleanup failed."
@@ -154,7 +157,7 @@ class GracefulRestart:
                 changed = self.changed
                 await changed.wait()
         for thread_id, entry in self.active.items():
-            if entry.state is None and thread_id not in self._candidates:
+            if entry.state is None and thread_id not in self._candidates and thread_id not in self._suppressed:
                 self.errors[thread_id] = "Shutdown did not reach this task's continuation boundary."
         # Save each complete family independently. A slow unrelated task must
         # not discard the boundaries reached by the rest of the workbench.
@@ -194,11 +197,13 @@ class GracefulRestart:
     def interrupted_boundary(self, thread_id: str) -> RestartItem | None:
         # Called only after the old model Run has joined. A still-armed candidate
         # proves no response processing or tool effect followed this checkpoint.
-        return self._candidates.get(thread_id) if self.committing else None
+        return self._candidates.get(thread_id) if self.committing and thread_id not in self._suppressed else None
 
     def saved_state(self, thread_id: str) -> HarnessState | None:
+        if not self.committing or thread_id in self._suppressed:
+            return None
         entry = self.active.get(thread_id)
-        return entry.state if self.committing and entry is not None else None
+        return entry.state if entry is not None else None
 
     def saved(self, item: RestartItem) -> None:
         self.finalized[item.thread_id] = item
@@ -211,7 +216,11 @@ class GracefulRestart:
         if not self.committing:
             return
         blocked = {self.families.get(thread_id, thread_id) for thread_id in self.errors}
-        items = tuple(item for item in self.finalized.values() if item.root_thread_id not in blocked)
+        items = tuple(
+            item
+            for item in self.finalized.values()
+            if item.root_thread_id not in blocked and item.thread_id not in self._suppressed
+        )
         if items:
             await self.repository.publish(RestartBatch(batch_id=f"restart-{uuid4().hex}", state="ready", items=items))
         if self.errors:
