@@ -18,13 +18,13 @@ The bundled WebUI is an online-only installable web app. Its same-origin manifes
 
 General settings offers installation when the browser supplies an install prompt and otherwise explains platform installation entry points. Prompts require an explicit user action; dismissal and failure do not cause automatic retries. An accepted prompt is not reported as completed installation without the browser's installation event. Installation availability depends on the browser and a secure origin (HTTPS or a loopback exception).
 
-The installed window uses the existing authentication, navigation, and observation paths. Installation neither starts nor bundles the Python backend. The server must remain reachable. A separately opted-in notification-only Service Worker enables [closed-page Web Push](04-workbench-interaction.md#task-notifications). Its root-scoped `/sw.js` is public static delivery with revalidation, never an immutable hashed asset or HTML fallback. It contains no credentials, fetch interception, offline cache, or queued mutations. Installation alone does not opt into push or guarantee background execution. Browser installation and worker updates do not change draft or Run persistence and do not force page reloads.
+The installed window uses existing auth, navigation, and observation paths against the running Python server. An opted-in notification-only Service Worker (`/sw.js`, public static delivery with revalidation, containing no credentials, fetch interception, offline cache, or queued mutations) enables [closed-page Web Push](04-workbench-interaction.md#task-notifications). Browser installation and worker updates leave drafts, Run persistence, and open pages unchanged.
 
 ## Compatibility and Boundaries
 
-The authenticated server status reports the actually installed `a13n-harness-ui` distribution version, independently of the API schema version. The bundled browser displays that server-reported running version rather than its private npm manifest version or an asset build timestamp. The browser creates no separate release line; wheel/sdist and bounded cross-group dependency rules remain in force.
+Authenticated server status reports the installed `a13n-harness-ui` version (displayed by the browser) independently of the API schema version.
 
-Operators may install the Python distribution in their own containers. Containerization does not configure an Agent Environment, enable native computer sharing, disable authentication, or grant Docker-daemon access. Native file and terminal access remains inside the server's OS authority and explicit mounts. Persistent mounts preserve selected data, not live processes or execution authority; container shutdown and browser disconnect have distinct lifecycle effects.
+Operators may run the Python distribution in their own containers; containerization leaves Agent Environment configuration, computer-sharing enablement, and authentication explicit, with persistent mounts preserving only stored data (not live processes or execution authority).
 
 ## Invariants
 

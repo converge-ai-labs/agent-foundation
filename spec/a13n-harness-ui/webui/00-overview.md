@@ -19,23 +19,17 @@ The server owns one process-local `HarnessUiApp`. The browser calls its public c
 | Host Files and Changes     | Browse and edit server files and inspect the server checkout's Git state when computer sharing is enabled                   |
 | Host Terminal              | Operate a native terminal on that same server when computer sharing is enabled                                              |
 
-The default work path is to enter a Project and continue a conversation, not to navigate through an administrative dashboard. Execution detail is inspectable without making raw logs the primary conversation view. Panel arrangement does not change command ownership.
+The default work path enters a Project and continues a conversation; execution detail stays inspectable without making raw logs the primary view. A saved browser conversation maps to an existing root Thread, while the [blank entry page](04-workbench-interaction.md#entry-and-navigation) holds local input before first Send. Child Threads stay subordinate inspection context, and projectless Threads keep their existing semantics.
 
-A saved browser conversation is an existing root Thread, not a new Session identity. The [blank entry page](04-workbench-interaction.md#entry-and-navigation) holds local input before first Send and does not fabricate persisted Thread state. Child Threads remain subordinate execution/inspection context. Projectless Threads retain their existing semantics and are not assigned fabricated roots merely for navigation.
-
-Different Threads can execute concurrently under App admission rules. Switching or closing a view does not cancel execution. Shared local paths can be modified by multiple Threads or people; Project grouping and multiple conversations do not imply worktree or filesystem isolation. The workbench shows the actual working location and does not create a worktree implicitly.
+Different Threads run concurrently under App admission rules; switching or closing a view leaves execution running. Project grouping and multiple conversations share the configured local paths without implicit worktree or filesystem isolation.
 
 ## Configuration Composition
 
-The configuration center is an editor and selector over the [file-backed resource catalog](../01-configuration-and-resource-catalog.md), not a second definition store. It exposes reusable Models, Agents, Capabilities, configured Harness Plugins, Environment profiles, Environment Run Extensions, MCP servers, and supported content management through their owning contracts.
+The configuration center edits the [file-backed resource catalog](../01-configuration-and-resource-catalog.md) directly, exposing reusable Models, Agents, Capabilities, Harness Plugins, Environment profiles, Run Extensions, MCP servers, and content management.
 
-A Project configuration view combines working roots and the resource selections used to initialize new conversations. Users can inspect the effective combination and its source before execution. Existing Threads retain their exact sticky selections; editing Project creation defaults does not silently reconfigure them. Applying a Project's current selections to an existing Thread is an explicit versioned configuration action. Each Run freezes its effective configuration at admission.
+A Project view combines working roots and new-conversation creation defaults (existing Threads keep their sticky selections until explicitly updated via a versioned action; each Run freezes its effective config at admission). Editing a shared resource affects later Runs selecting it, while a Project root edit follows its [later-Run effect](../04-projects-threads-and-environments.md#projects).
 
-The UI distinguishes changing a default resource selection from editing that resource's content. A shared resource edit can affect later Runs of Threads already selecting it. A Project root edit retains its separate [later-Run effect](../04-projects-threads-and-environments.md#projects). Neither operation changes an admitted Run.
-
-Forms group choices by Agent behavior, execution Environment, and tools/integrations. These presentation groups do not merge the runtime ownership of Capabilities, Harness Plugins, Providers, and Run Extensions. Discovery reports availability; it does not enable an implementation. A discovered Provider without a usable Host adapter is not presented as ready for Project execution.
-
-Common configuration is approachable without editing YAML; advanced source editing remains available. Both forms use the same validation and accepted-generation boundary. Invalid saves or unavailable dependencies have explicit diagnostics and do not silently select substitutes. Already imported extension code is fixed for the App lifetime; editing source is not universal hot reload.
+Forms group choices by Agent behavior, Environment, and tools/integrations without merging runtime ownership of Capabilities, Plugins, Providers, and Run Extensions. Discovery reports availability; only enabled Providers with a usable Host adapter appear ready for Project execution. Form and YAML edits share the same validation and accepted-generation boundary; already-imported extension code stays fixed for the App lifetime.
 
 ## Collaboration and Local View State
 
@@ -57,9 +51,7 @@ HTTP uses authorization headers rather than request-URL keys. Interactive connec
 
 ## Environment Boundary
 
-[Host computer sharing](02-host-computer-sharing.md) is remote access to the WebUI server machine, including when that machine is a container. It is not a browser surface over the Agent Environment and does not change location when an Agent selects E2B or another Provider.
-
-There is no Environment-specific file browser, debug terminal, or command console. Environment configuration and Agent execution remain available through their existing application boundaries. Developers can use native Host files and PTY to edit extension code, run tests or scripts, and inspect code without a separate SSH login. A Host path or Git diff never implies that a remote Agent has the same checkout.
+[Host computer sharing](02-host-computer-sharing.md) provides remote access to the WebUI server machine (or container and its mounted directories), independent of any Agent Environment selection such as E2B. Developers use native Host files and PTY to edit code, run tests, and inspect files on the server; remote Agent Environments remain behind their own boundaries.
 
 ## Invariants
 
