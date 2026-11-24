@@ -85,7 +85,11 @@ export function AcpAuth({ agentId }: { agentId: string }) {
                 )}
               >
                 <code style={{ overflowWrap: "anywhere" }}>
-                  {JSON.stringify(method.argv)}
+                  {method.argv
+                    ?.map(
+                      (argument) => `'${argument.replaceAll("'", "'\\''")}'`,
+                    )
+                    .join(" ")}
                 </code>
               </SettingsRow>
               {!!method.environment_keys?.length && (
