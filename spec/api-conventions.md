@@ -21,9 +21,9 @@ These conventions do not replace an upstream or project-owned protocol. The Harn
 
 Foundation-owned product HTTP APIs use the `/api` namespace. The current public compatibility line places its versioned resource routes below `/api/v1`. Operational endpoints such as liveness and readiness are outside `/api` and are not public resource APIs.
 
-Path segments use lowercase kebab-case, with plural names for resource collections. `GET` reads a resource or collection, `POST` creates a resource or invokes an explicit command, `PATCH` applies a partial mutation, and `DELETE` removes a resource only when its owning contract defines deletion. `PUT` is used only for a genuine complete replacement. A command uses a subordinate action path such as `POST /api/v1/runs/{run_id}/interrupt`; arbitrary verb-shaped RPC endpoints are not used when a resource or command expresses the operation directly.
+Path segments use lowercase kebab-case with plural collection names. `GET` reads, `POST` creates or invokes an explicit subordinate command (such as `POST /api/v1/runs/{run_id}/interrupt`), `PATCH` applies a partial mutation, `PUT` performs a complete replacement, and `DELETE` removes a resource where defined.
 
-A successful single-resource, mutation, or command response returns that resource or receipt directly. There is no universal `data` envelope. Ordinary status meanings are:
+A successful single-resource, mutation, or command response returns the resource or receipt directly without a `data` envelope:
 
 | Status | Meaning                                                              |
 | -----: | -------------------------------------------------------------------- |
@@ -32,7 +32,7 @@ A successful single-resource, mutation, or command response returns that resourc
 |  `202` | Durably accepted but not complete; a resource or receipt is returned |
 |  `204` | Successful operation with no response representation                 |
 
-An asynchronous acceptance never holds an HTTP request open until execution finishes and never reports `200` as if acceptance and completion were the same fact.
+Asynchronous acceptance returns `202` immediately with a resource or receipt; completion is observed separately.
 
 ## JSON Representations
 
@@ -65,15 +65,15 @@ GET /api/v1/agents?limit=50&cursor=opaque-value
 }
 ```
 
-`limit` is an integer from `1` through `100` and defaults to `50`. `next_cursor` is either an opaque string or `null`; `null` means that the observed traversal has no next page. The page does not also carry `has_more`, and ordinary collections do not expose parallel `page`, `page_size`, or `offset` pagination. They do not compute `total` by default.
+`limit` is an integer from `1` through `100` (default `50`). `next_cursor` is an opaque string or `null` when traversal has no next page.
 
-Each endpoint defines one deterministic default order and uses a unique stable tie-breaker. It exposes only explicit filters and sort choices rather than a platform query language. A cursor is bound to the authenticated scope and the query that created it. A changed scope, filter, or ordering, or an invalid or expired cursor, returns a typed error instead of an empty page.
+Each endpoint defines one deterministic default order with a unique stable tie-breaker and exposes only explicit filters and sort choices. A cursor is bound to the authenticated scope and query; a changed scope, filter, ordering, or an invalid/expired cursor returns a typed error.
 
-[Trace query](a13n-service/07-facts-and-delivery.md#trace-query) is a scoped exception for provider-backed telemetry: descending start time uses the selected backend's stable opaque identity continuation for ties rather than a cross-provider public ID comparator. Service preserves this native order across filtered pages; it does not impose a different global order by sorting individual pages.
+[Trace query](a13n-service/07-facts-and-delivery.md#trace-query) is a scoped exception for provider-backed telemetry: descending start time uses the selected backend's opaque continuation for ties and preserves native backend order across filtered pages.
 
-A bounded transient catalog command may return its complete `items` array without pagination when its owning API explicitly defines that contract and its response limits, as in the [model catalog](a13n-service/08-providers.md#model-catalog). This does not change ordinary resource collection pagination.
+A bounded transient catalog command may return its complete `items` array without pagination when explicitly defined by its owning API, as in the [model catalog](a13n-service/08-providers.md#model-catalog).
 
-The cursor is a continuation value, not an object ID or bearer authority. Clients do not parse or construct it, and the server reauthorizes every page. Ordinary collection pagination does not imply a database snapshot; an API that requires snapshot isolation or durable replay defines that stronger contract separately.
+Cursors are opaque, non-authoritative continuation values; the server reauthorizes every page. Ordinary pagination reflects current state rather than a database snapshot.
 
 ## Errors
 
@@ -115,11 +115,11 @@ SDKs expose one common API error base carrying HTTP status, `code`, `message`, `
 
 A versioned state-machine mutation that can lose a concurrent update accepts `expected_version` and compares it with the model's `version`. When one request boundary necessarily exposes multiple independent version axes, secondary preconditions are qualified just enough to distinguish them. A mismatch returns `409`. A mutable representation without an addressable history requires a strong `ETag` plus `If-Match`; an absent precondition returns `428` and a stale tag returns `412`. The tag changes whenever that complete representation changes and is not an addressable version, revision, or history selector. A revisioned resource head orders Revision publication, default selection and metadata changes with its one `ETag` ([data conventions](data-conventions.md#resource-revisions-and-concurrency)). One mutation axis never mixes the two contracts. Resources that cannot lose updates do not require an artificial concurrency token.
 
-A create or command that callers may safely retry accepts an `Idempotency-Key` header containing 1–512 visible ASCII bytes. Scope includes the authenticated Principal, applicable Workspace or Organization boundary, operation, target, and key digest. The same scoped key selects the accepted business result; a request whose content differs from the one the key accepted is refused with `409` rather than replayed, so a reused key never silently returns another request's result. Service reauthorizes replay access and constructs the response from retained records using current logic, so mutable fields and versions may have advanced. Replay precedes new-mutation version and semantic-input checks. Keys do not expire after 24 hours; deleting the owning data may end deduplication. No response snapshot or replay-specific retention hold is required. External protocol identities retain their separately owned semantics.
+A create or command that callers may safely retry accepts an `Idempotency-Key` header containing 1–512 visible ASCII bytes, scoped by authenticated Principal, Workspace/Organization boundary, operation, target, and key digest. Reusing a scoped key with the same payload replays the accepted result; reusing it with a different payload returns `409`. Service reauthorizes replay access and builds the response from retained records using current state. Replay runs before `expected_version` or `If-Match` evaluation. Keys remain valid beyond 24 hours until their owning data is deleted. External protocol identities keep their own semantics.
 
-Idempotent replay is resolved before evaluating `expected_version` or `If-Match`, so replay of a committed mutation does not conflict with the state it already changed. A timeout or lost response after possible dispatch has unknown outcome unless the same idempotency key or authoritative receipt reconciles it. A caller never changes the key merely because acknowledgement was lost.
+After a timeout or lost response, outcome is unknown until reconciled by the same idempotency key or an authoritative receipt; callers retain the original key on retry.
 
-SDKs automatically retry only bounded reads and mutations whose owning contract and idempotency evidence make replay safe. They honor `Retry-After` when present and never label an unknown mutation outcome as failure or success.
+SDKs automatically retry only bounded reads and mutations with safe idempotency evidence, honoring `Retry-After` and surfacing unknown mutation outcomes explicitly.
 
 ## Compatibility
 
