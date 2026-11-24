@@ -269,7 +269,7 @@ The Host publishes a successful suggestion as `{continuation_id, text}` through 
 
 The WebUI previews the result only in a visible, idle, runnable saved chat with an empty, synchronized composer and no pending interaction. Editing, attachments, reply annotations, composition, and navigation suppress the preview without interrupting generation. Escape dismisses the prediction locally for that continuation; deleting typed input can otherwise reveal the same prediction again. The suggestion is not unsent input and is not part of the text document or its undo history. Consuming the draft clears the captured prediction and preserves any suggestion published for the next continuation. The composer never shows a prediction for a different continuation.
 
-Tab accepts an available prediction as one undoable edit, after skill completion priority. Touch users can use the visible acceptance button. Enter never accepts or submits ghost text. The preview does not enter shared text until accepted.
+Tab accepts an available prediction as one undoable edit, after skill completion priority. Pointer and touch users can use the visible acceptance and dismiss controls. Enter never accepts or submits ghost text. The preview does not enter shared text until accepted.
 
 ### Activity
 

@@ -903,22 +903,22 @@ it("keeps a prediction out of shared text until Tab fills it as one undoable edi
   const draft = new ThreadDraft();
   const submit = vi.fn();
   const dismiss = vi.fn();
+  const text =
+    "Add an example for each usage scenario and keep the commands runnable.\nInclude the expected output and note where to find the full logs.";
   render(
     <ComposerEditor
       draft={draft}
       profile={{ display_name: "Alice", color: "#2563eb" }}
       presence={() => {}}
       submit={submit}
-      prediction={{ text: "Add an example.", dismiss }}
+      prediction={{ text, dismiss }}
     />,
   );
   const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
-  expect(textbox.querySelector(".cm-placeholder")?.textContent).toContain(
-    "Add an example.",
-  );
-  expect(screen.getByText("Tab")).toBeTruthy();
+  expect(textbox.querySelector(".cm-placeholder")?.textContent).toBe(text);
+  expect(textbox.contains(screen.getByText("Tab"))).toBe(false);
   expect(textbox.getAttribute("aria-description")).toContain(
-    "Suggested follow-up: Add an example. Press Tab to fill or Escape to dismiss.",
+    `Suggested follow-up: ${text} Press Tab to fill or Escape to dismiss.`,
   );
   expect(draft.doc.getText("text").length).toBe(0);
   expect(draft.undo.undoStack).toHaveLength(0);
@@ -927,7 +927,7 @@ it("keeps a prediction out of shared text until Tab fills it as one undoable edi
   fireEvent.keyDown(textbox, { key: "Escape" });
   expect(dismiss).toHaveBeenCalledTimes(1);
   fireEvent.keyDown(textbox, { key: "Tab" });
-  expect(draft.doc.getText("text").toString()).toBe("Add an example.");
+  expect(draft.doc.getText("text").toString()).toBe(text);
   expect(textbox.getAttribute("aria-description")).not.toContain(
     "Suggested follow-up:",
   );
@@ -954,17 +954,29 @@ it("does not accept a ghost prediction during IME composition", () => {
   expect(draft.undo.undoStack).toHaveLength(0);
 });
 
-it("offers a button to fill the prediction without a keyboard", () => {
+it("offers clickable accept and dismiss controls outside the textbox", () => {
   const draft = new ThreadDraft();
+  const dismiss = vi.fn();
   render(
     <ComposerEditor
       draft={draft}
       profile={{ display_name: "Alice", color: "#2563eb" }}
       presence={() => {}}
       submit={() => {}}
-      prediction={{ text: "Add an example.", dismiss: () => {} }}
+      prediction={{ text: "Add an example.", dismiss }}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Use suggestion" }));
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  const useSuggestion = screen.getByRole("button", { name: "Use suggestion" });
+  const dismissSuggestion = screen.getByRole("button", {
+    name: "Dismiss suggestion",
+  });
+  expect(textbox.contains(useSuggestion)).toBe(false);
+  expect(useSuggestion.contains(screen.getByText("Tab"))).toBe(true);
+  expect(textbox.contains(dismissSuggestion)).toBe(false);
+  fireEvent.click(dismissSuggestion);
+  expect(dismiss).toHaveBeenCalledTimes(1);
+  fireEvent.click(useSuggestion);
   expect(draft.doc.getText("text").toString()).toBe("Add an example.");
+  expect(document.activeElement).toBe(textbox);
 });

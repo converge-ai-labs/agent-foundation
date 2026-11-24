@@ -1,44 +1,73 @@
 .editor {
-  position: relative;
   min-width: 0;
-}
-
-.editor :global(.cm-scroller) {
-  container-type: inline-size;
 }
 
 .ghost {
-  display: inline-flex;
-  /* Center the key hint on the text line; baseline alignment drifts with the clipped text box. */
-  align-items: center;
-  /* CodeMirror's line can grow to fit the widget. Use the scrollport width instead. */
-  max-width: calc(100cqi - 2 * var(--composer-text-inset, 0px));
   color: var(--harness-placeholder);
-  font-style: italic;
-  pointer-events: none;
-  user-select: none;
 }
 
-.ghostText {
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 2px var(--composer-text-inset, 8px) 4px;
+}
+
+.accept[data-slot] {
+  height: 24px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
+  padding-inline: 8px;
+  border: 1px solid var(--a13n-border);
+  border-radius: var(--a13n-radius-chip);
+  background: var(--a13n-hover);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+  line-height: 1.4;
+  cursor: pointer;
 }
 
-.ghost kbd {
-  display: none;
-  flex-shrink: 0;
-  margin-inline-start: 0.5em;
-  padding-inline: 0.3em;
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  font-size: var(--a13n-text-2xs);
-  font-style: normal;
-  line-height: 1.4;
+.accept[data-slot]:is(:hover, :focus-visible) {
+  border-color: var(--a13n-input-border);
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+
+.key {
+  font-family: var(--a13n-font);
+  font-size: inherit;
+  line-height: 1;
 }
 
 .touch {
+  display: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dismiss[data-slot] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: var(--a13n-radius-chip);
+  color: var(--a13n-tertiary);
+  cursor: pointer;
+}
+
+.dismiss[data-slot] > svg {
+  width: 13px;
+  height: 13px;
+}
+
+.dismiss[data-slot]:is(:hover, :focus-visible) {
+  background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+
+.editor:has(.composing) .actions {
   display: none;
 }
 
@@ -46,40 +75,42 @@
   visibility: hidden;
 }
 
-@media not (pointer: coarse) {
-  .ghost kbd {
-    display: inline;
-  }
-}
-
 @media (pointer: coarse) {
-  .editor {
-    min-height: 44px;
+  .actions {
+    gap: 6px;
+    padding-block: 4px 6px;
   }
 
-  .editor:has(.touch) .ghost {
-    max-width: 60cqi;
+  .accept[data-slot] {
+    height: 32px;
+    padding-inline: 10px;
+    border-radius: var(--harness-radius-control);
+    font-size: var(--a13n-text-sm);
+  }
+
+  .key {
+    display: none;
   }
 
   .touch {
-    display: block;
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline-end: 0;
-    min-width: 44px;
-    min-height: 44px;
-    padding-inline: 0.45rem;
-    border: 1px solid var(--border);
-    border-radius: 0.25rem;
-    background: var(--background);
-    font-size: var(--a13n-text-2xs);
-    color: var(--a13n-text);
+    display: inline;
+  }
+
+  .dismiss[data-slot] {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--harness-radius-control);
+  }
+
+  .dismiss[data-slot] > svg {
+    width: 14px;
+    height: 14px;
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .ghost,
-  .touch {
+  .actions {
     animation: appear 140ms ease-out;
   }
 }

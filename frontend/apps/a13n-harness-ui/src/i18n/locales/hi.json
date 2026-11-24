@@ -3658,6 +3658,8 @@
   "Tab": "Tab",
   "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.": "सुझाया गया अगला संदेश: {{text}} भरने के लिए Tab या हटाने के लिए Escape दबाएँ।",
   "Use suggestion": "सुझाव इस्तेमाल करें",
+  "Dismiss suggestion": "सुझाव हटाएँ",
+  "Dismiss suggestion (Esc)": "सुझाव हटाएँ (Esc)",
   "Let agents post to Inbox": "Agents को Inbox में पोस्ट करने दें",
   "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "Agents परिणाम, प्रश्न और मुख्य प्रगति आपके Inbox में पोस्ट करते हैं और उन्हें इसकी याद दिलाई जाती है। इसे बंद करने पर नए Runs को Inbox टूल या रिमाइंडर नहीं मिलते; मौजूदा आइटम बने रहते हैं।"
 }

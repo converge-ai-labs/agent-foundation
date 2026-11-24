@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { X } from "@phosphor-icons/react";
+import { Button } from "a13n-ui";
 import { useAppearance } from "../appearance/react";
 import { useTranslation } from "../i18n";
 import {
@@ -403,12 +404,7 @@ export function ComposerEditor({
           ? placeholder((view) => {
               const ghost = view.dom.ownerDocument.createElement("span");
               ghost.className = predictionStyles.ghost;
-              const label = view.dom.ownerDocument.createElement("span");
-              label.className = predictionStyles.ghostText;
-              label.textContent = text;
-              const key = view.dom.ownerDocument.createElement("kbd");
-              key.textContent = t("Tab");
-              ghost.append(label, key);
+              ghost.textContent = text;
               return ghost;
             })
           : placeholder(t("Ask anything, or describe a task…")),
@@ -551,16 +547,40 @@ export function ComposerEditor({
       <div className={predictionStyles.editor}>
         <div ref={host} data-presence-anchor="composer" />
         {prediction && (
-          <button
-            type="button"
-            className={predictionStyles.touch}
-            onClick={() => {
-              const view = currentView.current;
-              if (view && acceptRef.current?.(view)) view.focus();
-            }}
-          >
-            {t("Use suggestion")}
-          </button>
+          <div className={predictionStyles.actions}>
+            <Button
+              variant="ghost"
+              size="xs"
+              className={predictionStyles.accept}
+              aria-label={t("Use suggestion")}
+              aria-keyshortcuts="Tab"
+              tooltip
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                const view = currentView.current;
+                if (view && acceptRef.current?.(view)) view.focus();
+              }}
+            >
+              <kbd className={predictionStyles.key} aria-hidden="true">
+                {t("Tab")}
+              </kbd>
+              <span className={predictionStyles.touch} aria-hidden="true">
+                {t("Use suggestion")}
+              </span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={predictionStyles.dismiss}
+              aria-label={t("Dismiss suggestion")}
+              aria-keyshortcuts="Escape"
+              title={t("Dismiss suggestion (Esc)")}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => prediction.dismiss()}
+            >
+              <X aria-hidden="true" />
+            </Button>
+          </div>
         )}
       </div>
     </>

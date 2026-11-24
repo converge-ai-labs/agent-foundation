@@ -3658,6 +3658,8 @@
   "Tab": "Tab",
   "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.": "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.",
   "Use suggestion": "Use suggestion",
+  "Dismiss suggestion": "Dismiss suggestion",
+  "Dismiss suggestion (Esc)": "Dismiss suggestion (Esc)",
   "Let agents post to Inbox": "Let agents post to Inbox",
   "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay."
 }
