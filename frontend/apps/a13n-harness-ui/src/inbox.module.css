@@ -27,19 +27,40 @@
   display: grid;
   gap: 4px;
 }
-.group > .heading {
+.groupHeader,
+.groupLabel {
   display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+}
+.groupHeader {
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+}
+.groupLabel > .heading {
   margin: 0;
-  color: var(--a13n-secondary);
+  color: var(--a13n-text-supporting);
   font-size: var(--a13n-text-sm);
   font-weight: 500;
   line-height: 20px;
 }
-.heading > span {
-  color: var(--a13n-tertiary);
+.laterPages {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+.groupCount {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
+}
+.groupHeader > button {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+.groupHeader > button[data-loading] {
+  color: transparent;
 }
 /* Rows bleed into the gutter so their text lines up with the page header. */
 .items {

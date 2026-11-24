@@ -120,7 +120,8 @@ flowchart TB
 
 1. 打开搜索栏下方的 **Inbox**，**Needs you** 置顶显示，其后为 **Updates**。
 2. 点击条目即可原地阅读，点击 **Open in chat** 跳转到来源轮次，处理完毕后点击 **Mark as done**。
-3. 如需关闭收件箱推送，在 **Settings → Chats → Inbox → Let agents post to Inbox** 中关闭（`inbox.enabled: false`）。
+3. 在**需要你处理**或**更新**栏点击**全部标为已读**，即可清除该栏的未读标记，包括尚未加载的条目。条目仍留在**待处理**，直到你将其标为完成。
+4. 如需关闭收件箱推送，在 **Settings → Chats → Inbox → Let agents post to Inbox** 中关闭（`inbox.enabled: false`）。
 
 ## 分享线程或项目
 

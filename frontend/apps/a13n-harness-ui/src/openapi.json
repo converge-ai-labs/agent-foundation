@@ -747,6 +747,27 @@
         }
       }
     },
+    "/api/inbox/mark-read": {
+      "post": {
+        "summary": "Inbox Mark Read",
+        "operationId": "inbox_mark_read_api_inbox_mark_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxMarkReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
     "/api/inbox/{item_id}": {
       "patch": {
         "summary": "Inbox Update",
@@ -18431,15 +18452,40 @@
             "type": "integer",
             "minimum": 0.0,
             "title": "Unread Count"
+          },
+          "unread_by_group": {
+            "$ref": "#/components/schemas/InboxUnreadCounts"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "items",
-          "unread_count"
+          "unread_count",
+          "unread_by_group"
         ],
         "title": "InboxPage"
+      },
+      "InboxUnreadCounts": {
+        "properties": {
+          "needs_you": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Needs You"
+          },
+          "updates": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Updates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "needs_you",
+          "updates"
+        ],
+        "title": "InboxUnreadCounts"
       },
       "InputPredictionResponse": {
         "properties": {
@@ -29487,6 +29533,24 @@
           "paused"
         ],
         "title": "BotPause"
+      },
+      "InboxMarkReadRequest": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "enum": [
+              "needs_you",
+              "updates"
+            ],
+            "title": "Group"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "group"
+        ],
+        "title": "InboxMarkReadRequest"
       },
       "InboxItemMutation": {
         "additionalProperties": false,

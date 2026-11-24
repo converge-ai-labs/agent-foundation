@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   useInfiniteQuery,
+  useIsMutating,
   useMutation,
   useQuery,
   useQueryClient,
@@ -31,6 +32,8 @@ import styles from "./inbox.module.css";
 
 type Item = Schema<"InboxItem">;
 type Kind = Item["kind"];
+type Group = Schema<"InboxMarkReadRequest">["group"];
+const MARK_GROUP_READ = ["inbox", "mark-group-read"];
 
 function useKind(kind: Kind) {
   const { t } = useTranslation();
@@ -304,11 +307,66 @@ function InboxRow({
   );
 }
 
+function InboxGroupHeader({
+  group,
+  title,
+  unread,
+  fetching,
+}: {
+  group: Group;
+  title: string;
+  unread: number;
+  fetching: boolean;
+}) {
+  const { t } = useTranslation();
+  const { client } = useTransport();
+  const queries = useQueryClient();
+  const heading = useId();
+  const markRead = useMutation({
+    mutationKey: MARK_GROUP_READ,
+    mutationFn: () => client.POST("/api/inbox/mark-read", { body: { group } }),
+    onSettled: () => queries.invalidateQueries({ queryKey: ["inbox"] }),
+  });
+  return (
+    <>
+      <header className={styles.groupHeader}>
+        <div className={styles.groupLabel}>
+          <h2 id={heading} className={styles.heading}>
+            {title}
+          </h2>
+          <span className={styles.groupCount} role="status">
+            {unread
+              ? t("{{count, number}} unread", { count: unread })
+              : t("All read")}
+          </span>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-describedby={heading}
+          loading={markRead.isPending}
+          disabled={!unread || fetching}
+          onClick={() => markRead.mutate()}
+        >
+          <EnvelopeSimpleOpen aria-hidden="true" />
+          {t("Mark all as read")}
+        </Button>
+      </header>
+      <ErrorNotice
+        error={markRead.error}
+        message={t("Could not mark this section as read.")}
+        inline
+      />
+    </>
+  );
+}
+
 export function InboxPage() {
   const { t } = useTranslation();
   const { client } = useTransport();
   const [state, setState] = useState<"open" | "done">("open");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const markingRead = useIsMutating({ mutationKey: MARK_GROUP_READ }) > 0;
   const list = useInfiniteQuery({
     queryKey: ["inbox", "list", state],
     initialPageParam: undefined as string | undefined,
@@ -322,19 +380,31 @@ export function InboxPage() {
     getNextPageParam: (page) => page.next_cursor ?? undefined,
   });
   const items = list.data?.pages.flatMap((page) => page.items) ?? [];
-  // Open questions for the user lead the Open view; everything else follows.
-  const needs =
-    state === "open" ? items.filter((item) => item.kind === "needs_human") : [];
-  const groups: { title?: string; count?: number; items: Item[] }[] =
-    needs.length
-      ? [
-          { title: t("Needs you"), count: needs.length, items: needs },
-          {
-            title: t("Updates"),
-            items: items.filter((item) => item.kind !== "needs_human"),
-          },
-        ]
-      : [{ items }];
+  const counts = list.data?.pages[0]?.unread_by_group;
+  const groups = [
+    {
+      group: "needs_you",
+      title: t("Needs you"),
+      items: items.filter((item) => item.kind === "needs_human"),
+    },
+    {
+      group: "updates",
+      title: t("Updates"),
+      items: items.filter((item) => item.kind !== "needs_human"),
+    },
+  ] as const;
+  const rows = (entries: Item[]) => (
+    <ul className={styles.items}>
+      {entries.map((item) => (
+        <InboxRow
+          key={item.item_id}
+          item={item}
+          expanded={expanded === item.item_id}
+          onExpand={(open) => setExpanded(open ? item.item_id : null)}
+        />
+      ))}
+    </ul>
+  );
   return (
     <section className={styles.page} aria-label={t("Inbox")}>
       <PageHeader
@@ -355,54 +425,53 @@ export function InboxPage() {
       />
       <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       {list.isPending && <p role="status">{t("Loading Inbox…")}</p>}
-      {list.isSuccess && !items.length && (
-        <div className={styles.empty}>
-          <Tray aria-hidden="true" />
-          <h2>
-            {state === "open" ? t("Inbox is clear") : t("Nothing done yet")}
-          </h2>
-          <p>
-            {state === "open"
-              ? t(
-                  "Agents post final results, questions for you, and real milestones here.",
-                )
-              : t("Items you mark as done appear here.")}
-          </p>
-        </div>
-      )}
-      {groups
-        .filter((group) => group.items.length)
-        .map((group) => (
-          <section
-            key={group.title ?? "all"}
-            className={styles.group}
-            aria-label={group.title}
-          >
-            {group.title && (
-              <h2 className={styles.heading}>
-                {group.title}
-                {group.count !== undefined && (
-                  <span>{t("{{count, number}}", { count: group.count })}</span>
-                )}
-              </h2>
-            )}
-            <ul className={styles.items}>
-              {group.items.map((item) => (
-                <InboxRow
-                  key={item.item_id}
-                  item={item}
-                  expanded={expanded === item.item_id}
-                  onExpand={(open) => setExpanded(open ? item.item_id : null)}
+      {list.isSuccess &&
+        !items.length &&
+        (state === "done" || !list.data.pages[0]?.unread_count) && (
+          <div className={styles.empty}>
+            <Tray aria-hidden="true" />
+            <h2>
+              {state === "open" ? t("Inbox is clear") : t("Nothing done yet")}
+            </h2>
+            <p>
+              {state === "open"
+                ? t(
+                    "Agents post final results, questions for you, and real milestones here.",
+                  )
+                : t("Items you mark as done appear here.")}
+            </p>
+          </div>
+        )}
+      {state === "done"
+        ? items.length > 0 && rows(items)
+        : counts &&
+          groups.map(({ group, title, items: entries }) => {
+            const unread = counts[group];
+            if (!entries.length && !unread) return null;
+            return (
+              <section key={group} className={styles.group} aria-label={title}>
+                <InboxGroupHeader
+                  group={group}
+                  title={title}
+                  unread={unread}
+                  fetching={list.isFetching}
                 />
-              ))}
-            </ul>
-          </section>
-        ))}
+                {entries.length ? (
+                  rows(entries)
+                ) : (
+                  <p className={styles.laterPages}>
+                    {t("Unread items in this section are on later pages.")}
+                  </p>
+                )}
+              </section>
+            );
+          })}
       {list.hasNextPage && (
         <Button
           variant="outline"
           loading={list.isFetchingNextPage}
-          onClick={() => void list.fetchNextPage()}
+          disabled={list.isFetching || (state === "open" && markingRead)}
+          onClick={() => void list.fetchNextPage({ cancelRefetch: false })}
         >
           {t("Load more")}
         </Button>
