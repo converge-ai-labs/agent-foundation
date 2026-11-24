@@ -4,7 +4,7 @@ sidebarTitle: Architecture deep dive
 description: Explore Harness UI's process-local HarnessUiApp core, five-tier YAML/SQLite/content-addressed storage model, POSIX WAL lock guards, and CRDT shared drafts.
 ---
 
-This page explains how `a13n-harness-ui` powers its Terminal Interface (TUI), browser WebUI, HTTP API, Management MCP, Bot, and Coordinator simultaneously on top of one local engine without requiring PostgreSQL, Redis, or background worker daemons. For everyday setup and embedding, see [Configuration reference](configuration.md) and [Embed the Python App](embedding.md).
+This page explains how `a13n-harness-ui` powers its Terminal Interface (TUI), browser WebUI, ACP stdio adapter, HTTP API, Management MCP, Bot, and Coordinator simultaneously on top of one local engine without requiring PostgreSQL, Redis, or background worker daemons. For everyday setup and embedding, see [Configuration reference](configuration.md) and [Embed the Python App](embedding.md).
 
 ## One `HarnessUiApp` core across all surfaces
 
@@ -15,6 +15,7 @@ flowchart TB
     subgraph Surfaces["Interactive & Programmatic Surfaces"]
         TUI["Terminal TUI"]
         WebUI["Browser WebUI (HTTP + WS)"]
+        ACP["ACP (stdio)"]
         MgmtMCP["Management MCP (/api/automation/mcp)"]
         Bot["Bot & Connectors"]
     end
@@ -32,7 +33,7 @@ flowchart TB
     Surfaces --> App
     App --> YAML & Plugins & SQLite & Objects & Memory
 
-    class TUI,WebUI,MgmtMCP,Bot app
+    class TUI,WebUI,ACP,MgmtMCP,Bot app
     class App a13n
     class YAML,Plugins,SQLite,Objects,Memory store
 ```

@@ -71,7 +71,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-当运行不支持暂停等待人工输入时（如[内置内联子智能体](delegation-and-codeact.md#host-managed-feedback)），设置 `RunBindings.deferred_tools_supported=False`。提问位于 `deferred.calls`，工具权限审批位于 `deferred.approvals`（见[受管工具](managed-tools.md)）。
+当运行不支持暂停等待人工输入时（如[内置内联子智能体](delegation-and-codeact.md#host-managed-feedback)），设置 `RunBindings.deferred_tools_supported=False`；若需同时将工具面过滤为已声明的非交互式工具，请设置 `RunBindings(unattended=True)`（见[无人值守运行](managed-tools.md#unattended-runs)）。提问位于 `deferred.calls`，工具权限审批位于 `deferred.approvals`（见[受管工具](managed-tools.md)）。
 
 ## 请求与回答结构
 

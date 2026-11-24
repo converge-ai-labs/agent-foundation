@@ -22,6 +22,7 @@ Harness UI 能够无缝融入您习惯的日常开发动线：
 - **终端命令行（TUI）：** 在任意工程根目录下直接运行 `a13n-harness-ui`。TUI 界面与您的 Shell 深度融为一体，支持极速全键盘操作、交互式决策卡片审批与思考中途实时引导（Steer）。[掌握终端交互指南](everyday-use.md)。
 - **现代浏览器（WebUI）：** 运行 `a13n-harness-ui webui` 并点击控制台输出的链接。获得图文并茂的 Markdown 渲染、折叠式代码目录树、Git 变更 Diff 查看器以及内嵌的多标签终端。[探索 WebUI 使用指南](webui.md)。
 - **全双工语音交互（Live Mode）：** 在 WebUI 中开启基于 WebRTC 的超低延迟实时语音通话，实现一边双眼审查代码 Diff、一边通过自然对话统筹 Agent 推进任务。[了解 Live 实时语音](live-mode.md)。
+- **编辑器与 ACP 客户端：** 运行 `a13n-harness-ui acp`，通过标准输入输出将 Zed、JetBrains AI Assistant 或自定义脚本接入本地工作台。[连接 ACP 客户端](agent-client-protocol.md)。
 
 ## 配置工作台
 

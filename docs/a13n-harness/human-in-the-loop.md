@@ -71,7 +71,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-Set `RunBindings.deferred_tools_supported=False` when a Run cannot pause for human input (used by [built-in inline children](delegation-and-codeact.md#host-managed-feedback)). Questions appear in `deferred.calls`; tool permission prompts appear in `deferred.approvals` (see [Managed tools](managed-tools.md)).
+Set `RunBindings.deferred_tools_supported=False` when a Run cannot pause for human input (used by [built-in inline children](delegation-and-codeact.md#host-managed-feedback)), or `RunBindings(unattended=True)` to also filter the tool surface to declared non-interactive tools (see [Unattended Runs](managed-tools.md#unattended-runs)). Questions appear in `deferred.calls`; tool permission prompts appear in `deferred.approvals` (see [Managed tools](managed-tools.md)).
 
 ## Request and answer schemas
 

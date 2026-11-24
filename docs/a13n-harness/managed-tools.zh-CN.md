@@ -117,3 +117,11 @@ permissions = ToolPermissionsCapability(
 
 - **人工审批：** 工具内部也可读取 `ctx.deps.tool_approval` 或抛出 `ApprovalRequired`。挂起后使用 `DeferredToolResume(first.deferred, first.deferred.build_results(approvals={call_id: True}))` 恢复运行（见[人机协作](human-in-the-loop.md)）。
 - **输出截断与落盘（`ToolOutputPolicy`）：** 支持 `overflow="spill"`（默认，在存在可写环境挂载时将脱敏后的完整输出写入 `.a13n/tmp/tool-results/`）、`"truncate"` 或 `"fail"`。
+
+### 无人值守运行
+
+当运行在没有人工审批或问答的环境中执行时，传入 `RunBindings.embedded(unattended=True)`（或 `RunBindings(unattended=True)`）。无人值守模式会自动设置 `deferred_tools_supported=False`，传播到内联子智能体，并在直接调用、`ToolSearch` 与 `CodeAct` 中过滤工具面：
+
+- 自定义工具需为非延迟定义、声明 `metadata={"a13n.harness.unattended": True}`（`UNATTENDED_TOOL_KEY`），且权限解析为 `allow`（且未启用 `InvocationPolicyCapability`）才会被准入。
+- 配置为 `review` 权限的 `environment.shell_exec` 仍可使用；当审查器判定需要人工审批时，该次工具调用直接失败。
+- 除 `ToolSearchTool` 外的提供商侧原生工具会被排除，任何意外触发的延迟调用都会直接失败而不会挂起运行。

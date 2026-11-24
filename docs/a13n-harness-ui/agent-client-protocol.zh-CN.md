@@ -1,11 +1,13 @@
 ---
 title: 通过 ACP 将客户端连接到 Harness UI
-description: 在 Zed 或 JetBrains 中使用 Harness UI 的 ACP v1 Agent，或从脚本启动，无需人工审批。
+description: 在 Zed 或 JetBrains 中使用 Harness UI 的 ACP v1 Agent，或从其他程序通过 stdio 以无人值守模式启动。
 ---
+
+`a13n-harness-ui acp` 在 macOS 和 Linux 上通过标准输入与标准输出提供 [Agent Client Protocol（ACP）](https://agentclientprotocol.com/) v1 服务，底层复用本地 Harness UI 配置与 SQLite 持久化 Thread，诊断日志输出至标准错误。
 
 ## 连接编辑器
 
-在 macOS 或 Linux 上运行 Harness UI 的 ACP 命令。Windows 不支持此命令。先按 [Harness UI 设置指南](setup.md) 配置模型和 Agent。在终端运行 `command -v a13n-harness-ui` 找到可执行文件。建议在编辑器中填写绝对路径，避免图形界面读取不到终端的 `PATH`。
+先按 [Harness UI 设置指南](setup.md)配置好 Model 与 Agent，再在终端运行 `command -v a13n-harness-ui` 获取可执行文件的绝对路径（图形界面编辑器通常无法继承终端的 `PATH`）。
 
 在 Zed 的设置中添加自定义 Agent：
 
@@ -21,7 +23,7 @@ description: 在 Zed 或 JetBrains 中使用 Harness UI 的 ACP v1 Agent，或�
 }
 ```
 
-在 JetBrains AI Assistant 中添加自定义 ACP Agent。对于通过 `~/.jetbrains/acp.json` 配置的版本，可以填写：
+在 JetBrains AI Assistant 中添加自定义 ACP Agent（通过 `~/.jetbrains/acp.json` 配置）：
 
 ```json
 {
@@ -34,25 +36,63 @@ description: 在 Zed 或 JetBrains 中使用 Harness UI 的 ACP v1 Agent，或�
 }
 ```
 
-在客户端选择 **Harness UI**，发送一条简短的提示来验证连接。如果希望在编辑器中审批工具调用，请保留交互模式。Harness UI 提供「仅允许本次」和「仅拒绝本次」，不会因此修改长期权限。如果要使用其他配置文件，请在参数列表中依次填写 `--config`、YAML 文件的绝对路径和 `acp`。
+在客户端中选择 **Harness UI** 并发送一条简短提示即可验证连接。在交互模式下，Harness UI 会将工具审批请求转发给编辑器，提供单次生效的 **Allow once**（仅允许本次）和 **Reject once**（仅拒绝本次）选项，不修改已保存的权限规则。
+
+如需指定其他配置文件，请将全局参数写在 `acp` 子命令之前：
+
+```json
+"args": ["--config", "/absolute/path/to/a13n-harness-ui.yaml", "acp"]
+```
+
+`acp` 支持 `--config`、`--data-root` 和 `--no-update-check`。`--resume`、`--agent`、`--environment-mode` 与 `--environment-profile` 会在启动时被拒绝，因为 ACP 通过协议选择 Thread，并直接使用配置中的默认 Agent 与 Environment。
 
 ## 由其他程序启动
 
-使用管道启动 `a13n-harness-ui acp --unattended`，让 ACP v1 客户端通过标准输入和标准输出通信，从标准错误读取诊断信息。先调用 `initialize`，再用工作区绝对路径 `cwd` 调用 `session/new`；如需继续已有会话，请用保存的会话 ID 和第一个已保存的根目录调用 `session/resume`。恢复失败不会创建新会话。等待 `session/prompt` 响应时，可接收 `session/update` 实时更新；要停止当前轮次，请调用 `session/cancel`。以终止响应为准，不要把流式文本直接当作最终答案。
+通过管道启动 `a13n-harness-ui acp --unattended`，让 ACP v1 客户端经由标准输入与标准输出通信，并从标准错误读取诊断信息：
 
-无人值守模式会过滤需要人工输入的工具。配置允许时仍可使用 Shell；如果某条命令需要人工审批，该次工具调用会失败。已有待处理决定的会话不能启动新的无人值守运行，请在交互界面打开该会话并处理决定。只需发送一条提示时，可以改用 [`run`](command-reference.md#run)，该命令始终以无人值守模式运行。
+1. 调用 `initialize`。
+2. 传入工作区绝对路径 `cwd` 调用 `session/new`，或传入已保存的会话 ID 及其首个本地根目录调用 `session/resume`（恢复失败直接返回错误，不会新建会话）。
+3. 发送 `session/prompt`，在等待响应期间监听 `session/update` 实时更新，并通过 `session/cancel` 中止当前轮次。待收到终止响应后再确认最终答案。
+
+无人值守模式会过滤需要人工输入的工具。配置允许时仍可使用 Shell，若某条命令在审查后需要人工审批，该次工具调用会失败。已有待处理决定的 Thread 无法进入无人值守运行，请先在交互界面（TUI 或 WebUI）中处理。只需执行单条无头提示时，请使用始终以无人值守模式运行的 [`a13n-harness-ui run`](command-reference.md#run)。
 
 ## 使用 a13n 扩展
 
-在初始化响应中读取 `_meta["dev.a13n.harness-ui"]`，确认是否支持版本 1。通过 `_a13n/inventory` 可查看会话的模型、推理选项、Skills 和 MCP 服务名称。在两轮之间使用 `session/set_config_option` 设置 `model` 和 `thought_level`，不会修改已保存的默认值。
+`initialize` 响应会在 `_meta` 中声明 `dev.a13n.harness-ui`（`version: 1`）。标准 ACP 客户端可忽略该命名空间；支持该扩展的客户端可使用资源清单、用量上报、严格中途引导及无人值守会话 MCP 声明：
 
-服务端已知上下文容量和用量时，通过 `usage_update` 报告 token 用量。如果希望在任一数值未知时收到 `_a13n/usage_report`，请在 `initialize` 请求的 `_meta["dev.a13n.harness-ui"]` 中传入 `{"version": 1}`。
+| 消息 / 方法                              | 位置 / 方向                                      | 字段与行为                                                                                                                                                      |
+| ---------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `initialize`                             | `_meta["dev.a13n.harness-ui"]`                   | 请求中传入 `{"version": 1}` 以在上下文大小或占用未知时接收 `_a13n/usage_report`；响应中返回特性标志（`version`、`unattended`、`steer`、`inputAcceptance` 等）。 |
+| `_a13n/inventory`                        | 请求（`{"sessionId": "..."}`）                   | 列出 `defaultModel`、`models`（ID、名称、默认及支持的推理强度）、`skills` 与 `mcpServers`（名称及来源）。                                                       |
+| `session/set_config_option`              | 标准 ACP 请求（轮次之间调用）                    | 设置仅在当前连接生效的 `model` 与 `thought_level` 覆盖项，不修改已保存默认值（恢复会话时清除）。                                                                |
+| `session/prompt`                         | 请求 `_meta["dev.a13n.harness-ui"]`              | 可选的全新 `turnId`（用于启用 `_a13n/steer`）和 `inputIds`（每个内容块对应一个唯一 ID）。                                                                       |
+| `_a13n/input_accepted`                   | 服务端通知                                       | `{"sessionId", "turnId", "inputId"}`，表示输入已进入主模型请求检查点。                                                                                          |
+| `_a13n/steer`                            | 请求（`sessionId`、`turnId`、`inputId`、`text`） | 返回 `{"delivery": "accepted" \| "not_delivered" \| "unknown"}`。`not_delivered` 表示该轮未收到该输入；返回 `unknown` 或连接中断时请勿重发。                    |
+| `session/update` 与 `_a13n/usage_report` | 服务端通知                                       | 上下文大小与占用均已知时，`usage_update` 在 `_meta["dev.a13n.harness-ui"]` 中携带 `usageReport`；任一未知时，已声明版本 1 的客户端会收到 `_a13n/usage_report`。 |
+| `session/prompt` 响应                    | 响应 `_meta["dev.a13n.harness-ui"]`              | 携带 `finalOutput`、`finalOutputOmitted` 及已提交的 `finalMessage`（`continuationId`、`position`），用于将最终提交答案与先前的实时输出区分开。                  |
 
-在提示的元数据中提供新的 `turnId`，即可通过 `_a13n/steer` 向该轮追加输入。可选的 `inputIds` 用来标记提示中的各个内容块。收到 `_a13n/input_accepted` 通知，表示输入已进入主模型请求的检查点。若追加输入返回 `not_delivered`，则该轮未收到该输入。若连接中断或返回 `unknown`，请勿重发该输入。成功的提示响应会单独标识已保存的最终答案，便于与实时输出区分。
+### 传入会话级 stdio MCP 服务
 
-创建或恢复会话时，可在 `mcpServers` 中提供 stdio MCP 命令。无人值守模式下，需要在同一请求的 a13n 命名空间中提供 `version: 1` 和 `unattendedSafeMcpServers: ["server-name"]`。只声明不需要人工输入的服务。请检查响应中的 `omittedMcpServers`；列在其中的服务不会启动。重新连接后，需要再次提供 MCP 服务及其声明。
+可在 `session/new` 或 `session/resume` 的 `mcpServers` 中传入 stdio MCP 配置（仅在当前连接有效，重连后需重新传入）。在 `--unattended` 模式下，需在同一请求的 `_meta["dev.a13n.harness-ui"]` 中显式声明无需人工输入的服务：
 
-如需管理项目、会话或调用 `post_to_inbox` 发布收件箱消息，请单独使用 [WebUI 管理 MCP 端点](http-api.md#manage-projects-threads-and-inbox-over-mcp)。ACP 会话只使用 Harness UI 配置选定的 MCP 服务，以及本会话请求获准使用的 stdio 服务。
+```json
+{
+  "cwd": "/absolute/path/to/workspace",
+  "mcpServers": [
+    { "name": "repo-tools", "command": "/absolute/path/to/mcp-server", "args": [], "env": [] }
+  ],
+  "_meta": {
+    "dev.a13n.harness-ui": {
+      "version": 1,
+      "unattendedSafeMcpServers": ["repo-tools"]
+    }
+  }
+}
+```
+
+无人值守模式下未声明的服务不会启动，并在响应的 `_meta["dev.a13n.harness-ui"].omittedMcpServers` 中报告（`[{"name": "...", "reason": "unattended_safety_not_declared"}]`）。
+
+如需管理 Project、Thread 与 Inbox，请单独使用 [WebUI 管理 MCP 端点](http-api.md#manage-projects-threads-and-inbox-over-mcp)。
 
 > [!WARNING]
-> ACP 进程使用 Harness UI 中配置的环境，不受编辑器沙箱规则约束。请只提供可信的 MCP 命令；stdio 命令在 ACP 宿主机上运行。
+> ACP 进程运行在已配置的 Harness UI Environment 中，不受编辑器沙箱规则约束。请仅提供可信的 stdio MCP 命令，这些命令会直接在 ACP 宿主机上执行。

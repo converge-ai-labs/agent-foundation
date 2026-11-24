@@ -117,3 +117,11 @@ permissions = ToolPermissionsCapability(
 
 - **Approvals:** Tools can also inspect `ctx.deps.tool_approval` or raise `ApprovalRequired`. Resume a suspended approval batch with `DeferredToolResume(first.deferred, first.deferred.build_results(approvals={call_id: True}))` (see [Human-in-the-loop](human-in-the-loop.md)).
 - **Output bounds (`ToolOutputPolicy`):** Choose `overflow="spill"` (default—writes full redacted output to `.a13n/tmp/tool-results/` when an Environment mount is writable), `"truncate"`, or `"fail"`.
+
+### Unattended Runs
+
+Pass `RunBindings.embedded(unattended=True)` (or `RunBindings(unattended=True)`) when a Run executes without a human available to answer approvals or questions. Unattended mode sets `deferred_tools_supported=False`, propagates to inline subagents, and filters the effective tool surface across direct calls, `ToolSearch`, and `CodeAct`:
+
+- A custom tool is admitted only when it is non-deferred, declares `metadata={"a13n.harness.unattended": True}` (`UNATTENDED_TOOL_KEY`), and resolves to `allow` permission (with no active `InvocationPolicyCapability`).
+- `environment.shell_exec` with `review` permission remains available; if the reviewer requires human approval, that individual tool call fails.
+- Provider-executed native tools (outside `ToolSearchTool`) are excluded, and any unexpected attempt to defer fails closed without suspending the Run.

@@ -10,6 +10,7 @@ Shell commands start and manage Harness UI. Slash commands control a conversatio
 | Configure my first Agent     | `a13n-harness-ui setup`                           | [First setup](setup.md)                             |
 | Chat in the terminal         | `a13n-harness-ui`                                 | [TUI use](everyday-use.md)                          |
 | Chat in a browser            | `a13n-harness-ui webui`                           | [WebUI](webui.md)                                   |
+| Connect an ACP editor/client | `a13n-harness-ui acp`                             | [Agent Client Protocol](agent-client-protocol.md)   |
 | Run one prompt from a script | `a13n-harness-ui run "PROMPT" --format json`      | [Automation](automation-and-troubleshooting.md)     |
 | Find or validate my files    | `a13n-harness-ui config path` / `config validate` | [Configuration](configuration.md)                   |
 | Inspect local execution      | `a13n-harness-ui environment status`              | [Environments](environments-and-projects.md)        |
@@ -119,7 +120,13 @@ a13n-harness-ui run "Reply with one short sentence." --format json
 
 ### `acp`
 
-Serve [Agent Client Protocol v1](agent-client-protocol.md) over stdin and stdout on macOS or Linux. The client handles one-shot tool permission requests by default. Add `--unattended` to run without interactive approvals. Read diagnostics on stderr. Windows is unsupported.
+Serve [Agent Client Protocol v1](agent-client-protocol.md) over `stdin` and `stdout` on macOS and Linux (diagnostics go to `stderr`).
+
+| Option         | Default | Purpose                                                                                             |
+| -------------- | ------- | --------------------------------------------------------------------------------------------------- |
+| `--unattended` | Off     | Filter tools requiring human input instead of forwarding one-shot permission requests to the client |
+
+Global `--config`, `--data-root`, and `--no-update-check` flags apply before `acp`; `--resume`, `--agent`, `--environment-mode`, and `--environment-profile` are rejected because ACP selects Threads over the protocol and uses configured Agent and Environment defaults.
 
 ### `config path`
 
@@ -324,4 +331,5 @@ The tables group commands by task. “Busy” means the parser allows the comman
 - [Models and authentication](models-and-authentication.md): choose routes and manage credentials.
 - [MCP](mcp.md) and [Skills/Content Plugins](skills-and-content-plugins.md): add integrations.
 - [TUI use](everyday-use.md): compose input, inspect history, and handle decisions.
+- [Agent Client Protocol](agent-client-protocol.md): connect Zed, JetBrains, or headless ACP v1 clients over stdio.
 - [Automation and troubleshooting](automation-and-troubleshooting.md): inspect outcomes, diagnose failures, and resume saved work.
