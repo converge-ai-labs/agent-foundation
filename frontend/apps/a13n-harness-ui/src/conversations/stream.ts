@@ -256,6 +256,15 @@ export class FocusDisplay {
         throw new Error("Chat stream epoch changed.");
       if (frame.event.sequence <= this.sequence) return;
       if (
+        frame.event.event_type === "CUSTOM" &&
+        object(frame.event.payload) &&
+        frame.event.payload.name === "a13n.harness_ui.root_settled"
+      ) {
+        this.sequence = frame.event.sequence;
+        this.cursor = frame.resume_cursor;
+        return;
+      }
+      if (
         frame.event.run_kind === "root" &&
         this.runId !== frame.event.run_id
       ) {

@@ -1036,6 +1036,7 @@ class RootRunCoordinator:
         if (
             self._live_hub is not None
             and not operation.observation_only
+            and operation.run_id is not None
             and operation.status not in (RootOperationStatus.preparing, RootOperationStatus.running)
         ):
             try:
@@ -1044,7 +1045,7 @@ class RootRunCoordinator:
                     root_thread_id=operation.receipt.thread_id,
                     parent_thread_id=None,
                     thread_id=operation.receipt.thread_id,
-                    run_id=operation.run_id or operation.receipt.receipt_id,
+                    run_id=operation.run_id,
                     events=(
                         CustomEvent(
                             name="a13n.harness_ui.root_settled",

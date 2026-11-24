@@ -920,6 +920,12 @@ class SessionBackend:
 
             def ingest(event: LiveEvent) -> bool:
                 nonlocal last_ordinal, observed_run_id
+                if (
+                    event.event_type == "CUSTOM"
+                    and isinstance(event.payload, dict)
+                    and event.payload.get("name") == "a13n.harness_ui.root_settled"
+                ):
+                    return False
                 if event.run_kind == "root":
                     if observed_run_id is None:
                         observed_run_id = event.run_id
