@@ -14,7 +14,7 @@ from uuid import uuid4
 from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.models import Model
-from pydantic_ai.native_tools import WebSearchTool
+from pydantic_ai.native_tools import SUPPORTED_NATIVE_TOOLS, WebSearchTool
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -111,7 +111,11 @@ class _WebFunctionToolset(InstructionFunctionToolset):
         names = super()._instruction_names(ctx)
         # Native tools are resolved by the Model, outside the function inventory.
         if self._native_search is not None and isinstance(model := ctx.model, Model):
-            supported = model.profile.get("supported_native_tools", model.supported_native_tools())
+            try:
+                supported = model.profile.get("supported_native_tools", SUPPORTED_NATIVE_TOOLS)
+            except NotImplementedError:
+                # Fallback models resolve the profile separately for each provider attempt.
+                return names
             if WebSearchTool in supported and not model.unsupported_native_tool_settings(self._native_search):
                 return names | {"search"}
         return names

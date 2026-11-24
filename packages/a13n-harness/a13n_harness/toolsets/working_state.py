@@ -17,10 +17,18 @@ from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import TaskChangedPayload, TaskEventProjection, emit_harness_event
 
-from ._instructions import InstructionFunctionToolset, tool_guidance
+from ._instructions import InstructionFunctionToolset, section, tool_guidance
 from ._results import ToolFailure, tool_failure, validation_failure
 
-_WORKING_STATE_INSTRUCTION = tool_guidance("working-state")
+_WORKING_STATE_GUIDANCE = tool_guidance(
+    "working-state",
+    section("working-state", "task-manager", all_of=("task_create", "task_update")),
+    section("working-state", "overview", any_of=("note_get", "note_write", "note_delete")),
+    section("working-state", "when-to-use", all_of=("note_write",), reference=True),
+    section("working-state", "task-context", all_of=("task_list", "task_get"), reference=True),
+    section("working-state", "note-context", all_of=("note_get",), reference=True),
+    section("working-state", "note", all_of=("note_write", "note_delete"), reference=True),
+)
 
 
 class TaskProjection(TypedDict):
@@ -122,7 +130,7 @@ class WorkingStateToolset:
             InstructionFunctionToolset(
                 tools=tools,
                 id="a13n-working-state-tools",
-                guidance=_WORKING_STATE_INSTRUCTION,
+                guidance=_WORKING_STATE_GUIDANCE,
             )
             if tools
             else None

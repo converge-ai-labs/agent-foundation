@@ -41,6 +41,7 @@ from a13n_harness.toolsets.web import _select_scrape_backend_bindings, _select_s
 from pydantic import ValidationError
 from pydantic_ai import RunContext
 from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.fallback import FallbackModel
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.native_tools import WebSearchTool
 
@@ -393,6 +394,20 @@ async def test_web_search_backend_selects_one_effective_surface(
     assert ("web_search" in native_kinds) is expected_native
     assert (observed[0].instructions or "").count("<search>") == int(expected_host or expected_native)
     assert {"fetch", "scrape", "download"} <= function_names
+
+
+async def test_fallback_model_keeps_function_tool_guidance() -> None:
+    observed: list[AgentInfo] = []
+    model = FallbackModel(_model(supports_native=False, observed=observed))
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=model, capabilities=(WebCapability(_configuration("auto")),)
+    )
+
+    result = await executable.run("Search", bindings=_bindings(host_search=True))
+
+    assert result.output_or_raise() == "done"
+    assert "search" in {tool.name for tool in observed[0].function_tools}
+    assert "<search>" in (observed[0].instructions or "")
 
 
 @pytest.mark.parametrize("guidance_enabled", [False, True])

@@ -12,7 +12,7 @@ from pydantic_ai import RunContext
 from a13n_harness.context import AgentContext
 from a13n_harness.providers.memory import MemoryRecord, MemoryStoreError, validate_record_text
 
-from ._instructions import InstructionFunctionToolset, tool_guidance
+from ._instructions import InstructionFunctionToolset, section, tool_guidance
 from ._memory import MemoryName, MemoryTool, failure, memory_tool_name, memory_toolset, mounted
 
 if TYPE_CHECKING:
@@ -33,7 +33,17 @@ RECORD_READ_TOOL_NAMES = frozenset(
     memory_tool_name("record", key) for key, spec in _TOOLS.items() if spec.access == "read"
 )
 RECORD_TOOL_KEYS: tuple[RecordToolKey, ...] = tuple(_TOOLS)
-_INSTRUCTION = tool_guidance("memory-records")
+_WRITE_NAMES = tuple(memory_tool_name("record", key) for key, spec in _TOOLS.items() if spec.access == "write")
+_MEMORY_RECORDS_GUIDANCE = tool_guidance(
+    "memory-records",
+    section("memory-records", "overview"),
+    section("memory-records", "recall", any_of=("memory_record_search", "memory_record_list"), reference=True),
+    section("memory-records", "writes", any_of=_WRITE_NAMES, reference=True),
+    section("memory-records", "update", all_of=("memory_record_update",), reference=True),
+    section("memory-records", "write-recovery", any_of=_WRITE_NAMES, all_of=("memory_record_search",), reference=True),
+    section("memory-records", "best-practices", any_of=("memory_record_add", "memory_record_update"), reference=True),
+    section("memory-records", "deduplicate", all_of=("memory_record_search", "memory_record_add"), reference=True),
+)
 
 _RecordId = Annotated[str, Field(min_length=1, max_length=256, description="The record's id")]
 _Text = Annotated[str, Field(min_length=1, description="The record's whole text, one self-contained statement")]
@@ -54,7 +64,7 @@ class MemoryRecordToolset:
         self._enabled = frozenset(tools)
 
     def get_toolset(self) -> InstructionFunctionToolset | None:
-        return memory_toolset(self, "record", _TOOLS, self._enabled, self._mounts, _INSTRUCTION)
+        return memory_toolset(self, "record", _TOOLS, self._enabled, self._mounts, _MEMORY_RECORDS_GUIDANCE)
 
     async def search(
         self,

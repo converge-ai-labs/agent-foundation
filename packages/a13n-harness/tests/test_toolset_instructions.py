@@ -22,6 +22,46 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 pytestmark = pytest.mark.anyio
 
 
+async def test_read_only_memories_omit_write_guidance() -> None:
+    from a13n_harness.capabilities import FileMemoryCapability, FileMount, RecordMemoryCapability, RecordMount
+
+    from .memory_helpers import FakeFileStore, FakeRecordStore
+
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            FileMemoryCapability([FileMount("files", FakeFileStore(), "read")]),
+            RecordMemoryCapability([RecordMount("records", FakeRecordStore(), "read")]),
+        ),
+    )
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "done"
+    info = captured[0]
+    assert {tool.name for tool in info.function_tools if tool.name.startswith("memory_")} == {
+        "memory_file_view",
+        "memory_file_grep",
+        "memory_record_search",
+        "memory_record_list",
+    }
+    instructions = info.instructions or ""
+    assert "<tool-name>memory-files</tool-name>" in instructions
+    assert "<tool-name>memory-records</tool-name>" in instructions
+    assert "`memory_file_grep` matches literal text" in instructions
+    assert "<recall>" in instructions
+    for write_details in ("<writes>", "<update>", "<write-recovery>", "read_conflict", "write_unconfirmed"):
+        assert write_details not in instructions
+
+
 async def _capture_instructions(
     spec: PydanticAgentSpec,
     *,
@@ -416,25 +456,55 @@ async def test_guidance_cache_projects_to_relevant_tools_and_gates_reference() -
 
 
 def test_builtin_guidance_dependencies_are_tool_names() -> None:
-    from unittest.mock import AsyncMock
+    from unittest.mock import AsyncMock, Mock
 
+    from a13n_harness.capabilities import (
+        FileMemoryCapability,
+        FileMount,
+        RecordMemoryCapability,
+        RecordMount,
+        WorkingState,
+        WorkingStateCapability,
+        WorkingStateConfiguration,
+    )
     from a13n_harness.capabilities.browser import _BROWSER_GUIDANCE, BrowserBackend, BrowserUseCapability
+    from a13n_harness.context import AgentContext
     from a13n_harness.environment import EnvironmentAction
     from a13n_harness.toolsets.computer import _COMPUTER_GUIDANCE, ComputerToolset
     from a13n_harness.toolsets.documents import _DOCUMENT_GUIDANCE, DocumentsToolset
     from a13n_harness.toolsets.files import _FILES_GUIDANCE, FileToolset
+    from a13n_harness.toolsets.memory_files import _MEMORY_FILES_GUIDANCE
+    from a13n_harness.toolsets.memory_records import _MEMORY_RECORDS_GUIDANCE
     from a13n_harness.toolsets.shell import _SHELL_GUIDANCE, ShellToolset
     from a13n_harness.toolsets.web import _WEB_GUIDANCE
+    from a13n_harness.toolsets.working_state import _WORKING_STATE_GUIDANCE, WorkingStateToolset
     from pydantic_ai.toolsets import FunctionToolset
+
+    from .memory_helpers import FakeFileStore, FakeRecordStore
 
     all_actions = frozenset(EnvironmentAction)
     browser = BrowserUseCapability(AsyncMock(spec=BrowserBackend)).get_toolset()
     assert isinstance(browser, FunctionToolset)
     assert set(browser.tools).issuperset(_BROWSER_GUIDANCE.referenced_tools)
+    memory_files = FileMemoryCapability([FileMount("files", FakeFileStore(), "write")]).get_toolset()
+    memory_records = RecordMemoryCapability([RecordMount("records", FakeRecordStore(), "write")]).get_toolset()
+    configuration = WorkingStateConfiguration()
+    working_state = WorkingStateToolset(
+        owner=WorkingStateCapability(configuration),
+        context=Mock(spec=AgentContext),
+        state=WorkingState(),
+        configuration=configuration,
+    ).get_toolset(tasks=True, notes=True)
+    assert isinstance(memory_files, FunctionToolset)
+    assert isinstance(memory_records, FunctionToolset)
+    assert isinstance(working_state, FunctionToolset)
     for guidance, names in (
         (_SHELL_GUIDANCE, ShellToolset.available_names(all_actions)),
         (_FILES_GUIDANCE, FileToolset.available_names((all_actions,)) - {"mkdir"}),
         (_WEB_GUIDANCE, {"search", "scrape", "fetch", "download"}),
+        (_MEMORY_FILES_GUIDANCE, set(memory_files.tools)),
+        (_MEMORY_RECORDS_GUIDANCE, set(memory_records.tools)),
+        (_WORKING_STATE_GUIDANCE, set(working_state.tools)),
         (_DOCUMENT_GUIDANCE, set(DocumentsToolset(object(), files=object()).get_toolset().tools)),
     ):
         assert guidance.referenced_tools == names
@@ -468,15 +538,27 @@ def test_fragmented_handbooks_declare_every_static_section() -> None:
     from a13n_harness.toolsets.computer import _COMPUTER_GUIDANCE
     from a13n_harness.toolsets.documents import _DOCUMENT_GUIDANCE
     from a13n_harness.toolsets.files import _FILES_GUIDANCE
+    from a13n_harness.toolsets.memory_files import _MEMORY_FILES_GUIDANCE
+    from a13n_harness.toolsets.memory_records import _MEMORY_RECORDS_GUIDANCE
     from a13n_harness.toolsets.shell import _SHELL_GUIDANCE
     from a13n_harness.toolsets.web import _WEB_GUIDANCE
+    from a13n_harness.toolsets.working_state import _WORKING_STATE_GUIDANCE
 
     def normalize(text: str) -> str:
         return re.sub(r"(?m)^\s*$", "", text).replace("\n\n", "\n").strip()
 
     pages = {
         guide.name: guide.fragments
-        for guide in (_BROWSER_GUIDANCE, _DOCUMENT_GUIDANCE, _FILES_GUIDANCE, _SHELL_GUIDANCE, _WEB_GUIDANCE)
+        for guide in (
+            _BROWSER_GUIDANCE,
+            _DOCUMENT_GUIDANCE,
+            _FILES_GUIDANCE,
+            _MEMORY_FILES_GUIDANCE,
+            _MEMORY_RECORDS_GUIDANCE,
+            _SHELL_GUIDANCE,
+            _WEB_GUIDANCE,
+            _WORKING_STATE_GUIDANCE,
+        )
     }
     pages["environment-computer"] = _COMPUTER_GUIDANCE
     for name, fragments in pages.items():
