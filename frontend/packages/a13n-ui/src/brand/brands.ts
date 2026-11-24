@@ -1,12 +1,23 @@
+import auth0Icon from "./auth0.svg";
+import autheliaIcon from "./authelia.svg";
+import authentikIcon from "./authentik.svg";
 import boxdIcon from "./boxd.svg";
+import cloudflareIcon from "./cloudflare.svg";
+import githubIcon from "./github.svg";
+import gitlabIcon from "./gitlab.svg";
 import googleIcon from "./google.svg";
+import keycloakIcon from "./keycloak.svg";
 import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
 import microsoftIcon from "./microsoft.svg";
+import oktaIcon from "./okta.svg";
 import typesafeIcon from "./typesafe.svg";
+import zitadelDarkIcon from "./zitadel-dark.svg";
+import zitadelIcon from "./zitadel.svg";
 
 /** Display identities only. These mappings never select an endpoint or account. */
 export interface Brand {
   icon: string;
+  /** Both the base icon and any dark variant are bundled assets. */
   bundled?: boolean;
   darkIcon?: string;
   invertInDark?: boolean;
@@ -24,9 +35,25 @@ const svgl = "https://svgl.app/library/";
 const curatedBrands: Record<string, Brand> = {
   google: { icon: assetUrl(googleIcon), bundled: true },
   microsoft: { icon: assetUrl(microsoftIcon), bundled: true },
+  okta: { icon: assetUrl(oktaIcon), bundled: true, invertInDark: true },
+  auth0: { icon: assetUrl(auth0Icon), bundled: true, invertInDark: true },
+  gitlab: { icon: assetUrl(gitlabIcon), bundled: true, invertInDark: true },
+  authentik: {
+    icon: assetUrl(authentikIcon),
+    bundled: true,
+    invertInDark: true,
+  },
+  keycloak: { icon: assetUrl(keycloakIcon), bundled: true, invertInDark: true },
+  authelia: { icon: assetUrl(autheliaIcon), bundled: true, invertInDark: true },
+  zitadel: {
+    icon: assetUrl(zitadelIcon),
+    darkIcon: assetUrl(zitadelDarkIcon),
+    bundled: true,
+  },
   github: {
-    icon: `${svgl}github_light.svg`,
-    darkIcon: `${svgl}github_dark.svg`,
+    icon: assetUrl(githubIcon),
+    bundled: true,
+    invertInDark: true,
     hosts: ["github.com", "api.githubcopilot.com"],
   },
   notion: {
@@ -36,6 +63,9 @@ const curatedBrands: Record<string, Brand> = {
   },
   cloudflare: {
     ...lobeBrands.cloudflare,
+    icon: assetUrl(cloudflareIcon),
+    bundled: true,
+    invertInDark: true,
     aliases: ["cloudflare_ai_gateway", "cloudflare-ai-gateway"],
     hosts: [
       "mcp.cloudflare.com",

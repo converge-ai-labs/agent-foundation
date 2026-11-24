@@ -52,7 +52,7 @@ export function BrandIcon({
       )
     );
   const { url: src, brand: activeBrand } = source;
-  const darkIcon = bundledOnly ? undefined : activeBrand?.darkIcon;
+  const darkIcon = activeBrand?.darkIcon;
   // A quiet placeholder holds the space until the image loads.
   const pending = !loaded.includes(src);
   const props = {

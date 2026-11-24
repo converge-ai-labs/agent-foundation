@@ -16704,7 +16704,16 @@
         "enum": [
           "generic",
           "google",
-          "microsoft"
+          "microsoft",
+          "okta",
+          "auth0",
+          "github",
+          "gitlab",
+          "cloudflare",
+          "authentik",
+          "keycloak",
+          "authelia",
+          "zitadel"
         ],
         "type": "string"
       },

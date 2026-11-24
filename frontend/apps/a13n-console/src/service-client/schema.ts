@@ -11425,7 +11425,19 @@ export interface components {
       token_endpoint_auth_method?: components["schemas"]["ClientAuthentication"];
     };
     /** @enum {string} */
-    OIDCBrand: "generic" | "google" | "microsoft";
+    OIDCBrand:
+      | "generic"
+      | "google"
+      | "microsoft"
+      | "okta"
+      | "auth0"
+      | "github"
+      | "gitlab"
+      | "cloudflare"
+      | "authentik"
+      | "keycloak"
+      | "authelia"
+      | "zitadel";
     /** OIDCSignIn */
     OIDCSignIn: {
       brand: components["schemas"]["OIDCBrand"];

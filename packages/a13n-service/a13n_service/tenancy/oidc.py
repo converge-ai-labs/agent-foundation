@@ -363,10 +363,14 @@ def _identity(token: str, keys: list[jwt.PyJWK], provider: OIDCProvider, nonce: 
         or not subject.isprintable()
     ):
         raise jwt.InvalidTokenError("invalid ID token subject")
+    email_verified = claims.get("email_verified") is True
     email = claims.get("email")
     email = (
         email
-        if claims.get("email_verified") is True and isinstance(email, str) and len(email) <= 320 and email.isprintable()
+        if (not provider.require_email_verified or email_verified)
+        and isinstance(email, str)
+        and len(email) <= 320
+        and email.isprintable()
         else None
     )
     name = claims.get("name")
@@ -376,7 +380,9 @@ def _identity(token: str, keys: list[jwt.PyJWK], provider: OIDCProvider, nonce: 
         for rule in provider.role_rules
         if all(_match_claim(claim, values, claims) for claim, values in rule.match.items())
     )
-    return Identity(subject, name or email or f"{provider.label} user"[:128], email, matched)
+    return Identity(
+        subject, name or (email if email_verified else None) or f"{provider.label} user"[:128], email, matched
+    )
 
 
 async def exchange(provider: OIDCProvider, flow: Flow, *, redirect_uri: str, code: str) -> Identity:

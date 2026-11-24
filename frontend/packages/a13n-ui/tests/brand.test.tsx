@@ -32,7 +32,7 @@ it("falls back from a failed brand image to a safe provider logo then a generic 
   );
   const icon = container.querySelector("img")!;
   expect(icon.getAttribute("referrerpolicy")).toBe("no-referrer");
-  expect(container.querySelectorAll("img")).toHaveLength(2);
+  expect(container.querySelectorAll("img")).toHaveLength(1);
   fireEvent.error(icon);
   expect(container.querySelector("img")?.src).toBe(
     "https://logos.example/github.png",
@@ -106,15 +106,28 @@ it("resolves every built-in Web provider identity while keeping unknown provider
   expect(resolveBrand({ identity: "future-web-provider" })).toBeUndefined();
 });
 
-it.each(["google", "microsoft"])(
-  "uses the bundled %s mark and custom fallback on failure",
-  (identity) => {
-    const fallback = <svg data-testid="shield" aria-hidden />;
-    const { container, getByTestId } = render(
-      <BrandIcon identity={identity} bundledOnly fallback={fallback} />,
-    );
-    const icon = container.querySelector("img")!;
-    expect(icon.getAttribute("src")).toBe(brands[identity].icon);
+it.each([
+  "google",
+  "microsoft",
+  "okta",
+  "auth0",
+  "github",
+  "gitlab",
+  "cloudflare",
+  "authentik",
+  "keycloak",
+  "authelia",
+  "zitadel",
+])("uses the bundled %s mark and custom fallback on failure", (identity) => {
+  const fallback = <svg data-testid="shield" aria-hidden />;
+  const { container, getByTestId } = render(
+    <BrandIcon identity={identity} bundledOnly fallback={fallback} />,
+  );
+  const icons = [...container.querySelectorAll("img")];
+  expect(icons.map((icon) => icon.getAttribute("src"))).toEqual(
+    [brands[identity].icon, brands[identity].darkIcon].filter(Boolean),
+  );
+  for (const icon of icons) {
     const url = new URL(icon.src);
     expect(
       /^data:image\/svg\+xml[;,]/.test(icon.src) ||
@@ -122,13 +135,13 @@ it.each(["google", "microsoft"])(
           url.origin === location.origin),
     ).toBe(true);
     expect(icon.alt).toBe("");
-    fireEvent.error(icon);
-    expect(container.querySelector("img")).toBeNull();
-    expect(getByTestId("shield")).toBeTruthy();
-  },
-);
+  }
+  fireEvent.error(icons[0]);
+  expect(container.querySelector("img")).toBeNull();
+  expect(getByTestId("shield")).toBeTruthy();
+});
 
-it.each(["generic", "github"])(
+it.each(["generic", "notion"])(
   "never uses remote or caller-supplied images in bundled-only mode (%s)",
   (identity) => {
     const { container, getByTestId } = render(

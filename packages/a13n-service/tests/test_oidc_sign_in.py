@@ -68,10 +68,28 @@ def id_token(key: Any, **overrides: object) -> str:
     )
 
 
-def test_token_returns_only_verified_email(signing_key) -> None:
+@pytest.mark.parametrize(
+    "claims, expected",
+    [
+        ({}, None),
+        ({"email_verified": False}, None),
+        ({"email_verified": "true"}, None),
+        ({"email_verified": True}, "test@example.com"),
+    ],
+    ids=["missing", "false", "string-true", "boolean-true"],
+)
+def test_token_requires_verified_email_by_default(signing_key, claims, expected) -> None:
     key, jwks = signing_key
-    assert oidc._identity(id_token(key, email_verified="true"), jwks, PROVIDER, NONCE).email is None
-    assert oidc._identity(id_token(key, email_verified=True), jwks, PROVIDER, NONCE).email == "test@example.com"
+    assert oidc._identity(id_token(key, **claims), jwks, PROVIDER, NONCE).email == expected
+
+
+@pytest.mark.parametrize(
+    "email", [123, "a" * 321, "test\n@example.com"], ids=["non-string", "overlong", "non-printable"]
+)
+def test_token_rejects_invalid_email_even_when_verification_is_optional(signing_key, email) -> None:
+    key, jwks = signing_key
+    provider = PROVIDER.model_copy(update={"require_email_verified": False})
+    assert oidc._identity(id_token(key, email=email), jwks, provider, NONCE).email is None
 
 
 @pytest.mark.parametrize(
@@ -137,23 +155,54 @@ def test_provider_settings_require_sign_in_and_https() -> None:
 
 
 @pytest.mark.parametrize(
-    ("issuer", "override", "expected"),
+    "issuer, expected",
     [
-        ("https://accounts.google.com", None, "google"),
-        ("https://accounts.google.com", "generic", "generic"),
-        ("https://accounts.google.com.example.test", None, "generic"),
-        ("https://accounts.google.com/custom", None, "generic"),
-        ("https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", None, "microsoft"),
-        ("https://login.microsoftonline.com/common/v2.0", None, "generic"),
-        ("https://identity.example.test", None, "generic"),
-        ("https://identity.example.test", "microsoft", "microsoft"),
+        ("https://accounts.google.com", "google"),
+        ("https://accounts.google.com.example.test", "generic"),
+        ("https://accounts.google.com/custom", "generic"),
+        ("https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0", "microsoft"),
+        ("https://login.microsoftonline.com/common/v2.0", "generic"),
+        ("https://team.okta.com", "okta"),
+        ("https://team.oktapreview.com", "okta"),
+        ("https://team.okta-emea.com", "okta"),
+        ("https://team.okta.com.example.test", "generic"),
+        ("https://notokta.com", "generic"),
+        ("https://team.auth0.com", "auth0"),
+        ("https://gitlab.com", "gitlab"),
+        ("https://team.cloudflareaccess.com", "cloudflare"),
+        ("https://team.zitadel.cloud", "zitadel"),
+        ("https://identity.example.test/application/o/console", "authentik"),
+        ("https://identity.example.test/application/o/console/", "authentik"),
+        ("https://identity.example.test/application/o/console/extra", "generic"),
+        ("https://identity.example.test/realms/team", "keycloak"),
+        ("https://identity.example.test/auth/realms/team", "keycloak"),
     ],
 )
-def test_sign_in_brand_is_based_on_the_exact_issuer_or_explicit_override(issuer, override, expected) -> None:
-    provider = OIDCProvider(
-        label="Google", issuer=issuer, brand=override, client_id="console", client_secret=SecretStr("test")
-    )
-    assert provider.sign_in_brand == expected
+def test_sign_in_brand_recognizes_issuer_hosts_and_paths(issuer, expected) -> None:
+    assert PROVIDER.model_copy(update={"issuer": issuer}).sign_in_brand() == expected
+
+
+@pytest.mark.parametrize(
+    "provider_id, label, expected",
+    [
+        ("company-authentik", "Team", "authentik"),
+        ("team", "Company OKTA", "okta"),
+        ("team", "Keycloak SSO", "keycloak"),
+        ("team", "GitHub", "github"),
+        ("team", "Authelia", "authelia"),
+        ("github-team", "Company Okta", "github"),
+        ("notgithub", "CustomAuth0", "generic"),
+    ],
+)
+def test_sign_in_brand_recognizes_provider_id_and_label_tokens(provider_id, label, expected) -> None:
+    assert PROVIDER.model_copy(update={"label": label}).sign_in_brand(provider_id) == expected
+
+
+def test_sign_in_brand_prefers_override_then_issuer_then_tokens() -> None:
+    provider = PROVIDER.model_copy(update={"issuer": "https://team.okta.com/realms/team", "label": "GitLab"})
+    assert provider.sign_in_brand("authentik") == "okta"
+    assert provider.model_copy(update={"brand": "generic"}).sign_in_brand("authentik") == "generic"
+    assert provider.model_copy(update={"brand": "microsoft"}).sign_in_brand("authentik") == "microsoft"
 
 
 async def test_state_is_bound_and_consumed_once(service) -> None:
@@ -224,6 +273,32 @@ async def test_oidc_account_is_provisioned_once_and_sessions_never_roll(service)
         await sign_in()
     with pytest.raises(ServiceError):
         await authenticate_secret(storage, access, first.secret, "session", session_seconds=43200, auth=settings.auth)
+
+
+async def test_oidc_sign_in_stores_and_refreshes_unverified_email_only_for_display(service, signing_key) -> None:
+    runtime = service.runtime
+    provider = PROVIDER.model_copy(update={"require_email_verified": False})
+    settings = runtime.settings.model_copy(
+        update={
+            "auth": Authentication(
+                oidc=OIDC(
+                    providers={"team": provider},
+                    defaults=[OIDCGrantSpec(workspace_id=service.tenant.workspace_id, role="runner")],
+                )
+            )
+        }
+    )
+    key, jwks = signing_key
+    principal_ids = []
+    for email, claims in [("admin@example.com", {}), ("updated@example.com", {"email_verified": False})]:
+        identity = oidc._identity(id_token(key, email=email, **claims), jwks, provider, NONCE)
+        login = await oidc.sign_in(runtime.storage, runtime.access, settings, "team", provider, identity)
+        principal_ids.append(login.principal.id)
+        async with short_session(runtime.storage) as session:
+            row = await session.get(PrincipalRow, login.principal.id)
+            assert row is not None and row.email is None and row.oidc_email == email
+            assert row.name == "Team user"
+    assert principal_ids[0] == principal_ids[1] != service.tenant.principal_id
 
 
 async def test_password_recovery_respects_sign_in_mode_and_identity(service, monkeypatch) -> None:
