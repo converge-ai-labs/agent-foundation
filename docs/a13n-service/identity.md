@@ -47,8 +47,8 @@ Create dedicated per-workspace service accounts for applications in **Workspace 
 
 ## Sign in, sessions, and OIDC SSO
 
-- **Login sessions:** Cookie-authenticated browser requests (`/api/v1/auth/login`, `/session`, `/logout`) require `X-CSRF-Token` on state-changing calls. Users manage active sessions, passwords, email, and self-disablement under **Personal settings**.
-- **OIDC SSO (`[auth.oidc]` / `A13N_AUTH__OIDC`):** Register callback `{server.public_url}/api/v1/auth/oidc/{provider_id}/callback` at your IdP (PKCE S256, `RS256`/`ES256`, `openid profile email`) and configure `defaults` plus optional claim-based `role_rules`:
+- **Login sessions:** Cookie-authenticated browser requests (`/api/v1/auth/login`, `/session`, `/logout`) require `X-CSRF-Token` on state-changing calls. Users manage active sessions, passwords, email, and self-disablement (`POST /api/v1/users/me/disable`) under **Personal settings**, and organization admins can issue password-reset links from **Members**.
+- **OIDC SSO (`[auth.oidc]` / `A13N_AUTH__OIDC`):** Register callback `{server.public_url}/api/v1/auth/oidc/{provider_id}/callback` at your IdP (Discovery, PKCE S256, `RS256`/`ES256`, `openid profile email`) and configure `defaults` plus optional claim-based `role_rules` (`A13N_AUTH__OIDC` replaces the entire `[auth.oidc]` table):
 
 ```json
 {
@@ -68,7 +68,9 @@ Create dedicated per-workspace service accounts for applications in **Workspace 
 }
 ```
 
-Set `A13N_AUTH__PASSWORD_ENABLED=false` after promoting an OIDC organization admin to enforce OIDC-only sign-in.
+- **Bundled sign-in icons (`brand`):** Console automatically matches common issuer URLs (Google, Microsoft Entra, Authentik, Keycloak) or whole brand tokens in the provider ID/label. Override explicitly with `brand` (`google`, `microsoft`, `okta`, `auth0`, `github`, `gitlab`, `cloudflare`, `authentik`, `keycloak`, `authelia`, `zitadel`, or `generic` for the default shield).
+- **Display email (`require_email_verified`):** Service stores the ID token's `email` strictly as display metadata (`oidc_email`) when `email_verified` is boolean `true` (`require_email_verified = true` by default; display email never links accounts or grants access). For providers that omit `email_verified` (Microsoft Entra ID workforce tenants) or default it to `False` (Authentik), set `require_email_verified = false` on `[auth.oidc.providers.<id>]` **only** when users cannot set arbitrary unverified addresses.
+- **OIDC-only sign-in:** After promoting an OIDC account to manual organization `admin` and verifying sign-in, set `A13N_AUTH__PASSWORD_ENABLED=false` on API replicas. Keep the bootstrap password admin for emergency recovery (or disable it via `a13n-service user disable --email <bootstrap-email>`—never delete rows directly from `principals` in PostgreSQL). OIDC sessions expire after `auth.oidc.session_seconds` (default 12 hours).
 
 ## Operator account control
 

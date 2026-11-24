@@ -1,9 +1,16 @@
 ---
 title: HTTP API
-description: 通过 Harness UI 的 WebUI HTTP API 创建线程、提交或实时引导运行、上传附件并监听更新。
+description: 通过 Harness UI 的 WebUI HTTP API 与管理 MCP 端点创建线程、提交或实时引导运行、推送收件箱条目、上传附件并监听更新。
 ---
 
-WebUI 监听服务提供 JSON HTTP API 与 WebSocket 通道用于自动化集成。使用实例密钥鉴权（`Authorization: Bearer $HUI_API_KEY`），完整 Schema 可访问 `/openapi.json`。
+WebUI 监听服务提供 JSON HTTP API、WebSocket 通道与管理 MCP 端点用于自动化集成。使用实例密钥鉴权（`Authorization: Bearer $HUI_API_KEY`），完整 Schema 可查询 `/api/openapi.json`（或 `/reference/harness-ui-openapi.json`）。
+
+## 通过 MCP 管理项目、会话与收件箱
+
+在支持 Streamable HTTP 的 MCP 客户端中连接 `$HUI_URL/api/automation/mcp`，并携带 `Authorization: Bearer <instance-key>`：
+
+- **项目与会话：** 使用 `list_projects`、`get_project` 与 `create_project` 查找或创建项目；使用 `list_threads`、`get_thread(thread_id)` 查询进度与结果；调用 `create_thread(prompt, project_id?)` 启动新对话；调用 `send_thread_message(thread_id, message)` 在空闲时启动新运行或在运行中实时注入引导（Steering）。
+- **推送收件箱条目：** 调用 `post_to_inbox(thread_id, kind, title, message)`（`thread_id` 取已有普通对话、Coordinator 或 Bot 会话 ID，`kind` 取 `result`、`needs_human` 或 `milestone`，`message` 为独立可读的 Markdown），成功返回 `item_id` 并投递到[收件箱](webui.md#read-your-inbox)，不会新增对话轮次或启动运行（受 `inbox.enabled` 控制；见下方[收件箱 HTTP 路由](#inbox)）。
 
 ## 创建线程并提交输入
 
@@ -67,7 +74,7 @@ fi
 
 - **实时引导：** `POST /api/operations/{receipt_id}/steer`，请求体 `{"parts":["Focus on the configuration files."]}`。
 - **取消运行：** `POST /api/operations/{receipt_id}/cancel`。
-- **工具执行管理：** `GET /api/threads/{thread_id}/tool-executions` 查询状态，`POST /api/threads/{thread_id}/tool-executions/{execution_id}/cancel` 取消保留执行。
+- **工具执行管理：** `GET /api/threads/{thread_id}/tool-executions` 查询状态，`POST /api/threads/{thread_id}/tool-executions/{execution_id}/cancel` 取消驻留执行。
 
 ## 单次运行环境覆盖
 
@@ -115,19 +122,25 @@ fi
 | `GET /api/threads/{id}/inputs` / `/transcript`  | 分页读取用户输入与完整对话记录       |
 | `DELETE /api/threads/{id}?expected_version=<v>` | 永久删除空闲的根线程                 |
 
-### 配置项目与线程
+### 编辑可复用资源
 
-- <span id="edit-reusable-resources"></span>**编辑可复用资源：** 通过 `GET/PUT /api/configuration/sources/{path}` 读写 YAML（如 `devices/build.yaml`、`web_providers/research.yaml`），通过 `/api/auth/keys` 管理密钥。
-- <span id="change-saved-thread-selections"></span>**修改线程已保存选择：** 使用 `PATCH /api/threads/{id}/configuration` 或预览并应用项目默认值。
+通过 `GET/PUT /api/configuration/sources/{path}` 读写 YAML（如 `devices/build.yaml`、`web_providers/research.yaml`），通过 `/api/auth/keys` 管理密钥。
+
+### 修改线程已保存选择
+
+使用 `PATCH /api/threads/{id}/configuration` 或预览并应用项目默认值。
 
 ### Bot
 
 通过 `/api/bot/*` 管理常驻 Bot 对话与状态，详见 [Bot](bot.md)。
 
-### 收件箱、协调器与 MCP
+### 收件箱
 
-- **收件箱：** 通过 `/api/inbox/*` 读取与处理智能体推送条目，详见[查看收件箱](webui.md#read-your-inbox)。
-- **MCP 与连接器：** 通过 `/api/mcp/*` 与 `/api/connectors/*` 管理 MCP 客户端、响应 [MCP 人工输入](mcp.md#human-input-from-mcp-servers) 与 OAuth 连接器。
+通过 `/api/inbox/*` 读取与处理智能体推送条目，详见[查看收件箱](webui.md#read-your-inbox)。
+
+### 协调器、MCP 与宿主机工具
+
+- **MCP 与连接器：** 通过 `/api/mcp/*` 与 `/api/connectors/*` 管理驻留 MCP 客户端、响应 [MCP 人工输入](mcp.md#human-input-from-mcp-servers) 与 OAuth 连接器。
 - **宿主机文件、Git 与终端：** 开启计算机共享时，可通过 `/api/files/*`、`/api/git/*`、`/api/terminals/*` 操作本地资源。
 
 ## 记忆观测

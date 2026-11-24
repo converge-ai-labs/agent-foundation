@@ -38,6 +38,7 @@ async def test_mcp_manages_projects_and_threads_on_the_webui_listener(tmp_path: 
                 "get_thread",
                 "create_thread",
                 "send_thread_message",
+                "post_to_inbox",
             }
             assert tools["get_thread"]["required"] == ["thread_id"]
             assert tools["create_thread"]["required"] == ["prompt"]
@@ -103,6 +104,62 @@ async def test_mcp_manages_projects_and_threads_on_the_webui_listener(tmp_path: 
             assert partial["ok"] is False and partial["error"]["code"] == "run_rejected"
             created_thread = await call("get_thread", thread_id=partial["thread_id"])
             assert created_thread["ok"] and created_thread["thread"]["thread"]["configuration"]["project_id"] is None
+
+
+async def test_mcp_posts_to_the_same_inbox_without_starting_a_run(tmp_path: Path) -> None:
+    configuration = _write_configuration(tmp_path)
+    async with listener_with_app(tmp_path, sharing=False, configuration_path=configuration) as (url, _, app):
+        thread = await app.create_thread()
+        coordinator = await app.create_thread(coordinator=True)
+        worker = await app.create_thread(coordinator_thread_id=coordinator.thread_id)
+        live = await app._threads.live_thread(configuration_root=tmp_path)
+        async with (
+            Client(StreamableHttpTransport(url + _PATH, headers=_AUTH)) as mcp,
+            httpx.AsyncClient(base_url=url, headers=_AUTH) as http,
+        ):
+            tool = next(tool for tool in await mcp.list_tools() if tool.name == "post_to_inbox")
+            schema = tool.input_schema
+            assert set(schema["required"]) == {"thread_id", "kind", "title", "message"}
+            assert schema["properties"]["kind"]["enum"] == ["result", "needs_human", "milestone"]
+            for field, maximum in (("title", 120), ("message", 4096)):
+                assert schema["properties"][field]["minLength"] == 1
+                assert schema["properties"][field]["maxLength"] == maximum
+
+            payload = {
+                "thread_id": thread.thread_id,
+                "kind": "needs_human",
+                "title": "Approve the plan?",
+                "message": "Reply **yes** to proceed.",
+            }
+
+            async def post(**overrides):
+                result = await mcp.call_tool("post_to_inbox", payload | overrides)
+                assert result.structured_content is not None
+                return result.structured_content
+
+            assert (await post(thread_id="thread_missing"))["error"]["code"] == "thread_missing"
+            for ineligible_id in (worker.thread_id, live.thread_id):
+                assert (await post(thread_id=ineligible_id))["error"]["code"] == "inbox_thread_ineligible"
+            posted = await post()
+            assert posted["ok"] is True
+            response = await http.get("/api/inbox")
+            response.raise_for_status()
+            page = response.json()
+            assert page["unread_count"] == 1
+            (item,) = page["items"]
+            assert item["item_id"] == posted["item_id"]
+            assert {field: item[field] for field in payload} == payload
+            location = await http.get(f"/api/inbox/{item['item_id']}/location")
+            location.raise_for_status()
+            assert location.json() == {"thread_id": thread.thread_id, "continuation_id": None, "turn_id": None}
+            assert await app.active_root_operation(thread.thread_id) is None
+            assert (await app.get_thread(thread.thread_id)).continuation_id is None
+
+            with configuration.open("a") as config:
+                config.write("inbox: {enabled: false}\n")
+            await app.reload_configuration()
+            assert (await post())["error"]["code"] == "inbox_disabled"
+            assert (await http.get("/api/inbox")).json() == page
 
 
 async def test_mcp_creation_model_applies_only_to_the_first_run(tmp_path: Path) -> None:

@@ -1,9 +1,16 @@
 ---
 title: HTTP API
-description: Integrate scripts and applications with Harness UI's WebUI HTTP API to create threads, submit or steer runs, upload attachments, and stream updates.
+description: Integrate scripts and applications with Harness UI's WebUI HTTP API and Management MCP endpoint to create threads, steer runs, post Inbox items, and stream updates.
 ---
 
-The WebUI listener exposes a JSON HTTP API and WebSocket channels for programmatic automation. Authenticate with the instance key (`Authorization: Bearer $HUI_API_KEY`) and inspect `/openapi.json` for the complete schema.
+The WebUI listener exposes a JSON HTTP API, WebSocket channels, and a Management MCP endpoint for programmatic automation. Authenticate with the instance key (`Authorization: Bearer $HUI_API_KEY`) and inspect `/api/openapi.json` (or `/reference/harness-ui-openapi.json`) for the complete schema.
+
+## Manage Projects, Threads, and Inbox over MCP
+
+Connect a Streamable HTTP MCP client to `$HUI_URL/api/automation/mcp` with `Authorization: Bearer <instance-key>`:
+
+- **Projects & Threads:** Call `list_projects`, `get_project`, and `create_project` to manage Projects; `list_threads` and `get_thread(thread_id)` to inspect conversations; `create_thread(prompt, project_id?)` to start one; and `send_thread_message(thread_id, message)` to start a Run (when idle) or steer the active Run.
+- **Post to Inbox:** Call `post_to_inbox(thread_id, kind, title, message)` using an existing ordinary, Coordinator, or Bot `thread_id`, `kind` (`result`, `needs_human`, or `milestone`), and standalone Markdown `message` to return an `item_id` in [Inbox](webui.md#read-your-inbox) without adding a chat turn or starting a Run (requires `inbox.enabled`; see [HTTP Inbox routes](#inbox)).
 
 ## Create a Thread and submit input
 
@@ -115,18 +122,24 @@ Upload attachments first via `POST /api/threads/{thread_id}/attachments`.
 | `GET /api/threads/{id}/inputs` / `/transcript`  | Paginate user turns and full message history         |
 | `DELETE /api/threads/{id}?expected_version=<v>` | Permanently delete an idle root Thread               |
 
-### Configure Projects and Threads
+### Edit reusable resources
 
-- <span id="edit-reusable-resources"></span>**Edit reusable resources:** Read and update YAML files under `GET/PUT /api/configuration/sources/{path}` (for example, `devices/build.yaml` or `web_providers/research.yaml`), and manage secrets via `/api/auth/keys`.
-- <span id="change-saved-thread-selections"></span>**Change saved Thread selections:** Update `PATCH /api/threads/{id}/configuration` or preview/apply Project defaults.
+Read and update YAML files under `GET/PUT /api/configuration/sources/{path}` (for example, `devices/build.yaml` or `web_providers/research.yaml`), and manage secrets via `/api/auth/keys`.
+
+### Change saved Thread selections
+
+Update `PATCH /api/threads/{id}/configuration` or preview/apply Project defaults.
 
 ### Bot
 
 Manage the always-on Bot conversation and status under `/api/bot/*`. See [Bot](bot.md).
 
-### Inbox, Coordinators, and MCP
+### Inbox
 
-- **Inbox:** Read and resolve agent-posted items via `/api/inbox/*` (see [Read your Inbox](webui.md#read-your-inbox)).
+Read and resolve agent-posted items via `/api/inbox/*` (see [Read your Inbox](webui.md#read-your-inbox)).
+
+### Coordinators, MCP, and Host tools
+
 - **MCP & Connectors:** Inspect/close retained MCP clients, answer [MCP human input](mcp.md#human-input-from-mcp-servers), and manage OAuth Connectors via `/api/mcp/*` and `/api/connectors/*`.
 - **Host Files, Git, & Terminal:** When computer sharing is enabled, browse files (`/api/files/*`), inspect Git diffs (`/api/git/*`), and open terminals (`/api/terminals/*`).
 

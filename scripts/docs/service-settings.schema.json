@@ -1461,7 +1461,16 @@
       "enum": [
         "generic",
         "google",
-        "microsoft"
+        "microsoft",
+        "okta",
+        "auth0",
+        "github",
+        "gitlab",
+        "cloudflare",
+        "authentik",
+        "keycloak",
+        "authelia",
+        "zitadel"
       ],
       "type": "string"
     },
@@ -1556,6 +1565,11 @@
           ],
           "title": "Token Endpoint Auth Method",
           "type": "string"
+        },
+        "require_email_verified": {
+          "default": true,
+          "title": "Require Email Verified",
+          "type": "boolean"
         },
         "extra_scopes": {
           "items": {
