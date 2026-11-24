@@ -1276,6 +1276,7 @@ export function focusRefresh(frame: FocusFrame): ThreadRefresh | undefined {
   }
   const source = object(value.event) ? value.event : {};
   const payload = object(source.payload) ? source.payload : {};
+  if (content.name === "a13n.harness_ui.root_settled") return "lifecycle";
   if (content.name === "a13n.harness_ui.checkpoint") return "checkpoint";
   if (payload.type === "usage_report") return "usage";
 }
@@ -1292,13 +1293,18 @@ export function watchThread(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let failures = 0;
   let snapshotRetryAvailable = true;
+  let cursorUsed = false;
   let replacement: FocusDisplay | undefined;
   let reconcileReplacement = false;
   let restarting = false;
   const subscription = transport.realtime.subscribe({
     stream: "focus",
     root: threadId,
-    cursor: () => display.cursor,
+    cursor: () => {
+      const value = display.cursor;
+      cursorUsed = value !== undefined;
+      return value;
+    },
     state(value) {
       if (value === "Reconnecting") {
         display.processes.end();
@@ -1315,8 +1321,16 @@ export function watchThread(
       try {
         const frame = focusFrame(value);
         if (frame.kind === "reset") {
+          const cursorReset =
+            cursorUsed &&
+            [
+              "live_cursor_expired",
+              "live_epoch_changed",
+              "stream_cursor_invalid",
+            ].includes(frame.reason);
           immediate =
-            frame.reason === "live_snapshot_changed" && snapshotRetryAvailable;
+            (frame.reason === "live_snapshot_changed" || cursorReset) &&
+            snapshotRetryAvailable;
           snapshotRetryAvailable = false;
           throw new Error(frame.reason);
         }

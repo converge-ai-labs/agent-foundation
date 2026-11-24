@@ -690,12 +690,20 @@ class AgentContext:
         await self._steering.checkpoint(message_history)
         await self._tool_executions.reconcile(self.tool_execution, self.thread_id, message_history)
         await self.usage_attribution.save()
-        state = HarnessState(
-            schema_version="1",
-            thread_id=self.thread_id,
-            message_history=tuple(message_history),
-            agent_context_state=await self.state.snapshot(),
-            environment_states=self.environment.dump_states(),
-            **self._state_extensions,
-        )
+        history_tuple = tuple(message_history)
+        context_snapshot = await self.state.snapshot()
+        env_states = self.environment.dump_states()
+        extensions = dict(self._state_extensions)
+
+        def build_state() -> HarnessState:
+            return HarnessState(
+                schema_version="1",
+                thread_id=self.thread_id,
+                message_history=history_tuple,
+                agent_context_state=context_snapshot,
+                environment_states=env_states,
+                **extensions,
+            )
+
+        state = await asyncio.to_thread(build_state) if len(history_tuple) > 16 else build_state()
         return await self._storage.export(state)

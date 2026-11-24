@@ -31,11 +31,12 @@ class InteractiveOutput:
         )
 
     async def send(self, frame: SurfaceModel) -> None:
+        text = frame.model_dump_json()
         with fail_after(10):
             async with self._lock:
                 if self.closed:
                     raise WebSocketDisconnect(code=1001)
-                await self._send({"type": "websocket.send", "text": frame.model_dump_json()})
+                await self._send({"type": "websocket.send", "text": text})
 
     async def close(self, code: int = 1000, reason: str = "") -> None:
         with fail_after(10):

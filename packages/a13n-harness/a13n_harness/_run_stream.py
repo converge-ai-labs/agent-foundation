@@ -123,10 +123,10 @@ from a13n_harness.recovery import (
     normalize_interrupted_history,
     prepare_tool_recovery,
 )
-from a13n_harness.result import HarnessRunResult, SafeFailure
+from a13n_harness.result import HarnessRunResult, SafeFailure, _MessageSnapshot
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
 from a13n_harness.spec import _default_usage_limits
-from a13n_harness.state import AgentContextState, HarnessState
+from a13n_harness.state import AgentContextState, HarnessState, encode_messages
 from a13n_harness.storage import RunStorage
 from a13n_harness.tools.client_output import ClientOutputRequested, client_output_identities
 from a13n_harness.tools.deferred import (
@@ -353,14 +353,25 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._bindings = bindings
         self._environment_runtime = environment_binding
         self._previous_state = (
-            previous_state.model_copy(deep=True) if previous_state is not None else HarnessState.new()
+            previous_state.model_copy()
+            if type(previous_state) is HarnessState and not previous_state.model_extra
+            else previous_state.model_copy(deep=True)
+            if previous_state is not None
+            else HarnessState.new()
         )
         self.thread_id = self._previous_state.thread_id
         self._usage_snapshot = UsageSnapshot.from_state(self._previous_state) if resume_usage else None
         if resume_usage and self._usage_snapshot is None:
             raise StateError("Accounting resume requires usage state.", code="usage_state_missing")
         self.run_id = f"run-{uuid4().hex}"
-        self._initial_history = self._previous_state.message_history
+        raw_history = self._previous_state.message_history_json
+        eager_history = (
+            self._previous_state.message_history
+            if not isinstance(raw_history, bytes) or len(raw_history) <= 32768
+            else None
+        )
+        self._initial_history: tuple[ModelMessage, ...] = eager_history or ()
+        self._initial_history_loaded = eager_history is not None
         self._compaction_result = compaction_result
         self._tool_recovery_mode: ToolRecoveryMode = tool_recovery
         self._accepted_deferred_resume = deferred_resume
@@ -546,6 +557,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         kind="deferred_response" if self._deferred_resume is not None else "prompt",
                     )
                 phase.set_attribute("a13n.phase.step", "context")
+                if not self._initial_history_loaded:
+                    self._initial_history = await asyncio.to_thread(lambda: self._previous_state.message_history)
+                    self._latest_messages = self._initial_history
+                    self._new_message_index = len(self._latest_messages)
+                    self._initial_history_loaded = True
                 context = await self._create_context(environment)
                 self._context = context
                 context._tool_executions.owner = self._environment_lifecycle_task
@@ -1284,7 +1300,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     async def _prepare_history(self, current_input: SemanticRunInput) -> None:
         """Jointly restore canonical history and ready work before recovery can rewrite it."""
         context = self.context
-        history = await context._storage.resolve_messages(self._initial_history)
+        raw_history = self._previous_state.message_history_json
+        history = await context._storage.resolve_messages(
+            self._initial_history,
+            raw_json=raw_history if isinstance(raw_history, bytes) else None,
+        )
         marker = None
         if self._compaction_result is not None:
             previous = await context.state.read(COMPACTION_CAPABILITY_ID, _CompactionState, version="1")
@@ -1372,15 +1392,16 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             if failed:
                 yield await self._failed_candidate(code="client_output_failed", message=str(value))
             else:
+                state = await self.context.export_state(self._latest_messages)
                 yield self._record_inner_candidate(
                     HarnessRunResult(
                         thread_id=self.thread_id,
                         run_id=self.run_id,
                         status="completed",
                         output=cast(OutputT, value),
-                        state=await self.context.export_state(self._latest_messages),
+                        state=state,
                         usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
-                        _messages=self._latest_messages,
+                        _messages=await self._snapshot_messages(self._latest_messages, state),
                         _new_message_index=min(self._new_message_index, len(self._latest_messages)),
                     )
                 )
@@ -1734,7 +1755,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         output=None,
                         state=state,
                         usage=self.usage,
-                        _messages=self._latest_messages,
+                        _messages=await self._snapshot_messages(self._latest_messages, state),
                         _new_message_index=min(self._new_message_index, len(self._latest_messages)),
                     )
                 )
@@ -1760,6 +1781,24 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             current_history = self._latest_messages
             attempt_index += 1
 
+    async def _snapshot_messages(
+        self, messages: tuple[ModelMessage, ...], state: HarnessState | None
+    ) -> tuple[ModelMessage, ...] | _MessageSnapshot:
+        if len(messages) <= 16:
+            return messages
+        if (
+            state is not None
+            and isinstance(state.message_history_json, bytes)
+            and (
+                self._context is None
+                or self._context._storage.store is None
+                or b"a13n.stored" not in state.message_history_json
+            )
+        ):
+            return _MessageSnapshot(state.message_history_json, len(messages))
+        encoded = await asyncio.to_thread(encode_messages, messages)
+        return _MessageSnapshot(encoded, len(messages))
+
     async def _native_result_candidate(
         self, result: AgentRunResult[OutputT | DeferredToolRequests]
     ) -> HarnessRunResult[OutputT]:
@@ -1769,6 +1808,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         new_message_index = len(messages) - len(result.new_messages())
         self._latest_messages = messages
         state = await self.context.export_state(messages)
+        snapshot = await self._snapshot_messages(messages, state)
         if not isinstance(result.output, DeferredToolRequests):
             return HarnessRunResult(
                 thread_id=self.thread_id,
@@ -1777,7 +1817,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 output=result.output,
                 state=state,
                 usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
-                _messages=messages,
+                _messages=snapshot,
                 _new_message_index=new_message_index,
             )
         if not self.context.deferred_tools_supported:
@@ -1792,7 +1832,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 ),
                 state=state,
                 usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
-                _messages=messages,
+                _messages=snapshot,
                 _new_message_index=new_message_index,
             )
         deferred = self._deferred_input.export(result.output)
@@ -1805,7 +1845,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             suspend_reason="deferred",
             state=state,
             usage=self.context.usage_attribution.summary(tool_calls=self._usage.tool_calls),
-            _messages=messages,
+            _messages=snapshot,
             _new_message_index=new_message_index,
         )
 
@@ -1821,6 +1861,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             await record_outcome(self.context, "failed")
             self.context._model_recovery.context_recovery_pending = False
         state = await self.context.export_state(self._latest_messages)
+        snapshot = await self._snapshot_messages(self._latest_messages, state)
         return self._record_inner_candidate(
             HarnessRunResult(
                 thread_id=self.thread_id,
@@ -1837,7 +1878,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         "retry_hint": retry_hint,
                     }
                 ),
-                _messages=self._latest_messages,
+                _messages=snapshot,
                 _new_message_index=min(self._new_message_index, len(self._latest_messages)),
             )
         )

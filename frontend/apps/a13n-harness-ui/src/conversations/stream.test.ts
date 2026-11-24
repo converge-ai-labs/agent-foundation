@@ -2373,3 +2373,39 @@ it("a child checkpoint recovers a trimmed prefix without hiding a later unsaved 
     );
   expect(child.gap).toBe(true);
 });
+
+it("retries an expired focus cursor immediately once with a snapshot bootstrap, then backs off", async () => {
+  vi.useFakeTimers();
+  const display = new FocusDisplay();
+  display.cursor = "expired-cursor";
+  const { socket, transport } = connectedTransport();
+  const close = watchThread(
+    transport,
+    "thread-one",
+    display,
+    vi.fn(),
+    vi.fn(),
+    vi.fn(),
+  );
+  try {
+    socket().open();
+    const subscribes = () =>
+      socket().sent.filter((item) => item.kind === "subscribe");
+    expect(subscribes()).toHaveLength(1);
+    expect(subscribes()[0].after).toBe("expired-cursor");
+
+    socket().frame({ kind: "reset", reason: "live_cursor_expired" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(subscribes()).toHaveLength(2);
+    expect(subscribes()[1].after).toBeNull();
+
+    // A second reset before snapshot completion must not spin in a tight loop.
+    socket().frame({ kind: "reset", reason: "live_cursor_expired" });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(subscribes()).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(subscribes()).toHaveLength(3);
+  } finally {
+    close();
+  }
+});

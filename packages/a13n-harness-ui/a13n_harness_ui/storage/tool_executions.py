@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from a13n_harness import HarnessState
 from a13n_harness.content import request_input_content
 from a13n_harness.environment.process_recovery import ShellExecutionState
 from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionRecord
@@ -83,6 +84,13 @@ def notify(row: ToolExecutionHeadRecord) -> None:
         row.completion_state = "pending"
     if row.delivery_acknowledged:
         consumed(row, datetime.now(UTC))
+
+
+def state_completion_ids(state: HarnessState) -> tuple[str, ...]:
+    raw = state.message_history_json
+    if isinstance(raw, bytes) and b"tool_execution.completion" not in raw:
+        return ()
+    return completion_ids(state.message_history)
 
 
 def completion_ids(messages: Sequence[ModelMessage]) -> tuple[str, ...]:

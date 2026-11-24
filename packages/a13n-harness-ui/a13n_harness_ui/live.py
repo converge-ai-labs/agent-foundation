@@ -378,6 +378,7 @@ class HarnessUiLiveHub:
         self._root_rings: OrderedDict[str, deque[LiveEvent]] = OrderedDict()
         self._root_floors: dict[str, int] = {}
         self._evicted_root_floor = 0
+        self._event_sizes: OrderedDict[int, int] = OrderedDict()
         self._ring_size = ring_size
         self._subscriber_buffer_size = subscriber_buffer_size
         self._subscribers: set[_LiveSubscriber] = set()
@@ -544,17 +545,24 @@ class HarnessUiLiveHub:
         """Detach only the requested suffix, filtering before copying payloads."""
         async with self._lock:
             ring = self._ring if root_thread_id is None else self._root_rings.get(root_thread_id, ())
-            retained: list[LiveEvent] = []
+            selected: list[LiveEvent] = []
             remaining = max_bytes
             for event in reversed(ring):
                 if through_sequence is not None and event.sequence > through_sequence:
                     continue
                 if remaining is not None:
-                    remaining -= len(event.model_dump_json().encode())
+                    size = self._event_sizes.get(event.sequence)
+                    if size is None:
+                        size = len(event.model_dump_json().encode())
+                        self._event_sizes[event.sequence] = size
+                        while len(self._event_sizes) > max(self._ring_size * 24, 4096):
+                            self._event_sizes.popitem(last=False)
+                    remaining -= size
                     if remaining < 0:
                         break
-                retained.append(event.model_copy(deep=True))
-            return tuple(reversed(retained))
+                selected.append(event)
+        detached = [event.model_copy(deep=True) for event in selected]
+        return tuple(reversed(detached))
 
     @asynccontextmanager
     async def subscribe(
@@ -647,6 +655,7 @@ class HarnessUiLiveHub:
             self._root_streams.clear()
             self._root_rings.clear()
             self._root_floors.clear()
+            self._event_sizes.clear()
             self._terminal_streams.clear()
             for subscriber in subscribers:
                 subscriber.root_stream = None

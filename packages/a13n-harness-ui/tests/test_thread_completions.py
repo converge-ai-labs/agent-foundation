@@ -267,3 +267,41 @@ async def test_root_preparation_preserves_safe_harness_errors_only(tmp_path, mon
             assert len(reports) == 1
         saved = (await app.get_thread(thread.thread_id)).thread.last_execution
         assert saved.error_message == operation.failure.message
+
+
+async def test_root_operation_settlement_emits_focused_lifecycle_event_after_durable_selection(tmp_path, monkeypatch):
+    configuration = _write_configuration(tmp_path)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+
+    async def stream(messages, info):
+        yield "Settled reply."
+
+    def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
+        return _reconstructed(stream, root_capabilities)
+
+    monkeypatch.setattr(AgentReconstructor, "reconstruct", reconstruct)
+    async with open_harness_ui_app(settings, configuration_path=configuration) as app:
+        thread = await app.create_thread()
+        async with app.live_events(root_thread_id=thread.thread_id) as subscription:
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Complete")
+            settled_payload = None
+            with fail_after(10):
+                while settled_payload is None:
+                    event = await subscription.__anext__()
+                    if (
+                        event.event_type == "CUSTOM"
+                        and isinstance(event.payload, dict)
+                        and event.payload.get("name") == "a13n.harness_ui.root_settled"
+                    ):
+                        settled_payload = event.payload.get("value")
+                        # Durable Thread state and inactive root_activity must already be
+                        # settled when a focused-only viewer receives root_settled.
+                        detail = await app.get_thread(thread.thread_id)
+                        assert detail.thread.root_activity.state == "inactive"
+                        assert detail.thread.last_execution is not None
+                        assert detail.thread.last_execution.execution_id == receipt.receipt_id
+                        assert detail.thread.last_execution.status == "completed"
+                        assert detail.continuation_id is not None
+            assert isinstance(settled_payload, dict)
+            assert settled_payload["receipt_id"] == receipt.receipt_id
+            assert settled_payload["status"] == "completed"

@@ -186,3 +186,13 @@ The benchmark queues nested child events, drains each subscriber, and verifies e
 - `max_rss_kib`: Linux process RSS high-water, including imports and allocator retention.
 
 Use separate traced and untraced runs, and repeat latency samples across fresh processes.
+
+## End-to-end WebUI multi-stage latency benchmark
+
+Run the disposable populated-store WebUI latency benchmark across 1 and 4 concurrent active chats:
+
+```bash
+uv run --locked python dev/harness-ui/benchmark_webui_latency.py --active 1 4 --rounds 3
+```
+
+The benchmark seeds a disposable store with multi-megabyte `HarnessState` tool histories, sealed display segments, historical `ThreadUsageRecord` scopes, and multi-replica CRDT composer drafts, then drives real HTTP and WebSocket connections (`draft/connect`, `/submit`, `realtime/connect` summary and focus channels, mid-run focus subscription, expired-cursor recovery, and coalesced HTTP reconciliation) against a deterministic multi-step tool-calling `FunctionModel`. Output contains content-free P50/P95/max stage timings (`draft_sync_ms`, `submit_ack_ms`, `submitted_to_started_ms`, `started_to_ended_ms`, `focus_first_frame_ms`, `focus_usable_output_ms`, `focus_expired_cursor_ms`, `final_text_to_summary_terminal_ms`, `final_text_to_ui_settled_ms`, and `event_loop_lag`).
