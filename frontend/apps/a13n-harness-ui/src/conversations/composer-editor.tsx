@@ -403,12 +403,7 @@ export function ComposerEditor({
           ? placeholder((view) => {
               const ghost = view.dom.ownerDocument.createElement("span");
               ghost.className = predictionStyles.ghost;
-              const label = view.dom.ownerDocument.createElement("span");
-              label.className = predictionStyles.ghostText;
-              label.textContent = text;
-              const key = view.dom.ownerDocument.createElement("kbd");
-              key.textContent = t("Tab");
-              ghost.append(label, key);
+              ghost.textContent = text;
               return ghost;
             })
           : placeholder(t("Ask anything, or describe a task…")),
@@ -551,16 +546,24 @@ export function ComposerEditor({
       <div className={predictionStyles.editor}>
         <div ref={host} data-presence-anchor="composer" />
         {prediction && (
-          <button
-            type="button"
-            className={predictionStyles.touch}
-            onClick={() => {
-              const view = currentView.current;
-              if (view && acceptRef.current?.(view)) view.focus();
-            }}
-          >
-            {t("Use suggestion")}
-          </button>
+          <div className={predictionStyles.actions}>
+            <kbd
+              className={`${predictionStyles.action} ${predictionStyles.key}`}
+              aria-hidden="true"
+            >
+              {t("Tab")}
+            </kbd>
+            <button
+              type="button"
+              className={`${predictionStyles.action} ${predictionStyles.touch}`}
+              onClick={() => {
+                const view = currentView.current;
+                if (view && acceptRef.current?.(view)) view.focus();
+              }}
+            >
+              {t("Use suggestion")}
+            </button>
+          </div>
         )}
       </div>
     </>

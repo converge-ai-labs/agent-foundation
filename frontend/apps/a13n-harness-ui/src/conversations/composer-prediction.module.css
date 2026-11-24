@@ -1,44 +1,37 @@
 .editor {
-  position: relative;
   min-width: 0;
-}
-
-.editor :global(.cm-scroller) {
-  container-type: inline-size;
 }
 
 .ghost {
-  display: inline-flex;
-  /* Center the key hint on the text line; baseline alignment drifts with the clipped text box. */
-  align-items: center;
-  /* CodeMirror's line can grow to fit the widget. Use the scrollport width instead. */
-  max-width: calc(100cqi - 2 * var(--composer-text-inset, 0px));
   color: var(--harness-placeholder);
   font-style: italic;
-  pointer-events: none;
-  user-select: none;
 }
 
-.ghostText {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-inline: var(--composer-text-inset, 0px);
 }
 
-.ghost kbd {
-  display: none;
-  flex-shrink: 0;
-  margin-inline-start: 0.5em;
-  padding-inline: 0.3em;
+.action {
+  align-items: center;
+  justify-content: center;
+  padding-inline: 0.5em;
   border: 1px solid var(--border);
-  border-radius: 0.25rem;
+  border-radius: var(--harness-radius-control);
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
   font-size: var(--a13n-text-2xs);
-  font-style: normal;
   line-height: 1.4;
 }
 
-.touch {
+.key {
+  display: inline-flex;
+}
+
+.touch,
+.editor:has(.composing) .actions {
   display: none;
 }
 
@@ -46,40 +39,22 @@
   visibility: hidden;
 }
 
-@media not (pointer: coarse) {
-  .ghost kbd {
-    display: inline;
-  }
-}
-
 @media (pointer: coarse) {
-  .editor {
-    min-height: 44px;
-  }
-
-  .editor:has(.touch) .ghost {
-    max-width: 60cqi;
+  .key {
+    display: none;
   }
 
   .touch {
-    display: block;
-    position: absolute;
-    inset-block-start: 0;
-    inset-inline-end: 0;
-    min-width: 44px;
-    min-height: 44px;
-    padding-inline: 0.45rem;
-    border: 1px solid var(--border);
-    border-radius: 0.25rem;
-    background: var(--background);
-    font-size: var(--a13n-text-2xs);
-    color: var(--a13n-text);
+    display: inline-flex;
+    min-block-size: 44px;
+    min-inline-size: 44px;
+    padding-inline: 0.75em;
   }
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .ghost,
-  .touch {
+  .actions {
     animation: appear 140ms ease-out;
   }
 }
