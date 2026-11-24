@@ -26,7 +26,6 @@ from a13n_harness_ui.content_plugins import ContentPluginStore, InstalledContent
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
 from a13n_harness_ui.model_accounts import (
     GrokLoginRequest,
-    Provider,
 )
 from a13n_harness_ui.settings_loader import ensure_default_directories, load_harness_ui_settings
 from a13n_harness_ui.surfaces import (
@@ -46,7 +45,7 @@ async def _run(request: CliRequest) -> int:
     )
     if request.command == "plugin":
         return await _run_content_plugins(request, settings.storage.data_root)
-    use_device_code = request.device_code
+    use_device_code = request.device_code is not False
 
     def app_factory() -> AbstractAsyncContextManager[HarnessUiApp]:
         return open_harness_ui_app(
@@ -296,6 +295,13 @@ async def _run_management(
             _print_projection({"environment_profiles": await app.environment_profiles()}, request.output_format)
         return 0
 
+    if request.command == "extensions":
+        _print_projection(
+            {"extensions": await app.list_catalog(), "diagnostics": (await app.model_choices()).diagnostics},
+            request.output_format,
+        )
+        return 0
+
     if request.command == "doctor":
         status = await app.status()
         references = await app.list_catalog()
@@ -325,12 +331,21 @@ async def _run_management(
             await app.delete_api_key(request.ref)
             _print_projection({"credential_ref": request.ref, "deleted": True}, request.output_format)
         return 0
+    connections = {
+        item.account.provider: item for item in (await app.model_choices()).connections if item.account is not None
+    }
     if request.action == "status" and request.provider is None:
-        result: object = {"accounts": [await app.inspect_model_account(provider) for provider in Provider]}
+        result: object = {"accounts": [await app.inspect_model_account(provider) for provider in connections]}
     else:
         if request.provider is None:
             raise RuntimeError("Authentication command requires a provider")
-        provider = Provider(request.provider)
+        provider = request.provider
+        connection = connections.get(provider)
+        if connection is None:
+            raise HarnessUiError(
+                f"Model Provider {provider} is unavailable. See extensions for diagnostics.",
+                code="model_provider_unavailable",
+            )
         if request.action == "status":
             result = await app.inspect_model_account(provider)
         elif request.action == "sources":
@@ -342,18 +357,35 @@ async def _run_management(
                 {"source": request.account_source, "account_id": request.account_id}
             )
             result = await app.select_model_account(provider, selection)
-        elif request.action == "login" and provider is Provider.CHATGPT:
+        elif (
+            request.action == "login"
+            and connection is not None
+            and connection.authentication in {"chatgpt_subscription", "plugin_subscription"}
+        ):
             from a13n_harness_ui.model_accounts.login import LoginRequest
 
+            assert connection.account is not None
+            method = (
+                request.login_method
+                or ("device" if request.device_code is True else "browser" if request.device_code is False else None)
+                or connection.account.login_methods[0]
+            )
+            if connection.authentication == "chatgpt_subscription":
+                method = "manual_callback"
+            if method != "device" and method != "browser" and method != "manual_callback":
+                raise HarnessUiError("Unknown login method.", code="login_method_unsupported")
             status = await app.start_login(
-                LoginRequest(
-                    provider="chatgpt", method="manual_callback", allow_account_switch=request.allow_account_switch
-                )
+                LoginRequest(provider=provider, method=method, allow_account_switch=request.allow_account_switch)
             )
             displayed = False
             while status.state in {"starting", "waiting"}:
                 if status.state == "waiting" and not displayed:
-                    _present_login(verification_url=status.verification_url, message=status.message)
+                    _present_login(
+                        verification_url=status.verification_url, user_code=status.user_code, message=status.message
+                    )
+                    if method != "manual_callback":
+                        displayed = True
+                        continue
                     callback_url = await asyncio.to_thread(
                         click.prompt, "Paste the complete callback URL", hide_input=True
                     )
@@ -371,7 +403,7 @@ async def _run_management(
                 status = await app.login_status(status.session_id)
             if status.state != "succeeded":
                 raise HarnessUiError(
-                    status.message or "ChatGPT sign-in failed.", code=status.error_code or "oauth_login_failed"
+                    status.message or "Provider sign-in failed.", code=status.error_code or "oauth_login_failed"
                 )
             result = await app.inspect_model_account(provider)
         elif request.action == "login":
@@ -380,7 +412,7 @@ async def _run_management(
                 allow_account_switch=request.allow_account_switch,
             )
         else:
-            result = {"provider": provider.value, "logged_out": await app.logout_model_account(provider)}
+            result = {"provider": provider, "logged_out": await app.logout_model_account(provider)}
     _print_projection(result, request.output_format)
     return 0
 

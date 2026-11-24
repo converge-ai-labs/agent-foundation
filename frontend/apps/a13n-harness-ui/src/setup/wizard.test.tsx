@@ -93,6 +93,11 @@ async function fetcher(request: Request): Promise<Response> {
           authentication: "codex_subscription",
           account: {
             provider: "codex",
+            managed_accounts: true,
+            supports_groups: true,
+            supports_usage: true,
+            supports_allow_credits: true,
+            supports_reset_vouchers: true,
             label: "Codex",
             login_methods: ["device", "browser"],
           },
@@ -421,33 +426,56 @@ it("retains nonsecret choices on refresh and dismissal, never the API key input"
   expect(wizardDismissed(status.draft_scope!)).toBe(true);
 });
 
-it("resumes the server's active device login without starting another authorization", async () => {
-  override = async (request) => {
-    const path = new URL(request.url).pathname;
-    if (
-      path === "/api/auth/logins" ||
-      path === "/api/auth/logins/login-restored"
-    )
-      return json({
-        session_id: "login-restored",
-        account_id: "acct-codex-default",
-        provider: "codex",
-        method: "device",
-        state: "waiting",
-        verification_url: "https://example.com/device",
-        user_code: "ABCD-1234",
-      });
-  };
-  mount();
-  await screen.findByText("ABCD-1234");
-  expect(
-    screen.getByRole("link", { name: /https:\/\/example\.com\/device/ }),
-  ).toBeTruthy();
-  expect(
-    calls.filter((c) => c.path === "/api/auth/logins" && c.method === "POST"),
-  ).toHaveLength(0);
-  expect(JSON.stringify(localStorage)).not.toContain("ABCD-1234");
-});
+it.each(["codex", "example-cloud"])(
+  "resumes an active %s device login without starting another authorization",
+  async (provider) => {
+    override = async (request) => {
+      const path = new URL(request.url).pathname;
+      if (provider !== "codex" && path === "/api/models/choices")
+        return json({
+          connections: [
+            {
+              id: provider,
+              provider,
+              label: "Example Cloud",
+              authentication: "plugin_subscription",
+              default_model: "demo",
+              models: [],
+              account: {
+                provider,
+                label: "Example Cloud",
+                login_methods: ["device"],
+                managed_accounts: true,
+                supports_groups: true,
+              },
+            },
+          ],
+        });
+      if (
+        path === "/api/auth/logins" ||
+        path === "/api/auth/logins/login-restored"
+      )
+        return json({
+          session_id: "login-restored",
+          account_id: `acct-${provider}-default`,
+          provider,
+          method: "device",
+          state: "waiting",
+          verification_url: "https://example.com/device",
+          user_code: "ABCD-1234",
+        });
+    };
+    mount();
+    await screen.findByText("ABCD-1234");
+    expect(
+      screen.getByRole("link", { name: /Open provider sign-in/ }),
+    ).toBeTruthy();
+    expect(
+      calls.filter((c) => c.path === "/api/auth/logins" && c.method === "POST"),
+    ).toHaveLength(0);
+    expect(JSON.stringify(localStorage)).not.toContain("ABCD-1234");
+  },
+);
 
 it("does not complete recovery into an existing chat with different execution authority", async () => {
   const first = mount();

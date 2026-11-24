@@ -53,7 +53,8 @@ class CliRequest:
     account_source: str | None = None
     account_id: str | None = None
     allow_account_switch: bool = False
-    device_code: bool = False
+    device_code: bool | None = None
+    login_method: str | None = None
     credential_key: SecretStr | None = field(default=None, repr=False)
     web_host: str = "127.0.0.1"
     web_port: int = 8765
@@ -78,7 +79,6 @@ class _CliContext:
 _CONTEXT_SETTINGS = {"help_option_names": ("-h", "--help")}
 _FORMAT_CHOICE = click.Choice(tuple(item.value for item in OutputFormat), case_sensitive=True)
 _ENVIRONMENT_MODE_CHOICE = click.Choice(("full-control", "sandbox"))
-_PROVIDER_CHOICE = click.Choice(("chatgpt", "codex", "grok", "copilot"))
 _PRODUCT_CHOICE = click.Choice(("claude-code", "cursor", "codex"))
 _SCOPE_CHOICE = click.Choice(("user", "project"))
 _PATH = click.Path(path_type=Path)
@@ -570,13 +570,36 @@ def doctor_command(ctx: click.Context, output_format: str) -> None:
     _execute(_request(ctx, command="doctor", output_format=OutputFormat(output_format)))
 
 
+@cli.command("extensions")
+@click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text")
+@click.pass_context
+def extensions_command(ctx: click.Context, output_format: str) -> None:
+    """List registered extensions and Model Provider diagnostics."""
+    _execute(_request(ctx, command="extensions", output_format=OutputFormat(output_format)))
+
+
+def _provider_argument(ctx: click.Context, param: click.Parameter, value: str | None) -> str | None:
+    from importlib.metadata import entry_points
+
+    from a13n_harness_ui.model_accounts.models import Provider
+    from a13n_harness_ui.model_providers.catalog import ENTRY_POINT_GROUP
+
+    if (
+        value is not None
+        and value not in {item.value for item in Provider}
+        and not entry_points(group=ENTRY_POINT_GROUP, name=value)
+    ):
+        raise click.BadParameter(f"Unknown Model Provider: {value}", ctx=ctx, param=param)
+    return value
+
+
 @cli.group("auth")
 def auth_group() -> None:
     """Inspect or manage compatible Model authentication."""
 
 
 @auth_group.command("status")
-@click.argument("provider", required=False, type=_PROVIDER_CHOICE)
+@click.argument("provider", required=False, callback=_provider_argument)
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context
 def auth_status_command(ctx: click.Context, provider: str | None, output_format: str) -> None:
@@ -631,7 +654,7 @@ def auth_key_delete(ctx: click.Context, reference: str) -> None:
 
 
 @cli.command("login")
-@click.argument("provider", type=_PROVIDER_CHOICE)
+@click.argument("provider", callback=_provider_argument)
 @click.option(
     "--allow-account-switch",
     is_flag=True,
@@ -639,23 +662,26 @@ def auth_key_delete(ctx: click.Context, reference: str) -> None:
 )
 @click.option(
     "--device-code/--browser",
-    default=True,
-    help=(
-        "Device authorization (default; ChatGPT uses callback URL paste) "
-        "or a local browser callback (Codex and Grok only)."
-    ),
+    default=None,
+    help="Use device authorization or a local browser callback when supported.",
 )
+@click.option("--method", "login_method", type=click.Choice(("device", "browser", "manual_callback")))
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context
 def auth_login_command(
     ctx: click.Context,
     provider: str,
     allow_account_switch: bool,
-    device_code: bool,
+    device_code: bool | None,
+    login_method: str | None,
     output_format: str,
 ) -> None:
     """Authenticate a compatible Model provider."""
 
+    from a13n_harness_ui.model_accounts.models import Provider
+
+    if device_code is None and provider in {item.value for item in Provider}:
+        device_code = login_method != "browser"
     _execute(
         _request(
             ctx,
@@ -664,13 +690,14 @@ def auth_login_command(
             provider=provider,
             allow_account_switch=allow_account_switch,
             device_code=device_code,
+            login_method=login_method,
             output_format=OutputFormat(output_format),
         )
     )
 
 
 @auth_group.command("sources")
-@click.argument("provider", type=_PROVIDER_CHOICE)
+@click.argument("provider", callback=_provider_argument)
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text")
 @click.pass_context
 def auth_sources_command(ctx: click.Context, provider: str, output_format: str) -> None:
@@ -681,7 +708,7 @@ def auth_sources_command(ctx: click.Context, provider: str, output_format: str) 
 
 
 @auth_group.command("select")
-@click.argument("provider", type=_PROVIDER_CHOICE)
+@click.argument("provider", callback=_provider_argument)
 @click.option("--source", "account_source", required=True, type=click.Choice(("native", "copilot_cli_file")))
 @click.option("--account", "account_id", required=True)
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text")
@@ -704,7 +731,7 @@ def auth_select_command(
 
 
 @auth_group.command("logout")
-@click.argument("provider", type=_PROVIDER_CHOICE)
+@click.argument("provider", callback=_provider_argument)
 @click.option("--format", "output_format", type=_FORMAT_CHOICE, default="text", show_default=True)
 @click.pass_context
 def auth_logout_command(ctx: click.Context, provider: str, output_format: str) -> None:

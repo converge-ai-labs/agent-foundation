@@ -194,9 +194,13 @@ Success exits `0`; preparation failure exits `1` and preserves the old default. 
 
 Inspect App and extension diagnostics. Accepts `--format text|json`. Use [troubleshooting](automation-and-troubleshooting.md) to choose the next check from the reported symptom.
 
+### `extensions`
+
+List installed extensions and OAuth Model Provider diagnostics. Accepts `--format text|json`.
+
 ### `auth status`
 
-Inspect Model authentication: `auth status [PROVIDER]`. The optional provider is `chatgpt`, `codex`, `grok`, or `copilot`. Accepts `--format text|json`.
+Inspect Model authentication: `auth status [PROVIDER]`. The optional provider is `chatgpt`, `codex`, `grok`, `copilot`, or the key of an installed OAuth Model Provider. Accepts `--format text|json`.
 
 ### `auth key list`
 
@@ -226,19 +230,20 @@ a13n-harness-ui auth select copilot --source native --account YOUR_GITHUB_LOGIN
 
 ### `auth logout`
 
-Remove selected local credentials with `auth logout PROVIDER`, using `chatgpt`, `codex`, `grok`, or `copilot`. Accepts `--format text|json`.
+Remove selected local credentials with `auth logout PROVIDER`, using `chatgpt`, `codex`, `grok`, `copilot`, or the key of an installed OAuth Model Provider. For a plugin, this signs out its default account. Accepts `--format text|json`.
 
 For a shared Copilot CLI file source, logout also removes the selected account's supported token fields from that file, affecting Copilot CLI. Other accounts stay intact; the Host does not select a fallback source.
 
 ### `login`
 
-Authenticate with `login PROVIDER`, using `chatgpt`, `codex`, `grok`, or `copilot`.
+Authenticate with `login PROVIDER`, using `chatgpt`, `codex`, `grok`, `copilot`, or an installed OAuth Model Provider key.
 
-| Option                        | Default         | Purpose                                                  |
-| ----------------------------- | --------------- | -------------------------------------------------------- |
-| `--allow-account-switch`      | Off             | Permit replacement of a different stored account.        |
-| `--device-code` / `--browser` | `--device-code` | Choose device authorization or a local browser callback. |
-| `--format text\|json`         | `text`          | Choose the output format.                                |
+| Option                                      | Default          | Purpose                                                  |
+| ------------------------------------------- | ---------------- | -------------------------------------------------------- |
+| `--allow-account-switch`                    | Off              | Permit replacement of a different stored account.        |
+| `--device-code` / `--browser`               | `--device-code`  | Choose device authorization or a local browser callback. |
+| `--method device\|browser\|manual_callback` | Provider default | Choose a declared OAuth method.                          |
+| `--format text\|json`                       | `text`           | Choose the output format.                                |
 
 ChatGPT uses callback-URL paste for the default flow. Local browser callbacks are supported for Codex and Grok. Copilot supports device authorization only and uses the public Copilot App identity by default; subscribers need not register an OAuth App. See [Copilot setup](models-and-authentication.md#github-copilot-subscription) for permissions and compatibility.
 

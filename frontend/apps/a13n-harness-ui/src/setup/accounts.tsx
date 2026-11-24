@@ -51,9 +51,7 @@ export function ProviderAccount({
   const { provider, label, login_methods: loginMethods } = connection;
   const nativeAccountId =
     accountId ??
-    (provider === "codex" || provider === "grok"
-      ? `acct-${provider}-default`
-      : undefined);
+    (connection.managed_accounts ? `acct-${provider}-default` : undefined);
   const accountKey = nativeAccountId ?? provider;
   const { client } = useTransport();
   const queries = useQueryClient();
@@ -90,7 +88,7 @@ export function ProviderAccount({
 
   const [method, setMethod] = useState<
     "device" | "browser" | "manual_callback"
-  >(provider === "chatgpt" ? "browser" : (loginMethods[0] ?? "device"));
+  >(loginMethods[0] ?? "device");
   const [callbackUrl, setCallbackUrl] = useState("");
   const [callbackSent, setCallbackSent] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -250,6 +248,10 @@ export function ProviderAccount({
     !login.error &&
     (!login.data ||
       ["starting", "waiting"].includes(login.data.state ?? "starting"));
+  const canPasteCallback =
+    loginMethods.includes("manual_callback") &&
+    (login.data?.method === "manual_callback" ||
+      login.data?.method === "browser");
   const url = safeLoginUrl(login.data?.verification_url);
   const code = login.data?.user_code;
   useEffect(() => {
@@ -352,14 +354,16 @@ export function ProviderAccount({
             </div>
             {accountActions}
           </div>
-          {!inline && provider === "copilot" && (
+          {!inline && connection.allowance_view === "copilot" && (
             <CopilotAllowance
               key={identity}
               identity={identity}
               ready={ready}
             />
           )}
-          {!inline && provider === "chatgpt" && <ChatGPTAllowance />}
+          {!inline && connection.allowance_view === "chatgpt" && (
+            <ChatGPTAllowance />
+          )}
           {connection.source_selection && (
             <details className={accountStyles.advanced}>
               <summary>{t("Account source")}</summary>
@@ -473,9 +477,7 @@ export function ProviderAccount({
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <span>
-                      {provider === "chatgpt" ? t("Sign in with ChatGPT") : url}
-                    </span>
+                    <span>{t("Open provider sign-in")}</span>
                     <ArrowSquareOut size={18} aria-hidden="true" />
                     <span className="sr-only">{t("(opens in a new tab)")}</span>
                   </a>
@@ -509,56 +511,54 @@ export function ProviderAccount({
           {loginGuidance &&
             !(
               active &&
-              provider === "chatgpt" &&
+              canPasteCallback &&
               login.data?.state === "waiting"
             ) && <p>{loginGuidance}</p>}
-          {active &&
-            provider === "chatgpt" &&
-            login.data?.state === "waiting" && (
-              <details
-                className={accountStyles.advanced}
-                open={login.data.method === "manual_callback" || undefined}
-              >
-                <summary>{t("Callback can't reach this server?")}</summary>
-                <div className={styles.stack}>
-                  <p>{loginGuidance}</p>
-                  <FormField label={t("Complete callback URL")}>
-                    <Input
-                      type="password"
-                      autoComplete="off"
-                      spellCheck={false}
-                      maxLength={16384}
-                      value={callbackUrl}
-                      onChange={(event) => setCallbackUrl(event.target.value)}
-                      disabled={callback.isPending || callbackSent}
-                      onKeyDown={(event) => {
-                        if (event.key !== "Enter") return;
-                        event.preventDefault();
-                        if (
-                          callbackUrl.trim() &&
-                          !callback.isPending &&
-                          !callbackSent
-                        )
-                          callback.mutate();
-                      }}
-                    />
-                  </FormField>
-                  <Button
-                    variant="outline"
-                    loading={callback.isPending}
-                    disabled={!callbackUrl.trim() || callbackSent}
-                    onClick={() => callback.mutate()}
-                  >
-                    {t("Complete sign-in")}
-                  </Button>
-                  {callbackSent && (
-                    <p role="status">
-                      {t("Callback received. Completing sign-in…")}
-                    </p>
-                  )}
-                </div>
-              </details>
-            )}
+          {active && canPasteCallback && login.data?.state === "waiting" && (
+            <details
+              className={accountStyles.advanced}
+              open={login.data.method === "manual_callback" || undefined}
+            >
+              <summary>{t("Callback can't reach this server?")}</summary>
+              <div className={styles.stack}>
+                <p>{loginGuidance}</p>
+                <FormField label={t("Complete callback URL")}>
+                  <Input
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    maxLength={16384}
+                    value={callbackUrl}
+                    onChange={(event) => setCallbackUrl(event.target.value)}
+                    disabled={callback.isPending || callbackSent}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      if (
+                        callbackUrl.trim() &&
+                        !callback.isPending &&
+                        !callbackSent
+                      )
+                        callback.mutate();
+                    }}
+                  />
+                </FormField>
+                <Button
+                  variant="outline"
+                  loading={callback.isPending}
+                  disabled={!callbackUrl.trim() || callbackSent}
+                  onClick={() => callback.mutate()}
+                >
+                  {t("Complete sign-in")}
+                </Button>
+                {callbackSent && (
+                  <p role="status">
+                    {t("Callback received. Completing sign-in…")}
+                  </p>
+                )}
+              </div>
+            </details>
+          )}
           {login.data?.error_code ===
             "account_switch_confirmation_required" && (
             <Button variant="outline" onClick={() => setSwitchOpen(true)}>
@@ -612,7 +612,7 @@ export function ProviderAccount({
         onOpenChange={setLogoutOpen}
         title={t("Log out of {{provider}}?", { provider })}
         description={
-          provider === "chatgpt"
+          connection.allowance_view === "chatgpt"
             ? t(
                 "Sign everyone out of ChatGPT on this server and request token revocation. Registration is kept for future sign-in. Codex stays signed in.",
               )

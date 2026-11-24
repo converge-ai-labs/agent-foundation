@@ -184,8 +184,22 @@ export function AccountUsage({
 }) {
   const { t } = useTranslation();
   const observed = view.usage.usage;
+  if (observed && "windows" in observed) {
+    return (
+      <div className={styles.usage}>
+        {observed.windows.map((window, index) => (
+          <WindowUsage
+            key={index}
+            window={window}
+            label={windowLabel(window.limit_window_seconds)}
+          />
+        ))}
+        <UsageFreshness snapshot={view.usage} />
+      </div>
+    );
+  }
   const usage = observed && "account_id" in observed ? observed : null;
-  if (view.account.provider === "grok" || observed?.provider === "grok") {
+  if (observed?.provider === "grok") {
     return (
       <div className={styles.usage}>
         <GrokAllowance
@@ -289,15 +303,16 @@ function SubscriptionAccountRow({
   view: AccountView;
   children: ReactNode;
   refreshing: boolean;
-  onRefresh: () => void;
-  onSignIn: () => void;
-  onEnable: () => void;
+  onRefresh?: () => void;
+  onSignIn?: () => void;
+  onEnable?: () => void;
   onVouchers?: () => void;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const { account, authentication } = view;
-  const usageAvailable = authentication.usable || !!view.usage.usage;
+  const usageAvailable =
+    !!onRefresh && (authentication.usable || !!view.usage.usage);
   const allowance = compactAllowance(view.usage.usage);
   const usage = view.usage.usage;
   return (
@@ -338,11 +353,11 @@ function SubscriptionAccountRow({
               />
             </Button>
           )}
-          {!account.enabled ? (
+          {!account.enabled && onEnable ? (
             <Button variant="outline" size="sm" onClick={onEnable}>
               {t("Enable")}
             </Button>
-          ) : !authentication.usable ? (
+          ) : !authentication.usable && onSignIn ? (
             <Button variant="outline" size="sm" onClick={onSignIn}>
               {t("Sign in")}
             </Button>
@@ -406,12 +421,11 @@ export function SubscriptionAccounts({
     previousLogin.current = session;
   }, [activeLogin.data?.session_id, queries]);
   const [creating, setCreating] = useState(false);
-  const [provider, setProvider] =
-    useState<Schema<"AccountConnection">["provider"]>("codex");
+  const [provider, setProvider] = useState(connections[0]?.provider ?? "");
   const [connectionLogin, setConnectionLogin] =
     useState<Schema<"AccountConnection"> | null>(null);
   const singleConnections = connections.filter(
-    (item) => item.provider !== "codex" && item.provider !== "grok",
+    (item) => !item.managed_accounts,
   );
   const singleAccounts = useQueries({
     queries: singleConnections.map((connection) => ({
@@ -431,7 +445,9 @@ export function SubscriptionAccounts({
       ? [{ connection, status }]
       : [];
   });
-  const namedProvider = provider === "codex" || provider === "grok";
+  const namedProvider = connections.some(
+    (item) => item.provider === provider && item.managed_accounts,
+  );
   const [name, setName] = useState("");
   const [editing, setEditing] = useState<Account | null>(null);
   const [login, setLogin] = useState<Account | null>(null);
@@ -441,7 +457,7 @@ export function SubscriptionAccounts({
   const invalidate = () =>
     queries.invalidateQueries({ queryKey: ["subscriptions"] });
   const create = useMutation({
-    mutationFn: (provider: "codex" | "grok") =>
+    mutationFn: (provider: string) =>
       result(
         client.POST("/api/subscriptions/accounts", {
           body: { provider, name: name.trim() },
@@ -515,7 +531,7 @@ export function SubscriptionAccounts({
         <Button
           onClick={() => {
             setName("");
-            setProvider(connections[0]?.provider ?? "codex");
+            setProvider(connections[0]?.provider ?? "");
             create.reset();
             setCreating(true);
           }}
@@ -554,7 +570,18 @@ export function SubscriptionAccounts({
         )}
       {catalog.isPending && <p role="status">{t("Loading accounts…")}</p>}
       <div className={styles.rows}>
-        {(["codex", "grok"] as const).map((provider) => {
+        {Array.from(
+          new Set([
+            ...connections
+              .filter((item) => item.managed_accounts)
+              .map((item) => item.provider),
+            ...accounts.map((item) => item.account.provider),
+          ]),
+        ).map((provider) => {
+          const connection = connections.find(
+            (item) => item.provider === provider && item.managed_accounts,
+          );
+          const label = connection?.label ?? provider;
           const providerAccounts = accounts.filter(
             ({ account }) =>
               account.provider === provider &&
@@ -568,15 +595,26 @@ export function SubscriptionAccounts({
               key={provider}
               className={styles.providerSection}
               aria-label={t("{{provider}} accounts", {
-                provider: provider === "codex" ? "Codex" : "Grok",
+                provider: label,
               })}
             >
               <header className={styles.providerHeading}>
-                <BrandIcon
-                  identity={provider === "codex" ? "openai" : "xai"}
-                  size={20}
-                />
-                <h3>{provider === "codex" ? "Codex" : "Grok"}</h3>
+                {connection?.logo_url ? (
+                  <img
+                    src={connection.logo_url}
+                    width={20}
+                    height={20}
+                    alt=""
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <BrandIcon
+                    identity={connection?.brand ?? provider}
+                    size={20}
+                  />
+                )}
+                <h3>{label}</h3>
+                {!connection && <span>{t("Provider unavailable")}</span>}
                 <span>
                   {providerAccounts.length === 1
                     ? t("1 account")
@@ -595,13 +633,22 @@ export function SubscriptionAccounts({
                       refreshing={
                         refresh.isPending && refresh.variables === account.id
                       }
-                      onRefresh={() => refresh.mutate(account.id)}
-                      onSignIn={() => setLogin(account)}
-                      onEnable={() =>
-                        update.mutate({ id: account.id, enabled: true })
+                      onRefresh={
+                        connection?.supports_usage
+                          ? () => refresh.mutate(account.id)
+                          : undefined
+                      }
+                      onSignIn={
+                        connection ? () => setLogin(account) : undefined
+                      }
+                      onEnable={
+                        connection
+                          ? () =>
+                              update.mutate({ id: account.id, enabled: true })
+                          : undefined
                       }
                       onVouchers={
-                        account.provider === "codex"
+                        connection?.supports_reset_vouchers
                           ? () => setReset(account)
                           : undefined
                       }
@@ -619,11 +666,15 @@ export function SubscriptionAccounts({
                           <DotsThreeIcon />
                         </MenuTrigger>
                         <MenuPopup align="end">
-                          <MenuItem onClick={() => setLogin(account)}>
+                          <MenuItem
+                            disabled={!connection}
+                            onClick={() => setLogin(account)}
+                          >
                             <KeyIcon />
                             {t("Sign-in & logout")}
                           </MenuItem>
                           <MenuItem
+                            disabled={!connection}
                             onClick={() => {
                               setName(account.name);
                               setEditing(account);
@@ -633,7 +684,7 @@ export function SubscriptionAccounts({
                             {t("Rename")}
                           </MenuItem>
                           <MenuItem
-                            disabled={update.isPending}
+                            disabled={!connection || update.isPending}
                             onClick={() =>
                               update.mutate({
                                 id: account.id,
@@ -644,7 +695,7 @@ export function SubscriptionAccounts({
                             {account.enabled ? <PauseIcon /> : <PlayIcon />}
                             {account.enabled ? t("Pause") : t("Enable")}
                           </MenuItem>
-                          {account.provider === "codex" && (
+                          {connection?.supports_reset_vouchers && (
                             <MenuItem onClick={() => setReset(account)}>
                               <TicketIcon />
                               {t("Reset voucher…")}
@@ -693,9 +744,7 @@ export function SubscriptionAccounts({
             >
               <header className={styles.providerHeading}>
                 <BrandIcon
-                  identity={
-                    connection.provider === "copilot" ? "github" : "openai"
-                  }
+                  identity={connection.brand ?? connection.provider}
                   size={20}
                 />
                 <h3>{connection.label}</h3>
@@ -732,16 +781,16 @@ export function SubscriptionAccounts({
                   </header>
                   <details className={styles.legacyUsage}>
                     <summary>{t("Usage & allowance")}</summary>
-                    {connection.provider === "copilot" ? (
+                    {connection.allowance_view === "copilot" ? (
                       <CopilotAllowance
                         identity={`${status.source_id ?? ""}:${status.account_id ?? ""}`}
                         ready={
                           status.usable || status.required_action === "refresh"
                         }
                       />
-                    ) : (
+                    ) : connection.allowance_view === "chatgpt" ? (
                       <ChatGPTAllowance />
-                    )}
+                    ) : null}
                   </details>
                 </article>
               </div>
@@ -805,8 +854,7 @@ export function SubscriptionAccounts({
               onClick={() => {
                 if (editing)
                   update.mutate({ id: editing.id, name: name.trim() });
-                else if (provider === "codex" || provider === "grok")
-                  create.mutate(provider);
+                else if (namedProvider) create.mutate(provider);
                 else {
                   const connection = connections.find(
                     (item) => item.provider === provider,
@@ -912,6 +960,21 @@ export function SubscriptionAccounts({
 
 export function AccountGroups() {
   const { t } = useTranslation();
+  const { client } = useTransport();
+  const choices = useQuery({
+    queryKey: ["model-choices"],
+    queryFn: ({ signal }) =>
+      result(client.GET("/api/models/choices", { signal })),
+  });
+  const connections = [
+    ...new Map(
+      (choices.data?.connections ?? []).flatMap((item) =>
+        item.account?.supports_groups
+          ? [[item.account.provider, item.account] as const]
+          : [],
+      ),
+    ).values(),
+  ];
   const catalog = useSubscriptions();
   const [params, setParams] = useSearchParams();
   const [filter, setFilter] = useState("");
@@ -930,6 +993,7 @@ export function AccountGroups() {
         key={id}
         initial={group}
         accounts={accounts}
+        connections={connections}
         close={() => setParams({ tab: "groups" })}
       />
     );
@@ -1188,10 +1252,12 @@ function VoucherDetails({ voucher }: { voucher: Schema<"ResetCredit"> }) {
 function GroupEditor({
   initial,
   accounts,
+  connections,
   close,
 }: {
   initial?: Group;
   accounts: AccountView[];
+  connections: Schema<"AccountConnection">[];
   close: () => void;
 }) {
   const { t } = useTranslation();
@@ -1204,7 +1270,7 @@ function GroupEditor({
         kind: "subscription_group",
         id: `group-${crypto.randomUUID().slice(0, 8)}`,
         name: "New group",
-        provider: "codex",
+        provider: connections[0]?.provider ?? "",
         strategy: "ordered",
         allow_credits: false,
         accounts: [],
@@ -1293,15 +1359,15 @@ function GroupEditor({
             onValueChange={(provider) =>
               setDraft({
                 ...draft,
-                provider: provider as "codex" | "grok",
+                provider,
                 accounts: [],
                 allow_credits: false,
               })
             }
-            options={[
-              { value: "codex", label: "Codex" },
-              { value: "grok", label: "Grok" },
-            ]}
+            options={connections.map((item) => ({
+              value: item.provider,
+              label: item.label,
+            }))}
           />
           <ChoiceField
             label={t("Scheduling")}
@@ -1323,7 +1389,10 @@ function GroupEditor({
               },
             ]}
           />
-          {draft.provider === "codex" && (
+          {connections.some(
+            (item) =>
+              item.provider === draft.provider && item.supports_allow_credits,
+          ) && (
             <ChoiceField
               label={t("Rechargeable credits")}
               value={draft.allow_credits ? "allow" : "deny"}
@@ -1339,13 +1408,17 @@ function GroupEditor({
               ]}
             />
           )}
-          {draft.provider === "codex" && draft.allow_credits && (
-            <p className={styles.help}>
-              {t(
-                "Uses credits after the included allowance. Usage may go slightly over the limit.",
-              )}
-            </p>
-          )}
+          {connections.some(
+            (item) =>
+              item.provider === draft.provider && item.supports_allow_credits,
+          ) &&
+            draft.allow_credits && (
+              <p className={styles.help}>
+                {t(
+                  "Uses credits after the included allowance. Usage may go slightly over the limit.",
+                )}
+              </p>
+            )}
         </SettingsSection>
         <SettingsSection
           title={t("Accounts")}

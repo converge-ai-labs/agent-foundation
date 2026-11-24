@@ -48,6 +48,11 @@ const mocks = vi.hoisted(() => ({
                 models: [],
                 account: {
                   provider: "codex",
+                  managed_accounts: true,
+                  supports_groups: true,
+                  supports_usage: true,
+                  supports_allow_credits: true,
+                  supports_reset_vouchers: true,
                   label: "Codex",
                   login_methods: ["device", "browser"],
                 },
@@ -61,6 +66,9 @@ const mocks = vi.hoisted(() => ({
                 models: [],
                 account: {
                   provider: "grok",
+                  managed_accounts: true,
+                  supports_groups: true,
+                  supports_usage: true,
                   label: "Grok",
                   login_methods: ["device", "browser"],
                 },
@@ -95,6 +103,29 @@ const mocks = vi.hoisted(() => ({
                 models: [],
                 default_model: "reviewed",
                 supports_base_url: true,
+              },
+              {
+                id: "example-cloud",
+                label: "Example Cloud",
+                provider: "example-cloud",
+                authentication: "plugin_subscription",
+                default_model: "demo",
+                models: [],
+                configuration_schema: {
+                  type: "object",
+                  required: ["workspace"],
+                  properties: {
+                    workspace: { type: "string", title: "Workspace" },
+                  },
+                },
+                account: {
+                  provider: "example-cloud",
+                  label: "Example Cloud",
+                  login_methods: ["device"],
+                  managed_accounts: true,
+                  supports_groups: true,
+                  model_discovery: true,
+                },
               },
             ],
           }
@@ -780,4 +811,20 @@ it("preserves custom API configuration when changing models", async () => {
   expect(parse(source()).model_configuration).toEqual({
     session_affinity_header: "X-Session-Id",
   });
+});
+
+it("edits nonsecret configuration from an installed Provider schema", async () => {
+  mount(`schema_version: '1'
+kind: model
+id: model-edit
+name: Example
+route: example-cloud:demo
+authentication: {kind: plugin_subscription, provider: example-cloud}
+model_configuration: {workspace: demo}
+`);
+  const field = await screen.findByRole("textbox", { name: /Workspace/ });
+  fireEvent.change(field, { target: { value: "research" } });
+  await waitFor(() => expect(source()).toContain("workspace: research"));
+  expect(source()).toContain("kind: plugin_subscription");
+  expect(mocks.prepare).not.toHaveBeenCalled();
 });

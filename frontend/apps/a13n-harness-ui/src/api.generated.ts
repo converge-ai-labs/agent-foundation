@@ -3356,14 +3356,11 @@ export interface components {
         };
         /**
          * AccountConnection
-         * @description Built-in account actions shared by terminal and browser authoring.
+         * @description Provider account actions shared by terminal and browser authoring.
          */
         AccountConnection: {
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "chatgpt" | "codex" | "grok" | "copilot";
+            /** Provider */
+            provider: string;
             /** Label */
             label: string;
             /** Login Methods */
@@ -3378,13 +3375,45 @@ export interface components {
              * @default false
              */
             source_selection?: boolean;
+            /** Brand */
+            brand?: string | null;
+            /** Logo Url */
+            logo_url?: string | null;
+            /**
+             * Managed Accounts
+             * @default false
+             */
+            managed_accounts?: boolean;
+            /**
+             * Supports Groups
+             * @default false
+             */
+            supports_groups?: boolean;
+            /**
+             * Supports Reset Vouchers
+             * @default false
+             */
+            supports_reset_vouchers?: boolean;
+            /**
+             * Supports Allow Credits
+             * @default false
+             */
+            supports_allow_credits?: boolean;
+            /**
+             * Supports Usage
+             * @default false
+             */
+            supports_usage?: boolean;
+            /** Allowance View */
+            allowance_view?: ("chatgpt" | "copilot") | null;
         };
         /**
          * AccountProjection
          * @description Bounded diagnostics safe for logs, APIs, and UI projection.
          */
         AccountProjection: {
-            provider: components["schemas"]["Provider"];
+            /** Provider */
+            provider: string;
             availability: components["schemas"]["Availability"];
             source: components["schemas"]["StoreKind"];
             /** Usable */
@@ -3871,7 +3900,7 @@ export interface components {
             mode: components["schemas"]["CredentialMode"];
         };
         /** @enum {string} */
-        AuthenticationKind: "api_key" | "chatgpt_subscription" | "codex_subscription" | "grok_subscription" | "copilot_subscription";
+        AuthenticationKind: "api_key" | "chatgpt_subscription" | "codex_subscription" | "grok_subscription" | "copilot_subscription" | "plugin_subscription";
         /** AuthorizationStatus */
         AuthorizationStatus: {
             /**
@@ -4515,7 +4544,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "capability" | "harness_plugin" | "environment_provider" | "environment_run_extension";
+            kind: "capability" | "harness_plugin" | "environment_provider" | "environment_run_extension" | "model_provider";
             /** Key */
             key: string;
             /**
@@ -6518,11 +6547,8 @@ export interface components {
             session_id: string;
             /** Account Id */
             account_id?: string | null;
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "chatgpt" | "codex" | "grok" | "copilot";
+            /** Provider */
+            provider: string;
             /**
              * Method
              * @enum {string}
@@ -6788,7 +6814,7 @@ export interface components {
             daemon?: components["schemas"]["DaemonMetrics"] | null;
             local_filesystems?: components["schemas"]["FilesystemInventory"] | null;
         };
-        ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["ChatGPTSubscriptionAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"];
+        ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["ChatGPTSubscriptionAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"] | components["schemas"]["CopilotSubscriptionAuthentication"] | components["schemas"]["PluginSubscriptionAuthentication"];
         /** ModelCatalogSnapshot */
         ModelCatalogSnapshot: {
             /** Items */
@@ -6809,6 +6835,9 @@ export interface components {
             value: string;
             /** Label */
             label: string;
+            /** Base Model */
+            base_model?: string | null;
+            characteristics?: components["schemas"]["ModelCharacteristics"] | null;
         };
         /** ModelChoices */
         ModelChoices: {
@@ -6816,6 +6845,11 @@ export interface components {
             base_models?: components["schemas"]["ModelChoice"][];
             /** Connections */
             connections?: components["schemas"]["ModelConnection"][];
+            /**
+             * Diagnostics
+             * @default []
+             */
+            diagnostics?: string[];
             /**
              * Session Affinity Presets
              * @default [
@@ -6854,6 +6888,18 @@ export interface components {
             authentication: components["schemas"]["AuthenticationKind"];
             account?: components["schemas"]["AccountConnection"] | null;
             /**
+             * Source
+             * @default builtin
+             * @enum {string}
+             */
+            source?: "builtin" | "entry_point" | "embedded";
+            /** Distribution Name */
+            distribution_name?: string | null;
+            /** Configuration Schema */
+            configuration_schema?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
              * Base Url
              * @default
              */
@@ -6877,6 +6923,9 @@ export interface components {
         };
         /** ModelOptions */
         ModelOptions: {
+            /** Base Model */
+            base_model?: string | null;
+            pricing?: components["schemas"]["ModelPricingEntry"] | null;
             /** Name */
             name: string;
             /** Route */
@@ -6908,6 +6957,41 @@ export interface components {
              * @default []
              */
             shell_review_models?: components["schemas"]["ModelChoice"][];
+        };
+        /**
+         * ModelPriceRule
+         * @description One complete set of prices and the condition selecting it.
+         */
+        ModelPriceRule: {
+            /** Rule Id */
+            rule_id: string;
+            constraint?: components["schemas"]["PricingConstraint"];
+            /** Service Tier */
+            service_tier?: string | null;
+            /** Max Input Tokens */
+            max_input_tokens?: number | null;
+            /** Prices */
+            prices: components["schemas"]["PriceComponent"][];
+        };
+        /**
+         * ModelPricingEntry
+         * @description Complete pricing declaration for one provider-qualified model.
+         */
+        ModelPricingEntry: {
+            /** Provider */
+            provider: string;
+            /** Model */
+            model: string;
+            /** Context Window */
+            context_window?: number | null;
+            /** Rules */
+            rules: components["schemas"]["ModelPriceRule"][];
+            /** Source */
+            source: string;
+            /** Source Revision */
+            source_revision: string;
+            /** Source Url */
+            source_url?: string | null;
         };
         /** ModelRecipe */
         ModelRecipe: {
@@ -7288,6 +7372,43 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** PluginSubscriptionAuthentication */
+        PluginSubscriptionAuthentication: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "plugin_subscription";
+            /** Provider */
+            provider: string;
+            group?: components["schemas"]["ResourceId"] | null;
+        };
+        /** PluginUsageSnapshot */
+        PluginUsageSnapshot: {
+            /** Windows */
+            windows: components["schemas"]["UsageWindow"][];
+        };
+        /**
+         * PreparedModelRecipe
+         * @description Authoring response with read-only pricing, separate from persisted recipes.
+         */
+        PreparedModelRecipe: {
+            /** Route */
+            route: string;
+            /** Base Model */
+            base_model?: string | null;
+            authentication: components["schemas"]["ModelAuthentication"];
+            /** Settings */
+            settings?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Model Configuration */
+            model_configuration?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            model_characteristics?: components["schemas"]["ModelCharacteristics"] | null;
+            pricing?: components["schemas"]["ModelPricingEntry"] | null;
+        };
         /** PresenceFrame */
         PresenceFrame: {
             /**
@@ -7336,6 +7457,52 @@ export interface components {
             memory?: components["schemas"]["Pressure"] | null;
             io?: components["schemas"]["Pressure"] | null;
         };
+        /**
+         * PriceComponent
+         * @description One genai-prices usage dimension and its USD unit price.
+         */
+        PriceComponent: {
+            /** Price Key */
+            price_key: string;
+            /** Price */
+            price: string;
+            /**
+             * Tiers
+             * @default []
+             */
+            tiers?: components["schemas"]["PriceTier"][];
+        };
+        /**
+         * PriceTier
+         * @description One cliff-pricing threshold applied to the complete usage quantity.
+         */
+        PriceTier: {
+            /** Start */
+            start: number;
+            /** Price */
+            price: string;
+        };
+        /**
+         * PricingConstraint
+         * @description A stable condition selecting one ordered model price rule.
+         */
+        PricingConstraint: {
+            /** @default always */
+            kind?: components["schemas"]["PricingConstraintKind"];
+            /** Start Date */
+            start_date?: string | null;
+            /** Start Time */
+            start_time?: string | null;
+            /** End Time */
+            end_time?: string | null;
+            /**
+             * Weekdays
+             * @default []
+             */
+            weekdays?: number[];
+        };
+        /** @enum {string} */
+        PricingConstraintKind: "always" | "start_date" | "daily_time";
         /**
          * ProjectDefaults
          * @description One creation combination; omission falls back and empty lists select none.
@@ -7418,11 +7585,6 @@ export interface components {
             last_active_at?: string | null;
             defaults?: components["schemas"]["ProjectDefaults"];
         };
-        /**
-         * Provider
-         * @enum {string}
-         */
-        Provider: "codex" | "grok" | "copilot" | "chatgpt";
         /** PublicDestinations */
         PublicDestinations: {
             /**
@@ -7855,11 +8017,8 @@ export interface components {
         };
         /** SetupProvider */
         SetupProvider: {
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "chatgpt" | "codex" | "grok" | "copilot";
+            /** Provider */
+            provider: string;
             /** Available */
             available: boolean;
             /** Selected */
@@ -8251,7 +8410,8 @@ export interface components {
         SubscriptionAccount: {
             /** Id */
             id: string;
-            provider: components["schemas"]["SubscriptionProvider"];
+            /** Provider */
+            provider: string;
             /** Name */
             name: string;
             /**
@@ -8316,11 +8476,8 @@ export interface components {
             id: components["schemas"]["ResourceId"];
             /** Name */
             name: string;
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "codex" | "grok";
+            /** Provider */
+            provider: string;
             /**
              * Strategy
              * @default ordered
@@ -9456,6 +9613,8 @@ export interface components {
              * @default 0
              */
             login_revision?: number;
+            /** Login Generation */
+            login_generation?: string | null;
             /**
              * Checked At
              * @default 0
@@ -9467,7 +9626,7 @@ export interface components {
              */
             observed_at?: number;
             /** Usage */
-            usage?: components["schemas"]["CodexUsage"] | components["schemas"]["GrokUsage"] | null;
+            usage?: components["schemas"]["CodexUsage"] | components["schemas"]["GrokUsage"] | components["schemas"]["PluginUsageSnapshot"] | null;
             /** Error */
             error?: string | null;
             /** Rejected */
@@ -10924,7 +11083,8 @@ export interface components {
         };
         /** SubscriptionAccountCreate */
         SubscriptionAccountCreate: {
-            provider: components["schemas"]["SubscriptionProvider"];
+            /** Provider */
+            provider: string;
             /** Name */
             name: string;
         };
@@ -10951,11 +11111,8 @@ export interface components {
         };
         /** LoginRequest */
         LoginRequest: {
-            /**
-             * Provider
-             * @enum {string}
-             */
-            provider: "chatgpt" | "codex" | "grok" | "copilot";
+            /** Provider */
+            provider: string;
             /**
              * Method
              * @default device
@@ -14362,7 +14519,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ModelRecipe"];
+                    "application/json": components["schemas"]["PreparedModelRecipe"];
                 };
             };
         };
@@ -14847,7 +15004,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: components["schemas"]["Provider"];
+                provider: string;
             };
             cookie?: never;
         };
@@ -14878,7 +15035,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: components["schemas"]["Provider"];
+                provider: string;
             };
             cookie?: never;
         };
@@ -14909,7 +15066,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: components["schemas"]["Provider"];
+                provider: string;
             };
             cookie?: never;
         };
@@ -14940,7 +15097,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: components["schemas"]["Provider"];
+                provider: string;
             };
             cookie?: never;
         };
@@ -14972,10 +15129,12 @@ export interface operations {
     };
     discover_account_models_api_auth_accounts__provider__models_post: {
         parameters: {
-            query?: never;
+            query?: {
+                account_id?: string | null;
+            };
             header?: never;
             path: {
-                provider: components["schemas"]["Provider"];
+                provider: string;
             };
             cookie?: never;
         };

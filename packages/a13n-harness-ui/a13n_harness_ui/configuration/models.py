@@ -555,6 +555,12 @@ class GrokSubscriptionAuthentication(StrictModel):
     group: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
+class PluginSubscriptionAuthentication(StrictModel):
+    kind: Literal["plugin_subscription"]
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,62}$")
+    group: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
 class CopilotSubscriptionAuthentication(StrictModel):
     kind: Literal["copilot_subscription"]
 
@@ -564,7 +570,8 @@ type ModelAuthentication = Annotated[
     | ChatGPTSubscriptionAuthentication
     | CodexSubscriptionAuthentication
     | GrokSubscriptionAuthentication
-    | CopilotSubscriptionAuthentication,
+    | CopilotSubscriptionAuthentication
+    | PluginSubscriptionAuthentication,
     Field(discriminator="kind"),
 ]
 
@@ -598,13 +605,15 @@ class SubscriptionGroupResource(ConfigurationModel):
     kind: Literal["subscription_group"]
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
-    provider: Literal["codex", "grok"]
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,62}$")
     strategy: Literal["ordered", "weighted"] = "ordered"
     allow_credits: bool = False
     accounts: tuple[SubscriptionGroupMember, ...] = Field(default=(), max_length=256)
 
     @model_validator(mode="after")
     def _unique_accounts(self) -> Self:
+        if self.allow_credits and self.provider != "codex":
+            raise ValueError("Only Codex subscription groups can use extra credits")
         if len({member.account for member in self.accounts}) != len(self.accounts):
             raise ValueError("Subscription group accounts must be unique")
         return self
@@ -1121,8 +1130,15 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
                 )
         for model in self.models.values():
             auth = model.authentication
-            if isinstance(auth, (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication)):
-                provider = auth.kind.removesuffix("_subscription")
+            if isinstance(
+                auth,
+                (CodexSubscriptionAuthentication, GrokSubscriptionAuthentication, PluginSubscriptionAuthentication),
+            ):
+                provider = (
+                    auth.provider
+                    if isinstance(auth, PluginSubscriptionAuthentication)
+                    else auth.kind.removesuffix("_subscription")
+                )
                 if auth.group:
                     _require_reference(auth.group, self.subscription_groups, f"{model.id}.authentication.group")
                 group = self.subscription_groups.get(auth.group or f"{provider}-default")

@@ -12,6 +12,8 @@ from anyio import CancelScope
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from a13n_harness_ui.configuration.models import SubscriptionGroupMember, SubscriptionGroupResource
+from a13n_harness_ui.model_providers.credentials import PluginAccountStore
+from a13n_harness_ui.model_providers.sdk import AuthorizedAccount
 
 from ._common import read_json_snapshot, write_json_if_unchanged
 from .codex import CodexAccountStore, CodexLoginCallback, CodexLoginRequest, resolve_codex_policy
@@ -35,13 +37,14 @@ class SubscriptionAccount(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str = Field(pattern=r"^acct-[a-zA-Z0-9_-]+$", max_length=128)
-    provider: SubscriptionProvider
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,62}$")
     name: str = Field(min_length=1, max_length=256)
     enabled: bool = True
     scope: str | None = None
     deleted: bool = False
     upstream_account_id: str | None = None
     login_revision: int = 0
+    login_generation: str | None = Field(default=None, exclude=True)
 
 
 class Adoption(BaseModel):
@@ -88,11 +91,17 @@ class SubscriptionAccounts:
             raise AccountStoreError(
                 "The subscription account is unavailable.",
                 code="subscription_account_unavailable",
-                provider=Provider(account.provider) if account else Provider.CODEX,
+                provider=account.provider if account else Provider.CODEX,
             )
+        store = self.store(account)
+        if isinstance(store, PluginAccountStore):
+            snapshot = await store.read()
+            return account.model_copy(update={"login_generation": snapshot.generation})
         return account
 
-    def store(self, account: SubscriptionAccount) -> CodexAccountStore | GrokAccountStore:
+    def store(self, account: SubscriptionAccount) -> CodexAccountStore | GrokAccountStore | PluginAccountStore:
+        if account.provider not in {"codex", "grok"}:
+            return PluginAccountStore(self.root, provider=account.provider, account_id=account.id)
         policy = StorePolicy(
             provider=Provider(account.provider),
             kind=StoreKind.FILE,
@@ -105,15 +114,70 @@ class SubscriptionAccounts:
             return CodexAccountStore(policy)
         return GrokAccountStore(policy, scope=account.scope or DEFAULT_GROK_OAUTH_SCOPE)
 
-    async def create(self, provider: SubscriptionProvider, name: str) -> SubscriptionAccount:
+    async def create(self, provider: str, name: str) -> SubscriptionAccount:
         account = SubscriptionAccount(id=f"acct-{uuid4().hex}", provider=provider, name=name)
         async with store_lock(self.path):
             snapshot, index = await self._read()
             index.accounts[account.id] = account
-            await write_json_if_unchanged(
-                self.path, index.model_dump(mode="json"), snapshot.digest, provider=Provider(provider)
-            )
+            await write_json_if_unchanged(self.path, index.model_dump(mode="json"), snapshot.digest, provider=provider)
         return account
+
+    async def ensure_default(self, provider: str, name: str) -> SubscriptionAccount:
+        account_id = f"acct-{provider}-default"
+        async with store_lock(self.path):
+            snapshot, index = await self._read()
+            account = index.accounts.get(account_id)
+            if account is None:
+                account = SubscriptionAccount(id=account_id, provider=provider, name=name)
+                index.accounts[account_id] = account
+                await write_json_if_unchanged(
+                    self.path, index.model_dump(mode="json"), snapshot.digest, provider=provider
+                )
+            elif account.deleted:
+                raise AccountStoreError(
+                    "The default account was deleted. Add a named account.",
+                    code="subscription_account_unavailable",
+                    provider=provider,
+                )
+            return account
+
+    async def publish_plugin_login(
+        self,
+        before: SubscriptionAccount,
+        observed_digest: str | None,
+        authorization: AuthorizedAccount,
+        *,
+        allow_account_switch: bool,
+    ) -> None:
+        async with store_lock(self.path):
+            _, index = await self._read()
+            account = index.accounts.get(before.id)
+            if (
+                account is None
+                or account.deleted
+                or not account.enabled
+                or account.provider != before.provider
+                or account.login_revision != before.login_revision
+            ):
+                raise AccountStoreConflictError(
+                    "The managed account changed while sign-in was active.",
+                    code="account_store_conflict",
+                    provider=before.provider,
+                )
+            store = self.store(account)
+            assert isinstance(store, PluginAccountStore)
+            async with store_lock(store.path):
+                current = await store.read()
+                if current.account is not None and (
+                    current.account.upstream_account_id != authorization.upstream_account_id
+                    and not allow_account_switch
+                ):
+                    raise AccountStoreConflictError(
+                        "Confirm switching to a different upstream account before signing in.",
+                        code="oauth_account_switch",
+                        provider=before.provider,
+                    )
+                await store.write(authorization, observed_digest)
 
     async def update(
         self, account_id: str, *, name: str | None = None, enabled: bool | None = None
@@ -130,7 +194,7 @@ class SubscriptionAccounts:
             )
             index.accounts[account_id] = updated
             await write_json_if_unchanged(
-                self.path, index.model_dump(mode="json"), snapshot.digest, provider=Provider(account.provider)
+                self.path, index.model_dump(mode="json"), snapshot.digest, provider=account.provider
             )
             return updated
 
@@ -143,7 +207,7 @@ class SubscriptionAccounts:
             # Keep a tombstone so captured groups cannot resurrect an identity.
             index.accounts[account_id] = account.model_copy(update={"deleted": True, "enabled": False})
             await write_json_if_unchanged(
-                self.path, index.model_dump(mode="json"), snapshot.digest, provider=Provider(account.provider)
+                self.path, index.model_dump(mode="json"), snapshot.digest, provider=account.provider
             )
             await self.store(account).logout()
 
@@ -170,7 +234,9 @@ class SubscriptionAccounts:
                         id=f"acct-{provider}-default", provider=provider, name=f"{provider.title()} default"
                     )
                     result = Adoption(status="absent")
-                    native_policy = self.store(account).policy
+                    native_store = self.store(account)
+                    assert isinstance(native_store, (CodexAccountStore, GrokAccountStore))
+                    native_policy = native_store.policy
                     target = native_policy.path
                     assert target is not None
                     current = await read_json_snapshot(target, provider=Provider(provider))
@@ -207,7 +273,9 @@ class SubscriptionAccounts:
                         if current.document is None:
                             await write_json_if_unchanged(target, document, None, provider=Provider(provider))
                         # Bind to the published native credential, not a later external snapshot.
-                        identity = (await self.store(account).load()).account_id
+                        published = self.store(account)
+                        assert isinstance(published, (CodexAccountStore, GrokAccountStore))
+                        identity = (await published.load()).account_id
                         account = account.model_copy(update={"upstream_account_id": identity})
                         result = Adoption(
                             status="adopted",
@@ -293,13 +361,13 @@ class SubscriptionAccounts:
                 raise AccountStoreConflictError(
                     "The account changed during login. Start login again.",
                     code="account_store_conflict",
-                    provider=Provider(account.provider),
+                    provider=account.provider,
                 )
             if account.upstream_account_id is not None and account.upstream_account_id != identity:
                 raise AccountStoreError(
                     "Sign in to the same account, or add a new subscription account.",
                     code="account_identity_changed",
-                    provider=Provider(account.provider),
+                    provider=account.provider,
                 )
             store = self.store(account)
             projection: AccountProjection | None = None
@@ -322,7 +390,7 @@ class SubscriptionAccounts:
                     update={"upstream_account_id": identity, "login_revision": account.login_revision + 1}
                 )
                 await write_json_if_unchanged(
-                    self.path, index.model_dump(mode="json"), snapshot.digest, provider=Provider(account.provider)
+                    self.path, index.model_dump(mode="json"), snapshot.digest, provider=account.provider
                 )
             assert projection is not None
             return projection
@@ -333,7 +401,7 @@ class SubscriptionAccounts:
             account = await self.get(account_id)
             index.accounts[account_id] = account.model_copy(update={"login_revision": account.login_revision + 1})
             await write_json_if_unchanged(
-                self.path, index.model_dump(mode="json"), snapshot.digest, provider=Provider(account.provider)
+                self.path, index.model_dump(mode="json"), snapshot.digest, provider=account.provider
             )
             return await self.store(account).logout()
 

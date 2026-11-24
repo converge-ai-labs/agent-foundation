@@ -12,7 +12,7 @@ from .usage_cache import UsageSnapshot
 class SubscriptionAccountCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    provider: SubscriptionProvider
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,62}$")
     name: str = Field(min_length=1, max_length=256)
 
 

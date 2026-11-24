@@ -18,7 +18,7 @@ from typing import Any, NoReturn, cast
 from anyio import to_thread
 from filelock import FileLock
 
-from .models import AccountStoreConflictError, AccountStoreError, ExpiryStatus, Provider
+from .models import AccountStoreConflictError, AccountStoreError, ExpiryStatus
 
 _MAX_STORE_BYTES = 2 * 1024 * 1024
 
@@ -38,7 +38,7 @@ class _ChangedDuringWrite(RuntimeError):
     pass
 
 
-def _bounded_error(message: str, *, code: str, provider: Provider) -> NoReturn:
+def _bounded_error(message: str, *, code: str, provider: str) -> NoReturn:
     raise AccountStoreError(message, code=code, provider=provider)
 
 
@@ -51,7 +51,7 @@ def _decode_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def decode_json_object(raw: bytes, *, provider: Provider, empty_object: bool = False) -> dict[str, Any]:
+def decode_json_object(raw: bytes, *, provider: str, empty_object: bool = False) -> dict[str, Any]:
     if not raw.strip() and empty_object:
         return {}
     try:
@@ -89,7 +89,7 @@ def _read_bytes(path: Path) -> bytes | None:
 async def read_json_snapshot(
     path: Path,
     *,
-    provider: Provider,
+    provider: str,
     empty_object: bool = False,
     comments: bool = False,
 ) -> JsonSnapshot:
@@ -166,7 +166,7 @@ async def write_json_if_unchanged(
     document: Mapping[str, Any],
     expected_digest: str | None,
     *,
-    provider: Provider,
+    provider: str,
 ) -> None:
     try:
         payload = (json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode()
@@ -175,6 +175,10 @@ async def write_json_if_unchanged(
             "The compatible account update has an invalid provider schema.",
             code="account_update_invalid",
             provider=provider,
+        )
+    if len(payload) > _MAX_STORE_BYTES:
+        _bounded_error(
+            "The account update exceeds the store size limit.", code="account_update_invalid", provider=provider
         )
     try:
         await to_thread.run_sync(_write_if_unchanged, path, payload, expected_digest)
@@ -192,10 +196,10 @@ async def write_json_if_unchanged(
         )
 
 
-def parse_timestamp(value: Any, *, provider: Provider, field: str) -> datetime:
+def parse_timestamp(value: Any, *, provider: str, field: str) -> datetime:
     if not isinstance(value, str) or not value:
         _bounded_error(
-            f"The selected {provider.value} account has an invalid {field} field.",
+            f"The selected {provider} account has an invalid {field} field.",
             code="account_store_incompatible",
             provider=provider,
         )
@@ -204,13 +208,13 @@ def parse_timestamp(value: Any, *, provider: Provider, field: str) -> datetime:
         parsed = datetime.fromisoformat(normalized)
     except ValueError:
         _bounded_error(
-            f"The selected {provider.value} account has an invalid {field} field.",
+            f"The selected {provider} account has an invalid {field} field.",
             code="account_store_incompatible",
             provider=provider,
         )
     if parsed.tzinfo is None:
         _bounded_error(
-            f"The selected {provider.value} account has an invalid {field} field.",
+            f"The selected {provider} account has an invalid {field} field.",
             code="account_store_incompatible",
             provider=provider,
         )
@@ -223,17 +227,17 @@ def timestamp_text(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
-def jwt_claims(token: str, *, provider: Provider, field: str) -> dict[str, Any]:
+def jwt_claims(token: str, *, provider: str, field: str) -> dict[str, Any]:
     if not isinstance(token, str) or not token:
         _bounded_error(
-            f"The selected {provider.value} account has an invalid {field} field.",
+            f"The selected {provider} account has an invalid {field} field.",
             code="account_store_incompatible",
             provider=provider,
         )
     parts = token.split(".")
     if len(parts) != 3 or not all(parts):
         _bounded_error(
-            f"The selected {provider.value} account has an invalid {field} field.",
+            f"The selected {provider} account has an invalid {field} field.",
             code="account_store_incompatible",
             provider=provider,
         )
@@ -242,25 +246,25 @@ def jwt_claims(token: str, *, provider: Provider, field: str) -> dict[str, Any]:
         decoded = json.loads(base64.urlsafe_b64decode(payload), object_pairs_hook=_decode_object)
     except (ValueError, json.JSONDecodeError, _DuplicateKey, binascii.Error):
         _bounded_error(
-            f"The selected {provider.value} account has an invalid {field} field.",
+            f"The selected {provider} account has an invalid {field} field.",
             code="account_store_incompatible",
             provider=provider,
         )
     if not isinstance(decoded, dict):
         _bounded_error(
-            f"The selected {provider.value} account has an invalid {field} field.",
+            f"The selected {provider} account has an invalid {field} field.",
             code="account_store_incompatible",
             provider=provider,
         )
     return cast(dict[str, Any], decoded)
 
 
-def jwt_expiry(token: str, *, provider: Provider) -> datetime:
+def jwt_expiry(token: str, *, provider: str) -> datetime:
     claims = jwt_claims(token, provider=provider, field="access_token")
     expiration = claims.get("exp")
     if not isinstance(expiration, int) or isinstance(expiration, bool):
         _bounded_error(
-            f"The selected {provider.value} account access token has no valid expiry.",
+            f"The selected {provider} account access token has no valid expiry.",
             code="account_store_incompatible",
             provider=provider,
         )
@@ -268,7 +272,7 @@ def jwt_expiry(token: str, *, provider: Provider) -> datetime:
         return datetime.fromtimestamp(expiration, tz=UTC)
     except (OverflowError, OSError, ValueError):
         _bounded_error(
-            f"The selected {provider.value} account access token has no valid expiry.",
+            f"The selected {provider} account access token has no valid expiry.",
             code="account_store_incompatible",
             provider=provider,
         )
