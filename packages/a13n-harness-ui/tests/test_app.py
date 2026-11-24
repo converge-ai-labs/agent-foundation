@@ -1958,6 +1958,7 @@ class _CompletedReconstructor:
         *,
         subagent_operator,
         root_capabilities=(),
+        root_plugins=(),
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
@@ -1970,7 +1971,7 @@ class _CompletedReconstructor:
             del messages, info
             yield "root complete"
 
-        return _reconstructed(model, root_capabilities)
+        return _reconstructed(model, root_capabilities, root_plugins)
 
 
 class _DeferredReconstructor:
@@ -1980,6 +1981,7 @@ class _DeferredReconstructor:
         *,
         subagent_operator,
         root_capabilities=(),
+        root_plugins=(),
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
@@ -2035,6 +2037,7 @@ class _DeferredReconstructor:
                 ),
                 *root_capabilities,
             ),
+            plugins=tuple(root_plugins),
         )
         executable = HarnessBuilder().build(definition)
         return ReconstructedAgent(
@@ -2054,6 +2057,7 @@ class _SlowReconstructor:
         *,
         subagent_operator,
         root_capabilities=(),
+        root_plugins=(),
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
@@ -2068,16 +2072,17 @@ class _SlowReconstructor:
             await sleep_forever()
             yield "unreachable"
 
-        return _reconstructed(model, root_capabilities)
+        return _reconstructed(model, root_capabilities, root_plugins)
 
 
-def _reconstructed(model, root_capabilities) -> ReconstructedAgent:
+def _reconstructed(model, root_capabilities, root_plugins=()) -> ReconstructedAgent:
     definition = AgentDefinition(
         agent=AgentSpec(),
         output_type=str,
         definition_id="a13n-harness-ui:agent:agent-assistant",
         model=FunctionModel(stream_function=model),
         capabilities=tuple(root_capabilities),
+        plugins=tuple(root_plugins),
     )
     executable = HarnessBuilder().build(definition)
     return ReconstructedAgent(

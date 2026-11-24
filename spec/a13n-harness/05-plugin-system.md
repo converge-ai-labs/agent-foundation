@@ -428,6 +428,16 @@ Already emitted events cannot be retracted. The [event contract](12-events-obser
 
 At every returned result boundary the Harness validates output typing, message suffix, state schema, run correlation and result combinations. Native Pydantic `AbstractCapability.wrap_run` remains its separate upstream API.
 
+## Post-run hooks and forked inference
+
+Use `wrap_run` to collect terminal facts that require live Run resources. Store the facts on the run-bound plugin instance or in `PluginSharedState`. A delivered `completed`, `suspended`, or `failed` result exposes `HarnessRunStream.post_run` when an enabled run-bound plugin overrides `post_run`. Cancellation, missing terminal delivery, and runs without such plugins expose no session.
+
+The Host invokes `PostRunSession.run()` after its settlement boundary. The session invokes the same bound instances in inner-to-outer order, independently of detached tool execution. `PluginPostRunContext` carries the Run and Thread IDs, instance identity, final result, shared scratch, `ForkedAgent`, and the original metadata overlaid with settlement metadata. The session is process-local and single-use. Ordinary exceptions are grouped after all hooks run; cancellation propagates immediately. A hook failure does not change the delivered result or its continuation.
+
+`ForkedAgent` exposes its definition, `can_replay_prefix`, `settled_model_id`, and `complete_text(prompt, *, source="plugin_post_run")`. Harness captures the last eligible request and response of the outer native Run. A newer ineligible request invalidates the prefix. The fork appends the prompt without changing main conversation history or context occupancy. It preserves function schemas and the original tool choice for prompt cache compatibility, strips function metadata, and removes native and structured-output tools. It never dispatches tool calls. Raw request overrides, persistent provider conversations or containers, provider-managed caches, and background requests make a prefix ineligible. Harness checks the merged model settings again after resolution and disables provider-native tool settings on replay.
+
+The fork uses the original model resolver unless the Host supplies an override. An ineligible prefix, tool-call response, empty text, or invalid text markers return `None`; usable text preserves its original whitespace. The fork meters inference in a separate usage scope with no Run request limits. A Host can supply a `usage_reporter` when invoking the session. The prefix, session, and instance scratch are never serialized or recovered.
+
 ## Trusted Result and State Composition
 
 Plugins are trusted in-process code. A plugin may intentionally transfer, replace, remove, or synthesize a well-formed `HarnessState` as part of a complete result replacement. The Harness validates the result's public structure and state schema, but it does not prove where state bytes came from, require identity with the inner candidate, require use of `export_current_state()`, or require `state.message_history` to equal `result.all_messages()`.

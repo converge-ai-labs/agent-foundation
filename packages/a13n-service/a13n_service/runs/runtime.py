@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from functools import cached_property, partial
 from typing import TYPE_CHECKING
@@ -12,6 +13,8 @@ from a13n_harness.environment import EnvironmentMount
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.modal.pool import TransportPool
+from a13n_harness.tool_execution import RetainedScope
+from pydantic_ai.models import Model
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +24,7 @@ from a13n_service.infra.db import Storage, after_commit
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.infra.redis import wake
 from a13n_service.infra.tasks import Tasks
+from a13n_service.infra.telemetry import meter
 from a13n_service.providers.metrics import Queries
 from a13n_service.providers.registry import Registry
 from a13n_service.providers.traces import TraceProvider
@@ -39,6 +43,9 @@ if TYPE_CHECKING:
     from a13n_service.runs.environments.contexts import Contexts
     from a13n_service.runs.environments.monitoring.proxy import Proxy
     from a13n_service.runs.tool_executions.owner import Executions
+
+
+POST_RUN_DROPPED = meter.create_counter("a13n.worker.post_run.dropped", unit="{session}")
 
 
 @dataclass(frozen=True)
@@ -69,6 +76,33 @@ class Runtime:
     apps: AppCatalog = field(default_factory=AppCatalog)
     # The backend trace queries read; None when tracing is off.
     traces: TraceProvider | None = None
+
+    @cached_property
+    def post_run_tasks(self) -> set[asyncio.Task[None]]:
+        return set()
+
+    def start_post_run(
+        self, run_id: str, model_scope: RetainedScope[dict[str, Model]], work: Callable[[], Awaitable[None]]
+    ) -> None:
+        """Hand off the model lifetime before returning the Worker slot."""
+        if self.tasks.stopping:
+            return
+        if len(self.post_run_tasks) >= self.settings.worker.post_run_concurrency:
+            POST_RUN_DROPPED.add(1, {"reason": "capacity"})
+            return
+        release = model_scope.retain()
+
+        async def finish() -> None:
+            try:
+                async with asyncio.timeout(self.settings.worker.post_run_seconds):
+                    await work()
+            finally:
+                await release()
+
+        task = self.tasks.start(finish(), name=f"post-run:{run_id}")
+        self.post_run_tasks.add(task)
+
+        task.add_done_callback(self.post_run_tasks.discard)
 
     @cached_property
     def seal_publish_tasks(self) -> set[asyncio.Task[None]]:

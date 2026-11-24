@@ -484,6 +484,8 @@ class Worker(Section):
     scan_seconds: float = Field(default=1, gt=0, le=30)
     authority_seconds: float = Field(default=1, gt=0, le=30)
     drain_seconds: float = Field(default=10, gt=0, le=300)
+    post_run_concurrency: int = Field(default=16, ge=1, le=1024)
+    post_run_seconds: float = Field(default=30, gt=0, le=300)
     # One boundary delivery batch of steers.
     delivery_count: int = Field(default=8, ge=1, le=128)
     delivery_bytes: int = Field(default=262144, ge=1024, le=16777216)
