@@ -40,7 +40,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
-from ._instructions import InstructionFunctionToolset, tool_guidance
+from ._instructions import InstructionFunctionToolset, section, tool_guidance
 from ._media import dispatch_media
 from ._results import ToolError, ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
@@ -193,6 +193,19 @@ class FilePathPair(BaseModel):
 
     src: str = Field(min_length=1, description="Logical source path")
     dst: str = Field(min_length=1, description="Logical destination path")
+
+
+_FILES_GUIDANCE = tool_guidance(
+    "files",
+    section("files", "essential-rules"),
+    section("files", "move", all_of=("move",)),
+    section("files", "copy", all_of=("copy",)),
+    section("files", "delete", all_of=("delete",)),
+    *(
+        section("files", name.replace("_", "-"), all_of=(name,), reference=True)
+        for name in ("view", "write", "edit", "multi_edit", "ls", "glob", "grep")
+    ),
+)
 
 
 class FileToolset:
@@ -368,7 +381,7 @@ class FileToolset:
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-file-tools",
-            instructions=[tool_guidance("files")] if tools else [],
+            guidance=_FILES_GUIDANCE,
         )
 
     def _tool(

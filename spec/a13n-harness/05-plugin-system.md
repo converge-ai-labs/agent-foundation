@@ -352,6 +352,8 @@ Plugin ordering is independent from Pydantic `CapabilityOrdering`. Capability co
 
 Each Agent-bound plugin may contribute zero or more ordinary `AbstractCapability[AgentContext]` instances. The Harness calls `get_capabilities()` exactly once after `for_agent()`, validates the original values, and retains exact plugin-instance ownership before appending contributions after explicit `AgentDefinition.capabilities`. Outer-to-inner plugin order and per-plugin contribution order are preserved. An optional per-Agent `ToolSearchPlan` selects these contributions by exact plugin ID without requiring plugin-specific presentation configuration or changing middleware/run binding; [ToolSearch composition](07-tool-execution.md#grouped-toolsearch-discovery) owns that build-only presentation step.
 
+Contributed Toolsets can use the [public Tool Guidance API](14-public-api-and-packaging.md#tool-guidance-api) to share surface-aware rendering between the prompt and Tool Search discovery.
+
 A contributed Capability that needs its run-bound plugin stores only the stable `plugin_id`. During its own Pydantic run binding it resolves the plugin through:
 
 ```python

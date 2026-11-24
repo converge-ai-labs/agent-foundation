@@ -60,7 +60,7 @@ class HandoffToolset:
         return InstructionFunctionToolset(
             tools=[Tool(self.summarize, metadata={HANDOFF_TOOL_METADATA_KEY: True})],
             id="a13n-handoff-tools",
-            instructions=_HANDOFF_INSTRUCTION,
+            guidance=_HANDOFF_INSTRUCTION,
         )
 
     async def replace_state(self, state: _HandoffState) -> None:

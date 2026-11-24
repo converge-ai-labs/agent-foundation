@@ -100,7 +100,7 @@ class UserInteractionToolset:
         return InstructionExternalToolset(
             [definition],
             id="a13n-user-interaction-tools",
-            instructions=_USER_INTERACTION_INSTRUCTION,
+            guidance=_USER_INTERACTION_INSTRUCTION,
         )
 
 

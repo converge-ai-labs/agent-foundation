@@ -123,7 +123,7 @@ def _toolset(**kwargs: Any) -> WebToolset:
     )
 
 
-async def test_web_group_guidance_preserves_provider_tool_activation() -> None:
+async def test_web_guidance_tracks_provider_tool_activation() -> None:
     ctx, _ = _run_context()
 
     base_toolset = _toolset(configuration=WebConfiguration(search=WebSearchConfiguration(mode="off"))).get_toolset()
@@ -132,8 +132,9 @@ async def test_web_group_guidance_preserves_provider_tool_activation() -> None:
     assert base_parts is not None
     base = "\n".join(part.content for part in base_parts)
     assert base.count("<tool-name>web</tool-name>") == 1
-    for section in ("search", "scrape", "fetch", "download"):
-        assert f"<{section}>" in base
+    assert "<fetch>" in base and "<download>" in base
+    assert "`search`" not in base and "`scrape`" not in base
+    assert "<search>" not in base and "<scrape>" not in base
 
     provider_toolset = _toolset(
         search_backends=(WebSearchBackendBinding("default", _WebProvider()),),
@@ -142,7 +143,9 @@ async def test_web_group_guidance_preserves_provider_tool_activation() -> None:
     assert set(provider_toolset.tools) == {"search", "scrape", "fetch", "download"}
     provider_parts = await provider_toolset.get_instructions(ctx)
     assert provider_parts is not None
-    assert "\n".join(part.content for part in provider_parts) == base
+    provider = "\n".join(part.content for part in provider_parts)
+    for section in ("search", "scrape", "fetch", "download"):
+        assert f"<{section}>" in provider
 
 
 def test_tool_output_size_uses_serialized_characters_not_utf8_bytes() -> None:
