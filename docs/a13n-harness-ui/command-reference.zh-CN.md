@@ -5,15 +5,16 @@ description: a13n-harness-ui 命令行参数、子命令以及交互式 TUI 斜�
 
 Shell 命令用于启动和管理 Harness UI。斜杠命令用于在 TUI 内控制对话。先按任务找到入口，再查阅具体参数。
 
-| 我想……             | 命令                                              | 操作指南                                     |
-| ------------------ | ------------------------------------------------- | -------------------------------------------- |
-| 配置第一个 Agent   | `a13n-harness-ui setup`                           | [首次配置](setup.md)                         |
-| 在终端聊天         | `a13n-harness-ui`                                 | [TUI 使用](everyday-use.md)                  |
-| 在浏览器聊天       | `a13n-harness-ui webui`                           | [WebUI](webui.md)                            |
-| 从脚本运行一次提示 | `a13n-harness-ui run "PROMPT" --format json`      | [自动化](automation-and-troubleshooting.md)  |
-| 查找或验证配置文件 | `a13n-harness-ui config path` / `config validate` | [配置](configuration.md)                     |
-| 查看本地执行环境   | `a13n-harness-ui environment status`              | [Environment](environments-and-projects.md)  |
-| 查看身份验证状态   | `a13n-harness-ui auth status`                     | [Model 与账户](models-and-authentication.md) |
+| 我想……                  | 命令                                              | 操作指南                                          |
+| ----------------------- | ------------------------------------------------- | ------------------------------------------------- |
+| 配置第一个 Agent        | `a13n-harness-ui setup`                           | [首次配置](setup.md)                              |
+| 在终端聊天              | `a13n-harness-ui`                                 | [TUI 使用](everyday-use.md)                       |
+| 在浏览器聊天            | `a13n-harness-ui webui`                           | [WebUI](webui.md)                                 |
+| 连接 ACP 编辑器或客户端 | `a13n-harness-ui acp`                             | [Agent Client Protocol](agent-client-protocol.md) |
+| 从脚本运行一次提示      | `a13n-harness-ui run "PROMPT" --format json`      | [自动化](automation-and-troubleshooting.md)       |
+| 查找或验证配置文件      | `a13n-harness-ui config path` / `config validate` | [配置](configuration.md)                          |
+| 查看本地执行环境        | `a13n-harness-ui environment status`              | [Environment](environments-and-projects.md)       |
+| 查看身份验证状态        | `a13n-harness-ui auth status`                     | [Model 与账户](models-and-authentication.md)      |
 
 ## Shell 调用
 
@@ -115,7 +116,17 @@ a13n-harness-ui run "Reply with one short sentence." --format json
 | `--title TITLE`                    | 未设置 | 为新 Thread 命名。                             |
 | `--format text\|json`              | `text` | 选择输出格式。                                 |
 
-恢复限制在这里同样适用。操作失败或挂起时，退出码非零。因决策而挂起时，用打印出的 Thread ID 以交互方式重新打开；单次模式没有审批选择器。见[完整脚本流程](automation-and-troubleshooting.md)。
+`run` 始终采用无人值守模式。需要审批的任务请在交互界面中运行。`run --resume` 保留会话已保存的项目和根目录。若已有待处理决定导致启动失败，请先在交互界面处理，再重试。
+
+### `acp`
+
+在 macOS 和 Linux 上通过标准输入与标准输出提供 [Agent Client Protocol v1](agent-client-protocol.md) 服务（诊断信息写入标准错误）。
+
+| 选项           | 默认值 | 用途                                                       |
+| -------------- | ------ | ---------------------------------------------------------- |
+| `--unattended` | 关闭   | 过滤需要人工输入的工具，不向客户端发送单次工具权限审批请求 |
+
+在 `acp` 之前可使用全局参数 `--config`、`--data-root` 和 `--no-update-check`；`--resume`、`--agent`、`--environment-mode` 与 `--environment-profile` 会被拒绝，因为 ACP 通过协议选择 Thread，并直接使用配置中的默认 Agent 与 Environment。
 
 ### `config path`
 
@@ -315,7 +326,7 @@ ChatGPT 的默认流程使用粘贴回调 URL。本地浏览器回调支持 Code
 | `auth key delete --yes`              | 确认引用名；该标志跳过确认提示。                   |
 | `update`、`envd update`              | 会直接安装，不再次确认。仅检测到更新不会触发安装。 |
 | `import subagents --apply`           | 先检查预览；这会写入导入文件。                     |
-| `run`                                | 因决策挂起时，需要以交互方式重新打开。             |
+| `run`                                | 始终采用无人值守模式。请在交互界面处理待决事项。   |
 | `webui --dangerous-skip-permissions` | 它移除 HTTP 身份验证，不关闭 Agent 权限检查。      |
 
 ## 按任务查阅指南
@@ -325,4 +336,5 @@ ChatGPT 的默认流程使用粘贴回调 URL。本地浏览器回调支持 Code
 - [Model 与身份验证](models-and-authentication.md)：选择路由和管理凭据。
 - [MCP](mcp.md) 与 [Skill/Content Plugin](skills-and-content-plugins.md)：添加集成。
 - [TUI 使用](everyday-use.md)：编写输入、查看历史、处理决策。
+- [Agent Client Protocol](agent-client-protocol.md)：通过 stdio 连接 Zed、JetBrains 或无头 ACP v1 客户端。
 - [自动化与故障排查](automation-and-troubleshooting.md)：检查结果、诊断失败、恢复已保存的工作。

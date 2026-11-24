@@ -93,6 +93,7 @@ from a13n_harness_ui.restart import GracefulRestart, RestartPauseCapability
 from a13n_harness_ui.restart_models import RestartItem
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
+from a13n_harness_ui.root_inputs import StrictRootInputs
 from a13n_harness_ui.storage import (
     Continuation,
     LocalStore,
@@ -172,6 +173,8 @@ class RootRunAdmission:
     browser_binding: str | None = None
     browser_unavailable: str = ""
     external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
+    strict_inputs: StrictRootInputs | None = field(default=None, repr=False)
+    run_capabilities: tuple[AbstractCapability[AgentContext], ...] = field(default=(), repr=False)
 
 
 class RootRunExecutor:
@@ -198,8 +201,10 @@ class RootRunExecutor:
         browsers: HostBrowsers | None = None,
         tool_executions: ToolExecutions | None = None,
         compaction: BackgroundCompaction | None = None,
+        unattended: bool = False,
         input_prediction: InputPredictionPlugin | None = None,
     ) -> None:
+        self._unattended = unattended
         self._browsers = browsers
         self._compaction = compaction
         self._input_prediction = input_prediction
@@ -299,6 +304,11 @@ class RootRunExecutor:
         )
         if restart is not None and previous_composition != restart.composition:
             raise RunCoordinationError("The saved restart composition changed.", code="restart_conflict")
+        if self._unattended and (deferred is not None or accepted is not None):
+            raise RunCoordinationError(
+                "The Thread has an unfinished deferred decision; resolve it in an interactive surface.",
+                code="thread_deferred_pending",
+            )
         if prompt is not None and deferred is not None:
             assert thread.continuation is not None
             response = ThreadDeferredResponse(
@@ -459,9 +469,17 @@ class RootRunExecutor:
             goal_capability = GoalCapability(goal, changed=on_goal)
             base_continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
 
+            strict_inputs = admission.strict_inputs
+
+            def terminal_state(state: HarnessState) -> HarnessState:
+                return state if strict_inputs is None else strict_inputs.prepare_cut(state)[0]
+
             async def save_checkpoint(state: HarnessState) -> tuple[str, str]:
                 nonlocal thread, run_checkpoint, checkpoint_error
                 assert stream is not None
+                steers: tuple[str, ...] = ()
+                if strict_inputs is not None:
+                    state, steers = strict_inputs.prepare_cut(state, primary=True)
 
                 def capture_checkpoint_state() -> tuple[DisplayHistory, ConversationExcerpt, tuple[str, ...]]:
                     history = state.message_history
@@ -493,6 +511,8 @@ class RootRunExecutor:
                     raise selected.error
                 run_checkpoint = selected.reference
                 thread = thread.model_copy(update={"continuation": selected.reference, "excerpt": excerpt})
+                if strict_inputs is not None:
+                    strict_inputs.commit(state, steers)
                 if (
                     self._restart is not None
                     and admission.organization is None
@@ -573,6 +593,7 @@ class RootRunExecutor:
                         else ()
                     ),
                     goal_capability,
+                    *admission.run_capabilities,
                     RootCheckpointCapability(
                         save_checkpoint,
                         before_response=partial(self._restart.invalidate, thread_id)
@@ -687,6 +708,7 @@ class RootRunExecutor:
                 display.observe(item)
 
             bindings = RunBindings(
+                unattended=self._unattended,
                 metadata=admission.external_context.model_copy(deep=True).metadata,
                 request_context=admission.external_context.request_context(),
                 tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
@@ -869,6 +891,7 @@ class RootRunExecutor:
                     else None
                 )
                 if paused_state is not None:
+                    paused_state = terminal_state(paused_state)
 
                     def capture_paused() -> tuple[DisplayHistory | None, ConversationExcerpt, tuple[str, ...]]:
                         history = paused_state.message_history
@@ -929,7 +952,7 @@ class RootRunExecutor:
                         )
                         current_state = result.state
                         updated_state = await goal_capability.finish(
-                            current_state,
+                            terminal_state(current_state),
                             status=goal_status,
                             usage=result.usage,
                         )
@@ -978,7 +1001,7 @@ class RootRunExecutor:
                         continuation = RootContinuationSelection(status="failed", error=exc)
                     else:
                         state = await goal_capability.finish(
-                            state,
+                            terminal_state(state),
                             status="cancelled" if isinstance(run_error, get_cancelled_exc_class()) else "failed",
                         )
 

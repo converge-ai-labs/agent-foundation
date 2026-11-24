@@ -544,7 +544,7 @@ class ShellToolset:
             function,
             name=name,
             metadata={
-                TOOL_EXECUTION_METADATA_KEY: self._execution_mode if tool_id == "environment.shell_exec" else "control"
+                TOOL_EXECUTION_METADATA_KEY: self._execution_mode if tool_id == "environment.shell_exec" else "control",
             },
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,

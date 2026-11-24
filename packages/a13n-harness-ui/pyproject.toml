@@ -16,6 +16,7 @@ dependencies = [
     "a13n-stream-protocol",
     "a13n-logging",
     "ag-ui-protocol>=1.0.0,<2",
+    "agent-client-protocol==1.0.0",
     "fastmcp-slim[client,server]>=4.0,<5",
     "filelock>=3.18,<4",
     "httpx2>=2.5,<3",

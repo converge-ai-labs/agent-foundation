@@ -10,6 +10,7 @@ Shell commands start and manage Harness UI. Slash commands control a conversatio
 | Configure my first Agent     | `a13n-harness-ui setup`                           | [First setup](setup.md)                             |
 | Chat in the terminal         | `a13n-harness-ui`                                 | [TUI use](everyday-use.md)                          |
 | Chat in a browser            | `a13n-harness-ui webui`                           | [WebUI](webui.md)                                   |
+| Connect an ACP editor/client | `a13n-harness-ui acp`                             | [Agent Client Protocol](agent-client-protocol.md)   |
 | Run one prompt from a script | `a13n-harness-ui run "PROMPT" --format json`      | [Automation](automation-and-troubleshooting.md)     |
 | Find or validate my files    | `a13n-harness-ui config path` / `config validate` | [Configuration](configuration.md)                   |
 | Inspect local execution      | `a13n-harness-ui environment status`              | [Environments](environments-and-projects.md)        |
@@ -115,7 +116,17 @@ a13n-harness-ui run "Reply with one short sentence." --format json
 | `--title TITLE`                    | Unset    | Name a new Thread.                                   |
 | `--format text\|json`              | `text`   | Choose the output format.                            |
 
-The resume restrictions also apply here. A failed or suspended operation exits nonzero. For a suspended decision, reopen the printed Thread ID interactively; one-shot mode has no approval selector. See [the complete script workflow](automation-and-troubleshooting.md).
+`run` always runs unattended. Use an interactive surface for work that requires approval. `run --resume` keeps the Thread’s saved Project and roots. If a saved decision blocks admission, resolve it in an interactive surface before retrying.
+
+### `acp`
+
+Serve [Agent Client Protocol v1](agent-client-protocol.md) over `stdin` and `stdout` on macOS and Linux (diagnostics go to `stderr`).
+
+| Option         | Default | Purpose                                                                                             |
+| -------------- | ------- | --------------------------------------------------------------------------------------------------- |
+| `--unattended` | Off     | Filter tools requiring human input instead of forwarding one-shot permission requests to the client |
+
+Global `--config`, `--data-root`, and `--no-update-check` flags apply before `acp`; `--resume`, `--agent`, `--environment-mode`, and `--environment-profile` are rejected because ACP selects Threads over the protocol and uses configured Agent and Environment defaults.
 
 ### `config path`
 
@@ -315,7 +326,7 @@ The tables group commands by task. “Busy” means the parser allows the comman
 | `auth key delete --yes`              | Confirm the reference; this flag skips the prompt.                                                                                         |
 | `update`, `envd update`              | Expect installation without a second confirmation. When an update notice appears, run `a13n-harness-ui update` to install the new release. |
 | `import subagents --apply`           | Inspect the preview first; this writes imported files.                                                                                     |
-| `run`                                | Plan to reopen suspended work interactively for decisions.                                                                                 |
+| `run`                                | Always unattended. Resolve pending decisions in an interactive surface.                                                                    |
 | `webui --dangerous-skip-permissions` | Disables WebUI HTTP authentication only; Agent tool permission checks continue to apply.                                                   |
 
 ## Task-oriented guides
@@ -325,4 +336,5 @@ The tables group commands by task. “Busy” means the parser allows the comman
 - [Models and authentication](models-and-authentication.md): choose routes and manage credentials.
 - [MCP](mcp.md) and [Skills/Content Plugins](skills-and-content-plugins.md): add integrations.
 - [TUI use](everyday-use.md): compose input, inspect history, and handle decisions.
+- [Agent Client Protocol](agent-client-protocol.md): connect Zed, JetBrains, or headless ACP v1 clients over stdio.
 - [Automation and troubleshooting](automation-and-troubleshooting.md): inspect outcomes, diagnose failures, and resume saved work.

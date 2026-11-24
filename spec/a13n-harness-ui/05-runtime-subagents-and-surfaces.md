@@ -553,6 +553,8 @@ Retained transcript comes from selected root continuations and child native chec
 
 ## CLI
 
+The [ACP surface](14-agent-client-protocol.md) and one-shot CLI share App admission, execution and checkpoint authority. Neither reads persisted state directly or resumes by launching a replacement Run.
+
 The [interactive CLI contract](07-interactive-cli.md) owns input, commands, setup choices, rendering, startup, and local session selection. CLI code consumes this App boundary and contains no provider, persistence, or execution authority. One-shot mode uses the same exact-first-root Project selection and detached model overrides as interactive mode. Help/version do not open the App.
 
 The commands, detached projections, live subscriptions, source-digest mutations, and expected-continuation decisions are shared with the explicitly selected WebUI adapter. Interactive mode never implicitly starts an HTTP listener.

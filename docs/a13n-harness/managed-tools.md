@@ -117,3 +117,9 @@ permissions = ToolPermissionsCapability(
 
 - **Approvals:** Tools can also inspect `ctx.deps.tool_approval` or raise `ApprovalRequired`. Resume a suspended approval batch with `DeferredToolResume(first.deferred, first.deferred.build_results(approvals={call_id: True}))` (see [Human-in-the-loop](human-in-the-loop.md)).
 - **Output bounds (`ToolOutputPolicy`):** Choose `overflow="spill"` (default—writes full redacted output to `.a13n/tmp/tool-results/` when an Environment mount is writable), `"truncate"`, or `"fail"`.
+
+### Unattended Runs
+
+Pass `RunBindings(unattended=True)` or `RunBindings.embedded(unattended=True)` to run without human input. The Run hides external-input tools and tools with an effective `ask` or `deny` permission before exposing them to the model, Tool Search, or CodeAct. Inline children inherit this mode. Other tools, including configured MCP and provider-native tools, remain available under the usual policies. No tool metadata opt-in is needed.
+
+Argument-dependent checks still run. If a Shell review, invocation policy, or other check needs approval, the call fails. Unexpected requests for external input also fail. The Run neither grants approval nor suspends for a response.

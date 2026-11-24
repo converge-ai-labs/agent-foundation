@@ -535,7 +535,7 @@ class SessionBackend:
         thread = detail.thread
         project_id = thread.configuration.project_id
         patch = ThreadConfigurationPatch()
-        if project_id not in matches:
+        if self.request.command is None and project_id not in matches:
             project_id = await self.app.ensure_cwd_project(self.directory)
             source = await self.app.current_configuration()
             assert source is not None

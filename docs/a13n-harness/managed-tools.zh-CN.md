@@ -117,3 +117,9 @@ permissions = ToolPermissionsCapability(
 
 - **人工审批：** 工具内部也可读取 `ctx.deps.tool_approval` 或抛出 `ApprovalRequired`。挂起后使用 `DeferredToolResume(first.deferred, first.deferred.build_results(approvals={call_id: True}))` 恢复运行（见[人机协作](human-in-the-loop.md)）。
 - **输出截断与落盘（`ToolOutputPolicy`）：** 支持 `overflow="spill"`（默认，在存在可写环境挂载时将脱敏后的完整输出写入 `.a13n/tmp/tool-results/`）、`"truncate"` 或 `"fail"`。
+
+### 无人值守运行
+
+在没有人工输入的情况下，使用 `RunBindings(unattended=True)` 或 `RunBindings.embedded(unattended=True)`。需要外部输入的工具，以及生效权限为 `ask` 或 `deny` 的工具，不会出现在模型、Tool Search 或 CodeAct 的工具列表中。内联子 Agent 继承此模式。已配置的 MCP 工具和模型提供方的原生工具等其他工具仍遵循常规策略，无需额外声明工具元数据。
+
+运行仍会执行依赖调用参数的检查。如果 Shell 审查、调用策略或其他检查要求人工批准，该次调用会失败。意外请求外部输入的调用也会失败。运行不会自动批准，也不会挂起等待答复。

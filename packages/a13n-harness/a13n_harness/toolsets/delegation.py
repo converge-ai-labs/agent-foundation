@@ -590,6 +590,7 @@ def _create_inline_child_bindings(
         usage_reporter=parent.usage_reporter,
         toolset_instructions=parent._toolset_instructions_override,
         deferred_tools_supported=False,
+        unattended=parent.unattended,
         capabilities=(invocation_policy,) if invocation_policy is not None else (),
         metadata=parent.metadata,
         request_context=parent.request_context,
@@ -606,6 +607,8 @@ def _create_inline_child_bindings(
             "Child run bindings factory cannot replace the child instance or borrowed Environment.",
             code="subagent_binding_invalid",
         )
+    if bindings.unattended and not resolved.unattended:
+        raise DefinitionError("Child bindings cannot relax unattended mode.", code="subagent_binding_invalid")
     if not bindings.deferred_tools_supported and resolved.deferred_tools_supported:
         raise DefinitionError(
             "Child bindings cannot enable unsupported deferred tools.", code="subagent_binding_invalid"

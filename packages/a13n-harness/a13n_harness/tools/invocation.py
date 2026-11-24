@@ -387,9 +387,13 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
                 requests.metadata.setdefault(call.tool_call_id, {})["a13n.harness.deferred-function-id"] = function_id
         if ctx.deps.deferred_tools_supported:
             return None
-        message = "Deferred tool interaction is unavailable for this Run."
+        message = (
+            "Tool requires human approval or input; denied in unattended mode."
+            if ctx.deps.unattended
+            else "Deferred tool interaction is unavailable for this Run."
+        )
         return DeferredToolResults(
-            calls={request.tool_call_id: ToolDenied(message) for request in requests.calls},
+            calls={request.tool_call_id: ToolFailed(message) for request in requests.calls},
             approvals={request.tool_call_id: ToolDenied(message) for request in requests.approvals},
         )
 

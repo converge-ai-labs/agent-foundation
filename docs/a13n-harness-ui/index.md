@@ -22,6 +22,7 @@ Harness UI adapts to your preferred working environment:
 - **Terminal (TUI):** Run `a13n-harness-ui` directly in any project directory. The TUI keeps you focused inside your shell, supporting hotkeys, interactive decision cards, and live prompt steering. [Master the terminal interface](everyday-use.md).
 - **Browser (WebUI):** Run `a13n-harness-ui webui` and open the generated link. Enjoy rich visual Markdown rendering, a collapsible file explorer, syntax-highlighted diffs, and integrated terminal panels. [Explore the WebUI guide](webui.md).
 - **Voice interaction (Live Mode):** Speak directly with an agent in WebUI using low-latency WebRTC audio streaming, allowing hands-free guidance while inspecting code changes. [Learn Live Mode](live-mode.md).
+- **Editor & ACP clients:** Connect Zed, JetBrains AI Assistant, or custom scripts over stdio using `a13n-harness-ui acp`. [Connect an ACP client](agent-client-protocol.md).
 
 ## Configure the workbench
 
