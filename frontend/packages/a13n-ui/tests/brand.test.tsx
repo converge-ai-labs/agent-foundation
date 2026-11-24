@@ -124,22 +124,33 @@ it.each([
     <BrandIcon identity={identity} bundledOnly fallback={fallback} />,
   );
   const icons = [...container.querySelectorAll("img")];
-  expect(icons.map((icon) => icon.getAttribute("src"))).toEqual(
-    [brands[identity].icon, brands[identity].darkIcon].filter(Boolean),
-  );
-  for (const icon of icons) {
-    const url = new URL(icon.src);
-    expect(
-      /^data:image\/svg\+xml[;,]/.test(icon.src) ||
-        (["http:", "https:"].includes(url.protocol) &&
-          url.origin === location.origin),
-    ).toBe(true);
-    expect(icon.alt).toBe("");
-  }
-  fireEvent.error(icons[0]);
+  expect(icons).toHaveLength(1);
+  const [icon] = icons;
+  expect(icon.getAttribute("src")).toBe(brands[identity].icon);
+  const url = new URL(icon.src);
+  expect(
+    /^data:image\/svg\+xml[;,]/.test(icon.src) ||
+      (["http:", "https:"].includes(url.protocol) &&
+        url.origin === location.origin),
+  ).toBe(true);
+  expect(icon.alt).toBe("");
+  fireEvent.error(icon);
   expect(container.querySelector("img")).toBeNull();
   expect(getByTestId("shield")).toBeTruthy();
 });
+
+it.each([
+  { identity: "cloudflare", invert: false },
+  { identity: "zitadel", invert: true },
+])(
+  "applies the expected dark-mode rule to the bundled $identity mark",
+  ({ identity, invert }) => {
+    const { container } = render(<BrandIcon identity={identity} bundledOnly />);
+    expect(
+      container.querySelector("img")?.classList.contains("dark:invert"),
+    ).toBe(invert);
+  },
+);
 
 it.each(["generic", "notion"])(
   "never uses remote or caller-supplied images in bundled-only mode (%s)",

@@ -63,12 +63,4 @@
             </g>
         </g>
     </g>
-    <defs>
-        <linearGradient id="_Linear1" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(-41.5984,155.247,-155.247,-41.5984,201.516,76.8392)"><stop offset="0" style="stop-color:rgb(255,143,0);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(254,0,255);stop-opacity:1"/></linearGradient>
-        <linearGradient id="_Linear2" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(155.247,-41.5984,41.5984,155.247,110.08,195.509)"><stop offset="0" style="stop-color:rgb(255,143,0);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(254,0,255);stop-opacity:1"/></linearGradient>
-        <linearGradient id="_Linear3" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(-113.649,-113.649,113.649,-113.649,258.31,215.618)"><stop offset="0" style="stop-color:rgb(255,143,0);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(254,0,255);stop-opacity:1"/></linearGradient>
-        <linearGradient id="_Linear4" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(-155.247,41.5984,-41.5984,-155.247,220.914,144.546)"><stop offset="0" style="stop-color:rgb(255,143,0);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(254,0,255);stop-opacity:1"/></linearGradient>
-        <linearGradient id="_Linear5" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(-113.649,113.649,113.649,113.649,206.837,124.661)"><stop offset="0" style="stop-color:rgb(255,143,0);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(254,0,255);stop-opacity:1"/></linearGradient>
-        <linearGradient id="_Linear6" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse" gradientTransform="matrix(-41.5984,-155.247,-155.247,41.5984,152.054,262.8)"><stop offset="0" style="stop-color:rgb(255,143,0);stop-opacity:1"/><stop offset="1" style="stop-color:rgb(254,0,255);stop-opacity:1"/></linearGradient>
-    </defs>
 </svg>

@@ -11,13 +11,11 @@ import { lobeBrands, lobeIconsCdn } from "./lobe-brands.generated";
 import microsoftIcon from "./microsoft.svg";
 import oktaIcon from "./okta.svg";
 import typesafeIcon from "./typesafe.svg";
-import zitadelDarkIcon from "./zitadel-dark.svg";
 import zitadelIcon from "./zitadel.svg";
 
 /** Display identities only. These mappings never select an endpoint or account. */
 export interface Brand {
   icon: string;
-  /** Both the base icon and any dark variant are bundled assets. */
   bundled?: boolean;
   darkIcon?: string;
   invertInDark?: boolean;
@@ -45,11 +43,7 @@ const curatedBrands: Record<string, Brand> = {
   },
   keycloak: { icon: assetUrl(keycloakIcon), bundled: true, invertInDark: true },
   authelia: { icon: assetUrl(autheliaIcon), bundled: true, invertInDark: true },
-  zitadel: {
-    icon: assetUrl(zitadelIcon),
-    darkIcon: assetUrl(zitadelDarkIcon),
-    bundled: true,
-  },
+  zitadel: { icon: assetUrl(zitadelIcon), bundled: true, invertInDark: true },
   github: {
     icon: assetUrl(githubIcon),
     bundled: true,
@@ -65,7 +59,6 @@ const curatedBrands: Record<string, Brand> = {
     ...lobeBrands.cloudflare,
     icon: assetUrl(cloudflareIcon),
     bundled: true,
-    invertInDark: true,
     aliases: ["cloudflare_ai_gateway", "cloudflare-ai-gateway"],
     hosts: [
       "mcp.cloudflare.com",

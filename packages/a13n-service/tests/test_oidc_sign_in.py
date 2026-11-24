@@ -84,12 +84,25 @@ def test_token_requires_verified_email_by_default(signing_key, claims, expected)
 
 
 @pytest.mark.parametrize(
-    "email", [123, "a" * 321, "test\n@example.com"], ids=["non-string", "overlong", "non-printable"]
+    "email",
+    [123, "a" * 321, "test\n@example.com", "", "   "],
+    ids=["non-string", "overlong", "non-printable", "empty", "whitespace"],
 )
 def test_token_rejects_invalid_email_even_when_verification_is_optional(signing_key, email) -> None:
     key, jwks = signing_key
     provider = PROVIDER.model_copy(update={"require_email_verified": False})
-    assert oidc._identity(id_token(key, email=email), jwks, provider, NONCE).email is None
+    identity = oidc._identity(id_token(key, email=email), jwks, provider, NONCE)
+    assert identity.email is None
+    assert identity.name == "Team user"
+
+
+def test_token_uses_trimmed_email_as_a_bounded_display_name(signing_key) -> None:
+    key, jwks = signing_key
+    provider = PROVIDER.model_copy(update={"require_email_verified": False})
+    email = "a" * 150 + "@example.com"
+    identity = oidc._identity(id_token(key, email=f"  {email}  "), jwks, provider, NONCE)
+    assert identity.email == email
+    assert identity.name == email[:128]
 
 
 @pytest.mark.parametrize(
@@ -290,15 +303,20 @@ async def test_oidc_sign_in_stores_and_refreshes_unverified_email_only_for_displ
     )
     key, jwks = signing_key
     principal_ids = []
-    for email, claims in [("admin@example.com", {}), ("updated@example.com", {"email_verified": False})]:
-        identity = oidc._identity(id_token(key, email=email, **claims), jwks, provider, NONCE)
+    for claim, expected, claims in [
+        ("  admin@example.com  ", "admin@example.com", {}),
+        ("updated@example.com", "updated@example.com", {"email_verified": False}),
+        ("   ", None, {}),
+    ]:
+        identity = oidc._identity(id_token(key, email=claim, **claims), jwks, provider, NONCE)
+        assert identity.name == (expected or "Team user")
         login = await oidc.sign_in(runtime.storage, runtime.access, settings, "team", provider, identity)
         principal_ids.append(login.principal.id)
         async with short_session(runtime.storage) as session:
             row = await session.get(PrincipalRow, login.principal.id)
-            assert row is not None and row.email is None and row.oidc_email == email
-            assert row.name == "Team user"
-    assert principal_ids[0] == principal_ids[1] != service.tenant.principal_id
+            assert row is not None and row.email is None and row.oidc_email == expected
+            assert row.name == "admin@example.com"
+    assert len(set(principal_ids)) == 1 and principal_ids[0] != service.tenant.principal_id
 
 
 async def test_password_recovery_respects_sign_in_mode_and_identity(service, monkeypatch) -> None:
