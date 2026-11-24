@@ -16,15 +16,17 @@ from typing import cast
 import pytest
 import yaml
 from a13n_harness.context import AgentContext
-from a13n_harness_ui.acp_server import AcpAgent, _Turn
+from a13n_harness_ui.acp_server import AcpAgent, _Approval, _Turn
 from a13n_harness_ui.app import HarnessUiApp
 from a13n_harness_ui.live import LiveSubscription
 from a13n_harness_ui.surfaces import RootRunReceipt
 from acp import Client
 from acp.schema import AgentThoughtChunk, RequestPermissionResponse, TextContentBlock
-from pydantic_ai import DeferredToolRequests, RunContext
-from pydantic_ai.messages import ToolCallPart
-from pydantic_ai.tools import ToolDenied
+from pydantic_ai import Agent, DeferredToolRequests, RunContext, Tool
+from pydantic_ai.capabilities import HandleDeferredToolCalls
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.tools import ToolApproved, ToolDenied
 
 from .test_interactive import _seed
 
@@ -904,6 +906,58 @@ async def test_cancel_denies_late_allow_before_app_stops_run():
         agent.disconnect()
         for task in tasks:
             task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("disconnect", [False, True], ids=["cancel", "disconnect"])
+async def test_turn_stop_denies_entire_approval_batch(disconnect: bool):
+    blocked = asyncio.Event()
+    calls_run: list[str] = []
+
+    async def cancel_root_operation(*args):
+        await blocked.wait()
+
+    async def action(name: str) -> str:
+        calls_run.append(name)
+        return name
+
+    async def model(messages, info):
+        returns = {part.tool_call_id: part.outcome for part in messages[-1].parts if isinstance(part, ToolReturnPart)}
+        if returns:
+            assert returns == {"first": "denied", "second": "denied"}
+            return ModelResponse(parts=[TextPart("Done")])
+        return ModelResponse(
+            parts=[ToolCallPart("action", {"name": call_id}, call_id) for call_id in ("first", "second")]
+        )
+
+    agent, turn = _approval_turn(cancel_root_operation=cancel_root_operation)
+    runner = Agent(
+        FunctionModel(model),
+        deps_type=AgentContext,
+        tools=[Tool(action, requires_approval=True)],
+        capabilities=[HandleDeferredToolCalls(agent._permission_handler(turn))],
+    )
+    run = asyncio.create_task(runner.run("Try two actions"))
+    try:
+        async with asyncio.timeout(3):
+            first = await turn.notifications.get()
+            assert isinstance(first, _Approval) and first.call.tool_call_id == "first"
+            first.answer.set_result(ToolApproved())
+            second = await turn.notifications.get()
+            assert isinstance(second, _Approval) and second.call.tool_call_id == "second"
+            assert not second.answer.done()
+            if disconnect:
+                agent.disconnect()
+            else:
+                await agent.cancel("session")
+            assert second.answer.result() == ToolDenied()
+            assert (await run).output == "Done"
+            assert not calls_run
+    finally:
+        agent.disconnect()
+        run.cancel()
+        tasks = [run] if turn.stopping is None else [run, turn.stopping]
         await asyncio.gather(*tasks, return_exceptions=True)
 
 

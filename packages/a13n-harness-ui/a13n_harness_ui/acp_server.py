@@ -298,8 +298,7 @@ class AcpAgent:
             approvals = {}
             for call in requests.approvals:
                 if self.disconnected or turn.cancel_requested:
-                    approvals[call.tool_call_id] = ToolDenied()
-                    continue
+                    break
                 answer: asyncio.Future[ToolApproved | ToolDenied] = asyncio.get_running_loop().create_future()
                 turn.approvals.add(answer)
                 turn.notifications.put_nowait(_Approval(call, answer))
@@ -311,7 +310,10 @@ class AcpAgent:
                     decision = ToolDenied()
                 finally:
                     turn.approvals.discard(answer)
-                approvals[call.tool_call_id] = ToolDenied() if turn.cancel_requested else decision
+                approvals[call.tool_call_id] = decision
+            # Pydantic dispatches only after it receives the whole batch.
+            if self.disconnected or turn.cancel_requested:
+                approvals.update((call.tool_call_id, ToolDenied()) for call in requests.approvals)
             return DeferredToolResults(
                 approvals=approvals,
                 calls={
