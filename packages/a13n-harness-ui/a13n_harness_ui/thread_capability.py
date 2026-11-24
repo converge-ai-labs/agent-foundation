@@ -39,7 +39,7 @@ from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspecti
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError, ThreadError
 from a13n_harness_ui.inbox import InboxController
-from a13n_harness_ui.inbox_models import InboxKind
+from a13n_harness_ui.inbox_models import InboxItem, InboxKind, InboxMessage, InboxTitle
 from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.root_execution import RootRunAdmission
 from a13n_harness_ui.root_run import RootRunCoordinator
@@ -167,6 +167,21 @@ class ThreadToolController:
         self.create_project = create_project
         self.read_project_memory = read_project_memory
         self.inbox = inbox
+
+    async def post_owner_inbox(self, *, thread_id: str, kind: InboxKind, title: str, message: str) -> InboxItem:
+        """Post on behalf of an instance owner outside any Agent Run."""
+        source = await self._configurations.current()
+        if self.inbox is None or source is None or not source.document.inbox.enabled:
+            raise ThreadError("Inbox posting is disabled.", code="inbox_disabled")
+        thread = await self._projections.get_thread(thread_id)
+        if (
+            thread.parent_thread_id is not None
+            or thread.coordinator_thread_id is not None
+            or thread.memory_scope is not None
+            or thread.configuration.agent_source.kind == "live"
+        ):
+            raise ThreadError("Use an ordinary, Coordinator, or Bot Thread.", code="inbox_thread_ineligible")
+        return await self.inbox.post_from_mcp(thread_id=thread_id, kind=kind, title=title, message=message)
 
     async def resources(
         self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
@@ -730,8 +745,8 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         self,
         ctx: RunContext[AgentContext],
         kind: InboxKind,
-        title: str = Field(min_length=1, max_length=120),
-        message: str = Field(min_length=1, max_length=4096),
+        title: InboxTitle,
+        message: InboxMessage,
     ) -> dict[str, Any]:
         """Post one item to the user's Inbox, where they read outcomes without opening each chat.
 

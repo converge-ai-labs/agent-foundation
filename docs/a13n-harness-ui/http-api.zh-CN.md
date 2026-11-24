@@ -54,6 +54,8 @@ description: 通过 Harness UI 提供的 HTTP API 与 SSE 事件流，以编程�
 
 用 `list_projects`、`get_project` 和 `create_project` 查找或创建 Project。用 `list_threads` 查找对话；启动新对话时，调用 `create_thread` 并传入 `prompt`，按需指定 `project_id`；继续已有对话时，调用 `send_thread_message` 并传入 `thread_id` 和 `message`。Thread 空闲时消息会启动一个 Run；运行中则尝试将消息送入当前 Run。用 `get_thread` 和 `thread_id` 查进度、读已保存的结果；回执只代表受理。如果创建返回了 `thread_id` 但 Run 未获受理，请保留这个 ID，先检查 Thread 再重试。
 
+调用 `post_to_inbox(thread_id, kind, title, message)` 可向[收件箱](webui.md#read-your-inbox)发送条目。`thread_id` 使用已有的普通对话、Coordinator 或 Bot 的 Thread ID，`kind` 取 `result`、`needs_human` 或 `milestone`，`message` 使用可独立阅读的 Markdown。成功时返回 `item_id`。条目关联到指定对话，不会新增对话轮次或启动 Run。发送受 `inbox.enabled` 控制；[读取和更新条目使用 HTTP 接口](#inbox)。
+
 ## 创建 Thread 并提交输入
 
 将以下代码保存为 `conversation.sh`。它需要 Bash、curl、jq、上面两个环境变量，以及可用的默认配置。脚本创建一个 Thread，只提交一次，轮询回执，然后读取保存的历史。提示词仍按所选 Agent 的实际权限运行。

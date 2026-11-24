@@ -54,6 +54,8 @@ Connect a Streamable HTTP MCP client to the WebUI address with `/api/automation/
 
 Use `list_projects`, `get_project`, and `create_project` to discover or create Projects. Use `list_threads` to find conversations, `create_thread` with `prompt` and an optional `project_id` to start one, and `send_thread_message` with `thread_id` and `message` to continue it. A message starts a Run when the Thread is idle or steers its active Run. Use `get_thread` with `thread_id` to check progress and read the saved result; a receipt alone confirms admission. If creation returns a `thread_id` with an admission error, keep that ID and inspect the Thread before retrying.
 
+To deliver an item to [Inbox](webui.md#read-your-inbox), call `post_to_inbox(thread_id, kind, title, message)`. Use the ID of an existing ordinary, Coordinator, or Bot Thread, a `kind` of `result`, `needs_human`, or `milestone`, and a standalone Markdown message. The tool returns `item_id` on success. The post links to the conversation without adding a chat turn or starting a Run. Posting respects `inbox.enabled`; you can [read and update items over HTTP](#inbox).
+
 ## Create a Thread and submit input
 
 Save this as `conversation.sh`. It requires Bash, curl, jq, the two environment variables above, and usable configured defaults. The script creates one Thread, submits once, polls its receipt, and reads saved history. The prompt still runs with the selected Agent's actual permissions.
