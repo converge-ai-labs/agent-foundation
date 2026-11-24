@@ -1,4 +1,8 @@
 {
+  "Agent plan": "एजेंट की योजना",
+  "Context window: {{percent}}% used": "संदर्भ विंडो: {{percent}}% उपयोग हुआ",
+  "External ACP agent": "बाहरी ACP एजेंट",
+  "No matching options.": "कोई मेल खाता विकल्प नहीं।",
   "ACP connection": "ACP कनेक्शन",
   "Check the saved executable and discover its login methods.": "सहेजी गई एक्ज़िक्यूटेबल फ़ाइल और उसके लॉगिन तरीकों की जाँच करें।",
   "The configured executable was not found.": "कॉन्फ़िगर की गई एक्ज़िक्यूटेबल फ़ाइल नहीं मिली।",
@@ -2161,6 +2165,8 @@
   "Use environment": "एनवायरनमेंट उपयोग करें",
   "Online - Check": "ऑनलाइन - जाँचें",
   "Offline - Retry": "ऑफ़लाइन - फिर से कोशिश करें",
+  "Terminal login": "टर्मिनल लॉगिन",
+  "Use a terminal on the Host to sign in, then check the connection again.": "Host के टर्मिनल में लॉग इन करें, फिर कनेक्शन दोबारा जाँचें।",
   "Check connection": "कनेक्शन जाँचें",
   "{{name}} environment": "{{name}} एनवायरनमेंट",
   "Edit {{name}} environment": "{{name}} एनवायरनमेंट संपादित करें",

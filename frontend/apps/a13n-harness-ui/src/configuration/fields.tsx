@@ -268,6 +268,14 @@ export function ResourceFields({
                 "Use a command on the Host PATH or an absolute path. Leave blank to use the preset executable.",
               )}
             />
+            {list(
+              t("MCP servers"),
+              ["mcp_servers"],
+              selectors.data?.mcp_servers.map((item) => ({
+                value: item.resource_id,
+                label: item.name,
+              })) ?? [],
+            )}
           </SettingsSection>
           <SettingsSection variant="plain" title={t("Instructions")}>
             <Textarea

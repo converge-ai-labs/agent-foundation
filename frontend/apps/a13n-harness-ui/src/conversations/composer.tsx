@@ -69,6 +69,7 @@ function beginInput(
   attachments: Map<string, Schema<"ThreadAttachment">>,
   preset?: string,
   catalog?: Schema<"SkillCatalogView">,
+  optimistic = true,
 ): LocalInput {
   const text = preset ?? draft.doc.getText("text").toString();
   const parts: OrderedInputPart[] = [];
@@ -101,11 +102,13 @@ function beginInput(
     ),
     state: "preparing",
   };
-  draft.localInputs = [
-    ...draft.localInputs.filter((item) => item.state !== "rejected"),
-    input,
-  ];
-  draft.notify();
+  if (optimistic) {
+    draft.localInputs = [
+      ...draft.localInputs.filter((item) => item.state !== "rejected"),
+      input,
+    ];
+    draft.notify();
+  }
   return input;
 }
 
@@ -372,6 +375,7 @@ export function Composer({
   referenceAdded = 0,
   autoFocus = false,
   local = false,
+  externalAgent = false,
   skillDefaults,
   prepareThread,
   queuedInput,
@@ -415,6 +419,7 @@ export function Composer({
   referenceAdded?: number;
   autoFocus?: boolean;
   local?: boolean;
+  externalAgent?: boolean;
   skillDefaults?: Schema<"NewThreadDefaults">;
   prepareThread?: () => Promise<void>;
   queuedInput?: { pending: boolean; locked: boolean; submit: () => void };
@@ -662,7 +667,11 @@ export function Composer({
     !unknown &&
     valid &&
     !!activity.available_actions?.includes("steer");
-  const stopAction = !transport.shareId && busy && !hasInput;
+  const stopAction =
+    !transport.shareId &&
+    busy &&
+    (!hasInput ||
+      (externalAgent && !activity.available_actions?.includes("steer")));
   const canSend =
     canRun &&
     !queuedInput?.locked &&
@@ -746,6 +755,7 @@ export function Composer({
         "skills",
         skillContext,
       ]),
+      action !== "steer" || !externalAgent,
     );
     try {
       setPreparing(true);

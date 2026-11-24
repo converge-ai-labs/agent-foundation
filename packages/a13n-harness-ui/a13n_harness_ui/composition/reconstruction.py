@@ -27,6 +27,7 @@ from a13n_harness.capabilities import (
     ToolSearchSelection,
 )
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
+from a13n_harness.capabilities.tool_review import AgentToolReviewer, ToolReviewConfig
 from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.mcp import UnavailableMCPToolset
@@ -45,6 +46,7 @@ from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.token_pricing import TokenPricingCapability
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness.tools.permissions import ToolPermissions
 from a13n_harness.tools.tool_search import grouped_tool_name
 from a13n_harness.toolsets.computer import ComputerToolset
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
@@ -80,6 +82,7 @@ from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.toolsets.web import WebConfiguration
 
 from a13n_harness_ui.acp_execution import AcpTurn
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.configuration.models import WebProviderResource
 
 from .auxiliary import capability_configuration
@@ -306,7 +309,7 @@ class AgentReconstructor:
             enabled=composition.memory_enabled,
             project_id=composition.project_id,
             positions=memory_positions,
-            bot=composition.root.source_kind == "bot",
+            bot=composition.thread_id == BOT_THREAD_ID,
         )
         if isinstance(composition.root, ResolvedAcpNode):
             if acp_turn is None:
@@ -317,12 +320,26 @@ class AgentReconstructor:
                 *((memory,) if memory is not None else ()),
                 *(self._mcp_capability(item) for item in composition.root.mcp_servers),
             )
+            acp_models = {model_recipe_id(item): item for item in composition.media_understanding.values()}
+            review_recipe = composition.root.shell_review
+            review_configuration = capability_configuration(review_recipe, acp_models) if review_recipe else None
             model_resolver = HarnessUiModelResolver(
-                {model_recipe_id(item): item for item in composition.media_understanding.values()},
+                acp_models,
                 subscription_sources=subscription_sources,
                 api_keys=self._api_keys,
                 configuration=composition.run_configuration,
             )
+            if review_configuration is not None:
+                config = ToolReviewConfig.model_validate(review_configuration["review"])
+                permissions = ToolPermissions.model_validate({"rules": review_configuration["rules"]})
+
+                async def shell_review(thread_id: str) -> ToolPermissionsCapability:
+                    model = await model_resolver.resolve(config.model, thread_id=thread_id)
+                    return ToolPermissionsCapability(
+                        permissions, review=config, reviewer=AgentToolReviewer(model, config)
+                    )
+
+                acp_turn.shell_review = shell_review
             return ReconstructedAgent(
                 executable=HarnessBuilder(
                     configured_plugins_enabled=False, instrumentation=self._instrumentation

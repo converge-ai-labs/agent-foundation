@@ -34,6 +34,9 @@ class AcpAuthMethod(BaseModel):
     id: str
     name: str
     description: str | None = None
+    kind: Literal["agent", "terminal"]
+    argv: tuple[str, ...] = ()
+    environment_keys: tuple[str, ...] = ()
 
 
 class AcpAuthStatus(BaseModel):
@@ -65,9 +68,17 @@ async def acp_auth(
         async with asyncio.timeout(310 if request.action == "login" else 15):
             async with AcpSessionRuntime.open(transport, capabilities=capabilities) as runtime:
                 methods = {
-                    method.id: AcpAuthMethod(id=method.id, name=method.name, description=method.description)
+                    method.id: AcpAuthMethod(
+                        id=method.id,
+                        name=method.name,
+                        description=method.description,
+                        kind="terminal",
+                        argv=(transport.executable, *transport.arguments, *(method.args or ())),
+                        environment_keys=tuple(sorted(method.env or {})),
+                    )
+                    if isinstance(method, schema.AuthMethodTerminal)
+                    else AcpAuthMethod(id=method.id, name=method.name, description=method.description, kind="agent")
                     for method in runtime.initialization.auth_methods or ()
-                    if isinstance(method, schema.AuthMethodAgent)
                 }
                 status = AcpAuthStatus(
                     state="available",
@@ -81,9 +92,10 @@ async def acp_auth(
                     await runtime.logout()
                     return status.model_copy(update={"state": "logout_completed"})
                 assert request.method_id is not None
-                if request.method_id not in methods:
+                method = methods.get(request.method_id)
+                if method is None or method.kind != "agent":
                     raise HarnessUiError(
-                        "The Agent did not advertise this login method.", code="acp_auth_method_invalid"
+                        "The Agent did not advertise this protocol login method.", code="acp_auth_method_invalid"
                     )
                 binding = AcpRunBinding()
                 if inputs is not None:

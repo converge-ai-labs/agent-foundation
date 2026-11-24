@@ -78,8 +78,71 @@ function systemNotice(metadata?: Record<string, unknown> | null) {
 
 // Generated run, subagent and recovery chrome is translated here; backend
 // messages, part kinds and outcome values stay verbatim.
+function acpActivity(
+  metadata: Record<string, unknown> | null | undefined,
+  value: unknown,
+) {
+  const name = metadata?.["a13n.acp.observation"];
+  if (!value || typeof value !== "object") return undefined;
+  if (
+    name === "a13n.acp.usage" &&
+    "used" in value &&
+    "size" in value &&
+    typeof value.used === "number" &&
+    typeof value.size === "number" &&
+    value.size > 0
+  )
+    return { kind: "usage" as const, used: value.used, size: value.size };
+  if (
+    name === "a13n.acp.plan" &&
+    "entries" in value &&
+    Array.isArray(value.entries)
+  )
+    return {
+      kind: "plan" as const,
+      entries: value.entries.flatMap((entry: unknown) => {
+        if (
+          !entry ||
+          typeof entry !== "object" ||
+          !("content" in entry) ||
+          typeof entry.content !== "string" ||
+          !("status" in entry)
+        )
+          return [];
+        return [{ content: entry.content, status: entry.status }];
+      }),
+    };
+  return undefined;
+}
+
 function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
   const { t } = useTranslation();
+  if (row.acp?.kind === "usage") {
+    const percent = Math.round((100 * row.acp.used) / row.acp.size);
+    return (
+      <div className={styles.activity}>
+        {t("Context window: {{percent}}% used", { percent })}
+      </div>
+    );
+  }
+  if (row.acp?.kind === "plan")
+    return (
+      <details open className={styles.activity}>
+        <summary>{t("Agent plan")}</summary>
+        <ul>
+          {row.acp.entries.map((entry, index) => (
+            <li key={index}>
+              {entry.content} —{" "}
+              {entry.status === "completed"
+                ? t("Completed")
+                : entry.status === "in_progress"
+                  ? t("In progress")
+                  : t("Pending")}
+            </li>
+          ))}
+        </ul>
+      </details>
+    );
   const title = row.execution
     ? row.execution === "cancelled"
       ? t("Execution cancelled")
@@ -175,6 +238,7 @@ type Row = {
   | { kind: "failure"; text: string }
   | {
       kind: "activity";
+      acp?: ReturnType<typeof acpActivity>;
       name?: string;
       text: string;
       omitted?: boolean;
@@ -299,7 +363,13 @@ function savedRows(
         rows.push({
           id,
           kind: "activity",
-          name: part.kind,
+          name:
+            part.metadata?.["a13n.acp.observation"] === "a13n.acp.plan"
+              ? "Agent plan"
+              : part.metadata?.["a13n.acp.observation"] === "a13n.acp.usage"
+                ? "Context window"
+                : part.kind,
+          acp: acpActivity(part.metadata, part.value),
           text: part.text ?? JSON.stringify(part.value, null, 2),
           omitted: part.value_omitted ?? undefined,
         });
@@ -441,6 +511,7 @@ function liveRows(
         id: block.id,
         kind: "activity",
         name: block.name || undefined,
+        acp: acpActivity(block.metadata, block.value),
         text: [block.text, block.result].filter(Boolean).join("\n"),
         execution: block.execution,
         recoveryOutcome: block.recoveryOutcome,

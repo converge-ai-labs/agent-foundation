@@ -406,7 +406,7 @@ class LocalProcessManager(NativeProcessTrees):
             )
             for profile in shell_profiles
         }
-        self._allowed_executables = {_resolve_configured_executable(path) for path in policy.allowed_executables}
+        self._allowed_executables = {_resolve_configured_executable(path) for path in policy.allowed_executables or ()}
         self._provider_type = provider_type
         self._environment_id = environment_id
         self._execution_id = execution_id
@@ -600,6 +600,8 @@ class LocalProcessManager(NativeProcessTrees):
     def _argv(self, request: CommandRequest) -> tuple[str, ...]:
         command = request.command
         if isinstance(command, ArgvCommand):
+            if self._policy.allowed_executables is None:
+                return (command.executable, *command.arguments)
             executable = self._canonical_executable(command.executable)
             return (str(executable), *command.arguments)
         if not isinstance(command, ShellCommand):

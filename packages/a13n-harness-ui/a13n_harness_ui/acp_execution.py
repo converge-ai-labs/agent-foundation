@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from base64 import b64encode
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from a13n_harness.acp import (
     AcpChannel,
@@ -17,18 +19,25 @@ from a13n_harness.acp import (
     PromptBlock,
     SteeringOutcome,
 )
-from a13n_harness.content import content_items
+from a13n_harness.content import ContentItem, content_items
 from a13n_harness.context import AgentContext
+from a13n_harness.environment.commands import ArgvCommand, CommandRequest
 from a13n_harness.events import input_events
 from a13n_harness.plugins import AbstractHarnessPlugin, PluginRunExchange, PluginRunNext
 from a13n_harness.result import HarnessRunResult
+from a13n_harness.tools.identity import TOOL_IDENTITY_KEY, ToolIdentity
+from a13n_harness.tools.permission_gate import check_permission
+from a13n_harness.tools.permissions import ToolPermissionsCapability
 from a13n_harness.toolsets.interaction import AskUserQuestionRequest, UserQuestion
 from a13n_stream_protocol.acp import AcpRunStream
 from acp import schema
-from pydantic import BaseModel
+from mcp.types import ElicitRequestFormParams
+from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import BinaryContent, RunContext, TextContent
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.exceptions import ApprovalRequired, ToolFailed
 from pydantic_ai.messages import CapabilityEvent, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 from pydantic_ai.usage import RunUsage
 
@@ -46,6 +55,84 @@ class _SessionState(BaseModel):
 
 
 _NAMESPACE = "a13n.acp"
+_SHELL = ToolDefinition(
+    name="shell_exec",
+    description="Execute a command requested by an external ACP Agent.",
+    metadata={TOOL_IDENTITY_KEY: ToolIdentity("environment.shell_exec", "review")},
+)
+
+
+class _ExecutePermissionInput(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    command: str
+    args: list[str] = []
+    cwd: str | None = None
+    env: dict[str, str] = {}
+
+
+def _bind_shell_review(
+    binding: AcpRunBinding, context: RunContext[AgentContext], interactions: AcpInputs | None
+) -> None:
+    async def review(
+        tool_call_id: str, command: ArgvCommand, cwd: str | None, environment: dict[str, str]
+    ) -> bool | None:
+        arguments = {"command": [command.executable, *command.arguments], "cwd": cwd, "environment": environment}
+        try:
+            await check_permission(
+                replace(context, tool_call_id=tool_call_id, tool_name=_SHELL.name), _SHELL, arguments
+            )
+        except ApprovalRequired:
+            return None
+        except ToolFailed:
+            return False
+        return True
+
+    def summary(command: ArgvCommand, cwd: str | None, environment: dict[str, str]) -> str:
+        return (
+            f"Allow this command?\n\n{[command.executable, *command.arguments]!r}"
+            f"\n\nWorking directory: {cwd or 'default'}"
+            f"\nEnvironment overrides: {', '.join(sorted(environment)) or 'none'}"
+        )
+
+    async def terminal(request: CommandRequest) -> bool:
+        assert isinstance(request.command, ArgvCommand)
+        environment = dict(request.environment.set)
+        decision = await review(f"call-{uuid4().hex}", request.command, request.cwd, environment)
+        if decision is not None:
+            return decision
+        message = summary(request.command, request.cwd, environment)
+        if interactions is None or len(message) > 8192:
+            return False
+        result = await interactions.request(
+            ElicitRequestFormParams(
+                message=message,
+                requested_schema={"type": "object", "properties": {}},
+            ),
+            None,
+        )
+        return result.action == "accept"
+
+    async def permission(call: schema.ToolCallUpdate, options: tuple[schema.PermissionOption, ...]) -> str | None:
+        try:
+            raw = _ExecutePermissionInput.model_validate(call.raw_input)
+            command = ArgvCommand(executable=raw.command, arguments=tuple(raw.args))
+        except ValidationError:
+            return None
+        decision = await review(call.tool_call_id, command, raw.cwd, raw.env)
+        message = summary(command, raw.cwd, raw.env)
+        if decision is False or interactions is None or len(message) > 8192:
+            return None
+        # A reviewed execute request can authorize this invocation only.
+        options = tuple(
+            option.model_copy(update={"name": "Allow once" if option.kind == "allow_once" else "Reject"})
+            for option in options
+            if option.kind in {"allow_once", "reject_once"}
+        )
+        return await interactions.permission(call.model_copy(update={"title": message}), options)
+
+    binding.review_command = terminal
+    binding.review_permission_command = permission
 
 
 @dataclass(kw_only=True)
@@ -67,23 +154,51 @@ class AcpTurn(AbstractHarnessPlugin):
     inputs: Inputs | None = None
     interaction_timeout_seconds: float | None = None
     ask_user_enabled: bool = True
+    thread_files: Path | None = None
+    shell_review: Callable[[str], Awaitable[ToolPermissionsCapability]] | None = None
     channel: AcpChannel | None = None
     bind_environment: Callable[[AgentContext], AcpRunBinding] = lambda _: AcpRunBinding()
     goal: GoalCapability | None = None
     bot: bool = False
     runtime: AcpSessionRuntime | None = None
+    _stop_requested: bool = False
 
     @property
     def plugin_id(self) -> str:
         return _NAMESPACE
+
+    def prompt_text(self, item: ContentItem) -> str:
+        value = item.value
+        if isinstance(value, str):
+            return value
+        assert isinstance(value, TextContent)
+        metadata = (item.metadata.model_extra or {}).get("harness_ui")
+        if (
+            isinstance(metadata, dict)
+            and metadata.get("mount") == "thread-files"
+            and isinstance(path := metadata.get("path"), str)
+        ):
+            text = value.content.replace("Read this file with view", "Read this file")
+            if self.thread_files is not None:
+                return f"{text}\nFile path for ACP readers: {self.thread_files / path}"
+            return text
+        return value.content
 
     async def steer(self, text: str) -> SteeringOutcome:
         if self.runtime is None:
             return "not_delivered"
         return await self.runtime.steer(text)
 
+    @property
+    def supports_steering(self) -> bool:
+        return self.runtime is not None and self.runtime.supports_steering and not self._stop_requested
+
     async def stop(self) -> bool:
-        return self.runtime is not None and await self.runtime.cancel()
+        self._stop_requested = True
+        if self.runtime is None:
+            return False
+        await self.runtime.cancel()
+        return True
 
     async def wrap_run(
         self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]
@@ -120,10 +235,8 @@ class AcpTurn(AbstractHarnessPlugin):
             prompt_capabilities = runtime.capabilities.prompt_capabilities or schema.PromptCapabilities()
             for item in content_items(exchange.input.value):
                 value = item.value
-                if isinstance(value, str):
-                    block = schema.TextContentBlock(text=value)
-                elif isinstance(value, TextContent):
-                    block = schema.TextContentBlock(text=value.content)
+                if isinstance(value, str | TextContent):
+                    block = schema.TextContentBlock(text=self.prompt_text(item))
                 elif isinstance(value, BinaryContent) and value.is_image and prompt_capabilities.image:
                     block = schema.ImageContentBlock(data=b64encode(value.data).decode(), mime_type=value.media_type)
                 elif isinstance(value, BinaryContent) and value.is_audio and prompt_capabilities.audio:
@@ -135,10 +248,19 @@ class AcpTurn(AbstractHarnessPlugin):
                     authored.append(value)
             # The external agent runs its own model loop. This RunContext only
             # binds Host capabilities and never invokes a native model.
-            run_context = RunContext(deps=context, model=None, usage=RunUsage(), run_id=context.run_id)
+            run_context = RunContext(
+                deps=context,
+                model=None,
+                usage=RunUsage(),
+                run_id=context.run_id,
+                messages=[*previous.message_history, ModelRequest(parts=[UserPromptPart(content=authored)])],
+            )
             capabilities = self.capabilities
+            if self.shell_review is not None:
+                capabilities = (*capabilities, await self.shell_review(context.thread_id))
             toolsets = self.toolsets
             binding = self.bind_environment(context)
+            interactions = None
             if self.inputs is not None and not context.unattended:
 
                 def require_active() -> None:
@@ -179,6 +301,8 @@ class AcpTurn(AbstractHarnessPlugin):
 
                 toolsets = (*toolsets, bot_tools)
             async with bridge.prepare(run_context, capabilities=capabilities, toolsets=toolsets) as scope:
+                if self.shell_review is not None:
+                    _bind_shell_review(binding, scope.context, interactions)
                 if runtime.session_id is None:
                     await runtime.open_session(
                         AcpSessionSetup(
@@ -219,13 +343,19 @@ class AcpTurn(AbstractHarnessPlugin):
                         hidden = await scope.prompt_context()
                         if guidance is not None:
                             hidden = (*hidden, guidance)
+                        if self._stop_requested:
+                            return schema.PromptResponse(stop_reason="cancelled")
                         response = await runtime.prompt(prompt, binding=binding, context=hidden)
+                        if self._stop_requested:
+                            return schema.PromptResponse(stop_reason="cancelled")
                         if response.stop_reason == "cancelled" or self.goal is None:
                             return response
                         if compacted:
                             await self.goal.observe_restore(run_context, "acp_compaction")
                         continuation: list[str] = []
                         await self.goal.after_reply(run_context, transcript.last_text, continuation.append)
+                        if self._stop_requested:
+                            return schema.PromptResponse(stop_reason="cancelled")
                         if not continuation:
                             return response
                         transcript.reset_reply()

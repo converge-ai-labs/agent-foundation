@@ -852,6 +852,17 @@ export class FocusDisplay {
     const value = object(event.value) ? event.value : {};
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
+    if (name === "a13n.acp.plan" || name === "a13n.acp.usage") {
+      const key = `${scope}:${name}`;
+      setBlock(key, {
+        id: key,
+        kind: "activity",
+        text: "",
+        metadata: { "a13n.acp.observation": name },
+        value,
+      });
+      return;
+    }
     if (
       name === "a13n.shell.status" &&
       this.runId &&

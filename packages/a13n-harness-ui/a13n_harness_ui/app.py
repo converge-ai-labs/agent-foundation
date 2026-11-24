@@ -42,7 +42,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
 from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus, acp_auth, auth_input_scope
-from a13n_harness_ui.acp_sessions import AcpSessions
+from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange, AcpSessions
 from a13n_harness_ui.background_input import background_input
 from a13n_harness_ui.browser import (
     BrowserAccess,
@@ -1832,6 +1832,19 @@ class HarnessUiApp:
                 await self._mcp_connections.close_integration(thread_id, server_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
 
+    async def acp_options(self, thread_id: str, change: AcpOptionChange | None = None) -> tuple[AcpOption, ...]:
+        async with self._operation():
+            if change is None:
+                thread = await self._threads.get(thread_id)
+                if thread.configuration.agent_source.kind not in {"acp_agent", "bot"}:
+                    return ()
+                return self._acp_sessions.options(thread_id)
+            async with self._root_runs.require_inactive(thread_id, clear_interaction=False):
+                thread = await self._threads.require_interactive(thread_id)
+                if thread.configuration.agent_source.kind not in {"acp_agent", "bot"}:
+                    raise ThreadError("This Thread does not use an ACP Agent.", code="acp_session_missing")
+                return await self._acp_sessions.set_option(thread_id, change)
+
     async def acp_auth(self, agent_id: str, request: AcpAuthRequest) -> AcpAuthStatus:
         async with self._operation():
             source = await self._configurations.current()
@@ -3400,7 +3413,9 @@ class HarnessUiApp:
                 )
 
             return SetupStatus(
-                needed=current is None or not current.agents or defaults is None or defaults.agent is None,
+                needed=(
+                    current is None or defaults is None or defaults.agent not in (current.agents | current.acp_agents)
+                ),
                 fresh=(current is None or not (current.agents or current.models or current.projects))
                 and self._candidate_error is None
                 and await to_thread.run_sync(untouched),

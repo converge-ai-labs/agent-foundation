@@ -560,7 +560,7 @@ class RootRunExecutor:
                 display.supplement((*image_events, *app_events))
 
             node = published.value.root
-            is_bot = node.source_kind == "bot"
+            is_bot = thread_id == BOT_THREAD_ID
             acp_turn = None
             if isinstance(node, ResolvedAcpNode):
                 if (
@@ -573,6 +573,10 @@ class RootRunExecutor:
                     )
                 workspaces = published.value.project_roots
                 cwd = workspaces[0] if workspaces else str(self._store.settings.data_root)
+                thread_files = (
+                    self._thread_files.directory(thread_id) if not is_bot and self._thread_files is not None else None
+                )
+                additional_directories = (*workspaces[1:], *((str(thread_files),) if thread_files else ()))
                 acp_turn = AcpTurn(
                     sessions=self.acp_sessions,
                     resource=node.resource,
@@ -580,22 +584,24 @@ class RootRunExecutor:
                         {
                             "root": node.model_dump(mode="json"),
                             "cwd": cwd,
-                            "additional_directories": workspaces[1:],
+                            "additional_directories": additional_directories,
                         }
                     ),
                     setup=AcpSessionSetup(
                         cwd=cwd,
                         instructions=(*node.global_guidance, node.resource.instructions),
-                        additional_directories=workspaces[1:],
+                        additional_directories=additional_directories,
                     ),
+                    thread_files=thread_files,
                     inputs=self._acp_inputs,
                     interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
-                    ask_user_enabled=source.document.tools.enable_ask_user_question,
+                    ask_user_enabled=not is_bot and source.document.tools.enable_ask_user_question,
                     goal=goal_capability,
-                    bind_environment=(
-                        (lambda _: AcpRunBinding())
-                        if source.document.security.shell_review.enable
-                        else (lambda context: AcpRunBinding(environment=context.environment))
+                    bot=is_bot,
+                    bind_environment=lambda context: AcpRunBinding(
+                        environment=context.environment,
+                        files_enabled=not is_bot or source.document.webui.bot.files_enabled is True,
+                        terminals_enabled=not is_bot or source.document.webui.bot.shell_enabled is True,
                     ),
                 )
             prediction = (
@@ -618,10 +624,11 @@ class RootRunExecutor:
             reconstruct = self._agents.reconstruct
             if prediction is not None:
                 reconstruct = partial(reconstruct, root_plugins=(prediction,))
+            if acp_turn is not None:
+                reconstruct = partial(reconstruct, acp_turn=acp_turn)
             reconstructed = reconstruct(
                 published.value,
                 background_compaction=self._compaction,
-                acp_turn=acp_turn,
                 pricing_catalog=pricing_catalog,
                 memory_positions=admission.memory_positions,
                 organization=admission.organization,
@@ -689,10 +696,14 @@ class RootRunExecutor:
                     self._thread_files,
                     thread_id,
                     source.document.input,
-                    view_enabled=(published.value.root.tools is None or "view" in published.value.root.tools)
-                    and any(
-                        isinstance(capability, DynamicEnvironmentCapability) and capability.configuration.files_enabled
-                        for capability in reconstructed.executable.definition.capabilities
+                    view_enabled=acp_turn is not None
+                    or (
+                        (published.value.root.tools is None or "view" in published.value.root.tools)
+                        and any(
+                            isinstance(capability, DynamicEnvironmentCapability)
+                            and capability.configuration.files_enabled
+                            for capability in reconstructed.executable.definition.capabilities
+                        )
                     ),
                 )
                 if self._thread_files is not None and admission.organization is None

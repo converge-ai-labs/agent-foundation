@@ -1189,7 +1189,9 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         for item in self.document.mcp.protocol_overrides:
             _require_reference(item, self.mcp_servers, "mcp.protocol_overrides")
         _require_reference(self.document.memory.auto_organize.model, self.models, "memory.auto_organize.model")
-        _require_reference(self.document.webui.bot.agent, self.agents, "webui.bot.agent")
+        _require_reference(self.document.webui.bot.agent, self.agents | self.acp_agents, "webui.bot.agent")
+        if self.bot_acp_agent is not None and self.document.webui.bot.model is not None:
+            raise ValueError("An ACP Bot Agent owns its model selection")
         _require_reference(self.document.webui.bot.model, self.models, "webui.bot.model")
         live = self.document.live
         if live is not None and live.model is not None:
@@ -1333,12 +1335,17 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         )
 
     @property
+    def bot_acp_agent(self) -> AcpAgentResource | None:
+        agent_id = self.document.webui.bot.agent
+        return self.acp_agents.get(agent_id) if agent_id is not None else None
+
+    @property
     def bot_model_id(self) -> ResourceId | None:
         """Use Bot's Model override, otherwise the selected Agent's Model."""
         if self.document.webui.bot.model is not None:
             return self.document.webui.bot.model
         agent_id = self.bot_agent_id
-        return None if agent_id is None else self.agents[agent_id].model
+        return self.agents[agent_id].model if agent_id in self.agents else None
 
     @property
     def memory_organization_model_id(self) -> ResourceId | None:

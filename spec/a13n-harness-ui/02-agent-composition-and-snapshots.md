@@ -449,6 +449,12 @@ flowchart LR
 
 The resolved composition contains complete normalized Agent nodes, Models, Capability specs, selected Harness Plugin and MCP recipes, subagent edges, package prompt identity, selected local roots (`project_roots` in the captured composition), the exact installed Content Plugin identities and captured editable paths, local Environment profile selection, captured Device definitions and directory selections, binding aliases/action ceilings/working directories and explicit default, Environment Run Extensions, and dependency provenance. A selected `skills` Capability captures only its ordered explicit Environment roots; automatic local-root, plugin, and user sources are derived during fresh reconstruction under [Environment Skill Sources](02b-environment-skill-sources.md). The composition contains no Skill bytes or discovered catalog, Host-resolved authentication credential bytes, native client, Environment adapter, task, callback, or active state coordinator. Opaque settings and extension payloads are retained verbatim; their contents are not classified or scrubbed as credentials.
 
+### External ACP Root
+
+An `acp_agent` selection captures a root recipe containing the accepted external Agent resource, global guidance, and selected Host MCP recipes. The external Agent owns model selection. Harness Model, Thinking, and other per-Run native model overrides are unavailable, including for Coordinator-created Workers that select ACP. An explicit `security.shell_review.model` supplies the auxiliary reviewer recipe when shell review is enabled.
+
+The Host reconstructs the Run's authority and presentation around the external prompt. The [Harness ACP bridge](../a13n-harness/25-acp.md) exposes prepared Host function tools under the captured Thread identity. The external Agent owns its native tools, model loop, and context compaction.
+
 ## Continuing Across Composition Changes
 
 The selected prior `HarnessState` remains the continuation authority when a later Run uses a different composition. Message history and detached Capability namespaces are preserved.

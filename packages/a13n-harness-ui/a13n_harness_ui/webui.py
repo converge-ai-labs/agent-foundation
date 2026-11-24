@@ -40,6 +40,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus
+from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.bot import BotSnapshot
 from a13n_harness_ui.bot_models import (
@@ -2106,6 +2107,18 @@ def create_webui(
             thread_id=thread_id, environment=await _document(request, EnvironmentSelectionPatch)
         )
 
+    @server.get("/api/threads/{thread_id}/acp-options", response_model=tuple[AcpOption, ...])
+    async def acp_options(thread_id: str) -> tuple[AcpOption, ...]:
+        return await app().acp_options(thread_id)
+
+    @server.put(
+        "/api/threads/{thread_id}/acp-options",
+        response_model=tuple[AcpOption, ...],
+        openapi_extra=_body(AcpOptionChange),
+    )
+    async def set_acp_option(thread_id: str, request: Request) -> tuple[AcpOption, ...]:
+        return await app().acp_options(thread_id, await _document(request, AcpOptionChange))
+
     @server.get("/api/threads/{thread_id}/configuration", response_model=ThreadConfigurationInspection)
     async def inspect_configuration(thread_id: str) -> ThreadConfigurationInspection:
         return await app().inspect_thread_configuration(thread_id)
@@ -2485,6 +2498,8 @@ def create_webui(
     async def submit(thread_id: str, request: Request) -> RootRunReceipt:
         # Ordered input and its base64 CRDT capture can each contain the prompt.
         document = await _document(request, SubmitRequest, max_bytes=2 * _MAX_BODY)
+        controls = document.controls().model_dump(exclude_none=True)
+        overrides = RunModelOverrides(model_id=document.model_id, **controls) if document.model_id or controls else None
         try:
             return await app().submit_thread(
                 thread_id=thread_id,
@@ -2492,7 +2507,7 @@ def create_webui(
                 app_context=document.app_context,
                 mode=document.mode,
                 environment=document.environment,
-                model_overrides=RunModelOverrides(model_id=document.model_id, **document.controls().model_dump()),
+                model_overrides=overrides,
                 skill_references=document.skill_references,
                 input_surface="webui",
                 draft=document.draft,

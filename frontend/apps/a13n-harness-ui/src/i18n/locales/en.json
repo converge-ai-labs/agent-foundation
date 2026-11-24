@@ -1,4 +1,8 @@
 {
+  "Agent plan": "Agent plan",
+  "Context window: {{percent}}% used": "Context window: {{percent}}% used",
+  "External ACP agent": "External ACP agent",
+  "No matching options.": "No matching options.",
   "ACP connection": "ACP connection",
   "Check the saved executable and discover its login methods.": "Check the saved executable and discover its login methods.",
   "The configured executable was not found.": "The configured executable was not found.",
@@ -2161,6 +2165,8 @@
   "Use environment": "Use environment",
   "Online - Check": "Online - Check",
   "Offline - Retry": "Offline - Retry",
+  "Terminal login": "Terminal login",
+  "Use a terminal on the Host to sign in, then check the connection again.": "Use a terminal on the Host to sign in, then check the connection again.",
   "Check connection": "Check connection",
   "{{name}} environment": "{{name}} environment",
   "Edit {{name}} environment": "Edit {{name}} environment",

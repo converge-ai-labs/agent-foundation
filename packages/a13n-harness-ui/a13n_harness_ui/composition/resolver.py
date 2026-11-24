@@ -371,17 +371,41 @@ class AgentCompositionResolver:
                 root=self._live_node(source),
                 environment_profile=self.environment_profile(source, FULL_CONTROL_PROFILE_ID),
             )
-        if selection.agent_source_kind == "acp_agent":
+        acp_bot = source.bot_acp_agent if selection.agent_source_kind == "bot" else None
+        if selection.agent_source_kind == "acp_agent" or acp_bot is not None:
             self._validate_selection(source, selection)
             if model_overrides is not None:
                 raise CompositionError("External ACP Agents own model selection.", code="acp_model_override")
-            resource = source.acp_agents[selection.agent_source_id]
+            resource = acp_bot if acp_bot is not None else source.acp_agents[selection.agent_source_id]
+            shell_review = None
+            if selections := self._shell_review_selections(source, ()):
+                reviewer_id = source.document.security.shell_review.model
+                if reviewer_id is None or reviewer_id not in source.models:
+                    raise CompositionError(
+                        "ACP shell review requires an explicit security.shell_review.model.",
+                        code="review_model_missing",
+                    )
+                shell_review = ResolvedCapabilityRecipe(
+                    capability=selections[0].capability,
+                    configuration=selections[0].configuration,
+                    model=self.model_recipe(source.models[reviewer_id], source),
+                )
             root: ResolvedAgentNode | ResolvedAcpNode = ResolvedAcpNode(
                 source_id=resource.id,
                 roster_name=resource.name[:128],
                 resource=resource,
-                global_guidance=source.global_guidance,
-                mcp_servers=self._mcp_recipes(source, selection.mcp_server_ids),
+                global_guidance=(
+                    (*source.global_guidance, BOT_INSTRUCTIONS, source.document.webui.bot.instructions)
+                    if acp_bot is not None
+                    else source.global_guidance
+                ),
+                mcp_servers=self._mcp_recipes(
+                    source,
+                    selection.mcp_server_ids
+                    if acp_bot is None
+                    else (source.document.defaults.mcp_servers if acp_bot.mcp_servers is None else acp_bot.mcp_servers),
+                ),
+                shell_review=shell_review,
             )
         else:
             root = self.resolve_agent(
@@ -394,7 +418,7 @@ class AgentCompositionResolver:
             *self._environment_dependencies(source, environment),
             *extension_dependencies,
         ]
-        targets = self._bot_environment_targets(source, selection) if root.source_kind == "bot" else ()
+        targets = self._bot_environment_targets(source, selection) if selection.agent_source_kind == "bot" else ()
         for target in targets:
             dependencies.extend(self._environment_dependencies(source, target.environment_profile))
         unique = {
@@ -923,7 +947,7 @@ class AgentCompositionResolver:
             )
             if not enabled
         }
-        selections = self._shell_review_selections(source, agent)
+        selections = self._shell_review_selections(source, agent.capabilities)
         for item in selections:
             if item.capability in disabled:
                 continue
@@ -1054,9 +1078,8 @@ class AgentCompositionResolver:
     def _shell_review_selections(
         self,
         source: LoadedHarnessUiConfiguration,
-        agent: AgentResource,
+        selections: tuple[CapabilitySelection, ...],
     ) -> tuple[CapabilitySelection, ...]:
-        selections = agent.capabilities
         shortcut = source.document.security.shell_review
         if not shortcut.enable:
             return selections

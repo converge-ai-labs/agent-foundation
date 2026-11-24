@@ -20,6 +20,7 @@ from a13n_harness.environment.commands import (
     CommandRequest,
     ProcessStatus,
 )
+from a13n_harness.environment.models import EnvironmentAction
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.providers.environment.direct_local.processes import _settle_task
 
@@ -59,8 +60,12 @@ class AcpRunBinding:
     review_command: Callable[[CommandRequest], Awaitable[bool]] | None = None
     on_update: Callable[[AcpUpdate], Awaitable[None] | None] | None = None
     terminal_alias: str | None = None
+    files_enabled: bool = True
+    terminals_enabled: bool = True
     host_tools: AcpHostToolScope | None = None
-    review_permission_command: Callable[[schema.ToolCallUpdate], Awaitable[bool]] | None = None
+    review_permission_command: (
+        Callable[[schema.ToolCallUpdate, tuple[schema.PermissionOption, ...]], Awaitable[str | None]] | None
+    ) = None
 
 
 @dataclass
@@ -107,6 +112,7 @@ class AcpEnvironmentClient:
         self.binding: AcpRunBinding | None = None
         self.config_options: list[ConfigOption] = []
         self._terminals: dict[str, _Terminal] = {}
+        self._tool_calls: dict[str, schema.ToolCallUpdate] = {}
         self._update_error: Exception | None = None
         self._bridge: AcpHostToolBridge | None = None
         self._environment_tasks: set[asyncio.Task[Any]] = set()
@@ -117,9 +123,10 @@ class AcpEnvironmentClient:
             raise RequestError.invalid_request({"code": "acp_run_inactive"})
         return self.binding
 
-    def _environment(self, session_id: str) -> BoundEnvironment:
-        environment = self._active(session_id).environment
-        if environment is None:
+    def _environment(self, session_id: str, *, terminal: bool = False) -> BoundEnvironment:
+        binding = self._active(session_id)
+        environment = binding.environment
+        if environment is None or not (binding.terminals_enabled if terminal else binding.files_enabled):
             raise RequestError.invalid_request({"code": "acp_environment_unavailable"})
         return environment
 
@@ -128,12 +135,12 @@ class AcpEnvironmentClient:
             return
         if isinstance(update, schema.ConfigOptionUpdate):
             self.config_options = update.config_options
-        if (
-            self._bridge is not None
-            and self.binding is not None
-            and isinstance(update, schema.ToolCallStart | schema.ToolCallProgress)
-        ):
-            self._bridge._observe(update)
+        if self.binding is not None and isinstance(update, schema.ToolCallStart | schema.ToolCallProgress):
+            if self.binding.review_permission_command is not None:
+                fields = update.model_dump(include={"tool_call_id", "title", "kind", "raw_input"}, exclude_unset=True)
+                self._tool_calls[update.tool_call_id] = self._tool_call(schema.ToolCallUpdate.model_validate(fields))
+            if self._bridge is not None:
+                self._bridge._observe(update)
         if self.binding is not None and self.binding.on_update is not None:
             try:
                 result = self.binding.on_update(update)
@@ -143,16 +150,28 @@ class AcpEnvironmentClient:
                 # SDK notification tasks cannot propagate application failure to prompt().
                 self._update_error = exc
 
+    def _tool_call(self, call: schema.ToolCallUpdate) -> schema.ToolCallUpdate:
+        prior = self._tool_calls.get(call.tool_call_id)
+        if prior is None:
+            return call
+        return call.model_copy(
+            update={
+                "kind": "execute" if "execute" in (call.kind, prior.kind) else call.kind or prior.kind,
+                "title": call.title or prior.title,
+                "raw_input": call.raw_input if "raw_input" in call.model_fields_set else prior.raw_input,
+            }
+        )
+
     async def request_permission(
         self, session_id: str, tool_call: schema.ToolCallUpdate, options: list[schema.PermissionOption], **_: Any
     ) -> schema.RequestPermissionResponse:
         binding = self._active(session_id)
 
         async def choose() -> str | None:
-            if tool_call.kind == "execute" and binding.review_permission_command is not None:
-                if not await binding.review_permission_command(tool_call):
-                    return None
-            return await binding.permission(tool_call, tuple(options)) if binding.permission else None
+            call = self._tool_call(tool_call)
+            if call.kind == "execute" and binding.review_permission_command is not None:
+                return await binding.review_permission_command(call, tuple(options))
+            return await binding.permission(call, tuple(options)) if binding.permission else None
 
         selected = await self._interact(choose(), binding)
         if selected is not None and selected in {option.option_id for option in options}:
@@ -279,19 +298,26 @@ class AcpEnvironmentClient:
         **_: Any,
     ) -> schema.CreateTerminalResponse:
         binding = self._active(session_id)
-        processes = self._environment(session_id).processes
+        environment = self._environment(session_id, terminal=True)
         request = CommandRequest(
             command=ArgvCommand(executable=command, arguments=tuple(args or ())),
             environment=CommandEnvironment(set={v.name: v.value for v in env or ()}),
             cwd=cwd,
             output_policy=_PROCESS_OUTPUT,
         )
-        if binding.review_command is not None and not await self._interact(binding.review_command(request), binding):
-            raise RequestError.invalid_request({"code": "acp_command_denied"})
+        mount_id = None
+        if binding.review_command is not None:
+            mount_id, can_start = environment._select_command_actions(
+                request, alias=binding.terminal_alias, actions=frozenset({EnvironmentAction.PROCESS_START})
+            )
+            if not can_start or not await self._interact(binding.review_command(request), binding):
+                raise RequestError.invalid_request({"code": "acp_command_denied"})
         if self.binding is not binding:
             raise RequestError.invalid_request({"code": "acp_run_inactive"})
         started, cancellation = await _settle_task(
-            asyncio.create_task(processes.start(request, alias=binding.terminal_alias))
+            asyncio.create_task(
+                environment.processes.start(request, alias=binding.terminal_alias, expected_mount_id=mount_id)
+            )
         )
         handle = started.process.handle
         terminal_id = f"terminal-{uuid4().hex}"
@@ -314,7 +340,7 @@ class AcpEnvironmentClient:
     @_scoped_environment_callback
     async def terminal_output(self, session_id: str, terminal_id: str, **_: Any) -> schema.TerminalOutputResponse:
         terminal = self._terminal(session_id, terminal_id)
-        processes = self._environment(session_id).processes
+        processes = self._environment(session_id, terminal=True).processes
         async with terminal.lock:
             while True:
                 page = await processes.read_output(
@@ -357,7 +383,7 @@ class AcpEnvironmentClient:
         self, session_id: str, terminal_id: str, **_: Any
     ) -> schema.WaitForTerminalExitResponse:
         terminal = self._terminal(session_id, terminal_id)
-        processes = self._environment(session_id).processes
+        processes = self._environment(session_id, terminal=True).processes
         while True:
             info = await processes.wait(terminal.handle, condition="initial_terminal", timeout_seconds=1)
             if (status := _exit_status(info.status)) is not None:
@@ -366,12 +392,12 @@ class AcpEnvironmentClient:
     @_scoped_environment_callback
     async def kill_terminal(self, session_id: str, terminal_id: str, **_: Any) -> None:
         terminal = self._terminal(session_id, terminal_id)
-        await self._environment(session_id).processes.kill(terminal.handle)
+        await self._environment(session_id, terminal=True).processes.kill(terminal.handle)
 
     @_scoped_environment_callback
     async def release_terminal(self, session_id: str, terminal_id: str, **_: Any) -> None:
         terminal = self._terminal(session_id, terminal_id)
-        processes = self._environment(session_id).processes
+        processes = self._environment(session_id, terminal=True).processes
         async with terminal.lock:
             if terminal_id in self._terminals:
 
@@ -386,6 +412,7 @@ class AcpEnvironmentClient:
     async def _unbind(self, binding: AcpRunBinding) -> None:
         self._revoke()
         self.binding = None
+        self._tool_calls.clear()
         await asyncio.gather(*self._interaction_tasks, *self._environment_tasks, return_exceptions=True)
         if self._bridge is not None:
             await self._bridge._unbind()

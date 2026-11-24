@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "../i18n";
 import { ModelIdentity } from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
@@ -157,6 +158,7 @@ type RunChoiceProps = ModelControlProps & {
   disabled: boolean;
   onAgentChange: (value: string) => void;
   onModelChange: (value: string | undefined) => void;
+  externalOptions?: ReactNode;
 };
 
 export function ThreadRunChoices(props: RunChoiceProps) {
@@ -180,8 +182,9 @@ export function ThreadRunChoices(props: RunChoiceProps) {
     speed === "on" || speed === "ultrafast"
       ? modelControlMessage(speedLabel(speed), t)
       : undefined;
+  const isAcp = agent?.kind === "acp_agent";
   const modelName =
-    model?.name ??
+    (isAcp ? t("External ACP agent") : model?.name) ??
     (selectedModelId
       ? t("{{name}} (unavailable)", { name: selectedModelId })
       : t("Model unavailable"));
@@ -198,9 +201,13 @@ export function ThreadRunChoices(props: RunChoiceProps) {
         triggerDescription={speedDescription}
         label={
           <span className={panelStyles.modelSummary}>
-            <ModelIdentity model={model} name={modelName} />
-            {thinking && <small>{thinking}</small>}
-            <SpeedIndicator speed={speed} />
+            {isAcp ? (
+              agent.name
+            ) : (
+              <ModelIdentity model={model} name={modelName} />
+            )}
+            {!isAcp && thinking && <small>{thinking}</small>}
+            {!isAcp && <SpeedIndicator speed={speed} />}
           </span>
         }
       >
@@ -221,6 +228,7 @@ function AgentModelChoices({
   disabled,
   onAgentChange,
   onModelChange,
+  externalOptions,
 }: RunChoiceProps) {
   const { t } = useTranslation();
   const settings = useComposerSettings()!;
@@ -306,6 +314,7 @@ function AgentModelChoices({
             disabled={disabled || !catalog}
             onClick={() => settings.navigate("agent")}
           />
+          {isAcp && externalOptions}
           {!isAcp && (
             <SettingsRow
               label={t("Model")}

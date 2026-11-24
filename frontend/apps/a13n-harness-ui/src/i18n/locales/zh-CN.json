@@ -1,4 +1,8 @@
 {
+  "Agent plan": "智能体计划",
+  "Context window: {{percent}}% used": "上下文窗口：已使用 {{percent}}%",
+  "External ACP agent": "外部 ACP 智能体",
+  "No matching options.": "没有匹配的选项。",
   "ACP connection": "ACP 连接",
   "Check the saved executable and discover its login methods.": "检查已保存的可执行文件，并获取它支持的登录方式。",
   "The configured executable was not found.": "未找到配置的可执行文件。",
@@ -2146,6 +2150,8 @@
   "Use environment": "使用环境",
   "Online - Check": "在线 - 检查",
   "Offline - Retry": "离线 - 重试",
+  "Terminal login": "终端登录",
+  "Use a terminal on the Host to sign in, then check the connection again.": "请在宿主终端登录，然后重新检查连接。",
   "Check connection": "检查连接",
   "{{name}} environment": "{{name}} 环境",
   "Edit {{name}} environment": "编辑 {{name}} 环境",

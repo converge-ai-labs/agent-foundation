@@ -30,6 +30,7 @@ export function AcpAuth({ agentId }: { agentId: string }) {
       );
     },
   });
+  const method = status?.methods?.find(({ id }) => id === methodId);
   const signingIn = auth.isPending && auth.variables?.action === "login";
   const inputs = useQuery({
     queryKey: ["acp-auth-inputs", agentId],
@@ -66,10 +67,7 @@ export function AcpAuth({ agentId }: { agentId: string }) {
         <>
           <SettingsChoice
             label={t("Login method")}
-            description={
-              status.methods.find(({ id }) => id === methodId)?.description ??
-              undefined
-            }
+            description={method?.description ?? undefined}
             value={methodId}
             disabled={auth.isPending}
             options={status.methods.map(({ id, name }) => ({
@@ -78,36 +76,48 @@ export function AcpAuth({ agentId }: { agentId: string }) {
             }))}
             onValueChange={setMethod}
           />
-          <SettingsRow label={t("Agent account")}>
+          {method?.kind === "terminal" && (
+            <>
+              <SettingsRow
+                label={t("Terminal login")}
+                description={t(
+                  "Use a terminal on the Host to sign in, then check the connection again.",
+                )}
+              >
+                <code style={{ overflowWrap: "anywhere" }}>
+                  {JSON.stringify(method.argv)}
+                </code>
+              </SettingsRow>
+              {!!method.environment_keys?.length && (
+                <SettingsRow label={t("Environment variables")}>
+                  <code>{method.environment_keys.join(", ")}</code>
+                </SettingsRow>
+              )}
+            </>
+          )}
+        </>
+      )}
+      {(method?.kind === "agent" || status?.logout_supported) && (
+        <SettingsRow label={t("Agent account")}>
+          {method?.kind === "agent" && (
             <Button
-              disabled={auth.isPending || !methodId}
+              disabled={auth.isPending}
               onClick={() =>
-                auth.mutate({ action: "login", method_id: methodId })
+                auth.mutate({ action: "login", method_id: method.id })
               }
             >
               {t("Log in")}
             </Button>
-            {status.logout_supported && (
-              <Button
-                variant="outline"
-                disabled={auth.isPending}
-                onClick={() => auth.mutate({ action: "logout" })}
-              >
-                {t("Log out")}
-              </Button>
-            )}
-          </SettingsRow>
-        </>
-      )}
-      {!status?.methods?.length && status?.logout_supported && (
-        <SettingsRow label={t("Agent account")}>
-          <Button
-            variant="outline"
-            disabled={auth.isPending}
-            onClick={() => auth.mutate({ action: "logout" })}
-          >
-            {t("Log out")}
-          </Button>
+          )}
+          {status?.logout_supported && (
+            <Button
+              variant="outline"
+              disabled={auth.isPending}
+              onClick={() => auth.mutate({ action: "logout" })}
+            >
+              {t("Log out")}
+            </Button>
+          )}
         </SettingsRow>
       )}
       <ErrorNotice error={auth.error || (signingIn ? inputs.error : null)} />

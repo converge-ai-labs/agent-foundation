@@ -6222,6 +6222,100 @@
         }
       }
     },
+    "/api/threads/{thread_id}/acp-options": {
+      "get": {
+        "summary": "Acp Options",
+        "operationId": "acp_options_api_threads__thread_id__acp_options_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AcpOption"
+                  },
+                  "title": "Response Acp Options Api Threads  Thread Id  Acp Options Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set Acp Option",
+        "operationId": "set_acp_option_api_threads__thread_id__acp_options_put",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AcpOption"
+                  },
+                  "title": "Response Set Acp Option Api Threads  Thread Id  Acp Options Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpOptionChange"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/configuration": {
       "get": {
         "summary": "Inspect Configuration",
@@ -10454,12 +10548,37 @@
               }
             ],
             "title": "Description"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "terminal"
+            ],
+            "title": "Kind"
+          },
+          "argv": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Argv",
+            "default": []
+          },
+          "environment_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Environment Keys",
+            "default": []
           }
         },
         "type": "object",
         "required": [
           "id",
-          "name"
+          "name",
+          "kind"
         ],
         "title": "AcpAuthMethod"
       },
@@ -10494,6 +10613,86 @@
           "state"
         ],
         "title": "AcpAuthStatus"
+      },
+      "AcpOption": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "title": "Value"
+          },
+          "choices": {
+            "items": {
+              "$ref": "#/components/schemas/AcpOptionValue"
+            },
+            "type": "array",
+            "title": "Choices",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "value"
+        ],
+        "title": "AcpOption"
+      },
+      "AcpOptionValue": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "name"
+        ],
+        "title": "AcpOptionValue"
       },
       "ActivitySummary": {
         "properties": {
@@ -31979,6 +32178,32 @@
           }
         },
         "title": "EnvironmentSelectionPatch",
+        "type": "object"
+      },
+      "AcpOptionChange": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "value"
+        ],
+        "title": "AcpOptionChange",
         "type": "object"
       },
       "ThreadConfigurationPatch": {

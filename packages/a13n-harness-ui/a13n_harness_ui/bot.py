@@ -156,7 +156,7 @@ class BotController:
         return BotSnapshot(
             state=await self._store.bot.state(),
             thread=detail.thread if detail is not None else None,
-            available=self._owned and model_id is not None,
+            available=self._owned and source is not None and (model_id is not None or source.bot_acp_agent is not None),
             enabled=policy.enabled,
             agent_id=source.bot_agent_id if source is not None else None,
             model_id=model_id,
@@ -515,7 +515,12 @@ class BotController:
 
     async def _can_deliver(self) -> bool:
         source = await self._configurations.current()
-        return bool(self._owned and source is not None and source.document.webui.bot.enabled and source.bot_model_id)
+        return bool(
+            self._owned
+            and source is not None
+            and source.document.webui.bot.enabled
+            and (source.bot_model_id or source.bot_acp_agent is not None)
+        )
 
     async def reconcile_policy(self, *, now: datetime | None = None) -> None:
         if self._owned:

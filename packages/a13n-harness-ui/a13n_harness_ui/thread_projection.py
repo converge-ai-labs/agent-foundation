@@ -496,10 +496,14 @@ class ThreadProjectionService:
             ),
             None,
         )
-        if position is None:
-            return header.source_id, None
+        # ACP host tools without a unique peer call ID use the Run's input identity.
         turns = await self._store.inspections.turns(
-            thread_id, header.source_id, lower=position, upper=position + 1, limit=1
+            thread_id,
+            header.source_id,
+            lower=position,
+            upper=None if position is None else position + 1,
+            turn_id=tool_call_id if position is None else None,
+            limit=1,
         )
         return header.source_id, TranscriptTurn.model_validate_json(turns[0]).turn_id if turns else None
 

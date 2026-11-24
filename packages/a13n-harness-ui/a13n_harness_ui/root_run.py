@@ -600,7 +600,11 @@ class RootRunCoordinator:
                     state=RootActivityState.running,
                     receipt_id=operation.receipt.receipt_id,
                     run_id=operation.run_id,
-                    available_actions=("wait",) if operation.observation_only else ("wait", "steer", "cancel"),
+                    available_actions=("wait",)
+                    if operation.observation_only
+                    else ("wait", "steer", "cancel")
+                    if operation.acp_turn is None or operation.acp_turn.supports_steering
+                    else ("wait", "cancel"),
                 )
         return result
 
@@ -661,27 +665,17 @@ class RootRunCoordinator:
 
         try:
             acp_turn = operation.acp_turn
-            prepared = (
-                await input_files.prepare(message, stream.context.environment)
-                if input_files is not None and acp_turn is None
-                else message
-            )
+            prepared = await input_files.prepare(message, stream.context.environment) if input_files else message
             if self._restart is not None:
                 self._restart.require_input()
             if authorize is not None:
                 await authorize()
             if acp_turn is not None:
-                parts = [item.value for item in content_items(prepared)]
-                if not parts or any(not isinstance(part, str | TextContent) for part in parts):
+                parts = content_items(prepared)
+                if not parts or any(not isinstance(part.value, str | TextContent) for part in parts):
                     return RootControlResult(receipt_id=receipt_id, accepted=False)
                 check_active()
-                delivery = await acp_turn.steer(
-                    "\n".join(
-                        part.content if isinstance(part, TextContent) else part
-                        for part in parts
-                        if isinstance(part, str | TextContent)
-                    )
-                )
+                delivery = await acp_turn.steer("\n".join(acp_turn.prompt_text(part) for part in parts))
                 if delivery != "accepted":
                     return RootControlResult(receipt_id=receipt_id, accepted=False)
                 enqueue_id = None

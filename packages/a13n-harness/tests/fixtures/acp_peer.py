@@ -23,6 +23,17 @@ RESIDENT_ONLY = MODE == "ui" and "resident" in sys.argv[2:]
 CATALOG = ["identify", "ask_user_question"] if "questions" in sys.argv[2:] else ["identify"]
 STEERING = not RESIDENT_ONLY and MODE not in {"load", "new-no-system"}
 PENDING = None
+ADDITIONAL = ()
+CONFIG_OPTIONS = [
+    dict(
+        id="mode",
+        name="Session mode",
+        category="mode",
+        type="select",
+        currentValue="chat",
+        options=[dict(value="chat", name="Chat"), dict(value="plan", name="Plan")],
+    )
+]
 MCP = None
 TERMINAL = None
 
@@ -31,8 +42,8 @@ def send(**data):
     print(json.dumps({"jsonrpc": "2.0", **data}), flush=True)
 
 
-def update(kind, **fields):
-    send(method="session/update", params={"sessionId": SESSION, "update": {"sessionUpdate": kind, **fields}})
+def update(update_type, **fields):
+    send(method="session/update", params={"sessionId": SESSION, "update": {"sessionUpdate": update_type, **fields}})
 
 
 def text(value):
@@ -55,6 +66,20 @@ def result(method, /, **params):
 
 def session_call(method, **params):
     return result(method, sessionId=SESSION, **params)
+
+
+def file_content(message):
+    lines = message.splitlines()
+    path = next(
+        line.removeprefix("File path for ACP readers: ")
+        for line in lines
+        if line.startswith("File path for ACP readers: ")
+    )
+    assert any(os.path.commonpath((directory, path)) == directory for directory in ADDITIONAL), ADDITIONAL
+    content = session_call("fs/read_text_file", path=path)["content"]
+    with open(path, encoding="utf-8") as file:
+        assert file.read() == content
+    return content
 
 
 def mcp(method, params=None, *, notification=False, expect_error=False, **meta):
@@ -84,6 +109,7 @@ def mcp(method, params=None, *, notification=False, expect_error=False, **meta):
         if notification:
             return None
         answer = json.loads(TERMINAL.stdout.readline())
+    assert ("error" if expect_error else "result") in answer, answer
     return answer["error"] if expect_error else answer["result"]
 
 
@@ -103,7 +129,19 @@ for line in sys.stdin:
             result={
                 "protocolVersion": 1,
                 "agentCapabilities": caps,
-                "authMethods": [{"id": "browser", "name": "Browser login"}] if MODE == "auth" else [],
+                "authMethods": [
+                    {"id": "browser", "name": "Browser login"},
+                    {
+                        "id": "terminal",
+                        "name": "Terminal login",
+                        "type": "terminal",
+                        "args": ["--login"],
+                        "env": {"FIXTURE_LOGIN": "fixture-secret"},
+                    },
+                    {"id": "unknown", "name": "Unknown flow", "type": "env"},
+                ]
+                if MODE == "auth"
+                else [],
                 "_meta": {"dev.a13n.harness-ui": {"version": 1}} if STEERING else {},
             },
         )
@@ -124,6 +162,7 @@ for line in sys.stdin:
     elif MODE == "auth" and method == "logout":
         send(id=ident, result={})
     elif method in {"session/new", "session/load", "session/resume"}:
+        ADDITIONAL = params.get("additionalDirectories", ())
         assert (method == "session/load") == (MODE == "load")
         if STEERING and MODE != "ui":
             assert params["systemPrompt"] == {"mode": "append", "content": [{"type": "text", "text": "guide"}]}
@@ -147,7 +186,14 @@ for line in sys.stdin:
             if MODE != "ui":
                 assert set(catalog) == set(CATALOG)
             assert mcp("tools/call", {"name": "identify"}, expect_error=True)["data"]["code"] == "acp_run_inactive"
-        send(id=ident, result={"sessionId": SESSION} if method == "session/new" else {})
+        response = {"sessionId": SESSION} if method == "session/new" else {}
+        if MODE == "ui":
+            response["configOptions"] = CONFIG_OPTIONS
+        send(id=ident, result=response)
+    elif method == "session/set_config_option" and MODE == "ui":
+        assert params["configId"] == "mode" and params["value"] in {"chat", "plan"}, params
+        CONFIG_OPTIONS[0]["currentValue"] = params["value"]
+        send(id=ident, result={"configOptions": CONFIG_OPTIONS})
     elif method == "_fixture/discover":
         assert {entry["name"] for entry in mcp("tools/list")["tools"]} == set(CATALOG)
         assert mcp("tools/call", {"name": "identify"}, expect_error=True)["data"]["code"] == "acp_run_inactive"
@@ -175,6 +221,35 @@ for line in sys.stdin:
             continue
         if MODE == "ui" and "acp_compaction" in message:
             text("Audit complete.\n[GOAL_COMPLETE]")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and "files" in sys.argv[2:]:
+            contents = [file_content(block) for block in blocks if "File path for ACP readers:" in block]
+            assert contents == ["initial line\n" * 80, "name,value\nexample,42\n"], contents
+            text("Files read")
+            PENDING = ident
+            continue
+        if MODE == "ui" and message in {"inbox exact", "inbox fallback"}:
+            if message == "inbox exact":
+                update("tool_call", toolCallId="inbox-exact", title="Post update", name="harness-host/post_to_inbox")
+            posted = mcp(
+                "tools/call",
+                {"name": "post_to_inbox", "arguments": {"kind": "result", "title": message, "message": "Saved."}},
+            )
+            assert not posted["isError"], posted
+            if message == "inbox exact":
+                update("tool_call_update", toolCallId="inbox-exact", status="completed")
+        if MODE == "ui" and message == "Show the workspace review plan":
+            update(
+                "plan",
+                entries=[
+                    {"content": "Inspect the workspace", "priority": "high", "status": "completed"},
+                    {"content": "Review changed files", "priority": "high", "status": "in_progress"},
+                    {"content": "Summarize findings", "priority": "medium", "status": "pending"},
+                ],
+            )
+            update("usage_update", used=4096, size=32768)
+            text("I inspected the workspace. Next I will review the changed files and summarize the findings.")
             send(id=ident, result={"stopReason": "end_turn"})
             continue
         if MODE == "ui" and message == "silence":
@@ -225,6 +300,30 @@ for line in sys.stdin:
                 },
             )
             continue
+        if MODE == "ui" and message == "worker task":
+            catalog = {entry["name"] for entry in mcp("tools/list")["tools"]}
+            assert (
+                "send_thread_message" in catalog and "create_worker" not in catalog and "post_to_inbox" not in catalog
+            )
+        if MODE == "ui" and message == "review callbacks":
+            options = [{"name": "Allow", "optionId": "allow", "kind": "allow_once"}]
+            update(
+                "tool_call", toolCallId="review-execute", title="Test", kind="execute", rawInput={"command": "denied"}
+            )
+            outcome = session_call(
+                "session/request_permission",
+                toolCall={"toolCallId": "review-execute"},
+                options=options,
+            )
+            assert outcome["outcome"]["outcome"] == "cancelled", outcome
+            denied = callback("terminal/create", sessionId=SESSION, command="denied")
+            assert denied["error"]["data"]["code"] == "acp_command_denied", denied
+            terminal = session_call("terminal/create", command=sys.executable, args=["-c", "print('reviewed')"])[
+                "terminalId"
+            ]
+            assert session_call("terminal/wait_for_exit", terminalId=terminal)["exitCode"] == 0
+            assert "reviewed" in session_call("terminal/output", terminalId=terminal)["output"]
+            session_call("terminal/release", terminalId=terminal)
         if message == "callbacks":
             path = "/workspace/sample.txt"
             session_call("fs/write_text_file", path=path, content="one\ntwo\nthree\n")
@@ -267,7 +366,14 @@ for line in sys.stdin:
         send(id=ident, result={"stopReason": "end_turn"})
     elif method == "_a13n/steer":
         assert PENDING is not None
-        send(id=ident, result={"delivery": "accepted"})
+        if "files" in sys.argv[2:]:
+            assert file_content(params["text"]) == "steered line\n" * 80
+            send(id=ident, result={"delivery": "accepted"})
+            text("Steering file read")
+            send(id=PENDING, result={"stopReason": "end_turn"})
+            PENDING = None
+        else:
+            send(id=ident, result={"delivery": "accepted"})
     elif method == "session/cancel":
         if PENDING is not None:
             send(id=PENDING, result={"stopReason": "cancelled"})

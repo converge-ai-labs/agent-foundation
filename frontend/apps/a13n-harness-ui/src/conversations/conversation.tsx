@@ -49,6 +49,7 @@ import {
 import { ComposerStatus } from "./composer-status";
 import { currentGoal } from "./goal-status";
 import { RunActivity } from "./run-activity";
+import { AcpOptions } from "./acp-options";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
 import { McpInputs, useMcpInputRequests } from "./mcp-inputs";
@@ -1224,6 +1225,9 @@ function ConversationContent({
             autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
             activity={thread?.root_activity ?? { state: "inactive" }}
+            externalAgent={
+              thread?.configuration.agent_source.kind === "acp_agent"
+            }
             owner={
               !guest && ownerId
                 ? {
@@ -1311,6 +1315,13 @@ function ConversationContent({
                     agentSelection.isPending ||
                     draft.submission.kind === "pending" ||
                     draft.submission.kind === "unknown"
+                  }
+                  externalOptions={
+                    <AcpOptions
+                      threadId={threadId}
+                      active={thread?.root_activity?.state !== "inactive"}
+                      continuation={detail.data?.continuation_id}
+                    />
                   }
                   onAgentChange={(value) => agentSelection.mutate(value)}
                   onModelChange={runChoices.onModelChange}

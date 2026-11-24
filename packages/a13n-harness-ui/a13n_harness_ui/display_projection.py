@@ -77,6 +77,8 @@ def _parts(item: Item) -> list[dict[str, Any]]:
         return parts
     name = content.get("name")
     value = content.get("value")
+    if name in {"a13n.acp.plan", "a13n.acp.usage"}:
+        return [{"kind": "other", "value": value, "metadata": {"a13n.acp.observation": name}}]
     event = value.get("event") if isinstance(value, dict) else None
     if not isinstance(event, dict):
         return []
@@ -230,12 +232,20 @@ def display_turns(display: DisplayHistory) -> tuple[TranscriptTurn, ...]:
     for index, (start, first) in enumerate(inputs):
         end = inputs[index + 1][0] if index + 1 < len(inputs) else len(rows)
         section = rows[start:end]
-        closing = section[-1]
+        closing_position = next(
+            (
+                position
+                for position in range(end - 1, start, -1)
+                if not all((part.get("metadata") or {}).get("a13n.acp.observation") for part in rows[position].parts)
+            ),
+            start,
+        )
+        closing = rows[closing_position]
         # A completion belongs to the closing row, not an earlier answer that
         # was subsequently resumed or followed by steering.
-        final = end - 1 if any(item.id in display.completed for item in closing.items) else None
+        final = closing_position if any(item.id in display.completed for item in closing.items) else None
         output = (
-            end - 1
+            closing_position
             if (
                 any(
                     part["kind"] == "assistant"

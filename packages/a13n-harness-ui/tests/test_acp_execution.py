@@ -13,7 +13,7 @@ from a13n_harness.acp import AcpSessionSetup
 from a13n_harness.context import AgentContext
 from a13n_harness_ui.acp_auth import AcpAuthRequest, acp_auth, auth_input_scope
 from a13n_harness_ui.acp_execution import AcpTurn
-from a13n_harness_ui.acp_sessions import AcpSessions, local_transport
+from a13n_harness_ui.acp_sessions import AcpOptionChange, AcpSessions, local_transport
 from a13n_harness_ui.configuration.models import AcpAgentResource
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputResponse
@@ -57,7 +57,13 @@ async def test_acp_auth_probe_and_browser_login(tmp_path: Path) -> None:
     missing = resource.model_copy(update={"command": str(tmp_path / "missing")})
     assert (await acp_auth(missing, tmp_path, AcpAuthRequest(action="probe"), inputs)).state == "executable_missing"
     status = await acp_auth(resource, tmp_path, AcpAuthRequest(action="probe"), inputs)
-    assert status.state == "available" and status.methods[0].id == "browser" and status.logout_supported
+    assert status.state == "available" and status.logout_supported
+    browser, terminal = status.methods
+    assert browser.id == "browser" and browser.kind == "agent"
+    assert terminal.kind == "terminal" and terminal.argv == (sys.executable, str(_PEER), "auth", "--login")
+    assert terminal.environment_keys == ("FIXTURE_LOGIN",) and "fixture-secret" not in status.model_dump_json()
+    with pytest.raises(HarnessUiError, match="protocol login method"):
+        await acp_auth(resource, tmp_path, AcpAuthRequest(action="login", method_id="terminal"), inputs)
     try:
         async with asyncio.TaskGroup() as group:
             login = group.create_task(
@@ -260,3 +266,116 @@ async def test_acp_thread_without_native_model_runs_and_saves_display(tmp_path: 
         resume = await app.submit_thread(thread_id=stopped_thread.thread_id, prompt="again")
         assert (await app.wait_root_operation(resume.receipt_id)).status is RootOperationStatus.completed
         assert (await app.get_thread(stopped_thread.thread_id)).thread.excerpt.latest_reply == "done:again"
+
+
+@pytest.mark.parametrize("flow", ["files", "inbox"])
+async def test_acp_host_inputs_and_inbox_links(tmp_path: Path, flow: str) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from a13n_harness_ui.thread_files import AttachmentUpload
+
+    root = tmp_path / "a13n-harness-ui.yaml"
+    root.write_text('schema_version: "1"\ndefaults:\n  agent: acp-fixture\ninput:\n  long_text_threshold_chars: 512\n')
+    directory = tmp_path / "acp_agents"
+    directory.mkdir()
+    resource = _resource().model_copy(update={"args": (str(_PEER), "ui", flow)})
+    (directory / "fixture.yaml").write_text(resource.model_dump_json(exclude_none=True))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
+        configuration_path=root,
+        host_mode="webui",
+    ) as app:
+        thread = await app.create_thread()
+        if flow == "files":
+            attachment = await app.stage_thread_attachment(
+                thread_id=thread.thread_id,
+                upload=AttachmentUpload("sample.csv", b"name,value\nexample,42\n", "text/csv"),
+            )
+            async with app.live_events(root_thread_id=thread.thread_id) as live:
+                receipt = await app.submit_thread(
+                    thread_id=thread.thread_id, prompt="initial line\n" * 80, attachment_ids=(attachment.attachment_id,)
+                )
+                async with asyncio.timeout(15):
+                    while "Files read" not in str((await live.receive()).payload):
+                        pass
+                steer = await app.steer_root_operation(receipt_id=receipt.receipt_id, message="steered line\n" * 80)
+                assert steer.accepted
+                outcome = await app.wait_root_operation(receipt.receipt_id)
+                assert outcome.status is RootOperationStatus.completed, outcome.failure
+            assert (
+                await app.get_thread(thread.thread_id)
+            ).thread.excerpt.latest_reply == "Files readSteering file read"
+        else:
+            for prompt in ("inbox exact", "inbox fallback"):
+                receipt = await app.submit_thread(thread_id=thread.thread_id, prompt=prompt)
+                outcome = await app.wait_root_operation(receipt.receipt_id)
+                assert outcome.status is RootOperationStatus.completed, outcome.failure
+            options = await app.acp_options(thread.thread_id)
+            assert [(item.id, item.value) for item in options] == [("mode", "chat")]
+            changed = await app.acp_options(thread.thread_id, AcpOptionChange(id="mode", value="plan"))
+            assert changed[0].value == "plan"
+            history = await app.get_thread_transcript(thread_id=thread.thread_id)
+            items = (await app.inbox().page(state="open", before=None, limit=10)).items
+            assert len(items) == len(history.turns) == 2
+            assert items[1].tool_call_id == "inbox-exact"
+            assert items[0].tool_call_id == history.turns[1].turn_id
+            for item, turn in zip(reversed(items), history.turns, strict=True):
+                location = await app.inbox().location(item.item_id)
+                assert (location.continuation_id, location.turn_id) == (history.continuation_id, turn.turn_id)
+
+
+async def test_acp_shell_review_on_app_callbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import json
+
+    from a13n_harness.capabilities.tool_review import (
+        AgentToolReviewer,
+        ToolReviewAssessment,
+        ToolReviewRequest,
+        ToolReviewResult,
+    )
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from pydantic_ai.models.test import TestModel
+
+    reviewed: list[ToolReviewRequest] = []
+
+    async def review(self, request: ToolReviewRequest, **_: Any) -> ToolReviewResult:
+        reviewed.append(request)
+        risk = "high" if request.arguments["command"] == ["denied"] else "low"
+        return ToolReviewResult(assessment=ToolReviewAssessment(risk=risk, reason="Fixture assessment"))
+
+    async def resolve(self, model_id: str, **_: Any) -> TestModel:
+        return TestModel()
+
+    monkeypatch.setattr(AgentToolReviewer, "review", review)
+    monkeypatch.setattr(HarnessUiModelResolver, "resolve", resolve)
+    root = tmp_path / "a13n-harness-ui.yaml"
+    root.write_text(
+        'schema_version: "1"\ndefaults:\n  agent: acp-fixture\nsecurity:\n  shell_review:\n'
+        "    enable: true\n    model: model-review\n    risk_threshold: high\n    on_flagged: deny\n"
+    )
+    directory = tmp_path / "acp_agents"
+    directory.mkdir()
+    resource = _resource().model_copy(update={"args": (str(_PEER), "ui")})
+    (directory / "fixture.yaml").write_text(json.dumps(resource.model_dump(mode="json", exclude_none=True)))
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "review.yaml").write_text(
+        'schema_version: "1"\nkind: model\nid: model-review\nname: Review\nroute: openai:gpt-5\n'
+        "authentication: {kind: api_key, env: FIXTURE_REVIEW_KEY}\n"
+    )
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="review callbacks")
+        async with asyncio.timeout(15):
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status is RootOperationStatus.completed, outcome.failure
+        assert len(reviewed) == 3
+        assert reviewed[0].tool_call_id == "review-execute"
+        assert len({request.tool_call_id for request in reviewed}) == 3
+        assert all(request.source is None for request in reviewed)
+        assert reviewed[2].arguments["command"] == [sys.executable, "-c", "print('reviewed')"]

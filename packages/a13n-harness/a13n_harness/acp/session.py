@@ -82,8 +82,9 @@ class _SessionWire:
                 if isinstance(methods, list):
                     # An omitted type means agent; the SDK's union otherwise selects terminal first.
                     methods = [
-                        {"type": "agent", **method} if isinstance(method, dict) and "type" not in method else method
+                        {"type": "agent", **method}
                         for method in methods
+                        if isinstance(method, dict) and method.get("type", "agent") in ("agent", "terminal")
                     ]
                     message = {**message, "result": {**result, "authMethods": methods}}
         return message
@@ -313,9 +314,10 @@ class AcpSessionRuntime:
             return response
         except asyncio.CancelledError:
             self.client._revoke()
-            with suppress(ConnectionError, TimeoutError):
-                async with asyncio.timeout(2):
-                    await self.connection.cancel(session_id)
+            if not self._stopping:
+                with suppress(ConnectionError, TimeoutError):
+                    async with asyncio.timeout(2):
+                        await self.connection.cancel(session_id)
             # Join admitted callbacks before SDK shutdown can cancel their cleanup again.
             self._broken = True
             raise
@@ -335,6 +337,10 @@ class AcpSessionRuntime:
         self.client._revoke()
         await self.connection.cancel(self.session_id)
         return True
+
+    @property
+    def supports_steering(self) -> bool:
+        return self._a13n_steering
 
     async def steer(self, text: str) -> SteeringOutcome:
         if self._turn is None or self._stopping or self.session_id is None:

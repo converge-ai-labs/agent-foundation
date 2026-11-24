@@ -34,7 +34,7 @@ class _DirectLocalFilePolicy:
 
 @dataclass(frozen=True, slots=True)
 class _DirectLocalProcessPolicy:
-    allowed_executables: frozenset[Path]
+    allowed_executables: frozenset[Path] | None
     allowed_environment_keys: frozenset[str] | None
     inherit_environment: bool
     max_concurrent_processes: int
@@ -107,7 +107,9 @@ def _operation_error(message: str, code: str):
 def _descriptor(
     configuration: DirectLocalEnvironmentConfiguration, generation: str, *, backing_identity: str | None = None
 ) -> EnvironmentDescriptor:
-    process_enabled = bool(configuration.allowed_executables or configuration.shell_profiles)
+    process_enabled = configuration.allowed_executables is None or bool(
+        configuration.allowed_executables or configuration.shell_profiles
+    )
     permissions = set(FILE_ACTIONS)
     families: set[EnvironmentOperationFamily] = {"files"}
     if process_enabled:
