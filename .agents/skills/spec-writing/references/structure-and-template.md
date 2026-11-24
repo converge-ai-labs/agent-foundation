@@ -65,10 +65,12 @@ Failure, compatibility, security, trade-off, and lifecycle sections are conditio
 
 ## Navigation and Terminology
 
-Link a foreign concept to its owner on first material use, using a relative Markdown link and a section anchor where helpful. Summaries may state a conclusion but must not duplicate a schema, state machine, or field table.
+Link a foreign concept to its owner on first material use, using a relative Markdown link and a section anchor where helpful. Summaries may state a conclusion and local binding rules, but must not duplicate an owner's schema, state machine, header format, or field table.
 
-Update incoming links, catalogs, and reading paths when ownership or filenames change. A complete catalog lists every owned document; label a selective entry list as selective.
+Keep paragraphs focused on a single concern (typically 2–4 sentences). When an update adds distinct controls, states, or edge cases to an existing section, introduce a subsection, bullet list, or table instead of appending onto an existing paragraph. When one rule spans many surfaces, state the general rule and its exceptions once.
 
-Preserve exact spelling/capitalization of named contracts. Define overloaded terms before use and use `must` for a genuine invariant or compatibility requirement. Separate identity from authority, routing from authorization, observation from commitment, and acceptance from delivery.
+Update incoming links, catalogs, and reading paths when ownership or filenames change. Preserve existing heading anchors referenced by other documents when reorganizing prose. A complete catalog lists every owned document; label a selective entry list as selective.
+
+Preserve exact spelling/capitalization of named contracts. Define overloaded terms before use and use `must` for a genuine invariant or compatibility requirement. Express separations between identity and authority, routing and authorization, observation and commitment, and acceptance and delivery through ownership tables, state transitions, and direct rules rather than repeating negative disclaimers in every paragraph.
 
 Apply the consistency and validation checks in [SKILL.md](../SKILL.md) after restructuring.

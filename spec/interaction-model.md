@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Agent Foundation uses four shared public interaction concepts: `Session`, `Thread`, `Run`, and `Item`. They describe Host-owned interaction scope, independently advancing Agent history, accepted advancement, and user-visible semantic output. Subsystems use these names consistently instead of defining competing session, lineage, conversation, or execution hierarchies.
+Agent Foundation uses four shared public interaction concepts: `Session`, `Thread`, `Run`, and `Item`. They define Host-owned interaction scope, independently advancing Agent history, accepted advancement, and user-visible semantic output across all subsystems.
 
 This contract owns the cross-platform meaning and relationships of the four concepts. Each Host owns its concrete persistence schema and lifecycle transitions. Process-local Harness execution remains separate from a Host's durable Run and worker-attempt contracts.
 
@@ -62,9 +62,9 @@ A Run can span zero or more process-local Harness Runs, including Host-owned wai
 
 ## Invariants
 
-1. Session scope groups hosted Threads but never substitutes for Thread continuation identity.
-2. Thread identity follows independently advancing continuation state, not a workload instance, process, provider session, or execution attempt.
-3. Run identity records Host acceptance and completion, not merely entry into process-local execution.
-4. Item identity names semantic user-visible content, not a generic stream envelope or transport event.
-5. Forking creates a new Thread with an explicit source reference and never advances the source Thread; the Host defines the Session the fork belongs to.
-6. Public schemas use explicit `session_id`, `thread_id`, `run_id`, and `item_id` fields where those concepts apply rather than an ambiguous combined reference.
+1. Session scope groups hosted Threads and is separate from Thread continuation identity.
+2. Thread identity tracks independently advancing continuation state, independent of workload instances, processes, provider sessions, or execution attempts.
+3. Run identity records Host acceptance and completion.
+4. Item identity names semantic user-visible content within a Run.
+5. Forking creates a new Thread with an explicit source reference without advancing the source Thread; the Host assigns the fork's Session.
+6. Public schemas use explicit `session_id`, `thread_id`, `run_id`, and `item_id` fields.

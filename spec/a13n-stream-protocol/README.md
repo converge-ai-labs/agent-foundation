@@ -4,7 +4,7 @@
 
 This directory defines the shared Agent User Interaction Protocol observation boundary distributed as `a13n-stream-protocol`. The package converts Harness observations to standard AG-UI events where a direct mapping exists and to a namespaced `CUSTOM` event otherwise. It also owns resumable normalization of raw events and compact checkpoints, including active accumulated content and parsing continuation; Hosts own durable selection, paging and transport recovery.
 
-One process-local observer binds to one Harness Run, can apply an optional Host processor, accumulates the resulting events in order, and can atomically reconstruct a fresh instance from a finite Host-supplied public source history. It is not a scheduler, lifecycle authority, Session store, durable event log, durable replay system, transport, browser SDK, or second Agent runtime.
+One process-local observer binds to one Harness Run, optionally applies a Host processor, accumulates resulting events in order, and atomically reconstructs a fresh instance from a finite Host-supplied public source history. Scheduling, lifecycle authority, storage, durable replay, transport, and rendering remain Host-owned.
 
 ## Document Catalog
 

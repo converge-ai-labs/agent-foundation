@@ -48,7 +48,7 @@ Every independently addressable Foundation-owned object has one stable opaque id
 - An identifier encodes no organization, region, time, ordering, parentage, storage, or routing information.
 - Possession or recognition of an identifier grants no authority.
 
-Service Python code uses one shared object-ID generator rather than reimplementing prefix validation, alphabet selection, or randomness. Independently embeddable libraries and other languages follow the same observable format when they are responsible for creating Foundation-owned objects; they do not depend on the Service allocator. Consumers treat IDs as opaque strings and do not derive behavior from their prefix, separator, or suffix.
+Service Python code uses one shared object-ID generator for prefix validation, alphabet selection, and randomness. Embeddable libraries and other languages follow the same observable format independently of the Service allocator. Consumers treat IDs as opaque strings.
 
 Thread IDs use `thread_` plus 32 lowercase hexadecimal characters. The Service allocates 128 random bits; the embeddable Harness and Harness UI use the hexadecimal form of a UUID4. The Harness and Harness UI also accept `thread-` plus 32 lowercase hexadecimal characters wherever they accept a Thread ID, including persisted state, client-supplied identity and browser drafts, and never rewrite Thread IDs, references or `threads/<thread-id>/` directories. The Service accepts only its own object ID form.
 
@@ -93,38 +93,24 @@ A revisioned Foundation resource has one stable object ID, a mutable head and im
 - A publication whose canonical content equals the current default Revision is a no-op: it returns that Revision and changes neither the head nor its `ETag`.
 - Selecting a retained Revision as the default repoints the head under its `ETag`; it appends no Revision.
 - `(resource_id, number)` is unique, positive, monotonically increasing, and never reused.
-- Durable work records an exact Revision ID or a complete owner-defined snapshot. It never resolves an unqualified `latest` during execution or recovery.
-- Absence is represented explicitly rather than by number `0`.
+- Durable work records an exact Revision ID or an owner-defined snapshot (never unqualified `latest` during execution or recovery).
+- Absence is represented explicitly (`null`/omitted), never by number `0`.
 
-Revision content contains every value whose change must affect durable selection, reconstruction, or historical interpretation. The resource head contains stable identity, user-facing metadata, administrative availability, archival or deletion facts, audit actors, timestamps, `version`, and `default_revision_id`; it does not duplicate mutable Revision content. A metadata-only mutation creates no Revision.
+Revision content holds every value affecting durable selection, reconstruction, or historical interpretation. The resource head holds stable identity, metadata, availability, archival/deletion facts, audit actors, timestamps, `version`, and `default_revision_id`. Metadata-only updates leave Revisions unchanged.
 
-Every change to the head advances its `version`, and every conditional mutation, publication included, presents the strong `ETag` derived from it in `If-Match`. One mechanism therefore orders all mutations of a resource; the tag is concurrency evidence rather than an addressable version or revision. Idempotent replay is resolved before the precondition is evaluated.
+Every head change advances `version`, and every conditional mutation (including publication) sends the strong `ETag` in `If-Match`. Idempotent replay resolves before precondition evaluation.
 
-A revisioned model has exactly two version axes: the head's `version` and the Revision `number`. Other Foundation models use `version` for their primary version axis and do not expose a parallel counter for the same fact. A model with multiple independent version axes qualifies the secondary names just enough to distinguish them. Mutable representations that do not need an addressable or domain-significant version use a strong ETag. Database migrations, protocols, artifacts, packages, and external systems retain their owner-defined compatibility or release semantics.
-
-Sequences, ordinals, offsets, generations, and fences retain their distinct meanings and are not renamed to versions merely because they are numeric. A generation change or fence advance does not create a new domain-object version unless the owning contract commits a corresponding material change.
-
-Package releases, protocol major/minor identities, Git or artifact revisions, and upstream or provider codec versions follow their owning compatibility contracts. They do not become integer domain-object versions by crossing a Foundation boundary.
+A revisioned model has two version axes: head `version` and Revision `number`. Other models use `version` for their single version axis, qualifying secondary axes only when distinct axes coexist. Mutable representations without addressable history use a strong `ETag`. Sequences, ordinals, offsets, generations, fences, migrations, protocols, and package releases retain their own owner-defined semantics.
 
 ## Public and Internal Naming
 
-Public APIs and SDKs use concise domain language such as `id`, `model`, `agent`, and `provider`. They do not expose internal suffixes merely to restate meaning already established by the resource, operation, or type.
+Public APIs and SDKs use concise domain names (`id`, `model`, `agent`, `provider`). The primary user-visible name of a managed resource is `name`; a distinct technical selector is `key`; `display_name` is used only where an external or compatibility contract requires it. Qualified names (`distribution_name`, `model_name`, `provider_key`) keep their owning semantics.
 
-The primary user-visible name of a managed resource is `name`, and a distinct technical selector is `key`. `display_name` is reserved for fields whose owning external or compatibility contract establishes that exact term. Qualified names such as `distribution_name`, `model_name`, and `provider_key` retain their owning semantics.
+Internal models use explicit names and typed references when multiple identities coexist (for example, `AgentId`, `AgentRevisionId`, and provider model identity). Type names state the concept without repeating repository, distribution, or module ownership (`Foundation`, `Service`, `Managed`, `Workspace`) unless two distinct concepts coexist at the same boundary (such as `Scope` beside `WorkspaceScope`).
 
-Internal domain, persistence, event, and adapter models use more explicit names when several identities or selection domains would otherwise be ambiguous, for example an Agent ID and AgentRevision ID beside a provider model identity. Typed values such as an AgentRevision reference or model selector carry semantics that a bare string and naming convention cannot.
+Where configured Providers are resources, each has its own `id` while `type` selects one trusted implementation family (multiple Providers may share a `type` with independent config, credentials, and lifecycle). Each Provider `type` owns the typed model for its non-secret `configuration` and authoritative validation; credentials are described separately and never enter configuration or read projections. Each domain (Model, Connector, Environment, Memory) defines its own Provider contract.
 
-A type name states the concept rather than its repository, distribution, or module owner. It does not repeat qualifiers such as `Foundation`, `Service`, `Managed`, or `Workspace` when the surrounding namespace and fields already establish that context. A qualifier is retained only when two real concepts coexist at the same boundary, such as an organization or workspace `Scope` beside a `WorkspaceScope` that always names a workspace. Likewise, `managed` belongs in a type name only when the same boundary also exposes a distinct unmanaged form.
-
-Where a domain exposes configured Providers as resources, each has its own `id`, while its `type` selects one trusted implementation family. Several Providers can have the same `type` while retaining independent configuration, credentials, names, ownership, and lifecycle. A field named `provider_id` identifies one configured Provider, while a Provider's own `type` is never presented as that resource's identity. On this resource boundary, `kind` is an optional object-category discriminator and does not select a Provider implementation.
-
-Each Provider type owns the strongly typed model for its non-secret `configuration`. The same implementation-owned model supplies safe configuration metadata for management surfaces and performs authoritative parsing and validation. Credential requirements are described separately, and credential values never enter ordinary configuration, configuration schemas, or read projections. Configuration validation is deterministic and distinct from testing credentials, endpoints, or upstream availability.
-
-These naming and configuration conventions do not create a universal Provider resource, base class, registry, credential model, discovery operation, or lifecycle. Model, Connector, Environment, Memory, and other domains define their own Provider contracts when they have one; common management projections or helpers are added only for a concrete shared consumer.
-
-Suffixes have stable domain meanings. `Revision` is an immutable member of a resource lineage; `Snapshot` is a frozen capture outside that lineage; `Request` is caller-supplied input; `Selection` records a choice; `Lock` freezes an exact dependency; `Ref` identifies without granting authority; `State` describes an owner's condition; `Event` records an occurrence; and `Receipt` is bounded evidence of an accepted or committed operation. A suffix is not added merely to make a local name sound more explicit.
-
-The public boundary validates and normalizes input once. Internal code consumes the resulting typed meaning instead of repeatedly inferring whether a string is an object ID, symbolic selection, external identity, scoped reference, or secret. No universal field-suffix rule overrides clarity at either boundary.
+Domain suffixes carry stable meanings: `Revision` (immutable lineage member), `Snapshot` (frozen capture outside a lineage), `Request` (caller input), `Selection` (choice), `Lock` (frozen dependency), `Ref` (non-authoritative identifier), `State` (owner condition), `Event` (occurrence), and `Receipt` (bounded evidence of acceptance/commit). The public boundary validates and normalizes input once so internal code consumes typed values directly.
 
 ### Resource Keys
 

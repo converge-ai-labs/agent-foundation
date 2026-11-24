@@ -8,19 +8,15 @@ A long-lived daemon collects abandoned Sessions and completed history periodical
 
 ## Session Liveness
 
-A Session has one owning Host execution context, which can span Runs. Active Runs and retained background work borrow that context under current Host authorization. Accepted requests update its last owner activity. The client sends `session.keepalive` while a borrower uses the Session, independently of command waits and output traffic. A saved context, cached client or shared Device connection does not keep historical Sessions alive. Final release touches the Session and stops keepalive, starting its idle window at the end of use.
+A Session has one owning Host execution context spanning Runs. Accepted requests refresh last owner activity; clients send `session.keepalive` while a borrower is active. Final release touches the Session and stops keepalive, starting its idle window.
 
-`session.open.configuration.lifecycle` selects an immutable policy with a positive `idle_timeout_ms` and optional positive `max_lifetime_ms`. Omission or null inherits the Device defaults. The Device advertises its default policy: one hour idle and unlimited maximum lifetime. The Session descriptor returns the effective policy. Envd uses monotonic clocks for last activity and creation time. Attach and keepalive never reset creation time. A finite maximum lifetime is a hard deadline, including during active work. Browser presence, output production, CPU usage, sibling traffic and WebSocket ping/pong are not Session owner activity.
+`session.open.configuration.lifecycle` selects an immutable `idle_timeout_ms` (default 1 hour) and optional `max_lifetime_ms` (default unlimited, hard deadline even during active work) measured on the daemon's monotonic clock. Attach and keepalive leave creation time unchanged; browser presence, output, CPU, sibling traffic, and WebSocket ping/pong count as non-owner activity.
 
-- An owned Session with current keepalive remains live even when its command is quiet for hours.
-- A Session without owner activity expires at its idle deadline, even if an abandoned process continues producing output.
-- Loss of a framed carrier detaches its Sessions without extending their existing idle/max deadlines. It immediately aborts that carrier's incomplete transfers while preserving commands.
-- `session.detach` releases attachment and touches the idle clock without destroying commands, output or history. It aborts incomplete transfers.
-- The authenticated Host can reattach an existing Session in the same generation before its deadline. Reattachment retains its original working directory, policy and resources. It replaces the previous owner and does not restore transfers.
-- HTTP connection loss alone is not Session detachment because TCP connections are not Session owners. The same selector remains usable until close or idle expiry.
-- Explicit close has no grace period. It starts cleanup immediately.
+- Active keepalive keeps quiet owned jobs alive; missing keepalive expires the Session at `idle_timeout_ms` even if processes keep producing output.
+- Framed carrier loss or `session.detach` detaches the Session and aborts incomplete transfers while preserving commands and existing deadlines; the authenticated Host can reattach in the same generation before expiry with a strictly newer `owner_epoch` (preserving working directory/policy/resources without restoring transfers).
+- HTTP connection loss leaves the Session attached until close or idle expiry. Explicit close starts cleanup immediately.
 
-The Host persists Session identity and recovery metadata separately from live clients and transport credentials. Normal Run completion and human-input pauses release use rather than destroy the shared context. Explicit close destroys the Session. A lost open response leaves an unclaimed Session that idle expiry collects. The Host may replace a proven expired Session or lost daemon generation for new work; temporary transport loss is not proof of expiry. Replacement cannot restore old native resources or justify replaying a command with an uncertain start outcome.
+The Host persists Session identity separately from live clients and replaces a proven expired Session or lost daemon generation for new work without replaying uncertain commands.
 
 ### Ownership Transfer
 
