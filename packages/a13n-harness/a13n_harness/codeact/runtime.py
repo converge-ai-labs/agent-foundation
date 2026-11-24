@@ -56,7 +56,7 @@ class CodeActRunState:
                 self._pool = await self._pool_stack.enter_async_context(
                     AsyncMonty(
                         min_processes=1,
-                        max_processes=2,
+                        max_processes=4,
                         request_timeout=self.config.timeout_seconds,
                     )
                 )
