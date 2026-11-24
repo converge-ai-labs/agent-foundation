@@ -265,6 +265,7 @@ def _resource_value(source: LoadedHarnessUiConfiguration, kind: str, resource_id
         "environment_run_extension": source.environment_run_extensions,
         "mcp_server": source.mcp_servers,
         "agent": source.agents,
+        "acp_agent": source.acp_agents,
         "subagent": source.subagents,
         "project": source.projects,
         "device": source.devices,

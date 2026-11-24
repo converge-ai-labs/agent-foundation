@@ -19,7 +19,9 @@ sys.excepthook = log_failure
 IDS = count(100)
 SESSION = "fixture-session"
 MODE = sys.argv[1]
-STEERING = MODE != "load"
+RESIDENT_ONLY = MODE == "ui" and "resident" in sys.argv[2:]
+CATALOG = ["identify", "ask_user_question"] if "questions" in sys.argv[2:] else ["identify"]
+STEERING = not RESIDENT_ONLY and MODE not in {"load", "new-no-system"}
 PENDING = None
 MCP = None
 TERMINAL = None
@@ -55,22 +57,34 @@ def session_call(method, **params):
     return result(method, sessionId=SESSION, **params)
 
 
-def mcp(method, params=None, **meta):
+def mcp(method, params=None, *, notification=False, expect_error=False, **meta):
     params = params or {}
+    frame = {"method": method, "params": params}
     if MCP["type"] == "acp":
-        return result("mcp/message", connectionId=MCP["connectionId"], method=method, params=params, _meta=meta)
-    line = json.dumps({"jsonrpc": "2.0", "id": 7, "method": method, "params": params}).encode() + b"\n"
+        fields = dict(connectionId=MCP["connectionId"], **frame, _meta=meta)
+        if notification:
+            send(method="mcp/message", params=fields)
+            return None
+        answer = callback("mcp/message", **fields)
+        return answer["error"] if expect_error else answer["result"]
+    if not notification:
+        frame["id"] = 7
+    line = json.dumps({"jsonrpc": "2.0", **frame}).encode() + b"\n"
     if MCP["type"] == "http":
         headers = {header["name"]: header["value"] for header in MCP["headers"]}
         headers["Content-Type"] = "application/json"
         with urlopen(Request(MCP["url"], line, headers), timeout=5) as response:
+            if notification:
+                assert response.status == 202
+                return None
             answer = json.load(response)
     else:
         TERMINAL.stdin.write(line)
         TERMINAL.stdin.flush()
+        if notification:
+            return None
         answer = json.loads(TERMINAL.stdout.readline())
-    assert "result" in answer, answer
-    return answer["result"]
+    return answer["error"] if expect_error else answer["result"]
 
 
 for line in sys.stdin:
@@ -79,7 +93,9 @@ for line in sys.stdin:
     params = frame.get("params", {})
     ident = frame.get("id")
     if method == "initialize":
-        caps = {"mcpCapabilities": {"acp": MODE == "remote", "http": MODE == "http"}, "loadSession": True}
+        caps = {"mcpCapabilities": {"acp": MODE == "remote", "http": MODE == "http"}, "loadSession": not RESIDENT_ONLY}
+        if MODE == "auth":
+            caps["auth"] = {"logout": {}}
         if STEERING:
             caps["sessionCapabilities"] = {"resume": {}, "systemPrompt": {}, "additionalDirectories": {}}
         send(
@@ -87,12 +103,29 @@ for line in sys.stdin:
             result={
                 "protocolVersion": 1,
                 "agentCapabilities": caps,
+                "authMethods": [{"id": "browser", "name": "Browser login"}] if MODE == "auth" else [],
                 "_meta": {"dev.a13n.harness-ui": {"version": 1}} if STEERING else {},
             },
         )
+    elif MODE == "auth" and method == "authenticate":
+        assert params["methodId"] == "browser"
+        answer = result(
+            "elicitation/create",
+            message="Complete sign-in",
+            mode="url",
+            url="https://example.com/sign-in",
+            elicitationId="auth-example",
+            requestId=ident,
+        )
+        if answer["action"] == "accept":
+            send(id=ident, result={})
+        else:
+            send(id=ident, error={"code": -32800, "message": "Cancelled"})
+    elif MODE == "auth" and method == "logout":
+        send(id=ident, result={})
     elif method in {"session/new", "session/load", "session/resume"}:
         assert (method == "session/load") == (MODE == "load")
-        if STEERING:
+        if STEERING and MODE != "ui":
             assert params["systemPrompt"] == {"mode": "append", "content": [{"type": "text", "text": "guide"}]}
         if method == "session/load":
             text("OLD TRANSCRIPT")
@@ -109,12 +142,77 @@ for line in sys.stdin:
                     env={**os.environ, **{v["name"]: v["value"] for v in MCP["env"]}},
                 )
             assert mcp("initialize", {"protocolVersion": "2025-11-25"})["capabilities"] == {"tools": {}}
+            mcp("notifications/initialized", notification=True)
+            catalog = [entry["name"] for entry in mcp("tools/list")["tools"]]
+            if MODE != "ui":
+                assert set(catalog) == set(CATALOG)
+            assert mcp("tools/call", {"name": "identify"}, expect_error=True)["data"]["code"] == "acp_run_inactive"
         send(id=ident, result={"sessionId": SESSION} if method == "session/new" else {})
+    elif method == "_fixture/discover":
+        assert {entry["name"] for entry in mcp("tools/list")["tools"]} == set(CATALOG)
+        assert mcp("tools/call", {"name": "identify"}, expect_error=True)["data"]["code"] == "acp_run_inactive"
+        send(id=ident, result={})
     elif method == "session/prompt":
         blocks = [item["text"] for item in params["prompt"]]
-        if not STEERING:
-            assert blocks in (["guide", "wait"], ["again"]), blocks
-        message = blocks[-1]
+        if MODE == "load":
+            assert blocks in (["wait"], ["again"], ["tools"]), blocks
+        if MODE == "new-no-system":
+            assert blocks in (["guide", "first"], ["again"]), blocks
+        message = (
+            next(block for block in reversed(blocks) if not block.startswith("This input was submitted through "))
+            if MODE == "ui"
+            else blocks[-1]
+        )
+        if message == "cancel-me":
+            text("partial reply")
+            PENDING = ident
+            continue
+        if MODE == "ui" and message == "goal":
+            text("Checking the work.")
+            update("compaction_update", compactionId="compact-1", status="completed")
+            text("\n[GOAL_COMPLETE]")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and "acp_compaction" in message:
+            text("Audit complete.\n[GOAL_COMPLETE]")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "silence":
+            assert "finish_silently" in [entry["name"] for entry in mcp("tools/list")["tools"]]
+            text("Preamble")
+            update("tool_call", toolCallId="silent", title="Finish silently", name="finish_silently")
+            assert not mcp("tools/call", {"name": "finish_silently", "arguments": {}})["isError"]
+            update("tool_call_update", toolCallId="silent", status="completed")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if message == "questions":
+            update(
+                "tool_call", toolCallId="question", title="Choose a format", name="mcp__harness-host__ask_user_question"
+            )
+            tool = mcp(
+                "tools/call",
+                {
+                    "name": "ask_user_question",
+                    "arguments": {
+                        "questions": [
+                            {
+                                "header": "Format",
+                                "question": "Which format?",
+                                "multiSelect": False,
+                                "options": [
+                                    {"label": "JSON", "description": "Structured data"},
+                                    {"label": "Text", "description": "Plain text"},
+                                ],
+                            }
+                        ]
+                    },
+                },
+            )
+            assert not tool["isError"], tool
+            update("tool_call_update", toolCallId="question", status="completed")
+            text(json.loads(tool["content"][0]["text"])["answers"]["Which format?"])
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
         if message == "wait":
             PENDING = ident
             send(
@@ -145,18 +243,23 @@ for line in sys.stdin:
             session_call("terminal/release", terminalId=terminal)
             denied = callback("terminal/create", sessionId=SESSION, command="denied")
             assert denied["error"]["data"]["code"] == "acp_command_denied"
-        if MCP:
-            assert [entry["name"] for entry in mcp("tools/list")["tools"]] == ["identify"]
-            for key in ("one", "two"):
-                update("tool_call", toolCallId=key, title="Identify", name="identify", status="in_progress")
-                tool = mcp(
-                    "tools/call",
-                    {"name": "identify", "arguments": {}},
-                    **({"toolCallId": "explicit"} if key == "two" and MODE == "remote" else {}),
-                )
+        if MCP and MODE != "ui":
+            assert {entry["name"] for entry in mcp("tools/list")["tools"]} == set(CATALOG)
+
+            def call_tool(**meta):
+                tool = mcp("tools/call", {"name": "identify", "arguments": {}}, **meta)
                 text(tool["content"][0]["text"])
-            tool = mcp("tools/call", {"name": "identify", "arguments": {}})
-            text(tool["content"][0]["text"])
+
+            for key, name in (
+                ("one", "mcp__harness-host__identify"),
+                ("exact", "identify"),
+                ("two", "harness-host/identify"),
+            ):
+                update("tool_call", toolCallId=key, title="Identify", name=name, status="in_progress")
+                call_tool(**({"toolCallId": "explicit"} if key == "two" and MODE == "remote" else {}))
+                if key == "exact":
+                    update("tool_call_update", toolCallId=key, status="completed")
+            call_tool()
             for key in ("one", "two"):
                 update("tool_call_update", toolCallId=key, status="completed")
         update("user_message_chunk", content={"type": "text", "text": "HIDDEN ECHO"})

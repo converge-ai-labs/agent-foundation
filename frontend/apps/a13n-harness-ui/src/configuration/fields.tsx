@@ -231,7 +231,7 @@ export function ResourceFields({
       <ErrorNotice
         error={selectors.error || sources.error || catalog.error || root.error}
       />
-      {kind && kind !== "agent" && kind !== "model" && (
+      {kind && kind !== "agent" && kind !== "acp_agent" && kind !== "model" && (
         <SettingsSection title={t("General")}>
           {field(t("Name"), ["name"])}
         </SettingsSection>
@@ -243,6 +243,43 @@ export function ResourceFields({
           onReady={onReady}
           nameField={field(t("Name"), ["name"])}
         />
+      )}
+      {kind === "acp_agent" && (
+        <>
+          <SettingsSection variant="grouped" title={t("General")}>
+            {field(t("Name"), ["name"])}
+            <ResourceChoice
+              label={t("ACP preset")}
+              value={text(["preset"]) || "custom"}
+              onValueChange={(value) => set(["preset"], value)}
+              options={[
+                { value: "custom", label: t("Custom") },
+                { value: "antigravity", label: "Antigravity" },
+                { value: "claude_code", label: "Claude Code" },
+                { value: "codex", label: "Codex" },
+                { value: "opencode", label: "OpenCode" },
+              ]}
+            />
+            <TextField
+              label={t("Executable")}
+              value={text(["command"])}
+              onChange={(value) => set(["command"], value || undefined)}
+              description={t(
+                "Use a command on the Host PATH or an absolute path. Leave blank to use the preset executable.",
+              )}
+            />
+          </SettingsSection>
+          <SettingsSection variant="plain" title={t("Instructions")}>
+            <Textarea
+              aria-label={t("Additional instructions")}
+              variant="soft"
+              value={text(["instructions"])}
+              onChange={(event) => set(["instructions"], event.target.value)}
+              rows={5}
+              className={management.instructions}
+            />
+          </SettingsSection>
+        </>
       )}
       {kind === "agent" && (
         <>

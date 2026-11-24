@@ -930,6 +930,45 @@ class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
         )
 
 
+type AcpAgentPreset = Literal["antigravity", "claude_code", "codex", "opencode", "custom"]
+
+ACP_AGENT_PRESETS: dict[AcpAgentPreset, tuple[str, tuple[str, ...]]] = {
+    "antigravity": ("agy", ("acp", "--process-per-session")),
+    "claude_code": ("claude-agent-acp", ()),
+    "codex": ("codex-acp", ()),
+    "opencode": ("opencode", ("acp",)),
+}
+
+
+class AcpAgentResource(ConfigurationModel):
+    schema_version: Literal["1"]
+    kind: Literal["acp_agent"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    preset: AcpAgentPreset = "custom"
+    command: str | None = Field(default=None, min_length=1, max_length=4096)
+    args: tuple[str, ...] | None = Field(default=None, max_length=128)
+    instructions: str = Field(default="", max_length=1024 * 1024)
+    mcp_servers: tuple[ResourceId, ...] | None = None
+
+    @model_validator(mode="after")
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "acp-")
+        if self.preset == "custom" and not self.command:
+            raise ValueError("Custom ACP agents require a command")
+        if self.command is not None and (not self.command.strip() or "\0" in self.command):
+            raise ValueError("ACP command must be a non-blank executable name or path")
+        if self.args is not None and any("\0" in arg for arg in self.args):
+            raise ValueError("ACP arguments cannot contain NUL")
+        if self.mcp_servers is not None and len(self.mcp_servers) != len(set(self.mcp_servers)):
+            raise ValueError("ACP MCP server selections must be unique and ordered")
+        return self
+
+    def argv(self) -> tuple[str, ...]:
+        command, args = ACP_AGENT_PRESETS.get(self.preset, ("", ()))
+        return (self.command or command, *(args if self.args is None else self.args))
+
+
 class AgentResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["agent"]
@@ -1116,6 +1155,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     environment_run_extensions: dict[ResourceId, EnvironmentRunExtensionResource] = Field(default_factory=dict)
     mcp_servers: dict[ResourceId, McpServerResource] = Field(default_factory=dict)
     agents: dict[ResourceId, AgentResource] = Field(default_factory=dict)
+    acp_agents: dict[ResourceId, AcpAgentResource] = Field(default_factory=dict, exclude_if=lambda value: not value)
     subagents: dict[ResourceId, CanonicalSubagent] = Field(default_factory=dict)
     projects: dict[ResourceId, ProjectResource] = Field(default_factory=dict)
     devices: dict[ResourceId, DeviceResource] = Field(default_factory=dict)
@@ -1157,7 +1197,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
             if not isinstance(self.models[live.model].authentication, CodexSubscriptionAuthentication):
                 raise ValueError("live.model requires codex_subscription authentication")
         _require_reference(defaults.project, self.projects, "defaults.project")
-        _require_reference(defaults.agent, self.agents, "defaults.agent")
+        _require_reference(defaults.agent, self.agents | self.acp_agents, "defaults.agent")
         for kind, model_id in self.document.media_understanding.selections().items():
             field = f"media_understanding.{kind}"
             _require_reference(model_id, self.models, field)
@@ -1189,7 +1229,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
             selected = project.defaults
             for binding in selected.environment_bindings or ():
                 _require_reference(binding.device_id, self.devices, f"{project.id}.defaults.environment_bindings")
-            _require_reference(selected.agent, self.agents, f"{project.id}.defaults.agent")
+            _require_reference(selected.agent, self.agents | self.acp_agents, f"{project.id}.defaults.agent")
             if (
                 selected.environment_profile is not None
                 and built_in_environment_profile(selected.environment_profile) is None
@@ -1206,6 +1246,10 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
             ):
                 for item in values or ():
                     _require_reference(item, resources, f"{project.id}.defaults.{name}")
+
+        for agent in self.acp_agents.values():
+            for server_id in agent.mcp_servers or ():
+                _require_reference(server_id, self.mcp_servers, f"{agent.id}.mcp_servers")
 
         for agent in self.agents.values():
             for capability in agent.capabilities:
@@ -1284,7 +1328,9 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     @property
     def bot_agent_id(self) -> ResourceId | None:
         """Resolve Bot's execution-policy base within this accepted generation."""
-        return self.document.webui.bot.agent or self.document.defaults.agent
+        return self.document.webui.bot.agent or (
+            self.document.defaults.agent if self.document.defaults.agent in self.agents else None
+        )
 
     @property
     def bot_model_id(self) -> ResourceId | None:
@@ -1301,7 +1347,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         if override is not None:
             return override
         agent_id = self.document.defaults.agent
-        return None if agent_id is None else self.agents[agent_id].model
+        return self.agents[agent_id].model if agent_id in self.agents else None
 
     def selected_plugins(self, agent: AgentResource) -> tuple[str, ...]:
         return self.document.defaults.harness_plugins if agent.harness_plugins is None else agent.harness_plugins

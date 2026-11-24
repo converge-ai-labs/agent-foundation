@@ -25,6 +25,7 @@ class AcpRunStream:
         self.run_id = run_id
         self.emit = emit
         self.final_text = ""
+        self.last_text = ""
         self._message: tuple[str, str] | None = None
         self._sequence = 0
         self._tools: dict[str, _Tool] = {}
@@ -45,6 +46,11 @@ class AcpRunStream:
             self._event(f"{kind}_END", messageId=message_id)
             self._message = None
 
+    def reset_reply(self) -> None:
+        """Keep streamed history while starting a new candidate reply."""
+        self._close_message()
+        self.last_text = ""
+
     def _chunk(self, kind: str, text: str) -> None:
         if not text:
             return
@@ -62,6 +68,11 @@ class AcpRunStream:
             return
         self.start()
         if isinstance(update, schema.AgentMessageChunk) and isinstance(update.content, schema.TextContentBlock):
+            if not update.content.text:
+                return
+            if self._message is None or self._message[0] != "TEXT_MESSAGE":
+                self.last_text = ""
+            self.last_text += update.content.text
             self.final_text += update.content.text
             self._chunk("TEXT_MESSAGE", update.content.text)
         elif isinstance(update, schema.AgentThoughtChunk) and isinstance(update.content, schema.TextContentBlock):

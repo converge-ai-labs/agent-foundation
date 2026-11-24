@@ -105,8 +105,10 @@ async def test_recovery_permission_steer_and_cancel(tmp_path, mode):
         assert [u.content.text for u in updates if isinstance(u, schema.AgentMessageChunk)] == ["done:again"]
 
 
-@pytest.mark.parametrize("mode", ["remote", "http", "stdio"])
-async def test_shared_dispatch_and_call_correlation(tmp_path, mode):
+@pytest.mark.parametrize(
+    ("mode", "recover"), [("remote", False), ("http", False), ("stdio", False), ("http", True), ("load", True)]
+)
+async def test_shared_dispatch_and_call_correlation(tmp_path, mode, recover):
     toolset: FunctionToolset[AgentContext] = FunctionToolset()
 
     @toolset.tool
@@ -127,17 +129,29 @@ async def test_shared_dispatch_and_call_correlation(tmp_path, mode):
         ) as acp,
         bridge.prepare(ctx) as scope,
     ):
-        await acp.open_session(setup(tmp_path))
+        await acp.open_session(
+            setup(tmp_path), discovery=scope, saved_session_id="fixture-session" if recover else None
+        )
+        await acp.connection.ext_method("fixture/discover", {})
         updates = []
         await acp.prompt(
             [schema.TextContentBlock(text="tools")], binding=AcpRunBinding(host_tools=scope, on_update=updates.append)
         )
         assert [u.content.text for u in updates if isinstance(u, schema.AgentMessageChunk)] == [
             "one",
+            "exact",
             "explicit" if mode == "remote" else "run-owner",
             "run-owner",
             "done:tools",
         ]
+
+
+async def test_first_prompt_fallback_is_sent_once_on_new_session(tmp_path):
+    async with asyncio.timeout(8), AcpSessionRuntime.open(local(tmp_path, "new-no-system")) as acp:
+        await acp.open_session(setup(tmp_path))
+        for message in ("first", "again"):
+            result = await acp.prompt([schema.TextContentBlock(text=message)], binding=AcpRunBinding())
+            assert result.stop_reason == "end_turn"
 
 
 async def test_remote_without_advertised_bridge_fails_early(tmp_path):

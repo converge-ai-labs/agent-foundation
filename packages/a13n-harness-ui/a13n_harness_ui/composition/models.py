@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Self, get_args, get_origin
+from typing import ClassVar, Literal, Self, get_args, get_origin
 
 from a13n_harness import RunConfiguration, ToolExecutionConfig
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
 from a13n_harness_ui.configuration.models import (
+    AcpAgentResource,
     AgentToolSearch,
     BackgroundCompactionConfiguration,
     DeviceResource,
@@ -205,6 +206,22 @@ class ResolvedSubagent(CompositionModel):
     definition: ResolvedAgentNode
 
 
+class ResolvedAcpNode(CompositionModel):
+    source_kind: Literal["acp_agent"] = "acp_agent"
+    source_id: str
+    roster_name: str
+    resource: AcpAgentResource
+    global_guidance: tuple[str, ...] = ()
+    mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=256)
+    model: ClassVar[None] = None
+    children: ClassVar[tuple[()]] = ()
+    capabilities: ClassVar[tuple[()]] = ()
+    harness_plugins: ClassVar[tuple[()]] = ()
+    tools: ClassVar[None] = None
+    tool_search: ClassVar[None] = None
+    base_agent_id: ClassVar[None] = None
+
+
 class ResolvedRunComposition(CompositionModel):
     origin_browser_id: BrowserId | None = Field(default=None, exclude_if=lambda value: value is None)
     schema_version: Literal["1"] = "1"
@@ -239,7 +256,7 @@ class ResolvedRunComposition(CompositionModel):
     )
     content_plugins: tuple[ResolvedContentPlugin, ...] = Field(default=(), max_length=256)
     connectors: tuple[ConnectorCapture, ...] = Field(default=(), exclude_if=lambda value: not value)
-    root: ResolvedAgentNode
+    root: ResolvedAgentNode | ResolvedAcpNode
     environment_profile: ResolvedEnvironmentProfile
     # Local Envd admission adds Thread grants to environment_profile. Retain the input for new children.
     base_environment_profile: ResolvedEnvironmentProfile | None = Field(
@@ -256,7 +273,7 @@ class ResolvedRunComposition(CompositionModel):
 
     def agent_nodes(self) -> tuple[ResolvedAgentNode, ...]:
         values: list[ResolvedAgentNode] = []
-        pending = [self.root]
+        pending = [self.root] if isinstance(self.root, ResolvedAgentNode) else []
         while pending:
             node = pending.pop()
             values.append(node)

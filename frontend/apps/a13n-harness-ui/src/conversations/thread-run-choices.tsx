@@ -227,6 +227,7 @@ function AgentModelChoices({
   const agent = catalog?.agents.find(
     (item) => item.agent_id === (agentId || defaultAgentId),
   );
+  const isAcp = agent?.kind === "acp_agent";
   const inheritedModelId = defaultModelId ?? agent?.model_id;
   const agentGroups = [
     {
@@ -249,6 +250,7 @@ function AgentModelChoices({
           value: item.agent_id,
           label: item.name,
           description: item.agent_id,
+          badge: item.kind === "acp_agent" ? t("ACP agent") : undefined,
         })),
         ...(agentId && !agent
           ? [
@@ -265,7 +267,7 @@ function AgentModelChoices({
   const model = catalog?.models?.find(
     (item) => item.model_id === (modelId ?? inheritedModelId),
   );
-  if (settings.page === "model")
+  if (settings.page === "model" && !isAcp)
     return (
       <ModelOptions
         models={catalog?.models ?? []}
@@ -304,30 +306,34 @@ function AgentModelChoices({
             disabled={disabled || !catalog}
             onClick={() => settings.navigate("agent")}
           />
-          <SettingsRow
-            label={t("Model")}
-            value={
-              <ModelIdentity
-                model={model}
-                name={
-                  model?.name ??
-                  t("{{name}} (unavailable)", {
-                    name: modelId ?? inheritedModelId ?? t("Model"),
-                  })
-                }
-              />
-            }
-            disabled={disabled || !catalog}
-            onClick={() => settings.navigate("model")}
-          />
+          {!isAcp && (
+            <SettingsRow
+              label={t("Model")}
+              value={
+                <ModelIdentity
+                  model={model}
+                  name={
+                    model?.name ??
+                    t("{{name}} (unavailable)", {
+                      name: modelId ?? inheritedModelId ?? t("Model"),
+                    })
+                  }
+                />
+              }
+              disabled={disabled || !catalog}
+              onClick={() => settings.navigate("model")}
+            />
+          )}
         </>
       )}
-      <ModelControlPanel
-        model={model}
-        controls={controls}
-        onControlsChange={onControlsChange}
-        disabled={disabled || !catalog}
-      />
+      {!isAcp && (
+        <ModelControlPanel
+          model={model}
+          controls={controls}
+          onControlsChange={onControlsChange}
+          disabled={disabled || !catalog}
+        />
+      )}
     </>
   );
 }

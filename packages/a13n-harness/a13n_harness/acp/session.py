@@ -15,7 +15,7 @@ from acp.client.connection import ClientSideConnection
 from a13n_harness.environment.models import EnvironmentError
 
 from .client import AcpEnvironmentClient, AcpRunBinding, ConfigOption
-from .mcp import AcpHostToolBridge
+from .mcp import AcpHostToolBridge, AcpHostToolScope
 from .transport import AcpChannel, AcpError, AcpTransport, LocalStdioTransport, StreamChannel
 
 type McpServer = schema.HttpMcpServer | schema.SseMcpServer | schema.AcpMcpServer | schema.McpServerStdio
@@ -44,7 +44,7 @@ class AcpSessionSetup:
 
 
 class _SessionWire:
-    """Preserve the one stable lifecycle field absent from the pinned SDK."""
+    """Adapt lifecycle fields and authentication defaults for the pinned SDK."""
 
     def __init__(self, channel: AcpChannel) -> None:
         self.channel = channel
@@ -78,6 +78,14 @@ class _SessionWire:
                 capabilities = result.get("agentCapabilities") or {}
                 sessions = capabilities.get("sessionCapabilities") or {} if isinstance(capabilities, dict) else {}
                 self.system_prompt = isinstance(sessions, dict) and isinstance(sessions.get("systemPrompt"), dict)
+                methods = result.get("authMethods")
+                if isinstance(methods, list):
+                    # An omitted type means agent; the SDK's union otherwise selects terminal first.
+                    methods = [
+                        {"type": "agent", **method} if isinstance(method, dict) and "type" not in method else method
+                        for method in methods
+                    ]
+                    message = {**message, "result": {**result, "authMethods": methods}}
         return message
 
     @asynccontextmanager
@@ -183,7 +191,9 @@ class AcpSessionRuntime:
     def config_options(self) -> tuple[ConfigOption, ...]:
         return tuple(self.client.config_options)
 
-    async def open_session(self, setup: AcpSessionSetup, *, saved_session_id: str | None = None) -> str:
+    async def open_session(
+        self, setup: AcpSessionSetup, *, saved_session_id: str | None = None, discovery: AcpHostToolScope | None = None
+    ) -> str:
         if self.session_id is not None or self._initializing or self.client.binding is not None:
             raise AcpError("acp_session_exists", "This ACP connection already owns a session.")
         capabilities = self.capabilities
@@ -199,6 +209,12 @@ class AcpSessionRuntime:
         )
         self._initializing = True
         try:
+            if self.client._bridge is not None:
+                if discovery is None:
+                    raise AcpError("acp_mcp_discovery_required", "Supply a prepared host tool scope for discovery.")
+                await self.client._bridge._discover(discovery)
+            elif discovery is not None:
+                raise AcpError("acp_host_tools_unconfigured", "Open the ACP connection with a host tool bridge.")
             if saved_session_id is None:
                 response = await self.connection.new_session(
                     cwd=setup.cwd, mcp_servers=servers, additional_directories=additional_directories
@@ -224,7 +240,7 @@ class AcpSessionRuntime:
                 raise AcpError("acp_resume_unsupported", "This agent cannot recover its saved ACP session.")
             self.client.session_id = session_id
             self.client.config_options = list(response.config_options or ()) if response is not None else []
-            if not self._wire.system_prompt:
+            if saved_session_id is None and not self._wire.system_prompt:
                 self._initial_instructions = self._wire.instructions
             return session_id
         finally:

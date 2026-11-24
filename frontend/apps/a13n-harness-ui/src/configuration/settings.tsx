@@ -199,11 +199,9 @@ export function AgentsPage() {
   return (
     <>
       <SourcesPage
-        kinds={["agent"]}
+        kinds={["agent", "acp_agent"]}
         title={t("Agents")}
-        description={t(
-          "Configure instructions, models and tools for each agent.",
-        )}
+        description={t("Configure Harness agents and external ACP agents.")}
       />
       <details className={layout.disclosure}>
         <summary>{t("Installed capabilities")}</summary>

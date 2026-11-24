@@ -31,6 +31,8 @@ An explicit `--config <path>` selects the root YAML. Otherwise Harness UI select
     <servers>.json
   agents/
     <resource>.yaml
+  acp_agents/
+    <resource>.yaml
   subagents/
     <resource>.md
   projects/
@@ -156,6 +158,12 @@ The owning contracts define the bodies:
 | Agent                                              | [Agent and MCP Composition](02-agent-composition-and-snapshots.md#agent-resources)                                                                   |
 | Markdown subagent                                  | [Agent and MCP Composition](02-agent-composition-and-snapshots.md#canonical-markdown-subagents)                                                      |
 | Project                                            | [Projects, Threads, and Environments](04-projects-threads-and-environments.md#projects)                                                              |
+
+## External ACP Agents
+
+An `acp_agent` resource in `acp_agents/` uses the `acp-` ID prefix. A resource selects an executable and argument vector directly or starts from a data-only preset: `antigravity`, `claude_code`, `codex`, `opencode`, or `custom`. An explicit command and arguments override the preset fields. Provider credentials stay in the external Agent's account store. ACP is an Agent source and has no Harness Model selection.
+
+An explicit connection check launches the saved executable and reads its ACP initialization response. The check reports executable availability and advertised authentication operations; login state is unknown at this point. A protocol login calls `authenticate` using an advertised Agent method and can ask the operator to continue in the provider's browser. Login completes when the Agent returns success. Logout is available when the Agent advertises it and completes on its successful response. Authentication elicitations belong to the configuration owner, outside Thread history and Run admission.
 
 ## Accepted Generation
 

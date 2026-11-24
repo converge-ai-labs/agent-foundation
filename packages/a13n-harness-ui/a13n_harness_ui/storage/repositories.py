@@ -1491,7 +1491,7 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
-    from .contracts import BotAgentSource, DynamicAgentSource, LiveAgentSource, MemoryAgentSource
+    from .contracts import AcpAgentSource, BotAgentSource, DynamicAgentSource, LiveAgentSource, MemoryAgentSource
 
     source = (
         MemoryAgentSource()
@@ -1504,6 +1504,8 @@ def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfigurati
         if record.agent_source_kind == "dynamic"
         else AgentResourceSource(id=record.agent_source_id)
         if record.agent_source_kind == "agent"
+        else AcpAgentSource(id=record.agent_source_id)
+        if record.agent_source_kind == "acp_agent"
         else MarkdownSubagentSource(id=record.agent_source_id)
     )
     return ThreadConfiguration(

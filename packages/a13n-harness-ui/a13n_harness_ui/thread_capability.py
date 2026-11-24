@@ -970,11 +970,12 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 ),
             }
             if thread_id == self.source_thread_id and self.composition is not None:
+                model = self.composition.root.model
                 result["current_run"] = {
                     "project_id": self.composition.project_id,
                     "project_roots": list(self.composition.project_roots),
                     "agent_id": self.composition.root.source_id,
-                    "model_id": self.composition.root.model.model_id,
+                    "model_id": None if model is None else model.model_id,
                     "role": self.composition.role,
                     "coordinator_thread_id": self.composition.coordinator_thread_id,
                     "generation_digest": self.composition.generation_digest,

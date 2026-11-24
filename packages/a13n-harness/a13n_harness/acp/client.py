@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from functools import wraps
+from inspect import isawaitable
 from typing import Any, Concatenate
 from uuid import uuid4
 
@@ -56,7 +57,7 @@ class AcpRunBinding:
     )
     elicitation: Callable[[str, str, dict[str, Any]], Awaitable[schema.CreateElicitationResponse]] | None = None
     review_command: Callable[[CommandRequest], Awaitable[bool]] | None = None
-    on_update: Callable[[AcpUpdate], None] | None = None
+    on_update: Callable[[AcpUpdate], Awaitable[None] | None] | None = None
     terminal_alias: str | None = None
     host_tools: AcpHostToolScope | None = None
     review_permission_command: Callable[[schema.ToolCallUpdate], Awaitable[bool]] | None = None
@@ -135,7 +136,9 @@ class AcpEnvironmentClient:
             self._bridge._observe(update)
         if self.binding is not None and self.binding.on_update is not None:
             try:
-                self.binding.on_update(update)
+                result = self.binding.on_update(update)
+                if isawaitable(result):
+                    await result
             except Exception as exc:
                 # SDK notification tasks cannot propagate application failure to prompt().
                 self._update_error = exc
@@ -156,11 +159,26 @@ class AcpEnvironmentClient:
             return schema.RequestPermissionResponse(outcome=schema.AllowedOutcome(option_id=selected))
         return schema.RequestPermissionResponse(outcome=schema.DeniedOutcome())
 
-    async def create_elicitation(self, message: str, mode: str, **kwargs: Any) -> schema.CreateElicitationResponse:
-        binding = self._active(kwargs.get("session_id"))
+    async def create_elicitation(
+        self, message: str, mode: schema.ElicitationMode, **kwargs: Any
+    ) -> schema.CreateElicitationResponse:
+        if isinstance(mode, (schema.ElicitationFormSessionMode, schema.ElicitationUrlSessionMode)):
+            binding = self._active(mode.session_id)
+            params: dict[str, Any] = {"tool_call_id": mode.tool_call_id}
+        else:
+            binding = self._active(None)
+            params = {}
         if binding.elicitation is None:
             return schema.CancelElicitationResponse()
-        result = await self._interact(binding.elicitation(message, mode, kwargs), binding)
+        if isinstance(mode, (schema.ElicitationFormSessionMode, schema.ElicitationFormRequestMode)):
+            kind = "form"
+            params["requested_schema"] = mode.requested_schema
+        elif isinstance(mode, (schema.ElicitationUrlSessionMode, schema.ElicitationUrlRequestMode)):
+            kind = "url"
+            params.update(url=str(mode.url), elicitation_id=mode.elicitation_id)
+        else:
+            return schema.CancelElicitationResponse()
+        result = await self._interact(binding.elicitation(message, kind, params), binding)
         return result if result is not None else schema.CancelElicitationResponse()
 
     async def _interact[T](self, operation: Awaitable[T], binding: AcpRunBinding) -> T | None:

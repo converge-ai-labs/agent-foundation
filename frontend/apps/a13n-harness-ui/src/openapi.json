@@ -5738,6 +5738,156 @@
         }
       }
     },
+    "/api/acp-agents/{agent_id}/auth": {
+      "post": {
+        "summary": "Acp Auth",
+        "operationId": "acp_auth_api_acp_agents__agent_id__auth_post",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpAuthStatus"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpAuthRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/acp-agents/{agent_id}/auth/inputs": {
+      "get": {
+        "summary": "Acp Auth Inputs",
+        "operationId": "acp_auth_inputs_api_acp_agents__agent_id__auth_inputs_get",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/McpInputRequestView"
+                  },
+                  "title": "Response Acp Auth Inputs Api Acp Agents  Agent Id  Auth Inputs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/acp-agents/{agent_id}/auth/inputs/{request_id}/response": {
+      "post": {
+        "summary": "Respond Acp Auth Input",
+        "operationId": "respond_acp_auth_input_api_acp_agents__agent_id__auth_inputs__request_id__response_post",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/McpInputRequestView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/McpInputResponse"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/configuration/sources": {
       "get": {
         "summary": "Configuration Sources",
@@ -10262,6 +10412,89 @@
         "title": "AccountSelection",
         "type": "object"
       },
+      "AcpAgentSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "acp_agent",
+            "title": "Kind",
+            "default": "acp_agent"
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^acp(?:-[a-z0-9]+)+$",
+            "title": "Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "AcpAgentSource"
+      },
+      "AcpAuthMethod": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AcpAuthMethod"
+      },
+      "AcpAuthStatus": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "executable_missing",
+              "available",
+              "login_completed",
+              "logout_completed"
+            ],
+            "title": "State"
+          },
+          "methods": {
+            "items": {
+              "$ref": "#/components/schemas/AcpAuthMethod"
+            },
+            "type": "array",
+            "title": "Methods",
+            "default": []
+          },
+          "logout_supported": {
+            "type": "boolean",
+            "title": "Logout Supported",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "AcpAuthStatus"
+      },
       "ActivitySummary": {
         "properties": {
           "kind": {
@@ -10413,6 +10646,9 @@
             "$ref": "#/components/schemas/AgentResourceSource"
           },
           {
+            "$ref": "#/components/schemas/AcpAgentSource"
+          },
+          {
             "$ref": "#/components/schemas/MarkdownSubagentSource"
           },
           {
@@ -10435,6 +10671,7 @@
           "kind": {
             "enum": [
               "agent",
+              "acp_agent",
               "markdown",
               "memory",
               "live",
@@ -10460,6 +10697,15 @@
       },
       "AgentSummary": {
         "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "agent",
+              "acp_agent"
+            ],
+            "title": "Kind",
+            "default": "agent"
+          },
           "agent_id": {
             "type": "string",
             "maxLength": 128,
@@ -19175,7 +19421,8 @@
           "mode": {
             "enum": [
               "form",
-              "url"
+              "url",
+              "question"
             ],
             "title": "Mode",
             "type": "string"
@@ -19184,6 +19431,14 @@
             "maxLength": 8192,
             "title": "Message",
             "type": "string"
+          },
+          "questions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/UserQuestion"
+            },
+            "title": "Questions",
+            "type": "array"
           },
           "schema": {
             "anyOf": [
@@ -27671,6 +27926,69 @@
         ],
         "title": "UsageWindow"
       },
+      "UserQuestion": {
+        "additionalProperties": false,
+        "description": "One bounded structured question.",
+        "properties": {
+          "question": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "header": {
+            "maxLength": 12,
+            "minLength": 1,
+            "title": "Header",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/UserQuestionOption"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "title": "Options",
+            "type": "array"
+          },
+          "multiSelect": {
+            "default": false,
+            "title": "Multiselect",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "question",
+          "header",
+          "options"
+        ],
+        "title": "UserQuestion",
+        "type": "object"
+      },
+      "UserQuestionOption": {
+        "additionalProperties": false,
+        "description": "One selectable answer shown by the Host.",
+        "properties": {
+          "label": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "description"
+        ],
+        "title": "UserQuestionOption",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -31417,6 +31735,37 @@
           "tools"
         ],
         "title": "McpToolSelection",
+        "type": "object"
+      },
+      "AcpAuthRequest": {
+        "properties": {
+          "action": {
+            "enum": [
+              "probe",
+              "login",
+              "logout"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "method_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method Id"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "AcpAuthRequest",
         "type": "object"
       },
       "ResourceMutationRequest": {

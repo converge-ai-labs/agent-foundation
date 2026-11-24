@@ -26,6 +26,7 @@ from a13n_harness import (
     RunModelResolver,
 )
 from a13n_harness import __version__ as harness_version
+from a13n_harness.acp import AcpRunBinding, AcpSessionSetup
 from a13n_harness.capabilities import AskUserQuestionRequest, UserQuestionAnswers
 from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillCatalogResolvedEvent, SkillsCapability
@@ -43,6 +44,8 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent, ModelMessage
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
+from a13n_harness_ui.acp_execution import AcpTurn
+from a13n_harness_ui.acp_sessions import AcpSessions
 from a13n_harness_ui.bot_environments import BotEnvironmentsCapability
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser import HostBrowsers
@@ -57,7 +60,8 @@ from a13n_harness_ui.composition import (
     RunCompositionService,
     ThreadCompositionSelection,
 )
-from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
+from a13n_harness_ui.composition.models import ResolvedAcpNode
+from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
 from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector, checkpoint_excerpt
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.display_history import (
@@ -77,6 +81,7 @@ from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
 from a13n_harness_ui.input_prediction import InputPredictionPlugin
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
+from a13n_harness_ui.mcp_runtime.inputs import Inputs
 from a13n_harness_ui.memory import MemoryOrganizationRun
 from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.model_accounts.provenance import MainAccountCapability
@@ -203,7 +208,10 @@ class RootRunExecutor:
         compaction: BackgroundCompaction | None = None,
         unattended: bool = False,
         input_prediction: InputPredictionPlugin | None = None,
+        acp_inputs: Inputs | None = None,
     ) -> None:
+        self._acp_inputs = acp_inputs
+        self.acp_sessions = AcpSessions()
         self._unattended = unattended
         self._browsers = browsers
         self._compaction = compaction
@@ -401,7 +409,8 @@ class RootRunExecutor:
         self,
         admission: RootRunAdmission,
         *,
-        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
+        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None, AcpTurn | None], Awaitable[None]]
+        | None = None,
         goal: GoalView | None = None,
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
         on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
@@ -421,7 +430,8 @@ class RootRunExecutor:
         self,
         admission: RootRunAdmission,
         *,
-        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
+        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None, AcpTurn | None], Awaitable[None]]
+        | None = None,
         goal: GoalView | None = None,
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
         on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
@@ -549,7 +559,45 @@ class RootRunExecutor:
                 )
                 display.supplement((*image_events, *app_events))
 
-            is_bot = published.value.root.source_kind == "bot"
+            node = published.value.root
+            is_bot = node.source_kind == "bot"
+            acp_turn = None
+            if isinstance(node, ResolvedAcpNode):
+                if (
+                    published.value.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID
+                    or published.value.environment_bindings
+                ):
+                    raise RunCoordinationError(
+                        "Launching a local ACP executable requires Full Control without Device bindings.",
+                        code="acp_requires_native_environment",
+                    )
+                workspaces = published.value.project_roots
+                cwd = workspaces[0] if workspaces else str(self._store.settings.data_root)
+                acp_turn = AcpTurn(
+                    sessions=self.acp_sessions,
+                    resource=node.resource,
+                    digest=canonical_digest(
+                        {
+                            "root": node.model_dump(mode="json"),
+                            "cwd": cwd,
+                            "additional_directories": workspaces[1:],
+                        }
+                    ),
+                    setup=AcpSessionSetup(
+                        cwd=cwd,
+                        instructions=(*node.global_guidance, node.resource.instructions),
+                        additional_directories=workspaces[1:],
+                    ),
+                    inputs=self._acp_inputs,
+                    interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
+                    ask_user_enabled=source.document.tools.enable_ask_user_question,
+                    goal=goal_capability,
+                    bind_environment=(
+                        (lambda _: AcpRunBinding())
+                        if source.document.security.shell_review.enable
+                        else (lambda context: AcpRunBinding(environment=context.environment))
+                    ),
+                )
             prediction = (
                 self._input_prediction
                 if published.value.root.source_kind == "agent"
@@ -573,12 +621,13 @@ class RootRunExecutor:
             reconstructed = reconstruct(
                 published.value,
                 background_compaction=self._compaction,
+                acp_turn=acp_turn,
                 pricing_catalog=pricing_catalog,
                 memory_positions=admission.memory_positions,
                 organization=admission.organization,
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
-                    MainAccountCapability(published.value.root.model.model_id, on_main_account),
+                    *((MainAccountCapability(node.model.model_id, on_main_account),) if node.model is not None else ()),
                     *(
                         (
                             BotEnvironmentsCapability(
@@ -588,7 +637,7 @@ class RootRunExecutor:
                         if is_bot and environment is not None
                         else ()
                     ),
-                    goal_capability,
+                    *((goal_capability,) if acp_turn is None else ()),
                     *admission.run_capabilities,
                     RootCheckpointCapability(
                         save_checkpoint,
@@ -688,7 +737,11 @@ class RootRunExecutor:
                 if reconstructed.compaction is not None
                 else None
             )
-            compaction_result = await self._compaction.restore(previous_state) if self._compaction is not None else None
+            compaction_result = (
+                await self._compaction.restore(previous_state)
+                if self._compaction is not None and acp_turn is None
+                else None
+            )
 
             def observe_production(item: HarnessEvent) -> None:
                 # The root's exact stream exists before Capability freezing starts.
@@ -708,7 +761,11 @@ class RootRunExecutor:
                 metadata=admission.external_context.model_copy(deep=True).metadata,
                 request_context=admission.external_context.request_context(),
                 tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
-                codeact_state=self._tool_executions.state(thread_id) if self._tool_executions is not None else None,
+                codeact_state=(
+                    self._tool_executions.state(thread_id)
+                    if self._tool_executions is not None and acp_turn is None
+                    else None
+                ),
                 instance=instance,
                 configuration=reconstructed.run_configuration,
                 environment=None if environment is None else environment.runtime,
@@ -771,7 +828,7 @@ class RootRunExecutor:
                 stream_entry_attempted = True
                 async with stream:
                     if on_stream is not None:
-                        await on_stream(stream, input_files)
+                        await on_stream(stream, input_files, acp_turn)
                     async for item in stream:
                         record_skill_event(item)
                         excerpts.observe(item)

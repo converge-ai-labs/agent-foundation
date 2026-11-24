@@ -16,6 +16,7 @@ from acp import RequestError, schema
 from aiohttp import web
 from pydantic import ValidationError
 from pydantic_ai import ModelRetry, RunContext, ToolDenied, ToolReturn
+from pydantic_ai.agent import _build_run_capabilities
 from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, UnexpectedModelBehavior
 from pydantic_ai.messages import InstructionPart, ToolCallPart
@@ -35,6 +36,8 @@ from a13n_harness.model_context import (
 from .transport import AcpError
 
 _MCP_VERSIONS = {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"}
+_SERVER_NAME = "harness-host"
+_SERVER_PREFIXES = (f"mcp__{_SERVER_NAME}__", f"mcp_{_SERVER_NAME}_", f"{_SERVER_NAME}/", f"{_SERVER_NAME}.")
 _STDIO_URL = "A13N_ACP_MCP_URL"
 _STDIO_TOKEN = "A13N_ACP_MCP_TOKEN"
 
@@ -79,20 +82,23 @@ class AcpHostToolScope:
         projection._confirm(projection.blocks)
         return tuple(block.content for block in projection.blocks)
 
-    async def _dispatch(self, method: str, params: dict[str, Any], anchor: str | None) -> dict[str, Any]:
-        manager = await ToolManager(self.toolset, root_capability=self.capability).for_run_step(self.context)
-        if method == "tools/list":
-            return {
-                "tools": [
-                    {
-                        "name": tool.name,
-                        "inputSchema": tool.parameters_json_schema,
-                        **({"description": tool.description} if tool.description else {}),
-                    }
-                    for tool in manager.tool_defs
-                    if tool.kind == "function"
-                ]
+    async def _manager(self) -> ToolManager[AgentContext]:
+        return await ToolManager(self.toolset, root_capability=self.capability).for_run_step(self.context)
+
+    async def _describe_tools(self) -> list[dict[str, Any]]:
+        manager = await self._manager()
+        return [
+            {
+                "name": tool.name,
+                "inputSchema": tool.parameters_json_schema,
+                **({"description": tool.description} if tool.description else {}),
             }
+            for tool in manager.tool_defs
+            if tool.kind == "function"
+        ]
+
+    async def _call(self, params: dict[str, Any], anchor: str | None) -> dict[str, Any]:
+        manager = await self._manager()
         name, arguments = params.get("name"), params.get("arguments", {})
         if not isinstance(name, str) or not isinstance(arguments, dict):
             raise RequestError.invalid_params()
@@ -129,25 +135,35 @@ class AcpHostToolBridge:
         *,
         toolsets: Sequence[AbstractToolset[AgentContext]] = (),
     ) -> None:
-        self._capability = CombinedCapability(capabilities)
+        self._capabilities = tuple(capabilities)
         self._toolsets = tuple(toolsets)
         self._scope: AcpHostToolScope | None = None
         self._turn_id: str | None = None
         self._calls: set[asyncio.Task[dict[str, Any]]] = set()
         self._active_names: dict[str, str | None] = {}
+        self._tool_catalog: list[dict[str, Any]] = []
         self._token: str | None = None
         self._server_id: str | None = None
         self._connections: set[str] = set()
 
     @asynccontextmanager
-    async def prepare(self, context: RunContext[AgentContext]) -> AsyncIterator[AcpHostToolScope]:
-        capability = await self._capability.for_run(context)
-        context = replace(context, root_capability=capability)
+    async def prepare(
+        self,
+        context: RunContext[AgentContext],
+        *,
+        capabilities: Sequence[AbstractCapability[AgentContext]] = (),
+        toolsets: Sequence[AbstractToolset[AgentContext]] = (),
+    ) -> AsyncIterator[AcpHostToolScope]:
+        capability = await CombinedCapability((*self._capabilities, *capabilities)).for_run(context)
+        # Capability-owned toolsets resolve ownership through the same registry
+        # as a native agent step, including generated IDs for anonymous capabilities.
+        context = replace(context, root_capability=capability, capabilities=_build_run_capabilities(capability))
         capability_tools = capability.get_toolset()
         assert capability_tools is None or isinstance(capability_tools, AbstractToolset)
         toolset: AbstractToolset[AgentContext] = CombinedToolset(
             [
                 *self._toolsets,
+                *toolsets,
                 *([capability_tools] if capability_tools is not None else []),
             ]
         )
@@ -168,10 +184,18 @@ class AcpHostToolBridge:
             self._token = None
             self._server_id = None
             self._connections.clear()
+            self._tool_catalog = []
 
-    def _bind(self, scope: AcpHostToolScope, turn_id: str) -> None:
+    def _require_scope(self, scope: AcpHostToolScope) -> None:
         if scope._bridge is not self:
             raise AcpError("acp_mcp_scope_mismatch", "Prepare the Run scope with this connection's bridge.")
+
+    async def _discover(self, scope: AcpHostToolScope) -> None:
+        self._require_scope(scope)
+        self._tool_catalog = await scope._describe_tools()
+
+    def _bind(self, scope: AcpHostToolScope, turn_id: str) -> None:
+        self._require_scope(scope)
         if self._turn_id is not None:
             raise AcpError("acp_mcp_busy", "The host tool bridge already has an active turn.")
         self._scope, self._turn_id = scope, turn_id
@@ -202,22 +226,26 @@ class AcpHostToolBridge:
             return {
                 "protocolVersion": version if isinstance(version, str) and version in _MCP_VERSIONS else "2025-11-25",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "harness-host", "version": "1"},
+                "serverInfo": {"name": _SERVER_NAME, "version": "1"},
             }
         if method in {"ping", "notifications/initialized"}:
             return {}
-        if method not in {"tools/list", "tools/call"}:
+        if method == "tools/list":
+            return {"tools": self._tool_catalog}
+        if method != "tools/call":
             raise RequestError.method_not_found(method)
         scope = self._scope
         if scope is None:
             raise RequestError.invalid_request({"code": "acp_run_inactive"})
-        if call_id is None:
-            matches = [
-                key for key, name in self._active_names.items() if name == params.get("name") and name is not None
-            ]
+        name = params.get("name")
+        if call_id is None and isinstance(name, str):
+            matches = [key for key, active_name in self._active_names.items() if active_name == name]
+            if not matches:
+                names = {prefix + name for prefix in _SERVER_PREFIXES}
+                matches = [key for key, active_name in self._active_names.items() if active_name in names]
             if len(matches) == 1:
                 call_id = matches[0]
-        task = asyncio.create_task(scope._dispatch(method, params, call_id))
+        task = asyncio.create_task(scope._call(params, call_id))
         self._calls.add(task)
         try:
             result = await task
@@ -233,7 +261,7 @@ class AcpHostToolBridge:
 
     def _acp_server(self) -> schema.AcpMcpServer:
         self._server_id = secrets.token_urlsafe(24)
-        return schema.AcpMcpServer(name="harness-host", server_id=self._server_id)
+        return schema.AcpMcpServer(name=_SERVER_NAME, server_id=self._server_id)
 
     def _connect(self, server_id: str) -> schema.ConnectMcpResponse:
         if self._server_id is None or server_id != self._server_id:
@@ -266,13 +294,13 @@ class AcpHostToolBridge:
             url = f"http://127.0.0.1:{runner.addresses[0][1]}/mcp"
             if http:
                 yield schema.HttpMcpServer(
-                    name="harness-host",
+                    name=_SERVER_NAME,
                     url=url,
                     headers=[schema.HttpHeader(name="Authorization", value=f"Bearer {token}")],
                 )
             else:
                 yield schema.McpServerStdio(
-                    name="harness-host",
+                    name=_SERVER_NAME,
                     command=sys.executable,
                     args=["-m", "a13n_harness.acp._stdio"],
                     env=[
@@ -307,7 +335,7 @@ class AcpHostToolBridge:
         if not isinstance(params, dict):
             return _rpc_error(request_id, -32602, "Invalid params")
         try:
-            if message["method"] in {"tools/list", "tools/call"} and self._turn_id != turn_id:
+            if message["method"] == "tools/call" and self._turn_id != turn_id:
                 raise RequestError.invalid_request({"code": "acp_run_inactive"})
             result = await self._dispatch(message["method"], params)
         except RequestError as exc:

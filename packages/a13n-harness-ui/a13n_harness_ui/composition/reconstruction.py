@@ -79,10 +79,11 @@ if TYPE_CHECKING:
 from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.toolsets.web import WebConfiguration
 
+from a13n_harness_ui.acp_execution import AcpTurn
 from a13n_harness_ui.configuration.models import WebProviderResource
 
 from .auxiliary import capability_configuration
-from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
+from .models import ResolvedAcpNode, ResolvedAgentNode, ResolvedMcpRecipe, ResolvedModelRecipe, ResolvedRunComposition
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +291,7 @@ class AgentReconstructor:
         memory_positions: Mapping[str, str | None] | None = None,
         organization: MemoryOrganizationRun | None = None,
         background_compaction: BackgroundCompaction | None = None,
+        acp_turn: AcpTurn | None = None,
     ) -> ReconstructedAgent:
         if composition.memory_organization:
             if organization is None:
@@ -306,6 +308,36 @@ class AgentReconstructor:
             positions=memory_positions,
             bot=composition.root.source_kind == "bot",
         )
+        if isinstance(composition.root, ResolvedAcpNode):
+            if acp_turn is None:
+                raise CompositionError("ACP requires an admitted outbound turn.", code="acp_turn_required")
+            acp_turn.capabilities = (
+                CurrentAgentContextCapability(),
+                *root_capabilities,
+                *((memory,) if memory is not None else ()),
+                *(self._mcp_capability(item) for item in composition.root.mcp_servers),
+            )
+            model_resolver = HarnessUiModelResolver(
+                {model_recipe_id(item): item for item in composition.media_understanding.values()},
+                subscription_sources=subscription_sources,
+                api_keys=self._api_keys,
+                configuration=composition.run_configuration,
+            )
+            return ReconstructedAgent(
+                executable=HarnessBuilder(
+                    configured_plugins_enabled=False, instrumentation=self._instrumentation
+                ).build(
+                    AgentSpec(),
+                    output_type=str | None,
+                    plugins=(acp_turn,),
+                    pricing_catalog=pricing_catalog,
+                ),
+                model_resolver=model_resolver,
+                definition_capability_ids=frozenset(item.id for item in acp_turn.capabilities if item.id is not None),
+                run_configuration=composition.run_configuration,
+                media_models=composition.media_understanding,
+                memory_cursors=cursors,
+            )
         from a13n_harness_ui.subagent_tools import SubagentTools, guidance
 
         dynamic = not subagent and composition.subagents.dynamic.enabled
@@ -439,6 +471,15 @@ class AgentReconstructor:
             },
         )
 
+    def _mcp_capability(self, item: ResolvedMcpRecipe) -> HarnessUiMCP:
+        return HarnessUiMCP(
+            item,
+            configuration_root=self._configuration_root,
+            oauth=self._mcp_oauth,
+            apps=self._mcp_apps if item.apps_enabled else None,
+            connections=self._mcp_connections,
+        )
+
     def _reconstruct_memory(
         self,
         composition: ResolvedRunComposition,
@@ -528,16 +569,7 @@ class AgentReconstructor:
             local_sources[recipe.capability] = capability
         if node.global_guidance is not None:
             capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
-        mcp_sources = {
-            item.server_id: HarnessUiMCP(
-                item,
-                configuration_root=self._configuration_root,
-                oauth=self._mcp_oauth,
-                apps=self._mcp_apps if item.apps_enabled else None,
-                connections=self._mcp_connections,
-            )
-            for item in node.mcp_servers
-        }
+        mcp_sources = {item.server_id: self._mcp_capability(item) for item in node.mcp_servers}
         capabilities.extend(mcp_sources.values())
         tool_search = (
             ToolSearchPlan(

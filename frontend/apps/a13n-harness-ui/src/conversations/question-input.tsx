@@ -9,8 +9,13 @@ export function QuestionInput({
   request,
   onChange,
 }: {
-  request: Schema<"StructuredQuestionRequestView">;
-  onChange: (response: DecisionResponse | undefined) => void;
+  request: Pick<
+    Schema<"StructuredQuestionRequestView">,
+    "request_id" | "questions"
+  >;
+  onChange: (
+    response: Extract<DecisionResponse, { kind?: "question" }> | undefined,
+  ) => void;
 }) {
   const { t } = useTranslation();
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});

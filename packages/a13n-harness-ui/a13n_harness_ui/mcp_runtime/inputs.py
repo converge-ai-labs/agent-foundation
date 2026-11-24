@@ -11,6 +11,7 @@ from typing import Any, Literal
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from a13n_harness.toolsets.interaction import AskUserQuestionRequest, UserQuestion, validate_user_question_result
 from fastmcp.client.elicitation import ElicitResult
 from jsonschema import Draft202012Validator, ValidationError
 from mcp.types import ElicitRequestFormParams, ElicitRequestParams
@@ -43,8 +44,9 @@ class McpInputRequestView(InputModel):
     run_id: str | None = None
     tool_call_id: str | None = None
     view_id: str | None = None
-    mode: Literal["form", "url"]
+    mode: Literal["form", "url", "question"]
     message: str = Field(max_length=8192)
+    questions: tuple[UserQuestion, ...] = ()
     schema_: dict[str, JsonValue] | None = Field(default=None, alias="schema")
     url: str | None = None
     state: Literal["pending", "accepted", "declined", "cancelled", "expired", "unavailable"] = "pending"
@@ -62,8 +64,7 @@ class McpIntegrationView(InputModel):
 @dataclass
 class _Request:
     view: McpInputRequestView
-    connection: Connection
-    operation: Operation
+    require_active: Callable[[], None]
     future: asyncio.Future[ElicitResult[Any]]
     response: McpInputResponse | None = None
 
@@ -134,8 +135,37 @@ class Inputs:
     async def __call__(
         self, connection: Connection, operation: Operation, params: ElicitRequestParams
     ) -> ElicitResult[Any]:
+        def require_active() -> None:
+            connection.require_admission()
+            if connection._active_operation is not operation:
+                raise HarnessUiError("The MCP operation is unavailable.", code="mcp_input_stale")
+
+        return await self.request(
+            params,
+            thread_id=connection.thread_id,
+            server_id=connection.server_id,
+            run_id=operation.run_id,
+            tool_call_id=operation.tool_call_id,
+            view_id=operation.view_id,
+            require_active=require_active,
+        )
+
+    async def request(
+        self,
+        params: ElicitRequestParams | AskUserQuestionRequest,
+        *,
+        thread_id: str,
+        server_id: str,
+        require_active: Callable[[], None],
+        run_id: str | None = None,
+        tool_call_id: str | None = None,
+        view_id: str | None = None,
+        timeout_seconds: float | None = None,
+    ) -> ElicitResult[Any]:
+        """Collect input for an in-flight operation without admitting another Run."""
         if self._closed:
             return ElicitResult(action="cancel")
+        require_active()
         # Bounded reconciliation history never evicts a pending operation.
         for key in tuple(self._requests):
             if len(self._requests) < 128:
@@ -144,33 +174,39 @@ class Inputs:
                 self._requests.pop(key)
         if len(self._requests) >= 128:
             return ElicitResult(action="decline")
-        schema, url = None, None
-        if isinstance(params, ElicitRequestFormParams):
+        schema, url, questions = None, None, ()
+        if isinstance(params, AskUserQuestionRequest):
+            mode, message, questions = "question", "", params.questions
+        elif isinstance(params, ElicitRequestFormParams):
+            mode, message = params.mode, params.message
             validate_schema(params.requested_schema)
             schema = params.requested_schema
         else:
+            mode, message = params.mode, params.message
             parsed = urlsplit(params.url)
             if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password:
                 raise ValueError("MCP input URL must be an HTTP(S) browser destination without credentials.")
             url = params.url
+        timeout = self._timeout if timeout_seconds is None else timeout_seconds
         view = McpInputRequestView(
             request_id=f"mcpinp_{uuid4().hex}",
-            thread_id=connection.thread_id,
-            server_id=connection.server_id,
-            run_id=operation.run_id,
-            tool_call_id=operation.tool_call_id,
-            view_id=operation.view_id,
-            mode=params.mode,
-            message=params.message,
+            thread_id=thread_id,
+            server_id=server_id,
+            run_id=run_id,
+            tool_call_id=tool_call_id,
+            view_id=view_id,
+            mode=mode,
+            message=message,
+            questions=questions,
             schema=schema,
             url=url,
-            expires_at=datetime.now(UTC) + timedelta(seconds=self._timeout),
+            expires_at=datetime.now(UTC) + timedelta(seconds=timeout),
         )
-        request = _Request(view, connection, operation, asyncio.get_running_loop().create_future())
+        request = _Request(view, require_active, asyncio.get_running_loop().create_future())
         self._requests[view.request_id] = request
         try:
-            await self._changed(connection.thread_id)
-            async with asyncio.timeout(self._timeout):
+            await self._changed(thread_id)
+            async with asyncio.timeout(timeout):
                 return await asyncio.shield(request.future)
         except TimeoutError:
             request.view = request.view.model_copy(update={"state": "expired"})
@@ -180,7 +216,7 @@ class Inputs:
                 request.view = request.view.model_copy(update={"state": "unavailable"})
             if not request.future.done():
                 request.future.cancel()
-            await self._changed(connection.thread_id)
+            await self._changed(thread_id)
 
     def thread_ids(self) -> set[str]:
         return {item.view.thread_id for item in self._requests.values()}
@@ -205,11 +241,17 @@ class Inputs:
             await self._changed(request.view.thread_id)
         if request.view.state != "pending" or request.future.done():
             raise HarnessUiError("MCP input is no longer pending.", code="mcp_input_stale")
-        request.connection.require_admission()
-        if request.connection._active_operation is not request.operation:
-            raise HarnessUiError("The MCP operation is unavailable.", code="mcp_input_stale")
+        request.require_active()
+        content = response.content
         if response.action == "accept":
-            if request.view.mode == "url":
+            if request.view.mode == "question":
+                try:
+                    content = validate_user_question_result({"questions": request.view.questions}, content)
+                except ValueError as exc:
+                    raise HarnessUiError(
+                        "Input does not answer the pending questions.", code="mcp_input_invalid"
+                    ) from exc
+            elif request.view.mode == "url":
                 if response.content is not None:
                     raise HarnessUiError("URL confirmation cannot include form data.", code="mcp_input_invalid")
             else:
@@ -233,7 +275,7 @@ class Inputs:
         request.view = request.view.model_copy(
             update={"state": {"accept": "accepted", "decline": "declined", "cancel": "cancelled"}[response.action]}
         )
-        request.future.set_result(ElicitResult(action=response.action, content=response.content))
+        request.future.set_result(ElicitResult(action=response.action, content=content))
         await self._changed(request.view.thread_id)
         return request.view.model_copy(deep=True)
 

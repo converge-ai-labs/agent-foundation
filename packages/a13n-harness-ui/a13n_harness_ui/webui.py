@@ -39,6 +39,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
+from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.bot import BotSnapshot
 from a13n_harness_ui.bot_models import (
@@ -2027,6 +2028,22 @@ def create_webui(
     @server.get("/api/web-providers", response_model=WebProviderCatalogView)
     async def web_providers() -> WebProviderCatalogView:
         return await app().web_provider_catalog()
+
+    @server.post("/api/acp-agents/{agent_id}/auth", response_model=AcpAuthStatus, openapi_extra=_body(AcpAuthRequest))
+    async def acp_auth(agent_id: str, request: Request) -> AcpAuthStatus:
+        return await app().acp_auth(agent_id, await _document(request, AcpAuthRequest))
+
+    @server.get("/api/acp-agents/{agent_id}/auth/inputs", response_model=tuple[McpInputRequestView, ...])
+    async def acp_auth_inputs(agent_id: str) -> tuple[McpInputRequestView, ...]:
+        return await app().acp_auth_inputs(agent_id)
+
+    @server.post(
+        "/api/acp-agents/{agent_id}/auth/inputs/{request_id}/response",
+        response_model=McpInputRequestView,
+        openapi_extra=_body(McpInputResponse),
+    )
+    async def respond_acp_auth_input(agent_id: str, request_id: str, request: Request) -> McpInputRequestView:
+        return await app().respond_acp_auth_input(agent_id, request_id, await _document(request, McpInputResponse))
 
     @server.get("/api/configuration/sources", response_model=ConfigurationSourceCatalog)
     async def configuration_sources() -> ConfigurationSourceCatalog:

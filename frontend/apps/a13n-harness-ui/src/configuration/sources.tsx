@@ -26,6 +26,7 @@ import { inlineLabel } from "../shell/text";
 import { ConfirmAction } from "../shell/confirm-action";
 import { SourceEditor } from "./editor";
 import { McpTools } from "./mcp-tools";
+import { AcpAuth } from "./acp-auth";
 import { ResourceFields, type RootSettingsGroup } from "./fields";
 import { BrowserConfigurationFields } from "./browser-runtime";
 import {
@@ -274,7 +275,10 @@ export function SourcesPage({
                   {kinds ? displayName(source) : source.relative_path}
                 </strong>
                 <small>
-                  {kinds?.length === 1 && kinds[0] === "agent" ? (
+                  {source.resource_kind === "acp_agent" ? (
+                    t("ACP agent")
+                  ) : kinds?.includes("agent") &&
+                    source.resource_kind === "agent" ? (
                     source.resource_ids.map((id) => {
                       const model = selectors.data?.agents.find(
                         (agent) => agent.agent_id === id,
@@ -505,7 +509,7 @@ export function SourceDocument({
     readDocument(draft?.content ?? "")?.get("kind") ??
     sourceInfo?.resource_kind;
   const [back, backLabel] =
-    kind === "agent"
+    kind === "agent" || kind === "acp_agent"
       ? ["/settings/agents", "Agents"]
       : kind === "model"
         ? ["/settings/models", "Models"]
@@ -692,6 +696,11 @@ export function SourceDocument({
           </Button>
         </div>
       )}
+      {source.data?.resource_kind === "acp_agent" &&
+        !dirty &&
+        source.data.resource_ids.map((id) => (
+          <AcpAuth key={`${id}:${source.data?.source_digest}`} agentId={id} />
+        ))}
       {source.data?.resource_kind === "mcp_server" &&
         !draft?.replacement &&
         source.data.resource_ids.map((id) => (

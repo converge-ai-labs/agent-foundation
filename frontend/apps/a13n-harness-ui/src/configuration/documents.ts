@@ -4,6 +4,7 @@ export type ResourceKind =
   | "model"
   | "web_provider"
   | "agent"
+  | "acp_agent"
   | "project"
   | "harness_plugin"
   | "environment_profile"
@@ -26,6 +27,12 @@ export const resourceKinds: {
   },
   { value: "device", label: "Device", directory: "devices", prefix: "device" },
   { value: "agent", label: "Agent", directory: "agents", prefix: "agent" },
+  {
+    value: "acp_agent",
+    label: "ACP agent",
+    directory: "acp_agents",
+    prefix: "acp",
+  },
   {
     value: "project",
     label: "Project",
@@ -70,6 +77,7 @@ export function template(kind: ResourceKind, id: string): string {
       authentication: { kind: "api_key", env: "A13N_DEVICE_TOKEN" },
     },
     agent: { model: null, instructions: "", capabilities: [], subagents: [] },
+    acp_agent: { preset: "custom", command: null, instructions: "" },
     project: { roots: [{ path: "" }], defaults: {} },
     harness_plugin: { plugin_key: "", configuration: {} },
     environment_profile: {

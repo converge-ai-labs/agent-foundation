@@ -65,6 +65,7 @@ from a13n_harness_ui.surfaces import RunModelOverrides
 
 from .models import (
     DependencyProvenance,
+    ResolvedAcpNode,
     ResolvedAgentNode,
     ResolvedCapabilityRecipe,
     ResolvedContentPlugin,
@@ -100,7 +101,7 @@ class ThreadCompositionSelection:
     thread_id: str
     version: int
     project_id: str | None
-    agent_source_kind: Literal["agent", "markdown", "live", "bot", "dynamic"]
+    agent_source_kind: Literal["agent", "acp_agent", "markdown", "live", "bot", "dynamic"]
     agent_source_id: str
     environment_profile_id: str
     harness_plugin_ids: tuple[str, ...]
@@ -370,13 +371,26 @@ class AgentCompositionResolver:
                 root=self._live_node(source),
                 environment_profile=self.environment_profile(source, FULL_CONTROL_PROFILE_ID),
             )
-        root = self.resolve_agent(
-            source, selection, parent_node=parent_node, dynamic_node=dynamic_node, model_overrides=model_overrides
-        )
+        if selection.agent_source_kind == "acp_agent":
+            self._validate_selection(source, selection)
+            if model_overrides is not None:
+                raise CompositionError("External ACP Agents own model selection.", code="acp_model_override")
+            resource = source.acp_agents[selection.agent_source_id]
+            root: ResolvedAgentNode | ResolvedAcpNode = ResolvedAcpNode(
+                source_id=resource.id,
+                roster_name=resource.name[:128],
+                resource=resource,
+                global_guidance=source.global_guidance,
+                mcp_servers=self._mcp_recipes(source, selection.mcp_server_ids),
+            )
+        else:
+            root = self.resolve_agent(
+                source, selection, parent_node=parent_node, dynamic_node=dynamic_node, model_overrides=model_overrides
+            )
         environment = self.environment_profile(source, selection.environment_profile_id)
         run_extensions, extension_dependencies = self._run_extensions(source, selection.environment_run_extension_ids)
         dependencies = [
-            *self._agent_dependencies(source, root),
+            *(self._agent_dependencies(source, root) if isinstance(root, ResolvedAgentNode) else ()),
             *self._environment_dependencies(source, environment),
             *extension_dependencies,
         ]
@@ -405,7 +419,9 @@ class AgentCompositionResolver:
             project_id=selection.project_id,
             memory_enabled=source.document.memory.enabled,
             inbox_enabled=source.document.inbox.enabled,
-            background_compaction=source.document.background_compaction,
+            background_compaction=source.document.background_compaction.model_copy(update={"enabled": False})
+            if isinstance(root, ResolvedAcpNode)
+            else source.document.background_compaction,
             run_configuration=run_configuration or source.document.run_configuration,
             tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
             subagents=source.document.subagents,
@@ -483,7 +499,9 @@ class AgentCompositionResolver:
             raise CompositionError("The Thread Project is unavailable.", code="project_missing")
         if selection.default_model_id is not None and selection.agent_source_kind not in {"agent", "dynamic"}:
             raise CompositionError("A Markdown child follows its parent Model.", code="thread_model_invalid")
-        sources = source.agents if selection.agent_source_kind == "agent" else source.subagents
+        sources = {"agent": source.agents, "acp_agent": source.acp_agents}.get(
+            selection.agent_source_kind, source.subagents
+        )
         if selection.agent_source_kind not in {"bot", "dynamic"} and selection.agent_source_id not in sources:
             raise CompositionError("The Thread Agent source is unavailable.", code="agent_source_missing")
         if (

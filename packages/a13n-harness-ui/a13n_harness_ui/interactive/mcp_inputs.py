@@ -8,6 +8,8 @@ from typing import Any
 
 from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView, McpInputResponse
 
+from .selection import resolve_choice
+
 
 @dataclass
 class McpInteraction:
@@ -28,6 +30,15 @@ class McpInteraction:
         return tuple(item for item in required if isinstance(item, str)) if isinstance(required, list) else ()
 
     def prompt(self) -> str:
+        if self.request.mode == "question":
+            question = self.request.questions[self.position]
+            options = "\n".join(
+                f"{index}. {option.label}\n   {option.description}" for index, option in enumerate(question.options, 1)
+            )
+            return (
+                f"{question.header} · {self.position + 1}/{len(self.request.questions)}\n"
+                f"{question.question}\n{options}\nChoose a number or type your own answer; or decline / cancel."
+            )
         if self.request.mode == "url":
             return f"Open in your browser: {self.request.url}\nAfter completing the action, type accept; or decline / cancel."
         if self.position >= len(self.fields):
@@ -44,6 +55,16 @@ class McpInteraction:
     def answer(self, text: str) -> McpInputResponse | None:
         if text.strip() in ("decline", "cancel"):
             return McpInputResponse(action="decline" if text.strip() == "decline" else "cancel")
+        if self.request.mode == "question":
+            question = self.request.questions[self.position]
+            answer = resolve_choice(
+                text, tuple(option.label for option in question.options), multiple=question.multi_select
+            )
+            self.content[question.question] = list(answer) if isinstance(answer, tuple) else answer
+            if self.position + 1 == len(self.request.questions):
+                return McpInputResponse(action="accept", content={"answers": self.content})
+            self.position += 1
+            return None
         if self.request.mode == "url" or self.position >= len(self.fields):
             if text.strip() != "accept":
                 raise ValueError("Type accept, decline, or cancel.")

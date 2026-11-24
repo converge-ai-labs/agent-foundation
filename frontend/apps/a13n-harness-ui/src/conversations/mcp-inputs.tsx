@@ -13,6 +13,7 @@ import { ErrorNotice } from "../shell/ui";
 import styles from "./decisions.module.css";
 import conversation from "./conversation.module.css";
 import { record } from "./decision-evidence";
+import { QuestionInput } from "./question-input";
 
 type Request = Schema<"McpInputRequestView">;
 type Response = Schema<"McpInputResponse">;
@@ -74,14 +75,16 @@ export function McpInputs({
   );
 }
 
-function McpInput({
+export function McpInput({
   threadId,
   request,
   reconcile,
+  submitResponse,
 }: {
   threadId: string;
   request: Request;
   reconcile: () => void;
+  submitResponse?: (response: Response) => Promise<Request>;
 }) {
   const { t } = useTranslation();
   const { client } = useTransport();
@@ -98,20 +101,27 @@ function McpInput({
     ),
   );
   const [submitted, setSubmitted] = useState<Response>();
+  const [questionAnswer, setQuestionAnswer] = useState<Response>();
   const answer = useMutation({
     mutationFn: (response: Response) =>
-      result(
-        client.POST(
-          "/api/threads/{thread_id}/mcp/inputs/{request_id}/response",
-          {
-            params: {
-              path: { thread_id: threadId, request_id: request.request_id },
-            },
-            body: response,
-          },
-        ),
-      ),
+      submitResponse
+        ? submitResponse(response)
+        : result(
+            client.POST(
+              "/api/threads/{thread_id}/mcp/inputs/{request_id}/response",
+              {
+                params: {
+                  path: { thread_id: threadId, request_id: request.request_id },
+                },
+                body: response,
+              },
+            ),
+          ),
     onSuccess: () => {
+      if (submitResponse) {
+        reconcile();
+        return;
+      }
       void queries.invalidateQueries({
         queryKey: ["thread", threadId, "mcp-inputs"],
       });
@@ -142,13 +152,38 @@ function McpInput({
             {t("From child Thread {{id}}", { id: request.thread_id })}
           </p>
         )}
-        <p className={styles.reason}>{request.message}</p>
+        {request.message && <p className={styles.reason}>{request.message}</p>}
         <p className={styles.hint}>
           {t(
             "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
           )}
         </p>
-        {request.mode === "url" ? (
+        {request.mode === "question" ? (
+          <fieldset disabled={locked}>
+            <QuestionInput
+              request={{
+                request_id: request.request_id,
+                questions: (request.questions ?? []).map(
+                  ({ multiSelect, ...question }) => ({
+                    ...question,
+                    multi_select: multiSelect,
+                  }),
+                ),
+              }}
+              onChange={(response) =>
+                setQuestionAnswer(
+                  response && {
+                    action: "accept",
+                    content: {
+                      answers: response.answers,
+                      response: response.response,
+                    },
+                  },
+                )
+              }
+            />
+          </fieldset>
+        ) : request.mode === "url" ? (
           <>
             <a
               href={request.url ?? undefined}
@@ -300,6 +335,14 @@ function McpInput({
           </form>
         )}
         <div className={styles.actions}>
+          {request.mode === "question" && (
+            <Button
+              disabled={locked || !questionAnswer}
+              onClick={() => questionAnswer && send(questionAnswer)}
+            >
+              {t("Send response")}
+            </Button>
+          )}
           {request.mode === "url" && (
             <Button
               disabled={locked}

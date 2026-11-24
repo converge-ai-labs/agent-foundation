@@ -15,6 +15,7 @@ from filelock import AsyncFileLock
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
+from a13n_harness_ui.configuration.models import AgentResource
 from a13n_harness_ui.display_history import (
     DisplayHistoryCollector,
     ordinary_input,
@@ -35,7 +36,7 @@ from a13n_harness_ui.storage import (
 )
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
 from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
-from a13n_harness_ui.storage.contracts import BotAgentSource, LiveAgentSource, MemoryAgentSource
+from a13n_harness_ui.storage.contracts import AcpAgentSource, BotAgentSource, LiveAgentSource, MemoryAgentSource
 from a13n_harness_ui.storage.display import read_display
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
@@ -626,10 +627,16 @@ def apply_configuration_mutation(
     return replacement
 
 
+def configured_agent_source(agent_id: str) -> AgentResourceSource | AcpAgentSource:
+    return AcpAgentSource(id=agent_id) if agent_id.startswith("acp-") else AgentResourceSource(id=agent_id)
+
+
 def project_defaults_patch(defaults: ProjectDefaults) -> ProjectDefaultsPatch:
     values: dict[str, object] = {}
     if defaults.agent is not None:
-        values["agent_source"] = AgentResourceSource(id=defaults.agent)
+        values["agent_source"] = configured_agent_source(defaults.agent)
+        if isinstance(values["agent_source"], AcpAgentSource):
+            values["default_model_id"] = None
     for name, value in (
         ("environment_profile_id", defaults.environment_profile),
         ("environment_bindings", defaults.environment_bindings),
@@ -662,9 +669,12 @@ def resolve_thread_configuration_details(
     agent_id, agent_origin = _first_selection(
         (requested.agent_id, "explicit"), (project.agent, "project"), (global_defaults.agent, "global")
     )
-    if agent_id is None or agent_id not in source.agents:
+    if agent_id is None:
         raise ThreadError("A root Thread requires an available Agent.", code="thread_agent_missing")
-    agent = source.agents[agent_id]
+    agent_source = configured_agent_source(agent_id)
+    agent = (source.acp_agents if isinstance(agent_source, AcpAgentSource) else source.agents).get(agent_id)
+    if agent is None:
+        raise ThreadError("A root Thread requires an available Agent.", code="thread_agent_missing")
     environment, environment_origin = _first_selection(
         (requested.environment_profile_id, "explicit"),
         (project.environment_profile, "project"),
@@ -683,7 +693,7 @@ def resolve_thread_configuration_details(
     plugins, plugins_origin = _first_selection(
         (requested.harness_plugin_ids, "explicit"),
         (project.harness_plugins, "project"),
-        (agent.harness_plugins, "agent"),
+        (agent.harness_plugins if isinstance(agent, AgentResource) else None, "agent"),
         (global_defaults.harness_plugins, "global"),
     )
     extensions, extensions_origin = _first_selection(
@@ -707,7 +717,7 @@ def resolve_thread_configuration_details(
         version=1,
         local_roots=roots or (),
         project_id=project_id,
-        agent_source=AgentResourceSource(id=agent_id),
+        agent_source=agent_source,
         default_model_id=requested.default_model_id,
         environment_profile_id=environment,
         environment_bindings=bindings or (),
@@ -749,11 +759,11 @@ def _validate_configuration(
 ) -> None:
     if value.project_id is not None and value.project_id not in source.projects:
         raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
-    if root and value.agent_source.kind != "agent":
+    if root and value.agent_source.kind not in {"agent", "acp_agent"}:
         raise ThreadError("A root Thread cannot select a Markdown source.", code="thread_agent_invalid")
     if value.default_model_id is not None:
         if value.agent_source.kind != "agent":
-            raise ThreadError("A Markdown child follows its parent Model.", code="thread_model_invalid")
+            raise ThreadError("This Agent source does not accept a Harness Model.", code="thread_model_invalid")
         if value.default_model_id not in source.models:
             raise ThreadError("The selected Thread Model is unavailable.", code="thread_model_missing")
     for binding in value.environment_bindings:
@@ -767,8 +777,14 @@ def _validate_configuration(
         )
     except ValueError as error:
         raise ThreadError(str(error), code="thread_environment_invalid") from error
-    resources = source.agents if value.agent_source.kind == "agent" else source.subagents
-    if value.agent_source.id not in resources:
+    match value.agent_source:
+        case AgentResourceSource():
+            agent_exists = value.agent_source.id in source.agents
+        case AcpAgentSource():
+            agent_exists = value.agent_source.id in source.acp_agents
+        case _:
+            agent_exists = value.agent_source.id in source.subagents
+    if not agent_exists:
         raise ThreadError("The selected Agent source is unavailable.", code="thread_agent_missing")
     if (
         built_in_environment_profile(value.environment_profile_id) is None
