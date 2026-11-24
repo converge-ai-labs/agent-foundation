@@ -180,11 +180,14 @@ it("marks only the selected section read, refreshes counts, and keeps items open
   expect(needs.queryByRole("alert")).toBeNull();
   expect(updates.getByRole("status").textContent).toBe("3 unread");
 
+  updatesAction.focus();
   fireEvent.click(updatesAction);
   await waitFor(() =>
     expect(updates.getByRole("status").textContent).toBe("All read"),
   );
-  expect(updatesAction.disabled).toBe(true);
+  expect(updatesAction.getAttribute("aria-disabled")).toBe("true");
+  expect(document.activeElement).toBe(updatesAction);
+  fireEvent.click(updatesAction);
   expect(
     updates.getByRole("button", { name: "Result, Fix is ready" }),
   ).toBeTruthy();
@@ -197,7 +200,7 @@ it("marks only the selected section read, refreshes counts, and keeps items open
   await waitFor(() =>
     expect(needs.getByRole("status").textContent).toBe("All read"),
   );
-  expect(needsAction.disabled).toBe(true);
+  expect(needsAction.getAttribute("aria-disabled")).toBe("true");
   expect(
     needs.getByRole("button", { name: "Needs you, Choose a timeout" }),
   ).toBeTruthy();
@@ -251,7 +254,7 @@ it("keeps pagination and bulk reading from interrupting each other", async () =>
   await waitFor(() => expect(more.disabled).toBe(true));
   finishBulk();
   await waitFor(() => expect(more.disabled).toBe(false));
-  expect(action.disabled).toBe(true);
+  expect(action.getAttribute("aria-disabled")).toBe("true");
 
   fireEvent.click(more);
   await waitFor(() => expect(more.disabled).toBe(true));

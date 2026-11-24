@@ -7,7 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { Link, NavLink } from "react-router";
-import { Button, SegmentedControl } from "a13n-ui";
+import { Button, SegmentedControl, Spinner } from "a13n-ui";
 import {
   ArrowCounterClockwise,
   ArrowUpRight,
@@ -327,6 +327,7 @@ function InboxGroupHeader({
     mutationFn: () => client.POST("/api/inbox/mark-read", { body: { group } }),
     onSettled: () => queries.invalidateQueries({ queryKey: ["inbox"] }),
   });
+  const unavailable = !unread || fetching || markRead.isPending;
   return (
     <>
       <header className={styles.groupHeader}>
@@ -344,11 +345,21 @@ function InboxGroupHeader({
           variant="ghost"
           size="sm"
           aria-describedby={heading}
-          loading={markRead.isPending}
-          disabled={!unread || fetching}
-          onClick={() => markRead.mutate()}
+          aria-busy={markRead.isPending || undefined}
+          aria-disabled={unavailable || undefined}
+          tabIndex={unavailable ? -1 : undefined}
+          onClick={() => {
+            if (!unavailable) markRead.mutate();
+          }}
         >
-          <EnvelopeSimpleOpen aria-hidden="true" />
+          {markRead.isPending ? (
+            <Spinner
+              aria-hidden="true"
+              className="motion-reduce:animate-none"
+            />
+          ) : (
+            <EnvelopeSimpleOpen aria-hidden="true" />
+          )}
           {t("Mark all as read")}
         </Button>
       </header>
