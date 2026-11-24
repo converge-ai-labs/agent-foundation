@@ -6,13 +6,16 @@ from types import SimpleNamespace
 
 import pytest
 from a13n_harness import AbstractHarnessPlugin, HarnessBuilder, PluginError, RunBindings
+from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
+from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.fork import _PrefixCapture
+from a13n_harness.tool_execution import ToolExecutionConfig, ToolExecutionRuntime
 from pydantic_ai import Tool
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
-from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.openai import OpenAIResponsesModelSettings
 from pydantic_ai.usage import UsageLimits
 
@@ -41,7 +44,7 @@ async def test_post_run_reuses_bound_plugins_after_environment_closes(convenienc
     model = FunctionModel(
         stream_function=stream,
         function=complete,
-        settings=OpenAIResponsesModelSettings(openai_native_tools=({"type": "web_search"},)),
+        settings=OpenAIResponsesModelSettings(openai_native_tools=({"type": "web_search"},), openai_background=False),
     )
 
     class Plugin(AbstractHarnessPlugin):
@@ -111,6 +114,66 @@ async def test_post_run_reuses_bound_plugins_after_environment_closes(convenienc
     assert fork[1].model_settings["openai_native_tools"] == ()
 
 
+async def test_post_run_completes_while_detached_tool_retains_environment():
+    environment = TaskAffineEnvironment()
+    runtime = ToolExecutionRuntime()
+    release = asyncio.Event()
+    executions = []
+    hooks = []
+
+    async def background():
+        await release.wait()
+        return "done"
+
+    async def stream(messages, info):
+        for message in messages:
+            for part in message.parts:
+                if isinstance(part, ToolReturnPart):
+                    executions.append(part.content["execution_id"])
+                    yield "Answer"
+                    return
+        yield {0: DeltaToolCall(name="background", json_args="{}", tool_call_id="call-background")}
+
+    async def complete(messages, info):
+        return ModelResponse(parts=[TextPart("Follow-up")])
+
+    class Plugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self):
+            return "post-run"
+
+        async def post_run(self, context):
+            assert not environment.closed.is_set()
+            hooks.append(await context.agent.complete_text("Continue"))
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream, function=complete),
+        plugins=(Plugin(),),
+        capabilities=(
+            ToolExecutionCapability(ToolExecutionConfig(mode="auto", foreground_wait_seconds=0)),
+            Capability(tools=[Tool(background, metadata={TOOL_EXECUTION_METADATA_KEY: "owned"})]),
+        ),
+    )
+    thread_id = None
+    try:
+        async with executable.stream(
+            "Start", bindings=RunBindings.embedded(environment=environment, tool_execution=runtime)
+        ) as stream_run:
+            thread_id = stream_run.thread_id
+            async for _ in stream_run:
+                pass
+        assert stream_run.post_run is not None
+        await asyncio.wait_for(stream_run.post_run.run(), timeout=2)
+        assert hooks == ["Follow-up"]
+    finally:
+        release.set()
+        if executions:
+            await runtime.wait(thread_id, executions[0])
+    assert environment.closed.is_set()
+
+
 @pytest.mark.parametrize("cancel", [False, True])
 async def test_post_run_isolates_failures_but_propagates_cancellation(cancel):
     calls = []
@@ -163,7 +226,7 @@ async def test_post_run_isolates_failures_but_propagates_cancellation(cancel):
     ],
 )
 async def test_capture_ignores_auxiliary_calls_and_resets_after_an_ineligible_response(settings, part):
-    capture = _PrefixCapture(None)
+    capture = _PrefixCapture()
     capture.begin("run-test")
     context = SimpleNamespace(run_id="run-test")
     request = ModelRequestContext(

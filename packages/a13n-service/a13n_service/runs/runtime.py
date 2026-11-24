@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from functools import cached_property, partial
 from typing import TYPE_CHECKING
@@ -14,6 +13,8 @@ from a13n_harness.environment import EnvironmentMount
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.environment.modal.pool import TransportPool
+from a13n_harness.tool_execution import RetainedScope
+from pydantic_ai.models import Model
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,8 +81,8 @@ class Runtime:
     def post_run_tasks(self) -> set[asyncio.Task[None]]:
         return set()
 
-    async def start_post_run(
-        self, run_id: str, models_stack: AsyncExitStack, work: Callable[[], Awaitable[None]]
+    def start_post_run(
+        self, run_id: str, model_scope: RetainedScope[dict[str, Model]], work: Callable[[], Awaitable[None]]
     ) -> None:
         """Hand off the model lifetime before returning the Worker slot."""
         if self.tasks.stopping:
@@ -89,31 +90,19 @@ class Runtime:
         if len(self.post_run_tasks) >= self.settings.worker.post_run_concurrency:
             POST_RUN_DROPPED.add(1, {"reason": "capacity"})
             return
-        started = asyncio.Event()
+        release = model_scope.retain()
 
         async def finish() -> None:
-            transferred = models_stack.pop_all()
-            started.set()
             try:
                 async with asyncio.timeout(self.settings.worker.post_run_seconds):
                     await work()
             finally:
-                await transferred.aclose()
+                await release()
 
         task = self.tasks.start(finish(), name=f"post-run:{run_id}")
         self.post_run_tasks.add(task)
 
-        def settled(done: asyncio.Task[None]) -> None:
-            self.post_run_tasks.discard(done)
-            started.set()
-
-        task.add_done_callback(settled)
-        try:
-            await started.wait()
-        finally:
-            # If cancelled before the transfer, the caller still owns the stack.
-            if not started.is_set():
-                task.cancel()
+        task.add_done_callback(self.post_run_tasks.discard)
 
     @cached_property
     def seal_publish_tasks(self) -> set[asyncio.Task[None]]:

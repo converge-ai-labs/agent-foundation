@@ -48,7 +48,6 @@ class ExecutableAgent[OutputT]:
         subagents: SubagentCollection,
         definition_reserved_capability_ids: frozenset[str],
         model_inference: RunModelResolver,
-        post_run_model_resolver: RunModelResolver,
         observation: _ObservationRuntime,
         model_cost: AbstractModelCostCapability,
     ) -> None:
@@ -62,7 +61,6 @@ class ExecutableAgent[OutputT]:
         self.plugin_activation = plugin_activation
         self._definition_reserved_capability_ids = definition_reserved_capability_ids
         self._model_inference = model_inference
-        self._post_run_model_resolver = post_run_model_resolver
         self._observation = observation
 
     async def compact(

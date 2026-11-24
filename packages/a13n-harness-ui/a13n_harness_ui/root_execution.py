@@ -531,14 +531,16 @@ class RootRunExecutor:
                 environment = await self._environments.prepare(published.value)
             preparation_span.set_attribute("a13n.phase.step", "reconstruction")
             pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
-            reconstructed = self._agents.reconstruct(
+            reconstruct = self._agents.reconstruct
+            if prediction is not None:
+                reconstruct = partial(reconstruct, root_plugins=(prediction,))
+            reconstructed = reconstruct(
                 published.value,
                 background_compaction=self._compaction,
                 pricing_catalog=pricing_catalog,
                 memory_positions=admission.memory_positions,
                 organization=admission.organization,
                 subagent_operator=self._subagent_operator,
-                root_plugins=(prediction,) if prediction is not None else (),
                 root_capabilities=(
                     MainAccountCapability(published.value.root.model.model_id, on_main_account),
                     *(

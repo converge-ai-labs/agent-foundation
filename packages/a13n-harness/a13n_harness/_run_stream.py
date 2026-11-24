@@ -383,9 +383,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._envd_session_replacements: list[str] = []
         self._run_plugins: tuple[AbstractHarnessPlugin, ...] = ()
         self._post_run: PostRunSession | None = None
-        model = executable.definition.model
         self._prefix_capture = (
-            _PrefixCapture(model.model_name if model is not None else None)
+            _PrefixCapture()
             if any(type(plugin).post_run is not AbstractHarnessPlugin.post_run for plugin in executable._plugins)
             else None
         )
@@ -1249,12 +1248,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 executable.definition,
                 capture.prefix if capture is not None else None,
                 ModelResolutionContext(agent=executable._agent, deps=context),
-                executable._post_run_model_resolver,
+                executable._model_inference,
                 context.usage_attribution.cost_capability or executable._model_cost,
             ),
             plugins=plugins,
             result=result,
-            retained_cleanup=self._environment_lifecycle_task if self._attachments_retained else None,
         )
 
     async def _call_plugin(

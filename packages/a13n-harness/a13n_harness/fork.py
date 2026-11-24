@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from types import MappingProxyType
@@ -22,11 +21,12 @@ from pydantic_ai.messages import (
     ToolCallPart,
     UserPromptPart,
 )
-from pydantic_ai.models import ModelRequestContext, ModelRequestParameters, ModelResolutionContext
+from pydantic_ai.models import Model, ModelRequestContext, ModelRequestParameters, ModelResolutionContext
 from pydantic_ai.settings import ModelSettings, merge_model_settings
 
 from a13n_harness.errors import PluginError
 from a13n_harness.metering import MeteredModel, ModelUsageBinding
+from a13n_harness.models.self_healing import SelfHealingModel
 from a13n_harness.usage import RunUsageLedger, UsageCapability, UsageDeltaReporter, UsageReporter
 
 if TYPE_CHECKING:
@@ -45,12 +45,13 @@ _NON_REPLAYABLE_SETTINGS = frozenset(
 
 
 def _can_replay_settings(settings: ModelSettings | None) -> bool:
-    return _NON_REPLAYABLE_SETTINGS.isdisjoint(settings or {})
+    return not settings or not any(settings.get(key) for key in _NON_REPLAYABLE_SETTINGS)
 
 
 @dataclass(frozen=True, slots=True)
 class _ReplayPrefix:
-    model_id: str
+    model: Model
+    model_id: str | None
     messages: tuple[ModelMessage, ...]
     parameters: ModelRequestParameters
     settings: ModelSettings | None
@@ -59,8 +60,7 @@ class _ReplayPrefix:
 class _PrefixCapture(AbstractCapability["AgentContext"]):
     id = _PREFIX_CAPTURE_ID
 
-    def __init__(self, fallback_model_id: str | None) -> None:
-        self.fallback_model_id = fallback_model_id
+    def __init__(self) -> None:
         self.run_id: str | None = None
         self.prefix: _ReplayPrefix | None = None
 
@@ -77,16 +77,18 @@ class _PrefixCapture(AbstractCapability["AgentContext"]):
         if ctx.run_id != self.run_id:
             return response
         self.prefix = None
-        model_id = request_context.model_id or self.fallback_model_id
-        if (
-            model_id is None
-            or not _can_replay_settings(request_context.model_settings)
-            or any(isinstance(part, ToolCallPart) for part in response.parts)
+        if not _can_replay_settings(request_context.model_settings) or any(
+            isinstance(part, ToolCallPart) for part in response.parts
         ):
             return response
         params = request_context.model_request_parameters
+        # Drop Harness wrappers that carry foreground usage or retry state.
+        model = request_context.model
+        while isinstance(model, (MeteredModel, SelfHealingModel)):
+            model = model.wrapped
         self.prefix = _ReplayPrefix(
-            model_id=model_id,
+            model=model,
+            model_id=request_context.model_id,
             messages=(*request_context.messages, response),
             parameters=replace(
                 params,
@@ -113,6 +115,7 @@ class ForkedAgent:
     _resolution: ModelResolutionContext[AgentContext]
     _resolver: RunModelResolver
     _cost: AbstractModelCostCapability
+    _resolver_override: RunModelResolver | None = None
     _reporter: UsageReporter | UsageDeltaReporter | None = None
 
     @property
@@ -121,14 +124,18 @@ class ForkedAgent:
 
     @property
     def settled_model_id(self) -> str | None:
-        return self._prefix.model_id if self._prefix is not None else None
+        prefix = self._prefix
+        return (prefix.model_id or prefix.model.model_name) if prefix is not None else None
 
     async def complete_text(self, prompt: str, *, source: str = "plugin_post_run") -> str | None:
         """Append a private prompt and return raw text from a single model request."""
         prefix = self._prefix
         if prefix is None:
             return None
-        model = await self._resolver(self._resolution, prefix.model_id)
+        model_id = prefix.model_id or prefix.model.model_name
+        model = prefix.model
+        if self._resolver_override is not None or prefix.model_id is not None:
+            model = await (self._resolver_override or self._resolver)(self._resolution, model_id)
         settings = merge_model_settings(model.settings, prefix.settings)
         if not _can_replay_settings(settings):
             return None
@@ -139,7 +146,7 @@ class ForkedAgent:
         )
         request = ModelRequestContext(
             model=model,
-            model_id=prefix.model_id,
+            model_id=model_id,
             messages=messages,
             model_settings=settings,
             model_request_parameters=prefix.parameters,
@@ -172,12 +179,10 @@ class PostRunSession:
         agent: ForkedAgent,
         plugins: tuple[AbstractHarnessPlugin, ...],
         result: HarnessRunResult[Any],
-        retained_cleanup: asyncio.Task[None] | None,
     ) -> None:
         self._agent = agent
         self._plugins = plugins
         self._result = result
-        self._retained_cleanup = retained_cleanup
         self._started = False
 
     async def run(
@@ -193,8 +198,6 @@ class PostRunSession:
         if self._started:
             raise PluginError("Post-run hooks may only run once.", code="post_run_reused")
         self._started = True
-        if self._retained_cleanup is not None:
-            await asyncio.shield(self._retained_cleanup)
         deps = self._agent._resolution.deps
         context = PluginPostRunContext(
             thread_id=deps.thread_id,
@@ -203,7 +206,7 @@ class PostRunSession:
             metadata=MappingProxyType({**deps.metadata, **(metadata or {})}),
             result=self._result,
             shared=deps.plugins.shared,
-            agent=replace(self._agent, _resolver=model_resolver or self._agent._resolver, _reporter=usage_reporter),
+            agent=replace(self._agent, _resolver_override=model_resolver, _reporter=usage_reporter),
         )
         errors: list[Exception] = []
         for plugin in reversed(self._plugins):

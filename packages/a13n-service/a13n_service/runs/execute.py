@@ -573,7 +573,6 @@ class _Attempt:
                     snapshot=self._snapshot(),
                     outcome=Outcome(status="completed"),
                 )
-                await advance(self.runtime, self.lease.thread_id)
                 return
             if not self.plan.agent.config.lazy_environment and not await self._prepare_environments():
                 if self.control.stopped.is_set():
@@ -582,23 +581,19 @@ class _Attempt:
                     # Another worker resumes instance preparation under the same durable operation.
                     await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
                 return
-            async with AsyncExitStack() as models_stack:
-                model_scope = RetainedScope(self._open_models())
+            model_scope = RetainedScope(self._open_models())
+            try:
                 models = await model_scope.ready()
-                models_stack.push_async_callback(model_scope.close)
-                resources_closed = asyncio.Event()
-                result, post_run = await self._stream(models, model_scope, resources_closed)
+                result, post_run = await self._stream(models, model_scope)
                 await self._end(result)
                 if post_run is not None:
                     resolve = _post_seal_model_resolver(self.runtime, self._call_context(), self.plan.agent, models)
 
-                    async def finish() -> None:
-                        await resources_closed.wait()
-                        await post_run.run(model_resolver=resolve)
-
-                    await self.runtime.start_post_run(self.lease.run_id, models_stack, finish)
-            if result.status in {"completed", "suspended"}:
-                await advance(self.runtime, self.lease.thread_id)
+                    self.runtime.start_post_run(
+                        self.lease.run_id, model_scope, partial(post_run.run, model_resolver=resolve)
+                    )
+            finally:
+                await model_scope.close()
         except (LeaseLost, asyncio.CancelledError):
             # Neither seals the run, but its charges so far stay recorded, even while the task is cancelled.
             await self._record_usage()
@@ -638,12 +633,10 @@ class _Attempt:
         self,
         models: Mapping[str, Model],
         model_scope: RetainedScope[dict[str, Model]],
-        resources_closed: asyncio.Event,
     ) -> AsyncIterator[Host]:
         runtime, lease = self.runtime, self.lease
         skill_cache = Cache()
         async with AsyncExitStack() as stack:
-            stack.callback(resources_closed.set)
             stack.push_async_callback(model_scope.retain())
             environments = await stack.enter_async_context(
                 open_mounts(
@@ -691,12 +684,11 @@ class _Attempt:
         self,
         models: dict[str, Model],
         model_scope: RetainedScope[dict[str, Model]],
-        resources_closed: asyncio.Event,
     ) -> tuple[HarnessRunResult, PostRunSession | None]:
         runtime, lease = self.runtime, self.lease
         root = self.plan.agent
         async with (
-            resources(lease, self._open_resources(models, model_scope, resources_closed)) as host,
+            resources(lease, self._open_resources(models, model_scope)) as host,
             AsyncExitStack() as stack,
         ):
             executable = agent.build(
@@ -1010,6 +1002,8 @@ class _Attempt:
         self.contents.retire([item.id for page in snapshot.pages for item in page.items])
         self.offers.consumed(consumed)
         self.usage.ingested(usage)
+        if outcome is not None and outcome.status in {"completed", "waiting"}:
+            await advance(self.runtime, self.lease.thread_id)
         return steers
 
     async def _offer(self, stream: HarnessRunStream, steers: list[Offered]) -> None:
