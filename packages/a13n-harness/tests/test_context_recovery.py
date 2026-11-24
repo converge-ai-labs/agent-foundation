@@ -94,10 +94,13 @@ def test_legacy_reconstruction_budgets_the_complete_retained_reference(
 
 
 @pytest.mark.anyio
-async def test_legacy_run_recovers_with_a_long_retained_reference(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("segments,reference_kept", [(117, True), (127, False)])
+async def test_legacy_run_recovers_with_a_long_retained_reference(
+    monkeypatch: pytest.MonkeyPatch, segments: int, reference_kept: bool
+) -> None:
     import a13n_harness._context_recovery as recovery
 
-    reference = "/" + "segment/" * 127 + "history"
+    reference = "/" + "segment/" * segments + "history"
     calls: list[list[ModelMessage]] = []
 
     async def retained(*args, **kwargs):
@@ -121,7 +124,12 @@ async def test_legacy_run_recovers_with_a_long_retained_reference(monkeypatch: p
     result = await executable.run(None, previous_state=previous)
     assert result.output_or_raise() == "resumed"
     assert len(calls) == 3
-    assert "history reference omitted" in str(calls[-1])
+    resumed = str(calls[-1])
+    assert "legacy task" in resumed
+    if reference_kept:
+        assert reference in resumed
+    else:
+        assert "history reference omitted" in resumed
     state = result.state.agent_context_state.get(recovery.CONTEXT_RECOVERY_STATE_ID)
     assert state is not None and isinstance(state.data, dict)
     assert state.data["after_chars"] <= 2048
