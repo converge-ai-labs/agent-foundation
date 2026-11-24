@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 420" role="img" aria-label="While Python totals sales in the target environment, the model reads the report template. Harness waits on the original handle, checks the chart, and later releases the session. A chart on persistent storage survives session cleanup.">
+  <text class="pt ink" x="22" y="34" style="font-size: 20px">One background execution</text>
+  <text class="pt ink" x="22" y="79" style="font-size: 12px">Time</text>
+  <path class="pf" d="M168 76h586m-8-5 8 5-8 5"/>
+  <path class="pf dash" d="M168 97v192"/>
+  <path class="pf dash" d="M284 97v192"/>
+  <path class="pf dash" d="M472 97v192"/>
+  <path class="pf dash" d="M587 97v192"/>
+  <path class="pf dash" d="M697 97v192"/>
+  <text class="pt ink" x="22" y="133" style="font-size: 14px">Model / Harness</text>
+  <text class="pt ink" x="22" y="205" style="font-size: 14px">Python process</text>
+  <text class="pt ink" x="22" y="270" style="font-size: 14px">envd session</text>
+  <rect class="pl" x="168" y="109" width="99" height="42" rx="2"/>
+  <text class="pt ink" x="217" y="135" style="font-size: 12px" text-anchor="middle">Start script</text>
+  <rect class="band" x="284" y="109" width="173" height="42" rx="2"/>
+  <text class="pt acc" x="370" y="135" style="font-size: 12px" text-anchor="middle">Read report template</text>
+  <rect class="pl" x="472" y="109" width="83" height="42" rx="2"/>
+  <text class="pt ink" x="514" y="135" style="font-size: 12px" text-anchor="middle">Wait</text>
+  <rect class="pl" x="587" y="109" width="110" height="42" rx="2"/>
+  <text class="pt ink" x="642" y="135" style="font-size: 12px" text-anchor="middle">Check chart</text>
+  <path class="pa" d="M217 151v29m-5-7 5 7 5-7"/>
+  <path class="pa" d="M241 180v-18h26m-7-5 7 5-7 5"/>
+  <text class="pt acc" x="282" y="172" style="font-size: 11px">handle returned</text>
+  <rect class="band" x="217" y="181" width="348" height="39" rx="2"/>
+  <path class="pa" d="M217 220L565 220"/>
+  <text class="pt ink" x="231" y="205" style="font-size: 13px">Aggregate monthly sales</text>
+  <text class="pt acc" x="554" y="205" style="font-size: 12px" text-anchor="end">Save chart</text>
+  <path class="pa" d="M565 201h9v-72h13m-6-4 6 4-6 4"/>
+  <path class="pf" d="M174 266h523"/>
+  <path class="pa" d="M217 266h348"/>
+  <circle class="pl" cx="174" cy="266" r="4"/>
+  <circle class="fa" cx="217" cy="266" r="4"/>
+  <circle class="fa" cx="565" cy="266" r="4"/>
+  <rect class="fi" x="693" y="262" width="8" height="8"/>
+  <text class="pt " x="168" y="291" style="font-size: 11px">open</text>
+  <text class="pt acc" x="390" y="254" style="font-size: 12px" text-anchor="middle">Track the process and drain its output</text>
+  <text class="pt " x="565" y="291" style="font-size: 11px" text-anchor="middle">exit</text>
+  <text class="pt ink" x="697" y="291" style="font-size: 11px" text-anchor="middle">close</text>
+  <path class="pf" d="M22 315L778 315"/>
+  <text class="pt ink" x="22" y="346" style="font-size: 15px">After session cleanup</text>
+  <path class="pl" d="M24 365h10l4 4h15v17H24z"/>
+  <text class="pt ink" x="64" y="380" style="font-size: 12px">Persistent workspace</text>
+  <text class="pt acc" x="64" y="400" style="font-size: 12px">chart.png remains accessible</text>
+  <rect class="pf" x="424" y="366" width="25" height="20" rx="1"/>
+  <path class="pf" d="M430 373h13m-13 6h8"/>
+  <text class="pt ink" x="460" y="380" style="font-size: 12px">Session-owned data</text>
+  <text class="pt " x="460" y="400" style="font-size: 11px">Process record and temporary logs reclaimed</text>
+</svg>

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 480" role="img" aria-label="Harness sends a tool call to envd. The session starts Python, captures two output streams, and returns a process handle. Python reads a sales table and writes a chart in the workspace.">
+  <!-- Harness: a terminal request above a small follow-up checklist. -->
+  <rect class="pl" x="24" y="131" width="180" height="209" rx="3"/>
+  <path class="pf" d="M24 158L204 158"/>
+  <circle class="fi" cx="39" cy="144" r="3"/>
+  <circle class="ff" cx="50" cy="144" r="3"/>
+  <circle class="ff" cx="61" cy="144" r="3"/>
+  <path class="pa thick" d="m44 180 8 7-8 7m15 0h14"/>
+  <path class="pf" d="M84 190h95M43 215h142"/>
+  <rect class="band" x="43" y="231" width="15" height="15" rx="1"/>
+  <path class="pa" d="m45 238 4 4 8-9"/>
+  <path class="pf" d="M70 236L175 236"/>
+  <path class="pf" d="M70 244L142 244"/>
+  <rect class="pf" x="43" y="258" width="15" height="15" rx="1"/>
+  <path class="pf" d="M46 265L54 265"/>
+  <path class="pf" d="M70 263L165 263"/>
+  <path class="pf" d="M70 271L133 271"/>
+  <rect class="pf" x="43" y="285" width="15" height="15" rx="1"/>
+  <path class="pf" d="M46 292L54 292"/>
+  <path class="pf" d="M70 290L155 290"/>
+  <path class="pf" d="M70 298L124 298"/>
+  <text class="pt ink" x="24" y="116">Harness</text>
+  <path class="pa" d="M204 198h88m-8-5 8 5-8 5"/>
+  <path class="pl" d="M292 299h-88m8-5-8 5 8 5"/>
+  <text class="pt acc" x="249" y="185" text-anchor="middle">start</text>
+  <text class="pt ink" x="249" y="326" text-anchor="middle">handle</text>
+  <!-- Target: monitored process, independent captured streams and workspace files. -->
+  <rect class="pf" x="265" y="37" width="630" height="405" rx="5"/>
+  <text class="pt ink" x="287" y="61">target machine</text>
+  <path class="pf" d="M286 72L873 72"/>
+  <rect class="pl" x="292" y="103" width="329" height="219" rx="3"/>
+  <path class="pf" d="M292 132L621 132"/>
+  <circle class="fi" cx="308" cy="118" r="3"/>
+  <circle class="ff" cx="320" cy="118" r="3"/>
+  <circle class="ff" cx="332" cy="118" r="3"/>
+  <text class="pt ink" x="604" y="122" text-anchor="end">envd session</text>
+  <rect class="band" x="306" y="145" width="300" height="59" rx="2"/>
+  <path class="pa thick" d="m321 163 9 8-9 8m16 0h15"/>
+  <path class="pf" d="M370 165h112M370 180h79"/>
+  <rect class="pa thin" x="547" y="153" width="36" height="36" rx="2"/>
+  <rect class="band" x="554" y="160" width="22" height="22"/>
+  <path class="pa thin" d="M554 148v5m0 36v5"/>
+  <path class="pa thin" d="M565 148v5m0 36v5"/>
+  <path class="pa thin" d="M576 148v5m0 36v5"/>
+  <path class="pa thin" d="M542 160h5m36 0h5"/>
+  <path class="pa thin" d="M542 171h5m36 0h5"/>
+  <path class="pa thin" d="M542 182h5m36 0h5"/>
+  <path class="pf" d="M306 217L606 217"/>
+  <text class="pt ink" x="309" y="241">process</text>
+  <path class="pf" d="M315 269h269"/>
+  <path class="pa" d="M315 269h143"/>
+  <circle class="fa" cx="315" cy="269" r="4"/>
+  <rect class="fa" x="453" y="264" width="10" height="10"/>
+  <circle class="pl" cx="584" cy="269" r="4"/>
+  <path class="pf" d="M315 277v8m143-8v8m126-8v8"/>
+  <text class="pt acc" x="458" y="307" text-anchor="middle">running</text>
+  <path class="pa" d="M621 161h27v-35h30m-7-5 7 5-7 5"/>
+  <path class="pl" d="M621 185h37v53h20m-7-5 7 5-7 5"/>
+  <rect class="pf" x="685" y="106" width="183" height="72" rx="2"/>
+  <rect class="pl" x="678" y="100" width="183" height="72" rx="2"/>
+  <rect class="band" x="689" y="111" width="20" height="49" rx="1"/>
+  <rect class="fa" x="695" y="118" width="7" height="4"/>
+  <path class="pa thin" d="M720 120L840 120"/>
+  <rect class="fa" x="695" y="133" width="7" height="4"/>
+  <path class="pf" d="M720 134L827 134"/>
+  <rect class="fa" x="695" y="148" width="7" height="4"/>
+  <path class="pf" d="M720 148L814 148"/>
+  <text class="pt acc" x="684" y="93">stdout</text>
+  <rect class="pf" x="685" y="217" width="183" height="72" rx="2"/>
+  <rect class="pl" x="678" y="211" width="183" height="72" rx="2"/>
+  <rect class="ff" x="689" y="222" width="20" height="49" rx="1"/>
+  <rect class="ff" x="695" y="229" width="7" height="4"/>
+  <path class="pf" d="M720 231L840 231"/>
+  <rect class="ff" x="695" y="244" width="7" height="4"/>
+  <path class="pf" d="M720 245L827 245"/>
+  <rect class="ff" x="695" y="259" width="7" height="4"/>
+  <path class="pf" d="M720 259L814 259"/>
+  <text class="pt ink" x="684" y="204">stderr</text>
+  <!-- In the workspace the script reads table rows and draws the output chart. -->
+  <path class="pl" d="M308 358v-12h40l9 9h56v63H308z"/>
+  <path class="pf" d="M308 370h105m-90 10h78m-78 12h78m-78 12h78m-57-31v36m25-36v36"/>
+  <path class="pl thin" d="M413 383h45v-61m-5 8 5-8 5 8"/>
+  <path class="pa" d="M507 322v61h172m-8-5 8 5-8 5"/>
+  <text class="pt ink" x="532" y="371">write chart</text>
+  <rect class="pl" x="679" y="314" width="182" height="104" rx="2"/>
+  <path class="pf" d="M694 330v73h151m-151-22h151m-151-22h151"/>
+  <rect class="band" x="709" y="386" width="17" height="17"/>
+  <path class="pa thin" d="M709 386L726 386"/>
+  <rect class="band" x="742" y="370" width="17" height="33"/>
+  <path class="pa thin" d="M742 370L759 370"/>
+  <rect class="band" x="775" y="376" width="17" height="27"/>
+  <path class="pa thin" d="M775 376L792 376"/>
+  <rect class="fa" x="808" y="347" width="17" height="56"/>
+</svg>
