@@ -1,3 +1,5 @@
+<!-- If an agent materially wrote or modified the changes, add a visible attribution blockquote before Summary naming the agent tool, model ID, and responsible human. Follow https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md#agent-attribution. -->
+
 ## Summary
 
 <!-- Agents must follow https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md#writing-issues-and-pull-requests; human contributors may adapt this writing guidance. Start with the scenario, problem, and resulting behavior. Add a small Mermaid diagram, diff, or other Markdown view when it clarifies the change; simple changes can use prose alone. -->
