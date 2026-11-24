@@ -124,6 +124,7 @@ class WebCapability(AbstractCapability[AgentContext]):
 
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
         attachment = self._bind(ctx)
+        native_search = next(iter(self.get_native_tools()), None)
         return WebToolset(
             client=attachment.client,
             policy=_RunWebPolicy(attachment.policy, ctx.deps.configuration),
@@ -132,7 +133,7 @@ class WebCapability(AbstractCapability[AgentContext]):
             scrape_backends=attachment.scrape_backends,
             files=ctx.deps.environment.files,
             file_scopes=ctx.deps.environment,
-        ).get_toolset()
+        ).get_toolset(native_search=native_search)
 
     def _bind(self, ctx: RunContext[AgentContext]) -> WebBinding:
         if WEB_CAPABILITY_ID not in ctx.deps._capability_provenance.definition_ids:

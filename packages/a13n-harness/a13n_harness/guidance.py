@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
-from functools import cache, lru_cache
+from functools import cache, lru_cache, partial
 from importlib.resources import files
 from typing import TYPE_CHECKING
 
@@ -34,7 +34,7 @@ class GuidanceFragment:
     reference: bool = False
 
 
-@dataclass(frozen=True, slots=True, eq=False)
+@dataclass(frozen=True, slots=True)
 class ToolGuidance:
     """Reusable guidance for a Toolset's ``get_instructions`` hook."""
 
@@ -42,10 +42,19 @@ class ToolGuidance:
     fragments: tuple[GuidanceFragment, ...]
     reference_page: str | None = None
     referenced_tools: frozenset[str] = field(init=False)
+    _render: Callable[[frozenset[str], str | None], str | None] = field(init=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
             self, "referenced_tools", frozenset(name for part in self.fragments for name in part.any_of + part.all_of)
+        )
+
+        # Keep the bounded cache with the declaration. Capture its values, not
+        # the declaration itself, so a short-lived guide can be released directly.
+        object.__setattr__(
+            self,
+            "_render",
+            lru_cache(maxsize=16)(partial(_render_tool_guidance, self.name, self.fragments, self.reference_page)),
         )
 
     def render(
@@ -53,16 +62,25 @@ class ToolGuidance:
         ctx: RunContext[AgentContext],
         *,
         toolset: AbstractToolset[AgentContext],
-        fallback: Iterable[str] = (),
+        fallback: Iterable[str] | None = None,
     ) -> InstructionPart | None:
-        """Render for the given owner; use fallback names only without a prepared inventory."""
+        """Use declared tool names as the default when no inventory is prepared."""
+        from pydantic_ai.toolsets import ExternalToolset, FunctionToolset
+
+        if fallback is None:
+            if isinstance(toolset, FunctionToolset):
+                fallback = toolset.tools
+            elif isinstance(toolset, ExternalToolset):
+                fallback = (tool.name for tool in toolset.tool_defs)
+            else:
+                fallback = ()
         return self._for_names(ctx, _tool_names(ctx, (toolset,), fallback))
 
     def _for_names(self, ctx: RunContext[AgentContext], names: frozenset[str]) -> InstructionPart | None:
         if not ctx.deps.toolset_instructions or not names:
             return None
         root = _reference_root(ctx) if self.reference_page is not None else None
-        content = _render_tool_guidance(self, names & self.referenced_tools, root)
+        content = self._render(names & self.referenced_tools, root)
         return InstructionPart(content=content, dynamic=False) if content is not None else None
 
 
@@ -77,22 +95,27 @@ def _reference_root(ctx: RunContext[AgentContext]) -> str | None:
     return root
 
 
-@lru_cache(maxsize=256)
-def _render_tool_guidance(guide: ToolGuidance, names: frozenset[str], reference_root: str | None) -> str | None:
+def _render_tool_guidance(
+    name: str | None,
+    fragments: tuple[GuidanceFragment, ...],
+    reference_page: str | None,
+    names: frozenset[str],
+    reference_root: str | None,
+) -> str | None:
     inline: list[str] = []
     details: list[str] = []
-    for part in guide.fragments:
+    for part in fragments:
         if (not part.any_of or not names.isdisjoint(part.any_of)) and names.issuperset(part.all_of):
             if text := part.text.strip():
                 (details if part.reference else inline).append(text)
-    if details and reference_root is not None and guide.reference_page is not None:
-        inline.append(_reference(f"{reference_root}/{guide.reference_page}"))
+    if details and reference_root is not None and reference_page is not None:
+        inline.append(_reference(f"{reference_root}/{reference_page}"))
     else:
         inline.extend(details)
     if not inline:
         return None
     body = "\n\n".join(inline)
-    return f"<tool-name>{guide.name}</tool-name>\n{body}" if guide.name is not None else body
+    return f"<tool-name>{name}</tool-name>\n{body}" if name is not None else body
 
 
 def _source_chain(tool: ToolsetTool[AgentContext]) -> Iterator[ToolsetTool[AgentContext]]:

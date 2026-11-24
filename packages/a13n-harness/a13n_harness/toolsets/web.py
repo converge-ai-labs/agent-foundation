@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
+from pydantic_ai.models import Model
 from pydantic_ai.native_tools import WebSearchTool
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import FunctionToolset
@@ -101,6 +102,21 @@ def _prefer_native_web_search(
     return replace(tool_def, unless_native=WebSearchTool.kind)
 
 
+class _WebFunctionToolset(InstructionFunctionToolset):
+    def __init__(self, tools: Sequence[HarnessTool], native_search: WebSearchTool | None) -> None:
+        super().__init__(tools=tools, id="a13n-web-tool-functions", guidance=_WEB_GUIDANCE)
+        self._native_search = native_search
+
+    def _instruction_names(self, ctx: RunContext[AgentContext]) -> frozenset[str]:
+        names = super()._instruction_names(ctx)
+        # Native tools are resolved by the Model, outside the function inventory.
+        if self._native_search is not None and isinstance(model := ctx.model, Model):
+            supported = model.profile.get("supported_native_tools", model.supported_native_tools())
+            if WebSearchTool in supported and not model.unsupported_native_tool_settings(self._native_search):
+                return names | {"search"}
+        return names
+
+
 class WebToolset:
     """Standard Web policy, transport, projection, and download semantics."""
 
@@ -140,7 +156,7 @@ class WebToolset:
         )
         self._file_access = ScopedFileAccess(files, file_scopes)
 
-    def get_toolset(self) -> FunctionToolset[AgentContext]:
+    def get_toolset(self, *, native_search: WebSearchTool | None = None) -> FunctionToolset[AgentContext]:
         tools: list[HarnessTool] = []
         search_mode = self.configuration.search.mode
         host_search = search_mode in {"host", "auto"} and bool(self._binding.search_backends)
@@ -183,11 +199,7 @@ class WebToolset:
                     effects=frozenset({"read", "write", "external_communication"}),
                 )
             )
-        return InstructionFunctionToolset(
-            tools=tools,
-            id="a13n-web-tool-functions",
-            guidance=_WEB_GUIDANCE,
-        )
+        return _WebFunctionToolset(tools, native_search)
 
     def _tool(
         self,

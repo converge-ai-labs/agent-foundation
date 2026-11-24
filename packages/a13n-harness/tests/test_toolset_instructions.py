@@ -369,7 +369,7 @@ def test_normal_operation_rules_remain_inline_without_duplicate_reference_text(p
 async def test_guidance_cache_projects_to_relevant_tools_and_gates_reference() -> None:
     from types import SimpleNamespace
 
-    from a13n_harness.guidance import GuidanceFragment, ToolGuidance, _render_tool_guidance
+    from a13n_harness.guidance import GuidanceFragment, ToolGuidance
     from pydantic_ai.toolsets import FunctionToolset
 
     guide = ToolGuidance(
@@ -395,12 +395,15 @@ async def test_guidance_cache_projects_to_relevant_tools_and_gates_reference() -
     first = guide.render(ctx, toolset=owner, fallback=fallback)
     assert first is not None
     assert first.content == "<tool-name>test-guide</tool-name>\nRead."
-    cache_hits = _render_tool_guidance.cache_info().hits
+    cache_hits = guide._render.cache_info().hits
+    other = ToolGuidance(guide.name, guide.fragments, reference_page=guide.reference_page)
+    assert other.render(ctx, toolset=owner) == first
+    assert guide._render.cache_info().hits == cache_hits
     ctx.tool_manager.tools["unrelated"] = tool()
     second = guide.render(ctx, toolset=owner)
     assert second is not None
     assert second.content == first.content
-    assert _render_tool_guidance.cache_info().hits == cache_hits + 1
+    assert guide._render.cache_info().hits == cache_hits + 1
     ctx.tool_manager.tools["write_item"] = tool()
     inline = guide.render(ctx, toolset=owner)
     assert inline is not None
@@ -413,14 +416,21 @@ async def test_guidance_cache_projects_to_relevant_tools_and_gates_reference() -
 
 
 def test_builtin_guidance_dependencies_are_tool_names() -> None:
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.capabilities.browser import _BROWSER_GUIDANCE, BrowserBackend, BrowserUseCapability
     from a13n_harness.environment import EnvironmentAction
     from a13n_harness.toolsets.computer import _COMPUTER_GUIDANCE, ComputerToolset
     from a13n_harness.toolsets.documents import _DOCUMENT_GUIDANCE, DocumentsToolset
     from a13n_harness.toolsets.files import _FILES_GUIDANCE, FileToolset
     from a13n_harness.toolsets.shell import _SHELL_GUIDANCE, ShellToolset
     from a13n_harness.toolsets.web import _WEB_GUIDANCE
+    from pydantic_ai.toolsets import FunctionToolset
 
     all_actions = frozenset(EnvironmentAction)
+    browser = BrowserUseCapability(AsyncMock(spec=BrowserBackend)).get_toolset()
+    assert isinstance(browser, FunctionToolset)
+    assert set(browser.tools).issuperset(_BROWSER_GUIDANCE.referenced_tools)
     for guidance, names in (
         (_SHELL_GUIDANCE, ShellToolset.available_names(all_actions)),
         (_FILES_GUIDANCE, FileToolset.available_names((all_actions,)) - {"mkdir"}),
@@ -430,3 +440,48 @@ def test_builtin_guidance_dependencies_are_tool_names() -> None:
         assert guidance.referenced_tools == names
     for fragment in _COMPUTER_GUIDANCE:
         assert ComputerToolset.available_names().issuperset(fragment.any_of + fragment.all_of)
+
+
+@pytest.mark.parametrize("external", [False, True])
+def test_native_toolsets_default_to_declared_names_without_preparation(external: bool) -> None:
+    from types import SimpleNamespace
+
+    from a13n_harness.guidance import GuidanceFragment, ToolGuidance
+    from pydantic_ai.tools import ToolDefinition
+    from pydantic_ai.toolsets import ExternalToolset, FunctionToolset
+
+    def lookup() -> str:
+        return "item"
+
+    owner = ExternalToolset([ToolDefinition(name="lookup")]) if external else FunctionToolset([lookup])
+    guide = ToolGuidance("test", (GuidanceFragment(text="Look up an item.", all_of=("lookup",)),))
+    ctx = SimpleNamespace(deps=SimpleNamespace(toolset_instructions=True), tool_manager=None)
+    assert guide.render(ctx, toolset=owner) is not None
+    assert guide.render(ctx, toolset=owner, fallback=()) is None
+    ctx.tool_manager = SimpleNamespace(tools={})
+    assert guide.render(ctx, toolset=owner) is None
+
+
+def test_fragmented_handbooks_declare_every_static_section() -> None:
+    from a13n_harness.capabilities.browser import _BROWSER_GUIDANCE
+    from a13n_harness.guidance import REFERENCE_MARKER, load_guidance
+    from a13n_harness.toolsets.computer import _COMPUTER_GUIDANCE
+    from a13n_harness.toolsets.documents import _DOCUMENT_GUIDANCE
+    from a13n_harness.toolsets.files import _FILES_GUIDANCE
+    from a13n_harness.toolsets.shell import _SHELL_GUIDANCE
+    from a13n_harness.toolsets.web import _WEB_GUIDANCE
+
+    def normalize(text: str) -> str:
+        return re.sub(r"(?m)^\s*$", "", text).replace("\n\n", "\n").strip()
+
+    pages = {
+        guide.name: guide.fragments
+        for guide in (_BROWSER_GUIDANCE, _DOCUMENT_GUIDANCE, _FILES_GUIDANCE, _SHELL_GUIDANCE, _WEB_GUIDANCE)
+    }
+    pages["environment-computer"] = _COMPUTER_GUIDANCE
+    for name, fragments in pages.items():
+        assert name is not None
+        essentials, _, details = load_guidance(name).partition(REFERENCE_MARKER)
+        for reference, source in ((False, essentials), (True, details)):
+            sections = "\n\n".join(fragment.text for fragment in fragments if fragment.reference is reference)
+            assert normalize(sections) == normalize(source), (name, reference)

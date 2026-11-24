@@ -33,12 +33,16 @@ def tool_instruction(name: str, *, reference_root: str | None = None) -> str:
     return f"<tool-name>{name}</tool-name>\n{content}"
 
 
-@cache
 def tool_guidance(name: str, *fragments: GuidanceFragment) -> ToolGuidance:
     if not fragments:
-        essentials, _, details = load_guidance(name).partition(REFERENCE_MARKER)
-        fragments = (GuidanceFragment(text=essentials), GuidanceFragment(text=details, reference=True))
+        return _whole_page_guidance(name)
     return ToolGuidance(name, fragments, reference_page=f"harness/{name}.md")
+
+
+@cache
+def _whole_page_guidance(name: str) -> ToolGuidance:
+    essentials, _, details = load_guidance(name).partition(REFERENCE_MARKER)
+    return tool_guidance(name, GuidanceFragment(text=essentials), GuidanceFragment(text=details, reference=True))
 
 
 def section(
@@ -74,13 +78,16 @@ class InstructionFunctionToolset(FunctionToolset[AgentContext]):
     async def get_instructions(self, ctx: RunContext[AgentContext]) -> list[InstructionPart] | None:
         if not ctx.deps.toolset_instructions:
             return None
-        owners = self._guidance_for or (self,)
-        names = _tool_names(ctx, owners, (name for owner in owners for name in owner.tools))
+        names = self._instruction_names(ctx)
         if not names:
             return None
         part = self._guidance._for_names(ctx, names) if self._guidance is not None else None
         extra = await super().get_instructions(ctx)
         return [part, *(extra or ())] if part is not None else extra
+
+    def _instruction_names(self, ctx: RunContext[AgentContext]) -> frozenset[str]:
+        owners = self._guidance_for or (self,)
+        return _tool_names(ctx, owners, (name for owner in owners for name in owner.tools))
 
 
 class InstructionExternalToolset(ExternalToolset[AgentContext]):
@@ -99,4 +106,4 @@ class InstructionExternalToolset(ExternalToolset[AgentContext]):
     async def get_instructions(self, ctx: RunContext[AgentContext]) -> InstructionPart | None:
         if not ctx.deps.deferred_tools_supported or self._guidance is None:
             return None
-        return self._guidance.render(ctx, toolset=self, fallback=(tool.name for tool in self.tool_defs))
+        return self._guidance.render(ctx, toolset=self)
