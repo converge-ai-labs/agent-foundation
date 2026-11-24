@@ -32,12 +32,11 @@ from pydantic_ai.capabilities import Capability, HandleDeferredToolCalls
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred
 from pydantic_ai.messages import ModelMessage, ModelRequest, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
 pytestmark = pytest.mark.anyio
 
 _DENIAL = "Deferred tool interaction is unavailable for this Run."
-_DENIAL_RESULT = repr(ToolDenied(_DENIAL))
 
 
 def _child_bindings(*, capabilities: tuple[Any, ...] = ()) -> RunBindings:
@@ -184,7 +183,9 @@ async def test_mandatory_child_denial_precedes_user_deferred_handler_while_root_
 
     child_result = await executable.run("go", bindings=_child_bindings())
 
-    assert child_result.output_or_raise() == _DENIAL_RESULT
+    assert child_result.output_or_raise() == _DENIAL
+    assert child_result.state is not None
+    assert _tool_returns(child_result.state.message_history)[-1].outcome == "failed"
     assert handler_calls == []
 
     root_result = await executable.run("go", bindings=RunBindings.embedded())
@@ -235,9 +236,14 @@ async def test_child_completes_mixed_ordinary_and_dynamic_deferred_batch() -> No
     assert result.status == "completed"
     assert ordinary_calls == [2]
     assert result.output_or_raise() == json.dumps(
-        {"deferred-1": _DENIAL_RESULT, "ordinary-1": "3"},
+        {"deferred-1": _DENIAL, "ordinary-1": "3"},
         sort_keys=True,
     )
+    assert result.state is not None
+    assert {part.tool_call_id: part.outcome for part in _tool_returns(result.state.message_history)} == {
+        "deferred-1": "failed",
+        "ordinary-1": "success",
+    }
 
 
 @pytest.mark.parametrize(("is_child", "approval"), [(True, True), (False, False)])
