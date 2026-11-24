@@ -428,6 +428,7 @@ function ConversationContent({
     ]).then(
       ([item, location]) => {
         void queries.invalidateQueries({ queryKey: ["inbox"] });
+        if (!location.continuation_id) return; // This post links to the chat, not its transcript.
         if (!location.turn_id)
           return setInboxProblem(
             new Error(

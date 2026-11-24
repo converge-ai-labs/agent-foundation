@@ -1,11 +1,13 @@
 """Inbox values shared by storage, model tools and the WebUI API."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 InboxKind = Literal["result", "needs_human", "milestone"]
+InboxTitle = Annotated[str, Field(min_length=1, max_length=120)]
+InboxMessage = Annotated[str, Field(min_length=1, max_length=4096)]
 
 
 class InboxModel(BaseModel):

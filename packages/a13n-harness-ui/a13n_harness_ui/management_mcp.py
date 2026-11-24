@@ -1,4 +1,4 @@
-"""Expose existing Thread and Project operations to WebUI owner MCP clients."""
+"""Expose Thread, Project and Inbox operations to WebUI owner MCP clients."""
 
 from collections.abc import Callable
 from typing import Annotated, Any
@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
+from a13n_harness_ui.inbox_models import InboxKind, InboxMessage, InboxTitle
 from a13n_harness_ui.thread_capability import (
     RemoteProjectRoot,
     ThreadToolController,
@@ -23,7 +24,8 @@ _ReadOnly = ToolAnnotations(read_only_hint=True)
 def build_management_mcp(controller: Callable[[], ThreadToolController]) -> StarletteWithLifespan:
     server = FastMCP(
         "Harness UI",
-        instructions="Manage Projects and Threads in this WebUI instance. Run receipts mean admission, not completion. "
+        instructions="Manage Projects and Threads and post to Inbox in this WebUI instance. "
+        "Run receipts mean admission, not completion. "
         "Use get_thread to inspect saved results. Reconcile an uncertain write before retrying.",
         tasks=False,
         mask_error_details=True,
@@ -155,6 +157,21 @@ def build_management_mcp(controller: Callable[[], ThreadToolController]) -> Star
             return await controller().send_thread_message(source_thread_id=None, thread_id=thread_id, message=message)
         except HarnessUiError as exc:
             return thread_tool_failure(exc, "thread_message_failed")
+
+    @server.tool(annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=False))
+    async def post_to_inbox(
+        thread_id: str, kind: InboxKind, title: InboxTitle, message: InboxMessage
+    ) -> dict[str, Any]:
+        """Post one item to the user's Inbox, linked to the specified Thread.
+
+        Use `result` for a final outcome, `needs_human` for a decision or response, and `milestone`
+        for a major checkpoint. Write `message` as standalone Markdown. An Inbox post does not start a Run.
+        """
+        try:
+            item = await controller().post_owner_inbox(thread_id=thread_id, kind=kind, title=title, message=message)
+            return {"ok": True, "item_id": item.item_id}
+        except HarnessUiError as exc:
+            return thread_tool_failure(exc, "inbox_post_failed")
 
     # The parent WebUI AccessBoundary checks Host, Origin and the instance key before MCP dispatch.
     return server.http_app(path="/mcp", stateless_http=True, json_response=True, host_origin_protection=False)

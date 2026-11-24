@@ -587,9 +587,11 @@ On normal listener shutdown, realtime WebSocket delivery ends before connection 
 
 ### Inbound Management MCP
 
-WebUI serves stateless Streamable HTTP at `/api/automation/mcp` on its existing listener. It shares the listener's instance-key, Host and Origin checks and explicit authentication bypass. Scoped guest grants do not authorize this endpoint. It runs inside the same App lifetime and exposes seven tools: `list_projects`, `get_project`, `create_project`, `list_threads`, `get_thread`, `create_thread`, and `send_thread_message`.
+WebUI serves stateless Streamable HTTP at `/api/automation/mcp` on its existing listener. It shares the listener's instance-key, Host and Origin checks and explicit authentication bypass. Scoped guest grants do not authorize this endpoint. It runs inside the same App lifetime and exposes `list_projects`, `get_project`, `create_project`, `list_threads`, `get_thread`, `create_thread`, `send_thread_message`, and `post_to_inbox`.
 
 These tools use existing Project resource publication and Thread management operations. The MCP caller has instance authority and no source Thread. Thread discovery lists root Threads; inspection takes an explicit Thread ID and returns status, configuration and paginated saved history. A new Thread uses the selected Project and Agent defaults; a null or omitted `project_id` creates a projectless Thread. `model_id` overrides only the first Run. `create_thread` returns the created Thread ID even if Run admission fails after creation. `send_thread_message` submits to an idle Thread or steers its active Run; a rejected steer does not submit a replacement Run. A receipt confirms admission, and `get_thread` reports saved output and activity. Reconcile an uncertain write before retrying it.
+
+`post_to_inbox(thread_id, kind, title, message)` delivers an [Inbox item](#inbox-posting) with the same content schema and delivery as the Agent tool. The MCP caller supplies the ID of an existing ordinary, Coordinator, or Bot Thread. Posting respects the current `inbox.enabled` setting. Success returns `ok: true` and the durable `item_id`. The item links to the specified conversation without a transcript turn; posting does not submit input, start or steer a Run, or create a deferred request. Each successful MCP call creates an item, so reconcile an uncertain post in Inbox before retrying.
 
 ### HTTP Adapter Contract
 

@@ -2,12 +2,15 @@
 
 from collections.abc import Callable
 from typing import Literal
+from uuid import uuid4
 
 from a13n_harness_ui.inbox_models import InboxItem, InboxItemMutation, InboxKind, InboxLocation, InboxPage
 from a13n_harness_ui.live import HarnessUiSummaryHub, InboxNotice, RootOperationNotice
 from a13n_harness_ui.notifications import reply_brief
 from a13n_harness_ui.storage.runtime import LocalStore
 from a13n_harness_ui.thread_projection import ThreadProjectionService
+
+_MCP_CALL_PREFIX = "mcp_"
 
 
 class InboxController:
@@ -36,6 +39,16 @@ class InboxController:
             self._notify(thread_id, notice)
         return item
 
+    async def post_from_mcp(self, *, thread_id: str, kind: InboxKind, title: str, message: str) -> InboxItem:
+        # A stateless MCP call has no durable Agent tool-call ID or transcript turn.
+        return await self.post(
+            thread_id=thread_id,
+            tool_call_id=f"{_MCP_CALL_PREFIX}{uuid4().hex}",
+            kind=kind,
+            title=title,
+            message=message,
+        )
+
     async def page(self, *, state: Literal["open", "done"], before: str | None, limit: int) -> InboxPage:
         items, cursor = await self._store.inbox.list(state=state, before=before, limit=limit)
         return InboxPage(items=items, next_cursor=cursor, unread_count=await self._store.inbox.unread_count())
@@ -47,5 +60,7 @@ class InboxController:
 
     async def location(self, item_id: str) -> InboxLocation:
         item = await self._store.inbox.get(item_id)
+        if item.tool_call_id.startswith(_MCP_CALL_PREFIX):
+            return InboxLocation(thread_id=item.thread_id)
         continuation_id, turn_id = await self._projections.tool_call_turn(item.thread_id, item.tool_call_id)
         return InboxLocation(thread_id=item.thread_id, continuation_id=continuation_id, turn_id=turn_id)
