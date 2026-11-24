@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Sparkle, X } from "@phosphor-icons/react";
+import { X } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useAppearance } from "../appearance/react";
 import { useTranslation } from "../i18n";
@@ -552,18 +552,21 @@ export function ComposerEditor({
               variant="ghost"
               size="xs"
               className={predictionStyles.accept}
+              aria-label={t("Use suggestion")}
               aria-keyshortcuts="Tab"
+              tooltip
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 const view = currentView.current;
                 if (view && acceptRef.current?.(view)) view.focus();
               }}
             >
-              <Sparkle aria-hidden="true" />
-              <span>{t("Use suggestion")}</span>
               <kbd className={predictionStyles.key} aria-hidden="true">
                 {t("Tab")}
               </kbd>
+              <span className={predictionStyles.touch} aria-hidden="true">
+                {t("Use suggestion")}
+              </span>
             </Button>
             <Button
               variant="ghost"

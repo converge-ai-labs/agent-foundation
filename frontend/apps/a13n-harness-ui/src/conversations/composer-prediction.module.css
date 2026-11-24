@@ -15,13 +15,12 @@
 }
 
 .accept[data-slot] {
-  height: 26px;
+  height: 24px;
   min-width: 0;
   max-width: 100%;
-  gap: 6px;
-  padding-inline: 8px 4px;
+  padding-inline: 8px;
   border: 1px solid var(--a13n-border);
-  border-radius: var(--harness-radius-control);
+  border-radius: var(--a13n-radius-chip);
   background: var(--a13n-hover);
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
@@ -30,57 +29,30 @@
   cursor: pointer;
 }
 
-.accept[data-slot] > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.accept[data-slot] > svg {
-  width: 13px;
-  height: 13px;
-  flex-shrink: 0;
-  margin-inline: 0;
-  opacity: 0.78;
-}
-
 .accept[data-slot]:is(:hover, :focus-visible) {
   border-color: var(--a13n-input-border);
   background: var(--a13n-selected);
   color: var(--a13n-text);
 }
 
-.accept[data-slot]:is(:hover, :focus-visible) > svg {
-  opacity: 1;
-}
-
 .key {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  height: 17px;
-  padding-inline: 5px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 4px;
-  background: var(--card);
-  color: var(--a13n-tertiary);
   font-family: var(--a13n-font);
-  font-size: var(--a13n-text-2xs);
-  font-weight: 400;
+  font-size: inherit;
   line-height: 1;
 }
 
-.accept[data-slot]:is(:hover, :focus-visible) .key {
-  border-color: var(--a13n-input-border);
-  color: var(--a13n-secondary);
+.touch {
+  display: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dismiss[data-slot] {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  border-radius: var(--harness-radius-control);
+  border-radius: var(--a13n-radius-chip);
   color: var(--a13n-tertiary);
   cursor: pointer;
 }
@@ -112,26 +84,27 @@
   .accept[data-slot] {
     height: 32px;
     padding-inline: 10px;
+    border-radius: var(--harness-radius-control);
     font-size: var(--a13n-text-sm);
   }
 
-  .accept[data-slot] > svg {
-    width: 14px;
-    height: 14px;
+  .key {
+    display: none;
+  }
+
+  .touch {
+    display: inline;
   }
 
   .dismiss[data-slot] {
     width: 32px;
     height: 32px;
+    border-radius: var(--harness-radius-control);
   }
 
   .dismiss[data-slot] > svg {
     width: 14px;
     height: 14px;
-  }
-
-  .key {
-    display: none;
   }
 }
 

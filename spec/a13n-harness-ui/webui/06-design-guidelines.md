@@ -81,7 +81,7 @@ In saved chats, one compact row above the editor holds the composer mode chips a
 
 Usage popovers lead with the requested figure and unit, then aligned supporting rows. Breakdowns expand inside one bounded reader; help carries accounting explanations. Avoid a card, subtitle or large gap for every metric. Scope changes preserve position and alignment.
 
-Input predictions replace the empty composer placeholder with quiet, upright ghost text matching the placeholder tone. The full suggestion wraps within the editor, preserves line breaks, and uses the editor's vertical scrolling when it exceeds the available height. Directly beneath the text on the same leading axis sits a compact **Use suggestion** button (with an inline `Tab` key hint on fine pointers) paired with a quiet dismiss button, using shared button targets on touch without overlaying the preview. Preview appearance follows reduced-motion preferences and shows no loading indicator.
+Input predictions replace the empty composer placeholder with quiet, upright ghost text matching the placeholder tone. The full suggestion wraps within the editor, preserves line breaks, and uses the editor's vertical scrolling when it exceeds the available height. Directly beneath the text on the same leading axis sits a compact accept button (labeled `Tab` on fine pointers and **Use suggestion** on coarse pointers) paired with a quiet dismiss button, using shared button targets on touch without overlaying the preview. Preview appearance follows reduced-motion preferences and shows no loading indicator.
 
 ### Reader Edges
 
