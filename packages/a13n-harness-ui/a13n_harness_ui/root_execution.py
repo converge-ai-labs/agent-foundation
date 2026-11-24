@@ -480,20 +480,12 @@ class RootRunExecutor:
                 steers: tuple[str, ...] = ()
                 if strict_inputs is not None:
                     state, steers = strict_inputs.prepare_cut(state, primary=True)
-
-                def decode_checkpoint_metadata() -> tuple[Sequence[ModelMessage], ConversationExcerpt, tuple[str, ...]]:
-                    history = state.message_history
-                    raw = state.message_history_json
-                    needs_history = not (isinstance(raw, bytes) and b'"suspended"' not in raw)
-                    return (
-                        history if needs_history else (),
-                        checkpoint_excerpt(thread.excerpt, history),
-                        completion_ids(history),
-                    )
-
-                history_for_capture, excerpt, completions = await to_thread.run_sync(decode_checkpoint_metadata)
-                frozen = display.capture(history_for_capture)
-                del history_for_capture
+                history = await to_thread.run_sync(lambda: state.message_history)
+                frozen = display.capture(history)
+                excerpt, completions = await to_thread.run_sync(
+                    lambda h=history: (checkpoint_excerpt(thread.excerpt, h), completion_ids(h))
+                )
+                del history
                 # RootCheckpointCapability joins this operation and its marker
                 # before propagating either native or AnyIO cancellation.
                 selected = await self._select_state(
@@ -896,21 +888,11 @@ class RootRunExecutor:
                 )
                 if paused_state is not None:
                     paused_state = terminal_state(paused_state)
-
-                    def decode_paused_metadata() -> tuple[Sequence[ModelMessage], ConversationExcerpt, tuple[str, ...]]:
-                        history = paused_state.message_history
-                        raw = paused_state.message_history_json
-                        needs_history = not (isinstance(raw, bytes) and b'"suspended"' not in raw)
-                        return (
-                            history if needs_history else (),
-                            checkpoint_excerpt(thread.excerpt, history),
-                            completion_ids(history),
-                        )
-
-                    paused_history, paused_excerpt, paused_completions = await to_thread.run_sync(
-                        decode_paused_metadata
-                    )
+                    paused_history = await to_thread.run_sync(lambda: paused_state.message_history)
                     paused_display = display.capture(paused_history) if display is not None else None
+                    paused_excerpt, paused_completions = await to_thread.run_sync(
+                        lambda h=paused_history: (checkpoint_excerpt(thread.excerpt, h), completion_ids(h))
+                    )
                     del paused_history
                     continuation = await self._select_state(
                         thread=thread,
