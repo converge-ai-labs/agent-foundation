@@ -115,7 +115,11 @@ a13n-harness-ui run "Reply with one short sentence." --format json
 | `--title TITLE`                    | 未设置 | 为新 Thread 命名。                             |
 | `--format text\|json`              | `text` | 选择输出格式。                                 |
 
-恢复限制在这里同样适用。操作失败或挂起时，退出码非零。因决策而挂起时，用打印出的 Thread ID 以交互方式重新打开；单次模式没有审批选择器。见[完整脚本流程](automation-and-troubleshooting.md)。
+`run` 始终采用无人值守模式。需要审批的任务请在交互界面中运行。`run --resume` 保留会话已保存的项目和根目录。若已有待处理决定导致启动失败，请先在交互界面处理，再重试。
+
+### `acp`
+
+在 macOS 或 Linux 上，通过标准输入和标准输出提供 [Agent Client Protocol v1](agent-client-protocol.md) 服务。默认由客户端处理单次工具权限请求。无需交互审批时，请添加 `--unattended`。诊断信息写入标准错误。Windows 不支持此命令。
 
 ### `config path`
 
@@ -310,7 +314,7 @@ ChatGPT 的默认流程使用粘贴回调 URL。本地浏览器回调支持 Code
 | `auth key delete --yes`              | 确认引用名；该标志跳过确认提示。                   |
 | `update`、`envd update`              | 会直接安装，不再次确认。仅检测到更新不会触发安装。 |
 | `import subagents --apply`           | 先检查预览；这会写入导入文件。                     |
-| `run`                                | 因决策挂起时，需要以交互方式重新打开。             |
+| `run`                                | 始终采用无人值守模式。请在交互界面处理待决事项。   |
 | `webui --dangerous-skip-permissions` | 它移除 HTTP 身份验证，不关闭 Agent 权限检查。      |
 
 ## 按任务查阅指南

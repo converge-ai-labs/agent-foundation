@@ -28,6 +28,7 @@ from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.media_types import is_text_media_type, text_charset
 from a13n_harness.providers.web.contracts import _validate_headers
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
+from a13n_harness.tools.surface import UNATTENDED_TOOL_KEY
 
 from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, environment_failure, tool_failure
@@ -199,6 +200,7 @@ class WebToolset:
     ) -> HarnessTool:
         return HarnessTool(
             function,
+            metadata={UNATTENDED_TOOL_KEY: True},
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,
                 effects=effects,

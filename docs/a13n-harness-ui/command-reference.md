@@ -115,7 +115,11 @@ a13n-harness-ui run "Reply with one short sentence." --format json
 | `--title TITLE`                    | Unset    | Name a new Thread.                                   |
 | `--format text\|json`              | `text`   | Choose the output format.                            |
 
-The resume restrictions also apply here. A failed or suspended operation exits nonzero. For a suspended decision, reopen the printed Thread ID interactively; one-shot mode has no approval selector. See [the complete script workflow](automation-and-troubleshooting.md).
+`run` always runs unattended. Use an interactive surface for work that requires approval. `run --resume` keeps the Thread’s saved Project and roots. If a saved decision blocks admission, resolve it in an interactive surface before retrying.
+
+### `acp`
+
+Serve [Agent Client Protocol v1](agent-client-protocol.md) over stdin and stdout on macOS or Linux. The client handles one-shot tool permission requests by default. Add `--unattended` to run without interactive approvals. Read diagnostics on stderr. Windows is unsupported.
 
 ### `config path`
 
@@ -310,7 +314,7 @@ The tables group commands by task. “Busy” means the parser allows the comman
 | `auth key delete --yes`              | Confirm the reference; this flag skips the prompt.                                                                                         |
 | `update`, `envd update`              | Expect installation without a second confirmation. When an update notice appears, run `a13n-harness-ui update` to install the new release. |
 | `import subagents --apply`           | Inspect the preview first; this writes imported files.                                                                                     |
-| `run`                                | Plan to reopen suspended work interactively for decisions.                                                                                 |
+| `run`                                | Always unattended. Resolve pending decisions in an interactive surface.                                                                    |
 | `webui --dangerous-skip-permissions` | Disables WebUI HTTP authentication only; Agent tool permission checks continue to apply.                                                   |
 
 ## Task-oriented guides

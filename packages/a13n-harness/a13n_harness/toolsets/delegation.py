@@ -39,6 +39,7 @@ from a13n_harness.observation import observe_operation, observe_output, record_s
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.tools.surface import UNATTENDED_TOOL_KEY
 from a13n_harness.usage import intersect_usage_limits, without_usage
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
@@ -86,6 +87,7 @@ class DelegationToolset:
     def get_toolset(self) -> FunctionToolset[AgentContext]:
         delegate_tool = HarnessTool(
             self.delegate,
+            metadata={UNATTENDED_TOOL_KEY: True},
             harness_metadata=HarnessToolMetadata(
                 tool_id="delegation.inline",
                 effects=frozenset({"execute"}),
@@ -98,6 +100,7 @@ class DelegationToolset:
         )
         resume_tool = HarnessTool(
             self.resume_subagent,
+            metadata={UNATTENDED_TOOL_KEY: True},
             harness_metadata=HarnessToolMetadata(
                 tool_id="delegation.inline.resume",
                 effects=frozenset({"execute"}),
@@ -590,6 +593,7 @@ def _create_inline_child_bindings(
         usage_reporter=parent.usage_reporter,
         toolset_instructions=parent._toolset_instructions_override,
         deferred_tools_supported=False,
+        unattended=parent.unattended,
         capabilities=(invocation_policy,) if invocation_policy is not None else (),
         metadata=parent.metadata,
         request_context=parent.request_context,
@@ -606,6 +610,8 @@ def _create_inline_child_bindings(
             "Child run bindings factory cannot replace the child instance or borrowed Environment.",
             code="subagent_binding_invalid",
         )
+    if bindings.unattended and not resolved.unattended:
+        raise DefinitionError("Child bindings cannot relax unattended mode.", code="subagent_binding_invalid")
     if not bindings.deferred_tools_supported and resolved.deferred_tools_supported:
         raise DefinitionError(
             "Child bindings cannot enable unsupported deferred tools.", code="subagent_binding_invalid"

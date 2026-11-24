@@ -529,6 +529,10 @@ Structured user interaction is a narrow client-side deferred tool rather than a 
 
 A question suspends the originating run and therefore retains no task, socket, credential, or user-interface handle in the Harness process. A Host can report an unanswered, expired, or otherwise failed external call with native `ToolFailed` in `DeferredToolResults.calls`; its message is validated as JSON-safe, and it is not parsed as a successful question answer. Correlation, exact batch coverage, and fresh-binding checks remain unchanged. `ToolDenied` belongs to approval results, not external-call result payloads. An answer is untrusted user-supplied data carried in a correlated `DeferredToolResults.calls` value, not `RunInputValue` or ordinary user-message content. It cannot serve as approval, Identity, policy, or Environment authority merely because it arrived through the correlated question surface.
 
+### Unattended Run policy
+
+Hosts may set `RunBindings.unattended`. The effective Tool Surface admits only non-deferred definitions with an explicit `a13n.harness.unattended: true` declaration and a noninteractive permission. The declaration applies to all direct, Tool Search and CodeAct projections; child Runs must not relax the policy. Undeclared tools and invocation policies fail closed. Provider-executed native tools are excluded; native Tool Search can only select among the admitted local definitions. Shell is the exception for `review`: the reviewer still runs, and a review that needs human approval fails the call. Unexpected attempts to defer fail closed without granting approval or suspending the Run.
+
 ## Discovery, Proxying, and Programmatic Dispatch
 
 Pydantic AI deferred Capability loading and tool-search primitives are the default progressive-disclosure path. Loaded Capability IDs and discovered tool names use upstream message-derived state and are persisted only when their continuation semantics require it.

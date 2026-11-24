@@ -243,6 +243,8 @@ async def _review(
             message = f"Tool review denied the invocation: {reason}"
         raise system_failure("tool_denied", message)
     if decision == "approval_required" and not approval.approved:
+        if ctx.deps.unattended:
+            raise system_failure("tool_denied", "Tool requires human approval; denied in unattended mode.")
         raise approval_required(
             ctx,
             approval,

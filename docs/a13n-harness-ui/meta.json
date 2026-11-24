@@ -30,6 +30,7 @@
     "running-webui",
     "command-reference",
     "embedding",
+    "agent-client-protocol",
     "http-api",
     "automation-and-troubleshooting",
     "observation",

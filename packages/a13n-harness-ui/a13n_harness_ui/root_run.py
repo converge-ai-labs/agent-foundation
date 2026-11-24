@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections import Counter, OrderedDict
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -15,6 +16,7 @@ from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
 from a13n_harness.capabilities.skills import BoundSkillCatalog
+from a13n_harness.context import AgentContext
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
 from a13n_harness.usage import RunUsageSummary
@@ -22,6 +24,7 @@ from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic_ai.capabilities import AbstractCapability
 
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser_handback import BrowserHandback
@@ -40,6 +43,7 @@ from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_models import RestartItem
 from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor, RootRunOutcome
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
+from a13n_harness_ui.root_inputs import InputDelivery, StrictRootInputs
 from a13n_harness_ui.shutdown import Shutdown
 from a13n_harness_ui.storage import ObjectRef, ThreadConfigurationMutation
 from a13n_harness_ui.storage.contracts import ThreadExecution
@@ -97,6 +101,7 @@ class _RootOperation:
     observation_only: bool = False
     main_account: MainAccountSelection | None = None
     skill_catalog: BoundSkillCatalog | None = None
+    strict_inputs: StrictRootInputs | None = None
 
 
 @dataclass(slots=True)
@@ -347,6 +352,9 @@ class RootRunCoordinator:
         reject_deferred: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
         bot_input: bool = False,
+        strict_inputs: StrictRootInputs | None = None,
+        run_capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
+        on_admitted: Callable[[RootRunReceipt], None] | None = None,
     ) -> RootRunReceipt:
         if thread_id == BOT_THREAD_ID and not (human_input or bot_input):
             raise RunCoordinationError("Bot accepts only user, heartbeat or Connector input.", code="bot_wake_rejected")
@@ -363,6 +371,9 @@ class RootRunCoordinator:
             human_input=human_input,
             reject_deferred=reject_deferred,
             authorize=authorize,
+            strict_inputs=strict_inputs,
+            run_capabilities=run_capabilities,
+            on_admitted=on_admitted,
         )
 
     async def submit_organization(self, thread_id: str, organization: MemoryOrganizationRun) -> RootRunReceipt:
@@ -423,6 +434,9 @@ class RootRunCoordinator:
         organization: MemoryOrganizationRun | None = None,
         reject_deferred: bool = False,
         authorize: Callable[[], Awaitable[None]] | None = None,
+        strict_inputs: StrictRootInputs | None = None,
+        run_capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
+        on_admitted: Callable[[RootRunReceipt], None] | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -488,7 +502,10 @@ class RootRunCoordinator:
                 # waits. Nothing suspends between this guard and registration.
                 if authorize is not None:
                     await authorize()
-                if reject_deferred and admission.response is not None:
+                if strict_inputs is not None or run_capabilities:
+                    admission = replace(admission, strict_inputs=strict_inputs, run_capabilities=run_capabilities)
+                    operation.strict_inputs = strict_inputs
+                if reject_deferred and (admission.response is not None or admission.deferred_resume is not None):
                     raise RunCoordinationError(
                         "A lifecycle notice cannot answer pending decisions.", code="thread_deferred_pending"
                     )
@@ -510,6 +527,10 @@ class RootRunCoordinator:
                 if human_input and self._browser_handback is not None:
                     self._browser_handback.user_input(thread_id)
                 self._task_group.start_soon(self._run_operation, operation, admission)
+                # Hand the receipt to hosts that must stop this exact operation
+                # if the submitting request is cancelled during publication.
+                if on_admitted is not None:
+                    on_admitted(receipt.model_copy(deep=True))
                 if prompt is not None and self._on_input_admitted is not None and organization is None:
                     try:
                         self._on_input_admitted(admission.published.value.project_id)
@@ -645,6 +666,40 @@ class RootRunCoordinator:
                     )
             await self._publish_change(operation)
         return RootControlResult(receipt_id=receipt_id, accepted=True, enqueue_id=enqueue_id)
+
+    async def steer_strict(self, receipt_id: str, *, input_id: str, message: str) -> InputDelivery:
+        operation = self._operations.get(receipt_id)
+        if operation is None or (inputs := operation.strict_inputs) is None:
+            return "not_delivered"
+        if (existing := inputs.existing(input_id)) is not None:
+            return await asyncio.shield(existing.completion)
+        stream = operation.stream
+        if stream is None or operation.status is not RootOperationStatus.running or operation.cancel_requested:
+            return "not_delivered"
+        if (offer := inputs.offer(input_id)) is None:
+            return "not_delivered"
+
+        def check_active() -> None:
+            if operation.cancel_requested or operation.status is not RootOperationStatus.running or inputs.closed:
+                raise RunCoordinationError("The root operation is no longer accepting input.", code="root_not_running")
+            if self._restart is not None:
+                self._restart.require_input()
+            offer.offered = True
+
+        try:
+            await stream.steer(
+                inputs.steer_content(offer, message),
+                input_id=offer.native_id,
+                immediate=True,
+                best_effort=True,
+                before_accept=check_active,
+            )
+        except Exception:
+            if not offer.offered:
+                offer.settle("not_delivered")
+            # After entering the native queue, only the checkpoint or joined
+            # terminal cut can determine delivery; never reoffer this ID.
+        return await asyncio.shield(offer.completion)
 
     async def cancel(self, receipt_id: str) -> RootControlResult:
         operation = self._operations.get(receipt_id)
@@ -861,6 +916,9 @@ class RootRunCoordinator:
                     reference.logical_digest,
                     prediction,
                 )
+            if operation.strict_inputs is not None:
+                operation.strict_inputs.close(uncertain=outcome is None or outcome.continuation.status != "selected")
+                operation.strict_inputs = None
             operation.done.set()
             if self._tool_executions is not None:
                 self._tool_executions.run_settled(thread_id)

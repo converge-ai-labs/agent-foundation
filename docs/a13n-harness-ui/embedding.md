@@ -6,6 +6,8 @@ description: Import and drive the Harness UI Python App programmatically to buil
 
 Use `HarnessUiApp` when your Python application needs Harness UI's YAML configurations, SQLite Threads, staged attachments, and Run controls. Choose [Harness directly](../a13n-harness/hosting.md) when your application owns configuration and storage, or [Service](../a13n-service/index.md) for worker-recoverable managed execution.
 
+Use [ACP](agent-client-protocol.md) to launch Harness UI as a subprocess from an editor or an application written in another language.
+
 ## Open, submit, and wait
 
 Install `a13n-harness-ui` in your application's Python environment, complete [setup](setup.md), run `a13n-harness-ui config path` to locate the root `a13n-harness-ui.yaml`, and save `embedded_chat.py`:

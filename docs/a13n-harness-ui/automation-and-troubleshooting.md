@@ -21,7 +21,7 @@ a13n-harness-ui run "Summarize the next step" --resume thread-id --format json
 a13n-harness-ui --environment-mode sandbox run "Inspect the repository"
 ```
 
-One-shot mode uses Project defaults and permission rules without opening interactive approval cards. If a Run suspends for a decision, resume interactively with `a13n-harness-ui --resume thread-id` to answer it.
+One-shot runs are always unattended. Choose tools that can finish under the Project’s permission rules without human input. `run --resume` keeps the Thread’s saved Project and roots. If a saved decision blocks admission, answer it with `a13n-harness-ui --resume thread-id` in an interactive terminal.
 
 | Symptom                             | Resolution                                                                                              |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -31,6 +31,8 @@ One-shot mode uses Project defaults and permission rules without opening interac
 | Submission rejected or draft closed | Restore buffered input with `/recover`, fix the reported issue, and resubmit                            |
 | `[System] Retrying model request…`  | Transient provider interruption (up to 5 attempts per turn without replaying completed tools)           |
 | Source checkout import errors       | Run `make sync` (or `make a13n-harness-ui`) after switching Git branches                                |
+
+To drive a session from an editor or another program, use [ACP](agent-client-protocol.md).
 
 See [Tracing](observation.md) for OTLP telemetry, [WebUI](webui.md) for server restart recovery, and the [Command reference](command-reference.md) for full CLI syntax.
 

@@ -6,6 +6,8 @@ description: 以编程方式导入并驱动 Harness UI Python App，在共享 YA
 
 当你的 Python 应用需要直接复用 Harness UI 的 YAML 配置文件、SQLite 会话历史、暂存附件与运行控制接口时，请使用 `HarnessUiApp`。若由应用自行管理配置与持久化，请直接嵌入 [Harness](../a13n-harness/hosting.md)；若需要跨工作进程故障恢复的托管执行，请选用 [Service](../a13n-service/index.md)。
 
+如需从编辑器或其他语言的应用启动 Harness UI 子进程，请使用 [ACP](agent-client-protocol.md)。
+
 ## 打开应用、提交输入并等待结果
 
 在应用的 Python 环境中安装 `a13n-harness-ui`，完成[初始化设置](setup.md)，运行 `a13n-harness-ui config path` 获取根 `a13n-harness-ui.yaml` 路径，并保存 `embedded_chat.py`：
