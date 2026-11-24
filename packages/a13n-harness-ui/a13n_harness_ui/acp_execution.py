@@ -250,7 +250,7 @@ class AcpTurn(AbstractHarnessPlugin):
             # binds Host capabilities and never invokes a native model.
             run_context = RunContext(
                 deps=context,
-                model=None,
+                model=None,  # pyright: ignore[reportArgumentType]
                 usage=RunUsage(),
                 run_id=context.run_id,
                 messages=[*previous.message_history, ModelRequest(parts=[UserPromptPart(content=authored)])],
@@ -288,7 +288,9 @@ class AcpTurn(AbstractHarnessPlugin):
                         request = AskUserQuestionRequest(questions=questions)
                         anchor = ctx.tool_call_id if ctx.tool_call_id != context.run_id else None
                         result = await interactions.request(request, anchor)
-                        return result.content if result.action == "accept" else {"action": result.action}
+                        if result.action == "accept" and result.content is not None:
+                            return result.content
+                        return {"action": result.action}
 
                     toolsets = (*toolsets, questions_toolset)
             if self.bot:

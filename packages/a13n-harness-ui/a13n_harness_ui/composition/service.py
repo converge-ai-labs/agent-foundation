@@ -186,7 +186,7 @@ class RunCompositionService:
         value = self._resolver.resolve_run(
             source,
             selection,
-            parent_node=parent.root,
+            parent_node=parent.require_native_root(),
             dynamic_node=dynamic_node,
             run_configuration=parent.run_configuration,
         )

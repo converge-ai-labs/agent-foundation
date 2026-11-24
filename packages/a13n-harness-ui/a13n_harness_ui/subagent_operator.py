@@ -492,7 +492,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
     ) -> AsyncExecutionView:
         del tool_call
         scope = await self._require_parent(plan.parent)
-        edge = _require_edge(scope.composition.root, request.subagent_name)
+        edge = _require_edge(scope.composition.require_native_root(), request.subagent_name)
         policy = scope.composition.subagents.dynamic
         try:
             policy.select_model(edge.definition.model.model_id)
@@ -616,7 +616,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             head,
             subagent_name=subagent_name,
             child_definition_id=reconstructed.executable.definition.definition_id,
-            source=_execution_source(published.value.root),
+            source=_execution_source(published.value.require_native_root()),
         )
 
     @_subagent_tool
@@ -640,7 +640,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         except HarnessUiError as exc:
             raise _SubagentRequestError(str(exc), code=exc.code) from exc
         state = HarnessState.new()
-        root = scope.composition.root.model_copy(
+        parent_root = scope.composition.require_native_root()
+        root = parent_root.model_copy(
             update={
                 "source_kind": "dynamic",
                 "source_id": _public_id("dynamic"),
@@ -652,8 +653,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "model": recipe,
                 "children": (),
                 "tools": None
-                if scope.composition.root.tools is None
-                else tuple(tool for tool in scope.composition.root.tools if tool not in _PARENT_CONTROL_TOOLS),
+                if parent_root.tools is None
+                else tuple(tool for tool in parent_root.tools if tool not in _PARENT_CONTROL_TOOLS),
             }
         )
         async with self._admission(scope):
@@ -1076,7 +1077,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         scope = await self._require_parent(plan.parent)
         previous = await self._require_execution(scope, request.execution_id)
         subagent_name = (await self._execution_identity(previous)).name
-        _require_edge(scope.composition.root, subagent_name)
+        _require_edge(scope.composition.require_native_root(), subagent_name)
         if subagent_name != plan.child.declaration.name or not previous.resumable:
             raise _SubagentRequestError(
                 "The retained child execution is not resumable from this roster edge.",
@@ -1277,7 +1278,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 head,
                 subagent_name=subagent_name,
                 child_definition_id=reconstructed.executable.definition.definition_id,
-                source=_execution_source(published.value.root),
+                source=_execution_source(published.value.require_native_root()),
             )
 
     async def _resolve_child_resume(
@@ -1287,7 +1288,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         retained_root = None
         if thread.configuration.agent_source.kind == "dynamic":
             retained = await self._store.objects.read_model(previous.run_composition, ResolvedRunComposition)
-            retained_root = retained.root
+            retained_root = retained.require_native_root()
         return await self._compositions.resolve_child_resume(
             source,
             _selection(thread.thread_id, thread.configuration),
@@ -2312,12 +2313,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "The child composition belongs to another Thread.",
                 code="subagent_execution_unavailable",
             )
-        model = current.root.model
+        root = current.require_native_root()
+        model = root.model
         model_name = await self._store.configurations.resource_name(current.generation_digest, "model", model.model_id)
         identity = _ChildIdentity(
             initial.root.roster_name,
-            _definition_id(current.root),
-            _execution_source(current.root),
+            _definition_id(root),
+            _execution_source(root),
             ChildExecutionModel(
                 name=model_name or model.model_id,
                 identity=model.base_model or model.route,

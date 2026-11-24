@@ -505,7 +505,7 @@ class AgentReconstructor:
         subscription_sources: Mapping[str, SubscriptionSource] | None,
         pricing_catalog: PricingCatalog | None,
     ) -> ReconstructedAgent:
-        node = composition.root
+        node = composition.require_native_root()
         recipe_id = model_recipe_id(node.model)
         memory = FileMemoryCapability(
             (

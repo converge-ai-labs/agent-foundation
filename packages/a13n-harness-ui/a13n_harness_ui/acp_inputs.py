@@ -56,7 +56,7 @@ class AcpInputs:
             ),
             call.tool_call_id,
         )
-        return result.content["option"] if result.action == "accept" else None
+        return result.content["option"] if result.action == "accept" and result.content is not None else None
 
     async def elicitation(self, message: str, mode: str, params: dict[str, Any]) -> schema.CreateElicitationResponse:
         if mode == "form":
@@ -70,8 +70,8 @@ class AcpInputs:
                 ),
             )
         elif mode == "url":
-            request = ElicitRequestURLParams(
-                message=message[:8192], url=params["url"], elicitationId=params["elicitation_id"]
+            request = ElicitRequestURLParams.model_validate(
+                {"message": message[:8192], "url": params["url"], "elicitationId": params["elicitation_id"]}
             )
         else:
             return schema.CancelElicitationResponse()

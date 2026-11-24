@@ -15,7 +15,6 @@ from a13n_harness.http import outbound_tls_verify
 from anyio import CancelScope, fail_after, sleep, to_thread
 from filelock import FileLock, Timeout
 
-from a13n_harness_ui.composition.models import ResolvedAcpNode
 from a13n_harness_ui.configuration.models import McpRemoteTransport
 from a13n_harness_ui.storage.mcp_oauth import McpOAuthRepository
 
@@ -23,7 +22,7 @@ from .models import OAuthBinding, OAuthError
 from .sdk import refresh
 
 if TYPE_CHECKING:
-    from a13n_harness_ui.composition.models import ResolvedAgentNode, ResolvedMcpRecipe
+    from a13n_harness_ui.composition.models import ResolvedAcpNode, ResolvedAgentNode, ResolvedMcpRecipe
     from a13n_harness_ui.configuration.models import LoadedHarnessUiConfiguration
 
 
@@ -88,9 +87,9 @@ class McpOAuth:
                 )
         await self.repository.reconcile(self.owner_prefix, owners)
 
-    async def bind_node[NodeT: (ResolvedAgentNode, ResolvedAcpNode)](self, node: NodeT) -> NodeT:
+    async def bind_node[NodeT: (ResolvedAgentNode | ResolvedAcpNode)](self, node: NodeT) -> NodeT:
         mcp_servers = tuple([await self.bind(recipe) for recipe in node.mcp_servers])
-        if isinstance(node, ResolvedAcpNode):
+        if node.source_kind == "acp_agent":
             return node.model_copy(update={"mcp_servers": mcp_servers})
         return node.model_copy(
             update={

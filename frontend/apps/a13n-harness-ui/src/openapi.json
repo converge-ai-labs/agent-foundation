@@ -13133,7 +13133,8 @@
               "memory",
               "live",
               "bot",
-              "dynamic"
+              "dynamic",
+              "acp_agent"
             ],
             "title": "Source Kind"
           },
@@ -13153,7 +13154,14 @@
             "title": "Base Agent Id"
           },
           "model_id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Model Id"
           },
           "thinking_summary": {

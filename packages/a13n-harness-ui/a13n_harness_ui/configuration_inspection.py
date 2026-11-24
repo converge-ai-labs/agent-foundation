@@ -18,10 +18,10 @@ from a13n_harness_ui.surfaces import SurfaceModel, ThreadConfigurationResolution
 
 class CapturedAgentSelection(SurfaceModel):
     name: str
-    source_kind: Literal["agent", "markdown", "memory", "live", "bot", "dynamic"]
+    source_kind: Literal["agent", "markdown", "memory", "live", "bot", "dynamic", "acp_agent"]
     source_id: str
     base_agent_id: str | None = None
-    model_id: str
+    model_id: str | None
     thinking_summary: str | None = None
     fast: FastState = "default"
     reasoning_mode: ReasoningModeState = "default"
@@ -67,6 +67,7 @@ class CapturedConfiguration(SurfaceModel):
 
 def captured_configuration(composition_id: str, value: ResolvedRunComposition) -> CapturedConfiguration:
     root = value.root
+    model = root.model
     return CapturedConfiguration(
         composition_id=composition_id,
         generation_digest=value.generation_digest,
@@ -86,10 +87,10 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
             source_kind=root.source_kind,
             source_id=root.source_id,
             base_agent_id=root.base_agent_id,
-            model_id=root.model.model_id,
-            thinking_summary=summarize_thinking(root.model.route, root.model.settings),
-            fast=fast_state(root.model.route, root.model.settings),
-            reasoning_mode=reasoning_mode_state(root.model.route, root.model.settings),
+            model_id=model.model_id if model is not None else None,
+            thinking_summary=summarize_thinking(model.route, model.settings) if model is not None else None,
+            fast=fast_state(model.route, model.settings) if model is not None else "default",
+            reasoning_mode=reasoning_mode_state(model.route, model.settings) if model is not None else "default",
         ),
         capability_ids=tuple(item.capability for item in root.capabilities),
         harness_plugin_ids=tuple(item.plugin_id for item in root.harness_plugins),

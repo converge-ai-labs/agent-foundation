@@ -823,6 +823,16 @@ class RootRunCoordinator:
         failure: FailureView | None = None
         cancelled = False
         cancelled_class = get_cancelled_exc_class()
+
+        async def on_stream(
+            stream: HarnessRunStream[Any], input_files: RootInputFiles | None = None, acp_turn: AcpTurn | None = None
+        ) -> None:
+            receipt_id = operation.receipt.receipt_id
+            if acp_turn is None:
+                await self._running(receipt_id, stream, input_files)
+            else:
+                await self._running(receipt_id, stream, input_files, acp_turn=acp_turn)
+
         try:
             # Registration is the admission boundary (including source authority).
             # Save even a pre-start cancellation, before any execution effects.
@@ -838,9 +848,7 @@ class RootRunCoordinator:
                         on_goal=lambda value: self._goal_changed(operation, value),
                         on_main_account=lambda value: self._main_account_changed(operation, value),
                         on_skill_catalog=lambda value: self._skill_catalog_resolved(operation, value),
-                        on_stream=lambda stream, input_files=None, acp_turn=None: self._running(
-                            operation.receipt.receipt_id, stream, input_files, acp_turn
-                        ),
+                        on_stream=on_stream,
                     )
             if outcome is None:
                 cancelled = True

@@ -239,6 +239,11 @@ async def test_acp_thread_without_native_model_runs_and_saves_display(tmp_path: 
         outcome = await app.wait_root_operation(receipt.receipt_id)
         assert outcome.status is RootOperationStatus.completed, outcome.failure
         assert (await app.get_thread(thread.thread_id)).thread.excerpt.latest_reply == "done:hello"
+        captured = await app.inspect_operation_configuration(receipt.receipt_id)
+        assert captured is not None
+        assert captured.agent.source_kind == "acp_agent"
+        assert captured.agent.source_id == "acp-fixture"
+        assert captured.agent.model_id is None
 
         rejected = await app.submit_thread(
             thread_id=thread.thread_id,

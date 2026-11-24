@@ -388,7 +388,7 @@ class DisplayFold:
         """The AG-UI events of one Harness event, as the JSON the stream carries."""
         return [event.model_dump(mode="json", by_alias=True) for event in self.observer.observe(source)]
 
-    def fold(self, events: list[dict[str, Any]], source: HarnessStreamEvent[Any] | None = None) -> list[Observed]:
+    def fold(self, events: Sequence[dict[str, Any]], source: HarnessStreamEvent[Any] | None = None) -> list[Observed]:
         """Give each event the next sequence and fold it. When `source` is a tool result the observer does not
         present, its call's item fails and the last event reports it."""
         observed: list[Observed] = []

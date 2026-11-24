@@ -21,6 +21,7 @@ from a13n_harness_ui.configuration.models import (
 )
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
+from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.mcp_oauth.models import OAuthBinding
 from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.notification_origin import BrowserId
@@ -271,6 +272,11 @@ class ResolvedRunComposition(CompositionModel):
     environment_targets: tuple[ResolvedEnvironmentTarget, ...] = Field(default=(), exclude_if=lambda value: not value)
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
+
+    def require_native_root(self) -> ResolvedAgentNode:
+        if isinstance(self.root, ResolvedAcpNode):
+            raise CompositionError("This operation requires a native Agent.", code="native_agent_required")
+        return self.root
 
     def agent_nodes(self) -> tuple[ResolvedAgentNode, ...]:
         values: list[ResolvedAgentNode] = []

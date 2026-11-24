@@ -4557,13 +4557,13 @@ export interface components {
              * Source Kind
              * @enum {string}
              */
-            source_kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
+            source_kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic" | "acp_agent";
             /** Source Id */
             source_id: string;
             /** Base Agent Id */
             base_agent_id?: string | null;
             /** Model Id */
-            model_id: string;
+            model_id: string | null;
             /** Thinking Summary */
             thinking_summary?: string | null;
             /** @default default */
