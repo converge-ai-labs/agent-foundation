@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import errno
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -40,7 +40,7 @@ from anyio import CancelScope, get_cancelled_exc_class, to_thread
 from opentelemetry.trace import StatusCode
 from pydantic_ai import RunContext, ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
+from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent, ModelMessage
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
 from a13n_harness_ui.bot_environments import BotEnvironmentsCapability
@@ -481,15 +481,19 @@ class RootRunExecutor:
                 if strict_inputs is not None:
                     state, steers = strict_inputs.prepare_cut(state, primary=True)
 
-                def capture_checkpoint_state() -> tuple[DisplayHistory, ConversationExcerpt, tuple[str, ...]]:
+                def decode_checkpoint_metadata() -> tuple[Sequence[ModelMessage], ConversationExcerpt, tuple[str, ...]]:
                     history = state.message_history
+                    raw = state.message_history_json
+                    needs_history = not (isinstance(raw, bytes) and b'"suspended"' not in raw)
                     return (
-                        display.capture(history),
+                        history if needs_history else (),
                         checkpoint_excerpt(thread.excerpt, history),
                         completion_ids(history),
                     )
 
-                frozen, excerpt, completions = await to_thread.run_sync(capture_checkpoint_state)
+                history_for_capture, excerpt, completions = await to_thread.run_sync(decode_checkpoint_metadata)
+                frozen = display.capture(history_for_capture)
+                del history_for_capture
                 # RootCheckpointCapability joins this operation and its marker
                 # before propagating either native or AnyIO cancellation.
                 selected = await self._select_state(
@@ -893,15 +897,21 @@ class RootRunExecutor:
                 if paused_state is not None:
                     paused_state = terminal_state(paused_state)
 
-                    def capture_paused() -> tuple[DisplayHistory | None, ConversationExcerpt, tuple[str, ...]]:
+                    def decode_paused_metadata() -> tuple[Sequence[ModelMessage], ConversationExcerpt, tuple[str, ...]]:
                         history = paused_state.message_history
+                        raw = paused_state.message_history_json
+                        needs_history = not (isinstance(raw, bytes) and b'"suspended"' not in raw)
                         return (
-                            display.capture(history) if display is not None else None,
+                            history if needs_history else (),
                             checkpoint_excerpt(thread.excerpt, history),
                             completion_ids(history),
                         )
 
-                    paused_display, paused_excerpt, paused_completions = await to_thread.run_sync(capture_paused)
+                    paused_history, paused_excerpt, paused_completions = await to_thread.run_sync(
+                        decode_paused_metadata
+                    )
+                    paused_display = display.capture(paused_history) if display is not None else None
+                    del paused_history
                     continuation = await self._select_state(
                         thread=thread,
                         superseded=run_checkpoint,
@@ -969,16 +979,28 @@ class RootRunExecutor:
                     result_completions: tuple[str, ...] | None = None
                     if result.state is not None:
                         final_result_state = result.state
+                        raw_final = final_result_state.message_history_json
+                        needs_history = display is not None and not (
+                            isinstance(raw_final, bytes) and b'"suspended"' not in raw_final
+                        )
+                        needs_completions = not (
+                            isinstance(raw_final, bytes) and b"tool_execution.completion" not in raw_final
+                        )
+                        if needs_history or needs_completions:
 
-                        def capture_result() -> tuple[DisplayHistory | None, tuple[str, ...]]:
-                            return (
-                                display.capture_state(final_result_state, completed=run_completed)
-                                if display is not None
-                                else None,
-                                state_completion_ids(final_result_state),
-                            )
+                            def decode_result_metadata() -> tuple[Sequence[ModelMessage], tuple[str, ...]]:
+                                history = final_result_state.message_history
+                                return (
+                                    history if needs_history else (),
+                                    completion_ids(history) if needs_completions else (),
+                                )
 
-                        result_display, result_completions = await to_thread.run_sync(capture_result)
+                            result_history, result_completions = await to_thread.run_sync(decode_result_metadata)
+                        else:
+                            result_history, result_completions = (), ()
+                        if display is not None:
+                            result_display = display.capture(result_history, completed=run_completed)
+                        del result_history
                     continuation = await self._select_state(
                         thread=thread,
                         superseded=run_checkpoint,
@@ -1005,13 +1027,27 @@ class RootRunExecutor:
                             status="cancelled" if isinstance(run_error, get_cancelled_exc_class()) else "failed",
                         )
 
-                        def capture_exported() -> tuple[DisplayHistory | None, tuple[str, ...]]:
-                            return (
-                                display.capture_state(state) if display is not None else None,
-                                state_completion_ids(state),
-                            )
+                        raw_exported = state.message_history_json
+                        needs_history = display is not None and not (
+                            isinstance(raw_exported, bytes) and b'"suspended"' not in raw_exported
+                        )
+                        needs_completions = not (
+                            isinstance(raw_exported, bytes) and b"tool_execution.completion" not in raw_exported
+                        )
+                        if needs_history or needs_completions:
 
-                        exported_display, exported_completions = await to_thread.run_sync(capture_exported)
+                            def decode_exported_metadata() -> tuple[Sequence[ModelMessage], tuple[str, ...]]:
+                                history = state.message_history
+                                return (
+                                    history if needs_history else (),
+                                    completion_ids(history) if needs_completions else (),
+                                )
+
+                            exported_history, exported_completions = await to_thread.run_sync(decode_exported_metadata)
+                        else:
+                            exported_history, exported_completions = (), ()
+                        exported_display = display.capture(exported_history) if display is not None else None
+                        del exported_history
                         continuation = await self._select_state(
                             thread=thread,
                             superseded=run_checkpoint,

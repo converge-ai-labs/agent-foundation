@@ -235,12 +235,6 @@ class DisplayHistoryCollector:
         self._observation_bytes = 0
         self._reset = True
 
-    def capture_state(self, state: HarnessState, *, completed: bool = False) -> DisplayHistory:
-        raw = state.message_history_json
-        if isinstance(raw, bytes) and b'"suspended"' not in raw:
-            return self.capture((), completed=completed)
-        return self.capture(state.message_history, completed=completed)
-
     def capture(self, history: Sequence[ModelMessage] = (), *, completed: bool = False) -> DisplayHistory:
         if self.fold is None:
             return self.saved.model_copy(deep=True)
