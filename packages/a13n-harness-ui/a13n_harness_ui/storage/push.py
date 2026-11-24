@@ -47,6 +47,9 @@ class PushRepository:
             record.p256dh = subscription.keys.p256dh
             record.auth = subscription.keys.auth
             record.origin = subscription.origin
+            # Older open tabs omit this preference when refreshing the same endpoint.
+            if "only_browser_id" in subscription.model_fields_set:
+                record.only_browser_id = subscription.only_browser_id
             record.scope = subscription.scope
             record.language = subscription.language
             record.updated_at = datetime.now(UTC)
@@ -97,5 +100,6 @@ def _subscription(record: WebPushSubscriptionRecord) -> PushSubscriptionInput:
         keys=PushKeys(p256dh=record.p256dh, auth=record.auth),
         origin=record.origin,
         scope=record.scope,
+        only_browser_id=record.only_browser_id,
         language=record.language,
     )

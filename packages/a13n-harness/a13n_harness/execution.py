@@ -202,7 +202,11 @@ class ExecutableAgent[OutputT]:
         ) as stream:
             async for item in stream:
                 if isinstance(item, HarnessRunResultEvent):
-                    return item.result
+                    break
+        if stream.result is not None:
+            if stream.post_run is not None:
+                await stream.post_run.run()
+            return stream.result
         raise RunError("The run ended without a terminal result.", code="run_result_missing")
 
     @overload

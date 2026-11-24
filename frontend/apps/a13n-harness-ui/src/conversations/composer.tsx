@@ -1,3 +1,4 @@
+import { browserSubmissionHeaders } from "../shell/notification-browser";
 import { useInputPrediction } from "./input-prediction";
 import { Dictation } from "./dictation";
 import type { DictationTarget } from "./dictation-context";
@@ -248,6 +249,7 @@ export async function submitDraft(
       const selectedModel = model?.model_id;
       const accepted = await result(
         transport.client.POST("/api/threads/{thread_id}/submit", {
+          headers: await browserSubmissionHeaders(),
           params: { path: { thread_id: threadId } },
           body: {
             parts,

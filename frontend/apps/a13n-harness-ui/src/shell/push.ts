@@ -1,4 +1,5 @@
 import { result, type Transport } from "../transport/client";
+import { notificationBrowserId } from "./notification-browser";
 import { readLanguage } from "../i18n/preferences";
 import { readPreference, writePreference } from "./preferences";
 
@@ -19,6 +20,12 @@ export class PushError extends Error {
     );
   }
 }
+
+export type NotificationAudience = "workspace" | "mine";
+export const notificationAudience = (): NotificationAudience =>
+  readPreference("notifications.audience", "workspace") === "mine"
+    ? "mine"
+    : "workspace";
 
 export type NotificationScope = "all" | "bot" | "inbox";
 export const notificationScope = (): NotificationScope => {
@@ -90,6 +97,7 @@ export async function enablePush(
     throw new PushError(
       "Allow notifications in this site's browser settings first.",
     );
+  const browserId = await notificationBrowserId();
   await serialized(async () => {
     if (readPreference("notifications.enabled", "true") === "false") return;
     // A queued refresh must not undo a concurrent explicit disable.
@@ -157,6 +165,8 @@ export async function enablePush(
             keys: { p256dh: data.keys.p256dh, auth: data.keys.auth },
             origin: window.location.origin,
             scope: notificationScope(),
+            only_browser_id:
+              notificationAudience() === "mine" ? browserId : null,
             language: readLanguage(),
           },
         }),

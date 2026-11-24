@@ -3633,6 +3633,11 @@
   "Mark as read": "पढ़ा हुआ चिह्नित करें",
   "Mark as unread": "अपठित चिह्नित करें",
   "Updates": "अपडेट",
+  "Mark all as read": "सभी को पढ़ा हुआ चिह्नित करें",
+  "All read": "सभी पढ़े गए",
+  "{{count, number}} unread": "{{count, number}} अपठित",
+  "Could not mark this section as read.": "इस अनुभाग को पढ़ा हुआ चिह्नित नहीं किया जा सका।",
+  "Unread items in this section are on later pages.": "इस अनुभाग के अपठित आइटम अगले पन्नों पर हैं।",
   "Inbox filter": "Inbox फ़िल्टर",
   "Open_inbox": "खुले",
   "Done_inbox": "पूरे",
@@ -3665,5 +3670,9 @@
   "Open provider sign-in": "प्रदाता का साइन-इन खोलें",
   "Loads models available to the connected account.": "कनेक्ट किए गए खाते के उपलब्ध मॉडल लोड करता है।",
   "Account catalog": "खाते की मॉडल सूची",
-  "Provider unavailable": "प्रदाता उपलब्ध नहीं है"
+  "Provider unavailable": "प्रदाता उपलब्ध नहीं है",
+  "Receive notifications from": "सूचनाओं का दायरा",
+  "My runs are those started from this browser.": "मेरे रन वे हैं जो इस ब्राउज़र से शुरू हुए हैं।",
+  "Entire workspace": "पूरा कार्यक्षेत्र",
+  "My runs only": "केवल मेरे रन"
 }

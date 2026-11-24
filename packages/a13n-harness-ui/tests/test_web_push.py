@@ -12,6 +12,7 @@ from a13n_harness_ui import web_push
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.live import RootOperationNotice
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+from a13n_harness_ui.notification_origin import notification_origin
 from a13n_harness_ui.push_models import PushKeys, PushSubscriptionInput, decode_key
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.storage.database import open_database, transaction
@@ -249,10 +250,12 @@ async def test_webui_run_push_does_not_need_any_browser_observer(
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     async with open_harness_ui_app(settings, configuration_path=configuration, host_mode="webui") as app:
         thread = await app.create_thread(title="Background work")
-        saved = await app.subscribe_push(template)
+        browser_id = "browser_" + "a" * 32
+        saved = await app.subscribe_push(template.model_copy(update={"only_browser_id": browser_id}))
         assert saved.subscription_id == template.subscription_id
         await app.record_push_activity(saved.subscription_id)
-        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Fix delivery")
+        with notification_origin(browser_id):
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Fix delivery")
         result = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
         assert result.status == "completed"
         with fail_after(5):
@@ -410,11 +413,22 @@ async def test_push_scope_is_per_device_and_rechecked_for_queued_delivery(tmp_pa
             assert bot_deliveries[0]["title"] == "Bot 给你发了消息"
             assert bot_deliveries[0]["body"] == "Done"
             assert bot_deliveries[0]["path"] == "/bot"
-            changed = all_device.model_copy(update={"scope": "bot"})
+            own_id = "browser_" + "a" * 32
+            own_device = all_device.model_copy(update={"only_browser_id": own_id})
+            await push.repository.save(own_device)
+            await push.repository.save(all_device)  # legacy refresh omits the audience
+            assert (await push.repository.get(own_device.subscription_id)).only_browser_id == own_id
+            payload = {"path": "/threads/work", "tag": "queued"}
+            for origin in (None, "browser_" + "b" * 32, own_id):
+                event = notice.model_copy(update={"origin_browser_id": origin})
+                assert await push._deliver(all_device, payload, (ordinary.thread_id, event)) is (origin == own_id)
+            assert (await push.test(own_device.subscription_id)).accepted
+            changed = all_device.model_copy(update={"scope": "bot", "only_browser_id": None})
             await push.repository.save(changed)
-            assert (await push.repository.get(changed.subscription_id)).scope == "bot"
+            saved = await push.repository.get(changed.subscription_id)
+            assert saved.scope == "bot" and saved.only_browser_id is None
             assert not await push._deliver(all_device, {"path": f"/threads/{ordinary.thread_id}", "tag": "stale"})
-            assert len(sent) == 3
+            assert len(sent) == 5
 
 
 @pytest.mark.parametrize("language", ["en", "zh-CN", "hi", "fr"])

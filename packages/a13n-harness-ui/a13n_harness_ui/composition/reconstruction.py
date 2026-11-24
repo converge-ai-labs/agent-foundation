@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from a13n_harness import (
+    AbstractHarnessPlugin,
     AgentContext,
     AgentDefinition,
     AgentSpec,
@@ -283,6 +284,7 @@ class AgentReconstructor:
         subagent_operator: HarnessUiSubagentOperator | None,
         subagent: bool = False,
         root_capabilities: Sequence[AbstractCapability[Any]] = (),
+        root_plugins: tuple[AbstractHarnessPlugin, ...] = (),
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         pricing_catalog: PricingCatalog | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
@@ -381,7 +383,9 @@ class AgentReconstructor:
                 configuration=composition.run_configuration,
             )
             pricing = model_resolver.pricing(pricing_catalog)
-            definition = definition.with_updates(capabilities=(*definition.capabilities, pricing))
+            definition = definition.with_updates(
+                capabilities=(*definition.capabilities, pricing), plugins=(*definition.plugins, *root_plugins)
+            )
             compaction = (
                 CompactionRun(background_compaction, model_resolver.fresh(), pricing)
                 if background_compaction is not None and composition.background_compaction.enabled

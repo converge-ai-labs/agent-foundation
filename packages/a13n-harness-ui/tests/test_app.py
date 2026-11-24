@@ -1958,6 +1958,7 @@ class _CompletedReconstructor:
         *,
         subagent_operator,
         root_capabilities=(),
+        root_plugins=(),
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
@@ -1970,7 +1971,7 @@ class _CompletedReconstructor:
             del messages, info
             yield "root complete"
 
-        return _reconstructed(model, root_capabilities)
+        return _reconstructed(model, root_capabilities, root_plugins)
 
 
 class _DeferredReconstructor:
@@ -1980,6 +1981,7 @@ class _DeferredReconstructor:
         *,
         subagent_operator,
         root_capabilities=(),
+        root_plugins=(),
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
@@ -2035,6 +2037,7 @@ class _DeferredReconstructor:
                 ),
                 *root_capabilities,
             ),
+            plugins=tuple(root_plugins),
         )
         executable = HarnessBuilder().build(definition)
         return ReconstructedAgent(
@@ -2054,6 +2057,7 @@ class _SlowReconstructor:
         *,
         subagent_operator,
         root_capabilities=(),
+        root_plugins=(),
         subscription_sources=None,
         pricing_catalog=None,
         memory_positions=None,
@@ -2068,16 +2072,17 @@ class _SlowReconstructor:
             await sleep_forever()
             yield "unreachable"
 
-        return _reconstructed(model, root_capabilities)
+        return _reconstructed(model, root_capabilities, root_plugins)
 
 
-def _reconstructed(model, root_capabilities) -> ReconstructedAgent:
+def _reconstructed(model, root_capabilities, root_plugins=()) -> ReconstructedAgent:
     definition = AgentDefinition(
         agent=AgentSpec(),
         output_type=str,
         definition_id="a13n-harness-ui:agent:agent-assistant",
         model=FunctionModel(stream_function=model),
         capabilities=tuple(root_capabilities),
+        plugins=tuple(root_plugins),
     )
     executable = HarnessBuilder().build(definition)
     return ReconstructedAgent(
@@ -2760,6 +2765,9 @@ async def test_summary_preserves_display_history_after_checkpoint_and_app_reopen
 
 
 async def test_real_webui_app_resumes_and_restart_does_not_rearm_saved_questions(tmp_path, monkeypatch):
+    from a13n_harness_ui.notification_origin import notification_origin
+
+    submitter = "browser_" + "a" * 32
     root = _write_configuration(tmp_path)
     root.write_text(root.read_text() + "tools:\n  interaction_timeout_seconds: 120\n")
     settings = _settings(tmp_path / "state")
@@ -2785,7 +2793,8 @@ async def test_real_webui_app_resumes_and_restart_does_not_rearm_saved_questions
         assert await app.thread_decisions(thread_id=thread.thread_id) is None
 
         pending_thread = await app.create_thread()
-        receipt = await app.submit_thread(thread_id=pending_thread.thread_id, prompt="ask")
+        with notification_origin(submitter):
+            receipt = await app.submit_thread(thread_id=pending_thread.thread_id, prompt="ask")
         await app.wait_root_operation(receipt.receipt_id)
         pending = await app.thread_decisions(thread_id=pending_thread.thread_id)
         assert pending is not None and pending.expires_at is not None
@@ -2795,6 +2804,11 @@ async def test_real_webui_app_resumes_and_restart_does_not_rearm_saved_questions
         assert retained.continuation_id == pending.continuation_id
         assert retained.expires_at is None
         assert await reopened.active_root_operation(pending_thread.thread_id) is None
+        with notification_origin("browser_" + "b" * 32):
+            admission = await reopened._root_runs._executor.capture(
+                thread_id=pending_thread.thread_id, prompt="Continue"
+            )
+        assert admission.published.value.origin_browser_id == submitter
 
 
 async def test_input_directory_and_bidirectional_history_use_saved_turn_boundaries(tmp_path, monkeypatch):

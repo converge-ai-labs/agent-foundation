@@ -288,6 +288,7 @@ class WebPushSubscriptionRecord(Base):
     p256dh: Mapped[str] = mapped_column(Text, nullable=False)
     auth: Mapped[str] = mapped_column(Text, nullable=False)
     origin: Mapped[str] = mapped_column(Text, nullable=False)
+    only_browser_id: Mapped[str | None] = mapped_column(String(40))
     scope: Mapped[Literal["all", "bot", "inbox"]] = mapped_column(String(8), nullable=False, server_default="all")
     language: Mapped[Literal["en", "zh-CN", "hi"]] = mapped_column(String(8), nullable=False, server_default="en")
     last_active_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)

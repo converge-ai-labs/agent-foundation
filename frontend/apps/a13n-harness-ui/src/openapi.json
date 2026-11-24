@@ -27,15 +27,34 @@
       "post": {
         "summary": "Start",
         "operationId": "start_api_voice_start_post",
+        "parameters": [
+          {
+            "name": "x-harness-browser",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^browser_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Harness-Browser"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/VoiceStart"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "202": {
@@ -622,16 +641,25 @@
       "post": {
         "summary": "Bot Submit",
         "operationId": "bot_submit_api_bot_inputs_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BotSubmitRequest"
-              }
+        "parameters": [
+          {
+            "name": "x-harness-browser",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^browser_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Harness-Browser"
             }
-          },
-          "required": true
-        },
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -640,6 +668,26 @@
                 "schema": {
                   "$ref": "#/components/schemas/BotInput"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BotSubmitRequest"
               }
             }
           }
@@ -743,6 +791,27 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/inbox/mark-read": {
+      "post": {
+        "summary": "Inbox Mark Read",
+        "operationId": "inbox_mark_read_api_inbox_mark_read_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxMarkReadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           }
         }
       }
@@ -2118,6 +2187,23 @@
             "schema": {
               "type": "string",
               "title": "View Id"
+            }
+          },
+          {
+            "name": "x-harness-browser",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^browser_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Harness-Browser"
             }
           }
         ],
@@ -8540,6 +8626,23 @@
               "type": "string",
               "title": "Thread Id"
             }
+          },
+          {
+            "name": "x-harness-browser",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^browser_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Harness-Browser"
+            }
           }
         ],
         "responses": {
@@ -9001,6 +9104,23 @@
             "schema": {
               "type": "string",
               "title": "Thread Id"
+            }
+          },
+          {
+            "name": "x-harness-browser",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^browser_[0-9a-f]{32}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Harness-Browser"
             }
           }
         ],
@@ -18511,15 +18631,40 @@
             "type": "integer",
             "minimum": 0.0,
             "title": "Unread Count"
+          },
+          "unread_by_group": {
+            "$ref": "#/components/schemas/InboxUnreadCounts"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
           "items",
-          "unread_count"
+          "unread_count",
+          "unread_by_group"
         ],
         "title": "InboxPage"
+      },
+      "InboxUnreadCounts": {
+        "properties": {
+          "needs_you": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Needs You"
+          },
+          "updates": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Updates"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "needs_you",
+          "updates"
+        ],
+        "title": "InboxUnreadCounts"
       },
       "InputPredictionResponse": {
         "properties": {
@@ -28365,6 +28510,19 @@
       "InboxNotice": {
         "additionalProperties": false,
         "properties": {
+          "origin_browser_id": {
+            "anyOf": [
+              {
+                "pattern": "^browser_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin Browser Id"
+          },
           "item_id": {
             "maxLength": 80,
             "minLength": 1,
@@ -28753,6 +28911,19 @@
       "RootOperationNotice": {
         "additionalProperties": false,
         "properties": {
+          "origin_browser_id": {
+            "anyOf": [
+              {
+                "pattern": "^browser_[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin Browser Id"
+          },
           "receipt_id": {
             "maxLength": 128,
             "minLength": 1,
@@ -29953,21 +30124,23 @@
         "type": "object"
       },
       "BotSubmitRequest": {
+        "additionalProperties": false,
         "properties": {
           "input_id": {
-            "type": "string",
             "maxLength": 128,
             "minLength": 1,
             "pattern": "^[A-Za-z0-9_-]+$",
-            "title": "Input Id"
+            "title": "Input Id",
+            "type": "string"
           },
           "text": {
-            "type": "string",
+            "default": "",
             "maxLength": 65536,
             "title": "Text",
-            "default": ""
+            "type": "string"
           },
           "parts": {
+            "default": [],
             "items": {
               "anyOf": [
                 {
@@ -29978,10 +30151,9 @@
                 }
               ]
             },
-            "type": "array",
             "maxItems": 1024,
             "title": "Parts",
-            "default": []
+            "type": "array"
           },
           "draft": {
             "anyOf": [
@@ -29994,12 +30166,11 @@
             ]
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "input_id"
         ],
-        "title": "BotSubmitRequest"
+        "title": "BotSubmitRequest",
+        "type": "object"
       },
       "BotPause": {
         "properties": {
@@ -30014,6 +30185,24 @@
           "paused"
         ],
         "title": "BotPause"
+      },
+      "InboxMarkReadRequest": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "enum": [
+              "needs_you",
+              "updates"
+            ],
+            "title": "Group"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "group"
+        ],
+        "title": "InboxMarkReadRequest"
       },
       "InboxItemMutation": {
         "additionalProperties": false,
@@ -30079,6 +30268,18 @@
             "type": "string",
             "maxLength": 512,
             "title": "Origin"
+          },
+          "only_browser_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^browser_[0-9a-f]{32}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Only Browser Id"
           },
           "scope": {
             "type": "string",

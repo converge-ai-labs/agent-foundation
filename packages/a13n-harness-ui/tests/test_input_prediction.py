@@ -1,19 +1,17 @@
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import replace
-from types import SimpleNamespace
 
 import httpx2
 import pytest
 from a13n_harness.models.transport import create_model_http_client
 from a13n_harness.providers.model import routes
-from a13n_harness_ui.app import HarnessUiApp, open_harness_ui_app
-from a13n_harness_ui.input_prediction import PREDICTION_PROMPT, PredictionCapture
+from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.input_prediction import PREDICTION_PROMPT, InputPredictionPlugin
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.shared_drafts import composer_options, options_document
 from a13n_harness_ui.surfaces import RootOperationStatus, ThreadMetadataMutation, ThreadMetadataPatch
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
-from pydantic_ai.models import ModelRequestContext, ModelRequestParameters
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.openai import OpenAIResponsesModelSettings
 
@@ -38,7 +36,7 @@ async def test_prediction_replays_settled_prefix_and_persists_only_text(tmp_path
     started = asyncio.Event()
     release = asyncio.Event()
     finished = asyncio.Event()
-    generate = HarnessUiApp._generate_prediction
+    generate = InputPredictionPlugin.post_run
 
     async def observe_generation(self, *args):
         try:
@@ -46,7 +44,7 @@ async def test_prediction_replays_settled_prefix_and_persists_only_text(tmp_path
         finally:
             finished.set()
 
-    monkeypatch.setattr(HarnessUiApp, "_generate_prediction", observe_generation)
+    monkeypatch.setattr(InputPredictionPlugin, "post_run", observe_generation)
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         foreground.append((list(messages), info))
@@ -143,55 +141,6 @@ async def test_prediction_replays_settled_prefix_and_persists_only_text(tmp_path
         assert await app.predict_input(thread_id, continuation_id) is None
 
 
-@pytest.mark.parametrize(
-    ("settings", "part"),
-    [
-        ({"openai_conversation_id": "conv-test"}, TextPart("Reply")),
-        ({"openai_background": True}, TextPart("Reply")),
-        ({"extra_body": {"conversation": "conv-test"}}, TextPart("Reply")),
-        ({"extra_body": {"tools": []}}, TextPart("Reply")),
-        ({"extra_body": {"background": True}}, TextPart("Reply")),
-        ({"extra_body": {"web_search_options": {}}}, TextPart("Reply")),
-        ({"anthropic_container": "container-test"}, TextPart("Reply")),
-        ({"google_cached_content": "cachedContents/retrieval"}, TextPart("Reply")),
-        (None, ToolCallPart("test_tool", {})),
-    ],
-    ids=[
-        "conversation",
-        "background",
-        "body-conversation",
-        "body-tools",
-        "body-background",
-        "body-web-search",
-        "anthropic-container",
-        "google-cached-content",
-        "tool-call",
-    ],
-)
-async def test_prediction_capture_discards_unreplayable_requests(settings, part):
-    capture = PredictionCapture()
-    ctx = SimpleNamespace(run_id="run-test")
-    request = ModelRequestContext(
-        model=FunctionModel(function=lambda _messages, _info: ModelResponse(parts=[TextPart("Reply")])),
-        model_id="model-test",
-        messages=[],
-        model_settings=None,
-        model_request_parameters=ModelRequestParameters(),
-    )
-
-    async def run():
-        await capture.after_model_request(
-            ctx, request_context=request, response=ModelResponse(parts=[TextPart("Reply")])
-        )
-        assert capture.prefix is not None
-        excluded = replace(request, model_settings=settings)
-        response = ModelResponse(parts=[part])
-        assert await capture.after_model_request(ctx, request_context=excluded, response=response) is response
-        assert capture.prefix is None
-
-    await capture.wrap_run(ctx, handler=run)
-
-
 @pytest.mark.parametrize("invalidate", ["new_run", "clear", "archive", "shutdown"])
 async def test_invalidating_a_thread_cancels_pending_prediction(tmp_path, monkeypatch, invalidate):
     root = _write_configuration(tmp_path)
@@ -259,7 +208,7 @@ async def test_prediction_does_not_retry_failed_provider_request(tmp_path, monke
     monkeypatch.setenv("OPENAI_API_KEY", "local-fixture-key")
     calls = []
     finished = asyncio.Event()
-    generate = HarnessUiApp._generate_prediction
+    generate = InputPredictionPlugin.post_run
 
     async def stream(messages, info):
         yield "Ready."
@@ -282,7 +231,7 @@ async def test_prediction_does_not_retry_failed_provider_request(tmp_path, monke
         return create_model_http_client(**kwargs, transport=httpx2.MockTransport(reject))
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", run_model)
-    monkeypatch.setattr(HarnessUiApp, "_generate_prediction", observe_generation)
+    monkeypatch.setattr(InputPredictionPlugin, "post_run", observe_generation)
     monkeypatch.setattr(routes, "create_model_http_client", scripted_client)
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
         thread_id = (await app.create_thread()).thread_id

@@ -136,7 +136,7 @@ Manage the always-on Bot conversation and status under `/api/bot/*`. See [Bot](b
 
 ### Inbox
 
-Read and resolve agent-posted items via `/api/inbox/*` (see [Read your Inbox](webui.md#read-your-inbox)).
+Read and resolve agent-posted items via `/api/inbox/*` (see [Read your Inbox](webui.md#read-your-inbox)). `GET /api/inbox` returns the total `unread_count` and `unread_by_group` counts for all Open items, independent of pagination. Send `POST /api/inbox/mark-read` with `{"group":"needs_you"}` for questions or `{"group":"updates"}` for results and milestones. A `204 No Content` response means the selected group’s open unread items are now read. The action leaves their completion state and other groups unchanged.
 
 ### Coordinators, MCP, and Host tools
 

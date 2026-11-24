@@ -12,6 +12,7 @@ from pydantic import ValidationError
 
 from a13n_harness_ui.conversation import excerpt_text
 from a13n_harness_ui.live import RootOperationNotice
+from a13n_harness_ui.notification_origin import origin_browser
 from a13n_harness_ui.surfaces import RootOperationStatus, RootOperationView
 
 
@@ -49,6 +50,7 @@ def root_operation_notice(
             else:
                 brief = "The Goal stopped without verified completion. Open the conversation to review the output."
             return RootOperationNotice(
+                origin_browser_id=origin_browser.get(),
                 receipt_id=operation.receipt.receipt_id,
                 status="goal_verified" if verified else "goal_incomplete",
                 brief=brief,
@@ -94,5 +96,8 @@ def root_operation_notice(
         else "suspended"
     )
     return RootOperationNotice(
-        receipt_id=operation.receipt.receipt_id, status=notice_status, brief=brief or fallback[status]
+        origin_browser_id=origin_browser.get(),
+        receipt_id=operation.receipt.receipt_id,
+        status=notice_status,
+        brief=brief or fallback[status],
     )
