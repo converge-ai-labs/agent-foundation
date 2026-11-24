@@ -49,7 +49,7 @@ WebUI runs configured external ACP executables on the local Full Control Host wi
 
 An idle chat prepares its ACP session on the first options read. Discovery exposes the Host tool catalog; tool execution is authorized only while a real prompt owns the session. The initial prompt reuses the matching resident session. WebUI shows the peer's effective model, thinking level, and mode when offered. Standard `configOptions` take precedence; peers with only legacy `models` use `session/set_model`. The peer's option response replaces the current choice list, including thinking levels that change with the model.
 
-The Thread stores the matching session identity and effective option values separately from its continuation. Recovering a session reapplies supported values with the model first. If the peer cannot resume or load, an unprompted session can be recreated with the saved selections; a prompted session cannot silently discard its history. Clear context retires the resident and clears its recoverable identity.
+The Thread stores the matching session identity and effective option values separately from its continuation. When the resident connection is lost before the first prompt, Harness UI opens a new session with `session/new` and restores only the saved options. After a prompt, recovery uses `session/resume` or `session/load` to preserve the peer's history. Both paths reapply supported options with the model first. Clear context retires the resident and clears its recoverable identity.
 
 ### Active prompts and transcript
 

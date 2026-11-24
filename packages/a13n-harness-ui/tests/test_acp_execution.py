@@ -292,8 +292,9 @@ async def test_acp_thread_without_native_model_runs_and_saves_display(tmp_path: 
 
 
 @pytest.mark.parametrize("flow", ["files", "inbox"])
-async def test_acp_host_inputs_and_inbox_links(tmp_path: Path, flow: str) -> None:
+async def test_acp_host_inputs_and_inbox_links(tmp_path: Path, flow: str, monkeypatch: pytest.MonkeyPatch) -> None:
     from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.browser import HostBrowsers
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from a13n_harness_ui.surfaces import RootOperationStatus
     from a13n_harness_ui.thread_files import AttachmentUpload
@@ -302,7 +303,16 @@ async def test_acp_host_inputs_and_inbox_links(tmp_path: Path, flow: str) -> Non
     root.write_text('schema_version: "1"\ndefaults:\n  agent: acp-fixture\ninput:\n  long_text_threshold_chars: 512\n')
     directory = tmp_path / "acp_agents"
     directory.mkdir()
-    resource = _resource().model_copy(update={"args": (str(_PEER), "ui", flow)})
+    peer_flags = (flow,)
+    if flow == "inbox":
+        # Advertise a ready binding without launching Chromium; the stdio peer
+        # checks the real Browser capabilities via MCP tools/list on turn one.
+        async def admit_browser(_self: HostBrowsers, _thread_id: str) -> str:
+            return "fixture-browser"
+
+        monkeypatch.setattr(HostBrowsers, "admit", admit_browser)
+        peer_flags += ("browser",)
+    resource = _resource().model_copy(update={"args": (str(_PEER), "ui", *peer_flags)})
     (directory / "fixture.yaml").write_text(resource.model_dump_json(exclude_none=True))
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
@@ -356,7 +366,8 @@ async def test_acp_host_inputs_and_inbox_links(tmp_path: Path, flow: str) -> Non
                 assert (location.continuation_id, location.turn_id) == (history.continuation_id, turn.turn_id)
 
 
-async def test_acp_prewarm_replays_options_after_host_restart(tmp_path: Path) -> None:
+@pytest.mark.parametrize("peer_flag", ["resident", "never-persisted"])
+async def test_acp_prewarm_replays_options_after_host_restart(tmp_path: Path, peer_flag: str) -> None:
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 
@@ -364,7 +375,7 @@ async def test_acp_prewarm_replays_options_after_host_restart(tmp_path: Path) ->
     config.write_text('schema_version: "1"\ndefaults:\n  agent: acp-fixture\n')
     resources = tmp_path / "acp_agents"
     resources.mkdir()
-    resource = _resource().model_copy(update={"args": (str(_PEER), "ui", "resident")})
+    resource = _resource().model_copy(update={"args": (str(_PEER), "ui", peer_flag)})
     (resources / "fixture.yaml").write_text(resource.model_dump_json(exclude_none=True))
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     async with open_harness_ui_app(settings, configuration_path=config) as app:

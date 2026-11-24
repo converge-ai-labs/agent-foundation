@@ -30,8 +30,8 @@ pytestmark = pytest.mark.anyio
 def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, MetaData]:
     """Exercise the real comment upgrades with a current-code reader stand-in.
 
-    Keep unrelated navigation columns on both sides of this historical fixture;
-    the navigation migration itself has separate real old-schema coverage.
+    Keep unrelated Thread columns on both sides of this historical fixture;
+    their migrations have separate old-schema coverage.
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("versions", "__pycache__"))
@@ -83,6 +83,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN external_context_json TEXT"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN unread BOOLEAN NOT NULL DEFAULT 0"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_state_version INTEGER NOT NULL DEFAULT 0"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN acp_state_json TEXT"))
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
             connection.execute(text("ALTER TABLE thread_usage ADD COLUMN indexed_through DATETIME"))
             # Keep unrelated query/push tables on both sides of this comment-only fixture.
@@ -252,6 +253,7 @@ def test_comment_retirement_preserves_threads_and_requires_backup_for_rollback(t
                 "external_context_json": None,
                 "unread": 0,
                 "read_state_version": 0,
+                "acp_state_json": None,
             }
             assert "output_comment" not in inspect(connection).get_table_names()
             assert "output_comment_tombstone" not in inspect(connection).get_table_names()
@@ -304,6 +306,7 @@ async def test_memory_migration_preserves_existing_threads_and_enforces_scope_id
                 "external_context_json": None,
                 "unread": 0,
                 "read_state_version": 0,
+                "acp_state_json": None,
             }
             assert connection.execute(text("SELECT * FROM thread_configuration")).mappings().one() == before_config
         async with open_harness_ui_app(settings, configuration_path=configuration) as app:

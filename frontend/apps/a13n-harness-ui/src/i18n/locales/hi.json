@@ -2184,6 +2184,7 @@
   "Offline - Retry": "ऑफ़लाइन - फिर से कोशिश करें",
   "Terminal login": "टर्मिनल लॉगिन",
   "Use a terminal on the Host to sign in, then check the connection again.": "Host के टर्मिनल में लॉग इन करें, फिर कनेक्शन दोबारा जाँचें।",
+  "Check connection": "कनेक्शन जाँचें",
   "{{name}} environment": "{{name}} एनवायरनमेंट",
   "Edit {{name}} environment": "{{name}} एनवायरनमेंट संपादित करें",
   "Remove directory {{path}}": "डायरेक्टरी {{path}} हटाएँ",

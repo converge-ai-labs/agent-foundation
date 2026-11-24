@@ -321,6 +321,38 @@ class RootRunExecutor:
             ),
         )
 
+    async def _capture_browser(self, composition: ResolvedRunComposition) -> tuple[str | None, str]:
+        if composition.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:
+            return None, "Host browser requires this Run to use Full Control."
+        if self._browsers is None:
+            return None, "Host browser is unavailable."
+        binding = await self._browsers.admit(composition.thread_id)
+        return binding, "" if binding is not None else self._browsers.unavailable_reason()
+
+    def _conversation_capabilities(
+        self,
+        composition: ResolvedRunComposition,
+        browser_binding: str | None,
+        browser_unavailable: str,
+        *,
+        local: bool = True,
+    ) -> tuple[AbstractCapability[AgentContext], ...]:
+        thread_id = composition.thread_id
+        capabilities: list[AbstractCapability[AgentContext]] = []
+        browsers = self._browsers
+        backend = browsers.backend(thread_id, browser_binding) if browsers is not None and browser_binding else None
+        if local:
+            capabilities.append(BrowserContextCapability(backend, unavailable=browser_unavailable))
+        if backend is not None and browsers is not None:
+            capabilities.append(
+                BrowserUseCapability(backend, on_human_control=partial(browsers.handback.blocked, thread_id))
+            )
+        if local and self._restart is not None:
+            capabilities.append(RestartPauseCapability(self._restart, thread_id))
+        if local and self._root_capability_factory is not None:
+            capabilities.append(self._root_capability_factory(composition))
+        return tuple(capabilities)
+
     async def prepare_acp_options(self, thread_id: str, change: AcpOptionChange | None) -> tuple[AcpOption, ...]:
         thread = await self._threads.require_interactive(thread_id)
         if thread.archived or thread.parent_thread_id is not None:
@@ -338,13 +370,12 @@ class RootRunExecutor:
             # admission, prompt, live publication, or tool-call authority.
             turn.prewarm = True
             state, _, _, _, positions, _ = await self._load_run_state(thread)
+            browser_binding, browser_unavailable = await self._capture_browser(composition)
             reconstructed = self._agents.reconstruct(
                 composition,
                 subagent_operator=None,
                 acp_turn=turn,
-                root_capabilities=(
-                    (self._root_capability_factory(composition),) if self._root_capability_factory else ()
-                ),
+                root_capabilities=self._conversation_capabilities(composition, browser_binding, browser_unavailable),
                 subscription_sources=self._subscription_sources,
                 memory_positions=positions,
             )
@@ -504,14 +535,7 @@ class RootRunExecutor:
                     object_kind=ObjectKind.run_composition, value=captured
                 )
                 published = PublishedRunComposition(value=captured, reference=envelope.ref)
-        browser_binding = None
-        browser_unavailable = "Host browser is unavailable."
-        if published.value.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:
-            browser_unavailable = "Host browser requires this Run to use Full Control."
-        elif self._browsers is not None:
-            browser_binding = await self._browsers.admit(thread_id)
-            if browser_binding is None:
-                browser_unavailable = self._browsers.unavailable_reason()
+        browser_binding, browser_unavailable = await self._capture_browser(published.value)
         return RootRunAdmission(
             thread,
             source,
@@ -741,37 +765,11 @@ class RootRunExecutor:
                         else None,
                     ),
                     _ToolPresentationCapability(retain_tool_presentation),
-                    *(
-                        (
-                            BrowserContextCapability(
-                                self._browsers.backend(thread_id, admission.browser_binding)
-                                if self._browsers is not None and admission.browser_binding is not None
-                                else None,
-                                unavailable=admission.browser_unavailable,
-                            ),
-                        )
-                        if admission.organization is None
-                        else ()
-                    ),
-                    *(
-                        (
-                            BrowserUseCapability(
-                                self._browsers.backend(thread_id, admission.browser_binding),
-                                on_human_control=partial(self._browsers.handback.blocked, thread_id),
-                            ),
-                        )
-                        if self._browsers is not None and admission.browser_binding is not None
-                        else ()
-                    ),
-                    *(
-                        (RestartPauseCapability(self._restart, thread_id),)
-                        if self._restart is not None and admission.organization is None
-                        else ()
-                    ),
-                    *(
-                        ()
-                        if self._root_capability_factory is None or admission.organization is not None
-                        else (self._root_capability_factory(published.value),)
+                    *self._conversation_capabilities(
+                        published.value,
+                        admission.browser_binding,
+                        admission.browser_unavailable,
+                        local=admission.organization is None,
                     ),
                 ),
                 subscription_sources=self._subscription_sources,

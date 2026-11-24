@@ -314,17 +314,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 if self.shell_review is not None and not self.prewarm:
                     _bind_shell_review(binding, scope.context, interactions)
                 if runtime.session_id is None:
-                    recovering = saved_id
-                    agent = runtime.capabilities
-                    if (
-                        saved is not None
-                        and not saved.prompted
-                        and not (
-                            agent.load_session
-                            or (agent.session_capabilities and agent.session_capabilities.resume is not None)
-                        )
-                    ):
-                        recovering = None
+                    recovering = saved.session_id if saved is not None and saved.prompted else None
                     await runtime.open_session(
                         AcpSessionSetup(
                             cwd=self.setup.cwd,

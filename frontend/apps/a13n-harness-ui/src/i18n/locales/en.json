@@ -2184,6 +2184,7 @@
   "Offline - Retry": "Offline - Retry",
   "Terminal login": "Terminal login",
   "Use a terminal on the Host to sign in, then check the connection again.": "Use a terminal on the Host to sign in, then check the connection again.",
+  "Check connection": "Check connection",
   "{{name}} environment": "{{name}} environment",
   "Edit {{name}} environment": "Edit {{name}} environment",
   "Remove directory {{path}}": "Remove directory {{path}}",

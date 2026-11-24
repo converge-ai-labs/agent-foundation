@@ -169,6 +169,8 @@ for line in sys.stdin:
         send(id=ident, result={})
     elif MODE == "auth-required" and method == "session/new":
         send(id=ident, error={"code": -32000, "message": "Authentication required"})
+    elif method in {"session/load", "session/resume"} and MODE == "ui" and "never-persisted" in sys.argv[2:]:
+        send(id=ident, error={"code": -32602, "message": "Unknown session"})
     elif method in {"session/new", "session/load", "session/resume"}:
         ADDITIONAL = params.get("additionalDirectories", ())
         assert (method == "session/load") == (MODE == "load")
@@ -255,6 +257,9 @@ for line in sys.stdin:
             PENDING = ident
             continue
         if MODE == "ui" and message in {"inbox exact", "inbox fallback"}:
+            if "browser" in sys.argv[2:]:
+                catalog = {entry["name"] for entry in mcp("tools/list")["tools"]}
+                assert {"browser_observe", "browser_notify_on_handback"} <= catalog, catalog
             if message == "inbox exact":
                 update("tool_call", toolCallId="inbox-exact", title="Post update", name="harness-host/post_to_inbox")
             posted = mcp(
