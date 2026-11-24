@@ -96,6 +96,7 @@ function fixture(request: Request): Response | Promise<Response> {
           account: {
             provider: "codex",
             label: "Codex",
+            managed_accounts: true,
             login_methods: ["device", "browser"],
           },
         },
@@ -104,6 +105,7 @@ function fixture(request: Request): Response | Promise<Response> {
           account: {
             provider: "grok",
             label: "Grok",
+            managed_accounts: true,
             login_methods: ["device", "browser"],
           },
         },

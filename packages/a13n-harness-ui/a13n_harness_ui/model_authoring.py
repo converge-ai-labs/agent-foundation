@@ -12,33 +12,48 @@ from dataclasses import replace
 from typing import Literal
 
 from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS, SessionAffinityPreset
-from a13n_harness.pricing import get_current_pricing_catalog
+from a13n_harness.pricing import ModelPricingEntry, get_current_pricing_catalog
 from a13n_harness.spec import HarnessModelCharacteristics
 from pydantic import Field, JsonValue, TypeAdapter, model_validator
 
-from a13n_harness_ui.configuration.models import ModelAuthentication, ModelCharacteristics, StrictModel
+from a13n_harness_ui.configuration.models import (
+    ModelAuthentication,
+    ModelCharacteristics,
+    PluginSubscriptionAuthentication,
+    StrictModel,
+)
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_presets import (
     API_MODEL_SUGGESTIONS,
     API_PROVIDERS,
     SettingsPreset,
+    configured_price_entry,
     known_context_window,
     known_model_capabilities,
     known_model_characteristics,
     settings_presets,
     validate_base_url,
 )
+from a13n_harness_ui.model_providers.catalog import Registration
+from a13n_harness_ui.model_providers.sdk import PluginModelSuggestion
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl, describe_reasoning_mode
 from a13n_harness_ui.resource_names import model_name
 
 type AuthenticationKind = Literal[
-    "api_key", "chatgpt_subscription", "codex_subscription", "grok_subscription", "copilot_subscription"
+    "api_key",
+    "chatgpt_subscription",
+    "codex_subscription",
+    "grok_subscription",
+    "copilot_subscription",
+    "plugin_subscription",
 ]
 
 
 class ModelChoice(StrictModel):
     value: str
     label: str
+    base_model: str | None = None
+    characteristics: ModelCharacteristics | None = None
 
 
 class ContextChoice(StrictModel):
@@ -55,13 +70,21 @@ CODEX_CONTEXT_CHOICES = (
 
 
 class AccountConnection(StrictModel):
-    """Built-in account actions shared by terminal and browser authoring."""
+    """Provider account actions shared by terminal and browser authoring."""
 
-    provider: Literal["chatgpt", "codex", "grok", "copilot"]
+    provider: str
     label: str
     login_methods: tuple[Literal["device", "browser", "manual_callback"], ...]
     model_discovery: bool = False
     source_selection: bool = False
+    brand: str | None = None
+    logo_url: str | None = None
+    managed_accounts: bool = False
+    supports_groups: bool = False
+    supports_reset_vouchers: bool = False
+    supports_allow_credits: bool = False
+    supports_usage: bool = False
+    allowance_view: Literal["chatgpt", "copilot"] | None = None
 
 
 class ModelConnection(StrictModel):
@@ -70,6 +93,9 @@ class ModelConnection(StrictModel):
     provider: str
     authentication: AuthenticationKind
     account: AccountConnection | None = None
+    source: Literal["builtin", "entry_point", "embedded"] = "builtin"
+    distribution_name: str | None = None
+    configuration_schema: dict[str, JsonValue] | None = None
     base_url: str = ""
     credential_env: str | None = None
     supports_base_url: bool = False
@@ -84,7 +110,17 @@ SUBSCRIPTION_CONNECTIONS = (
         label="Codex subscription",
         provider="openai-codex",
         authentication="codex_subscription",
-        account=AccountConnection(provider="codex", label="Codex", login_methods=("device", "browser")),
+        account=AccountConnection(
+            provider="codex",
+            label="Codex",
+            login_methods=("device", "browser"),
+            brand="openai",
+            managed_accounts=True,
+            supports_groups=True,
+            supports_reset_vouchers=True,
+            supports_allow_credits=True,
+            supports_usage=True,
+        ),
         models=tuple(
             ModelChoice(value=value, label=model_name("codex", value))
             for value in (
@@ -106,7 +142,15 @@ SUBSCRIPTION_CONNECTIONS = (
         label="Grok subscription",
         provider="grok",
         authentication="grok_subscription",
-        account=AccountConnection(provider="grok", label="Grok", login_methods=("device", "browser")),
+        account=AccountConnection(
+            provider="grok",
+            label="Grok",
+            login_methods=("device", "browser"),
+            brand="xai",
+            managed_accounts=True,
+            supports_groups=True,
+            supports_usage=True,
+        ),
         models=tuple(
             ModelChoice(value=value, label=model_name("grok-subscription", value))
             for value in ("grok-4.7", "grok-4.5", "grok-4.20-0309-reasoning")
@@ -121,6 +165,8 @@ SUBSCRIPTION_CONNECTIONS = (
         account=AccountConnection(
             provider="copilot",
             label="GitHub Copilot",
+            brand="github",
+            allowance_view="copilot",
             login_methods=("device",),
             model_discovery=True,
             source_selection=True,
@@ -136,7 +182,9 @@ SUBSCRIPTION_CONNECTIONS = (
         account=AccountConnection(
             provider="chatgpt",
             label="ChatGPT",
-            login_methods=("manual_callback", "browser"),
+            brand="openai",
+            allowance_view="chatgpt",
+            login_methods=("browser", "manual_callback"),
             model_discovery=True,
             source_selection=True,
         ),
@@ -144,6 +192,38 @@ SUBSCRIPTION_CONNECTIONS = (
         default_model="",
     ),
 )
+
+
+def plugin_connection(registration: Registration) -> ModelConnection:
+    declaration = registration.declaration
+    return ModelConnection(
+        id=declaration.provider_key,
+        label=declaration.display_name,
+        provider=declaration.provider_key,
+        authentication="plugin_subscription",
+        source=registration.source,
+        distribution_name=registration.distribution_name,
+        configuration_schema=registration.configuration_schema,
+        account=AccountConnection(
+            provider=declaration.provider_key,
+            label=declaration.display_name,
+            login_methods=declaration.login_methods,
+            model_discovery=declaration.supports_model_discovery,
+            brand=declaration.brand,
+            logo_url=declaration.logo_url,
+            managed_accounts=True,
+            supports_groups=True,
+            supports_usage=declaration.supports_usage,
+        ),
+        models=tuple(plugin_model_choice(item) for item in declaration.models),
+        default_model=declaration.default_model,
+    )
+
+
+def plugin_model_choice(item: PluginModelSuggestion) -> ModelChoice:
+    return ModelChoice(
+        value=item.model_id, label=item.label, base_model=item.base_model, characteristics=item.characteristics
+    )
 
 
 def subscription_connection(provider: str) -> ModelConnection:
@@ -199,6 +279,7 @@ def base_model_choices() -> tuple[ModelChoice, ...]:
 class ModelChoices(StrictModel):
     base_models: tuple[ModelChoice, ...] = Field(default_factory=base_model_choices)
     connections: tuple[ModelConnection, ...] = Field(default_factory=model_connections)
+    diagnostics: tuple[str, ...] = ()
     session_affinity_presets: tuple[SessionAffinityPreset, ...] = SESSION_AFFINITY_PRESETS
 
 
@@ -221,6 +302,21 @@ class ModelRecipe(StrictModel):
         if route is not None and (self.route.partition(":")[0] != route or self.model_configuration):
             raise ValueError("Subscriptions require their native route and no endpoint configuration")
         return self
+
+
+class PreparedModelRecipe(ModelRecipe):
+    """Authoring response with read-only pricing, separate from persisted recipes."""
+
+    pricing: ModelPricingEntry | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
+def base_model_pricing(base_model: str | None) -> ModelPricingEntry | None:
+    if base_model is None:
+        return None
+    entry = configured_price_entry(get_current_pricing_catalog(), base_model)
+    if base_model.startswith("google-vertex:") and entry is not None and entry.provider == "google":
+        return None
+    return entry
 
 
 class ModelOptionsRequest(StrictModel):
@@ -281,6 +377,8 @@ def model_tool_choices(route: str, authentication: str, base_url: str) -> tuple[
 
 
 class ModelOptions(StrictModel):
+    base_model: str | None = None
+    pricing: ModelPricingEntry | None = None
     name: str
     route: str
     presets: tuple[ModelSettingsChoice, ...]
@@ -386,15 +484,25 @@ def shell_review_models(connection: ModelConnection, model_id: str) -> tuple[Mod
     return tuple(sorted(connection.models, key=priority))
 
 
-def model_options(request: ModelOptionsRequest) -> ModelOptions:
-    connection = model_connection(request.connection)
+def model_options(
+    request: ModelOptionsRequest,
+    registration: Registration | None = None,
+    discovered: tuple[ModelChoice, ...] = (),
+) -> ModelOptions:
+    connection = plugin_connection(registration) if registration is not None else model_connection(request.connection)
+    suggestion = next((item for item in (*discovered, *connection.models) if item.value == request.model_id), None)
+    base_model = request.base_model or (suggestion.base_model if suggestion is not None else None)
     base_url = _base_url(connection, request.base_url)
     if any(char.isspace() for char in request.model_id):
         raise HarnessUiError("Model IDs cannot contain whitespace.", code="model_id_invalid")
     route = f"{connection.provider}:{request.model_id}"
-    identity = request.base_model or route
+    identity = base_model or route
     provider, _, model = identity.partition(":")
-    known_context = known_context_window(provider, model, base_url) if connection.authentication == "api_key" else None
+    known_context = (
+        known_context_window(provider, model, base_url)
+        if connection.authentication == "api_key" or base_model
+        else None
+    )
     known_inputs = known_model_characteristics(identity)
     known_capabilities = known_inputs.capabilities if known_inputs is not None else None
     context = (
@@ -412,14 +520,23 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
     )
     if known_inputs is not None and known_inputs.url_input.video:
         characteristics = characteristics.model_copy(update={"url_input": known_inputs.url_input})
+    if suggestion is not None and suggestion.characteristics is not None:
+        characteristics = characteristics.model_copy(
+            update={
+                field: getattr(suggestion.characteristics, field)
+                for field in suggestion.characteristics.model_fields_set
+            }
+        )
     return ModelOptions(
+        base_model=base_model,
+        pricing=base_model_pricing(base_model),
         name=model_name(connection.id, request.model_id),
         route=route,
         presets=tuple(
             ModelSettingsChoice(value=p.key, label=p.label, description=p.description, settings=p.settings)
             for p in authoring_presets(connection, request.model_id)
         ),
-        context_window=context,
+        context_window=characteristics.context_window_tokens,
         known_context_window=known_context,
         context_choices=CODEX_CONTEXT_CHOICES if connection.id == "codex" else (),
         characteristics=characteristics,
@@ -431,9 +548,13 @@ def model_options(request: ModelOptionsRequest) -> ModelOptions:
     )
 
 
-def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
+def prepare_model(
+    request: ModelRecipeRequest,
+    registration: Registration | None = None,
+    discovered: tuple[ModelChoice, ...] = (),
+) -> ModelRecipe:
     """Expand omitted creation fields; explicit native mappings remain authoritative."""
-    connection = model_connection(request.connection)
+    connection = plugin_connection(registration) if registration is not None else model_connection(request.connection)
     configured_url = request.model_configuration.get("base_url")
     if "base_url" in request.model_configuration and not isinstance(configured_url, str):
         raise HarnessUiError("Base URL must be a string.", code="model_base_url_invalid")
@@ -452,9 +573,23 @@ def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
             model_id=request.model_id,
             base_model=request.base_model,
             base_url=effective_url,
-        )
+        ),
+        registration,
+        discovered,
     )
     authentication = request.authentication
+    if registration is not None:
+        if authentication is None:
+            authentication = PluginSubscriptionAuthentication(kind="plugin_subscription", provider=connection.provider)
+        if (
+            not isinstance(authentication, PluginSubscriptionAuthentication)
+            or authentication.provider != connection.provider
+        ):
+            raise HarnessUiError("Authentication must match the Model Provider.", code="model_authentication_invalid")
+        try:
+            registration.configuration(request.model_configuration)
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="model_configuration_invalid") from None
     if authentication is None and connection.authentication != "api_key":
         authentication = TypeAdapter(ModelAuthentication).validate_python({"kind": connection.authentication})
     if authentication is None or authentication.kind != connection.authentication:
@@ -478,12 +613,12 @@ def prepare_model(request: ModelRecipeRequest) -> ModelRecipe:
         raise HarnessUiError("This connection does not accept a base URL.", code="model_base_url_unsupported")
     return ModelRecipe(
         route=options.route,
-        base_model=request.base_model,
+        base_model=options.base_model,
         authentication=authentication,
         settings=settings,
         model_configuration=configuration,
         model_characteristics=_characteristics(
-            request.base_model or options.route,
+            options.base_model or options.route,
             request.model_characteristics if request.model_characteristics is not None else options.characteristics,
         ),
     )

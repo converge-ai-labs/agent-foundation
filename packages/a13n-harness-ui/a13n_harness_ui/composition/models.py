@@ -47,6 +47,7 @@ class DependencyProvenance(CompositionModel):
         "environment_provider",
         "environment_run_extension",
         "environment_adapter",
+        "model_provider",
     ]
     key: str = Field(min_length=1, max_length=200)
     source: Literal["installed", "host"]
@@ -64,6 +65,7 @@ class ResolvedModelRecipe(CompositionModel):
         default=None, pattern=r"^[^\s:]+:[^\s:]+$", max_length=512, exclude_if=lambda v: v is None
     )
     authentication: ModelAuthentication
+    model_provider: DependencyProvenance | None = Field(default=None, exclude_if=lambda value: value is None)
     subscription_group: SubscriptionGroupResource | None = Field(default=None, exclude_if=lambda value: value is None)
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)

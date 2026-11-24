@@ -198,3 +198,9 @@ This value explains what the admitted Run used. Model routes, authentication kin
 08. An Environment profile is Host configuration, not a runtime target identity.
 09. Full Control and Sandbox are fixed release-owned profiles whose IDs cannot be shadowed by configuration resources.
 10. A Provider without a Host Project-root adapter is not executable merely because it is installed.
+
+## OAuth Model Providers
+
+Harness UI discovers trusted no-argument `ModelProviderPlugin` classes in the `a13n_harness_ui.model_providers` entry-point group. An embedded app can supply instances through `HarnessUiIntegrations.model_providers`; both sources use the same catalog and validation. Import, construction, schema generation, and declaration are pure. Installed Python runs with Host authority. The SDK client policies govern requests made through the SDK, not arbitrary Python execution.
+
+The declaration key matches the entry-point name and cannot overlap a native route, native account type, or another plugin key. Duplicate registrations for a key make that key unavailable. Invalid registrations produce diagnostics while independent entries remain usable. Discovery and inspection do not make upstream calls. This catalog is fixed for the App lifetime; restart after installing or removing a package. Model choices expose declaration metadata and diagnostics. The extension catalog and captured Model provenance use the `model_provider` kind, including the implementation identity and distribution version when installed.

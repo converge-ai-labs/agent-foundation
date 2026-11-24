@@ -99,6 +99,7 @@ export function compactAllowance(usage: Schema<"UsageSnapshot">["usage"]) {
       )
       .join(" - ");
   }
+  if ("windows" in usage) return "";
   const value = grokAllowance(usage.config);
   return value.usedPercent == null
     ? ""

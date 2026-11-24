@@ -194,9 +194,13 @@ a13n-harness-ui environment check --profile environment-envd
 
 查看 App 和扩展诊断。支持 `--format text|json`。按报告的现象，在[故障排查](automation-and-troubleshooting.md)中选择下一步检查。
 
+### `extensions`
+
+列出已安装的扩展和 OAuth 模型提供方诊断信息。支持 `--format text|json`。
+
 ### `auth status`
 
-查看 Model 身份验证状态：`auth status [PROVIDER]`。可选 provider 为 `chatgpt`、`codex`、`grok` 或 `copilot`。支持 `--format text|json`。
+查看 Model 身份验证状态：`auth status [PROVIDER]`。可选 provider 为 `chatgpt`、`codex`、`grok`、`copilot`，也可以是已安装的 OAuth 模型提供方插件的 key。支持 `--format text|json`。
 
 ### `auth key list`
 
@@ -226,19 +230,20 @@ a13n-harness-ui auth select copilot --source native --account YOUR_GITHUB_LOGIN
 
 ### `auth logout`
 
-用 `auth logout PROVIDER` 移除选中的本地凭据，provider 为 `chatgpt`、`codex`、`grok` 或 `copilot`。支持 `--format text|json`。
+用 `auth logout PROVIDER` 移除选中的本地凭据，provider 为 `chatgpt`、`codex`、`grok`、`copilot`，也可以是已安装的 OAuth 模型提供方插件的 key。对插件执行此命令会登出其默认账户。支持 `--format text|json`。
 
 来源是共享 Copilot CLI 文件时，登出也会删除该文件中选中账户受支持的 token 字段，影响 Copilot CLI。其他账户保留；Host 不选择备用来源。
 
 ### `login`
 
-用 `login PROVIDER` 完成身份验证，provider 为 `chatgpt`、`codex`、`grok` 或 `copilot`。
+用 `login PROVIDER` 完成身份验证，provider 为 `chatgpt`、`codex`、`grok`、`copilot` 或已安装的 OAuth 模型提供方键。
 
-| 选项                          | 默认值          | 用途                           |
-| ----------------------------- | --------------- | ------------------------------ |
-| `--allow-account-switch`      | 关闭            | 允许替换另一个已保存账户。     |
-| `--device-code` / `--browser` | `--device-code` | 选择设备授权或本地浏览器回调。 |
-| `--format text\|json`         | `text`          | 选择输出格式。                 |
+| 选项                                        | 默认值          | 用途                           |
+| ------------------------------------------- | --------------- | ------------------------------ |
+| `--allow-account-switch`                    | 关闭            | 允许替换另一个已保存账户。     |
+| `--device-code` / `--browser`               | `--device-code` | 选择设备授权或本地浏览器回调。 |
+| `--method device\|browser\|manual_callback` | 提供方默认值    | 选择已声明的 OAuth 登录方式。  |
+| `--format text\|json`                       | `text`          | 选择输出格式。                 |
 
 ChatGPT 的默认流程使用粘贴回调 URL。本地浏览器回调支持 Codex 和 Grok。Copilot 仅支持设备授权，默认使用公共 Copilot App 身份，订阅用户无需注册 OAuth App。权限和兼容性见 [Copilot 配置](models-and-authentication.md#github-copilot-subscription)。
 

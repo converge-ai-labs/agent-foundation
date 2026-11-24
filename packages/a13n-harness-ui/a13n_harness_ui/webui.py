@@ -135,7 +135,7 @@ from a13n_harness_ui.mcp_apps.sandbox import serve_sandbox
 from a13n_harness_ui.mcp_oauth.login import CALLBACK_PATH
 from a13n_harness_ui.mcp_oauth.models import AuthorizationStatus, AuthorizationTarget, OAuthLoginStatus
 from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView, McpInputResponse, McpIntegrationView
-from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
+from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginCallbackInput, LoginRequest, LoginStatus
 from a13n_harness_ui.model_accounts.managed import SubscriptionAccount
@@ -153,8 +153,9 @@ from a13n_harness_ui.model_authoring import (
     ModelChoices,
     ModelOptions,
     ModelOptionsRequest,
-    ModelRecipe,
     ModelRecipeRequest,
+    PreparedModelRecipe,
+    base_model_pricing,
 )
 from a13n_harness_ui.model_catalog import ModelCatalogSnapshot
 from a13n_harness_ui.model_controls import ModelControlSelection
@@ -574,6 +575,7 @@ def create_webui(
         raise ValueError("API key cannot be empty")
     owner: HarnessUiApp | None = None
     allowed_origins: frozenset[str] = frozenset()
+    model_logo_origins = ""
     sandbox_url: str | None = None
     sandbox_error: str | None = None
     stopping = stopping if stopping is not None else Event()
@@ -581,7 +583,7 @@ def create_webui(
 
     @asynccontextmanager
     async def lifespan(_server: FastAPI) -> AsyncGenerator[None]:
-        nonlocal owner, allowed_origins, sandbox_url, sandbox_error
+        nonlocal owner, allowed_origins, model_logo_origins, sandbox_url, sandbox_error
         async with app_factory() as opened, AsyncExitStack() as resources:
             _server.state.shutdown = opened.shutdown
             source = await opened.current_configuration()
@@ -595,6 +597,15 @@ def create_webui(
                     sandbox_error = "The MCP Apps sandbox could not start. Check its bind address and port, then restart WebUI. The original tool result remains available."
                     get_logger(__name__).warning(sandbox_error)
             allowed_origins = frozenset(source.document.webui.allowed_origins) if source is not None else frozenset()
+            model_logo_origins = " ".join(
+                sorted(
+                    {
+                        origin(urlsplit(item.account.logo_url)._replace(path="", query="", fragment="").geturl())
+                        for item in (await opened.model_choices()).connections
+                        if item.account is not None and item.account.logo_url is not None
+                    }
+                )
+            )
             owner = opened
             try:
                 async with mcp_app.lifespan(mcp_app):
@@ -736,6 +747,8 @@ def create_webui(
             status = 429
         elif code in {"app_not_ready", "app_stopping", "host_git_unavailable", "host_terminal_unavailable"}:
             status = 503
+        elif code == "model_provider_unavailable":
+            status = 422
         elif code == "host_git_timeout":
             status = 504
         elif code in {"connector_missing", "connector_setup_missing"} or code.endswith("not_found"):
@@ -1712,9 +1725,18 @@ def create_webui(
     async def model_options(request: Request) -> ModelOptions:
         return await app().model_options(await _document(request, ModelOptionsRequest))
 
-    @server.post("/api/models/prepare", response_model=ModelRecipe, openapi_extra=_body(ModelRecipeRequest))
-    async def prepare_model(request: Request) -> ModelRecipe:
-        return await app().prepare_model(await _document(request, ModelRecipeRequest))
+    @server.post("/api/models/prepare", response_model=PreparedModelRecipe, openapi_extra=_body(ModelRecipeRequest))
+    async def prepare_model(request: Request) -> PreparedModelRecipe:
+        recipe = await app().prepare_model(await _document(request, ModelRecipeRequest))
+        return PreparedModelRecipe(
+            route=recipe.route,
+            base_model=recipe.base_model,
+            authentication=recipe.authentication,
+            settings=recipe.settings,
+            model_configuration=recipe.model_configuration,
+            model_characteristics=recipe.model_characteristics,
+            pricing=base_model_pricing(recipe.base_model),
+        )
 
     @server.post("/api/setup/preview", response_model=SetupPreview, openapi_extra=_body(SetupSelection))
     async def preview(request: Request) -> SetupPreview:
@@ -1828,11 +1850,11 @@ def create_webui(
         return await app().redeem_codex_reset(await _document(request, ResetRequest), account_id)
 
     @server.get("/api/auth/accounts/{provider}", response_model=AccountProjection)
-    async def account(provider: Provider) -> AccountProjection:
+    async def account(provider: str) -> AccountProjection:
         return await app().inspect_model_account(provider)
 
     @server.get("/api/auth/accounts/{provider}/sources", response_model=tuple[AccountCandidate, ...])
-    async def account_sources(provider: Provider) -> tuple[AccountCandidate, ...]:
+    async def account_sources(provider: str) -> tuple[AccountCandidate, ...]:
         return await app().model_account_candidates(provider)
 
     @server.put(
@@ -1840,15 +1862,15 @@ def create_webui(
         response_model=AccountProjection,
         openapi_extra=_body(AccountSelection),
     )
-    async def select_account(provider: Provider, request: Request) -> AccountProjection:
+    async def select_account(provider: str, request: Request) -> AccountProjection:
         return await app().select_model_account(provider, await _document(request, AccountSelection))
 
     @server.post("/api/auth/accounts/{provider}/models", response_model=tuple[ModelChoice, ...])
-    async def discover_account_models(provider: Provider) -> tuple[ModelChoice, ...]:
-        return await app().discover_account_models(provider)
+    async def discover_account_models(provider: str, account_id: str | None = None) -> tuple[ModelChoice, ...]:
+        return await app().discover_account_models(provider, account_id)
 
     @server.delete("/api/auth/accounts/{provider}", response_model=bool)
-    async def logout_account(provider: Provider) -> bool:
+    async def logout_account(provider: str) -> bool:
         return await app().logout_model_account(provider)
 
     @server.get("/api/catalog", response_model=tuple[CatalogReference, ...])
@@ -2900,7 +2922,7 @@ def create_webui(
                     "https://cdn.simpleicons.org https://deepwiki.com https://composio.dev "
                     "https://parallel.ai https://serpapi.com https://www.tinyfish.ai https://specstream.ai "
                     "https://e2b.dev https://modal.com https://framerusercontent.com "
-                    "https://docs.runloop.ai https://fly.io; media-src 'self' blob:; "
+                    f"https://docs.runloop.ai https://fly.io {model_logo_origins}; media-src 'self' blob:; "
                     "style-src 'self' 'unsafe-inline'; "
                     "script-src 'self'; frame-ancestors 'none'; base-uri 'none'; frame-src "
                     + (origin(sandbox_url.removesuffix("/sandbox.html")) if sandbox_url is not None else "'none'")

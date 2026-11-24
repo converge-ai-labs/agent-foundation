@@ -24,6 +24,11 @@ const json = (body: unknown) =>
 function mount(
   connection: Schema<"AccountConnection"> = {
     provider: "codex",
+    managed_accounts: true,
+    supports_groups: true,
+    supports_usage: true,
+    supports_allow_credits: true,
+    supports_reset_vouchers: true,
     label: "Codex",
     login_methods: ["device", "browser"],
   },
@@ -75,7 +80,7 @@ afterEach(async () => {
 it("recovers device login with a visible URL, ordered instructions and a copyable code", async () => {
   mount();
   const link = await screen.findByRole("link", {
-    name: /login\.example\.com\/device/,
+    name: /Open provider sign-in/,
   });
   expect(link.getAttribute("href")).toBe(verificationUrl);
   expect(link.getAttribute("target")).toBe("_blank");
@@ -109,7 +114,7 @@ it.each(["rejected", "unavailable"])(
 it("shows the browser verification link without inventing a device-code step", async () => {
   login = { ...login, method: "browser", user_code: null };
   mount();
-  await screen.findByRole("link", { name: /login\.example\.com/ });
+  await screen.findByRole("link", { name: /Open provider sign-in/ });
   expect(screen.getAllByRole("listitem")).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "Copy code" })).toBeNull();
 });
@@ -205,49 +210,65 @@ it("selects a Copilot source explicitly and confirms shared logout even when exp
   await screen.findByText("Account: other-user - Host account");
 });
 
-it("defaults ChatGPT to automatic callback and posts a private full-URL fallback without persistence", async () => {
-  login = { ...login, provider: "chatgpt", method: "browser", user_code: null };
-  const completed = vi.fn();
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (request: Request) => {
-      const path = new URL(request.url).pathname;
-      if (
-        path.startsWith("/api/auth/accounts/") ||
-        path.startsWith("/api/subscriptions/accounts/")
-      )
-        return json({ usable: false, required_action: "login" });
-      if (path.endsWith("/callback")) {
-        completed(await request.json());
-        return json(login);
-      }
-      if (path === "/api/auth/logins" || path === "/api/auth/logins/login-test")
-        return json(login);
-      throw new Error(`Unexpected request: ${path}`);
-    }),
-  );
-  mount({
-    provider: "chatgpt",
-    label: "ChatGPT",
-    login_methods: ["manual_callback", "browser"],
-  });
-  expect(
-    (await screen.findByRole("combobox", { name: "Login method" })).textContent,
-  ).toContain("Browser callback");
-  fireEvent.click(await screen.findByText("Callback can't reach this server?"));
-  const input = screen.getByLabelText("Complete callback URL");
-  expect(input.getAttribute("type")).toBe("password");
-  fireEvent.change(input, {
-    target: { value: "http://127.0.0.1:1456/auth/callback?code=synthetic" },
-  });
-  expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
-  await waitFor(() =>
-    expect(completed).toHaveBeenCalledWith({
-      callback_url: "http://127.0.0.1:1456/auth/callback?code=synthetic",
-    }),
-  );
-  await waitFor(() => expect(input).toHaveProperty("value", ""));
-});
+it.each(["chatgpt", "example-cloud"])(
+  "uses %s connection metadata to post a private browser fallback",
+  async (provider) => {
+    login = {
+      ...login,
+      provider,
+      account_id: `acct-${provider}-default`,
+      method: "browser",
+      user_code: null,
+    };
+    const completed = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: Request) => {
+        const path = new URL(request.url).pathname;
+        if (
+          path.startsWith("/api/auth/accounts/") ||
+          path.startsWith("/api/subscriptions/accounts/")
+        )
+          return json({ usable: false, required_action: "login" });
+        if (path.endsWith("/callback")) {
+          completed(await request.json());
+          return json(login);
+        }
+        if (
+          path === "/api/auth/logins" ||
+          path === "/api/auth/logins/login-test"
+        )
+          return json(login);
+        throw new Error(`Unexpected request: ${path}`);
+      }),
+    );
+    mount({
+      provider,
+      label: "Provider",
+      managed_accounts: provider !== "chatgpt",
+      login_methods: ["browser", "manual_callback"],
+    });
+    expect(
+      (await screen.findByRole("combobox", { name: "Login method" }))
+        .textContent,
+    ).toContain("Browser callback");
+    fireEvent.click(
+      await screen.findByText("Callback can't reach this server?"),
+    );
+    const input = screen.getByLabelText("Complete callback URL");
+    expect(input.getAttribute("type")).toBe("password");
+    fireEvent.change(input, {
+      target: { value: "http://127.0.0.1:1456/auth/callback?code=synthetic" },
+    });
+    expect(fireEvent.keyDown(input, { key: "Enter" })).toBe(false);
+    await waitFor(() =>
+      expect(completed).toHaveBeenCalledWith({
+        callback_url: "http://127.0.0.1:1456/auth/callback?code=synthetic",
+      }),
+    );
+    await waitFor(() => expect(input).toHaveProperty("value", ""));
+  },
+);
 
 it.each(["browser", "manual_callback"] as const)(
   "localizes real ChatGPT %s guidance and preserves the callback draft when switching language",

@@ -274,3 +274,11 @@ Provider file schemas, path policy, and login presentation may evolve with upstr
 10. A first Grok login uses the reviewed production profile, while an existing unambiguous compatible scope retains its own issuer and client identity.
 11. Copilot binds both account and source, never copies CLI tokens, and never falls back after missing credentials or logout.
 12. Auth results and diagnostics never expose token material, authorization codes, secret device codes, PKCE values, or raw identity claims; the human-facing user code is shown only during authorization.
+
+## Plugin Subscription Authentication
+
+`plugin_subscription` selects a registered provider and an optional subscription group. The route prefix must match the provider key, and `model_configuration` conforms to the plugin's nonsecret schema. The implicit group `<provider>-default` targets `acct-<provider>-default` until an explicit group replaces it. Named accounts can be renamed, paused, or deleted. Groups use the existing ordered and weighted selection rules. Native CLI adoption remains limited to Codex and Grok. An inferred `base_model` supplies the model characteristics and pricing identity unless the author supplies an override.
+
+The Host drives device polling, callback receipt, and expiry within a 15-minute session. Callback logins use Host PKCE S256 and state; a browser callback binds to loopback before authorization. A pasted URL is data, checked against the exact redirect and state, with unique query keys and OAuth errors handled before exchange. The plugin supplies upstream request details and the resulting account identity. Credentials are published to a private CAS-protected file. Confirmed reauthorization advances the login generation; a refresh preserves this generation and cannot change the bound identity. Requests can refresh and replay a buffered body once after HTTP 401.
+
+SDK HTTP is restricted to exact declared HTTPS origins and the Run's outbound policy. Credential headers are attached only for declared origins; redirects are rejected. Explicit model discovery is account-scoped, with a 10-second deadline and 4 MiB response budget. Optional usage returns generic allowance windows. Account status, login status and recipes omit credential material.

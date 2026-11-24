@@ -79,7 +79,7 @@ class StorePolicy:
 class AccountProjection:
     """Bounded diagnostics safe for logs, APIs, and UI projection."""
 
-    provider: Provider
+    provider: str
     availability: Availability
     source: StoreKind
     usable: bool
@@ -114,7 +114,7 @@ class AccountStoreError(Exception):
         message: str,
         *,
         code: str,
-        provider: Provider,
+        provider: str,
         details: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(message)
