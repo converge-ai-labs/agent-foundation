@@ -1,20 +1,13 @@
 ---
 title: Configure Service
-description: Configure PostgreSQL, Redis, S3 object storage, encryption key rings, outbound network policies, and execution limits in service.toml.
+description: Configure PostgreSQL, Redis, S3 object storage, encryption key rings, outbound network policies, Kubernetes sandboxes, and telemetry in service.toml.
 ---
 
-Configure Service in three steps: connect its shared stores, supply persistent encryption keys, then start the required process roles. Settings load once at startup. Restart every affected process after a change. Use this guide for setup decisions and the [settings reference](configuration-reference.md) for individual fields, bounds and defaults.
+Configure Service by connecting its shared backing stores, supplying persistent encryption keys, and starting your `control` and `worker` roles (or `--role all`). See the [settings reference](configuration-reference.md) for every field and default.
 
 ## Sources and precedence
 
-1. Save deployment settings in a TOML file, such as `service.toml` below.
-2. Supply credentials through the process environment or your platform's secret store.
-3. Pass `--config service.toml` **before** the command, or set `A13N_SETTINGS_FILE`.
-4. Restart the process and check readiness before testing an application request.
-
-`A13N_<SECTION>__<FIELD>` replaces the matching TOML field. For example, `A13N_WORKER__SLOTS=6` overrides `[worker] slots = 2`. Lists, maps and nested sections use a complete JSON value: `A13N_AUTH__MAIL` replaces the mail section rather than merging individual fields. Service reads only the selected file and environment; it does not discover `.env` files or search configuration directories.
-
-This example assumes PostgreSQL, Redis, an S3-compatible bucket and an HTTPS reverse proxy already exist. Replace their addresses and public origin:
+Save settings in `service.toml` and pass `--config service.toml` **before** the subcommand (or set `A13N_SETTINGS_FILE`). Override individual fields via `A13N_<SECTION>__<FIELD>` (for example, `A13N_WORKER__SLOTS=6`); maps, lists, and nested sections take a full JSON value (such as `A13N_AUTH__MAIL`).
 
 ```toml
 [server]
@@ -41,99 +34,33 @@ return_urls = ["https://agents.example.com/connections/callback"]
 log_format = "json"
 ```
 
-Set `trusted_proxies` to your actual proxy addresses or CIDRs. Supply the database credential, object-store credentials and [encryption keys](#encryption-keys) before starting. For a single process:
+Start and verify readiness:
 
 ```sh
 a13n-service --config service.toml run --role all
-```
-
-From another terminal, check the public endpoint, then sign in and send a model-only prompt:
-
-```sh
 curl --fail --silent --show-error https://agents.example.com/readyz
 ```
 
-A ready response confirms process and schema readiness. The prompt checks the configured provider and model path. Unknown settings stop startup. The CLI reports the configuration error type without printing potentially secret input values.
-
 ## Required infrastructure
 
-Every role must use the same durable state and decryption keys:
+Every role (`control`, `worker`, `all`) must share the same PostgreSQL, Redis, object store, and encryption keys:
 
-| Configure           | Purpose                                                                                  |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `server.public_url` | The Console/API origin, browser-origin checks, mailed links and authorization callbacks. |
-| `database.url`      | PostgreSQL durable state using `postgresql+psycopg://`.                                  |
-| `redis.url`         | Shared wakeups, live output, rate limits and monitoring coordination.                    |
-| `objects.*`         | Checkpoints, displays, uploads, assets, skill packages and images.                       |
-| `encryption.*`      | Keys for stored credentials and other protected values.                                  |
-
-### PostgreSQL
-
-Use a database dedicated to Service. Set `database.url` through `A13N_DATABASE__URL` when it contains credentials. Tune connection and statement timeouts for that deployment. For migration ownership and upgrade order, see [schema migrations](operations.md#schema-migrations).
-
-### Redis
-
-Point every process at the same Redis endpoint. Redis accelerates work and transports live session output; PostgreSQL retains durable state. During a Redis outage, stored results remain readable and workers scan for work, while live output and rate limiting are unavailable. Readiness reports `"degraded": ["redis"]`. Temporary environment monitoring also depends on Redis ownership and routing.
-
-### Objects
-
-Choose the backend by how your processes share storage:
-
-- **One host or shared volume:** use `objects.backend = "local"` and `objects.root`. Every process must see the same directory. Relative roots resolve from the process working directory.
-- **Multiple hosts:** use `objects.backend = "s3"` and `objects.bucket`, then set `region`, `endpoint_url` and `prefix` as needed. Supply `access_key_id` and `secret_access_key` together, or use the default AWS credential chain.
-
-The store needs ordinary reads, writes, listing and deletes. Service writes each object under a new key. `objects.max_bytes` limits one stored object; `upload_bytes`, `upload_limit` and `upload_window_seconds` control upload size and per-principal rate.
-
-Each S3 process uses `objects.max_pool_connections` (default 32) for ordinary object I/O. Control and all-role processes also open an independent pool for `checkpoint_cleanup`, sized by `objects.cleanup_max_pool_connections` (default 4). Workers do not open this second pool. Cleanup uses the same bucket, prefix, credentials and timeouts; unread foreground GET responses cannot occupy its connections. Its concurrent claims are limited to the smaller of this pool size and `outbox.policies.checkpoint_cleanup.parallel`, before claims acquire leases. This limits concurrency per process, not across replicas. The local backend continues to use one store.
-
-Set `A13N_OBJECTS__CLEANUP_MAX_POOL_CONNECTIONS` or Helm `objects.cleanupMaxPoolConnections` to override the cleanup pool. This reserves client connections; it does not isolate S3 server capacity or CPU. Cleanup retains its total I/O budget, persisted scan cursor and retry policy.
-
-For S3-compatible storage, choose `objects.addressing_style` to match the endpoint:
-
-| Value     | Address form          | Use                                                      |
-| --------- | --------------------- | -------------------------------------------------------- |
-| `auto`    | Selected by the SDK   | Default behavior.                                        |
-| `path`    | `endpoint/bucket/key` | Endpoints that require path-style buckets.               |
-| `virtual` | `bucket.endpoint/key` | Bucket-subdomain endpoints, including Alibaba Cloud OSS. |
-
-Virtual addressing requires compatible bucket names, DNS and TLS certificates. When `addressing_style` is omitted, `path_style = true` selects `path` and `false` selects `auto`. Do not combine `path_style = true` with an explicit `auto` or `virtual`. The environment override is `A13N_OBJECTS__ADDRESSING_STYLE`; Helm uses `objects.addressingStyle`.
-
-If an S3-compatible provider rejects optional streaming checksum trailers, set `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` on every Service process. This includes Alibaba Cloud OSS deployments. With Helm, put it in the environment file used for `existingSecret`. Required checksums and Service digest verification remain enabled. Service uses the same plain `PutObject` path across providers.
-
-### Encryption keys
-
-Configure encryption before saving provider credentials, connection tokens, webhook secrets or queued identity mail. Service uses AES-GCM with a named active key. Choose one key source:
-
-- **Single-host key file:** set `encryption.key_file` to persistent storage shared by the processes. On first start, Service creates a missing file with mode `600`; later starts read that same key.
-- **Managed key ring:** set `encryption.active_key_id` and `encryption.keys`. Each value is a base64-encoded 32-byte random key. Supply the ring through your secret store, using the same value on every role.
-
-For a new key ring, generate a key once:
+- **PostgreSQL (`database.url`):** Durable state (`postgresql+psycopg://`); see [schema migrations](operations.md#schema-migrations).
+- **Redis (`redis.url`):** Live output streams, wakeups, rate limits, and monitoring coordination.
+- **Object storage (`objects.*`):** Use `backend = "local"` with a shared `root` on single-host setups, or `backend = "s3"` across hosts (`addressing_style` supports `"auto"`, `"path"`, or `"virtual"` for providers like Alibaba Cloud OSS; set `AWS_REQUEST_CHECKSUM_CALCULATION=when_required` if an S3-compatible store rejects streaming checksum trailers).
+- **Encryption keys (`encryption.*`):** AES-GCM protection for stored credentials, tokens, and mail links. Use either a shared `encryption.key_file` (`0600`) or an explicit key ring:
 
 ```sh
 export A13N_ENCRYPTION__ACTIVE_KEY_ID=primary
 export A13N_ENCRYPTION__KEYS="{\"primary\": \"$(openssl rand -base64 32)\"}"
 ```
 
-Persist those values in the deployment secret store. Do not regenerate `primary` on each restart. The key file and explicit ring are mutually exclusive. To migrate a key file into a ring, preserve its content under the ID `key_file`.
+To rotate keys, add a new ID to `keys` and switch `active_key_id` while retaining older keys to decrypt existing records.
 
-To rotate, add a new key under a new ID and make it active. Keep older keys for values already encrypted with them. Back up keys with the database: losing a key makes its encrypted values unreadable. Starting without keys is allowed, but credential writes fail with `unavailable`.
+## HTTP server, identity, and mail
 
-## HTTP server
-
-`server.host` and `server.port` select the listener. `server.public_url` is the origin users reach, which can differ behind a proxy. Use HTTPS for remote access. Either configure `tls_certificate` and `tls_key` on Service or terminate TLS at a trusted reverse proxy.
-
-List only the proxy addresses or CIDRs in `server.trusted_proxies`. Service accepts forwarded client addresses and schemes from those proxies; rate limits use the resulting client address. An HTTPS public URL gives login sessions a `Secure`, `__Host-` cookie. Plain HTTP does not.
-
-Keep request limits separate from execution timeouts. `server.request_bytes` bounds the incoming body (`413 payload_too_large`), and `request_timeout` bounds body arrival (`408 request_timeout`). `readiness_timeout` bounds readiness checks; `shutdown_timeout` bounds HTTP graceful shutdown.
-
-## Identity and mail
-
-Enable SMTP when users need password resets or email changes. Without SMTP, an invitation link is returned once to its creator for manual delivery.
-
-1. Configure an encryption key source so queued links can be encrypted.
-2. Set the SMTP host, port, security mode and sender.
-3. If the server requires authentication, supply both `smtp_username` and `smtp_password`.
-4. Restart the API-serving processes and send an invitation to verify delivery.
+- **HTTP server (`[server]`):** Set `public_url` to your external HTTPS origin and list reverse proxy IPs/CIDRs in `trusted_proxies`. Use `control_url` in split deployments when workers reach `control` over an internal address.
+- <span id="identity-and-mail"></span>**Identity and mail (`[auth.mail]`):** Configure SMTP alongside encryption keys to email invitations, password resets, and email-change links:
 
 ```toml
 [encryption]
@@ -146,97 +73,45 @@ smtp_security = "starttls"
 sender = "agents@example.com"
 ```
 
-For an environment override, provide the **whole** mail object as JSON in `A13N_AUTH__MAIL`, including any credentials. Mail links are never logged. `auth.session_seconds` controls login lifetime, `invitation_seconds` invitation validity, and `link_seconds` password-reset/email-change validity. `login_limit` per `login_window_seconds` applies per client address; public authorization callbacks have a separate budget with those limits.
-
 ## Outbound requests
 
-Configure a provider's endpoint and credentials in its workspace resource. Deployment settings determine where Service-owned clients may connect:
-
-- HTTPS is required by default. Permit a specific plaintext origin through `providers.http_origins` when needed.
-- URLs carry no user information, fragment or credential-like query parameter. Put credentials in their designated fields.
-- Host provider clients refuse redirects and compressed responses, and bound bodies through `providers.response_bytes`.
-
-For example, allow a model server on the Docker host without opening every HTTP destination:
+Service requires HTTPS by default for provider, MCP, and webhook destinations. Explicitly allow trusted internal HTTP origins when needed:
 
 ```toml
 [providers]
 http_origins = ["http://host.docker.internal:11434"]
 ```
 
-Keep certificate verification enabled. The shared process variable `A13N_OUTBOUND_TLS_VERIFY` accepts `true` (also the unset default) or `false`; other values fail startup. It has no TOML equivalent. A deliberate `false` disables verification for covered owned HTTP clients; read [coverage and interception risks](../a13n-harness/models.md#outbound-tls-verification) before using it.
-
-An application can further restrict one run through `options.configuration`. This is the `options` object in an input request:
-
-```json
-{
-  "configuration": {
-    "allowed_hosts": ["api.example.com", "regex:(api|docs)\\.example\\.com"],
-    "extensions": {}
-  }
-}
-```
-
-Include every provider, connection and remote environment hostname that run needs. `null` permits any host; `[]` denies all. Ordinary entries match exact normalized hostnames or IPs; `regex:` patterns match the full hostname. Globs, ports and CIDRs are not host rules. See [host rules](../a13n-harness/context.md#host-rules-and-regular-expressions) for escaping and normalization.
-
-Acceptance freezes this configuration for input URL reads, execution, recovery, resume and children. Steering may omit it or repeat the same value. To change it, submit `delivery: "next_run"`; a different value on an active run produces `run_configuration_immutable`. Console has no controls for this field. Namespaced `extensions` affect only consumers that support them.
-
-Host rules check declared URL names, without DNS prechecks or IP pinning. Management requests outside a run use deployment policy. Enforce restrictions on arbitrary shell, plugin and opaque SDK traffic at the environment or deployment network boundary.
+Per-run destination allowlists can be passed via `options.configuration.allowed_hosts` (see [host rules](../a13n-harness/context.md#host-rules-and-regular-expressions)).
 
 ### Outbound proxies
 
-Set standard proxy variables on each process or container that needs them:
-
-```bash
-export http_proxy=http://proxy.example.com:8080
-export https_proxy=http://proxy.example.com:8080
-export no_proxy=localhost,127.0.0.1,::1,.internal.example.com
-```
-
-Uppercase forms and `ALL_PROXY` also work; selection and bypass matching follow `httpx2`. An HTTP proxy can carry HTTPS through CONNECT. Host HTTP clients use these routes for models, Remote MCP/OAuth, connectors, memory, web requests, catalogs and webhooks. Host rules and TLS verification still apply, and failed proxy requests do not retry directly.
-
-HTTPS Envd connections use these variables; plaintext local or provider-private Envd HTTP stays direct. Other environment and storage SDKs own their proxy behavior. Allow access to `https://models.dev/catalog.json` for Console's model catalog, or use the last catalog/manual upstream IDs if it is unreachable.
-
-For slow upstreams, tune the matching budget: `providers.model_timeout` covers each read of a model exchange, `tool_call_seconds` a connection tool call, `operation_seconds` authorization steps and resource tests, and `flow_seconds` browser authorization. `discovery_ttl` controls tool-discovery caching. `return_urls` lists exact callback destinations; `mcp_servers` supplies [MCP suggestions](tools.md#mcp-server-suggestions).
+Set `http_proxy`, `https_proxy`, and `no_proxy` on each Service process/container for outbound model, MCP, connector, web, and webhook traffic. TLS verification remains enabled unless `A13N_OUTBOUND_TLS_VERIFY=false` is explicitly set for local debugging (see [outbound TLS verification](../a13n-harness/models.md#outbound-tls-verification)).
 
 ## Execution
 
-Each worker process can run up to 128 attempts concurrently by default. Set `worker.slots` from 1 to 1024 according to provider quotas, target capacity and available database connections. Use these groups for other changes:
+Each `worker` runs up to `worker.slots` concurrent attempts (default `128`, range `1`–`1024`). Tune related limits together in `service.toml`:
 
-| Goal                                    | Settings                                                                                             |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Adjust recovery and authority checks    | `worker.max_attempts`, `lease_seconds`, `authority_seconds`.                                         |
-| Bound child runs and queued input       | `worker.child_depth`, `child_count`; `control.inbox_count`, `inbox_bytes`.                           |
-| Tune live streaming and display storage | `worker.stream_*`, `page_items`, `page_bytes`, `content_bytes`, `output_bytes`, `compression_level`. |
-| Tune target preparation and maintenance | `environments.*`.                                                                                    |
-| Limit retained tools                    | `tool_executions.max_active`, retention and shutdown settings.                                       |
-
-Retained calls default to 64 active executions per worker and a five-second foreground wait. That wait is the deployment fallback for [execution policy](execution-options.md#execution-policy), not a deadline; agent, thread or single-run choices can override it. Results remain for at most 24 hours after completion. First delivery acknowledgement starts a shorter one-hour reread window without extending the maximum age.
-
-Plan shutdown time for all phases: worker attempts drain, retained calls get `shutdown_grace_seconds` (300 by default), then cancellation gets `finalization_seconds` (10) for cleanup and publication. Unfinished records become lost through lease reconciliation after the process exits. Set the platform's termination grace accordingly; see [operations](operations.md).
-
-In split deployments, set `server.control_url` to a control API address reachable from workers when the public URL is unsuitable. Internal platform MCP uses that address while retaining the public HTTP Host. `plugins.keys` admits installed Harness plugin factories by entry-point key; `composer.models` sets preferred upstream names for [Agent Composer](agent-composer.md).
+- **Retries & leases:** `worker.max_attempts`, `lease_seconds`, `authority_seconds`.
+- **Delegation & inbox:** `worker.child_depth`, `child_count`, `control.inbox_count`, `inbox_bytes`.
+- **Retained tools & graceful drain:** `tool_executions.max_active` (default `64`), `shutdown_grace_seconds` (`300`), and `finalization_seconds` (`10`).
+- **Plugins:** Allowlist installed Harness plugin factories via `plugins.keys`.
 
 ## Logs, metrics and traces
 
-Start with JSON logs and enable a private metrics listener when needed. `telemetry.log_level` and `log_format` apply to every command. The server can write a rotating JSON file through `log_file`, `log_file_max_mb` and `log_file_backups`; `log_stdout = false` requires a file. `metrics_port` must differ from the HTTP port. Follow [monitoring setup](monitoring.md#metrics) to verify scraping.
+Configure `telemetry.log_level`, `log_format` (`json`), optional rotating `log_file`, and a separate `telemetry.metrics_port` for Prometheus scraping (see [monitoring](monitoring.md#metrics)).
 
-Choose one trace backend for export and [trace queries](inspect-runs.md#traces):
+| `telemetry.trace_backend` | Required settings                                         |
+| ------------------------- | --------------------------------------------------------- |
+| `none`                    | Default (tracing disabled)                                |
+| `langfuse`                | `trace_url`, `langfuse_public_key`, `langfuse_secret_key` |
+| `logfire`                 | `trace_url`, `logfire_write_token`, `logfire_read_token`  |
 
-| `telemetry.trace_backend` | Required settings                                          |
-| ------------------------- | ---------------------------------------------------------- |
-| `none`                    | Default; tracing is off.                                   |
-| `langfuse`                | `trace_url`, `langfuse_public_key`, `langfuse_secret_key`. |
-| `logfire`                 | `trace_url`, `logfire_write_token`, `logfire_read_token`.  |
-
-Set `trace_content` to `none`, `standard` or `full` based on which prompt, output and tool content may leave the deployment. `trace_query_timeout` limits reads from the backend. See [Harness observation](../a13n-harness/observation.md) for content levels.
+Set `telemetry.trace_content` (`none`, `standard`, or `full`) to control prompt/tool payload export.
 
 ## Environment monitoring
 
-`monitoring.enabled` defaults to `true`, but collection starts only after a target selects a data source. For a first chart, bind **Local Cache** using the [environment monitoring guide](environment-monitoring.md#bind-and-verify-an-environment).
-
-For pull collection, configure `monitoring.collectors.vmagent` or `.alloy` before creating a pull source. The map is empty by default. Each entry needs an absolute shared directory and a reload endpoint. Set exactly one `all` or `control` process as `writer = true`; others use the default `false`. Alloy also needs an existing `receiver`. Follow [collector bootstrap](environment-collectors.md#bootstrap-an-optional-collector) for mounts, credentials, reload policy and verification. Environment overrides use the complete JSON map `A13N_MONITORING__COLLECTORS`.
-
-Once the collector exists, offer an optional preset to named workspaces:
+`monitoring.enabled` defaults to `true`. Configure pull collectors under `monitoring.collectors.vmagent` or `.alloy` (see [collector bootstrap](environment-collectors.md#bootstrap-an-optional-collector)) and optionally publish a preset to selected workspaces:
 
 ```toml
 [monitoring.deployment_preset]
@@ -246,43 +121,9 @@ query_endpoint = "https://metrics.example.com"
 workspace_ids = ["ws_example"]
 ```
 
-An empty list exposes no preset. `A13N_MONITORING__DEPLOYMENT_PRESET` accepts the whole object as JSON. Supply the optional read token separately through `A13N_MONITORING__DEPLOYMENT_QUERY_BEARER_TOKEN`, then restart control processes. Administrators [confirm the preset](environment-collectors.md#confirm-a-deployment-preset) to create a source and optionally snapshot its credential. Deployment changes do not update existing sources or bindings.
-
-## Nested bounds
-
-When tuning limits, change the related budgets together. Upload size must fit below request size; child output plus its envelope must fit the inbox; authority checks and object operations must fit the lease; worker drain must fit shutdown. Environment scan and renewal budgets must leave time to renew hosted targets.
-
-Startup rejects inconsistent combinations. If a change produces `Invalid Service configuration`, check the changed fields and their containing budgets in the [settings reference](configuration-reference.md).
-
-## Container deployments
-
-The image uses the same executable and settings for all roles. Mount your TOML at the path passed to `--config` (the supplied image uses `/app/service.toml`) and inject credentials into the container environment. Editing a host file affects the container only when it is mounted there. Recreate or restart affected containers after changes; changed environment variables require recreation.
-
-Use the [single-host Compose stack](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) for `all` with PostgreSQL, Redis and host-Engine Docker environments. Use the [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes) for split control/worker Deployments and a migration Job. `all` and `control` serve Console and the API at `server.public_url`.
-
 ## Kubernetes environments
 
-Configure the same trusted cluster profiles on Control and Worker. An empty `environments.kubernetes_clusters` map disables Kubernetes in the provider catalog. Profiles belong to operator settings; workspace providers select only a profile name and an allowed namespace. Service supplies the Host integration for Kubernetes; Harness UI does not offer it as a standalone built-in provider.
-
-### Helm deployment
-
-The chart's integration is optional and off by default. Add this block to your deployment values:
-
-```yaml title="values.yaml"
-kubernetesEnvironments:
-  enabled: true
-  namespace: agent-sandboxes
-  ownershipId: production-service
-  allowPlaintextEnvd: true
-```
-
-Create `agent-sandboxes` before installing or upgrading. Helm creates the `in-cluster` profile for Control and Worker, namespace-scoped management RBAC and the separate `<release>-a13n-sandbox` ServiceAccount. It projects Kubernetes credentials only into runtime Service containers. No extra TOML block or workspace credential is needed. Empty `namespace` uses the release namespace; empty `ownershipId` uses the release-derived name. Use a separate sandbox namespace in production.
-
-The chart configures infrastructure access. Create the workspace provider, template and agent in Console using the [first-run procedure](environments.md#kubernetes-sandboxes). Images, storage classes, Pod resources, scheduling and instance network policies belong to the native template; the chart does not seed workspace resources or impose a global sandbox image.
-
-### Manual process configuration
-
-Without Helm's integration, add the following to the TOML loaded by **both** Control and Worker, then restart both roles:
+Enable Kubernetes sandbox Pods via Helm (`kubernetesEnvironments.enabled: true`, `namespace: agent-sandboxes`, `allowPlaintextEnvd: true` on a trusted private network) or declare identical cluster profiles on both `control` and `worker`:
 
 ```toml title="service.toml"
 [environments.kubernetes_clusters.in-cluster]
@@ -293,58 +134,13 @@ sandbox_service_account = "agent-sandbox"
 allow_plaintext_envd = true
 ```
 
-Provision the namespace, sandbox ServiceAccount and management RBAC before using this profile. The [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#kubernetes-environments) can create these bindings with `kubernetesEnvironments.enabled`. It projects API credentials into runtime Service containers and keeps sandbox token mounting disabled. Use a separate sandbox namespace in production: native Pod authors can reference namespace Secrets and request privileges, so enforce Pod Security and admission policy there. Namespace selection alone is not a workload isolation policy.
-
-For a development process outside the cluster, use an operator-owned kubeconfig and explicit context:
-
-```toml
-[environments.kubernetes_clusters.local-kind]
-authentication = "kubeconfig"
-kubeconfig = "/absolute/path/to/kubeconfig"
-context = "kind-my-cluster"
-namespaces = ["agent-sandboxes"]
-ownership_id = "local-development"
-sandbox_service_account = "agent-sandbox"
-allow_plaintext_envd = true
-allow_port_forward = true
-```
-
-Install `kubectl` in every process that uses `connection: port_forward`, and grant its management identity `create` on `pods/portforward`. This development tunnel belongs to the process using it. The Helm integration uses direct connections and grants no port-forward permission.
-
-### Network and first-run checks
-
-Both connection modes currently use bearer-authenticated HTTP. `allow_plaintext_envd` (Helm: `allowPlaintextEnvd`) must be true to create and connect; the default stays false so an operator explicitly accepts the network trust boundary. The credential authenticates requests without encrypting traffic. Permit Envd traffic only on a trusted private network. For `direct`, Control and Worker must reach sandbox Pod IPs on the recipe's `envd_port` (8888 by default); Console users need only the Service URL. Configure cluster admission and network policy for your topology. The Kubernetes API request timeout defaults to 15 seconds and accepts values up to 60 seconds.
-
-Use **Check connection** to verify the profile policy, authentication and namespace Pod-list access. Then create a real instance and run a Files/Shell task to verify creation permissions, image pulls, admission, scheduling, storage and Envd readiness. Common setup failures:
-
-| Symptom                                      | Check                                                                                                 |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Kubernetes is missing from the catalog       | A nonempty profile map is loaded by Control; configure Worker identically.                            |
-| Profile or namespace rejected                | Use a listed profile and one of its allowed namespaces, not a kubeconfig context name.                |
-| HTTP opt-in denied                           | Enable the explicit plaintext setting only after securing the network path.                           |
-| `ImagePullBackOff`                           | Load the local image into kind or use a pullable tag/digest and `imagePullSecrets`.                   |
-| Pod is Running but the instance is preparing | Verify the selected container starts Envd, its credential-file configuration and Pod IP routing.      |
-| PVC remains Pending                          | Inspect Events, StorageClass and scheduling, including WaitForFirstConsumer.                          |
-| Instance remains deleting                    | Inspect finalizers and retained/borrowed resource receipts; Service preserves third-party finalizers. |
-
-Keep `ownership_id`, profile names, namespace and sandbox identity stable while instances exist. Retire instances through Service before removing a profile or its permissions, and preserve the database and encryption key ring for recovery. Removing deployment resources does not retire instance Pods or retained claims. See [Kubernetes sandboxes](environments.md#kubernetes-sandboxes) for native recipes, storage disposition, diagnostics and debug holds.
+For local `kind` clusters outside Kubernetes, use `authentication = "kubeconfig"` with `kubeconfig`, `context`, and `allow_port_forward = true` (`kubectl` required). Then create the workspace provider and template as shown in [Kubernetes sandboxes](environments.md#kubernetes-sandboxes).
 
 ## Kubernetes Browsers
 
-Kubernetes Browsers are independent of Kubernetes Environments. Use Kubernetes 1.32 or newer, a CNI that enforces NetworkPolicy, and a StorageClass that supports the chosen access mode. Create a dedicated workload namespace, then add these values to your Service Helm deployment:
+Enable managed Chromium Pods in Helm (`kubernetesBrowsers.enabled: true`, `namespace: agent-browsers` on Kubernetes 1.32+ with NetworkPolicy and PVC support), then configure the provider in Console ([browser guide](browsers.md#kubernetes)).
 
-```yaml
-kubernetesBrowsers:
-  enabled: true
-  namespace: agent-browsers
-```
-
-The default image is `ghcr.io/converge-ai-labs/a13n-browser:<chart-appVersion>`, with Chromium and VNC built in. A published chart selects the Browser image at the same release version, not the `latest` tag. A source checkout uses `dev` as its `appVersion`; to build and load the checkout images into kind, run `K8S_BROWSERS=1 make k8s-up k8s-smoke`. Set `kubernetesBrowsers.image.repository` for a mirror. An explicit `digest` takes precedence over `tag`.
-
-Storage defaults to `ReadWriteOncePod` and the cluster's default StorageClass. Set `kubernetesBrowsers.storage.className` to select a different class. Use `ReadWriteOnce` with kind's local-path provisioner. Keep CDP and VNC private and restrict browser egress according to cluster policy. Helm prints the Console provider settings; see the [browser guide](browsers.md#kubernetes).
-
-If a browser stays in preparation, inspect `kubectl -n agent-browsers get pods,pvc,statefulsets` and the Pod events. Release browsers in Service before disabling the feature or uninstalling the chart. See the [deployment guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/deploy/kubernetes/README.md#kubernetes-browsers) for all Helm settings, permissions, and cleanup boundaries.
-
-## Workspace provisioning
+## Related guides
 
 - [Configure workspace provisioning](workspace-provisioning.md)
+- [Docker Compose](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) and [Helm chart](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes) deployments

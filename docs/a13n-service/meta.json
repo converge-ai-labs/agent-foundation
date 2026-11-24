@@ -43,6 +43,7 @@
     "environment-collectors",
     "workspace-provisioning",
     "---Architecture & Reference---",
+    "architecture",
     "resources",
     "model-providers",
     "reading-api",

@@ -1,155 +1,133 @@
 ---
 title: Tools and dependencies
-description: Attach typed Python function tools to your agent, inject application dependencies via RunContext, and configure retry limits.
+description: Register typed Python function tools in Capabilities, read RunContext[AgentContext], and bind per-Run application services safely.
 ---
 
-Agents interact with external systems through **tools**. In Harness, any standard Python function or asynchronous coroutine with type annotations can be exposed to the model as a tool. Harness automatically generates the underlying JSON schema using Pydantic, validates model arguments before invocation, and safely packages return values.
+Expose typed Python functions or async coroutines to the model by registering them in a `Capability` and passing it to `HarnessBuilder().build(...)`. Pydantic AI generates the JSON Schema and validates arguments; Harness enforces output bounds and execution lifecycles.
 
 ## Run a function tool offline
 
-You can register and test tools offline using a deterministic `FunctionModel` without making external API calls:
+Save this self-contained example as `tools_example.py` and run `uv run python tools_example.py`:
 
-```python title="tools_demo.py"
+```python title="tools_example.py"
 import asyncio
 from collections.abc import AsyncIterator
 
 from a13n_harness import AgentSpec, HarnessBuilder
-from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
-from pydantic_ai.tools import Tool
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.messages import ModelMessage, ToolReturnPart
+from pydantic_ai.models.function import (
+    AgentInfo,
+    DeltaToolCall,
+    DeltaToolCalls,
+    FunctionModel,
+)
 
 
-# 1. Define a typed Python tool function
 def double(value: int) -> int:
-    """Return twice the input integer."""
+    """Return twice the supplied integer."""
     return value * 2
 
 
-# 2. Mock model that deterministically requests double(4) then returns the answer
-async def mock_tool_model(
-    messages: list[ModelMessage],
-    info: AgentInfo,
-) -> AsyncIterator[str | ToolCallPart]:
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str | DeltaToolCalls]:
     del info
-    has_tool_call = any(
-        isinstance(part, ToolCallPart)
-        for msg in messages
-        if isinstance(msg, ModelResponse)
-        for part in msg.parts
-    )
-    if not has_tool_call:
-        yield ToolCallPart(tool_name="double", args={"value": 4})
+    results = [
+        part.content
+        for message in messages
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == "double"
+    ]
+    if results:
+        yield f"Result: {results[-1]}"
     else:
-        # Extract the tool return value from previous messages
-        return_val = next(
-            part.content
-            for msg in messages
-            if hasattr(msg, "parts")
-            for part in msg.parts
-            if isinstance(part, ToolReturnPart)
-        )
-        yield f"The doubled result is {return_val}."
+        yield {
+            0: DeltaToolCall(
+                name="double", json_args='{"value": 4}', tool_call_id="call-double"
+            )
+        }
 
 
 async def main() -> None:
     executable = HarnessBuilder().build(
-        AgentSpec(instructions="Double numbers when requested."),
+        AgentSpec(),
         output_type=str,
-        model=FunctionModel(stream_function=mock_tool_model),
-        tools=[Tool(double)],
+        model=FunctionModel(stream_function=respond),
+        capabilities=(Capability(id="math", tools=[double]),),
     )
-
-    result = await executable.run("Compute double of 4")
-    print(result.output_or_raise())
+    result = await executable.run("Double four.")
+    print(result.output_or_raise())  # Result: 8
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Execute with `uv run python tools_demo.py`:
-
-```text
-The doubled result is 8.
-```
-
-Harness handles the intermediate model exchange: the model requests the tool, Harness executes `double(4)`, feeds `8` back into the conversation messages, and awaits the final answer.
+Type annotations define the model-visible parameters and the docstring explains when to call the tool. For larger tool groups, wrap functions in `FunctionToolset([...], id="...")` from `pydantic_ai.toolsets` inside `Capability(toolsets=[...])`.
 
 ## Access the current Run
 
-When a tool needs access to the active execution context—such as the `run_id`, `thread_id`, or model request metadata—declare a parameter typed as `RunContext`:
+Declare `ctx: RunContext[AgentContext]` as the first parameter when a tool needs Run identity, Environment, plugins, state, or bounded JSON metadata. Harness injects `ctx` automatically without exposing it in the model schema:
 
 ```python
+from a13n_harness import AgentContext, RunBindings
 from pydantic_ai import RunContext
 
 
-def audit_logger(ctx: RunContext, event_name: str) -> str:
-    """Log an audit event associated with the active run."""
-    run_id = getattr(ctx, "run_id", "local_run")
-    return f"Logged '{event_name}' under run {run_id}"
+def request_label(ctx: RunContext[AgentContext]) -> str:
+    """Return the application's label for this request."""
+    label = ctx.deps.metadata.get("request_label", "unlabeled")
+    if not isinstance(label, str):
+        raise TypeError("request_label must be a string")
+    return label
+
+
+# Pass per-Run JSON metadata via RunBindings:
+# bindings = RunBindings.embedded(metadata={"request_label": "support-triage"})
 ```
 
-Harness automatically injects the current context into `ctx` during invocation; the parameter is excluded from the model-visible JSON schema.
+`ctx` exposes messages, usage, and limits; `ctx.deps` (`AgentContext`) exposes `run_id`, `thread_id`, `instance`, `environment`, `plugins`, `state`, and `metadata`. Keep credentials and live clients out of `metadata` and `HarnessState`.
 
 ## Supply a live application dependency
 
-Real-world tools often require live infrastructure handles such as database session pools, HTTP clients, or tenant identity objects:
+Harness fixes the Pydantic AI dependency type to `AgentContext`—do not pass a custom `deps_type`. Choose the service binding pattern that matches your executable's lifetime:
+
+| Application pattern                  | How to supply the dependency                                                                                                                                     |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Build an executable per request      | Close over the authorized service in your tool function                                                                                                          |
+| Reuse one executable across requests | Resolve a fresh service via `AbstractCapability[AgentContext].for_run(ctx)` or a [Harness plugin](plugins.md#plugin-lifecycle) (`ctx.deps.plugins.require(...)`) |
+| Use a built-in integration           | Pass its typed `RunBindings` field (such as `environment`, `web`, or `document_converter`)                                                                       |
+
+For a single-request executable, close over the pre-authorized service and scope database transactions to individual queries rather than the entire Agent loop:
 
 ```python
-from dataclasses import dataclass
-from pydantic_ai import RunContext
+from a13n_harness import AgentSpec, HarnessBuilder
+from pydantic_ai.capabilities import Capability
 
 
-@dataclass
-class DatabaseConnection:
-    connection_string: str
+async def inspect_inventory(inventory, model):
+    async def stock_count(sku: str) -> int:
+        """Look up stock for one product in the current authorized inventory."""
+        return await inventory.stock_count(sku)
 
-    async def query_user(self, user_id: str) -> dict:
-        return {"user_id": user_id, "name": "Alice", "role": "admin"}
-
-
-# Tool function requesting the injected dependency
-async def lookup_user(ctx: RunContext[DatabaseConnection], user_id: str) -> dict:
-    """Fetch user profile details from the database."""
-    db = ctx.deps
-    return await db.query_user(user_id=user_id)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model,
+        capabilities=(Capability(id="inventory", tools=[stock_count]),),
+    )
+    return await executable.run("Check stock for SKU-123")
 ```
 
-Pass the dependency instance at runtime via `RunBindings`:
+## Tool execution paths, retries, and output bounds
 
-```python
-from a13n_harness import RunBindings
+| Action                                           | Integration                                                                  |
+| ------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Run trusted Python application code              | Python function in `Capability(tools=[...])`                                 |
+| Edit files or run commands under sandbox policy  | [Managed tools](managed-tools.md) and [Environments](environments.md)        |
+| Call external tool servers                       | [MCP](mcp.md)                                                                |
+| Suspend for human approval or frontend execution | [Human-in-the-loop](human-in-the-loop.md) or [Client tools](client-tools.md) |
+| Orchestrate multiple tools in Python             | [Delegation and CodeAct](delegation-and-codeact.md)                          |
 
-db_pool = DatabaseConnection(connection_string="postgresql://localhost:5432/app")
-
-result = await executable.run(
-    "Lookup profile for user_123",
-    bindings=RunBindings.embedded(deps=db_pool),
-)
-```
-
-This pattern keeps your agent definitions static and reusable while allowing different requests to bind distinct database sessions or tenant credentials.
-
-## Tool execution paths
-
-Harness supports three execution modes for tools:
-
-| Tool category         | Execution mechanism                               | Typical use case                                       |
-| :-------------------- | :------------------------------------------------ | :----------------------------------------------------- |
-| **Direct tools**      | Executed in-process via async Python functions    | Application databases, arithmetic, local calculations  |
-| **Environment tools** | Dispatched to a sandboxed filesystem or container | Code editing, bash commands, build tools               |
-| **Remote MCP tools**  | Invoked over HTTP/SSE or stdio MCP transports     | SaaS integrations, GitHub, Slack, team knowledge bases |
-
-## Errors, retries, and output bounds
-
-Protect your application and model context with defensive tool guardrails:
-
-- **Validation errors:** If the model supplies invalid argument types, Harness intercepts the error and returns a structured validation explanation back to the model, allowing it to self-correct on the next iteration.
-- **Output truncation:** Tools returning massive datasets (e.g., querying 10,000 rows) can quickly exhaust context windows. Use `max_content_bytes` policies to automatically truncate oversized responses and save complete outputs to temporary thread storage.
-- **Retry budgets:** Configure maximum tool invocation attempts per turn to prevent infinite retry loops when third-party services experience downtime.
-
-## Next steps
-
-1. [Managed tools and permissions](managed-tools.md): Require explicit human approval before executing sensitive tools.
-2. [Model Context Protocol (MCP)](mcp.md): Connect external tool servers via standard protocols.
-3. [Delegation and CodeAct](delegation-and-codeact.md): Let agents orchestrate multiple tools concurrently in Python.
+Argument validation failures feed structured retry messages back to the model up to `AgentSpec.retries` (inspect external state before repeating non-idempotent mutations). Oversized tool outputs are bounded automatically before entering model history.

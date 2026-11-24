@@ -102,8 +102,13 @@ def test_harness_ui_documentation_stays_plain_markdown() -> None:
 
 def test_envd_client_reference_covers_every_generated_method() -> None:
     text = (ROOT / "docs/a13n-envd/python-client.md").read_text(encoding="utf-8")
-    documented = set(re.findall(r"^\|\s+`([a-z_]+(?:\.[a-z_]+)?)`\s+\|\s+`[a-z_]+`\s+\|\s+`", text, re.MULTILINE))
-    assert documented == set(METHODS)
+    documented = set(
+        re.findall(r"^\|\s+`([a-z0-9_]+(?:\.[a-z0-9_]+)?)`\s+\|\s+`[a-z0-9_]+`\s+\|\s+`", text, re.MULTILINE)
+    )
+    platform_prefixes = ("computer.ax_", "computer.uia_", "computer.atspi_")
+    for prefix in platform_prefixes:
+        assert f"`{prefix}*`" in text
+    assert documented == {method for method in METHODS if not method.startswith(platform_prefixes)}
 
 
 @pytest.mark.parametrize("locale", ["en", "zh-CN"])

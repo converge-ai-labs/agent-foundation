@@ -1,50 +1,66 @@
 ---
-title: 接入 MCP 服务端
-description: 在 Harness UI 中配置本地 stdio 或远程 HTTP/SSE MCP 服务端，管理 OAuth 与令牌凭证，并为不同 Agent 筛选可见工具。
+title: MCP 服务器
+description: 在 Harness UI 中接入 stdio 与 Streamable HTTP MCP 服务器，配置 OAuth DCR 与工具过滤，并管理宿主常驻连接与人工输入。
 ---
 
-添加 MCP 工具需要三步：**注册服务器、选择服务器、测试调用**。需要已有 [Agent](agents-and-subagents.md)，以及 Streamable HTTP 端点或已安装的命令行 MCP 服务器。
+分三步接入模型上下文协议（MCP）服务器：在根配置 `a13n-harness-ui.yaml` 同级的 `mcp/*.yaml` 下注册服务定义（或在 **Settings → Connections → MCP** 中添加），在智能体或项目中勾选启用，最后运行 `a13n-harness-ui config validate` 校验。
 
-运行 `a13n-harness-ui config path`。将服务器文件保存在 `configuration_path` 所示根 YAML 旁的 `mcp/` 下。每个服务器选择以下一种格式，不要重复注册同一 ID。
+## 添加 MCP 服务器
 
-| 已有的服务器信息                 | 使用方式                                     |
-| -------------------------------- | -------------------------------------------- |
-| HTTPS MCP 端点                   | [远程传输](#remote-transport)                |
-| 通过标准输入/输出提供 MCP 的命令 | [命令传输](#command-transport)               |
-| 带 `mcpServers` 的客户端配置     | [复制 JSON 配置](#copy-a-json-configuration) |
+在 `mcp/` 目录下保存 **Streamable HTTP** 远程传输或本地 **stdio 命令**传输定义：
 
-## 远程传输
+```yaml title="mcp/docs.yaml — Streamable HTTP 远程服务"
+schema_version: "2"
+kind: mcp_server
+id: mcp-docs
+name: Documentation service
+transport:
+  url: https://mcp.example.com/mcp
+  init_timeout_seconds: 20
+  headers:
+    Authorization:
+      env: DOCS_MCP_AUTHORIZATION
+```
 
-1. 获取服务器的 Streamable HTTP 端点和身份验证要求。下方地址为占位示例。
+```yaml title="mcp/local.yaml — stdio 本地命令服务"
+schema_version: "2"
+kind: mcp_server
+id: mcp-local
+name: Local tools
+transport:
+  command: /absolute/path/to/mcp-server
+  arguments: ["--readonly"]
+  environment:
+    API_TOKEN:
+      env: LOCAL_MCP_TOKEN
+```
 
-2. 将以下完整文件保存为 `mcp/docs.yaml`，替换 URL：
+在智能体文件（`agents/*.yaml`）的 `mcp_servers: [mcp-docs]`、项目的 `defaults.mcp_servers` 或会话设置中启用该服务（`null` 继承默认，`[]` 不启用任何服务）。也可在 **Settings → Connections** 中直接粘贴标准客户端 `{"mcpServers": {...}}` JSON 配置。
 
-   ```yaml title="mcp/docs.yaml — complete file; replace endpoint"
-   schema_version: "2"
-   kind: mcp_server
-   id: mcp-docs
-   name: Documentation service
-   transport:
-     url: https://mcp.example.com/mcp
-     init_timeout_seconds: 20
-     headers:
-       Authorization:
-         env: DOCS_MCP_AUTHORIZATION
-   ```
+## MCP 字段参考
 
-3. 在启动 Harness UI 的进程中设置 `DOCS_MCP_AUTHORIZATION`。值必须是服务器要求的完整 header，包括 `Bearer` 等身份验证方案。服务器不需要 header 时，省略 `headers`。
+| 字段                     | 用途                                                                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_version`、`kind` | 固定为 `"2"` 与 `mcp_server`                                                                                                           |
+| `id`、`name`             | 唯一 `mcp-` 前缀 ID 与显示名称                                                                                                         |
+| `transport`              | `{url, init_timeout_seconds, headers, oauth}`（HTTPS 或无请求头的本机回环 HTTP）或 `{command, arguments, environment}`（在宿主机启动） |
+| `tools`                  | `null`/省略（允许全部工具，含后续新增）、`[]`（禁用全部）或 `[exact_name, ...]` 精确工具名白名单                                       |
+| `object_ref_tools`       | 启用[对象引用传输](../a13n-harness/capabilities.md#object-reference-transport)的工具名称或通配模式列表                                 |
+| `on_error`               | 启动失败策略（如 `fail` 或 `skip`）                                                                                                    |
 
-4. [启用服务器](#enable-a-server)，测试其文档列出的一个只读工具。
+### 字面量与密钥引用
 
-使用不含凭据的 HTTPS URL。仅字面回环主机且未配置 header 时支持明文 HTTP。客户端不跟随重定向，请直接配置最终 MCP 端点。远程传输使用 Streamable HTTP，不使用旧版 SSE。支持 DCR 的服务可以使用 [OAuth](#oauth-authorization) 代替 Authorization header。
-
-如果服务器握手较慢，可将 `transport.init_timeout_seconds` 设为大于零的秒数。例如，`20` 表示整个协议协商（包括回退）最多等待 20 秒。Run 内的连接和设置页的工具发现默认等待 5 秒，Host 跨 Run 保留的连接和 MCP Apps 默认等待 30 秒。工具调用有单独的超时。
+在 `transport.headers` 与 `transport.environment` 中，请使用 `{env: VAR_NAME}` 或 `{credential_ref: key-id}`（或受支持的字符串环境变量插值）引用凭据，切勿将明文密钥写入 YAML。
 
 ## OAuth 授权
 
-对于支持 OAuth 动态客户端注册（DCR）的服务，移除 Authorization header，并在远程传输中添加 `oauth`：
+对于支持 OAuth 动态客户端注册（DCR）的 HTTPS 服务，省略 `headers` 并配置 `transport.oauth`：
 
-```yaml title="mcp/docs.yaml — replace transport"
+```yaml title="mcp/oauth-docs.yaml"
+schema_version: "2"
+kind: mcp_server
+id: mcp-oauth-docs
+name: OAuth documentation service
 transport:
   url: https://mcp.example.com/mcp
   oauth:
@@ -52,199 +68,13 @@ transport:
     scope: read
 ```
 
-`registration` 默认为 `dcr`，也是唯一支持的模式。省略 `scope` 时使用服务发现的权限；显式 scope 限制请求和接受的权限。在 `mcpServers` 条目中，将 `oauth` 放在 `url` 同级。OAuth 始终要求 HTTPS，包括回环服务。
+在 WebUI 中打开 **Settings → Connections**，选中该服务并点击 **Connect** 完成浏览器授权（远程访问 WebUI 时，需在 `webui.allowed_origins` 中配置精确的公网 HTTPS 源并转发 `/oauth/mcp/callback`）。保存后的令牌会在共享同一数据目录的 WebUI 与 TUI 运行中自动刷新。
 
-打开**设置 → 连接**，选择服务，在**授权**下点击**连接**。Harness UI 发现授权服务器，并自动注册本实例的客户端。在浏览器中完成同意；弹窗受阻时使用**继续授权**。无需项目统一维护 OAuth 应用，也无需手动提供客户端密钥。成功授权会保存凭据；**加载工具**单独验证 MCP 连接。
+## 连接生命周期与协议覆盖
 
-登录复用现有 WebUI listener。本地访问使用 listener 的实际回环端口；远程访问需在 `webui.allowed_origins` 配置精确的公开 HTTPS origin，并将 `/oauth/mcp/callback` 路由到同一 listener。通配符不赋予 OAuth 回调权限。回调必须来自发起登录的浏览器。待完成尝试十分钟后过期，App 重启会丢失；已完成授权会保留。重新开始前可**取消授权**。
+- **单次运行连接与宿主常驻连接：** MCP 客户端默认随每次运行建立与关闭。将服务 ID 加入 `a13n-harness-ui.yaml` 的 `mcp.host_owned_servers` 可跨运行保持长连接存活（可通过 `mcp_status` 或 WebUI **Connections** 查看与断开）。
+- **协议版本覆盖：** 当服务端要求特定协议版本时，可在 `mcp.protocol_overrides` 中按服务 ID 指定 `auto`、`legacy` 或 `2026-07-28`。
 
-令牌、注册信息和绝对过期时间保存在此实例的私有数据库中。运行时自动刷新过期访问令牌，不打开浏览器；使用相同配置和数据根目录的 TUI 也可使用和刷新授权。刷新结果不确定或被拒绝时需**重新连接**；普通工具调用收到 401 后不会自动重放。**断开连接**清除本地授权。修改传输或重新连接会使旧运行捕获的账户绑定失效，之后请启动新 Run。
+## 来自 MCP 服务器的人工输入
 
-OAuth 发现、DCR 和令牌请求使用 Host 网络，不受 Run `allowed_hosts` 限制；MCP 业务请求保留现有网络策略。不支持要求手动注册应用或 CIMD 的服务。
-
-## 选择工具
-
-在 **Settings → Connections** 打开 MCP 服务，选择 **Selected tools** 即可加载工具列表。也可以点击 **Load tools** 或 **Refresh** 主动获取列表。搜索并勾选需要的工具，然后 **Save**。设置适用于使用该服务的所有 Agent 和对话，从后续 Run 生效。加载或刷新列表不会执行工具；保存工具选择会保留隐藏的连接凭据。
-
-**All tools** 包括服务以后新增的工具。**Selected tools** 不会自动启用新工具，即使你选中了当前全部工具。清空选择会禁用所有工具，但保留连接。已选但消失的工具会显示为不可用；刷新失败会保留选择。
-
-对于单资源文件，在 `transport` 同级添加 `tools`，填写服务器返回的精确工具名：
-
-```yaml title="mcp/docs.yaml — merge fragment"
-tools: [search, fetch_content]
-```
-
-| `tools` 值                | 允许使用的工具                   |
-| ------------------------- | -------------------------------- |
-| 省略或 `null`             | 全部工具，包括以后新增的工具     |
-| `[]`                      | 不允许任何工具                   |
-| `[search, fetch_content]` | 仅这些精确匹配的服务器原生工具名 |
-
-对于 `mcpServers` 包装格式，在对应服务器条目内设置 `tools`。限制适用于直接调用、工具搜索调用和 MCP Apps。[工具搜索](agents-and-subagents.md#tool-search-groups)可以进一步减少模型上下文，但不能启用已排除的工具。
-
-## 命令传输
-
-1. 安装并检查准备运行的 MCP 服务器。从服务器文档获取可执行文件、参数和必需环境变量。
-
-2. 将如下完整资源保存为 `mcp/local.yaml`。用已安装服务器的实际值替换可执行文件和参数：
-
-   ```yaml title="mcp/local.yaml — complete file; replace executable and arguments"
-   schema_version: "2"
-   kind: mcp_server
-   id: mcp-local
-   name: Local tools
-   transport:
-     command: /absolute/path/to/mcp-server
-     arguments: []
-     environment:
-       API_TOKEN:
-         env: LOCAL_MCP_TOKEN
-   ```
-
-3. 在 Harness UI 进程环境中设置必需变量。服务器不需要时，移除 `environment`。
-
-4. [启用 `mcp-local`](#enable-a-server)，测试一个只读工具。
-
-Harness UI 在 Host 上启动此程序。选择 Sandbox Environment 不会让外部 MCP 进程进入沙箱。启动进程的 `PATH` 可能不同时，使用可执行文件的绝对路径；命令、参数和 URL 字符串不支持环境变量模板。
-
-## 复制 JSON 配置
-
-如果服务器文档提供 `mcpServers`，在其同级添加 `schema_version: "2"`，再将对象保存为 `mcp/servers.json`。以下示例是 `mcp/docs.yaml` 的**替代形式**，使用同一 `mcp-docs` ID：
-
-```json title="mcp/servers.json — complete file; replace endpoint"
-{
-  "schema_version": "2",
-  "mcpServers": {
-    "docs": {
-      "type": "http",
-      "url": "https://mcp.example.com/mcp",
-      "headers": {
-        "Authorization": "Bearer ${DOCS_MCP_TOKEN}"
-      }
-    }
-  }
-}
-```
-
-设置 `DOCS_MCP_TOKEN`，再按下文选择 `mcp-docs`。此例只将 token 插入 `Bearer` 后面；前面的 YAML 示例读取整个 header 值。
-
-一个包装对象可包含多个服务器。名称会规范化为 `mcp-` ID：`My_Server` 变成 `mcp-my-server`。不同文件中的重复 ID 会导致配置被拒绝。
-
-| 包装对象中的条目 | 字段                                                                                           |
-| ---------------- | ---------------------------------------------------------------------------------------------- |
-| 命令             | `command`，可选 `args`、`env`；可选 `type: stdio`                                              |
-| 远程             | `url`，可选 `headers`、`oauth`、`init_timeout_seconds`；可选 `type: http` 或 `streamable-http` |
-
-`.yaml` 和 `.json` 都接受包装对象或单资源格式。使用严格 JSON：注释和末尾逗号无效。移除 `disabled` 等不支持的客户端专用字段。
-
-## 启用服务器
-
-1. 编辑 Agent 文件，如 `agents/coder.yaml`。将服务器 ID 合并到其列表，并保留其他已选 ID：
-
-   ```yaml title="Agent file — merge fragment"
-   mcp_servers: [mcp-docs]
-   ```
-
-   命令传输示例使用 `mcp-local`。如果希望设置全局创建默认值，则将以下片段合并到根 YAML：
-
-   ```yaml title="a13n-harness-ui.yaml — merge into defaults"
-   defaults:
-     mcp_servers: [mcp-docs]
-   ```
-
-2. 运行 `a13n-harness-ui config validate`。使用自定义配置树时，在 `config` 前加 `--config /absolute/path/a13n-harness-ui.yaml`。
-
-3. 用该 Agent 启动新对话。让它用小输入调用服务器中一个已知的只读工具。检查工具结果，不要把文字回答当作连接成功的证据。
-
-Agent 的 `mcp_servers: null` 继承根默认值；`[]` 不选择服务器。Project 默认值可以在 Agent 和全局默认值之前，为新 Thread 提供选择。注册 MCP 服务端后，请在 Agent 配置中显式勾选需要暴露给模型的工具。
-
-对于已有 TUI 对话，`/resume <id>` 或重启时的 `--resume <id>` 会按当前 Project → Agent → 全局默认值刷新 MCP 列表。这会替换对话专用列表，包括当前默认值为空的情况。WebUI 和无头运行保留已保存的列表，直到显式修改。
-
-| 现象                         | 检查项                                                |
-| ---------------------------- | ----------------------------------------------------- |
-| 没有 MCP 工具                | 资源 ID、Agent/Thread 选择，以及精确 `tools` 允许列表 |
-| 找不到可执行文件             | 服务器安装位置和 Harness UI 进程的可执行文件路径      |
-| `runtime_credential_missing` | 指定变量在 Harness UI 进程环境中非空                  |
-| 配置通过但调用失败           | 实际端点、凭据、服务器就绪状态和传输类型              |
-| `mcp_source_changed`         | 从当前配置启动新 Run；参见下文捕获来源说明            |
-
-## 字面值与环境变量引用
-
-命令的 `environment`（包装对象中为 `env`）和远程 `headers` 接受以下形式：
-
-| 值                      | 含义                              |
-| ----------------------- | --------------------------------- |
-| `"us-east-1"`           | 字面字符串                        |
-| `"${API_TOKEN}"`        | 读取指定进程环境变量              |
-| `"Bearer ${API_TOKEN}"` | 将 token 替换到字符串中           |
-| `{"env": "API_TOKEN"}`  | YAML 或 JSON 中的显式环境变量引用 |
-
-展开在新 Run 构造时执行一次。引用的变量必须非空。空字面字符串和空白会保留。仅变量名合法的 `${NAME}` 会展开；不支持 shell 求值或默认值语法。替换仅适用于 environment/header 值。
-
-在启动 Harness UI 前设置变量。在其他 shell 中导出不会改变已运行的进程。包含字面凭据的文件应保持私有，不纳入版本控制。
-
-Run 捕获保存来源位置和摘要，不保存字面的 environment/header 值。客户端构造前，捕获的字面值或模板源文件必须保持不变，否则较早的 Run 或子级续接会报告 `mcp_source_changed`。新 Run 捕获当前来源。环境变量引用允许不修改文件就轮换凭据，前提是新值已传入 Host 进程。
-
-## 连接生命周期与协议
-
-默认客户端生命周期为一个逻辑 Run。要跨 Run 保留服务器的进程内状态，将以下片段合并到根 YAML：
-
-```yaml title="a13n-harness-ui.yaml — merge fragment"
-mcp:
-  host_owned_servers: [mcp-docs]
-  protocol_overrides:
-    mcp-docs: auto
-```
-
-保留前文的普通 Agent/Thread 选择。`host_owned_servers` 默认 `[]`；`protocol_overrides` 默认 `{}`。列出的 ID 必须指向已配置服务器。
-
-每个 Thread，包括子 Thread，都有自己的保留客户端。Run 完成和浏览器断开不会关闭它。Host 关闭、显式关闭、Thread 释放或绑定更改会结束连接。连接只属于当前进程；续接不会序列化客户端状态或待处理的服务器输入。显式关闭结束当前连接，但不更改 Thread 已选择的服务器。后续仍选择该服务器的新 Run 可以建立替代连接，包括在显式关闭之后。旧 Run 的工具投影和 App View 仍绑定已关闭的连接。要阻止后续 Run 激活该服务器，需将它从适用的服务器选择中移除。断开后不会自动重放调用。启用的 [MCP Apps](mcp-apps.md) 自动保留客户端，激活 App 可建立替代连接。
-
-连接初始化遇到暂时超时、传输中断或临时 HTTP 故障时，最多尝试三次，重试前依次等待一秒、两秒。每次尝试使用配置的初始化超时。因此，无响应的服务器可能耗费三次初始化超时和三秒退避，另加 SDK 清理时间。认证和协议错误不会重试。启动失败时按服务器的[启动失败策略](#startup-failure-policy)处理。
-
-每个协议覆盖接受 `auto`、`legacy` 或 `2026-07-28`；省略时使用 `auto`。除非服务器要求特定模式，否则使用 `auto`。该设置控制 Core 协议协商，与连接生命周期和 MCP Apps UI 协议分开。
-
-Harness UI 在每次 Run 中仅获取一次各 MCP 服务器的工具列表，并在该 Run 的模型步骤中复用。服务器在 Run 期间更改的工具列表会在下次 Run 中生效。
-
-## 启动失败策略
-
-每个 MCP 服务器默认使用 `on_error: skip`，对 Bot、普通 Thread 和子 Thread 都相同。连接初始化失败并用尽适用的重试后，当前 Run 使用其余能力继续执行。该服务器的工具在本次 Run 内保持不可用，模型会收到不可用提示，Host 日志会标明被跳过的服务器。后续 Run 会重新尝试连接；Bot 保持正常 Heartbeat 调度。
-
-若某个服务器必须可用，在资源文件中与 `transport` 同级添加：
-
-```yaml title="mcp/docs.yaml — 合并片段"
-on_error: raise
-```
-
-对于 `mcpServers` 包装格式，将 `on_error` 放在对应服务器条目内，与 `url` 或 `command` 同级。仅接受 `skip` 和 `raise`。省略时使用 `skip`，旧资源和已捕获的旧 recipe 也相同。
-
-Agent 的显式工具白名单仍限制实际可调用的工具。若被跳过的服务器配置了工具选择，其中的名称视为暂时不可用；若允许全部工具，由于无法读取工具目录，未知名称校验延后到服务器正常的 Run。
-
-`raise` 让启动失败中断当前 Run。取消、传输授权、凭据来源校验和已捕获 OAuth 账户检查保持原有错误行为。连接成功后的工具列表和业务调用错误正常返回；两种策略都不会重放工具调用。
-
-## MCP 服务器请求的人工输入
-
-服务器可以暂停操作，请求填写表单或完成外部 URL 流程。TUI 和 WebUI 会显示服务器及 Thread，也包括子级请求。
-
-1. 检查请求及其来源。对于 URL 请求，在 App iframe 之外主动打开目的地，完成该流程后再确认。
-2. 在五分钟内选择接受、拒绝或取消。不要在 MCP 表单中输入密码或 token。
-3. 回答后检查工具结果。输入被接受只表示答案已交付，不表示远程操作已完成。
-
-表单支持原始字符串、数字、布尔值、单选枚举和字符串多选枚举，包括带标题的选项。Host 根据原 schema 验证答案，拒绝不支持的 schema、远程引用和声明为敏感的字段。
-
-取消、过期、连接关闭或进程关闭会结束请求。答案交付不确定时，检查请求或重发完全相同的答案；冲突答案会被拒绝。嵌入应用必须启用[输入处理器](embedding.md#mcp-input-and-integration-control)。
-
-## MCP 字段参考
-
-MCP 资源和包装对象使用 `schema_version: "2"`。单资源文件还需要 `kind: mcp_server`、唯一的 `mcp-` `id`、显示名称 `name`，以及恰好一种传输形式：
-
-| 传输 | 必需      | 可选                                           |
-| ---- | --------- | ---------------------------------------------- |
-| 命令 | `command` | `arguments: []`、`environment: {}`             |
-| 远程 | `url`     | `headers: {}`、`oauth`、`init_timeout_seconds` |
-
-Environment 和 header 值接受字符串或 `{env: VARIABLE}`。在 `mcpServers` 包装对象中，使用 `args` 和 `env`，而不是 `arguments` 和 `environment`。可选的 `tools` 遵循[工具选择规则](#choose-tools)。
-
-### 兼容性
-
-已有的 v1 MCP 资源和未标版本的 `mcpServers` 包装对象仍可读取，默认允许全部工具。添加工具限制前，将 MCP 文档的 `schema_version` 设为 `"2"`。旧版 Harness UI 无法加载 v2；保留版本标记可防止旧版静默忽略限制。根配置、Agent 和 Model 的 schema 版本相互独立，保持不变。
+当运行中的 MCP 服务器发起表单征询（Elicitation）或 URL 确认请求时，Harness UI 会在工具 iframe 之外弹出原生 WebUI 或 TUI 交互卡片，选择 `accept`（附表单数据）、`decline` 或 `cancel` 即可继续当前调用。

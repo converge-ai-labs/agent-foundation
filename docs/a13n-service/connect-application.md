@@ -3,31 +3,23 @@ title: Connect your application
 description: Integrate managed Service agents into your backend using workspace API keys, official SDKs, or the HTTP API with idempotency keys and human approval resume.
 ---
 
-Connect your application's backend to an agent you have already tested in Console. You will need the Service URL, the agent ID, and a workspace API key. If you are starting from scratch, deploy Service with the [quickstart](get-started.md), then configure and test an agent with the [Console guide](use-platform.md).
-
-After [setting up credentials](#set-up-credentials), choose the [SDK guide](#start-with-an-sdk) for your language or follow the [HTTP example](#direct-http-integration) with curl. Both paths finish with a saved result you can [inspect in Console](#inspect-the-run-in-console).
+Connect your backend to a tested Service agent using the **Service URL**, **Agent ID**, and a workspace **API key** (`runner` or higher; use a [service account](identity.md#service-accounts) for production apps and keep keys server-side).
 
 ## Set up credentials
 
-1. In Console, open the agent's menu and select **Connect to app**.
-2. Copy the **Service URL** and **Agent ID** into your server-side configuration.
-3. Use a saved personal API key, or select **Create key**. Copy a new key before closing the dialog: its secret is shown only once.
-4. Store the key as `A13N_API_KEY` in your server environment. Use **Copy for agent** if you want connection instructions for a coding assistant.
-
-You can manage personal keys under **API keys** in the sidebar. A key acts in its workspace with the current permissions of its principal, the user or service account it belongs to. Running an existing agent requires **runner** or higher; creating one requires **builder** or **admin**. For a team application, use a dedicated [service account](identity.md#service-accounts). Keep API keys on the server, out of browser code.
+Open the agent's menu in Console and click **Connect to app**, copy the **Service URL** and **Agent ID**, create or select a workspace API key, and store it as `A13N_API_KEY` on your server.
 
 ## Start with an SDK
 
-On your server, set `A13N_URL` to the **Service URL** and `AGENT_ID` to the **Agent ID**. Use the `A13N_API_KEY` you saved above. Save this Python example as `call_agent.py`.
+Run with Python 3.13 (`uv run --python 3.13 --with 'a13n==0.0.98' call_agent.py`; see [SDK guides](sdks.md#choose-a-client) for TypeScript, Go, and Rust):
 
 ```python title="call_agent.py"
 import asyncio
 import os
-
 from a13n import Client
 
 
-async def main():
+async def main() -> None:
     async with Client(os.environ["A13N_URL"], os.environ["A13N_API_KEY"]) as client:
         agent = client.agents(os.environ["AGENT_ID"])
         message = await agent.start("Name two colors.")
@@ -38,143 +30,38 @@ async def main():
 asyncio.run(main())
 ```
 
-Run it with Python 3.13 and SDK 0.0.98:
-
-```sh
-uv run --python 3.13 --with 'a13n==0.0.98' call_agent.py
-```
-
-On completion, the script prints the agent’s answer. If it prints `waiting`, [handle the pending requests](#handle-a-waiting-result). Keep `message.thread.id` to find this conversation in Console or send a follow-up.
-
-For runnable TypeScript, Go, and Rust examples, see the [SDK guides](sdks.md#choose-a-client). If your application needs to retry a submission after losing the response, save an idempotency key and the original input before sending. Reuse both on retry.
-
-## Send a follow-up
-
-Send the next message to the same thread to continue its history. For example, after “Name two colors,” ask “Spell the first one backwards.” Keep the thread reference and give the new submission a new idempotency key. Track its result separately from the first message.
-
-Closing the client stops local observation; Service continues the work. Use an explicit cancellation operation when you want to stop execution. Your [SDK's application guide](sdks.md#choose-a-client) owns its streaming, cleanup, and recovery calls.
+Retain `message.thread.id` to send follow-ups to the same conversation or inspect it in Console (**Sessions**).
 
 ## Handle a waiting result
 
-A waiting run needs an action before it can continue. For a question, approval, or client-side tool call:
-
-1. Read the run's `pending` requests and show each question or decision to the responsible user, or invoke the application's client-side tool.
-2. Collect and save responses in your application. Keep each response associated with its `tool_call_id` and category: `approvals` or `calls`.
-3. Submit the complete batch to `POST /api/v1/runs/{run_id}/resume`, with a new idempotency key. Include both category maps, even when one is empty. Every pending request needs an explicit response; unanswered requests are not automatic approvals or denials.
-4. Follow the returned successor run. The original run remains waiting as the record of that suspension.
-
-Sending another ordinary message does not answer the wait; the message stays queued. For response shapes and desktop-control waits, follow [Waits, approvals and questions](agents-and-runs.md#waits-approvals-and-questions). For a failed run, inspect `failure` and use [troubleshooting](monitoring.md#troubleshoot-a-request-or-run).
+When `result.status == "waiting"`, inspect `pending.approvals` and `pending.calls`, collect user decisions or execute client-side tools, and submit **both** maps to `POST /api/v1/runs/{run_id}/resume` with a fresh `Idempotency-Key`, then follow the returned successor run (see [Waits, approvals and questions](agents-and-runs.md#waits-approvals-and-questions)).
 
 ## Direct HTTP integration
 
-Use these steps to see the protocol before implementing a client. Run the commands in one shell with `curl`, `jq`, and `uuidgen` installed. Replace the URL and API key with your deployment's values:
+Submit a message with a unique `Idempotency-Key` (reuse the exact key and body if retrying a lost response), then poll the inbox entry and assigned run:
 
 ```sh
 export A13N_URL=http://127.0.0.1:8080
 export A13N_API_KEY=a13n_replace_with_your_key
-```
-
-### Select an agent
-
-Use the ID from Console, or list the agents available to the key:
-
-```sh
-curl --fail-with-body -sS "$A13N_URL/api/v1/agents" \
-  -H "Authorization: Bearer $A13N_API_KEY"
-```
-
-If you need to create an agent, find an enabled model's key under **Models** or with `GET /api/v1/models`. Replace `your-model-key` and send:
-
-```sh
-MODEL_KEY=your-model-key
-jq -n --arg model "$MODEL_KEY" \
-  '{name: "Helper", config: {model: $model, instructions: "Answer briefly."}}' > agent.json
-curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/agents" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  --data-binary @agent.json
-```
-
-### Start a conversation
-
-Set `AGENT_ID` to the selected agent's `id`. Prepare one message and its idempotency key:
-
-```sh
-AGENT_ID=ap_replace_with_the_returned_id
+AGENT_ID=ap_replace_with_your_agent_id
 MESSAGE_KEY=$(uuidgen)
-jq -n --arg agent "$AGENT_ID" \
-  '{agent_id: $agent, payload: {content: [{type: "text", text: "Name two colors."}]}}' > message.json
-```
 
-Submit the message and save the receipt. If the response is lost, repeat this request with the same body and `MESSAGE_KEY`; do not generate a new key for that retry.
-
-```sh
 curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/threads" \
   -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
   -H "Idempotency-Key: $MESSAGE_KEY" \
-  --data-binary @message.json > submitted.json
-jq '{thread_id: .thread.id, session_id: .thread.session_id, entry_id: .entry.id, run_id: .run.id}' submitted.json
-```
+  -d "{\"agent_id\":\"$AGENT_ID\",\"payload\":{\"content\":[{\"type\":\"text\",\"text\":\"Name two colors.\"}]}}" \
+  > submitted.json
 
-The receipt contains `thread`, `entry`, and `run` when the entry already has an assigned run. `run: null` means the message has been stored but has no assigned run yet. Save the IDs for later reads:
-
-```sh
 THREAD_ID=$(jq -r '.thread.id' submitted.json)
 SESSION_ID=$(jq -r '.thread.session_id' submitted.json)
 ENTRY_ID=$(jq -r '.entry.id' submitted.json)
-```
 
-### Read the result
-
-Read this message's entry, including when the original receipt had `run: null`:
-
-```sh
 curl --fail-with-body -sS "$A13N_URL/api/v1/threads/$THREAD_ID/inbox/$ENTRY_ID" \
   -H "Authorization: Bearer $A13N_API_KEY" > entry.json
-jq '{status, assigned_run_id, failure}' entry.json
-```
-
-| Entry status | What to do                                                                              |
-| ------------ | --------------------------------------------------------------------------------------- |
-| `pending`    | Read again later. If the thread is waiting, answer that wait first.                     |
-| `assigned`   | Read `assigned_run_id` to observe execution, then re-read the entry when that run ends. |
-| `consumed`   | The run incorporated this message into saved state. Read that run's outcome.            |
-| `failed`     | Inspect the entry's `failure`; the message did not finish incorporation.                |
-| `withdrawn`  | Stop waiting for an answer to this entry.                                               |
-
-Once `assigned_run_id` is present, read the run:
-
-```sh
 RUN_ID=$(jq -r '.assigned_run_id' entry.json)
+
 curl --fail-with-body -sS "$A13N_URL/api/v1/runs/$RUN_ID" \
-  -H "Authorization: Bearer $A13N_API_KEY" > run.json
-jq '{status, output, pending, failure}' run.json
+  -H "Authorization: Bearer $A13N_API_KEY" | jq '{status, output, pending, failure}'
 ```
 
-Repeat the run read while its status is `accepted` or `running`. A `completed` run has its answer in `output`; `waiting` requires the response workflow above; `failed` and `cancelled` end execution without a completed answer.
-
-Before presenting a completed run as this message's result, re-read the entry and confirm it is `consumed` by that run. Assignment alone is not enough: a run can finish without incorporating an assigned message, returning that entry to `pending`. Continue tracking the entry in that case, rather than using the thread's latest run as its answer.
-
-After the first answer, send a follow-up to the same thread:
-
-```sh
-MESSAGE_KEY=$(uuidgen)
-jq -n --arg agent "$AGENT_ID" \
-  '{agent_id: $agent, payload: {content: [{type: "text", text: "Spell the first one backwards."}]}}' > message.json
-curl --fail-with-body -sS -X POST "$A13N_URL/api/v1/threads/$THREAD_ID/inbox" \
-  -H "Authorization: Bearer $A13N_API_KEY" -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $MESSAGE_KEY" \
-  --data-binary @message.json > submitted.json
-ENTRY_ID=$(jq -r '.entry.id' submitted.json)
-```
-
-Repeat the entry and run reads for this new `ENTRY_ID`. For live updates, follow the [session stream](stream-and-read-results.md#follow-a-session-stream) using `SESSION_ID`, or subscribe to [webhooks](webhooks.md). Keep the submission IDs so reconnecting can resume observation of the same work.
-
-See [HTTP conventions](http.md) for pagination, conditional writes, and errors, and the [API reference](api-reference/index.md) for complete request and response schemas.
-
-## Inspect the run in Console
-
-1. Open **Sessions** in the workspace that issued your application's API key. Search for the thread ID from the submission receipt.
-2. Select **Inspect execution** to open Debug. Match the run ID to the run that consumed your entry. A queued entry may still be waiting for a run.
-3. Open that run’s **Details** to check its configuration, attempts, and usage. Inspect tool calls in the conversation. If the run failed, use its failure details; if it is waiting, [answer the pending requests](#handle-a-waiting-result).
-
-To continue the conversation in Console, select **Continue thread**. Your application can also [send a follow-up](#send-a-follow-up) to the same thread. See [Inspect a reply](use-platform.md#inspect-a-reply) for more ways to debug a run.
+Confirm the inbox entry is `consumed` by that `RUN_ID`, and send follow-ups to `POST /api/v1/threads/$THREAD_ID/inbox` with a new `Idempotency-Key`. For live events instead of polling, subscribe to [session SSE streams](stream-and-read-results.md#follow-a-session-stream) (`$SESSION_ID`) or [webhooks](webhooks.md).

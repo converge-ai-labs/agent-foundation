@@ -1,43 +1,16 @@
 ---
 title: Extend Service with App plugins
-description: Package and install trusted Python App plugins to add custom tools, routes, webhooks, and Prometheus metrics to a Service deployment.
+description: Package and install trusted Python App plugins to add custom APIs, Console pages, database tables, Harness plugins, and metrics to Service.
 ---
 
-App plugins add business APIs, organization-scoped background work, Harness factories and packaged Console assets to Service. Operators install trusted Python packages on every serving and worker process. Organization administrators enable each App. Operators can opt in to an initial selection when bootstrapping a deployment.
+App plugins extend Service with domain APIs (`/api/v1/apps/<app_id>/...`), organization background sweeps, Harness plugin factories, PostgreSQL tables, and Console UI pages while reusing Service's authentication, workspaces, and agent runtime.
 
-App plugins run inside Service with its process permissions. Review packages before installation. [MCP Apps](mcp-apps.md) are a separate protocol for interactive tool results.
+> [!IMPORTANT]
+> App plugins run in-process with Service permissions. Install identical package versions across all `control` and `worker` processes (or `all`), and enable each App per organization.
 
-## Deploy App plugins
+## Scaffold and run an App locally
 
-Use the same App packages and versions in every `control` and `worker` process, including Apps that only add Console pages or management APIs. An `all` process uses the same package set and serves both roles. You can install multiple App packages in the same Service Python environment.
-
-- **Custom Service image:** Install the selected App wheels and their dependencies into the Service Python environment during the image build. Use the same image for `control` and `worker`. If an App ships a frontend, its wheel includes the prebuilt assets; you do not need to rebuild Console.
-- **Local Service:** Install the selected wheels into the Python environment that starts Service. For example, put the wheels in `./app-wheels/` and run `uv pip install --python /path/to/service/.venv/bin/python ./app-wheels/*.whl`.
-
-Restart Service to discover the installed packages. Installation makes Apps available to the deployment. They stay disabled for an organization until its administrator enables them or bootstrap supplies the initial policy.
-
-`control` serves App APIs and Console assets, runs organization sweeps, and performs automatic migrations when configured. `worker` runs agents and their App-provided Harness extensions. It checks App database revisions at startup but does not migrate databases or run organization sweeps. For Apps with database migrations, bring the schema up to date through `control`, `all`, or a migration job before starting workers that need the new schema.
-
-An App's `startup` callback runs in each Service process, regardless of organization enablement. Use it to initialize per-process resources. Put organization-scoped background work in a sweep, not in `startup`.
-
-### Enable selected Apps at bootstrap
-
-For a fresh deployment with preinstalled Apps, set the initial policy in `service.toml`:
-
-```toml
-[plugins]
-bootstrap_enabled_apps = ["acme.reports"]
-```
-
-In Docker Compose, set `A13N_PLUGINS__BOOTSTRAP_ENABLED_APPS: '["acme.reports"]'` in the environment of the Service that handles Console setup or the job that runs `a13n-service bootstrap`. Use App IDs, not distribution names or the Harness factory keys configured in `plugins.keys`. The process performing bootstrap must have every listed App installed; if an App is missing, bootstrap fails without creating the organization.
-
-The list defaults to empty. Bootstrap writes it once when creating the first organization. Afterward, use the organization App controls; changing the deployment setting, upgrading the image or restarting Service does not reapply the list.
-
-## Start an independent App
-
-The [App plugin template](https://github.com/converge-ai-labs/agent-foundation/tree/template/app-plugin) generates an independent full-stack, frontend-only, or backend-only project with a Makefile and GitHub Actions checks. The existing [Reports example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) remains a separate integration example.
-
-Install Git, uv, Make, Python 3.13, and Docker Compose v2. Frontend projects also need Node.js 24 and pnpm 10.30.3. Generate a project, enter its directory, and start it:
+Generate a standalone project from the [App plugin template](https://github.com/converge-ai-labs/agent-foundation/tree/template/app-plugin) and start the local stack:
 
 ```bash
 uvx cookiecutter gh:converge-ai-labs/agent-foundation --checkout template/app-plugin
@@ -45,24 +18,18 @@ cd my-service-app
 make dev
 ```
 
-`make dev` uses the project's pinned `a13n-service` wheel and its bundled Console, installs the App editable, and starts local PostgreSQL, Redis, and S3. It migrates the database and initializes a development administrator and workspace on first start. Sign in to the printed Console URL, open **Settings → Organization → App plugins**, and enable your App. If it has a Console page, open it from the workspace sidebar. An older generated project that still has `.service-ref` uses its original README and setup workflow.
+`make dev` starts PostgreSQL, Redis, and S3, runs migrations, and launches Service with hot reload. Sign in to Console, open **Settings → Organization → App plugins**, and enable your App. See [`examples/service-app-plugin`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) for a complete reference implementation.
 
-Python edits restart the local Service. Use `make dev RELOAD=0` when attaching a debugger without restarts. For TSX or CSS edits, wait for the build and reload the App page; the development bundle has sourcemaps and bypasses production asset caching. Ctrl+C stops the local Service and watcher. `make dev-down` stops the containers and keeps their volumes.
+## Register an App definition
 
-`make verify` builds and tests the installed wheel without replacing the editable installation. To change Service versions, edit the dependency in `pyproject.toml` and update the project's lockfile. Generation does not create a remote repository or choose a license. The generated README covers creating a repository and publishing independent App `vX.Y.Z` releases.
+Expose a zero-argument factory under `a13n_service.app_plugins` matching `AppDefinition.app_id`:
 
-## Register a package
-
-Declare one zero-argument definition function in your wheel:
-
-```toml
+```toml title="pyproject.toml"
 [project.entry-points."a13n_service.app_plugins"]
 "acme.reports" = "acme_reports.app:definition"
 ```
 
-Use the host router so policy is checked before your dependencies and handler:
-
-```python
+```python title="acme_reports/app.py"
 from a13n_service.app_definitions import AppDefinition
 from a13n_service.tenancy.app_plugins import app_router
 from a13n_service.tenancy.requests import Actor, WorkspaceId
@@ -72,7 +39,6 @@ router = app_router("acme.reports")
 
 @router.get("/summary", name="get_acme_report_summary", openapi_extra={"x-a13n-mcp": True})
 async def summary(actor: Actor, workspace_id: WorkspaceId) -> dict[str, str]:
-    # Read admission is complete. Check additional business permissions here when needed.
     return {"workspace_id": workspace_id, "requested_by": actor.id}
 
 
@@ -80,53 +46,30 @@ def definition() -> AppDefinition:
     return AppDefinition(app_id="acme.reports", name="Reports", routers=(router,))
 ```
 
-The entry-point name must match `AppDefinition.app_id`. Service loads every installed definition during application assembly, including disabled Apps. Duplicate App IDs, factory ownership, settings or HTTP operations fail startup. Install the wheel on every control and worker process, then restart the deployment. Use the same package version across the deployment.
+- **`factory_keys`:** Claim owned Harness plugin factories (registered under `a13n_harness.plugins`; see [Plugins and extensions](../a13n-harness/plugins.md#publish-a-plugin-factory)), e.g. `factory_keys=frozenset({"acme.audit"})`.
+- **`OrganizationSweep` & `startup`:** Use `startup(runtime, stack)` for per-process resources and `OrganizationSweep` for replica-safe periodic background work on enabled organizations.
 
-`AppDefinition.factory_keys` declares owned Harness factory keys. Register each factory under `a13n_harness.plugins`, as shown in [Plugins and extensions](../a13n-harness/plugins.md#publish-a-plugin-factory), and add its key to the definition, for example `factory_keys=frozenset({"acme.audit"})`. Configure named plugin instances on the agent as usual. Service loads owned factories at startup and gates their instances using the accepted run snapshot. Standalone factories are selected through `plugins.keys`.
+## Use the in-process App SDK and Run seals
 
-`OrganizationSweep` callbacks receive the existing Runtime and one enabled organization ID. Service selects organizations and closes SQL sessions before callbacks. Callbacks own bounded business work and replica-safe claims. Each organization gets the declared timeout; a failed callback leaves the rest of the batch running and marks the pass failed. Optional `startup(runtime, stack)` opens process resources and registers cleanup on the existing exit stack. Startup runs for each installed App, regardless of organization enablement. Apps can declare an optional database with independent migrations, as described below. Service validates installed App database heads before running any App startup callback.
+Import `a13n_service.app_sdk` to manage native Threads, Schedules, and App-owned egress credentials atomically alongside your business tables:
 
-## React to Run seals and submit Inbox messages
-
-Declare `RunSealSubscription(callback, timeout=5)` in `AppDefinition(run_seals=(...,))`. The async callback receives the Runtime and a `RunSealEvent` with organization, workspace, session, thread, run and principal IDs, status and immutable acceptance-time options labels. Completed, failed and cancelled are selected by default; include `waiting` explicitly in `statuses` when needed. Service publishes only after commit and checks current App enablement before callbacks. A bounded Redis Stream consumer group delivers each retained hint to one control replica with NOACK. Hints published before group creation, trimmed before reading, or lost after receipt are not retried; hints can also be duplicated. Retain your organization sweep and make business effects idempotent. Callback execution and publishing are bounded; `a13n_app_run_seal_dropped_total` and `a13n_run_seal_publish_dropped_total` expose capacity drops. A burst after an interruption can exceed the callback limit, so the App's own sweep must reconcile durable state rather than depend on every hint.
-
-A waiting Run is sealed and remains waiting in its historical record. Resume creates a successor Run with a new ID; check the Thread's current wait before acting on a hint. Each deployment needs its own Redis logical database. When deployments share a Redis server, select different databases; if the server supports only database 0, use a dedicated instance per deployment.
-
-Configure a service-account principal for automatic actions. User principals are also accepted and checked against current grants. The event's principal is the original Run principal, not authority to act. Preparing submission holds an organization lock until transaction end, serializing App submissions within that organization; keep the transaction short, especially during fan-out. `runs.submit.submit_app_message(runtime, principal_id, workspace_id, thread_id, message, request_key=...)` submits using current, workspace-confined grants. For atomic App writes, use `infra.db.transaction`, call `prepare_app_submission(session, runtime, workspace_id, principal_id)` before acquiring any App row or Thread acceptance lock (organization → App → Thread), then pass its result to `submit_message_in_transaction`. The admission belongs only to that transaction. For automatic follow-up, under the Thread lock check the expected last Run, idle and non-paused state, and pending native input before submission. A receipt is durable after commit; ordinary input does not answer a wait or target an exact active Run. These APIs do not apply a Run's delegation ceiling and must not be used as delegated Run operations.
-
-## Use the in-process App SDK
-
-Import `a13n_service.app_sdk` in installed plugins for native Threads, projects, Agent revisions, Schedules, egress credentials and model usage. Call `app_sdk.transaction(runtime.storage)` for operations that take a session. For atomic Thread creation or submission, call `threads.prepare_admission(session, runtime, workspace_id, principal_id, app_id=...)` before locking any App state, then pass the result to `threads.create_thread_in_transaction` or `threads.submit_message_in_transaction`. The execution principal is a workspace Service Account with `run`. Use a stable, App-specific request key and record the receipt in the same transaction as your business state.
-
-Use `threads.update_thread_resources` to update the root Thread and its shared-Environment descendants, including dynamic children. Passing `environment_template_id` queues creation of the replacement and returns its `environment_id` in `UpdatedThreadResources`, alongside the root’s `browser_id`. Save those IDs with your App state in the same transaction. For multiple App instances in one workspace, pass the instance’s `labels` to both Schedule listing and active counting. The active count includes matching Schedules with a pending occurrence, even if archived.
-
-Use `egress.create_app_credential`, `rotate_app_credential` and `revoke_app_credential` for tokens maintained by the App. A current organization principal supplies attribution; a workspace Runner account does not need promotion to `write`. Operators can inspect ownership and request Session synchronization in Console. **On a rolling upgrade, finish upgrading all API-serving replicas before enabling any App feature that creates App-owned credentials.** Older replicas do not enforce the new mutation guard.
-
-To commit a credential change and App state together, use `egress.create_app_credential_in_transaction`, `egress.rotate_app_credential_in_transaction` or `egress.revoke_app_credential_in_transaction` in the same Service transaction. Rotation and revocation notify active Sessions only after commit.
-
-Use `threads.update_app_egress_secrets` to set App-owned references or remove them by environment variable name from the desired primary bindings of an idle shared Thread subtree. Pass `set_secrets` with `egress.SecretReference` values, or `remove_envs` with the variable names to remove. The patch preserves each Thread's existing destinations and other owners' references. If a binding has neither an egress mode nor a policy, adding a reference requires `initial_destinations`. For example, pass `AllowlistDestinations(mode="allowlist", hosts=("api.example.com",))` from `a13n_envd_client.eip.v1` to initialize controlled egress for that host. Use `PublicDestinations(mode="public")` only when you intend to allow public destinations. Neither option replaces an existing policy. A removal leaves destinations unchanged; revoke the credential to invalidate it in live Sessions.
+- **Threads & submissions:** Call `threads.prepare_admission(session, runtime, workspace_id, principal_id, app_id=...)` before locking App rows, then call `threads.create_thread_in_transaction` or `threads.submit_message_in_transaction` using a workspace Service Account with `run` permission. Use `threads.update_thread_resources` to update a root Thread and its shared-Environment descendants.
+- **App-owned egress credentials:** Manage tokens with `egress.create_app_credential`, `rotate_app_credential`, and `revoke_app_credential` (or their `*_in_transaction` variants to commit with App state; active Sessions are notified after commit).
+- **Thread egress bindings:** Call `threads.update_app_egress_secrets` with `set_secrets` (`egress.SecretReference`) or `remove_envs` on an idle shared Thread subtree while preserving existing destinations and other owners' secrets. When initializing an unset binding, pass `initial_destinations` (such as `AllowlistDestinations(mode="allowlist", hosts=("api.example.com",))` from `a13n_envd_client.eip.v1`).
+- **Run seals:** Subscribe to terminal or `waiting` Run completions via `RunSealSubscription(callback, timeout=5)` on `AppDefinition(run_seals=(...,))`. Treat seal hints as at-least-once/best-effort wakeups and reconcile durable state in an `OrganizationSweep`.
 
 ## Persist business data
 
-Use `AppDatabase` when an App needs tables in the host PostgreSQL database. Each App owns an independent migration history in `public`. App rows use ordinary SQLAlchemy models and the existing Runtime Storage, so queries can join native Service rows without a second database pool. Prefixes separate migration ownership; App code still enforces tenant scoping and authorization.
+Use `AppDatabase` to manage App tables in PostgreSQL (`public` schema with an isolated table/migration prefix) and join native Service rows on the same pool:
 
-Declare the database and models in a module such as `models.py`, then import that module from `app.py` and pass the same database to `AppDefinition(database=database)`. Resolve deployment configuration before importing models:
-
-```python
-import os
-
+```python title="acme_reports/models.py"
 from a13n_service.app_database import AppDatabase
 from a13n_service.tenancy.tables import WorkspaceRow
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-# Optional deployment override. Leave unset for a stable App-ID-derived prefix.
-database = AppDatabase(
-    "acme.reports",
-    migrations="acme_reports:migrations",
-    prefix=os.environ.get("ACME_REPORTS_TABLE_PREFIX") or None,
-)
-database.reference(WorkspaceRow.__table__)  # Read-only foreign-key target, never App-owned DDL.
+database = AppDatabase("acme.reports", migrations="acme_reports:migrations")
+database.reference(WorkspaceRow.__table__)
 
 
 class Base(DeclarativeBase):
@@ -135,221 +78,78 @@ class Base(DeclarativeBase):
 
 class Note(Base):
     __tablename__ = database.name("notes")
-
     id: Mapped[int] = mapped_column(primary_key=True)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
     body: Mapped[str]
 ```
 
-The default physical table is `app__acme_report_8b627b7edb3d__notes`. Its label combines a readable slug with a stable digest of the full, exact App ID, so `acme.reports` and `acme_reports` get different namespaces regardless of installation order. Long App IDs work without configuration. An optional explicit label must be lowercase snake case, start with a letter and fit 24 bytes; for example `ACME_REPORTS_TABLE_PREFIX=reports_1` selects `app__reports_1__notes`. Use `database.name(...)` rather than hardcoding physical names. A deployment uses the same setting in migration, control and worker processes; authoring can use the default because generated identifiers are portable. Duplicate App IDs and conflicting explicit prefixes are rejected. After a database is initialized, its retained App ID/prefix binding prevents accidental retargeting. Changing the setting does not move existing data; moving a deployed namespace requires an explicit reviewed migration.
+Pass `database=database` to `AppDefinition`, then author and verify migrations against a scratch PostgreSQL URL:
 
-1. Install your App editable in a Service-compatible development environment. Run these authoring commands from the App project root. `--app` is optional when one current-project App is unambiguous.
-
-   ```bash
-   a13n-service apps db init --app acme.reports
-   a13n-service apps db revision --app acme.reports -m "create notes" \
-     --scratch-url "$APP_TEST_POSTGRES_URL"
-   a13n-service apps db check --app acme.reports \
-     --scratch-url "$APP_TEST_POSTGRES_URL"
-   ```
-
-   `init` creates only `acme_reports/migrations/versions/`; the template does not initialize persistence. `revision` and `check` each create a disposable database, replay Core and this App history, then remove it. Their PostgreSQL role needs `CREATE DATABASE` permission. Use a local/CI server. Without `--scratch-url`, these commands use the server from Service database settings, connecting to its `postgres` maintenance database. They never upgrade the configured business database.
-
-2. Review the generated revision. Table, key, index and foreign-key identifiers use `migration_name("notes")` and related local suffixes, so one published history works with a deployment-selected prefix. Defaults and data literals retain their values. Review renames, drops, backfills, locks and rolling compatibility. Autogenerate cannot infer every schema object: write raw SQL, expression text, functions, triggers and other manual changes explicitly, using `migration_name` for owned SQL names. Core shared functions are already available; do not recreate them in an App base revision.
-
-3. Include `migrations/versions/*.py` in the App wheel and source distribution. Verify the installed artifact with `apps db check`, then install the same package on every Service process. By default, `all` and `control` startup upgrade Core, then every installed App database. For a dedicated migration job, run:
-
-   ```bash
-   a13n-service migrate
-   a13n-service apps db status --app acme.reports
-   ```
-
-   `migrate` upgrades Core first, then all installed App histories; `migrate --no-apps` prepares Core only. To apply one App after Core is current, use `a13n-service apps db upgrade --app acme.reports`. App histories remain independent of each other's installation order. Set `A13N_DATABASE__AUTO_MIGRATE=false` on serving replicas when a dedicated job owns migrations. To automate Core but manage App upgrades separately, keep the master switch enabled and set `A13N_DATABASE__AUTO_MIGRATE_APPS=false`. These switches affect startup only; explicit CLI commands still migrate. `migrate --check` checks live Core/App parity without DDL or `CREATE DATABASE` permission; `apps db check` is the disposable authoring/CI check. Startup and readiness require every installed App at its packaged head, including organization-disabled Apps. Workers, readiness and organization enablement never execute DDL. Uninstalling the package retains its tables, version table and ownership binding.
-
-Use `transaction(runtime.storage)` or `short_session(runtime.storage)` from `a13n_service.infra.db` for business queries. Keep the session around one short database operation. A native join uses the same ORM session:
-
-```python
-from a13n_service.infra.db import short_session
-from sqlalchemy import select
-
-async with short_session(runtime.storage) as session:
-    rows = (
-        await session.execute(
-            select(Note.body, WorkspaceRow.name)
-            .join(WorkspaceRow, Note.workspace_id == WorkspaceRow.id)
-            .where(WorkspaceRow.id == authorized_workspace_id)
-        )
-    ).all()
+```bash
+a13n-service apps db init --app acme.reports
+a13n-service apps db revision --app acme.reports -m "create notes" --scratch-url "$APP_TEST_POSTGRES_URL"
+a13n-service apps db check --app acme.reports --scratch-url "$APP_TEST_POSTGRES_URL"
 ```
 
-For integration tests, reuse `a13n_service.migrations.scratch.scratch_database(development_database_settings)`. Inside that scope, call `runner.upgrade(scratch, OSS)` and `apps.upgrade(scratch, OSS, database)` from `a13n_service.migrations`, then open ordinary `Storage(scratch.url.get_secret_value())`. Close Storage before leaving the scope. This exercises the packaged history and drops the database after the test. Add `apps db check` to CI; `status` checks deployment revision state, while `check` proves migration/model parity on a fresh replay.
-
-## Report custom metrics
-
-App plugins use the same process-wide metrics provider and private `/metrics` listener as Service. Use the standard `opentelemetry-api` package; declare `opentelemetry-api>=1.39,<2` as a direct dependency when your App imports it. No `AppDefinition` registration or separate exporter is needed. Operators enable `telemetry.metrics_port` and scrape every control and worker process as described in [monitoring](monitoring.md#metrics).
-
-Create instruments under your App's own prefix. Include an explicit plugin prefix in each metric name because the Service Prometheus exporter flattens meter scopes. This example extends the `/preview` handler from the [Reports example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) to count completed previews and measure their successful handler duration:
-
-```python
-from time import perf_counter
-
-from opentelemetry import metrics
-
-meter = metrics.get_meter("acme.reports")
-previews = meter.create_counter("acme.reports.previews", description="Report previews completed")
-preview_duration = meter.create_histogram(
-    "acme.reports.preview.duration",
-    unit="s",
-    description="Successful report preview handler duration",
-    explicit_bucket_boundaries_advisory=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 5),
-)
-
-
-@router.post("/preview", name="preview_acme_report")
-async def preview(body: PreviewRequest, workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime) -> Preview:
-    started = perf_counter()
-    async with short_session(runtime.storage) as session:
-        await workspace_scope(session, actor, workspace_id, "write")
-    result = Preview(workspace_id=workspace_id, title=body.title)
-    # Host admission and the action's write check both succeeded.
-    previews.add(1, {"result": "completed"})
-    preview_duration.record(perf_counter() - started, {"result": "completed"})
-    return result
-```
-
-The existing example supplies the route, request/response types and authorization imports; replace its handler rather than registering a second `/preview` route. Prometheus exports `acme_reports_previews_total` and the `acme_reports_preview_duration_seconds` histogram. The counter measures successful handler calls, not distinct reports or delivery to the browser. Core HTTP metrics already cover refused/failed requests. Organization sweeps already receive host pass/failure/freshness metrics under `sweep="app:acme.reports:<name>"`; add only business measurements that those signals do not answer. Use your own Grafana panels and alerts for custom names; the bundled dashboards cover Service instruments.
-
-Follow these rules:
-
-- Service owns the meter provider, listener and process shutdown. Do not call `set_meter_provider()`, `serve_metrics()` or `start_http_server()` from an App. With metrics disabled, the standard API performs no export. Embedded hosts that call `build_app()` directly own their telemetry initialization.
-- Creating meters/instruments during import is supported. Record observations from startup or admitted business work, after executable initialization; observations made before provider initialization are discarded. Startup runs even when all organizations disable the App, so a startup metric is process state, not tenant enablement.
-- Use fixed instrument names and bounded attribute values defined in code. Never label metrics with organization/workspace/user/run IDs, model names, report titles, raw URLs, credentials or payloads. The host does not automatically sanitize custom App attributes.
-- Use seconds for durations and choose histogram buckets for the operation. Count a durable business fact only after its transaction commits, using the existing `after_commit(session, callback)` boundary. An operation-attempt metric can instead count each attempt, including retries; name it accordingly.
-- Observable gauge callbacks run during scrapes. Read a cached in-memory snapshot only; refresh external/SQL/Redis state in bounded admitted background work and publish a freshness timestamp alongside inventory. Disabling an App stops future organization callbacks, not previously exported counter values or cached samples; expire stale samples in dashboard queries.
-
-## Enable an organization
-
-Read the installed inventory and its organization ETag:
-
-```http
-GET /api/v1/organizations/org_example/app-plugins
-```
-
-Copy the `ETag` response header into `If-Match` to enable an installed App (the value below is illustrative):
-
-```http
-PUT /api/v1/organizations/org_example/app-plugins/acme.reports
-If-Match: "org_example:1"
-Content-Type: application/json
-
-{"enabled": true}
-```
-
-Organization readers can inspect inventory. Organization admins can change policy. Browser changes use the normal session, CSRF and Origin rules. The ETag is the organization's version: another organization edit can make it stale. Read again after a 412 response. Real policy changes are audited; repeating the current value changes neither version nor audit history. After uninstalling a package, an administrator can clear its retained policy ID with the same PUT and `{"enabled": false}`.
-
-Business endpoints live under `/api/v1/apps/acme.reports/`. Each request uses existing workspace selection and authorization. A disabled App returns `disabled` before its request dependencies execute. Previously admitted work can finish and clean up.
-
-## Keep run behavior stable
-
-Each accepted run freezes organization policy, package versions and factory ownership. Later turns and worker recovery use that snapshot. Inline children share its availability ceiling while keeping their own instance declarations. A new durable child or resume successor captures current policy.
-
-A worker with a different enabled package version or ownership fails explicitly before plugin construction. The check covers every enabled App in the snapshot, including Apps the run's agent does not select. Roll out packages consistently and drain old work when upgrading. If a resume successor restores an unfinished tool now disabled, it fails with `deferred_surface_mismatch` before executing that tool. Disabling preserves historical results and saved plugin state.
+Use `short_session(runtime.storage)` or `transaction(runtime.storage)` from `a13n_service.infra.db` for short async queries. `control`, `all`, or `a13n-service migrate` upgrades Core and installed App schemas before `worker` replicas start.
 
 ## Add a Console page
 
-Export an `AppContribution` as the default export of the frontend entry. Console loads enabled Apps in the current organization and renders their contributions inside its existing providers. This example displays the `/summary` endpoint defined above:
+Bundle a frontend ESM entry with `@a13n/console` externalized, export an `AppContribution` as the default export, and attach `Frontend` to `AppDefinition`:
 
 ```tsx
 import { React, useApp, useQuery } from "@a13n/console";
 import type { AppContribution } from "@a13n/console";
 
-type Summary = { workspace_id: string; requested_by: string };
-
 function ReportsPage() {
   const app = useApp();
   const summary = useQuery({
     queryKey: app.queryKey("summary"),
-    queryFn: async ({ signal }) => {
-      const response = await app.request("/summary", { signal });
-      return (await response.json()) as Summary;
-    },
+    queryFn: async ({ signal }) => (await app.request("/summary", { signal })).json(),
   });
-
-  if (summary.isPending) return <p>Loading reports…</p>;
-  if (summary.isError) return <p>Could not load reports.</p>;
-  return <p>Workspace: {summary.data.workspace_id}</p>;
+  return <div>{summary.data?.workspace_id}</div>;
 }
 
-const contribution: AppContribution = {
-  bridge: 1,
-  pages: [{ id: "reports", label: { en: "Reports", "zh-CN": "报告" }, component: ReportsPage }],
-};
-
-export default contribution;
+export default {
+  pages: [{ path: "reports", label: { en: "Reports", "zh-CN": "报告" }, component: ReportsPage }],
+} satisfies AppContribution;
 ```
 
-`useApp()` supplies `appId`, `organizationId`, `workspaceId`, a scoped `queryKey(...)`, and `request(path, init)`. A request path starts with `/` and remains within `/api/v1/apps/{appId}/` after normalization. The host adds the selected workspace header and uses its existing authentication, CSRF handling and transport. Business requests require a selected workspace.
+```python
+from a13n_service.app_plugins import Frontend
 
-In organization settings, the host selects the remembered accessible workspace, or the first active workspace when none is remembered. If only archived workspaces are available, the host selects the first one. `workspaceId` is undefined when no workspace is available. The settings scope determines where the section appears; App business HTTP requests remain workspace-scoped.
-
-Pages appear under `/workspace/{workspaceId}/apps/{appId}/{pageId}/*`. Page IDs use lowercase letters, digits and hyphens, starting with a letter. Optional `description` and `permission` fields describe a page and control its Console visibility and route access. Business endpoints still enforce their own authorization. Labels and descriptions accept a string or an object with `en` and optional `zh-CN`. A `settings` entry uses the same fields and adds `scope: "workspace"` or `"organization"`; its host settings key is `app.{appId}.{sectionId}`.
-
-When permission filtering leaves multiple visible pages, Console groups them under the App name. Set `navigation: { label: { en: "Reports", "zh-CN": "报告" }, icon: "chart" }` to customize that group. Supported icon keys are `puzzle`, `robot`, `chart`, `calendar`, and `lightning`; the default is `puzzle`. One visible page remains a direct link, and an App with no visible pages has no navigation entry.
-
-An App can also provide `workspaceHome: Component` to replace the workspace index. Core agent routes remain available. If multiple enabled Apps claim the index, Console shows an error with a link to agents. Organization administrators can enable or disable an App in settings; successful changes update the active registry. Refreshing Console fetches the current catalog.
-
-### Build the entry
-
-Bundle the frontend as ESM and externalize `@a13n/console`. Console's import map supplies the shared React, query, router, translation, UI and host context exports. Import these through `@a13n/console`, use classic JSX with its exported `React`, and let Console mount the component.
-
-The [independent App example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/service-app-plugin) contains a Vite build, its own App definition and an installable wheel. From the repository root, build its frontend with:
-
-```bash
-pnpm --dir examples/service-app-plugin/frontend install --frozen-lockfile
-pnpm --dir examples/service-app-plugin/frontend build
+frontend = Frontend(
+    package="acme_reports", directory="static", entry="index.js", styles=("index.css",)
+)
 ```
 
-Follow the example's build and install instructions to package the generated assets, start Service and enable the App. The example implements its own `/summary` response and uses the same App ID as the snippets on this page.
-
-The bridge also exports hooks such as `useAuth`, `useAccess`, `useWorkspace`, `useAppearance`, `useTranslation`, `useMutation`, and `useQueryClient`, plus selected UI components including `Page`, `Empty`, `Loading`, and `ErrorPage`. Console owns the React root and providers.
-
-Import `ChoiceField` for a labeled choice, `SearchPicker` for searchable options, or `SegmentedControl` for an inline mode switch. Compose custom fields with `Field` and its parts, and use `Select` with `SelectTrigger`, `SelectValue`, `SelectPopup`, and `SelectItem` for a custom dropdown. Use `ReadOnlyField` to display a labeled value.
-
-### Type-check a standalone App
-
-Service 0.2.2 and later ship a TypeScript declaration with the Console. The App template's `make setup` installs the pinned Service and exports its declaration for editor completion. Run `make typecheck` to check an App against that Service; `make verify` and the production frontend build run the same check.
-
-For an existing standalone App, run this command in the App's Python environment after installing or upgrading Service:
+Export TypeScript declarations for editor completion and `make typecheck` with:
 
 ```bash
 python -m a13n_service.console_sdk frontend/.console-sdk/index.d.ts
 ```
 
-Map `@a13n/console` to `./.console-sdk/index.d.ts` in `frontend/tsconfig.json` under `compilerOptions.paths`, keep the generated declaration out of source control, and use the template's frontend dev dependencies to resolve the declaration's referenced types. Keep `@a13n/console` external in the bundler. There is no Console SDK npm package or second React runtime in the App bundle. When using newer bridge exports, pin the Service release you build and test against.
+## Report custom metrics
 
-Use `Page`, `Toolbar`, and `ResourceTable` for lists; `DetailPage` and `DetailHeader` for details; and `FormSection`, `FormField`, and `FormActions` for editing. The template shows these patterns together with the host's light and dark themes.
-
-## Package browser assets
-
-Add a `Frontend` declaration to the definition when the package includes a prebuilt ESM asset tree:
+Emit custom business metrics with `opentelemetry-api` under your App's prefix; Service exports them on its `/metrics` endpoint alongside host metrics:
 
 ```python
-from a13n_service.app_definitions import AppDefinition
-from a13n_service.app_plugins import Frontend
+from opentelemetry import metrics
 
-
-def definition() -> AppDefinition:
-    return AppDefinition(
-        app_id="acme.reports",
-        name="Reports",
-        routers=(router,),  # router from the registration example above
-        frontend=Frontend(
-            package="acme_reports", directory="static",
-            entry="index.js", styles=("index.css",),
-        ),
-    )
+meter = metrics.get_meter("acme.reports")
+previews = meter.create_counter("acme.reports.previews", description="Report previews completed")
 ```
 
-Include the entry, styles, relative chunks and fonts in the wheel under `acme_reports/static/`. If the generated directory is ignored by Git, configure the build backend to include it explicitly in both the wheel and source distribution, as the example does with Hatch `force-include`. The entry and declared styles are checked at startup; a missing referenced asset returns 404. Service serves assets from same-origin versioned URLs and keeps extracted resources available until shutdown. The declaration uses bridge version `1` by default. A refresh reads current catalog metadata without caching it; asset bytes are immutable for their package version.
+Keep attribute values bounded—never attach workspace, user, or run IDs, raw URLs, or secrets as metric labels.
 
-Packaged code is public like Console assets. Business API authorization remains independent. Change the package version whenever asset bytes change.
+## Deploy and enable Apps
+
+1. Install the exact same App wheel versions into every `control` and `worker` environment (and run `a13n-service migrate` if auto-migrate is disabled).
+2. Optionally enable Apps on first bootstrap via `service.toml`:
+
+```toml
+[plugins]
+bootstrap_enabled_apps = ["acme.reports"]
+```
+
+3. Enable or disable an installed App for an organization in **Settings → Organization → App plugins** or via API (`GET` the organization ETag, then `PUT /api/v1/organizations/{org_id}/app-plugins/acme.reports` with `If-Match` and `{"enabled": true}`). Accepted runs retain their enabled-App snapshot until completion.
