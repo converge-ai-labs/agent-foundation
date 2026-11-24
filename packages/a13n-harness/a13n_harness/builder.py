@@ -754,6 +754,13 @@ class HarnessBuilder:
                 code="agent_build_failed",
                 details={"definition_id": definition.definition_id},
             ) from exc
+
+        async def resolve_post_run_model(context: ModelResolutionContext[AgentContext], model_id: str) -> Model:
+            if context.deps.model_resolver is None and definition_model is not None:
+                if definition_model.model_name == model_id:
+                    return definition_model
+            return await resolve_model(context, model_id)
+
         return ExecutableAgent(
             definition=definition,
             agent=cast(Agent[AgentContext, BuildOutputT | DeferredToolRequests], agent),
@@ -764,6 +771,7 @@ class HarnessBuilder:
             subagents=subagents,
             definition_reserved_capability_ids=definition_reserved_ids,
             model_inference=resolve_model,
+            post_run_model_resolver=resolve_post_run_model,
             observation=self._observation,
             model_cost=model_cost,
         )

@@ -25,7 +25,7 @@ The package root is a closed primary code-first facade. It exports only the valu
 | Context and identity          | `RunBindings`, `AgentContext`, `AgentIdentityRef`, `AgentInstanceRef`, `AgentInstanceContext`                                                                                                                                                                                                        |
 | Input                         | `NativeRunInput`, `RunInputValue`, `SemanticRunInput`, `ContentItem`, `ContentMetadata`, `RunInputFactory`, `RunPreparationContext`, `DeferredToolResume`                                                                                                                                            |
 | Environment selection         | `EnvironmentEntry`, `EnvironmentSource`, `EnvironmentMount`                                                                                                                                                                                                                                          |
-| Direct plugins                | `AbstractHarnessPlugin`, `PluginSource`, `PluginActivation`, `PluginOrdering`                                                                                                                                                                                                                        |
+| Direct plugins                | `AbstractHarnessPlugin`, `PluginSource`, `PluginActivation`, `PluginOrdering`, `PluginPostRunContext`, `PostRunSession`, `ForkedAgent`                                                                                                                                                               |
 | Model and recovery            | `infer_model`, `RunModelResolver`, `ModelRecoveryPolicy`, `ToolRecoveryMode`                                                                                                                                                                                                                         |
 | Observation                   | `HarnessInstrumentation`, `HarnessObservationContext`, `HarnessTraceContent`, `InputTextEvent`, `InputMediaEvent`                                                                                                                                                                                    |
 | State, execution, and results | `HarnessState`, `StateStore`, `StoredRef`, `HarnessRunStream`, `HarnessLiveStream`, `HarnessRunResult`, `SafeFailure`, `AgentStreamEventProtocol`, `HarnessEvent`, `HarnessExtensionEvent`, `HarnessRunResultEvent`, `HarnessStreamEvent`                                                            |
@@ -332,7 +332,7 @@ class ExecutableAgent[OutputT]:
 
 An immediate input and `input_factory` are mutually exclusive. Omitting both passes no new user input, which permits continuation from imported messages. `deferred_resume` is a separate Harness correlation envelope around native Pydantic requests and results rather than user content. It requires a compatible prior state and current tool surface; after preflight, only its native results are consumed by the first `ModelAttempt`. A supplied `RunUsage` remains the one accumulator shared across all internal `ModelAttempt` values; otherwise the Harness creates a fresh value. Native `UsageLimits` retain their public configuration type. Harness enforces model limits against current attributed accounting at the public Model boundary, including restored scope usage; native tool-call enforcement retains the shared accumulator. Explicit Host baseline usage participates in enforcement but is not added again to the local public summary.
 
-`run()` consumes the canonical stream internally and returns its sole terminal result. `stream()` returns a lazy single-entry async context manager and single-consumer async iterator. `ExecutableAgent` is immutable reusable build output and has no independent async lifecycle: it owns no entered Model, plugin, Capability, client, or child resource. Every resource-bearing lifetime belongs to a `HarnessRunStream` or to the caller that supplied the resource.
+`run()` consumes the canonical stream internally, runs its [post-run session](05-plugin-system.md#post-run-hooks-and-forked-inference) after stream exit when present, and returns the sole terminal result. Hook exceptions propagate to the caller after settlement. `stream()` returns a lazy single-entry async context manager and single-consumer async iterator. `ExecutableAgent` is immutable reusable build output and has no independent async lifecycle: it owns no entered Model, plugin, Capability, client, or child resource. Every resource-bearing lifetime belongs to a `HarnessRunStream` or to the caller that supplied the resource.
 
 ## Stream API
 
@@ -348,6 +348,9 @@ class HarnessRunStream[OutputT](
 
     @property
     def result(self) -> HarnessRunResult[OutputT] | None: ...
+
+    @property
+    def post_run(self) -> PostRunSession | None: ...
 
     @property
     def outcome(self) -> HarnessRunResult[OutputT] | None: ...

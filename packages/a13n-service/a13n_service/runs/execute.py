@@ -19,9 +19,11 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, replace
 from functools import partial
 from typing import Literal
+from uuid import uuid4
 
 import anyio
 from a13n_harness import (
+    AgentContext,
     DeferredToolResume,
     HarnessError,
     HarnessEvent,
@@ -30,6 +32,7 @@ from a13n_harness import (
     HarnessRunStream,
     HarnessState,
     HarnessStreamEvent,
+    PostRunSession,
     RequestContext,
     RunBindings,
     RunConfiguration,
@@ -46,10 +49,12 @@ from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.recovery import normalize_interrupted_history
 from a13n_harness.state import encode_messages
+from a13n_harness.tool_execution import RetainedScope
 from a13n_harness.usage import without_usage
 from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue
 from pydantic_ai.messages import ModelMessage, TextContent, UserContent
+from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,6 +64,7 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
 from a13n_service.resources.agents import stored
+from a13n_service.resources.models.service import resolve_model
 from a13n_service.runs import agent, checkpoints, claim, compactions, deferred, definitions, inbox, inputs, placement
 from a13n_service.runs.accept import advance, delegation
 from a13n_service.runs.admission import CallContext
@@ -112,7 +118,7 @@ from a13n_service.runs.tool_executions.owner import resources
 from a13n_service.runs.tool_executions.recovery import acknowledge as acknowledge_executions
 from a13n_service.runs.tool_executions.recovery import restore as restore_executions
 from a13n_service.runs.tool_executions.state import SharedCodeActState
-from a13n_service.runs.usage import DeltaReporter, UsageBuffer, ingest_late, totals
+from a13n_service.runs.usage import DeltaReporter, UsageBuffer, ingest_late, price_snapshot, totals
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
 logger = get_logger(__name__)
@@ -458,6 +464,45 @@ class _Offers:
             del self.open[entry_id]
 
 
+def _post_seal_model_resolver(
+    runtime: Runtime, call: CallContext, root: ResolvedAgent, models: Mapping[str, Model]
+) -> RunModelResolver:
+    selected = {model.key: model for model in root.models()}
+    resolve = agent.model_resolver(root, models)
+
+    async def authorized(context: ModelResolutionContext[AgentContext], model_id: str) -> Model:
+        model = selected[model_id]
+        async with short_session(runtime.storage) as session:
+            run = await session.get(RunRow, call.run_id)
+            if run is None or run.cancel_requested_at is not None:
+                raise AuthorityRevoked()
+            principal = await authorize_execution(session, runtime.access, run)
+            current = await resolve_model(
+                session,
+                principal,
+                WorkspaceScope(run.organization_id, run.workspace_id),
+                model_id,
+                authority=ExecutionAuthority.model_validate(run.authority),
+            )
+            if (current.id, current.provider.id) != (model.id, model.provider.id):
+                raise AuthorityRevoked()
+            if runtime.admission is not None:
+                await runtime.admission.proceed(
+                    session,
+                    replace(
+                        call,
+                        call_id=f"call_{uuid4().hex}",
+                        source="plugin_post_run",
+                        provider_id=model.provider.id,
+                        model_id=model.id,
+                        price_snapshot=price_snapshot(model),
+                    ),
+                )
+        return await resolve(context, model_id)
+
+    return authorized
+
+
 class _Attempt:
     """One Harness run of the attempt: the display it folds, the input it offered and what it committed."""
 
@@ -528,16 +573,32 @@ class _Attempt:
                     snapshot=self._snapshot(),
                     outcome=Outcome(status="completed"),
                 )
+                await advance(self.runtime, self.lease.thread_id)
                 return
-            result = await self._stream()
-            if result is None:
+            if not self.plan.agent.config.lazy_environment and not await self._prepare_environments():
                 if self.control.stopped.is_set():
                     await self._seal_interrupted(self.control.outcome)
                 else:
                     # Another worker resumes instance preparation under the same durable operation.
                     await release_attempt(self.runtime, self.lease, status="yielded", yield_reason="handoff")
                 return
-            await self._end(result)
+            async with AsyncExitStack() as models_stack:
+                model_scope = RetainedScope(self._open_models())
+                models = await model_scope.ready()
+                models_stack.push_async_callback(model_scope.close)
+                resources_closed = asyncio.Event()
+                result, post_run = await self._stream(models, model_scope, resources_closed)
+                await self._end(result)
+                if post_run is not None:
+                    resolve = _post_seal_model_resolver(self.runtime, self._call_context(), self.plan.agent, models)
+
+                    async def finish() -> None:
+                        await resources_closed.wait()
+                        await post_run.run(model_resolver=resolve)
+
+                    await self.runtime.start_post_run(self.lease.run_id, models_stack, finish)
+            if result.status in {"completed", "suspended"}:
+                await advance(self.runtime, self.lease.thread_id)
         except (LeaseLost, asyncio.CancelledError):
             # Neither seals the run, but its charges so far stay recorded, even while the task is cancelled.
             await self._record_usage()
@@ -562,10 +623,28 @@ class _Attempt:
                 await self._seal_interrupted(outcome)
 
     @asynccontextmanager
-    async def _open_resources(self) -> AsyncIterator[Host]:
-        runtime, lease, root = self.runtime, self.lease, self.plan.agent
+    async def _open_models(self) -> AsyncIterator[dict[str, Model]]:
+        async with AsyncExitStack() as stack:
+            yield await agent.open_models(
+                stack,
+                self.runtime,
+                self.plan.agent,
+                configuration=self.plan.configuration,
+                request_context=self.plan.request_context,
+            )
+
+    @asynccontextmanager
+    async def _open_resources(
+        self,
+        models: Mapping[str, Model],
+        model_scope: RetainedScope[dict[str, Model]],
+        resources_closed: asyncio.Event,
+    ) -> AsyncIterator[Host]:
+        runtime, lease = self.runtime, self.lease
         skill_cache = Cache()
         async with AsyncExitStack() as stack:
+            stack.callback(resources_closed.set)
+            stack.push_async_callback(model_scope.retain())
             environments = await stack.enter_async_context(
                 open_mounts(
                     runtime,
@@ -576,9 +655,6 @@ class _Attempt:
                     configuration=self.plan.configuration,
                     skill_cache=skill_cache,
                 )
-            )
-            models = await agent.open_models(
-                stack, runtime, root, configuration=self.plan.configuration, request_context=self.plan.request_context
             )
             host = await stack.enter_async_context(
                 open_host(
@@ -611,13 +687,18 @@ class _Attempt:
             self.client_recovery = recovery if recovery.mounts else None
             yield host
 
-    async def _stream(self) -> HarnessRunResult | None:
-        """The Harness result, or None when stop or handoff interrupted Service instance preparation."""
+    async def _stream(
+        self,
+        models: dict[str, Model],
+        model_scope: RetainedScope[dict[str, Model]],
+        resources_closed: asyncio.Event,
+    ) -> tuple[HarnessRunResult, PostRunSession | None]:
         runtime, lease = self.runtime, self.lease
         root = self.plan.agent
-        if not root.config.lazy_environment and not await self._prepare_environments():
-            return None
-        async with resources(lease, self._open_resources()) as host, AsyncExitStack() as stack:
+        async with (
+            resources(lease, self._open_resources(models, model_scope, resources_closed)) as host,
+            AsyncExitStack() as stack,
+        ):
             executable = agent.build(
                 root,
                 capabilities=lambda node: (
@@ -715,7 +796,7 @@ class _Attempt:
                         self.incoming = None
         if stream.result is None:
             raise ServiceError("unavailable", "The Harness run ended without a result", {"dependency": "harness"})
-        return stream.result
+        return stream.result, stream.post_run
 
     async def _prepare_environments(self) -> bool:
         """Prepare instances in Service before entering Harness; stop or handoff interrupts the wait."""
@@ -929,8 +1010,6 @@ class _Attempt:
         self.contents.retire([item.id for page in snapshot.pages for item in page.items])
         self.offers.consumed(consumed)
         self.usage.ingested(usage)
-        if outcome is not None and outcome.status in {"completed", "waiting"}:
-            await advance(self.runtime, self.lease.thread_id)
         return steers
 
     async def _offer(self, stream: HarnessRunStream, steers: list[Offered]) -> None:

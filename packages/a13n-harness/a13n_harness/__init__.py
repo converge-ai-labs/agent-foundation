@@ -49,6 +49,7 @@ if TYPE_CHECKING:
         InputTextEvent,
     )
     from a13n_harness.execution import ExecutableAgent, HarnessRunStream
+    from a13n_harness.fork import ForkedAgent, PostRunSession
     from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext, AgentInstanceRef
     from a13n_harness.input import (
         NativeRunInput,
@@ -63,7 +64,13 @@ if TYPE_CHECKING:
         HarnessObservationContext,
         HarnessTraceContent,
     )
-    from a13n_harness.plugins import AbstractHarnessPlugin, PluginActivation, PluginOrdering, PluginSource
+    from a13n_harness.plugins import (
+        AbstractHarnessPlugin,
+        PluginActivation,
+        PluginOrdering,
+        PluginPostRunContext,
+        PluginSource,
+    )
     from a13n_harness.recovery import ContextRecoveryPolicy, ModelRecoveryPolicy, ToolRecoveryMode
     from a13n_harness.result import HarnessRunResult, SafeFailure
     from a13n_harness.spec import (
@@ -148,6 +155,7 @@ _EXPORTS = {
         "ExecutableAgent",
         "HarnessRunStream",
     ),
+    "a13n_harness.fork": ("ForkedAgent", "PostRunSession"),
     "a13n_harness.identity": (
         "AgentIdentityRef",
         "AgentInstanceContext",
@@ -173,6 +181,7 @@ _EXPORTS = {
         "AbstractHarnessPlugin",
         "PluginActivation",
         "PluginOrdering",
+        "PluginPostRunContext",
         "PluginSource",
     ),
     "a13n_harness.recovery": (

@@ -248,6 +248,8 @@ Each executing process runs one claim loop with `worker.slots` local slots and a
 
 Each claimed attempt runs as its own task. One supervisor task renews the leases of all of them and polls cancellation and each principal's authority every `worker.authority_seconds`, independently of the Harness tasks ([05](05-runs.md#claim-heartbeat-and-authority)). An error that escapes an attempt is logged and left to lease expiry and recovery. Shutdown drains the worker as described in [Startup, readiness and shutdown](#startup-readiness-and-shutdown); the supervisor keeps renewing while it drains.
 
+[App plugin post-run hooks](15-app-plugins.md#worker-post-run-hooks) have their own process capacity and timeout. They run after commit outside the Worker attempt slots.
+
 A separate bounded scanner runs every `worker.scan_seconds` for [recoverable native Shells](05-runs.md#native-shell-recovery), independently of Attempt slots and the originating Run's terminal state. It claims relinquished or expired supervision under the Thread execution context, restores the original native resource and retains ordinary owner heartbeats and routing. Control-side owner-loss reconciliation skips these native executions; other expired invocations become `lost`.
 
 ### Worker claim wakeups

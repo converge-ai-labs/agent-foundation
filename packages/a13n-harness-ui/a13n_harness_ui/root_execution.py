@@ -21,7 +21,9 @@ from a13n_harness import (
     HarnessRunResultEvent,
     HarnessRunStream,
     HarnessState,
+    PostRunSession,
     RunBindings,
+    RunModelResolver,
 )
 from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, UserQuestionAnswers
@@ -32,7 +34,7 @@ from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
 from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
 from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
-from a13n_harness.usage import UsageSnapshot
+from a13n_harness.usage import UsageDeltaReporter, UsageReporter, UsageSnapshot
 from a13n_logging import get_logger
 from anyio import CancelScope, get_cancelled_exc_class, to_thread
 from opentelemetry.trace import StatusCode
@@ -72,13 +74,13 @@ from a13n_harness_ui.environment_runtime import EnvironmentFinalization, Environ
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
-from a13n_harness_ui.input_prediction import PredictionCapture, PredictionSnapshot
+from a13n_harness_ui.input_prediction import InputPredictionPlugin
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
 from a13n_harness_ui.memory import MemoryOrganizationRun
 from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.model_accounts.provenance import MainAccountCapability
-from a13n_harness_ui.model_runtime import SubscriptionSource
+from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource
 from a13n_harness_ui.observation import (
     phase,
     record_configuration,
@@ -130,7 +132,25 @@ class RootRunOutcome:
     continuation: RootContinuationSelection
     composition: ObjectRef
     interaction_timeout_seconds: float = 120.0
-    prediction: PredictionSnapshot | None = None
+    post_run: PostRunSession | None = None
+    prediction_resolver: HarnessUiModelResolver | None = None
+    usage_reporter: UsageReporter | UsageDeltaReporter | None = None
+
+    def post_run_model_resolver(self, account: MainAccountSelection | None) -> RunModelResolver | None:
+        if self.prediction_resolver is None:
+            return None
+        resolver = self.prediction_resolver.fresh()
+
+        async def resolve(context, model_id):
+            recipe = resolver.configured_models.get(model_id)
+            prediction_account = (
+                account.account_id if account and recipe and recipe.model_id == account.model_id else None
+            )
+            return await resolver.resolve(
+                model_id, thread_id=context.deps.thread_id, prediction=True, prediction_account=prediction_account
+            )
+
+        return resolve
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,9 +197,11 @@ class RootRunExecutor:
         browsers: HostBrowsers | None = None,
         tool_executions: ToolExecutions | None = None,
         compaction: BackgroundCompaction | None = None,
+        input_prediction: InputPredictionPlugin | None = None,
     ) -> None:
         self._browsers = browsers
         self._compaction = compaction
+        self._input_prediction = input_prediction
         self._tool_executions = tool_executions
         self._store = store
         self._mcp_apps = mcp_apps
@@ -493,7 +515,7 @@ class RootRunExecutor:
 
             is_bot = published.value.root.source_kind == "bot"
             prediction = (
-                PredictionCapture()
+                self._input_prediction
                 if published.value.root.source_kind == "agent"
                 and source.document.input_prediction.enabled
                 and thread_id != BOT_THREAD_ID
@@ -516,6 +538,7 @@ class RootRunExecutor:
                 memory_positions=admission.memory_positions,
                 organization=admission.organization,
                 subagent_operator=self._subagent_operator,
+                root_plugins=(prediction,) if prediction is not None else (),
                 root_capabilities=(
                     MainAccountCapability(published.value.root.model.model_id, on_main_account),
                     *(
@@ -534,7 +557,6 @@ class RootRunExecutor:
                         if self._restart is not None
                         else None,
                     ),
-                    *((prediction,) if prediction is not None else ()),
                     _ToolPresentationCapability(retain_tool_presentation),
                     *(
                         (
@@ -1007,17 +1029,9 @@ class RootRunExecutor:
             continuation=continuation,
             composition=published.reference,
             interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
-            prediction=(
-                PredictionSnapshot(
-                    prediction.prefix, reconstructed.model_resolver, usage_reporter, reconstructed.pricing
-                )
-                if prediction is not None
-                and prediction.prefix is not None
-                and reconstructed.pricing is not None
-                and prediction.prefix.model_id in reconstructed.model_resolver.configured_models
-                and result.deferred is None
-                else None
-            ),
+            post_run=stream.post_run if stream is not None else None,
+            prediction_resolver=reconstructed.model_resolver if prediction is not None else None,
+            usage_reporter=usage_reporter,
         )
 
     @asynccontextmanager

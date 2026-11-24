@@ -82,6 +82,14 @@ An installed Harness factory can export named native output handlers. A Run expo
 
 A new resume successor can encounter an unfinished target from an App now disabled. Harness validates the restored exact deferred target against its current dispatcher before effects and reports `deferred_surface_mismatch`; Service preserves that failure code. Disabling never re-enables a historical target or erases recorded results.
 
+## Worker post-run hooks
+
+An App can capture terminal environment data in `wrap_run`, then generate and publish an artifact in the same run-bound plugin's [post-run hook](../a13n-harness/05-plugin-system.md#post-run-hooks-and-forked-inference). The Worker hands off the session only after its own seal transaction commits. Heavy Run resources close before the hook starts. The model clients stay open through the handoff, so replay can reuse the connection pool and Thread affinity header. The detached hook owns neither the Attempt slot nor the Thread lease; it may finish after a successor starts.
+
+The process bounds concurrent sessions with `worker.post_run_concurrency` and elapsed hook time with `worker.post_run_seconds`. Excess sessions are dropped and counted. Shutdown cancels outstanding work. The hook is best effort, has no recovery or retry, and cannot change the sealed result. Apps own publication and any reconciliation required for their business records. Use a Run seal subscription when a separate control-role consumer needs a hint without in-process plugin state.
+
+Each forked request rechecks the original principal's execution authority, the Workspace, pending cancellation, the selected Model and Provider, and any configured paid-dispatch policy. SQL closes before provider I/O. The request does not reserve `Run.max_usage.requests`, write native Run or Session usage records, or participate in sealed Run totals.
+
 ## App SDK
 
 Trusted installed Apps use `a13n_service.app_sdk` as Service's supported in-process integration boundary. The SDK exposes native value models and delegates to Service's existing lifecycles; ORM tables, runtime internals and private helpers are not part of the compatibility contract. There is no new HTTP surface. Apps pin a compatible Service version and keep authority for their own product resources at their entry points.

@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal, cast
 
+from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import PluginError
+from a13n_harness.fork import ForkedAgent
+from a13n_harness.identity import AgentInstanceContext
 from a13n_harness.input import SemanticRunInput
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
@@ -67,6 +70,19 @@ class PluginRunNext[OutputT]:
         return await self._factory(exchange)
 
 
+@dataclass(frozen=True, slots=True)
+class PluginPostRunContext:
+    """Settled run facts and plugin scratch, without live run resources."""
+
+    thread_id: str
+    run_id: str
+    instance: AgentInstanceContext
+    metadata: Mapping[str, JsonValue]
+    result: HarnessRunResult[Any]
+    shared: PluginSharedState
+    agent: ForkedAgent
+
+
 class AbstractHarnessPlugin(ABC):
     """Trusted code-first extension around the whole Harness run boundary."""
 
@@ -99,6 +115,10 @@ class AbstractHarnessPlugin(ABC):
     ) -> HarnessRunResult[Any]:
         """Wrap execution and its result; emit observations through context.events."""
         return await call_next(exchange)
+
+    async def post_run(self, context: PluginPostRunContext) -> None:
+        """Perform optional follow-up after the Host settles the run."""
+        return None
 
 
 @dataclass(frozen=True, slots=True)
