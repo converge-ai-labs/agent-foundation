@@ -35,7 +35,7 @@ Replace the endpoints, labels and tokens for your backend, then select the retur
 
 Credentials are encrypted and write-only; responses report their presence. On update, omit a credential to keep it, send `null` to clear it, or supply an object to replace it. Changing a destination requires explicitly replacing or clearing its credential. Use [conditional updates](http.md#concurrency-control). Unbind all environments and Devices before deleting a source.
 
-Scope read credentials at the backend to the workspace's permitted data. Scope labels filter built-in queries; arbitrary PromQL requires workspace administration and can query beyond those labels. Monitoring endpoints are for people and applications, outside agent tools and MCP. Backend errors remain visible rather than switching to Local Cache.
+Scope read credentials at the backend to the workspace's permitted data. Scope labels filter built-in queries; arbitrary PromQL requires workspace administration and can query beyond those labels. Monitoring endpoints are for people and applications, outside agent tools and MCP. Backend query errors surface directly in the UI without falling back to Local Cache.
 
 > [!WARNING]
 > Native export delivers its write credential to the target process. Users and agents that execute there can read and reuse it. Use receiver-scoped, write-only credentials and trust those executors within that ingestion scope. Labels cannot prove sample identity. Choose pull or proxy if receiver credentials must stay outside the target.
@@ -50,7 +50,7 @@ An operator can offer a pull/query preset to an explicit list of workspaces. In 
 
 If loading fails, retry or choose **Configure manually**. Reopen the form if its public preset changed. Credential inheritance saves an encrypted server-side snapshot; the token stays out of the browser. Later deployment rotation or preset removal leaves saved sources unchanged, so replace their credentials explicitly.
 
-API clients read `GET /api/v1/metrics-data-sources/deployment-preset`, then create with its `deployment_preset_revision` and, when desired, `use_deployment_query_credentials: true`. Inheritance and explicit query credentials are mutually exclusive. Discovery requires administration and returns `null` when monitoring, collector configuration or workspace eligibility is missing. The backend must enforce data access for all allowed workspaces; the allowlist is not backend tenant isolation.
+API clients read `GET /api/v1/metrics-data-sources/deployment-preset`, then create with its `deployment_preset_revision` and, when desired, `use_deployment_query_credentials: true`. Inheritance and explicit query credentials are mutually exclusive. Discovery requires administration and returns `null` when monitoring, collector configuration or workspace eligibility is missing. The preset allowlist controls which workspaces can discover the preset; enforce actual metric query isolation at the metrics backend.
 
 Operators configure the preset in [Service settings](configuration.md#environment-monitoring) or the [Helm deployment](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors).
 

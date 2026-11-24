@@ -20,7 +20,7 @@ For instance-wide WebUI accounts, use [Connectors](connectors.md). Concrete serv
 
 Use an existing [Agent](agents-and-subagents.md#create-an-agent-from-files). Run `a13n-harness-ui config path` to find its configuration tree. Edit the appropriate file under `agents/`, beside the root YAML shown as `configuration_path`.
 
-1. Add the needed entry to the Agent's `capabilities` list. Preserve unrelated entries, and edit an existing entry instead of adding the same Capability twice.
+1. Add the needed entry to the Agent's `capabilities` list, preserving unrelated entries and updating any existing entry for the same Capability in place.
 2. Put that Capability's settings under its own `configuration` mapping.
 3. Run `a13n-harness-ui config validate`. Inspect `capability_warnings` as well as `valid`. An unavailable or invalid ordinary Capability can be skipped while the rest of the configuration remains usable.
 4. Start a new conversation with the Agent and ask it to use the feature. Inspect the actual tool result. After validating the configuration, run a test prompt that calls the tool to verify connectivity and Model support.
@@ -127,7 +127,7 @@ These resources select installed Python integrations. Before writing a file, ins
 3. Run `a13n-harness-ui config validate`; repair missing factory or invalid configuration errors.
 4. Start a new Thread with that selection and test the integration's documented behavior.
 
-This is a **template**, not a built-in memory plugin. Replace `vendor.memory` and its configuration with values from your installed integration:
+Use the following template by replacing `vendor.memory` and `configuration` with the factory key and settings from your installed integration:
 
 ```yaml title="extensions/memory.yaml — template; replace factory key"
 schema_version: "1"
@@ -146,4 +146,4 @@ For this resource, merge `harness_plugins: [plugin-memory]` into the Agent, pres
 | `environment_run_extension` | `extension-`   | `extension_key`               | `configuration`, default `{}`                                        | Project or root `defaults.environment_run_extensions` for new Threads |
 | `environment_profile`       | `environment-` | `provider_key`, `adapter_key` | `provider_configuration`, `adapter_configuration`, each default `{}` | Environment selection                                                 |
 
-All three also require `schema_version: "1"`, `kind`, `id`, and `name`. Use the integration's credential-reference fields rather than storing secrets in YAML. See [custom Environment profiles](environments-and-projects.md#custom-environment-profiles) for a provider configuration workflow.
+All three also require `schema_version: "1"`, `kind`, `id`, and `name`. Reference secrets through the integration's credential-reference fields so YAML files stay free of plaintext keys. See [custom Environment profiles](environments-and-projects.md#custom-environment-profiles) for a provider configuration workflow.

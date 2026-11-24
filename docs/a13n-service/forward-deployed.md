@@ -6,7 +6,7 @@ description: "Deliver an end-to-end self-hosted Service deployment in a customer
 
 Deliver one customer workflow end to end before expanding the platform. For example, build an agent that reads project notes and proposes follow-up work, then let customer staff test the result and approve any changes to their systems. This guide walks through deployment, integration, acceptance and handover.
 
-Service runs Console, the HTTP API, workers and Service-managed storage on the customer's infrastructure. Choose model, tool, trace and record-memory backends that meet the customer's data requirements: those backends receive the data sent to them. If the customer wants agent execution inside an existing application rather than a managed platform, embed [Harness](../a13n-harness/index.md).
+Service runs Console, the HTTP API, workers and Service-managed storage on the customer's infrastructure. Choose model, tool, trace and record-memory backends that meet the customer's data requirements: those backends receive the data sent to them. When the customer wants in-process agent execution inside an existing Python application, embed [Harness](../a13n-harness/index.md) directly.
 
 ```mermaid
 flowchart TB
@@ -62,7 +62,7 @@ Test one harmless operation with the identity that will run the workflow, such a
 
 1. Open [Agent Composer](agent-composer.md) and describe the input and expected result: “Read these project notes and propose follow-up actions with owners. Ask before creating tasks in our system.”
 2. Review the proposed instructions, selected model and tools. Approve the resource writes that match the agreed task.
-3. Have customer staff [try the saved agent in Console](use-platform.md) with representative notes. Check that the output identifies real actions and preserves unknown owners instead of inventing them.
+3. Have customer staff [try the saved agent in Console](use-platform.md) with representative notes. Check that the output identifies real actions and marks unassigned items as unknown.
 4. Adjust the agent and repeat the same sample. Record the accepted agent revision and test result; each run identifies its saved revision.
 
 When an application will call the agent, repeat the accepted workflow through its own credentials using [Connect your application](connect-application.md).

@@ -6,7 +6,7 @@ import json
 from collections import Counter, OrderedDict
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from time import monotonic
@@ -30,11 +30,11 @@ from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.goal import GoalView
-from a13n_harness_ui.input_prediction import PredictionSnapshot
 from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.memory import MemoryOrganizationRun
 from a13n_harness_ui.model_accounts.models import MainAccountSelection
+from a13n_harness_ui.notification_origin import notification_origin
 from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.restart import GracefulRestart
@@ -138,7 +138,6 @@ class RootRunCoordinator:
         on_human_admitted: Callable[[RootRunAdmission, RootOperationView], Awaitable[None]] | None = None,
         restart_coordinator: GracefulRestart | None = None,
         on_input_admitted: Callable[[str | None], None] | None = None,
-        generate_prediction: Callable[[str, str, str, PredictionSnapshot], Awaitable[None]] | None = None,
         tool_executions: ToolExecutions | None = None,
         browser_handback: BrowserHandback | None = None,
     ) -> None:
@@ -149,7 +148,6 @@ class RootRunCoordinator:
         self._observation = observation or UiObservation()
         self._restart = restart_coordinator
         self._executor = executor
-        self._generate_prediction = generate_prediction
         self._predictions: dict[str, CancelScope] = {}
         self._touch_thread = touch_thread
         self._save_execution = save_execution
@@ -199,16 +197,26 @@ class RootRunCoordinator:
         if (scope := self._predictions.pop(thread_id, None)) is not None:
             scope.cancel()
 
-    async def _run_prediction(
-        self, scope: CancelScope, thread_id: str, execution_id: str, continuation_id: str, snapshot: PredictionSnapshot
+    async def _run_post_run(
+        self,
+        scope: CancelScope,
+        thread_id: str,
+        execution_id: str,
+        continuation_id: str | None,
+        outcome: RootRunOutcome,
+        account: MainAccountSelection | None,
     ) -> None:
-        assert self._generate_prediction is not None
+        assert outcome.post_run is not None
         try:
             with scope:
                 if not scope.cancel_called:
-                    await self._generate_prediction(thread_id, execution_id, continuation_id, snapshot)
+                    await outcome.post_run.run(
+                        model_resolver=outcome.post_run_model_resolver(account),
+                        usage_reporter=outcome.usage_reporter,
+                        metadata={"continuation_id": continuation_id, "execution_id": execution_id},
+                    )
         except Exception as exc:
-            get_logger(__name__).info("Input prediction unavailable", extra={"error_type": type(exc).__name__})
+            get_logger(__name__).info("Root post-run hooks failed", extra={"error_type": type(exc).__name__})
         finally:
             if self._predictions.get(thread_id) is scope:
                 del self._predictions[thread_id]
@@ -681,9 +689,12 @@ class RootRunCoordinator:
         operation: _RootOperation,
         admission: RootRunAdmission,
     ) -> None:
-        with self._observation.operation(
-            "root", thread_id=operation.receipt.thread_id, operation_id=operation.receipt.receipt_id
-        ) as span:
+        with (
+            notification_origin(admission.published.value.origin_browser_id),
+            self._observation.operation(
+                "root", thread_id=operation.receipt.thread_id, operation_id=operation.receipt.receipt_id
+            ) as span,
+        ):
             record_input(
                 admission.prompt if admission.response is None else admission.response,
                 kind="prompt" if admission.response is None else "deferred_response",
@@ -842,27 +853,21 @@ class RootRunCoordinator:
                 self._active_by_thread.pop(thread_id, None)
             if (
                 self._accepting
-                and self._generate_prediction is not None
                 and self._task_group is not None
                 and not operation.observation_only
-                and operation.status is RootOperationStatus.completed
                 and outcome is not None
-                and outcome.prediction is not None
-                and (reference := outcome.continuation.reference) is not None
+                and outcome.post_run is not None
             ):
-                prediction = outcome.prediction
-                if (account := operation.main_account) is not None and (
-                    prediction.resolver.configured_models[prediction.prefix.model_id].model_id == account.model_id
-                ):
-                    prediction = replace(prediction, account_id=account.account_id)
+                reference = outcome.continuation.reference
                 scope = self._predictions[thread_id] = CancelScope()
                 self._task_group.start_soon(
-                    self._run_prediction,
+                    self._run_post_run,
                     scope,
                     thread_id,
                     operation.receipt.receipt_id,
-                    reference.logical_digest,
-                    prediction,
+                    reference.logical_digest if reference is not None else None,
+                    outcome,
+                    operation.main_account,
                 )
             operation.done.set()
             if self._tool_executions is not None:

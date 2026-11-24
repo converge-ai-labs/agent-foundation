@@ -25,7 +25,7 @@ Key precedence is `--apikey`, `A13N_HARNESS_UI_API_KEY`, then a fresh process ke
 
 2. Configure TLS termination and WebSocket upgrades. Preserve the external `Host` (including port) and browser `Origin`; forward the HTTPS scheme as `X-Forwarded-Proto: https`.
 
-3. If the proxy peer is not trusted loopback `127.0.0.1`, set `FORWARDED_ALLOW_IPS` in the WebUI process environment to the proxy IPs/networks as seen by that process/container. Have the proxy overwrite client-supplied forwarding headers.
+3. When the proxy connects from an address other than loopback `127.0.0.1`, set `FORWARDED_ALLOW_IPS` in the WebUI process environment to the proxy IPs/networks as seen by that process/container. Have the proxy overwrite client-supplied forwarding headers.
 
 4. Restart WebUI, open the external address, log in, and check a conversation and interactive connection.
 
@@ -42,7 +42,7 @@ Device pairing returns root-relative paths resolved against the paired Host URL,
 
 Graceful shutdown saves root/child checkpoints, finalizes Environments, and records a restart handoff for each complete task family. One slow family does not block unrelated saved work. The next start consumes the handoff once and continues compatible work in new Runs, retaining completed tool results without resending prompts.
 
-`shutdown_timeout_seconds` (default 60 seconds) is one shared App grace budget for admission, restart boundaries, and active work. Each phase uses the remaining time rather than starting another timeout. Press Ctrl+C again to end the remaining grace period and request cancellation sooner. This does not skip task cleanup or storage finalization.
+`shutdown_timeout_seconds` (default 60 seconds) is one shared App grace budget for admission, restart boundaries, and active work. Each phase draws from the remaining time in that shared budget. Press Ctrl+C again to end the remaining grace period and request cancellation sooner while still completing task cleanup and storage finalization.
 
 The grace budget does not bound total process exit. A root still waiting for its model response can retain its last saved request checkpoint after cancellation joins. Unfinished tools or failed checkpoint/Environment finalization exclude that task family. Cancellation and cleanup still take time; trusted Python code that ignores cancellation can delay exit. Use an external process supervisor if you need a hard termination deadline. Let the old process finish before starting its replacement.
 
@@ -54,15 +54,15 @@ Inspect saved history/logs before retrying uncertain effects or failed reconstru
 
 Use `process.log_level` and `process.log_format` to control logs. INFO reports normal API activity and shutdown phases with elapsed time and remaining App grace; DEBUG adds assets, health probes, and cleanup details. API entries record route templates, status, elapsed time, codes, and generated IDs, excluding bodies, keys, query values, and native paths.
 
-| Observation                                                            | Action                                                                                   |
-| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| **Stopping WebUI**                                                     | Wait for cleanup; **WebUI stopped** confirms completion                                  |
-| Slow shutdown                                                          | Inspect the reported App phase; press Ctrl+C again to end grace, not abandon cleanup     |
-| **Connection interrupted**                                             | Let reconnect run or choose **Retry now**; restart the server first if stopped           |
-| `thread_history_continuation_changed` / `thread_continuation_conflict` | Refresh the conversation                                                                 |
-| `object_payload_incompatible`                                          | Inspect object/version/validation details in storage warnings; retain the data directory |
+| Observation                                                            | Action                                                                                         |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Stopping WebUI**                                                     | Wait for cleanup; **WebUI stopped** confirms completion                                        |
+| Slow shutdown                                                          | Inspect the reported App phase; press Ctrl+C again to end grace early while completing cleanup |
+| **Connection interrupted**                                             | Let reconnect run or choose **Retry now**; restart the server first if stopped                 |
+| `thread_history_continuation_changed` / `thread_continuation_conflict` | Refresh the conversation                                                                       |
+| `object_payload_incompatible`                                          | Inspect object/version/validation details in storage warnings; retain the data directory       |
 
-Reconnect refreshes observations, not failed saves or submissions. Browser disconnection does not stop Runs or terminals. WARNING log level hides normal progress.
+Reconnect refreshes live observations; review and resubmit any failed saves or inputs explicitly. Browser disconnection leaves Runs and terminals running. WARNING log level hides normal progress.
 
 ## Listener and application lifetime
 
@@ -72,7 +72,7 @@ Compatible TUI/WebUI processes can use one local database across package upgrade
 
 ## Container and installed assets
 
-Install the Python distribution on the workbench Host. Its wheel/sdist includes WebUI assets, so end users need no Node.js or frontend checkout. Harness UI publishes no official container image; a custom deployment must pin the distribution and configure listener, authentication, and persistent mounts. `a13n-sandbox` is an Agent execution image, not the WebUI server.
+Install the Python distribution on the workbench Host. Its wheel/sdist bundles compiled WebUI assets, so end users need no Node.js or frontend checkout. Harness UI is distributed as a Python package; custom container deployments should pin the package version and configure listener, authentication, and persistent mounts (the published `a13n-sandbox` image serves Envd Agent execution sandboxes).
 
 For repository development, `make webui` builds/installs assets and starts a foreground server with isolated config/data in `var/harness-ui/`. It prints a generated-key login link when no key was supplied. Use `WEBUI_ARGS` for server options and `CLI_ARGS` for global options:
 

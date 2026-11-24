@@ -114,7 +114,7 @@ This label describes the deployment, independently of execution Environment prof
 3. Follow `harness.run` and its model/tool spans for timings, recovery, usage, and cost. Request-level model fields show changes made by a Model resolver.
 4. For delegated work, filter by `root_thread_id`. Use `parent_thread_id`, `subagent_role`, `execution_id`, and `segment_index` to identify a child segment. A resumed child keeps its Thread/session ID and adds `resumed_from_execution_id`, but starts another trace.
 
-A child's dispatch Link connects valid live trace context. Durable execution lineage can outlive that context, so a resumed child need not link to a previous process's trace. Normal cancellation remains cancellation rather than an error.
+A child's dispatch Link connects valid live trace context. Durable execution lineage can outlive that context, so a resumed child starts a fresh trace when no live parent context remains. Normal cancellation is recorded as cancellation without marking the span as an error.
 
 ### Host phases and Skill inspection
 
@@ -138,6 +138,6 @@ Choose the content policy before exporting real conversations:
 | `standard`                   | Current submission and final output on operation roots, plus native model/tool content |
 | `full`                       | Standard content plus upstream binary and request-parameter capture                    |
 
-Operation-root input and output are each capped at 8 KiB. Inspect `a13n.input.capture`, `a13n.output.capture`, and truncation flags for missing or partial values. Roots describe native media without copying binaries, full history, credentials, raw exceptions, or checkpoint bodies. Upstream model/tool spans have their own information boundary: `none` is not a complete scrubber for exceptions, Agent descriptions, metadata, or tool schemas. Review [Harness tracing](../a13n-harness/observation.md) when choosing an export policy.
+Operation-root input and output are each capped at 8 KiB. Inspect `a13n.input.capture`, `a13n.output.capture`, and truncation flags for missing or partial values. Roots describe native media without copying binaries, full history, credentials, raw exceptions, or checkpoint bodies. Upstream model/tool spans apply their own capture rules (even under `none`, exceptions, Agent descriptions, metadata, and tool schemas can still appear). Review [Harness tracing](../a13n-harness/observation.md) when choosing an export policy.
 
-At shutdown, the App drains its own exporter after active work and collaborators close, off the event loop and within its waiting budget. Export is best effort. Use the saved Thread state—not a trace or its presence in a backend—to resume work.
+At shutdown, the App drains its own exporter after active work and collaborators close, off the event loop and within its waiting budget. Export is best effort; saved Thread state in local storage remains the source of truth for resuming work.

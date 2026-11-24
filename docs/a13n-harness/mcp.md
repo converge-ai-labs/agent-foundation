@@ -58,7 +58,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Scope any shared client to a single identity and header set. Checkpoints store conversation history, not live MCP connections.
+Scope any shared client to a single identity and header set. Checkpoints store conversation history only; supply live MCP connections on each Run.
 
 ## Declarative `MCP` and execution modes
 
@@ -126,5 +126,5 @@ For custom logic (such as async tenant or short-lived token lookups), pass a syn
 
 ## Startup isolation and large tool catalogs
 
-- **Optional servers & init retries:** Wrap initialization in `MCPServer(id=..., prepare=..., on_error="skip")` with `InitializationRetryClient` (retries transient init errors up to 3 times with 1s/2s backoff; `skip` omits a failed server for that Run instead of failing the Run).
+- **Optional servers & init retries:** Wrap initialization in `MCPServer(id=..., prepare=..., on_error="skip")` with `InitializationRetryClient` (retries transient init errors up to 3 times with 1s/2s backoff; `skip` omits a failed server for that Run while keeping other tools active).
 - **Tool search:** For servers with many tools, pass the local `MCP` or `ContextualMCP` instance directly as a [ToolSearchGroup source](tool-search.md#group-a-run-bound-mcp-capability) (`native=False, local=True`) so schemas load on demand while preserving per-Run headers.

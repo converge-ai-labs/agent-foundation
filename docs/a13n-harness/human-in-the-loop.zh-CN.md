@@ -87,7 +87,7 @@ asyncio.run(main())
 
 ### 回答（`UserQuestionAnswers`）
 
-`answers` 的键必须是归一化后的完整**问题文本**（而非 `header` 或调用 ID），值为所选 `label`、标签数组（`multiSelect: true` 时）或自由文本，也可提供顶层 `response`：
+`answers` 以每个问题归一化后的完整 `question` 字符串（对应 `questions[i].question`）为键，值为所选 `label`、标签数组（`multiSelect: true` 时）或自由文本，也可提供顶层 `response`：
 
 ```json
 {
@@ -98,7 +98,7 @@ asyncio.run(main())
 }
 ```
 
-若用户拒绝或超时，请返回明确的工具失败（嵌入式 Harness 传入 `ToolFailed`，Service 传入 `"status": "failed"`），不要传空对象 `{}`。
+若用户拒绝或超时，请返回明确的工具失败（嵌入式 Harness 传入 `ToolFailed`，Service 传入 `"status": "failed"`），让模型获知拒绝状态。
 
 ## 在 Service 中恢复等待中的运行
 

@@ -2622,6 +2622,20 @@
           "title": "Drain Seconds",
           "type": "number"
         },
+        "post_run_concurrency": {
+          "default": 16,
+          "maximum": 1024,
+          "minimum": 1,
+          "title": "Post Run Concurrency",
+          "type": "integer"
+        },
+        "post_run_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Post Run Seconds",
+          "type": "number"
+        },
         "delivery_count": {
           "default": 8,
           "maximum": 128,

@@ -783,6 +783,59 @@ it("persists Bot-only scope, filters ordinary notices and keeps Bot attention", 
   expect(await screen.findByText("Task failed - UI polish")).toBeTruthy();
 });
 
+it("filters by originating browser within a shared conversation and consumes suppressed notices", async () => {
+  const own = "browser_" + "a".repeat(32);
+  writePreference("notifications.browser-id", own);
+  mount("/settings/notifications");
+  fireEvent.click(screen.getByRole("button", { name: "My runs only" }));
+  for (const origin of [null, "browser_" + "b".repeat(32)]) {
+    event = notice("foreign-" + origin, "failed");
+    event.notice!.origin_browser_id = origin;
+    fireEvent.click(screen.getByText("Emit"));
+    expect(screen.queryByText("Task failed - UI polish")).toBeNull();
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Entire workspace" }));
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.queryByText("Task failed - UI polish")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "My runs only" }));
+  event = notice("own", "failed");
+  event.notice!.origin_browser_id = own;
+  fireEvent.click(screen.getByText("Emit"));
+  expect(await screen.findByText("Task failed - UI polish")).toBeTruthy();
+});
+
+it("combines Inbox-only notifications with the originating browser", async () => {
+  const own = "browser_" + "a".repeat(32);
+  writePreference("notifications.browser-id", own);
+  writePreference("notifications.audience", "mine");
+  writePreference("notifications.scope", "inbox");
+  mount("/settings/notifications");
+  event = notice("own");
+  event.notice!.origin_browser_id = own;
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.queryByText("Task completed - UI polish")).toBeNull();
+  for (const [itemId, origin] of [
+    ["external", null],
+    ["mine", own],
+  ] as const) {
+    event = {
+      ...notice(),
+      kind: "inbox",
+      notice: null,
+      inbox: {
+        item_id: itemId,
+        origin_browser_id: origin,
+        kind: "result",
+        title: itemId,
+        brief: "Inbox " + itemId,
+      },
+    };
+    fireEvent.click(screen.getByText("Emit"));
+  }
+  expect(await screen.findByText("Inbox mine")).toBeTruthy();
+  expect(screen.queryByText("Inbox external")).toBeNull();
+});
+
 it("restores scope across reload and synchronizes existing push on scope and language changes", async () => {
   permission = "granted";
   writePreference("notifications.scope", "bot");

@@ -125,7 +125,9 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
 
     async def capture_project(**kwargs):
         admission = await capture(**kwargs)
-        admission.published.value = SimpleNamespace(project_id="project-captured")
+        admission.published.value = SimpleNamespace(
+            project_id="project-captured", origin_browser_id="browser_" + "a" * 32
+        )
         return admission
 
     async def on_settled(project_id, operation):
@@ -163,6 +165,7 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
                             break
                 assert event.kind == "root_operation"
                 assert event.thread_id == "thread_test"
+                assert event.notice.origin_browser_id == "browser_" + "a" * 32
                 assert event.notice.receipt_id == receipt.receipt_id
                 assert event.notice.status == operation.status
                 assert operation.completed_at is not None and operation.completed_at <= datetime.now(UTC)

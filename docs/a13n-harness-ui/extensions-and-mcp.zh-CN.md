@@ -23,7 +23,7 @@ description: 对比 Skills、Content Plugins、MCP 服务端、Connectors 与 Py
 1. 将所需条目加入 Agent 的 `capabilities` 列表。保留无关条目；已有同名 Capability 时编辑原条目，不要重复添加。
 2. 将该 Capability 的设置放在它自己的 `configuration` 映射下。
 3. 运行 `a13n-harness-ui config validate`。除 `valid` 外，也检查 `capability_warnings`。不可用或配置无效的普通 Capability 可能被跳过，而其余配置仍可使用。
-4. 用该 Agent 启动新对话，让它使用该功能，并检查实际工具结果。配置通过检查并不等于连接可用或 Model 支持该工具。
+4. 用该 Agent 启动新对话，发起一次调用该功能的测试提示并核对工具返回结果，以验证远端连通性与 Model 工具支持。
 
 已安装的 Capability 定义自己的设置 schema。YAML 通过目录键选择实现，不负责安装 Python 代码或导入任意模块。普通选择器不列出权限和审查 Capability；shell 审查应使用下方根级快捷配置。已有的显式权限策略仍受支持。
 
@@ -127,7 +127,7 @@ Content Plugin 打包可编辑的 Skill 和 Markdown subagent。[安装内容包
 3. 运行 `a13n-harness-ui config validate`，修复缺失工厂或无效配置错误。
 4. 用该选择启动新 Thread，测试集成文档描述的行为。
 
-以下是**模板**，不是内置记忆插件。请将 `vendor.memory` 及其配置替换为已安装集成提供的值：
+在下方配置模板中，将占位符 `vendor.memory` 及 `configuration` 替换为已安装集成包提供的工厂键名与参数：
 
 ```yaml title="extensions/memory.yaml — template; replace factory key"
 schema_version: "1"

@@ -3,9 +3,9 @@ title: Skills 与 Content Plugins
 description: 使用模块化操作规程（Skills）扩展 Agent 认知，并通过基于 Git 的 Content Plugin 轻松分发团队专属技能与子智能体矩阵。
 ---
 
-\*\*Skill（技能）\*\*是一种以目录为单位打包的模块化操作规范，核心入口为其中的 `SKILL.md` 指令文件。与将成百上千条业务规则一股脑硬塞进 Agent 基础系统提示词的粗暴做法不同，Skills 采用即时检索（JIT）机制：模型先浏览技能清单中的简短描述，仅在真正遇到匹配任务时，才会动态读取 `SKILL.md` 完整正文。
+**Skill**（技能）以包含 `SKILL.md` 指令文件的目录为单位封装可复用的操作流程。Skills 采用按需加载机制：模型先浏览技能清单中的简短描述，遇到匹配任务时才动态读取 `SKILL.md` 完整正文。
 
-\*\*Content Plugin（内容插件）\*\*则进一步让您可以将多项 Skills 以及用 Markdown 编写的专业子智能体（Subagents）打包进标准的 Git 仓库中，方便全团队一键安装与跨项目分发。
+**Content Plugin**（内容插件）则进一步支持将多项 Skills 以及用 Markdown 编写的专业子智能体（Subagents）打包进标准的 Git 仓库中，方便全团队一键安装与跨项目分发。
 
 ## 开启 Skill
 

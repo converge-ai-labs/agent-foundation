@@ -74,7 +74,7 @@ Update the native Envd installation without opening the App. Stop daemons using 
 
 | Option              | Default | Purpose                                                                                  |
 | ------------------- | ------- | ---------------------------------------------------------------------------------------- |
-| `--executable PATH` | Unset   | Update a standalone executable instead of the configured runtime.                        |
+| `--executable PATH` | Unset   | Update the standalone executable at `PATH`.                                              |
 | `--version VERSION` | Unset   | Choose an exact native version; managed installations stay pinned to the client version. |
 | `--check`           | Off     | Inspect the update without installing.                                                   |
 | `--force`           | Off     | Reinstall the selected version; cannot be combined with `--check`.                       |
@@ -123,7 +123,7 @@ Print `configuration_path` and `data_root`. Use the first value to locate the ro
 
 ### `config validate`
 
-Validate the selected source tree and report configuration errors or Capability warnings. Accepts `--format text|json`. This checks configuration, not provider or MCP connectivity.
+Validate the selected source tree and report local YAML/schema errors or Capability warnings (`--format text|json`). Send a test prompt afterward to verify provider or MCP connectivity.
 
 ### `config show`
 
@@ -150,7 +150,7 @@ a13n-harness-ui import subagents --product codex --scope project --project-root 
 | `--apply`             | Off       | Write every ready candidate.                  |
 | `--format text\|json` | `text`    | Choose the output format.                     |
 
-Importing creates files; it does not enroll the imports in every Agent. Follow [Agent configuration](agents-and-subagents.md) to select them.
+Importing writes the converted subagent files; select the ones you want in [Agent configuration](agents-and-subagents.md).
 
 ### `plugin install`
 
@@ -244,7 +244,7 @@ ChatGPT uses callback-URL paste for the default flow. Local browser callbacks ar
 
 ## Slash commands
 
-Type these in the TUI composer. Use Tab to complete arguments, `/help` or `/?` for help, and `/help COMMAND` for one command. Setup and login run in your shell; pending decisions use the TUI's typed selectors rather than `/approve`, `/deny`, or `/result`.
+Type these in the TUI composer. Use Tab to complete arguments, `/help` or `/?` for help, and `/help COMMAND` for one command. Run setup and login from your shell, and answer pending approvals or questions through the TUI's interactive prompt selectors.
 
 The tables group commands by task. “Busy” means the parser allows the command during work; the target must still be available. Enter while busy sends draft text and attachments as steering.
 
@@ -284,14 +284,14 @@ The tables group commands by task. “Busy” means the parser allows the comman
 
 `/thinking` and completion use the selected Model's supported choices. `default` inherits configured settings. Depending on the adapter, explicit levels can include `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. Unknown models offer only `default` with an explanation; unsupported levels are rejected.
 
-`/environment` accepts `full-control`, `envd`, `desktop`, or `sandbox` where supported. `envd` and `desktop` prepare the runtime before changing the Thread's next-turn profile; failure preserves the selection. This changes the current Thread, not the new-conversation default.
+`/environment` accepts `full-control`, `envd`, `desktop`, or `sandbox` where supported. `envd` and `desktop` prepare the runtime before updating the current Thread's next-turn profile (leaving global new-conversation defaults unchanged); failure preserves the previous selection.
 
 ### Status and presentation
 
 | Command                                                                 | Busy | Use                                                                                    |
 | ----------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------- |
 | `/help [command]`, `/?`                                                 | Yes  | Show help and shortcuts.                                                               |
-| `/mode [concise\|detailed]`                                             | Yes  | Change output detail, not execution.                                                   |
+| `/mode [concise\|detailed]`                                             | Yes  | Switch TUI display verbosity (`concise` or `detailed`).                                |
 | `/theme [auto\|dark\|light]`                                            | Yes  | Change the TUI theme.                                                                  |
 | `/mouse [on\|off]`                                                      | Yes  | Toggle wheel capture; `off` allows native text selection/copy.                         |
 | `/status`                                                               | Yes  | Inspect Model, context, Environment, and subscription usage.                           |
@@ -311,7 +311,7 @@ The tables group commands by task. “Busy” means the parser allows the comman
 | `update`, `envd update`              | Expect installation without a second confirmation. When an update notice appears, run `a13n-harness-ui update` to install the new release. |
 | `import subagents --apply`           | Inspect the preview first; this writes imported files.                                                                                     |
 | `run`                                | Plan to reopen suspended work interactively for decisions.                                                                                 |
-| `webui --dangerous-skip-permissions` | Understand that this removes HTTP authentication, not Agent permission checks.                                                             |
+| `webui --dangerous-skip-permissions` | Disables WebUI HTTP authentication only; Agent tool permission checks continue to apply.                                                   |
 
 ## Task-oriented guides
 

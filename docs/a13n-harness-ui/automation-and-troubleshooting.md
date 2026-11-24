@@ -49,7 +49,7 @@ Close active TUI/WebUI sessions before upgrading a `uv tool` installation:
 a13n-harness-ui update
 ```
 
-Startup update notices never install packages automatically; suppress them once with `--no-update-check` or permanently in `a13n-harness-ui.yaml`:
+Startup update checks display a notice only (updates run explicitly via `a13n-harness-ui update`); suppress the notice once with `--no-update-check` or permanently in `a13n-harness-ui.yaml`:
 
 ```yaml title="a13n-harness-ui.yaml"
 process:

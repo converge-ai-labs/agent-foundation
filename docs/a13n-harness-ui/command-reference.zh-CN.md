@@ -74,7 +74,7 @@ a13n-harness-ui --config ./a13n-harness-ui.yaml config validate
 
 | 选项                | 默认值 | 用途                                           |
 | ------------------- | ------ | ---------------------------------------------- |
-| `--executable PATH` | 未设置 | 更新独立可执行文件，而不是配置的运行时。       |
+| `--executable PATH` | 未设置 | 更新 `PATH` 指定的独立可执行文件。             |
 | `--version VERSION` | 未设置 | 选择精确原生版本；托管安装仍固定为客户端版本。 |
 | `--check`           | 关闭   | 查看更新，不安装。                             |
 | `--force`           | 关闭   | 重新安装所选版本；不能与 `--check` 同用。      |
@@ -123,7 +123,7 @@ a13n-harness-ui run "Reply with one short sentence." --format json
 
 ### `config validate`
 
-验证所选源配置树，报告配置错误或 Capability 警告。支持 `--format text|json`。它检查配置，不测试 provider 或 MCP 连接。
+验证所选源配置树，报告本地 YAML/Schema 错误或 Capability 警告（支持 `--format text|json`）；远端 provider 或 MCP 连通性请通过发送测试消息验证。
 
 ### `config show`
 
@@ -150,7 +150,7 @@ a13n-harness-ui import subagents --product codex --scope project --project-root 
 | `--apply`             | 关闭       | 写入所有就绪候选。                   |
 | `--format text\|json` | `text`     | 选择输出格式。                       |
 
-导入会创建文件，不会自动将导入项加入每个 Agent。按 [Agent 配置](agents-and-subagents.md)选择需要的项。
+导入会生成转换后的 subagent 文件；随后按 [Agent 配置](agents-and-subagents.md)将所需项加入对应 Agent。
 
 ### `plugin install`
 
@@ -244,7 +244,7 @@ ChatGPT 的默认流程使用粘贴回调 URL。本地浏览器回调支持 Code
 
 ## 斜杠命令
 
-在 TUI 输入框中输入。Tab 补全参数，`/help` 或 `/?` 显示帮助，`/help COMMAND` 查看单个命令。首次配置和登录在 shell 中运行；待处理决策使用 TUI 对应类型的选择器，而不是 `/approve`、`/deny` 或 `/result`。
+在 TUI 输入框中输入。Tab 补全参数，`/help` 或 `/?` 显示帮助，`/help COMMAND` 查看单个命令。首次配置和登录在 shell 中运行；待处理审批或提问通过 TUI 内置交互选择器完成。
 
 下表按任务分组。“忙碌时可用”表示解析器允许在执行期间使用；目标资源仍须可用。忙碌时按 Enter，会将草稿文本和附件一起作为 steering 发送。
 

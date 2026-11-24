@@ -3,7 +3,7 @@ title: Session egress
 description: Enforce per-session outbound domain allowlists in Envd and inject rotated HTTPS credentials through the local egress proxy without exposing secrets.
 ---
 
-Controlled egress lets a Linux Session call approved upstream hosts while commands hold opaque sentinel placeholders instead of real secrets. Envd's out-of-worker broker checks destinations, injects real secrets into allowed HTTPS request headers on port `443`, and redacts exact secret matches from responses.
+Controlled egress lets a Linux Session call approved upstream hosts while exposing only opaque sentinel placeholders to command environments. Envd's out-of-worker broker checks destinations, injects real secrets into allowed HTTPS request headers on port `443`, and redacts exact secret matches from responses.
 
 Enable controlled egress on the daemon (`A13N_ENVD_EGRESS_MODE=controlled`, `--egress-mode controlled`, or JSON config) inside a Linux 6.1.2+ environment with root namespace permissions, `seccomp`, `pidfds`, `/usr/bin/unshare`, `/usr/sbin/ip`, `/usr/sbin/nft`, and `/usr/bin/ldd` (preinstalled in the [Sandbox image](sandbox.md)):
 

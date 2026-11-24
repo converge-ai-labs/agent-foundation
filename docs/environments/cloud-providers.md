@@ -8,7 +8,7 @@ Choose a cloud backend in the [Environment overview](index.md#choose-a-backend),
 
 ## Cloud Providers
 
-Daytona and Modal run through Envd; E2B, Vercel, and Sprites support both Native Files & Shell and Envd; Runloop and boxd provide Native Files & Shell only. Store API keys in your credential store rather than inside recipes or saved `EnvironmentState`:
+Daytona and Modal run through Envd; E2B, Vercel, and Sprites support both Native Files & Shell and Envd; Runloop and boxd provide Native Files & Shell only. Store API keys in your credential store and keep recipes and saved `EnvironmentState` free of secrets:
 
 | Provider       | Backend settings                                                                 | Credential fields          | Common recipe settings                                                                                        |
 | -------------- | -------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------- |

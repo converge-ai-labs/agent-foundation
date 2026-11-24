@@ -40,7 +40,7 @@ Live Mode lets you speak conversationally while delegating complex tasks to dedi
 4. Continue browsing other WebUI tabs or reviewing Git diffs. The **Microphone on** indicator in the header confirms that your audio session remains active.
 5. When the background job finishes, return to its dedicated thread to review the final changes.
 
-This architecture ensures that lengthy compilation or test runs never block your voice session, allowing natural conversation to proceed continuously.
+This decoupled execution keeps your voice conversation responsive while long builds or test suites run in the background.
 
 ## Results and Reports
 

@@ -1,3 +1,4 @@
+import { browserSubmissionHeaders } from "./shell/notification-browser";
 import { result, type Schema, type Transport } from "./transport/client";
 
 class VoiceMessage extends Error {}
@@ -230,6 +231,7 @@ export class VoiceSession {
       call.abort.signal.throwIfAborted();
       await result(
         this.transport.client.POST("/api/voice/start", {
+          headers: await browserSubmissionHeaders(),
           body: {
             owner_id: call.owner,
             start_id: call.id,

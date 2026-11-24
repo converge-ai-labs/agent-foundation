@@ -3633,6 +3633,11 @@
   "Mark as read": "पढ़ा हुआ चिह्नित करें",
   "Mark as unread": "अपठित चिह्नित करें",
   "Updates": "अपडेट",
+  "Mark all as read": "सभी को पढ़ा हुआ चिह्नित करें",
+  "All read": "सभी पढ़े गए",
+  "{{count, number}} unread": "{{count, number}} अपठित",
+  "Could not mark this section as read.": "इस अनुभाग को पढ़ा हुआ चिह्नित नहीं किया जा सका।",
+  "Unread items in this section are on later pages.": "इस अनुभाग के अपठित आइटम अगले पन्नों पर हैं।",
   "Inbox filter": "Inbox फ़िल्टर",
   "Open_inbox": "खुले",
   "Done_inbox": "पूरे",
@@ -3661,5 +3666,9 @@
   "Dismiss suggestion": "सुझाव हटाएँ",
   "Dismiss suggestion (Esc)": "सुझाव हटाएँ (Esc)",
   "Let agents post to Inbox": "Agents को Inbox में पोस्ट करने दें",
-  "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "Agents परिणाम, प्रश्न और मुख्य प्रगति आपके Inbox में पोस्ट करते हैं और उन्हें इसकी याद दिलाई जाती है। इसे बंद करने पर नए Runs को Inbox टूल या रिमाइंडर नहीं मिलते; मौजूदा आइटम बने रहते हैं।"
+  "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "Agents परिणाम, प्रश्न और मुख्य प्रगति आपके Inbox में पोस्ट करते हैं और उन्हें इसकी याद दिलाई जाती है। इसे बंद करने पर नए Runs को Inbox टूल या रिमाइंडर नहीं मिलते; मौजूदा आइटम बने रहते हैं।",
+  "Receive notifications from": "सूचनाओं का दायरा",
+  "My runs are those started from this browser.": "मेरे रन वे हैं जो इस ब्राउज़र से शुरू हुए हैं।",
+  "Entire workspace": "पूरा कार्यक्षेत्र",
+  "My runs only": "केवल मेरे रन"
 }

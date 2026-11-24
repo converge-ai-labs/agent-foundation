@@ -4,12 +4,13 @@ from collections.abc import Callable
 from typing import Literal
 
 from anyio import create_task_group, fail_after, sleep
-from fastapi import FastAPI, WebSocket
+from fastapi import Depends, FastAPI, WebSocket
 from pydantic import Field
 from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.interactive_transport import InteractiveOutput, authenticate_interactive, receive_text
+from a13n_harness_ui.notification_origin import browser_submission
 from a13n_harness_ui.surfaces import SurfaceModel
 from a13n_harness_ui.voice import VoiceController, VoiceSnapshot
 
@@ -41,7 +42,7 @@ def register_voice_routes(server: FastAPI, controller: Callable[[], VoiceControl
     async def status() -> VoiceSnapshot:
         return await controller().status()
 
-    @server.post("/api/voice/start", status_code=202)
+    @server.post("/api/voice/start", status_code=202, dependencies=[Depends(browser_submission)])
     async def start(body: VoiceStart) -> VoiceSnapshot:
         return await controller().begin(owner_id=body.owner_id, start_id=body.start_id, offer_sdp=body.offer_sdp)
 

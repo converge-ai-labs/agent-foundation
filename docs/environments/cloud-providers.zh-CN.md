@@ -8,7 +8,7 @@ description: 配置 E2B、Daytona、Modal、Vercel、Sprites、Runloop 与 boxd 
 
 ## 云端提供方概览
 
-Daytona 与 Modal 统一通过 Envd 执行；E2B、Vercel 与 Sprites 同时支持原生文件/Shell 路径与显式 Envd 路径；Runloop 与 boxd 仅提供原生文件与 Shell。请将 API 密钥保存在凭据存储中，切勿写入配方（Recipe）或 `EnvironmentState`：
+Daytona 与 Modal 统一通过 Envd 执行；E2B、Vercel 与 Sprites 同时支持原生文件/Shell 路径与显式 Envd 路径；Runloop 与 boxd 仅提供原生文件与 Shell。请将 API 密钥保存在凭据存储中，确保配方（Recipe）与 `EnvironmentState` 不含敏感密钥：
 
 | 提供方         | 后端连接配置                                                                   | 凭据字段                   | 常用配方参数                                                                                                  |
 | -------------- | ------------------------------------------------------------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------- |

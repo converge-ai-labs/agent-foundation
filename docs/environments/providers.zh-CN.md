@@ -41,7 +41,7 @@ runtime = LocalEnvdProviderRuntime(
 
 1. 将 `DockerConnectionConfiguration.docker_host` 设为 Host 可访问的 Engine。后续重连需访问同一 Engine。Service 的 [Compose 部署](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose)展示了非 root 进程如何访问 socket。
 2. 选择镜像和执行路径。Service 的 `DockerRecipe` 默认采用 `execution="native"` 和 `ghcr.io/converge-ai-labs/a13n-sandbox:dev`。Native 执行使用 Docker exec；`execution="envd_http"` 使用镜像内的 Envd 守护进程。
-3. 添加资源限制和可选绑定挂载。挂载 `source` 必须已存在于 Engine 所在机器上；`read_only` 默认为 true。保留容器自身文件系统中的 `/workspace` 和私有命令元数据。命名卷不是配方选项。
+3. 添加资源限制和可选宿主机绑定挂载。挂载 `source` 必须已存在于 Engine 所在机器上；`read_only` 默认为 true（配方不支持 Docker 命名卷）。保留容器自身文件系统中的 `/workspace` 和私有命令元数据。
 4. 创建目标、保存状态并打开 connector。拉取或重新构建镜像标签不会替换已有容器。
 
 默认 `pull_policy="if_missing"` 只拉取缺失镜像。`"never"` 在镜像缺失时报告 `environment_image_missing`。需要精确镜像身份时使用不可变 digest。Native 执行按以下顺序选择用户：显式配方 `user`、`ai.a13n.environment.user`、镜像 USER。标准沙箱镜像选择 UID/GID 1000。
@@ -50,9 +50,9 @@ runtime = LocalEnvdProviderRuntime(
 
 使用 HTTP EIP 时，在连接的 `envd_http` 中配置 Worker 可达的主机和监听地址。Service 保留镜像入口，将容器 8888 端口发布到 Docker 分配的主机端口。使用兼容的 Envd 镜像并保持网络启用。镜像负责执行身份，因此该路径拒绝配方中的 `user` 覆盖。添加 `desktop: true`，可让就绪检查包含可观察、可输入的桌面。明文 HTTP 要求回环地址或显式信任的私有链路。Console 步骤见[创建 Docker 桌面](../a13n-service/computer-use.md#create-a-docker-desktop)。
 
-无桌面 Envd 可选择与部署版本匹配的官方 `-slim` 沙箱标签，并设置 `execution="envd_http"`、`desktop=false`。管理初始化和凭据读取使用 POSIX shell 与核心工具，不需要 guest Python 或 jq。Native Docker 文件操作仍需要 Python。
+无桌面 Envd 可选择与部署版本匹配的官方 `-slim` 沙箱标签，并设置 `execution="envd_http"`、`desktop=false`。管理初始化和凭据读取仅依赖 POSIX shell 与核心工具；Native Docker 文件操作还要求容器内安装 Python。
 
-使用自定义 base 时，先构建显式兼容的 wrapper 镜像：安装兼容的 Envd 二进制和公共 `a13n-sandbox-entrypoint`，创建 Session 用户与可写工作目录，并在 Dockerfile 中选择该 wrapper 和 daemon 命令。Service 保留入口与命令，以 root 启动。普通 base 镜像本身不是自动安装请求。二进制架构与 userspace 必须匹配；添加 shell 脚本不能让 glibc 二进制在 musl 上运行。桌面 wrapper 还需要桌面启动器及其依赖。
+使用自定义 base 时，先构建显式兼容的 wrapper 镜像：预装兼容的 Envd 二进制和公共 `a13n-sandbox-entrypoint`，创建 Session 用户与可写工作目录，并在 Dockerfile 中选择该 wrapper 和 daemon 命令。Service 会保留镜像声明的入口与命令并以 root 启动（要求镜像内已包含 Envd）。请确保二进制架构与系统 C 库匹配（例如 glibc 二进制需搭配 glibc 基础镜像）。桌面 wrapper 还需要桌面启动器及其依赖。
 
 嵌入式 Host 也可以借用自己的 Engine 客户端：
 

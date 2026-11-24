@@ -5,7 +5,7 @@ description: 从模型生成的 Harness 执行输入、Service 管理 recipe、�
 
 先确认配置所在的边界。Harness 执行输入描述已经选定的目标；Service 管理 recipe 添加目标创建和桌面准备。账号设置与凭据独立于这两类输入。按[配置 Provider](configuration.md)组合这些对象。
 
-标为**必填**的字段必须提供。**默认值由模型工厂计算**表示构造时计算默认值。表格展示字段 schema，不包含跨字段校验或 Host 最终选择的值；自动桌面默认值和有效组合按设置指南选择。独立守护进程 JSON 使用 [Envd 配置](../a13n-envd/configuration.md)，而非这些模型。
+标为**必填**的字段必须提供。**默认值由模型工厂计算**表示构造时计算默认值。表格列出各字段自身的 schema；跨字段校验、自动桌面默认值和有效组合请参见设置指南。配置独立守护进程 JSON 请参阅 [Envd 配置](../a13n-envd/configuration.md)。
 
 表格由 `scripts/docs/references.py` 选定的内置模型生成。贡献者用 `uv run --locked python scripts/docs/references.py` 重新生成英文页面并同步中文。保留执行模型与对应 Service recipe 的区别。
 

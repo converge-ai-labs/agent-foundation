@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 InboxKind = Literal["result", "needs_human", "milestone"]
+InboxGroup = Literal["needs_you", "updates"]
 InboxTitle = Annotated[str, Field(min_length=1, max_length=120)]
 InboxMessage = Annotated[str, Field(min_length=1, max_length=4096)]
 
@@ -29,10 +30,20 @@ class InboxItem(InboxModel):
     project_id: str | None = None
 
 
+class InboxUnreadCounts(InboxModel):
+    needs_you: int = Field(ge=0)
+    updates: int = Field(ge=0)
+
+
 class InboxPage(InboxModel):
     items: tuple[InboxItem, ...]
     next_cursor: str | None = None
     unread_count: int = Field(ge=0)
+    unread_by_group: InboxUnreadCounts
+
+
+class InboxMarkReadRequest(InboxModel):
+    group: InboxGroup
 
 
 class InboxItemMutation(InboxModel):

@@ -178,7 +178,7 @@ from a13n_harness_ui.host_files import (
 from a13n_harness_ui.host_git import GitCaptureRequest, GitDiff, GitDiffRequest, GitDiscovery, GitStatus, HostGit
 from a13n_harness_ui.host_terminal import HostTerminal, TerminalCreate, TerminalSession, TerminalView
 from a13n_harness_ui.inbox import InboxController
-from a13n_harness_ui.input_prediction import PredictionSnapshot
+from a13n_harness_ui.input_prediction import InputPredictionPlugin
 from a13n_harness_ui.live import (
     HarnessUiLiveHub,
     HarnessUiSummaryHub,
@@ -659,14 +659,9 @@ class HarnessUiApp:
                 return cached.text if await self._prediction_eligible(thread_id, continuation_id) else None
             return None
 
-    async def _generate_prediction(
-        self, thread_id: str, execution_id: str, continuation_id: str, snapshot: PredictionSnapshot
+    async def _publish_input_prediction(
+        self, thread_id: str, continuation_id: str, execution_id: str, text: str
     ) -> None:
-        if not await self._prediction_eligible(thread_id, continuation_id, execution_id):
-            return
-        text = await snapshot.sample(thread_id)
-        if text is None:
-            return
         async with self._root_runs.require_inactive(thread_id, clear_interaction=False):
             if not await self._prediction_eligible(thread_id, continuation_id, execution_id):
                 return
@@ -4374,7 +4369,19 @@ async def open_harness_ui_app(
             )
             resources.push_async_callback(browsers.close)
             work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
+
+            async def prediction_eligible(thread_id: str, continuation_id: str, execution_id: str) -> bool:
+                assert app is not None
+                return await app._prediction_eligible(thread_id, continuation_id, execution_id)
+
+            async def publish_prediction(thread_id: str, continuation_id: str, execution_id: str, text: str) -> None:
+                assert app is not None
+                await app._publish_input_prediction(thread_id, continuation_id, execution_id, text)
+
             root_executor = RootRunExecutor(
+                input_prediction=InputPredictionPlugin(prediction_eligible, publish_prediction)
+                if host_mode == "webui"
+                else None,
                 browsers=browsers,
                 compaction=compaction,
                 tool_executions=tool_executions,
@@ -4441,12 +4448,6 @@ async def open_harness_ui_app(
                 if app is not None:
                     await app._title_new_chat(admission)
 
-            async def generate_prediction(
-                thread_id: str, execution_id: str, continuation_id: str, snapshot: PredictionSnapshot
-            ) -> None:
-                assert app is not None
-                await app._generate_prediction(thread_id, execution_id, continuation_id, snapshot)
-
             root_runs = RootRunCoordinator(
                 root_executor,
                 tool_executions=tool_executions,
@@ -4456,7 +4457,6 @@ async def open_harness_ui_app(
                 on_input_admitted=memory_organizer.offer if host_mode == "webui" else None,
                 on_human_admitted=human_admitted if host_mode == "webui" else None,
                 on_settled=notify_settled if host_mode == "webui" else None,
-                generate_prediction=generate_prediction if host_mode == "webui" else None,
                 summary_hub=summary_hub,
                 live_hub=live_hub,
                 observation=observation,

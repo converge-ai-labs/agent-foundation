@@ -3,7 +3,7 @@ title: 断线重放与展示状态恢复
 description: 在流式输出过程中导出紧凑的展示检查点，支持前端客户端断线重连后确定性地重放并续接 AG-UI 界面状态。
 ---
 
-消费端重启后，应继续尚未结束的消息，而不是将其显示两遍。在同一位置保存展示内容和解析状态，再提供完整的后续事件。以下示例将这项工作与重建事件转换、继续 Agent 执行分别说明。
+消费端在流式输出中途重启时，可通过检查点从断开位置无缝续接未完成的消息。在同一位置保存展示内容和解析状态，再提供完整的后续事件。以下示例分别说明展示检查点恢复、源观测历史重放，以及二者与 Agent 执行恢复的分工。
 
 ## 选择恢复路径
 
@@ -71,7 +71,7 @@ async for source in run_stream:
 
 ## 从源历史恢复
 
-Host 保留的是 Harness 观测而非转换器检查点时，使用源重放。创建全新的 observer，从有限前缀重建，再跟进下一源条目。这里的 `source_journal`、`cursor` 和 `host` 由应用提供：
+当 Host 持久化的是原始 Harness 观测序列时，可使用源重放重建转换状态。创建全新的 observer，从有限前缀重建，再跟进下一源条目。这里的 `source_journal`、`cursor` 和 `host` 由应用提供：
 
 ```python
 from a13n_stream_protocol import HarnessAguiStreamObserver
@@ -87,7 +87,7 @@ async for item in source_journal.tail(run_id=run_id, after=cursor):
 
 ### Host 必须保证什么
 
-提供一个根流及其内联子执行的精确有序前缀，并解码为公开 Harness 源条目。序列化 AG-UI 记录应送入 `DisplayFold`，而非 `observer.resume()`。
+提供一个根流及其内联子执行的精确有序前缀，并解码为公开 Harness 源条目（`observer.resume()` 接收公开 Harness 源条目；已序列化的 AG-UI 记录请直接传入 `DisplayFold.fold()`）。
 
 使用同一个 Host 游标选择前缀边界和实时后续流。在转换前排除重复交付并检测缺口。等待重放完成后，再输入实时观测；一个 observer 接受串行调用。
 

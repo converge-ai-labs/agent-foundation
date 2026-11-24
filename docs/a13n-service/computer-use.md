@@ -48,7 +48,7 @@ The action list replaces the entire permission set. Include file and execution a
 
 The Computer toolset includes semantic reads and grouped `computer_ax`, `computer_uia` and `computer_atspi` mutation tools. Discover the backend with `computer_accessibility_describe`, inspect a target's actual capabilities, then verify any change through readback or a screenshot. Native backend readiness is independent of permissions.
 
-Observation permission includes the seven `environment.computer.a11y_*` read actions. Exact mutation ceilings use platform actions such as `environment.computer.uia_invoke` or `environment.computer.atspi_do_action`; selecting a grouped tool does not authorize every operation. Retained node and text-range references stay bound to their original mount and execution. Inspect bounded-result completeness before treating a missing node as absent.
+Observation permission includes the seven `environment.computer.a11y_*` read actions. Grant specific platform actions in the mount permission ceiling (such as `environment.computer.uia_invoke` or `environment.computer.atspi_do_action`) to authorize individual mutations inside grouped tools. Retained node and text-range references stay bound to their original mount and execution. Inspect bounded-result completeness before treating a missing node as absent.
 
 Semantic reads and mutations use the same Computer takeover admission. After handback, a fresh screenshot and a later model decision are required before native mutation; semantic reads, projections and mutation readback do not satisfy screenshot freshness. An unknown native mutation outcome requires state reconciliation before another attempt.
 
@@ -64,7 +64,7 @@ Pass positions from 0 to 1000 directly. Tools convert them to screenshot pixels,
 
 ### Desktop access prerequisites
 
-Enable `desktop: true` and `desktop_assistance: true` in the recipe. This prepares human viewing and Computer control, not an agent tool. Service has no built-in desktop-assistance request tool; an application can supply its own request workflow. Configure the agent's Computer tools and mount permissions separately. Prepare a compatible desktop-access v2 endpoint using the [provider guide](../environments/providers.md).
+Enable `desktop: true` and `desktop_assistance: true` in the recipe to prepare Console human viewing and interactive desktop takeover. Configure the agent's Computer tools and mount permissions separately (applications that want an explicit agent-initiated assistance prompt can supply a custom tool). Prepare a compatible desktop-access v2 endpoint using the [provider guide](../environments/providers.md).
 
 For Docker, configure `desktop_viewer_url`, such as `wss://desktop.example/{container_id}/websockify`, routed to each container's port 6081. Engine and Envd access do not provide this browser route. Plain WS is accepted only on loopback. E2B needs an automatically prepared or compatible custom desktop template; a stock `desktop` template alone is insufficient. Other providers use their prepared supervisor and provider-specific routes. Opening the viewer does not start or extend the environment.
 

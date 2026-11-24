@@ -3,7 +3,7 @@ title: Skill publication reference
 description: Compare shared read-only host mounts and isolated environment synchronization for publishing workspace Skills to Service agent runs.
 ---
 
-Use this reference after [importing and testing a workspace skill](skills.md#add-a-skill). Choose shared publication for conventional paths, or isolated publication when concurrent agents must keep distinct package versions. These rules apply to imported workspace skills, not read-only built-in Host skills.
+Use this reference after [importing and testing a workspace skill](skills.md#add-a-skill). Choose shared publication for conventional paths, or isolated publication when concurrent agents must keep distinct package versions. These publication modes govern imported workspace skills (built-in Host skills are mounted read-only at `/platform-skills`).
 
 ## Runtime synchronization
 
@@ -31,7 +31,7 @@ Before the first model request, Service publishes each selected package at `/wor
 
 Leave `cleanup: false` when independent agents share the environment. Enabling cleanup removes unselected entries from the shared root; an empty selection clears it, including skills another agent is using. Shared mode uses no package cache.
 
-For the same name, the last publication wins. An active reader can therefore see another run's version, and separate reads can span versions. Publication is per skill, not atomic across the whole selection. Use isolated mode when each agent must keep reading its selected package.
+For the same name, the last publication wins. An active reader can therefore see another run's version, and separate reads can span versions because each skill directory is published individually. Use isolated mode when each agent must keep reading its selected package.
 
 ### Isolated packages
 

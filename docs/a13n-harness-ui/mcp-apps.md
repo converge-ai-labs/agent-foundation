@@ -7,7 +7,7 @@ MCP Apps turn tool results into interactive cards in WebUI. For example, a count
 
 ## Enable Apps for selected servers
 
-You need a working WebUI and an MCP server that produces Apps. Ordinary text-only MCP tools will not gain an interface by enabling this setting. The server must supply `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource; legacy MCP-UI HTML is not supported.
+You need a working WebUI and an MCP server that produces Apps. Enabling this setting renders interactive cards for MCP tools that supply `ui.resourceUri` metadata and a `text/html;profile=mcp-app` resource (standard MCP App profile; legacy MCP-UI HTML is unsupported).
 
 1. [Add the MCP server](mcp.md) under the selected configuration directory's `mcp/` directory. Note its exact resource ID.
 
@@ -54,7 +54,7 @@ Keep these lifetimes separate:
 | Action                                                                                 | Result                                                                              |
 | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | Close a View                                                                           | Ends its controls and pending confirmations; dispatched operations may still finish |
-| Reload and choose Open App                                                             | Shows the saved original, not the last interactive screen state                     |
+| Reload and choose Open App                                                             | Renders the saved original result (interactive View changes stay transient)         |
 | Reactivate                                                                             | Checks current authority and lets the App read current server state                 |
 | Finish a Run or disconnect the browser                                                 | Keeps an eligible Host-owned server connection alive                                |
 | Shut down the Host, close the connection, retire its binding, or dispose of the Thread | Ends the connection; server-private state is not restored by WebUI                  |
@@ -69,9 +69,9 @@ To include an App's value in a prompt:
 2. Inspect and select that value in the Host card.
 3. Write an ordinary composer message and send it.
 
-Send captures the exact selected values. Selection belongs to mounted Apps in this browser tab's conversation, not another tab or the shared draft. Unselected context stays out of the prompt; stale or missing selections fail visibly. Each value is limited to 64 KiB, with at most eight Views per submission. The Model receives source-attributed external data. Context is not automatically attached to steering.
+Send captures the exact selected values from mounted Apps in the current browser tab's conversation (scoped to that tab). Unselected context stays out of the prompt; stale or missing selections fail visibly. Each value is limited to 64 KiB, with at most eight Views per submission. The Model receives source-attributed external data on regular prompt submissions (steering messages omit App context).
 
-An App can also propose a separate message. Review its text and destination, then choose **Send once** or **Decline** outside the iframe. A child App proposes a handoff to its owning root conversation. A busy root rejects the message instead of queuing it or turning it into steering. Your composer draft stays intact. If the response is uncertain, check the receipt before taking further action.
+An App can also propose a separate message. Review its text and destination, then choose **Send once** or **Decline** outside the iframe. A child App proposes a handoff to its owning root conversation. A busy root rejects the proposed message immediately while leaving your composer draft intact. If the response is uncertain, check the receipt before taking further action.
 
 ## External links
 
@@ -108,7 +108,7 @@ For a WebUI published as `https://chat.example.com`, configure a distinct sandbo
 
 4. Restart WebUI. From the remote browser, invoke an App-producing tool and verify that its card opens and activates.
 
-`public_url` is an origin, not a path prefix, and must differ from the WebUI origin. Prefer a distinct hostname that does not receive domain-scoped Host cookies. For a proxy on the same machine, keep `bind: 127.0.0.1` and forward the fixed port. For local HTTP Docker tests, publish separate WebUI and sandbox ports and advertise the browser-reachable sandbox origin.
+`public_url` takes a bare scheme-host-port origin (such as `https://apps.example.net`, with no path suffix) distinct from the WebUI origin. Prefer a distinct hostname that avoids receiving domain-scoped Host cookies. For a proxy on the same machine, keep `bind: 127.0.0.1` and forward the fixed port. For local HTTP Docker tests, publish separate WebUI and sandbox ports and advertise the browser-reachable sandbox origin.
 
 | Setting              | Default     | When to change it                                       |
 | -------------------- | ----------- | ------------------------------------------------------- |
@@ -126,7 +126,7 @@ Installed wheels and sdists include the sandbox and compiled Host assets. Runnin
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | No App card                                            | Check the enabled flag and server ID, restart WebUI, and invoke an App-producing tool. Old history without App metadata cannot gain a card retroactively.                                                                                   |
 | Sandbox unavailable                                    | Check bind address, port conflicts, and the public origin, then restart. Ordinary text results remain usable; there is no same-origin HTML fallback.                                                                                        |
-| Initialization failed                                  | The SDK handshake exceeded 15 seconds. Inspect browser errors and declared resource/CSP origins. This is not an MCP connection idle timeout.                                                                                                |
+| Initialization failed                                  | The browser-to-sandbox SDK handshake exceeded 15 seconds (MCP server connections have no idle timeout); inspect browser errors and declared resource/CSP origins.                                                                           |
 | Activation fails after an edit                         | Current permissions, server binding, child route, or original tool contract changed. Invoke the tool again under current configuration if appropriate.                                                                                      |
 | Operation limit reached                                | Close and reopen the View explicitly. Each View retains at most 128 tool requests, each at most 256 KiB.                                                                                                                                    |
 | External assets fail                                   | Check exact declared resource/connect origins. Host-origin access and wildcard grants are unavailable; external assets can also prevent offline display.                                                                                    |

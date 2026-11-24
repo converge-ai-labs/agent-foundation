@@ -60,7 +60,7 @@ payloads = [
 | 原生 `CapabilityEvent` | 使用原生 `kind` 的 `CUSTOM`                                                           |
 | 其他未匹配的公开观测   | 带命名空间的 `CUSTOM`，如 `a13n.harness.lifecycle` 或 `a13n.pydantic_ai.final_result` |
 
-完整参数列表表示工具调用的输入已形成，不表示执行成功。结果需要单独读取。[终结事件](api-reference.md#terminal-events)介绍 outcome 和延后调用 ID。
+`TOOL_CALL_END` 表示工具入参流式接收完毕；实际执行结果由随后的 `TOOL_CALL_RESULT` 或终结事件给出。[终结事件](api-reference.md#terminal-events)介绍 outcome 和延后调用 ID。
 
 ### 内容与大型自定义事件
 
@@ -126,6 +126,6 @@ for start in range(0, stop, 100):
     inspect_batch(events)
 ```
 
-返回的事件是独立副本，修改副本不影响 observer。日志没有保留上限，位置是本地索引，不是传输游标。
+返回的事件是独立副本，修改副本不影响 observer。内存日志不设保留上限，其位置为当前实例的本地数组下标；网络重连游标由上层 Host 传输信封维护。
 
 设置 `retain_events=False` 时，`observe()` 返回相同的转换事件，`event_count` 保持为零，`snapshot()` 抛出 `AguiObservationError`。需要累积展示内容且无需保留每个 token 事件时，选择 [DisplayFold 检查点](replay.md#restore-a-compact-display-checkpoint)。

@@ -1,3 +1,4 @@
+import { browserSubmissionHeaders } from "./shell/notification-browser";
 import {
   createContext,
   useContext,
@@ -178,8 +179,13 @@ function useBotComposer() {
   const refresh = () => queries.invalidateQueries({ queryKey: ["bot"] });
   const send = useMutation({
     retry: false,
-    mutationFn: (value: BotSubmission) =>
-      result(client.POST("/api/bot/inputs", { body: value.command })),
+    mutationFn: async (value: BotSubmission) =>
+      result(
+        client.POST("/api/bot/inputs", {
+          headers: await browserSubmissionHeaders(),
+          body: value.command,
+        }),
+      ),
     onSuccess: (accepted, value) => {
       // Admission owns the canonical row without waiting for a heavy snapshot.
       queries.setQueryData<Schema<"BotSnapshot">>(["bot"], (snapshot) => {

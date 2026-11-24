@@ -20,6 +20,9 @@
   max-width: 800px;
   margin-inline: auto;
 }
+.page > header {
+  align-items: center;
+}
 .page > button {
   align-self: flex-start;
 }
@@ -27,19 +30,60 @@
   display: grid;
   gap: 4px;
 }
-.group > .heading {
-  display: flex;
+.groupHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) fit-content(60%);
   align-items: center;
-  gap: 6px;
+  gap: 12px;
+}
+.groupLabel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  overflow-wrap: anywhere;
+}
+.groupLabel > .heading {
   margin: 0;
-  color: var(--a13n-secondary);
+  color: var(--a13n-text-supporting);
   font-size: var(--a13n-text-sm);
   font-weight: 500;
   line-height: 20px;
 }
-.heading > span {
-  color: var(--a13n-tertiary);
+.laterPages {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+}
+.groupCount {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
+}
+.groupHeader > button {
+  min-width: 0;
+  height: auto;
+  min-height: 32px;
+  padding-block: 4px;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-sm);
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.groupHeader > button[aria-disabled="true"] {
+  background: transparent;
+  color: var(--a13n-tertiary);
+  cursor: default;
+  transform: none;
+}
+.groupHeader > button:is(:focus-visible, [aria-busy="true"]) {
+  color: var(--a13n-secondary);
+}
+@media (pointer: coarse) {
+  .groupHeader > button {
+    min-height: 44px;
+  }
 }
 /* Rows bleed into the gutter so their text lines up with the page header. */
 .items {
@@ -187,8 +231,17 @@
   gap: 2px;
   padding-inline-end: 8px;
 }
-/* Touch rows keep only Done visible; a tap opens the row with every action. */
+/* Reserve the touch action column when expanded so the time stays put. */
 @media not ((hover: hover) and (pointer: fine)) {
+  .item {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+  .quick {
+    align-self: start;
+    justify-content: center;
+    min-height: 44px;
+    padding-inline-end: 0;
+  }
   .quick > :not(:last-child) {
     display: none;
   }

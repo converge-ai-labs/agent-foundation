@@ -290,6 +290,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/mark-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Inbox Mark Read */
+        post: operations["inbox_mark_read_api_inbox_mark_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inbox/{item_id}": {
         parameters: {
             query?: never;
@@ -6341,6 +6358,14 @@ export interface components {
             next_cursor?: string | null;
             /** Unread Count */
             unread_count: number;
+            unread_by_group: components["schemas"]["InboxUnreadCounts"];
+        };
+        /** InboxUnreadCounts */
+        InboxUnreadCounts: {
+            /** Needs You */
+            needs_you: number;
+            /** Updates */
+            updates: number;
         };
         /** InputPredictionResponse */
         InputPredictionResponse: {
@@ -9847,6 +9872,11 @@ export interface components {
         };
         /** InboxNotice */
         InboxNotice: {
+            /**
+             * Origin Browser Id
+             * @default null
+             */
+            origin_browser_id?: string | null;
             /** Item Id */
             item_id: string;
             /**
@@ -10000,6 +10030,11 @@ export interface components {
         };
         /** RootOperationNotice */
         RootOperationNotice: {
+            /**
+             * Origin Browser Id
+             * @default null
+             */
+            origin_browser_id?: string | null;
             /** Receipt Id */
             receipt_id: string;
             /**
@@ -10522,6 +10557,14 @@ export interface components {
             /** Paused */
             paused: boolean;
         };
+        /** InboxMarkReadRequest */
+        InboxMarkReadRequest: {
+            /**
+             * Group
+             * @enum {string}
+             */
+            group: "needs_you" | "updates";
+        };
         /** InboxItemMutation */
         InboxItemMutation: {
             /** Read */
@@ -10543,6 +10586,8 @@ export interface components {
             keys: components["schemas"]["PushKeys"];
             /** Origin */
             origin: string;
+            /** Only Browser Id */
+            only_browser_id?: string | null;
             /**
              * Scope
              * @default all
@@ -11263,7 +11308,9 @@ export interface operations {
     start_api_voice_start_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-harness-browser"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -11715,7 +11762,9 @@ export interface operations {
     bot_submit_api_bot_inputs_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-harness-browser"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -11732,6 +11781,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BotInput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -11790,6 +11848,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    inbox_mark_read_api_inbox_mark_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboxMarkReadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -12780,7 +12860,9 @@ export interface operations {
     send_mcp_app_message_api_threads__thread_id__apps__view_id__messages_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-harness-browser"?: string | null;
+            };
             path: {
                 thread_id: string;
                 view_id: string;
@@ -17170,7 +17252,9 @@ export interface operations {
     submit_api_threads__thread_id__submit_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-harness-browser"?: string | null;
+            };
             path: {
                 thread_id: string;
             };
@@ -17471,7 +17555,9 @@ export interface operations {
     shared_submit_api_shared__share_id__threads__thread_id__submit_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "x-harness-browser"?: string | null;
+            };
             path: {
                 share_id: string;
                 thread_id: string;

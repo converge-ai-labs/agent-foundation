@@ -3,7 +3,7 @@ title: Replay and recovery
 description: Export compact display checkpoints during active streams and deterministically replay or resume AG-UI frontend state after client reconnection.
 ---
 
-A consumer restart should continue an unfinished message instead of displaying it twice. Save the display content and its parsing state at the same position, then supply the intact suffix. The examples below separate that task from rebuilding event conversion and continuing Agent execution.
+When a stream consumer restarts mid-turn, checkpointing lets it continue an in-progress message seamlessly from where it left off. Save the display content and its parsing state at the same position, then supply the intact suffix. The examples below cover display restoration, source-history replay, and how both relate to Agent execution recovery.
 
 ## Choose the recovery path
 
@@ -71,7 +71,7 @@ The delta contains only changed items, so it needs the earlier prefix to form a 
 
 ## Resume from Source History
 
-Use source replay when your Host retained Harness observations rather than a converter checkpoint. Create a fresh observer, rebuild it from a finite prefix, then follow the next source item. `source_journal`, `cursor`, and `host` here are application-owned:
+Use source replay when your Host stores raw Harness observations. Create a fresh observer, rebuild it from a finite prefix, then follow the next source item. `source_journal`, `cursor`, and `host` here are application-owned:
 
 ```python
 from a13n_stream_protocol import HarnessAguiStreamObserver
@@ -87,7 +87,7 @@ async for item in source_journal.tail(run_id=run_id, after=cursor):
 
 ### What the Host must guarantee
 
-Provide the exact ordered prefix for one root stream and its inline children. Decode it into public Harness source items. Feed serialized AG-UI records to `DisplayFold`, not to `observer.resume()`.
+Provide the exact ordered prefix for one root stream and its inline children, decoded into public Harness source items (`observer.resume()` accepts Harness source items; pass serialized AG-UI event records to `DisplayFold.fold()`).
 
 Select the prefix boundary and live suffix using the same Host cursor. Exclude duplicate delivery and detect gaps before conversion. Wait for replay to finish before feeding live observations; one observer accepts serial calls.
 
@@ -97,12 +97,12 @@ If you saved `observer.export()`, restore it directly with `HarnessAguiStreamObs
 
 Failed or cancelled `resume()` leaves the observer fresh. Repair the history source and retry with the complete prefix. After successful observation or replay, continue with `observe()`; another `resume()` on that observer is rejected.
 
-## Resume Is Not Agent Recovery
+## Observer resume and Agent recovery
 
-Use [Harness State and Resume](../a13n-harness/state-and-resume.md) to continue model or tool execution. That creates a new Run with a new observer; retain the old Run's display separately. The same distinction applies to a Host-triggered compaction Run: its execution checkpoint and the display of its summary are separate saved values.
+Use [Harness State and Resume](../a13n-harness/state-and-resume.md) to continue model or tool execution. That creates a new Run with a new observer; retain the old Run's display separately. The same boundary applies to a Host-triggered compaction Run: its execution checkpoint and the display of its summary are separate saved values.
 
 ## Errors and Atomicity
 
 `AguiObservationError` identifies invalid correlation, replay use, or processor replacement. `TypeError` identifies an invalid Python input type. A failed `observe()` leaves that source item uncommitted in the observer, allowing the Host to correct the cause before retrying conversion.
 
-After successful conversion, persistence and delivery follow your Host's transaction contract. A failure there does not undo the observer's successful conversion. Use the retained batch or a selected checkpoint and exact suffix to recover delivery, rather than blindly feeding the same source item again.
+After successful conversion, persistence and delivery follow your Host's transaction contract. A failure there leaves the observer's conversion state advanced; recover delivery from the retained output batch or from a saved checkpoint plus its suffix so each source item is observed once.

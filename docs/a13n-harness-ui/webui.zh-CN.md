@@ -120,7 +120,8 @@ flowchart TB
 
 1. 打开搜索栏下方的 **Inbox**，**Needs you** 置顶显示，其后为 **Updates**。
 2. 点击条目即可原地阅读，点击 **Open in chat** 跳转到来源轮次，处理完毕后点击 **Mark as done**。
-3. 如需关闭收件箱推送，在 **Settings → Chats → Inbox → Let agents post to Inbox** 中关闭（`inbox.enabled: false`）。
+3. 在**需要你处理**或**更新**栏点击**全部标为已读**，即可清除该栏的未读标记，包括尚未加载的条目。条目仍留在**待处理**，直到你将其标为完成。
+4. 如需关闭收件箱推送，在 **Settings → Chats → Inbox → Let agents post to Inbox** 中关闭（`inbox.enabled: false`）。
 
 ## 分享线程或项目
 
@@ -156,5 +157,5 @@ flowchart TB
 
 - **Memory：** 在左下角导航打开 **Memory**，查看全局或项目记忆文件及自动整理记录，在 **Settings → Memory** 中调整策略。
 - **Settings：** 在 **Settings** 中管理 **Agents**、**Models**、**Accounts & API keys**、**Connections**（MCP 与插件）、**Environments**、**General**（Live、通知、诊断）以及原始 **Configuration files**。文件化配置示例见[配置配方](configuration-recipes.md)。
-- **通知与 PWA：** 在 **Settings → General** 中开启任务通知，或通过浏览器菜单将 WebUI 安装为桌面/移动应用。
+- **通知与 PWA：** 在 **设置 → 偏好设置 → 通知** 中开启任务通知，接收范围可选 **整个工作区** 或 **仅我的运行**，同时适用于站内提醒和后台推送。“我的运行”包括同一浏览器配置中各个标签页发起的运行。其他设备可单独设置。也可以通过浏览器菜单将 WebUI 安装为桌面/移动应用。
 - **远程运维：** 密钥管理、反向代理、重启与日志请参见[运行与重启 WebUI](running-webui.md)。

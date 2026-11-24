@@ -50,7 +50,7 @@ Enable the server by adding `mcp_servers: [mcp-docs]` on an Agent (`agents/*.yam
 
 ### Literal values and secret references
 
-Inside `transport.headers` and `transport.environment`, reference secrets with `{env: VAR_NAME}` or `{credential_ref: key-id}` (or `"Bearer ${TOKEN}"` string interpolation where supported) rather than committing plaintext credentials.
+Inside `transport.headers` and `transport.environment`, reference secrets with `{env: VAR_NAME}` or `{credential_ref: key-id}` (or `"Bearer ${TOKEN}"` string interpolation where supported) to keep YAML files free of plaintext credentials.
 
 ## OAuth authorization
 

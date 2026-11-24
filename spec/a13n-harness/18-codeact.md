@@ -157,7 +157,7 @@ Both runner definitions are sequential parent tools within their native model-re
 
 Only one `run_code` call can own its inline session at a time. An overlapping entry, including a call from a later model response while the first feed is retained, fails as busy before evaluating source; it does not race bindings or let `restart=True` interrupt an active call. The Agent waits for that execution before reusing the inline session. `run_program` always uses a fresh session. Independent retained programs from successive model responses, or a program and an inline feed, may overlap under ordinary parallel policy. Each execution retains its original catalog, budget, result and cancellation ownership; cancelling one does not cancel its sibling. Shared external effects and stored keys still require Agent-chosen ordering.
 
-One lazily initialized worker pool belongs to the logical Run. Concurrent first use initializes it once; independent sessions acquire separate checkouts. The pool admits at most two workers, so occupied checkouts can impose capacity backpressure. A persistent inline session holds its checkout between successful feeds. This capacity wait is separate from explicit Thread ordering and the inline busy guard.
+One lazily initialized worker pool belongs to the logical Run. Concurrent first use initializes it once; independent sessions acquire separate checkouts. The pool admits at most four workers, so occupied checkouts can impose capacity backpressure. A persistent inline session holds its checkout between successful feeds. This capacity wait is separate from explicit Thread ordering and the inline busy guard.
 
 ## `run_code`
 

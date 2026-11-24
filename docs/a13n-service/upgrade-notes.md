@@ -3,7 +3,7 @@ title: Service upgrade notes
 description: Version-specific migration instructions, breaking contract cutovers, and data conversion procedures for upgrading an existing Service deployment.
 ---
 
-Use this page when upgrading an existing Service deployment, not for a new installation. Select the cutovers that apply to the source and target releases, follow the [backup and migration procedure](operations.md), and keep admission closed until data, workers and clients are compatible. Preserve unknown external-operation outcomes for reconciliation.
+Use this page when upgrading an existing Service deployment (fresh installations already start on the latest schema and contracts). Select the cutovers that apply to the source and target releases, follow the [backup and migration procedure](operations.md), and keep admission closed until data, workers and clients are compatible. Preserve unknown external-operation outcomes for reconciliation.
 
 ## Composable memory guidance rollout
 
@@ -17,7 +17,7 @@ The migration adds standalone policy and successful history-consumption tables. 
 
 Upgrade every control and worker before configuring policy `instructions` or `history` or using standalone automation. Unset new policy fields are omitted from storage so default policies retain their previous shape. Old processes reject explicitly configured new fields. Before rollback, disable standalone policies, clear Space `instructions` and `history`, and drain accepted organization Runs. Retain the additive tables and compatible readers for accepted history; dropping the tables discards standalone policy and consumption progress.
 
-History automation requires an explicit Session allowlist and starting seal time. Existing file-only policies retain their saved-change behavior; installation alone never opts them into conversation processing.
+History automation requires an explicit Session allowlist and starting seal time. Existing file-only policies retain their saved-change behavior until `history` is configured explicitly.
 
 ## Run search rollout
 

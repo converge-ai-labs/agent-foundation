@@ -5,7 +5,7 @@ description: Generated Harness execution inputs, Service management recipes, acc
 
 Choose the model for the boundary you are configuring. Harness execution inputs describe an already selected target. Service management recipes add target creation and desktop preparation. Account settings and credentials are separate from both. Use [Configure Providers](configuration.md) to assemble these inputs.
 
-A field marked **Required** must be supplied. **Default from model factory** means the model computes the value when constructed. The tables show field schemas, not cross-field validation or the values selected by a Host; follow the setup guide for automatic desktop defaults and valid combinations. Standalone daemon JSON uses [Envd configuration](../a13n-envd/configuration.md), not these models.
+A field marked **Required** must be supplied. **Default from model factory** means the model computes the value when constructed. The tables list individual field schemas; follow the setup guide for cross-field validation, automatic desktop defaults, and valid combinations. For standalone daemon JSON, see [Envd configuration](../a13n-envd/configuration.md).
 
 These tables are generated from the selected built-in models in `scripts/docs/references.py`. Contributors regenerate them with `uv run --locked python scripts/docs/references.py` and synchronize the Chinese page. Keep each execution model distinct from its Service recipe.
 

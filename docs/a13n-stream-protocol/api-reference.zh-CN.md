@@ -49,7 +49,7 @@ description: Stream Protocol 完整 API 参考：涵盖观测器接口、展示�
 | `fold.capture_delta()`                                                  | 导出上次捕获以来的变更条目及当前续接状态 |
 | `fold.export_continuation()`                                            | 单独导出解析状态                         |
 
-默认预览将每个文本、参数或结果字段限制为 262,144 个字符，并标记截断。大型观测载荷保留名称，而非复制完整载荷。`full_content=True` 保留完整展示内容；保留的对话大小仍随条目数量和内容大小增长。按照[检查点步骤](replay.md#restore-a-compact-display-checkpoint)，将内容、续接状态和后续事件选择保持一致。
+默认预览将每个文本、参数或结果字段限制为 262,144 个字符，并标记截断；大型观测载荷仅记录事件名称。`full_content=True` 保留完整展示内容；保留的对话大小仍随条目数量和内容大小增长。按照[检查点步骤](replay.md#restore-a-compact-display-checkpoint)，将内容、续接状态和后续事件选择保持一致。
 
 ## 对完整自定义事件分片
 

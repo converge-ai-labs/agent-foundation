@@ -116,7 +116,7 @@ from a13n_harness_ui.host_git import (
     GitStatus,
 )
 from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
-from a13n_harness_ui.inbox_models import InboxItem, InboxItemMutation, InboxLocation, InboxPage
+from a13n_harness_ui.inbox_models import InboxItem, InboxItemMutation, InboxLocation, InboxMarkReadRequest, InboxPage
 from a13n_harness_ui.input_prediction import InputPredictionRequest, InputPredictionResponse
 from a13n_harness_ui.interactive_transport import (
     InteractiveAuthentication,
@@ -158,6 +158,7 @@ from a13n_harness_ui.model_authoring import (
 )
 from a13n_harness_ui.model_catalog import ModelCatalogSnapshot
 from a13n_harness_ui.model_controls import ModelControlSelection
+from a13n_harness_ui.notification_origin import browser_submission
 from a13n_harness_ui.page_presence import (
     PRESENCE_REFRESH_SECONDS,
     PRESENCE_TIMEOUT_SECONDS,
@@ -656,7 +657,12 @@ def create_webui(
     async def bot_note(thread_id: str) -> BotNote:
         return await app().bot().notes.read(caller=BOT_THREAD_ID, thread_id=thread_id)
 
-    @server.post("/api/bot/inputs", response_model=BotInput, openapi_extra=_body(BotSubmitRequest))
+    @server.post(
+        "/api/bot/inputs",
+        response_model=BotInput,
+        openapi_extra=_body(BotSubmitRequest),
+        dependencies=[Depends(browser_submission)],
+    )
     async def bot_submit(request: Request) -> BotInput:
         document = await _document(request, BotSubmitRequest)
         return await app().submit_bot_input(
@@ -675,6 +681,12 @@ def create_webui(
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
     ) -> InboxPage:
         return await app().inbox().page(state=state, before=before, limit=limit)
+
+    @server.post("/api/inbox/mark-read", status_code=204, openapi_extra=_body(InboxMarkReadRequest))
+    async def inbox_mark_read(request: Request) -> Response:
+        document = await _document(request, InboxMarkReadRequest)
+        await app().inbox().mark_group_read(document.group)
+        return Response(status_code=204)
 
     @server.patch("/api/inbox/{item_id}", response_model=InboxItem, openapi_extra=_body(InboxItemMutation))
     async def inbox_update(item_id: str, request: Request) -> InboxItem:
@@ -1132,6 +1144,7 @@ def create_webui(
         "/api/threads/{thread_id}/apps/{view_id}/messages",
         response_model=AppMessageReceipt,
         openapi_extra=_body(AppMessageRequest),
+        dependencies=[Depends(browser_submission)],
     )
     async def send_mcp_app_message(thread_id: str, view_id: str, request: Request) -> AppMessageReceipt:
         return await app().send_mcp_app_message(thread_id, view_id, await _document(request, AppMessageRequest))
@@ -2424,7 +2437,12 @@ def create_webui(
             },
         )
 
-    @server.post("/api/threads/{thread_id}/submit", response_model=RootRunReceipt, openapi_extra=_body(SubmitRequest))
+    @server.post(
+        "/api/threads/{thread_id}/submit",
+        response_model=RootRunReceipt,
+        openapi_extra=_body(SubmitRequest),
+        dependencies=[Depends(browser_submission)],
+    )
     async def submit(thread_id: str, request: Request) -> RootRunReceipt:
         # Ordered input and its base64 CRDT capture can each contain the prompt.
         document = await _document(request, SubmitRequest, max_bytes=2 * _MAX_BODY)
@@ -2744,7 +2762,7 @@ def create_webui(
         "/threads/{thread_id}/submit",
         response_model=RootRunReceipt,
         openapi_extra=_body(RootSteerRequest),
-        dependencies=[Depends(require_prompt)],
+        dependencies=[Depends(require_prompt), Depends(browser_submission)],
     )
     async def shared_submit(share_id: str, thread_id: str, request: Request) -> RootRunReceipt:
         document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)

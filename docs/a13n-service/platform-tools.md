@@ -11,7 +11,7 @@ Service-managed agents use a separate internal platform-tool catalog. The Host s
 
 For older saved agents, follow the [platform-tool cutover](upgrade-notes.md#internal-platform-tools) before upgrading.
 
-For Agent configuration deltas, naming `base_revision_id` also requires an explicit `make_default`; omission returns `invalid_argument`. Missing required versions fail validation and stale versions return `precondition_failed`. A conflict requires rereading and reviewing a new change, not silently refreshing an approved version.
+For Agent configuration deltas, naming `base_revision_id` also requires an explicit `make_default`; omission returns `invalid_argument`. Missing required versions fail validation and stale versions return `precondition_failed`. On a version conflict, reread the current configuration and submit a freshly reviewed delta.
 
 External clients use [management MCP](mcp.md), with HTTP envelopes and `request_body` arguments.
 

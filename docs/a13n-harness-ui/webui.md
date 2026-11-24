@@ -120,7 +120,8 @@ Agents post final results, milestones, and items needing your decision to **Inbo
 
 1. Open **Inbox** below conversation search. **Needs you** items appear first, followed by **Updates**.
 2. Click a row to read it in place, **Open in chat** to jump to the originating turn, or **Mark as done** to clear it.
-3. To disable Inbox posting for new runs, turn off **Settings → Chats → Inbox → Let agents post to Inbox** (`inbox.enabled: false`).
+3. Select **Mark all as read** in **Needs you** or **Updates** to clear unread marks in that section, including items you have not loaded. Items remain in **Open** until you mark them as done.
+4. To disable Inbox posting for new runs, turn off **Settings → Chats → Inbox → Let agents post to Inbox** (`inbox.enabled: false`).
 
 ## Share a Thread or Project
 
@@ -156,5 +157,5 @@ Configure which Models agents may use for new chats and subagents under **Settin
 
 - **Memory:** Open **Memory** in the bottom-left navigation to view Global or Project memory files and automatic organization runs. Manage settings under **Settings → Memory**.
 - **Settings:** Use **Settings** to configure **Agents**, **Models**, **Accounts & API keys**, **Connections** (MCP and plugins), **Environments**, **General** (Live, notifications, diagnostics), and raw **Configuration files**. See [configuration recipes](configuration-recipes.md) for file-based setups.
-- **Notifications & PWA:** Enable browser/task notifications under **Settings → General**, or install WebUI as a desktop/mobile app from your browser's install menu.
+- **Notifications & PWA:** Enable browser/task notifications under **Settings → Preferences → Notifications**, and choose **Entire workspace** or **My runs only** for in-app and background alerts. My runs includes work started from this browser profile across its tabs. Another device has its own setting. You can also install WebUI as a desktop/mobile app from your browser's install menu.
 - **Remote operations:** See [Run and restart WebUI](running-webui.md) for authentication keys, reverse proxies, restarts, and server logs.

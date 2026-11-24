@@ -3633,6 +3633,11 @@
   "Mark as read": "Mark as read",
   "Mark as unread": "Mark as unread",
   "Updates": "Updates",
+  "Mark all as read": "Mark all as read",
+  "All read": "All read",
+  "{{count, number}} unread": "{{count, number}} unread",
+  "Could not mark this section as read.": "Could not mark this section as read.",
+  "Unread items in this section are on later pages.": "Unread items in this section are on later pages.",
   "Inbox filter": "Inbox filter",
   "Open_inbox": "Open",
   "Done_inbox": "Done",
@@ -3661,5 +3666,9 @@
   "Dismiss suggestion": "Dismiss suggestion",
   "Dismiss suggestion (Esc)": "Dismiss suggestion (Esc)",
   "Let agents post to Inbox": "Let agents post to Inbox",
-  "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay."
+  "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.",
+  "Receive notifications from": "Receive notifications from",
+  "My runs are those started from this browser.": "My runs are those started from this browser.",
+  "Entire workspace": "Entire workspace",
+  "My runs only": "My runs only"
 }

@@ -126,7 +126,7 @@ make harness-ui-smoke
 | `a13n.ui.continuation.status`          | 是否已为下一次 Run 选定续接状态？           |
 | 操作根和 `harness.run` 中的 Skill 摘要 | 此 Thread 中哪些 Skill 可用、哪些已读取？   |
 
-如果回答可见但应用操作失败，重试任务前先检查收尾阶段。Harness Run 可能成功，而保存失败。Skill 读取记录的是访问行为，不能据此认定 Agent 遵循了指令。
+如果回答可见但应用操作失败，重试任务前先检查收尾阶段。Harness Run 可能成功，而保存失败。追踪 span 记录了 `SKILL.md` 的读取时间；请结合后续工具调用与输出复核 Agent 对流程的实际执行情况。
 
 ## 内容与限制
 
@@ -140,4 +140,4 @@ make harness-ui-smoke
 
 操作根的输入和输出各自最多 8 KiB。用 `a13n.input.capture`、`a13n.output.capture` 和截断标记检查缺失或不完整的值。根中只描述原生媒体，不复制二进制、完整历史、凭据、原始异常或检查点正文。上游模型／工具 span 有自己的信息边界：`none` 不能完整清除异常、Agent 描述、元数据或工具 schema。选择导出策略时，请阅读 [Harness 追踪](../a13n-harness/observation.md)。
 
-关闭时，App 在活跃工作及协作组件结束后，于事件循环之外、等待预算之内排空自己的 exporter。导出采用尽力交付。恢复工作应使用已保存的 Thread 状态，而不是追踪或后端是否收到了追踪。
+关闭时，App 在活跃工作及协作组件结束后，于事件循环之外、等待预算之内排空自己的 exporter。追踪导出采用尽力交付；恢复会话始终以本地持久保存的 Thread 状态为准。

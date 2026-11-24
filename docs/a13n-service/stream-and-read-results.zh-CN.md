@@ -37,4 +37,4 @@ description: 订阅 Service 会话与线程的实时 SSE 事件流，精准关�
 
 `complete: true` 的 `items` 帧是运行最终显示；运行结果要看 status。重连时丢弃未完成显示，从新快照重建活跃运行。断开期间结束的运行通过 `/runs/{run_id}/items` 读取。忽略未知事件名。
 
-使用上限为 30 秒的随机退避重连，429 或 503 按 `Retry-After` 等待。其他 4xx 拒绝及无效帧需要修正原因，而非自动重试。事件流是临时观测，已保存显示项才是持久记录。帧 Schema 导出到 `proto/a13n-service/session-stream.schema.json`。
+使用上限为 30 秒的随机退避重连，429 或 503 按 `Retry-After` 等待；遇到其他 4xx 拒绝或无效帧时，请先排查修正请求原因。事件流提供低延迟实时预览，已保存显示项则是持久记录。帧 Schema 导出到 `proto/a13n-service/session-stream.schema.json`。

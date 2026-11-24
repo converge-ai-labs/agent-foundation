@@ -32,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, Valid
 from a13n_harness_ui.display_history import DisplayPublication
 from a13n_harness_ui.errors import LivePresentationError
 from a13n_harness_ui.mcp_apps.models import AppReference
+from a13n_harness_ui.notification_origin import BrowserId
 
 _LIVE_PAYLOAD_ADAPTER = TypeAdapter(dict[str, JsonValue])
 _AGUI_ADAPTER = TypeAdapter(AguiEvent)
@@ -682,6 +683,7 @@ class SummaryCursor(_StreamModel):
 
 
 class RootOperationNotice(_StreamModel):
+    origin_browser_id: BrowserId | None = None
     receipt_id: str = Field(min_length=1, max_length=128)
     message_id: str | None = Field(default=None, min_length=1, max_length=256)
     status: Literal["completed", "failed", "suspended", "goal_verified", "goal_incomplete"]
@@ -689,6 +691,7 @@ class RootOperationNotice(_StreamModel):
 
 
 class InboxNotice(_StreamModel):
+    origin_browser_id: BrowserId | None = None
     item_id: str = Field(min_length=1, max_length=80)
     kind: Literal["result", "needs_human", "milestone"]
     title: str = Field(min_length=1, max_length=120)

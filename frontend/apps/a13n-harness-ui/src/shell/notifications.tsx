@@ -30,9 +30,12 @@ import {
   pushSubscriptionId,
   supportsPush,
   testPush,
+  notificationAudience,
+  type NotificationAudience,
   notificationScope,
   type NotificationScope,
 } from "./push";
+import { currentBrowserId } from "./notification-browser";
 import { PageHeader } from "./ui";
 import { inboxTarget } from "../inbox-target";
 import styles from "./notifications.module.css";
@@ -106,6 +109,8 @@ export function notificationPermission(): Permission {
 type Notifications = {
   enabled: boolean;
   scope: NotificationScope;
+  audience: NotificationAudience;
+  setAudience: (value: NotificationAudience) => void;
   setScope: (value: NotificationScope) => void;
   permission: Permission;
   requesting: boolean;
@@ -134,6 +139,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
 function NotificationState({ children }: { children: ReactNode }) {
   const { t, i18n } = useTranslation();
   const language = i18n.resolvedLanguage;
+  const [audience, updateAudience] = useState(notificationAudience);
   const [scope, updateScope] = useState(notificationScope);
   const frame = useRef<HTMLDivElement>(null);
   useEffect(
@@ -183,6 +189,7 @@ function NotificationState({ children }: { children: ReactNode }) {
     toast,
     background,
     viewedThread,
+    audience,
     scope,
   });
   current.current = {
@@ -191,6 +198,7 @@ function NotificationState({ children }: { children: ReactNode }) {
     toast,
     background,
     viewedThread,
+    audience,
     scope,
   };
   useEffect(() => {
@@ -198,6 +206,7 @@ function NotificationState({ children }: { children: ReactNode }) {
     const refresh = () => {
       setPermission(notificationPermission());
       updateScope(notificationScope());
+      updateAudience(notificationAudience());
       if (document.visibilityState === "visible")
         refreshSubscription((version) => version + 1);
       updateEnabled(
@@ -259,6 +268,7 @@ function NotificationState({ children }: { children: ReactNode }) {
     refreshVersion,
     requesting,
     scope,
+    audience,
     language,
   ]);
   useEffect(() => {
@@ -310,6 +320,11 @@ function NotificationState({ children }: { children: ReactNode }) {
         });
     }
   };
+  const setAudience = (value: NotificationAudience) => {
+    current.current.audience = value;
+    writePreference("notifications.audience", value);
+    updateAudience(value);
+  };
   const setScope = (value: NotificationScope) => {
     current.current.scope = value;
     writePreference("notifications.scope", value);
@@ -349,6 +364,9 @@ function NotificationState({ children }: { children: ReactNode }) {
   };
   const receive = useCallback(
     (event: SummaryEvent) => {
+      const acceptsOrigin = (id: string | null | undefined) =>
+        current.current.audience === "workspace" ||
+        (!!id && id === currentBrowserId());
       const notice = event.notice;
       const threadId = event.root_thread_id;
       if (alive.current && event.kind === "inbox" && event.inbox && threadId) {
@@ -356,6 +374,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         const id = `${event.epoch}:${item.item_id}`;
         if (seen.current.has(id)) return;
         seen.current.add(id);
+        if (!acceptsOrigin(item.origin_browser_id)) return;
         const { scope, viewedThread } = current.current;
         if (scope === "bot" && threadId !== "thread_bot") return;
         if (viewedThread === threadId) return;
@@ -392,6 +411,7 @@ function NotificationState({ children }: { children: ReactNode }) {
       seen.current.add(id);
       if (seen.current.size > 256)
         seen.current.delete(seen.current.values().next().value!);
+      if (!acceptsOrigin(notice.origin_browser_id)) return;
       if (current.current.scope === "inbox") return;
       if (current.current.scope === "bot" && !bot) return;
       // The viewed conversation owns its feedback. Consume the identity above
@@ -463,6 +483,8 @@ function NotificationState({ children }: { children: ReactNode }) {
     enabled,
     scope,
     setScope,
+    audience,
+    setAudience,
     permission,
     requesting,
     error: error.push?.registration
@@ -618,6 +640,23 @@ export function NotificationSettings({
             id="desktop-notifications"
             checked={notifications.enabled}
             onCheckedChange={notifications.setEnabled}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t("Receive notifications from")}
+          description={t("My runs are those started from this browser.")}
+        >
+          <SegmentedControl
+            label={t("Receive notifications from")}
+            value={notifications.audience}
+            onValueChange={(value) => {
+              if (value === "workspace" || value === "mine")
+                notifications.setAudience(value);
+            }}
+            options={[
+              { value: "workspace", label: t("Entire workspace") },
+              { value: "mine", label: t("My runs only") },
+            ]}
           />
         </SettingsRow>
         <SettingsRow

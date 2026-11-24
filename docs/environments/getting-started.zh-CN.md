@@ -58,7 +58,7 @@ asyncio.run(main())
 2. `await connector.open()` 打开已就绪的执行。它的文件操作接口将逻辑路径 `/hello.txt` 映射到 `workspace / "hello.txt"`。
 3. 离开异步上下文后，execution 关闭。随后的断言证明文件仍存在；外层 `TemporaryDirectory` 块退出后才删除目录。
 
-Direct Local 使用 Host 账号。目录映射是路径接口，不提供 OS 隔离。需要沙箱目标时，继续阅读[后端选择](index.md#choose-a-backend)。
+Direct Local 使用 Host 操作系统账号运行，并将逻辑路径映射到工作区目录。需要操作系统级沙箱隔离时，请继续阅读[后端选择](index.md#choose-a-backend)。
 
 ## 与 Harness 一起使用
 

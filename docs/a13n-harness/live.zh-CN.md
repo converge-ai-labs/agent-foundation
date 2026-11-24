@@ -80,7 +80,7 @@ if __name__ == "__main__":
 
 ## 工具、内联审批、状态续接与用量
 
-原生工具 Schema 会在建立连接时一次性宣告。若需在保持语音连接不断开的前提下审批敏感调用或回填外部工具结果，请在能力列表或 `RunBindings` 中注册 `HandleDeferredToolCalls`，而非挂起等待 `DeferredToolResume`。Harness 会将初始上下文注入会话指令，并在工具调用完成后追加刷新后的上下文。
+原生工具 Schema 会在建立连接时一次性宣告。若需在保持语音连接不断开的前提下审批敏感调用或回填外部工具结果，请在能力列表或 `RunBindings` 中注册 `HandleDeferredToolCalls`，在当前长连接内直接完成延迟调用。Harness 会将初始上下文注入会话指令，并在工具调用完成后追加刷新后的上下文。
 
 正常结束调用 `close()`（中止调用 `cancel()`），排空迭代器收到 `HarnessRunResultEvent`（由于对话内容保存在消息历史中，`result.output` 恒为 `None`），然后持久化 `await live.export_state()`。下次调用 `agent.live(..., previous_state=restored)` 即可在新连接上续接同一会话。
 
