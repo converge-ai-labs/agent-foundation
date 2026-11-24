@@ -26,7 +26,6 @@ from a13n_harness.tools.metadata import (
     ToolOutputPolicy,
     ToolResourceResolver,
 )
-from a13n_harness.tools.surface import UNATTENDED_TOOL_KEY
 
 from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, environment_failure
@@ -546,7 +545,6 @@ class ShellToolset:
             name=name,
             metadata={
                 TOOL_EXECUTION_METADATA_KEY: self._execution_mode if tool_id == "environment.shell_exec" else "control",
-                UNATTENDED_TOOL_KEY: True,
             },
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,

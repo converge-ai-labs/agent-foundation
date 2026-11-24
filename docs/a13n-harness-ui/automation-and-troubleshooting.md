@@ -21,7 +21,7 @@ a13n-harness-ui run "Summarize the next step" --resume thread-id --format json
 a13n-harness-ui --environment-mode sandbox run "Inspect the repository"
 ```
 
-One-shot runs are always unattended. Choose tools that can finish under the Project’s permission rules without human input. `run --resume` keeps the Thread’s saved Project and roots. If a saved decision blocks admission, answer it with `a13n-harness-ui --resume thread-id` in an interactive terminal.
+One-shot runs are always unattended. Tools that require external input or static approval are hidden. Shell review and other argument-dependent checks still run; calls that require approval fail without suspending the Run. `run --resume` keeps the Thread’s saved Project and roots. If a saved decision blocks admission, answer it with `a13n-harness-ui --resume thread-id` in an interactive terminal.
 
 | Symptom                             | Resolution                                                                                              |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------- |

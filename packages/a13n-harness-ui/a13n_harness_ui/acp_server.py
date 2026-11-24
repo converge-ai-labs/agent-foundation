@@ -3,23 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import re
-import select
-import sys
-from collections.abc import AsyncIterator, Iterable, Sequence
-from contextlib import AbstractAsyncContextManager, asynccontextmanager, suppress
+from collections.abc import Callable, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from importlib.metadata import version
 from pathlib import Path
-from typing import IO, Any, SupportsIndex, cast
+from typing import Any
 
 from a13n_harness.context import AgentContext
 from a13n_harness.events import TaskChangedPayload, UsageReportPayload
 from a13n_harness.models.codex import CodexRequestModel
-from a13n_logging import get_logger
-from acp import Agent, Client, RequestError
-from acp.agent import AgentSideConnection
+from acp import Client, RequestError
 from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
@@ -27,7 +21,6 @@ from acp.schema import (
     AgentThoughtChunk,
     Implementation,
     InitializeResponse,
-    McpServerStdio,
     NewSessionResponse,
     PermissionOption,
     PlanEntry,
@@ -45,18 +38,20 @@ from acp.schema import (
     ToolCallUpdate,
     UsageUpdate,
 )
-from pydantic_ai import DeferredToolRequests, DeferredToolResults, RunContext
+from pydantic_ai import DeferredToolRequests, DeferredToolResults, RunContext, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability, HandleDeferredToolCalls
-from pydantic_ai.messages import AgentStreamEvent, PartEndEvent, ThinkingPart
+from pydantic_ai.messages import AgentStreamEvent, PartEndEvent, ThinkingPart, ToolCallPart
+from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.models.wrapper import WrapperModel
 from pydantic_ai.tools import ToolApproved, ToolDenied
 
 from a13n_harness_ui.app import HarnessUiApp
-from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.errors import HarnessUiError, LivePresentationError
 from a13n_harness_ui.live import LiveEvent, LiveSubscription
 from a13n_harness_ui.model_thinking import describe_thinking
 from a13n_harness_ui.root_inputs import StrictRootInputs
-from a13n_harness_ui.session_mcp import SessionMcpServer
+from a13n_harness_ui.session_mcp import PROFILE, SessionMcpServer, select_session_mcp
 from a13n_harness_ui.surfaces import (
     NewThreadDefaults,
     RootOperationStatus,
@@ -65,11 +60,22 @@ from a13n_harness_ui.surfaces import (
     RunModelOverrides,
 )
 
-PROFILE = "dev.a13n.harness-ui"
+
+def _profile(kwargs: dict[str, Any]) -> dict[str, Any] | None:
+    profile = kwargs.get(PROFILE)
+    if profile is not None and not isinstance(profile, dict):
+        raise RequestError.invalid_params({"message": "Invalid a13n request metadata."})
+    return profile
 
 
 class _PromptCancelled(Exception):
     """The ACP turn was cancelled before the App registered an operation."""
+
+
+@dataclass(slots=True)
+class _Approval:
+    call: ToolCallPart
+    answer: asyncio.Future[ToolApproved | ToolDenied]
 
 
 @dataclass(slots=True)
@@ -78,13 +84,11 @@ class _Turn:
     receipt: RootRunReceipt | None = None
     cancel_requested: bool = False
     stopping: asyncio.Task[None] | None = None
-    settled: asyncio.Event = field(default_factory=asyncio.Event)
+    notifications: asyncio.Queue[AgentThoughtChunk | str | _Approval] = field(default_factory=asyncio.Queue)
     plan: dict[str, PlanEntry] = field(default_factory=dict)
     run_id: str | None = None
     tool_calls: dict[str, str] = field(default_factory=dict)
-
-    def admitted(self, receipt: RootRunReceipt) -> None:
-        self.receipt = receipt
+    started_calls: set[str] = field(default_factory=set)
 
 
 class AcpAgent:
@@ -94,12 +98,12 @@ class AcpAgent:
         self.client: Client
         self.initialized = False
         self.disconnected = False
-        self.profile_usage = False
         self.resuming: set[str] = set()
         self.sessions: dict[str, tuple[SessionMcpServer, ...]] = {}
         self.turns: dict[str, _Turn] = {}
         self.model_overrides: dict[str, RunModelOverrides] = {}
-        self.turn_ids: dict[str, set[str]] = {}
+        self.omitted_servers: dict[str, list[dict[str, Any]]] = {}
+        self.tool_exclusions: dict[str, dict[str, str]] = {}
 
     def on_connect(self, conn: Client) -> None:
         self.client = conn
@@ -114,22 +118,8 @@ class AcpAgent:
 
     async def initialize(self, protocol_version: int, **kwargs: Any) -> InitializeResponse:
         self.initialized = True
-        profile = kwargs.get(PROFILE)
-        self.profile_usage = (
-            isinstance(profile, dict) and type(profile.get("version")) is int and profile["version"] == 1
-        )
         return InitializeResponse(
-            field_meta={
-                PROFILE: {
-                    "version": 1,
-                    "unattended": self.unattended,
-                    "steer": True,
-                    "inputAcceptance": True,
-                    "inventory": True,
-                    "usageReport": True,
-                    "unattendedSafeMcpServers": True,
-                }
-            },
+            field_meta={PROFILE: {"version": 1, "unattended": self.unattended}},
             protocol_version=1,
             agent_info=Implementation(name="a13n-harness-ui", title="Harness UI", version=version("a13n-harness-ui")),
             agent_capabilities=AgentCapabilities(
@@ -151,13 +141,14 @@ class AcpAgent:
     ) -> NewSessionResponse:
         self._require_initialized()
         directory = _cwd(cwd)
-        servers, meta = _mcp_selection(directory, mcp_servers, kwargs.get(PROFILE), unattended=self.unattended)
+        servers, meta = select_session_mcp(directory, mcp_servers, _profile(kwargs), unattended=self.unattended)
         try:
             project_id = await self.app.ensure_cwd_project(directory)
             thread = await self.app.create_thread(defaults=NewThreadDefaults(project_id=project_id))
         except HarnessUiError as exc:
             raise _app_error(exc) from exc
         self.sessions[thread.thread_id] = servers
+        self.omitted_servers[thread.thread_id] = meta[PROFILE]["omittedMcpServers"] if meta else []
         return NewSessionResponse(
             session_id=thread.thread_id, field_meta=meta, config_options=[*await self._options(thread.thread_id)]
         )
@@ -167,14 +158,21 @@ class AcpAgent:
     ) -> ResumeSessionResponse:
         self._require_initialized()
         directory = _cwd(cwd)
-        servers, meta = _mcp_selection(directory, mcp_servers, kwargs.get(PROFILE), unattended=self.unattended)
+        servers, meta = select_session_mcp(directory, mcp_servers, _profile(kwargs), unattended=self.unattended)
         if session_id in self.turns or session_id in self.resuming:
             raise RequestError.invalid_request({"message": "The session already has an open turn or resume request."})
         self.resuming.add(session_id)
         try:
             detail = await self.app.get_thread(session_id)
             thread = detail.thread
-            if thread.parent_thread_id is not None or thread.archived or thread.memory_scope is not None:
+            if (
+                thread.role != "ordinary"
+                or thread.coordinator_thread_id is not None
+                or thread.parent_thread_id is not None
+                or thread.archived
+                or thread.memory_scope is not None
+                or thread.configuration.agent_source.kind != "agent"
+            ):
                 raise RequestError.invalid_params({"message": "Only active ordinary root Threads can be resumed."})
             if await self.app.active_root_operation(session_id) is not None:
                 raise RequestError.invalid_request({"message": "The Thread already has an active run."})
@@ -185,9 +183,16 @@ class AcpAgent:
                 raise RequestError.invalid_request(
                     {"message": "Resolve the Thread's pending decisions before resuming."}
                 )
-            options = await self._options(session_id, include_override=False)
+            override = self.model_overrides.pop(session_id, None)
+            try:
+                options = await self._options(session_id)
+            except BaseException:
+                if override is not None:
+                    self.model_overrides[session_id] = override
+                raise
             self.sessions[session_id] = servers
-            self.model_overrides.pop(session_id, None)
+            self.omitted_servers[session_id] = meta[PROFILE]["omittedMcpServers"] if meta else []
+            self.tool_exclusions.pop(session_id, None)
             return ResumeSessionResponse(field_meta=meta, config_options=[*options])
         except HarnessUiError as exc:
             raise _app_error(exc) from exc
@@ -197,9 +202,7 @@ class AcpAgent:
     async def prompt(self, session_id: str, prompt: Sequence[object], **kwargs: Any) -> PromptResponse:
         self._require_session(session_id)
         parts = _prompt_parts(prompt)
-        profile = kwargs.get(PROFILE)
-        if profile is not None and not isinstance(profile, dict):
-            raise RequestError.invalid_params({"message": "Invalid a13n prompt metadata."})
+        profile = _profile(kwargs)
         turn_id = None if profile is None or "turnId" not in profile else _identifier(profile["turnId"])
         ids = None if profile is None else profile.get("inputIds")
         if ids is not None and (not isinstance(ids, list) or len(ids) != len(parts) or len(ids) > 256):
@@ -209,50 +212,42 @@ class AcpAgent:
             raise RequestError.invalid_params({"message": "Input IDs must be unique within the turn."})
         if session_id in self.turns or session_id in self.resuming:
             raise RequestError.invalid_request({"message": "The session already has an open turn or resume request."})
-        if turn_id is not None:
-            seen = self.turn_ids.setdefault(session_id, set())
-            if turn_id in seen or len(seen) >= 4096:
-                raise RequestError.invalid_params(
-                    {"message": "Use a fresh turn ID (at most 4096 per connection session)."}
-                )
-            seen.add(turn_id)
         turn = self.turns[session_id] = _Turn(turn_id)
         servers = self.sessions[session_id]
         override = self.model_overrides.get(session_id) or RunModelOverrides(carry_forward=False)
-
-        async def accepted(input_id: str) -> None:
-            await self.client.ext_notification(
-                "a13n/input_accepted", {"sessionId": session_id, "turnId": turn_id, "inputId": input_id}
-            )
 
         def check_admission() -> None:
             if turn.cancel_requested or self.disconnected:
                 raise _PromptCancelled
 
-        inputs = StrictRootInputs(accepted)
-        message = inputs.prompt(tuple(zip(input_ids, parts, strict=True))) if input_ids else "\n".join(parts)
+        inputs = StrictRootInputs(turn.notifications.put_nowait) if turn_id is not None or input_ids else None
+        message = inputs.prompt(tuple(zip(input_ids, parts, strict=True))) if inputs and input_ids else "\n".join(parts)
         result = None
         try:
             async with self.app.watch_thread(root_thread_id=session_id) as watch:
                 check_admission()
+                self.tool_exclusions.pop(session_id, None)
                 capabilities: tuple[AbstractCapability[AgentContext], ...] = (
-                    _SummaryCapability(self.client, session_id),
+                    _TurnCapability(
+                        turn.notifications,
+                        snapshot=lambda hidden: self.tool_exclusions.__setitem__(session_id, hidden),
+                    ),
                     *(server.capability() for server in servers),
                 )
                 if not self.unattended:
-                    capabilities += (HandleDeferredToolCalls(self._permission_handler(session_id)),)
+                    capabilities += (HandleDeferredToolCalls(self._permission_handler(turn)),)
                 await self.app.submit_thread(
                     thread_id=session_id,
                     prompt=message,
                     strict_inputs=inputs,
                     run_capabilities=capabilities,
                     model_overrides=override,
-                    on_admitted=turn.admitted,
+                    on_admitted=lambda receipt: setattr(turn, "receipt", receipt),
                     before_admit=check_admission,
                 )
                 if turn.cancel_requested and not self.disconnected:
                     self._request_stop(turn)
-                result = await self._observe(session_id, turn, watch.events)
+                result = await self._stream(session_id, turn, watch.events)
             for call_id in turn.tool_calls.values():
                 await self.client.session_update(session_id, ToolCallProgress(tool_call_id=call_id, status="failed"))
             if result.status is RootOperationStatus.cancelled:
@@ -277,6 +272,8 @@ class AcpAgent:
             return PromptResponse(stop_reason="end_turn", field_meta={PROFILE: final})
         except _PromptCancelled:
             return PromptResponse(stop_reason="cancelled")
+        except LivePresentationError as exc:
+            raise RequestError.internal_error({"code": exc.code}) from exc
         except HarnessUiError as exc:
             raise _app_error(exc) from exc
         finally:
@@ -287,35 +284,65 @@ class AcpAgent:
                     await self._join_stop(turn.stopping)
             finally:
                 del self.turns[session_id]
-                turn.settled.set()
 
-    def _permission_handler(self, session_id: str):
+    def _permission_handler(self, turn: _Turn):
         async def handle(ctx: RunContext[AgentContext], requests: DeferredToolRequests) -> DeferredToolResults:
             approvals = {}
             for call in requests.approvals:
-                response = await self.client.request_permission(
-                    session_id,
-                    ToolCallUpdate(tool_call_id=call.tool_call_id, title=call.tool_name, raw_input=call.args),
-                    [
-                        PermissionOption(option_id="allow-once", name="Allow once", kind="allow_once"),
-                        PermissionOption(option_id="reject-once", name="Reject once", kind="reject_once"),
-                    ],
-                )
-                outcome = response.outcome
-                approvals[call.tool_call_id] = (
-                    ToolApproved()
-                    if outcome.outcome == "selected" and outcome.option_id == "allow-once"
-                    else ToolDenied()
-                )
+                if self.disconnected:
+                    approvals[call.tool_call_id] = ToolDenied()
+                    continue
+                answer = asyncio.get_running_loop().create_future()
+                turn.notifications.put_nowait(_Approval(call, answer))
+                approvals[call.tool_call_id] = await answer
             return DeferredToolResults(
                 approvals=approvals,
                 calls={
-                    call.tool_call_id: ToolDenied("Client cannot answer this tool input request.")
+                    call.tool_call_id: ToolFailed("Client cannot answer this tool input request.")
                     for call in requests.calls
                 },
             )
 
         return handle
+
+    async def _ask_approval(self, session_id: str, turn: _Turn, request: _Approval) -> None:
+        if request.answer.done():
+            return
+        call = request.call
+        answer: ToolApproved | ToolDenied = ToolDenied()
+        try:
+            if not self.disconnected:
+                # A fast model can request approval before the live observer sees
+                # the start event. Publish the start here if needed and dedupe it.
+                await self._start_tool_call(session_id, turn, call.tool_call_id, call.tool_name)
+                raw_input = call.args
+                with suppress(ValueError, TypeError, AssertionError):
+                    raw_input = call.args_as_dict()
+                pending = asyncio.create_task(
+                    self.client.request_permission(
+                        session_id,
+                        ToolCallUpdate(tool_call_id=call.tool_call_id, title=call.tool_name, raw_input=raw_input),
+                        [
+                            PermissionOption(option_id="allow-once", name="Allow once", kind="allow_once"),
+                            PermissionOption(option_id="reject-once", name="Reject once", kind="reject_once"),
+                        ],
+                    )
+                )
+                try:
+                    ready, _ = await asyncio.wait((pending, request.answer), return_when=asyncio.FIRST_COMPLETED)
+                    if pending in ready:
+                        outcome = pending.result().outcome
+                        if outcome.outcome == "selected" and outcome.option_id == "allow-once":
+                            answer = ToolApproved()
+                finally:
+                    if not pending.done():
+                        pending.cancel()
+                    await asyncio.gather(pending, return_exceptions=True)
+        except (ConnectionError, RequestError):
+            pass
+        finally:
+            if not request.answer.done():
+                request.answer.set_result(answer)
 
     async def cancel(self, session_id: str, **kwargs: Any) -> None:
         turn = self.turns.get(session_id)
@@ -324,7 +351,6 @@ class AcpAgent:
         turn.cancel_requested = True
         if turn.receipt is not None:
             self._request_stop(turn)
-        await turn.settled.wait()
 
     def _request_stop(self, turn: _Turn) -> asyncio.Task[None]:
         assert turn.receipt is not None
@@ -382,15 +408,23 @@ class AcpAgent:
             "skills": [{"name": item.name, "description": item.description} for item in skills.items] if skills else [],
             "mcpServers": [{"name": name, "source": "configuration"} for name in config.mcp_server_ids]
             + [{"name": entry.name, "source": "session"} for entry in self.sessions[session_id]],
+            "omittedMcpServers": self.omitted_servers[session_id],
+            **(
+                {"omittedTools": [{"name": name, "reason": reason} for name, reason in sorted(hidden.items())]}
+                if (hidden := self.tool_exclusions.get(session_id)) is not None
+                else {}
+            ),
         }
 
-    async def _options(self, session_id: str, *, include_override: bool = True) -> list[SessionConfigOptionSelect]:
+    async def _options(self, session_id: str) -> list[SessionConfigOptionSelect]:
         source = await self.app.current_configuration()
         if source is None or not source.models:
             return []
         inspection = await self.app.inspect_thread_configuration(session_id)
-        override = self.model_overrides.get(session_id) if include_override else None
+        override = self.model_overrides.get(session_id)
         current = override.model_id if override and override.model_id else inspection.next_model_id
+        if current not in source.models:
+            current = None
         choices = [SessionConfigSelectOption(value="default", name="Thread default")]
         choices.extend(SessionConfigSelectOption(value=key, name=model.name) for key, model in source.models.items())
         result = [
@@ -428,8 +462,6 @@ class AcpAgent:
         **kwargs: Any,
     ) -> SetSessionConfigOptionResponse:
         self._require_session(session_id)
-        if session_id in self.turns or session_id in self.resuming:
-            raise RequestError.invalid_request({"message": "Set configuration between turns and outside resume."})
         options = {option.id: option for option in await self._options(session_id)}
         if session_id in self.turns or session_id in self.resuming:
             raise RequestError.invalid_request({"message": "Set configuration between turns and outside resume."})
@@ -442,6 +474,7 @@ class AcpAgent:
             thinking = {"default": None, "on": True, "off": False}.get(value, value)
             override = RunModelOverrides(model_id=override.model_id, thinking=thinking, carry_forward=False)
         self.model_overrides[session_id] = override
+        self.tool_exclusions.pop(session_id, None)
         return SetSessionConfigOptionResponse(config_options=[*await self._options(session_id)])
 
     async def ext_method(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -469,32 +502,58 @@ class AcpAgent:
             return {"delivery": "unknown"}
         return {"delivery": delivery}
 
-    async def _observe(self, session_id: str, turn: _Turn, events: LiveSubscription) -> RootOperationView:
+    async def _stream(self, session_id: str, turn: _Turn, events: LiveSubscription) -> RootOperationView:
         assert turn.receipt is not None
-        receipt_id = turn.receipt.receipt_id
-        done = asyncio.create_task(self.app.wait_root_operation(receipt_id))
+        done = asyncio.create_task(self.app.wait_root_operation(turn.receipt.receipt_id))
+        receive = asyncio.create_task(events.receive())
+        notify = asyncio.create_task(turn.notifications.get())
         try:
-            await self._stream(session_id, events, done)
+            while True:
+                ready, _ = await asyncio.wait((done, receive, notify), return_when=asyncio.FIRST_COMPLETED)
+                if done in ready:
+                    # Fence pending readers before the awaits below so they
+                    # cannot consume any entries from the terminal drain.
+                    for reader in (receive, notify):
+                        if not reader.done():
+                            reader.cancel()
+                if receive in ready:
+                    await self._update(session_id, receive.result())
+                if notify in ready:
+                    await self._notify(session_id, turn, notify.result())
+                if done in ready:
+                    break
+                if receive in ready:
+                    receive = asyncio.create_task(events.receive())
+                if notify in ready:
+                    notify = asyncio.create_task(turn.notifications.get())
+            for event in events.drain_pending():
+                await self._update(session_id, event)
+            while not turn.notifications.empty():
+                await self._notify(session_id, turn, turn.notifications.get_nowait())
             return done.result()
         finally:
-            # Only the observer is owned here; prompt owns stopping the Run.
-            if not done.done():
-                done.cancel()
-            await asyncio.gather(done, return_exceptions=True)
+            # These are observer tasks. The prompt still owns stopping the Run.
+            for task in (done, receive, notify):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(done, receive, notify, return_exceptions=True)
 
-    async def _stream(self, session_id: str, events: LiveSubscription, done: asyncio.Task[RootOperationView]) -> None:
-        while not done.done():
-            receive = asyncio.create_task(events.receive())
-            try:
-                await asyncio.wait((receive, done), return_when=asyncio.FIRST_COMPLETED)
-                if receive.done():
-                    await self._update(session_id, receive.result())
-            finally:
-                if not receive.done():
-                    receive.cancel()
-                    await asyncio.gather(receive, return_exceptions=True)
-        for event in events.drain_pending():
-            await self._update(session_id, event)
+    async def _notify(self, session_id: str, turn: _Turn, update: AgentThoughtChunk | str | _Approval) -> None:
+        if isinstance(update, _Approval):
+            await self._ask_approval(session_id, turn, update)
+        elif isinstance(update, str):
+            await self.client.ext_notification(
+                "a13n/input_accepted", {"sessionId": session_id, "turnId": turn.turn_id, "inputId": update}
+            )
+        else:
+            await self.client.session_update(session_id, update)
+
+    async def _start_tool_call(self, session_id: str, turn: _Turn, call_id: str, name: str) -> None:
+        if call_id not in turn.started_calls:
+            await self.client.session_update(
+                session_id, ToolCallStart(tool_call_id=call_id, title=name, status="in_progress")
+            )
+            turn.started_calls.add(call_id)
 
     async def _update(self, session_id: str, event: LiveEvent) -> None:
         if event.run_kind != "root":
@@ -505,6 +564,8 @@ class AcpAgent:
             turn.run_id = (await self.app.get_root_operation(turn.receipt.receipt_id)).run_id
         if event.run_id != turn.run_id:
             return
+        if event.payload_omitted:
+            raise RequestError.internal_error({"code": "live_payload_omitted"})
         payload = event.payload or {}
         item = event.item
         if item is not None and item.kind == "tool_call":
@@ -512,9 +573,7 @@ class AcpAgent:
                 call_id, name = payload.get("toolCallId"), payload.get("toolCallName")
                 if isinstance(call_id, str) and isinstance(name, str) and item.id not in turn.tool_calls:
                     turn.tool_calls[item.id] = call_id
-                    await self.client.session_update(
-                        session_id, ToolCallStart(tool_call_id=call_id, title=name, status="in_progress")
-                    )
+                    await self._start_tool_call(session_id, turn, call_id, name)
             elif item.state in {"completed", "failed", "interrupted"}:
                 if (call_id := turn.tool_calls.pop(item.id, None)) is not None:
                     status = "completed" if item.state == "completed" else "failed"
@@ -555,13 +614,13 @@ class AcpAgent:
                         field_meta={PROFILE: {"usageReport": report}},
                     ),
                 )
-            elif self.profile_usage:
+            else:
                 await self.client.ext_notification(
                     "a13n/usage_report", {"sessionId": session_id, "version": 1, "usageReport": report}
                 )
 
 
-class _SummaryCapability(AbstractCapability[AgentContext]):
+class _TurnCapability(AbstractCapability[AgentContext]):
     """Expose only Responses summary text from the audited adapters.
 
     The pinned Responses parser keeps raw `reasoning_text` in
@@ -569,19 +628,31 @@ class _SummaryCapability(AbstractCapability[AgentContext]):
     fields are intentionally ignored, including on parts carrying a summary.
     """
 
-    def __init__(self, client: Client, session_id: str) -> None:
-        self.client = client
-        self.session_id = session_id
+    def __init__(
+        self,
+        notifications: asyncio.Queue[AgentThoughtChunk | str | _Approval],
+        *,
+        snapshot: Callable[[dict[str, str]], None],
+    ) -> None:
+        self.notifications = notifications
+        self.snapshot = snapshot
+
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        self.snapshot(dict(ctx.deps.unattended_tool_exclusions))
+        return request_context
 
     async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
-        if (
-            isinstance(event, PartEndEvent)
-            and isinstance(event.part, ThinkingPart)
-            and event.part.content
-            and isinstance(ctx.model, (CodexRequestModel, OpenAIResponsesModel))
-        ):
-            await self.client.session_update(
-                self.session_id, AgentThoughtChunk(content=TextContentBlock(type="text", text=event.part.content))
+        # The SDK requires an async hook. This producer never awaits I/O.
+        if not isinstance(event, PartEndEvent) or not isinstance(event.part, ThinkingPart) or not event.part.content:
+            return
+        model = ctx.model
+        while isinstance(model, WrapperModel):
+            model = model.wrapped
+        if isinstance(model, (CodexRequestModel, OpenAIResponsesModel)):
+            self.notifications.put_nowait(
+                AgentThoughtChunk(content=TextContentBlock(type="text", text=event.part.content))
             )
 
 
@@ -615,158 +686,3 @@ def _prompt_parts(prompt: Sequence[object]) -> list[str]:
     if not result.strip():
         raise RequestError.invalid_params({"message": "The prompt must not be blank."})
     return parts
-
-
-def _mcp_selection(
-    directory: Path,
-    entries: Sequence[object] | None,
-    profile: Any,
-    *,
-    unattended: bool,
-) -> tuple[tuple[SessionMcpServer, ...], dict[str, Any] | None]:
-    if profile is not None and not isinstance(profile, dict):
-        raise RequestError.invalid_params({"message": "Invalid a13n session metadata."})
-    opted = [] if profile is None else profile.get("unattendedSafeMcpServers", [])
-    if not isinstance(opted, list) or any(not isinstance(name, str) for name in opted) or len(set(opted)) != len(opted):
-        raise RequestError.invalid_params({"message": "List unique names in unattendedSafeMcpServers."})
-    if profile is not None and opted and (type(profile.get("version")) is not int or profile["version"] != 1):
-        raise RequestError.invalid_params({"message": "MCP opt-in requires a13n profile version 1."})
-    servers = []
-    omitted = []
-    names = set()
-    for entry in entries or ():
-        if not isinstance(entry, McpServerStdio):
-            raise RequestError.invalid_params({"message": "Only stdio MCP servers are supported."})
-        name = entry.name
-        if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", name) or name in names:
-            raise RequestError.invalid_params({"message": "MCP server names must be unique identifiers."})
-        names.add(name)
-        if not entry.command.strip() or "\x00" in entry.command or any("\x00" in arg for arg in entry.args):
-            raise RequestError.invalid_params({"message": "Use a nonblank MCP command and valid arguments."})
-        env = tuple((pair.name, pair.value) for pair in entry.env)
-        if len({key for key, _ in env}) != len(env) or any(
-            not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key) or "\x00" in value for key, value in env
-        ):
-            raise RequestError.invalid_params({"message": "Use unique, valid MCP environment entries."})
-        if unattended and name not in opted:
-            omitted.append({"name": name, "reason": "unattended_safety_not_declared"})
-            continue
-        servers.append(SessionMcpServer(name, entry.command, tuple(entry.args), directory, env, name in opted))
-    if set(opted) - names:
-        raise RequestError.invalid_params({"message": "Every opted-in MCP name must appear in this request."})
-    for item in omitted:
-        get_logger(__name__).warning("Omitted ACP MCP server %s: %s", item["name"], item["reason"])
-    return tuple(servers), {PROFILE: {"omittedMcpServers": omitted}} if omitted else None
-
-
-class _StdinReader(asyncio.StreamReader):
-    def __init__(self) -> None:
-        # StreamReader pauses above twice this pending-input limit. The SDK
-        # can still consume larger individual frames in chunks.
-        super().__init__(limit=1024 * 1024)
-        self._read_changed = asyncio.Event()
-        self._eof_received = False
-        self._pipe: asyncio.ReadTransport | None = None
-
-    def set_transport(self, transport: asyncio.BaseTransport) -> None:
-        super().set_transport(transport)
-        self._pipe = cast(asyncio.ReadTransport, transport)
-
-    def feed_data(self, data: Iterable[SupportsIndex]) -> None:
-        super().feed_data(data)
-        if self._pipe is not None and not self._pipe.is_reading():
-            self._read_changed.set()
-
-    def feed_eof(self) -> None:
-        super().feed_eof()
-        self._eof_received = True
-        self._read_changed.set()
-
-    async def wait_disconnected(self, stdin_fd: int) -> None:
-        # Poll only while asyncio has paused reads. POLLHUP reports a closed
-        # writer even with unread bytes in the pipe, without consuming them.
-        hangup = select.poll()
-        # Linux can report a socket peer's write-side shutdown as RDHUP
-        # without HUP if that peer is still reading.
-        hangup.register(stdin_fd, select.POLLHUP | getattr(select, "POLLRDHUP", 0))
-        while not self._eof_received:
-            if self._pipe is not None and not self._pipe.is_reading():
-                try:
-                    if hangup.poll(0):
-                        return
-                except OSError:
-                    return
-                await asyncio.sleep(0.05)
-            else:
-                await self._read_changed.wait()
-                self._read_changed.clear()
-
-
-@asynccontextmanager
-async def _stdio(protocol: IO[str]) -> AsyncIterator[tuple[_StdinReader, asyncio.StreamWriter]]:
-    loop = asyncio.get_running_loop()
-    reader = _StdinReader()
-    input_pipe, _ = await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
-    try:
-        # asyncio's pipe flow control wakes drain() when abort() closes the
-        # connection. The SDK's stdout protocol only wakes on resume_writing().
-        unused_reader = asyncio.StreamReader()
-        output_protocol = asyncio.StreamReaderProtocol(unused_reader)
-        output_pipe, _ = await loop.connect_write_pipe(lambda: output_protocol, protocol)
-        try:
-            yield reader, asyncio.StreamWriter(output_pipe, output_protocol, None, loop)
-        finally:
-            if not output_pipe.is_closing():
-                output_pipe.abort()
-    finally:
-        input_pipe.close()
-
-
-async def _listen(connection: AgentSideConnection, reader: _StdinReader) -> None:
-    # A receive can be waiting to send a parse-error response. Observe
-    # stdin closing even if the SDK listener cannot read more bytes.
-    listener = asyncio.create_task(connection.listen())
-    disconnect = asyncio.create_task(reader.wait_disconnected(sys.stdin.fileno()))
-    try:
-        await asyncio.wait((listener, disconnect), return_when=asyncio.FIRST_COMPLETED)
-        if listener.done():
-            listener.result()
-        if disconnect.done():
-            disconnect.result()
-    finally:
-        for task in (listener, disconnect):
-            task.cancel()
-        await asyncio.gather(listener, disconnect, return_exceptions=True)
-
-
-async def serve(app_factory: AbstractAsyncContextManager[HarnessUiApp], *, unattended: bool = False) -> None:
-    """Keep even subprocess and extension diagnostics away from the protocol descriptor."""
-    sys.stdout.flush()
-    with os.fdopen(os.dup(sys.stdout.fileno()), "w", encoding="utf-8") as original_stdout:
-        os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
-        try:
-            with os.fdopen(os.dup(original_stdout.fileno()), "w", encoding="utf-8") as protocol:
-                async with _stdio(protocol) as (reader, writer):
-                    closing = None
-                    try:
-                        async with app_factory as app:
-                            agent = AcpAgent(app, unattended=unattended)
-                            # Own the listen/close boundary without changing SDK routing.
-                            connection = AgentSideConnection(cast(Agent, agent), writer, reader, listening=False)
-                            try:
-                                await _listen(connection, reader)
-                            finally:
-                                agent.disconnect()
-                                if not writer.is_closing():
-                                    writer.transport.abort()
-                                # Exit the App context without waiting for SDK handlers.
-                                closing = asyncio.create_task(connection.close())
-                    finally:
-                        if closing is not None:
-                            # An aborted writer can report connection loss when
-                            # SDK close joins its sender. The client is gone.
-                            with suppress(ConnectionError):
-                                await closing
-        finally:
-            sys.stdout.flush()
-            os.dup2(original_stdout.fileno(), sys.stdout.fileno())

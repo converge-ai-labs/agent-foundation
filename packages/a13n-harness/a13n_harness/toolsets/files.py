@@ -39,7 +39,6 @@ from a13n_harness.tools.metadata import (
     ToolOutputPolicy,
     ToolResourceResolver,
 )
-from a13n_harness.tools.surface import UNATTENDED_TOOL_KEY
 
 from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._media import dispatch_media
@@ -387,7 +386,6 @@ class FileToolset:
     ) -> HarnessTool:
         return HarnessTool(
             function,
-            metadata={UNATTENDED_TOOL_KEY: True},
             harness_metadata=HarnessToolMetadata(
                 tool_id=tool_id,
                 effects=frozenset(effects),

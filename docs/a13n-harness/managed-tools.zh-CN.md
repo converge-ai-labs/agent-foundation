@@ -120,8 +120,6 @@ permissions = ToolPermissionsCapability(
 
 ### 无人值守运行
 
-当运行在没有人工审批或问答的环境中执行时，传入 `RunBindings.embedded(unattended=True)`（或 `RunBindings(unattended=True)`）。无人值守模式会自动设置 `deferred_tools_supported=False`，传播到内联子智能体，并在直接调用、`ToolSearch` 与 `CodeAct` 中过滤工具面：
+在没有人工输入的情况下，使用 `RunBindings(unattended=True)` 或 `RunBindings.embedded(unattended=True)`。需要外部输入的工具，以及生效权限为 `ask` 或 `deny` 的工具，不会出现在模型、Tool Search 或 CodeAct 的工具列表中。内联子 Agent 继承此模式。已配置的 MCP 工具和模型提供方的原生工具等其他工具仍遵循常规策略，无需额外声明工具元数据。
 
-- 自定义工具需为非延迟定义、声明 `metadata={"a13n.harness.unattended": True}`（`UNATTENDED_TOOL_KEY`），且权限解析为 `allow`（且未启用 `InvocationPolicyCapability`）才会被准入。
-- 配置为 `review` 权限的 `environment.shell_exec` 仍可使用；当审查器判定需要人工审批时，该次工具调用直接失败。
-- 除 `ToolSearchTool` 外的提供商侧原生工具会被排除，任何意外触发的延迟调用都会直接失败而不会挂起运行。
+运行仍会执行依赖调用参数的检查。如果 Shell 审查、调用策略或其他检查要求人工批准，该次调用会失败。意外请求外部输入的调用也会失败。运行不会自动批准，也不会挂起等待答复。

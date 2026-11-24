@@ -21,7 +21,7 @@ a13n-harness-ui run "Summarize the next step" --resume thread-id --format json
 a13n-harness-ui --environment-mode sandbox run "Inspect the repository"
 ```
 
-单次运行始终采用无人值守模式。请选择符合项目权限规则且无需人工输入的工具。`run --resume` 保留会话已保存的项目和根目录。若已有待处理决定导致启动失败，请在交互式终端执行 `a13n-harness-ui --resume thread-id`，先处理该决定。
+单次运行始终采用无人值守模式。需要外部输入或固定要求审批的工具不会出现在工具列表中。Shell 审查和其他依赖调用参数的检查照常执行；需要审批的调用会失败，不会挂起运行。`run --resume` 保留会话已保存的项目和根目录。若已有待处理决定导致启动失败，请在交互式终端执行 `a13n-harness-ui --resume thread-id`，先处理该决定。
 
 | 常见现象                                | 处理方式                                                                                |
 | --------------------------------------- | --------------------------------------------------------------------------------------- |

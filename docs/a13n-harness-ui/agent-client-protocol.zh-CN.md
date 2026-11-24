@@ -54,22 +54,22 @@ description: 在 Zed 或 JetBrains 中使用 Harness UI 的 ACP v1 Agent，或�
 2. 传入工作区绝对路径 `cwd` 调用 `session/new`，或传入已保存的会话 ID 及其首个本地根目录调用 `session/resume`（恢复失败直接返回错误，不会新建会话）。
 3. 发送 `session/prompt`，在等待响应期间监听 `session/update` 实时更新，并通过 `session/cancel` 中止当前轮次。待收到终止响应后再确认最终答案。
 
-无人值守模式会过滤需要人工输入的工具。配置允许时仍可使用 Shell，若某条命令在审查后需要人工审批，该次工具调用会失败。已有待处理决定的 Thread 无法进入无人值守运行，请先在交互界面（TUI 或 WebUI）中处理。只需执行单条无头提示时，请使用始终以无人值守模式运行的 [`a13n-harness-ui run`](command-reference.md#run)。
+无人值守模式会隐藏需要外部输入的工具，以及生效权限为 `ask` 或 `deny` 的工具。已配置的 MCP 工具和其他非交互式工具仍遵循常规权限。配置允许时仍可使用 Shell，若某条命令在审查后需要人工审批，该次工具调用会失败。已有待处理决定的 Thread 无法进入无人值守运行，请先在交互界面（TUI 或 WebUI）中处理。只需执行单条无头提示时，请使用始终以无人值守模式运行的 [`a13n-harness-ui run`](command-reference.md#run)。
 
 ## 使用 a13n 扩展
 
 `initialize` 响应会在 `_meta` 中声明 `dev.a13n.harness-ui`（`version: 1`）。标准 ACP 客户端可忽略该命名空间；支持该扩展的客户端可使用资源清单、用量上报、严格中途引导及无人值守会话 MCP 声明：
 
-| 消息 / 方法                              | 位置 / 方向                                      | 字段与行为                                                                                                                                                      |
-| ---------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `initialize`                             | `_meta["dev.a13n.harness-ui"]`                   | 请求中传入 `{"version": 1}` 以在上下文大小或占用未知时接收 `_a13n/usage_report`；响应中返回特性标志（`version`、`unattended`、`steer`、`inputAcceptance` 等）。 |
-| `_a13n/inventory`                        | 请求（`{"sessionId": "..."}`）                   | 列出 `defaultModel`、`models`（ID、名称、默认及支持的推理强度）、`skills` 与 `mcpServers`（名称及来源）。                                                       |
-| `session/set_config_option`              | 标准 ACP 请求（轮次之间调用）                    | 设置仅在当前连接生效的 `model` 与 `thought_level` 覆盖项，不修改已保存默认值（恢复会话时清除）。                                                                |
-| `session/prompt`                         | 请求 `_meta["dev.a13n.harness-ui"]`              | 可选的全新 `turnId`（用于启用 `_a13n/steer`）和 `inputIds`（每个内容块对应一个唯一 ID）。                                                                       |
-| `_a13n/input_accepted`                   | 服务端通知                                       | `{"sessionId", "turnId", "inputId"}`，表示输入已进入主模型请求检查点。                                                                                          |
-| `_a13n/steer`                            | 请求（`sessionId`、`turnId`、`inputId`、`text`） | 返回 `{"delivery": "accepted" \| "not_delivered" \| "unknown"}`。`not_delivered` 表示该轮未收到该输入；返回 `unknown` 或连接中断时请勿重发。                    |
-| `session/update` 与 `_a13n/usage_report` | 服务端通知                                       | 上下文大小与占用均已知时，`usage_update` 在 `_meta["dev.a13n.harness-ui"]` 中携带 `usageReport`；任一未知时，已声明版本 1 的客户端会收到 `_a13n/usage_report`。 |
-| `session/prompt` 响应                    | 响应 `_meta["dev.a13n.harness-ui"]`              | 携带 `finalOutput`、`finalOutputOmitted` 及已提交的 `finalMessage`（`continuationId`、`position`），用于将最终提交答案与先前的实时输出区分开。                  |
+| 消息 / 方法                              | 位置 / 方向                                      | 字段与行为                                                                                                                                     |
+| ---------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `initialize`                             | 响应 `_meta["dev.a13n.harness-ui"]`              | 返回 `version: 1` 和 Agent 是否采用 `unattended` 模式。                                                                                        |
+| `_a13n/inventory`                        | `sessionId`                                      | 列出模型、推理选项、Skills、已选 MCP 服务名及未纳入的项目和原因。工具列表根据最近一次准备运行时的结果报告未纳入的工具。                        |
+| `session/set_config_option`              | 标准 ACP 请求（轮次之间调用）                    | 设置仅在当前连接生效的 `model` 与 `thought_level` 覆盖项，不修改已保存默认值（恢复会话时清除）。                                               |
+| `session/prompt`                         | 请求 `_meta["dev.a13n.harness-ui"]`              | 可选的全新 `turnId`（用于启用 `_a13n/steer`）和 `inputIds`（每个内容块对应一个唯一 ID）。                                                      |
+| `_a13n/input_accepted`                   | 服务端通知                                       | `{"sessionId", "turnId", "inputId"}`，表示输入已进入主模型请求检查点。                                                                         |
+| `_a13n/steer`                            | 请求（`sessionId`、`turnId`、`inputId`、`text`） | 返回 `{"delivery": "accepted" \| "not_delivered" \| "unknown"}`。`not_delivered` 表示该轮未收到该输入；返回 `unknown` 或连接中断时请勿重发。   |
+| `session/update` 与 `_a13n/usage_report` | 服务端通知                                       | 上下文容量和用量已知时，`usage_update` 携带 `usageReport`。否则，服务端发送 `_a13n/usage_report`。标准 ACP 客户端可以忽略此扩展。              |
+| `session/prompt` 响应                    | 响应 `_meta["dev.a13n.harness-ui"]`              | 携带 `finalOutput`、`finalOutputOmitted` 及已提交的 `finalMessage`（`continuationId`、`position`），用于将最终提交答案与先前的实时输出区分开。 |
 
 ### 传入会话级 stdio MCP 服务
 

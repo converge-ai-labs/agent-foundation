@@ -20,7 +20,6 @@ from a13n_harness.tools import (
     ToolPermissions,
     ToolPermissionsCapability,
 )
-from a13n_harness.tools.surface import UNATTENDED_TOOL_KEY
 from a13n_harness.toolsets import (
     CodeActPolicyToolset,
     CodeActToolPolicy,
@@ -72,9 +71,7 @@ def _metadata(tool_id: str, *, superseded_by: frozenset[str] = frozenset()) -> H
     )
 
 
-def _tool(
-    name: str, tool_id: str, *, superseded_by: frozenset[str] = frozenset(), unattended: bool = False
-) -> HarnessTool:
+def _tool(name: str, tool_id: str, *, superseded_by: frozenset[str] = frozenset()) -> HarnessTool:
     def implementation() -> str:
         return name
 
@@ -83,7 +80,6 @@ def _tool(
         name=name,
         description=f"Invoke {name}.",
         harness_metadata=_metadata(tool_id, superseded_by=superseded_by),
-        metadata={UNATTENDED_TOOL_KEY: True} if unattended else None,
     )
 
 
@@ -208,11 +204,11 @@ async def test_run_replacement_cannot_wrap_outside_the_mandatory_surface() -> No
 
 
 @pytest.mark.parametrize("codeact", [False, True])
-async def test_unattended_tool_surface_admits_only_declared_noninteractive_tools(codeact: bool) -> None:
+async def test_unattended_tool_surface_excludes_static_approval(codeact: bool) -> None:
     tools = FunctionToolset(
         [
-            _tool("declared", "tools.declared", unattended=True),
-            _tool("needs_permission", "tools.approval", unattended=True),
+            _tool("declared", "tools.declared"),
+            _tool("needs_permission", "tools.approval"),
             _tool("undeclared", "tools.undeclared"),
         ],
         id="test-tools",
@@ -242,25 +238,25 @@ async def test_unattended_tool_surface_admits_only_declared_noninteractive_tools
     if codeact:
         assert "run_code" in observed
         assert "`declared`" in catalog
-        assert "`needs_permission`" not in catalog and "`undeclared`" not in catalog
+        assert "`needs_permission`" not in catalog and "`undeclared`" in catalog
     else:
-        assert observed == {"declared"}
+        assert observed == {"declared", "undeclared"}
 
 
 @pytest.mark.parametrize("codeact", [False, True])
 async def test_unattended_proxy_directory_uses_same_admitted_surface(codeact: bool) -> None:
     tools = FunctionToolset(
         [
-            _tool("declared", "test.declared", unattended=True),
-            _tool("must_ask", "test.ask", unattended=True),
-            _tool("must_deny", "test.deny", unattended=True),
+            _tool("declared", "test.declared"),
+            _tool("must_ask", "test.ask"),
+            _tool("must_deny", "test.deny"),
             _tool("undeclared", "test.undeclared"),
         ],
         id="search-test",
     )
 
     async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[Any]:
-        assert not any(isinstance(tool, WebSearchTool) for tool in info.model_request_parameters.native_tools)
+        assert any(isinstance(tool, WebSearchTool) for tool in info.model_request_parameters.native_tools)
         result = next(
             (part.content for message in messages for part in message.parts if isinstance(part, ToolReturnPart)), None
         )
@@ -268,7 +264,7 @@ async def test_unattended_proxy_directory_uses_same_admitted_surface(codeact: bo
             assert "list_tools" in {tool.name for tool in info.function_tools}
             yield {0: DeltaToolCall(name="list_tools", json_args="{}")}
         else:
-            assert "declared" in str(result) and "undeclared" not in str(result)
+            assert "declared" in str(result) and "undeclared" in str(result)
             assert "must_ask" not in str(result) and "must_deny" not in str(result)
             yield "done"
 
@@ -292,11 +288,12 @@ async def test_unattended_inline_child_filters_tools_and_denies_unexpected_defer
         raise CallDeferred()
 
     async def child_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[Any]:
-        assert {tool.name for tool in info.function_tools} == {"declared", "defer"}
+        assert {tool.name for tool in info.function_tools} == {"declared", "undeclared", "defer"}
         returned = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
         if not returned:
             yield {0: DeltaToolCall(name="defer", json_args="{}")}
         else:
+            assert returned[-1].outcome == "failed"
             assert "denied in unattended mode" in str(returned[-1].content)
             yield "child continued"
 
@@ -311,9 +308,9 @@ async def test_unattended_inline_child_filters_tools_and_denies_unexpected_defer
 
     tools = FunctionToolset(
         [
-            _tool("declared", "child.declared", unattended=True),
+            _tool("declared", "child.declared"),
             _tool("undeclared", "child.undeclared"),
-            Tool(defer, metadata={UNATTENDED_TOOL_KEY: True}),
+            Tool(defer),
         ],
         id="child-tools",
     )

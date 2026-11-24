@@ -83,7 +83,7 @@ async def _run(request: CliRequest) -> int:
         return 0
 
     if request.command == "acp":
-        from a13n_harness_ui.acp_server import serve
+        from a13n_harness_ui.acp_stdio import serve
 
         if any((request.thread_id, request.agent_id, request.environment_mode, request.environment_profile_id)):
             raise click.UsageError(

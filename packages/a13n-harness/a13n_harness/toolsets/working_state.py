@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from secrets import token_urlsafe
-from typing import Any, Literal, TypedDict
+from typing import Literal, TypedDict
 
 from pydantic import JsonValue, ValidationError
-from pydantic_ai import RunContext, Tool
+from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import TaskChangedPayload, TaskEventProjection, emit_harness_event
-from a13n_harness.tools.surface import UNATTENDED_TOOL_KEY
 
 from ._instructions import InstructionFunctionToolset, tool_guidance
 from ._results import ToolFailure, tool_failure, validation_failure
@@ -114,15 +113,11 @@ class WorkingStateToolset:
             get_logger(__name__).exception("Working State observer failed")
 
     def get_toolset(self, *, tasks: bool, notes: bool) -> FunctionToolset[AgentContext] | None:
-        def noninteractive(fn: Callable[..., Any]) -> Tool[AgentContext]:
-            return Tool(fn, metadata={UNATTENDED_TOOL_KEY: True})
-
         tools = []
         if tasks:
-            task_tools = (self.task_create, self.task_get, self.task_list, self.task_update)
-            tools.extend(noninteractive(fn) if self._configuration.task_mode == "embedded" else fn for fn in task_tools)
+            tools.extend((self.task_create, self.task_get, self.task_list, self.task_update))
         if notes:
-            tools.extend(noninteractive(fn) for fn in (self.note_write, self.note_delete, self.note_get))
+            tools.extend((self.note_write, self.note_delete, self.note_get))
         return (
             InstructionFunctionToolset(
                 tools=tools,

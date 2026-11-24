@@ -640,7 +640,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             usage_attribution=usage_attribution,
             deferred_resume=self._deferred_resume,
             _deferred_input=self._deferred_input,
-            deferred_tools_supported=bindings.deferred_tools_supported,
+            deferred_tools_supported=bindings.deferred_tools_supported and not bindings.unattended,
             unattended=bindings.unattended,
             _tool_recovery=(ToolRecoveryPlan(self._tool_recovery_mode, ()) if self._deferred_resume is None else None),
             _storage=storage,

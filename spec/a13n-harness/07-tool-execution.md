@@ -531,7 +531,7 @@ A question suspends the originating run and therefore retains no task, socket, c
 
 ### Unattended Run policy
 
-Hosts may set `RunBindings.unattended`. The effective Tool Surface admits only non-deferred definitions with an explicit `a13n.harness.unattended: true` declaration and a noninteractive permission. The declaration applies to all direct, Tool Search and CodeAct projections; child Runs must not relax the policy. Undeclared tools and invocation policies fail closed. Provider-executed native tools are excluded; native Tool Search can only select among the admitted local definitions. Shell is the exception for `review`: the reviewer still runs, and a review that needs human approval fails the call. Unexpected attempts to defer fail closed without granting approval or suspending the Run.
+Hosts may set `RunBindings.unattended`. Before model exposure, the effective Tool Surface excludes tools that require deferred input or whose effective static permission is `ask` or `deny`. The same surface applies to Tool Search and CodeAct; children inherit unattended execution. Other tools, including provider-native tools, follow normal composition and permission rules. Argument-dependent reviews and invocation policies run at call time. An approval requirement or unexpected deferral fails the call without granting approval or suspending the Run.
 
 ## Discovery, Proxying, and Programmatic Dispatch
 

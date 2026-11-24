@@ -218,8 +218,6 @@ class RunBindings:
             raise TypeError("RunBindings.configuration must be a RunConfiguration")
         if not isinstance(self.unattended, bool):
             raise TypeError("unattended must be a boolean")
-        if self.unattended:
-            object.__setattr__(self, "deferred_tools_supported", False)
         if not isinstance(self.deferred_tools_supported, bool):
             raise TypeError("deferred_tools_supported must be a boolean")
         if self.tool_result_directory is not None:
@@ -471,6 +469,7 @@ class AgentContext:
     request_context: RequestContext = field(default_factory=RequestContext, repr=False)
     deferred_tools_supported: bool = True
     unattended: bool = field(default=False, kw_only=True)
+    unattended_tool_exclusions: dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
     _envd_session_replacements: list[str] = field(default_factory=list, repr=False, compare=False)

@@ -25,6 +25,7 @@ from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.messages import TextContent
 
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser_handback import BrowserHandback
@@ -671,7 +672,7 @@ class RootRunCoordinator:
         operation = self._operations.get(receipt_id)
         if operation is None or (inputs := operation.strict_inputs) is None:
             return "not_delivered"
-        if (existing := inputs.existing(input_id)) is not None:
+        if (existing := inputs.steers.get(input_id)) is not None:
             return await asyncio.shield(existing.completion)
         stream = operation.stream
         if stream is None or operation.status is not RootOperationStatus.running or operation.cancel_requested:
@@ -688,7 +689,7 @@ class RootRunCoordinator:
 
         try:
             await stream.steer(
-                inputs.steer_content(offer, message),
+                (TextContent(message, metadata={"source_id": offer.native_id}),),
                 input_id=offer.native_id,
                 immediate=True,
                 best_effort=True,

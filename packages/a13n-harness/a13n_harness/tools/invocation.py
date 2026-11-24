@@ -393,7 +393,7 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
             else "Deferred tool interaction is unavailable for this Run."
         )
         return DeferredToolResults(
-            calls={request.tool_call_id: ToolDenied(message) for request in requests.calls},
+            calls={request.tool_call_id: ToolFailed(message) for request in requests.calls},
             approvals={request.tool_call_id: ToolDenied(message) for request in requests.approvals},
         )
 

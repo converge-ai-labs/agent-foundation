@@ -470,7 +470,7 @@ class RootRunExecutor:
                 run_checkpoint = selected.reference
                 thread = thread.model_copy(update={"continuation": selected.reference, "excerpt": excerpt})
                 if strict_inputs is not None:
-                    await strict_inputs.commit(state, steers)
+                    strict_inputs.commit(state, steers)
                 if (
                     self._restart is not None
                     and admission.organization is None

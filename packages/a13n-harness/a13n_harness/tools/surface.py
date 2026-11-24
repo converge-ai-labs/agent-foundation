@@ -6,17 +6,16 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import cast
 
+from a13n_logging import get_logger
 from pydantic import JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, ToolSearch
 from pydantic_ai.capabilities._deferred_capability_loader import DeferredCapabilityLoader
-from pydantic_ai.models import ModelRequestContext
-from pydantic_ai.native_tools._tool_search import ToolSearchTool
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
-from a13n_harness.tools.identity import identify_tool, tool_identity
+from a13n_harness.tools.identity import identify_tool
 from a13n_harness.tools.invocation import ToolExecutionBoundaryCapability
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
@@ -24,9 +23,7 @@ from a13n_harness.tools.metadata import (
     normalize_harness_tool_metadata,
 )
 from a13n_harness.tools.permission_gate import permission_mode
-from a13n_harness.tools.policy import INVOCATION_POLICY_CAPABILITY_ID
 
-UNATTENDED_TOOL_KEY = "a13n.harness.unattended"
 TOOL_SURFACE_CAPABILITY_ID = "a13n.tool-surface"
 
 
@@ -52,18 +49,6 @@ class ToolSurfaceCapability(AbstractCapability[AgentContext]):
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
         return ToolSurfaceToolset(toolset)
 
-    async def before_model_request(
-        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
-    ) -> ModelRequestContext:
-        if not ctx.deps.unattended:
-            return request_context
-        # Provider-executed tools do not pass through the local permission
-        # boundary and cannot declare unattended behavior here. Native search
-        # only selects from the already prepared local tool definitions.
-        parameters = request_context.model_request_parameters
-        native_tools = [tool for tool in parameters.native_tools if isinstance(tool, ToolSearchTool)]
-        return replace(request_context, model_request_parameters=replace(parameters, native_tools=native_tools))
-
 
 @dataclass
 class ToolSurfaceToolset(WrapperToolset[AgentContext]):
@@ -72,28 +57,32 @@ class ToolSurfaceToolset(WrapperToolset[AgentContext]):
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         candidates = await self.wrapped.get_tools(ctx)
         if ctx.deps.unattended:
-            candidates = {name: tool for name, tool in candidates.items() if _available_unattended(ctx, tool)}
-        return resolve_tool_surface(
-            candidates,
-            allow_deferred=ctx.deps.deferred_tools_supported,
-        )
+            hidden = {}
+            for name, tool in candidates.items():
+                if reason := _unattended_exclusion(ctx, tool):
+                    hidden[name] = reason
+            if hidden and hidden != ctx.deps.unattended_tool_exclusions:
+                get_logger(__name__).warning("Unattended tool surface excluded %s", hidden)
+            ctx.deps.unattended_tool_exclusions.clear()
+            ctx.deps.unattended_tool_exclusions.update(hidden)
+            candidates = {name: tool for name, tool in candidates.items() if name not in hidden}
+        return resolve_tool_surface(candidates, allow_deferred=ctx.deps.deferred_tools_supported)
 
 
-def _available_unattended(ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]) -> bool:
+def _unattended_exclusion(ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]) -> str | None:
     definition = tool.tool_def
     if definition.kind == "output":
-        return True
-    if (
-        definition.defer
-        or INVOCATION_POLICY_CAPABILITY_ID in ctx.capabilities
-        or (definition.metadata or {}).get(UNATTENDED_TOOL_KEY) is not True
-    ):
-        return False
-    definition = identify_tool(tool).tool_def
-    permission = permission_mode(ctx, definition)
-    return permission == "allow" or (
-        permission == "review" and tool_identity(definition).tool_id == "environment.shell_exec"
-    )
+        return None
+    if definition.kind == "external":
+        return "external_input_required"
+    if definition.defer:
+        return "approval_required"
+    permission = permission_mode(ctx, identify_tool(tool).tool_def)
+    if permission == "ask":
+        return "approval_required"
+    if permission == "deny":
+        return "permission_denied"
+    return None
 
 
 def resolve_tool_surface(

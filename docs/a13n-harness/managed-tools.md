@@ -120,8 +120,6 @@ permissions = ToolPermissionsCapability(
 
 ### Unattended Runs
 
-Pass `RunBindings.embedded(unattended=True)` (or `RunBindings(unattended=True)`) when a Run executes without a human available to answer approvals or questions. Unattended mode sets `deferred_tools_supported=False`, propagates to inline subagents, and filters the effective tool surface across direct calls, `ToolSearch`, and `CodeAct`:
+Pass `RunBindings(unattended=True)` or `RunBindings.embedded(unattended=True)` to run without human input. The Run hides external-input tools and tools with an effective `ask` or `deny` permission before exposing them to the model, Tool Search, or CodeAct. Inline children inherit this mode. Other tools, including configured MCP and provider-native tools, remain available under the usual policies. No tool metadata opt-in is needed.
 
-- A custom tool is admitted only when it is non-deferred, declares `metadata={"a13n.harness.unattended": True}` (`UNATTENDED_TOOL_KEY`), and resolves to `allow` permission (with no active `InvocationPolicyCapability`).
-- `environment.shell_exec` with `review` permission remains available; if the reviewer requires human approval, that individual tool call fails.
-- Provider-executed native tools (outside `ToolSearchTool`) are excluded, and any unexpected attempt to defer fails closed without suspending the Run.
+Argument-dependent checks still run. If a Shell review, invocation policy, or other check needs approval, the call fails. Unexpected requests for external input also fail. The Run neither grants approval nor suspends for a response.

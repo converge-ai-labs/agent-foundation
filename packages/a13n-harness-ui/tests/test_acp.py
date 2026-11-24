@@ -11,6 +11,7 @@ from contextlib import ExitStack, asynccontextmanager
 from pathlib import Path
 
 import pytest
+import yaml
 
 from .test_interactive import _seed
 
@@ -55,6 +56,8 @@ async def stream(model, messages, info):
         yield f"{model} {info.model_request_parameters.thinking}"
         return
     if any("shell check" in p for p in prompts):
+        Path('shell-tool-surface').write_text(json.dumps(sorted(t.name for t in info.function_tools)))
+        Path('shell-instructions').write_text(info.instructions or '')
         returns = [p for m in messages for p in m.parts if isinstance(p, ToolReturnPart) and p.tool_name == "shell_exec"]
         if not returns:
             command = f"printf '%s' ran > '{Path.cwd() / 'shell-marker'}'"
@@ -89,6 +92,51 @@ codex.CodexRequestModel = lambda name, **kw: FunctionModel(
 )
 main()
 """
+
+
+@pytest.mark.anyio
+async def test_acp_rejects_nonordinary_resume_and_dangling_model(tmp_path):
+    from types import SimpleNamespace
+    from typing import cast
+
+    from a13n_harness_ui.acp_server import AcpAgent
+    from a13n_harness_ui.app import HarnessUiApp
+    from a13n_harness_ui.surfaces import RunModelOverrides
+    from acp import RequestError
+
+    thread = SimpleNamespace(
+        role="coordinator",
+        coordinator_thread_id=None,
+        parent_thread_id=None,
+        archived=False,
+        memory_scope=None,
+        configuration=SimpleNamespace(agent_source=SimpleNamespace(kind="agent")),
+    )
+
+    class App:
+        async def get_thread(self, thread_id):
+            return SimpleNamespace(thread=thread)
+
+        async def current_configuration(self):
+            return SimpleNamespace(models={"available": SimpleNamespace(name="Available")})
+
+        async def inspect_thread_configuration(self, thread_id):
+            return SimpleNamespace(next_model_id="removed")
+
+    agent = AcpAgent(cast(HarnessUiApp, App()))
+    await agent.initialize(1)
+    with pytest.raises(RequestError) as error:
+        await agent.resume_session("session", str(tmp_path))
+    assert error.value.code == -32602
+    thread.role = "ordinary"
+    thread.configuration.agent_source.kind = "live"
+    with pytest.raises(RequestError) as error:
+        await agent.resume_session("session", str(tmp_path))
+    assert error.value.code == -32602
+    agent.model_overrides["session"] = RunModelOverrides(model_id="also-removed")
+    (model_option,) = await agent._options("session")
+    assert model_option.current_value == "default"
+    assert model_option.current_value in {option.value for option in model_option.options}
 
 
 class Rpc:
@@ -139,7 +187,6 @@ async def _agent(
     *,
     unattended: bool = False,
     hooks: str = "",
-    profile_usage: bool = False,
     discard_stdout: bool = False,
     init_meta: dict[str, str] | None = None,
     stdin_sockets: tuple[socket.socket, socket.socket] | None = None,
@@ -169,18 +216,13 @@ async def _agent(
     try:
         rpc = Rpc(process, stdin_sockets[0] if stdin_sockets else None)
         metadata = dict(init_meta or {})
-        if profile_usage:
-            metadata[PROFILE] = {"version": 1}
         params = {"_meta": metadata} if metadata else {}
         await rpc.send("initialize", id=1, protocolVersion=1, clientCapabilities={}, **params)
         result, frames = await rpc.response(1)
         assert not frames
         assert result["result"]["protocolVersion"] == 1
         profile = result["result"]["_meta"][PROFILE]
-        assert profile["version"] == 1
-        assert profile["unattended"] is unattended
-        assert profile["unattendedSafeMcpServers"] is True
-        assert profile["usageReport"] is True
+        assert profile == {"version": 1, "unattended": unattended}
         assert "resume" in result["result"]["agentCapabilities"]["sessionCapabilities"]
         yield rpc
     finally:
@@ -214,7 +256,7 @@ async def _wait_for_marker(path: Path, *, timeout: float = 45) -> None:
 async def test_large_initialize_during_app_startup_keeps_connection(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
     hooks = """
-from a13n_harness_ui.acp_server import _StdinReader
+from a13n_harness_ui.acp_stdio import _StdinReader
 from a13n_harness_ui.root_run import RootRunCoordinator
 
 original_start = RootRunCoordinator.start
@@ -245,7 +287,8 @@ RootRunCoordinator.start = start
 async def test_valid_input_burst_keeps_connection_while_handler_waits(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
     hooks = """
-from a13n_harness_ui.acp_server import AcpAgent, _StdinReader
+from a13n_harness_ui.acp_server import AcpAgent
+from a13n_harness_ui.acp_stdio import _StdinReader
 
 original_inventory = AcpAgent._inventory
 original_readuntil = _StdinReader.readuntil
@@ -379,7 +422,8 @@ AcpAgent.cancel = cancel
 async def test_eof_aborts_backpressured_stdout(tmp_path, monkeypatch, use_socket):
     path = await _seed(tmp_path, monkeypatch)
     hooks = """
-from a13n_harness_ui.acp_server import AcpAgent, _StdinReader
+from a13n_harness_ui.acp_server import AcpAgent
+from a13n_harness_ui.acp_stdio import _StdinReader
 from a13n_harness_ui.app import HarnessUiApp
 
 original_drain = asyncio.StreamWriter.drain
@@ -595,9 +639,8 @@ HarnessUiApp.watch_thread = watch
         assert reply["result"]["_meta"][PROFILE]["finalOutput"] == "gpt-5.6-sol low", reply
 
 
-@pytest.mark.parametrize("profile_usage", [False, True])
 @pytest.mark.anyio
-async def test_unknown_usage_window_only_reports_to_profile_clients(tmp_path, monkeypatch, profile_usage):
+async def test_unknown_usage_window_reports_in_extension_notification(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch)
     hooks = """
 from a13n_harness_ui.app import HarnessUiApp
@@ -610,7 +653,7 @@ async def context_usage(self, thread_id):
 
 HarnessUiApp.context_usage = context_usage
 """
-    async with _agent(path, tmp_path, hooks=hooks, profile_usage=profile_usage) as rpc:
+    async with _agent(path, tmp_path, hooks=hooks) as rpc:
         await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
         reply, _ = await rpc.response(2)
         session_id = reply["result"]["sessionId"]
@@ -622,7 +665,7 @@ HarnessUiApp.context_usage = context_usage
         ]
         assert "notice" not in updates and "usage_update" not in updates
         reports = [frame["params"] for frame in frames if frame.get("method") == "_a13n/usage_report"]
-        assert bool(reports) is profile_usage
+        assert reports
         for report in reports:
             assert report["version"] == 1 and report["sessionId"] == session_id and report["usageReport"]["records"]
 
@@ -759,9 +802,15 @@ async def test_permission_choices_and_cancel_pending_interactive_request(tmp_pat
             await rpc.send(
                 "session/prompt", id=prompt_id, sessionId=session_id, prompt=[{"type": "text", "text": "shell check"}]
             )
+            starts = set()
             while (frame := await rpc.receive()).get("method") != "session/request_permission":
                 assert frame.get("id") != prompt_id, frame
+                update = frame.get("params", {}).get("update", {})
+                if update.get("sessionUpdate") == "tool_call":
+                    starts.add(update["toolCallId"])
             params = frame["params"]
+            assert params["toolCall"]["toolCallId"] in starts
+            assert isinstance(params["toolCall"]["rawInput"]["command"], str)
             assert params["sessionId"] == session_id
             assert params["toolCall"]["toolCallId"]
             assert {option["kind"] for option in params["options"]} == {"allow_once", "reject_once"}
@@ -804,8 +853,184 @@ async def test_permission_choices_and_cancel_pending_interactive_request(tmp_pat
 
 
 @pytest.mark.anyio
-async def test_one_shot_shell_review_denies_without_suspending(tmp_path, monkeypatch):
+async def test_checkpoint_finishes_when_client_disconnects_after_selection(tmp_path, monkeypatch):
+    path = await _seed(tmp_path, monkeypatch)
+    hooks = """
+from a13n_harness_ui import acp_server
+from a13n_harness_ui.app import HarnessUiApp
+from a13n_harness_ui.restart import GracefulRestart
+from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
+from a13n_harness_ui.root_execution import RootRunExecutor
+from a13n_harness_ui.root_run import RootRunCoordinator
+
+original_persist = RootRunCoordinator._persist_execution
+original_select = RootRunExecutor._select_state
+original_boundary = GracefulRestart.boundary
+original_checkpoint = RootCheckpointCapability._checkpoint
+original_stop = HarnessUiApp._stop
+
+async def select(self, **kwargs):
+    selected = await original_select(self, **kwargs)
+    if not Path('primary-selected').exists():
+        assert selected.status == 'selected'
+        summary = self._summary_hub
+        assert summary is not None
+        original_publish = type(summary).publish
+        async def publish(hub, **kw):
+            await original_publish(hub, **kw)
+            if Path('restart-boundary').exists():
+                Path('summary-published').touch()
+        type(summary).publish = publish
+        Path('primary-selected').touch()
+        while not Path('release-primary').exists():
+            await asyncio.sleep(0.01)
+    return selected
+
+async def boundary(self, item):
+    await original_boundary(self, item)
+    Path('restart-boundary').touch()
+
+async def checkpoint(self, ctx, state):
+    await original_checkpoint(self, ctx, state)
+    assert Path('summary-published').exists()
+    Path('checkpoint-emitted').touch()
+
+async def stop(self, **kwargs):
+    Path('app-stopping').touch()
+    await original_stop(self, **kwargs)
+
+async def persist(self, operation):
+    await original_persist(self, operation)
+    if operation.completed_at is not None:
+        Path('settled-status').write_text(operation.status.value)
+
+RootRunCoordinator._persist_execution = persist
+RootRunExecutor._select_state = select
+GracefulRestart.boundary = boundary
+RootCheckpointCapability._checkpoint = checkpoint
+HarnessUiApp._stop = stop
+"""
+    async with _agent(path, tmp_path, hooks=hooks, discard_stdout=True) as rpc:
+        await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
+        reply, _ = await rpc.response(2)
+        await rpc.send(
+            "session/prompt",
+            id=3,
+            sessionId=reply["result"]["sessionId"],
+            prompt=[{"type": "text", "text": "continue"}],
+            _meta={PROFILE: {"inputIds": ["initial"]}},
+        )
+        try:
+            await _wait_for_marker(tmp_path / "primary-selected")
+            rpc.shutdown_input()
+            await _wait_for_marker(tmp_path / "app-stopping", timeout=8)
+        finally:
+            (tmp_path / "release-primary").touch()
+        await _wait_for_marker(tmp_path / "checkpoint-emitted", timeout=8)
+    assert (tmp_path / "settled-status").read_text() == "cancelled"
+
+
+@pytest.mark.parametrize("backpressure", [False, True])
+@pytest.mark.anyio
+async def test_wrapped_summary_and_run_progress_under_backpressure(tmp_path, monkeypatch, backpressure):
+    path = await _seed(tmp_path, monkeypatch)
+    size = 256 * 1024 if backpressure else 0
+    hooks = f"""
+from a13n_harness_ui import acp_server
+from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
+from pydantic_ai.models.function import DeltaThinkingPart
+from pydantic_ai.models.wrapper import WrapperModel
+
+acp_server.CodexRequestModel = FunctionModel
+original = RootCheckpointCapability._checkpoint
+
+async def checkpoint(self, ctx, state):
+    await original(self, ctx, state)
+    Path('checkpoint-emitted').touch()
+
+async def thinking(messages, info):
+    yield {{0: DeltaThinkingPart(content='public summary' + 'x' * {size}, signature='private signature')}}
+    yield 'final answer'
+    await asyncio.sleep(0.1)
+    Path('model-finished').touch()
+
+RootCheckpointCapability._checkpoint = checkpoint
+codex.CodexRequestModel = lambda *a, **kw: WrapperModel(WrapperModel(FunctionModel(stream_function=thinking)))
+"""
+    async with _agent(path, tmp_path, hooks=hooks, discard_stdout=backpressure) as rpc:
+        await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
+        reply, _ = await rpc.response(2)
+        await rpc.send(
+            "session/prompt",
+            id=3,
+            sessionId=reply["result"]["sessionId"],
+            prompt=[{"type": "text", "text": "think"}],
+            _meta={PROFILE: {"inputIds": ["initial"]}},
+        )
+        if backpressure:
+            await _wait_for_marker(tmp_path / "checkpoint-emitted")
+            await _wait_for_marker(tmp_path / "model-finished", timeout=8)
+        else:
+            reply, frames = await rpc.response(3)
+            assert reply["result"]["stopReason"] == "end_turn", reply
+            summaries = [
+                update["content"]["text"]
+                for frame in frames
+                if (update := frame.get("params", {}).get("update", {})).get("sessionUpdate") == "agent_thought_chunk"
+            ]
+            assert summaries == ["public summary"]
+
+
+@pytest.mark.parametrize("acp", [False, True])
+@pytest.mark.anyio
+async def test_default_unattended_surface_and_shell_review(tmp_path, monkeypatch, acp):
     path = await _seed(tmp_path, monkeypatch, shell_review=True)
+    root = yaml.safe_load(path.read_text())
+    root["subagents"] = {
+        "dynamic": {"enabled": True, "allowed_models": ["model-codex"], "default_model": "model-codex"}
+    }
+    path.write_text(yaml.safe_dump(root))
+    if acp:
+        async with _agent(path, tmp_path, unattended=True) as rpc:
+            await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
+            reply, _ = await rpc.response(2)
+            session_id = reply["result"]["sessionId"]
+            await rpc.send(
+                "session/prompt", id=3, sessionId=session_id, prompt=[{"type": "text", "text": "shell check"}]
+            )
+            reply, _ = await rpc.response(3)
+            assert reply["result"]["_meta"][PROFILE]["finalOutput"] == "denied automatically"
+            await rpc.send("_a13n/inventory", id=4, sessionId=session_id)
+            reply, _ = await rpc.response(4)
+            assert isinstance(reply["result"]["omittedTools"], list)
+    else:
+        await _one_shot_shell_check(path, tmp_path)
+    names = set(json.loads((tmp_path / "shell-tool-surface").read_text()))
+    assert {
+        "shell_exec",
+        "shell_wait",
+        "shell_signal",
+        "shell_input",
+        "tool_execution_info",
+        "tool_execution_result",
+        "tool_execution_wait",
+        "tool_execution_cancel",
+        "note_write",
+        "run_code",
+        "store",
+        "load",
+        "forget",
+        "subagent_info",
+        "wait_subagent",
+        "steer_subagent",
+        "cancel_subagent",
+    } <= names, names
+    assert "ask_user_question" not in names
+    assert "ask_user_question" not in (tmp_path / "shell-instructions").read_text()
+    assert not (tmp_path / "shell-marker").exists()
+
+
+async def _one_shot_shell_check(path, tmp_path):
     process = await asyncio.create_subprocess_exec(
         sys.executable,
         "-c",
@@ -828,7 +1053,32 @@ async def test_one_shot_shell_review_denies_without_suspending(tmp_path, monkeyp
             await process.wait()
     assert process.returncode == 0, stderr.decode()
     assert b"denied automatically" in stdout
-    assert not (tmp_path / "shell-marker").exists()
+
+
+@pytest.mark.anyio
+async def test_unsupported_external_input_fails_tool(tmp_path, monkeypatch):
+    path = await _seed(tmp_path, monkeypatch)
+    hooks = """
+async def ask(messages, info):
+    returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+    if not returns:
+        assert 'ask_user_question' in {tool.name for tool in info.function_tools}
+        yield {0: DeltaToolCall(name='ask_user_question', json_args='{}')}
+    else:
+        assert returns[-1].outcome == 'failed', returns[-1]
+        yield 'unsupported input failed'
+
+codex.CodexRequestModel = lambda *a, **kw: FunctionModel(stream_function=ask)
+"""
+    async with _agent(path, tmp_path, hooks=hooks) as rpc:
+        await rpc.send("session/new", id=2, cwd=str(tmp_path), mcpServers=[])
+        reply, _ = await rpc.response(2)
+        await rpc.send(
+            "session/prompt", id=3, sessionId=reply["result"]["sessionId"], prompt=[{"type": "text", "text": "ask"}]
+        )
+        reply, frames = await rpc.response(3)
+        assert reply["result"]["_meta"][PROFILE]["finalOutput"] == "unsupported input failed"
+        assert not any(frame.get("method") == "session/request_permission" for frame in frames)
 
 
 @pytest.mark.anyio
@@ -913,6 +1163,9 @@ mcp.run(show_banner=False)
         await rpc.send("_a13n/inventory", id=5, sessionId=session_id)
         inventory, _ = await rpc.response(5)
         assert inventory["result"]["mcpServers"] == [{"name": "opted", "source": "session"}]
+        assert inventory["result"]["omittedMcpServers"] == [
+            {"name": "skipped", "reason": "unattended_safety_not_declared"}
+        ]
         await rpc.send("session/prompt", id=4, sessionId=session_id, prompt=[{"type": "text", "text": "show tools"}])
         reply, frames = await rpc.response(4)
         assert reply.get("result", {}).get("stopReason") == "end_turn", reply
