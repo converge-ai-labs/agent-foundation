@@ -77,7 +77,7 @@ Call `result.output_or_raise()` for the common success path, or branch on `resul
 | `completed` | Use `output` and persist `state` if continuing          | `output`, `state`, `usage`            |
 | `suspended` | Collect deferred tool results or approvals, then resume | `state`, `deferred`, `suspend_reason` |
 | `failed`    | Inspect `failure` and decide whether to keep `state`    | `failure`, optional `state`           |
-| `cancelled` | Handle cancellation without treating as completed       | optional `state`                      |
+| `cancelled` | Handle cancellation and inspect any partial `state`     | optional `state`                      |
 
 Use `all_messages()` for full history and `new_messages()` for messages added by this Run. See [State and resume](state-and-resume.md) for checkpoint persistence and [Client tools](client-tools.md) for deferred tools.
 
@@ -118,7 +118,7 @@ bindings = RunBindings.embedded(
 result = await executable.run("Summarize the change", bindings=bindings)
 ```
 
-Keep live bindings out of saved `HarnessState`. When building input requires the entered Environment, pass `input_factory=make_input` instead of `input`.
+Keep live bindings out of saved `HarnessState`. When building input requires the entered Environment, pass `input_factory=make_input`.
 
 ## Configure the definition
 

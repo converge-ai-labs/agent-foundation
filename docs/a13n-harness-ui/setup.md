@@ -27,7 +27,7 @@ You can choose to configure a connection now and sign in later with `a13n-harnes
 
 ## 2. Select the model and settings
 
-Choose a suggested model or enter its case-sensitive API model ID. Use a model your account can access; the suggestions come from a catalog, not an account-access test. When you reuse an existing Model, its saved settings stay unchanged.
+Choose a suggested model from the built-in catalog or enter its case-sensitive API model ID, then verify account entitlement with a test prompt after saving. When you reuse an existing Model, its saved settings stay unchanged.
 
 For a first session, keep the offered model settings unless you have a specific requirement. You can change [reasoning and context budgets](models-and-authentication.md#context-and-modality-policy) later. For a Codex connection, **Fast** requests priority service tier processing, which depends on provider capacity and may consume additional quota.
 

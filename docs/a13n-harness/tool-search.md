@@ -57,7 +57,7 @@ capabilities = (ToolSearchCapability(groups={"knowledge": knowledge}),)
 
 ## Host integration
 
-When Capabilities or plugins are already attached to the Agent definition, pass a `ToolSearchPlan` to `HarnessBuilder().build(..., tool_search=...)` (or `AgentDefinition.tool_search`) instead of wrapping sources manually:
+When Capabilities or plugins are already attached to the Agent definition, pass a `ToolSearchPlan` to `HarnessBuilder().build(..., tool_search=...)` (or `AgentDefinition.tool_search`) so Harness groups them declaratively:
 
 ```python
 from a13n_harness.capabilities import ToolSearchPlan, ToolSearchSelection

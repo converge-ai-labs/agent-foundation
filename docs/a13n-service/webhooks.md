@@ -101,7 +101,7 @@ Service stages matching deliveries durably with the transition and retries failu
 
 Failed requests retry with exponential backoff of up to 2, 4, 8, … seconds, with 20% jitter and a one-hour cap. The attempt budget comes from `outbox.by_kind.webhook.max_attempts`, falling back to `outbox.defaults.max_attempts` (12 by default). Exhausted deliveries become `dead`.
 
-Inspect `GET /api/v1/subscriptions/{subscription_id}/deliveries` or Console's **Deliveries**. Records are newest first and include status (`pending`, `delivered`, `dead`), attempts, last error and payload. Correct the receiver problem, then select **Retry delivery** or call `POST /api/v1/subscriptions/{subscription_id}/deliveries/{delivery_id}/redeliver` for an eligible dead delivery. Redelivery gives it a fresh attempt budget while retaining the original ID, URL, payload and secret. Refresh to confirm the result; queued means pending, not received.
+Inspect `GET /api/v1/subscriptions/{subscription_id}/deliveries` or Console's **Deliveries**. Records are newest first and include status (`pending`, `delivered`, `dead`), attempts, last error and payload. Correct the receiver problem, then select **Retry delivery** or call `POST /api/v1/subscriptions/{subscription_id}/deliveries/{delivery_id}/redeliver` for an eligible dead delivery. Redelivery gives it a fresh attempt budget while retaining the original ID, URL, payload and secret. Queued redeliveries dispatch asynchronously in the background; refresh the delivery history to confirm the target endpoint's final status.
 
 Settled delivery records are retained for one day after success or fourteen days after becoming dead by default. The webhook outbox policy controls these periods.
 

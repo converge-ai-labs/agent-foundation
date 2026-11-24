@@ -65,7 +65,7 @@ async def run_host(model) -> None:
 
 ## 按次重建权限与调用前准入检查
 
-每次 Run 都应在全新的 `RunBindings` 上重建当前身份、凭据、`RequestContext(headers={...})` 与 `EnvironmentSource`——`HarnessState` 仅存储对话历史，绝不保存密钥或活跃连接。
+每次 Run 都应在全新的 `RunBindings` 上重建当前身份、凭据、`RequestContext(headers={...})` 与 `EnvironmentSource`；`HarnessState` 仅保存对话历史与可序列化的能力状态。
 
 ### 在发送模型请求前执行准入检查
 

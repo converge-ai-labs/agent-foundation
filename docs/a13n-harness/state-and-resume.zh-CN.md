@@ -54,7 +54,7 @@ resumed = await executable.run(
 
 ## 恢复未应答的工具调用
 
-若进程在工具执行中途崩溃并从中断检查点恢复，Harness 会依据工具声明的幂等属性（如 `HarnessToolMetadata(idempotency="read_only")`）与恢复策略进行对账——仅在最新权限下重跑已声明安全的只读/幂等调用，而将非幂等调用标记为已中断，绝不盲目重放结果未知的写操作。
+若进程在工具执行中途崩溃并从中断检查点恢复，Harness 会依据工具声明的幂等属性（如 `HarnessToolMetadata(idempotency="read_only")`）与恢复策略进行对账——仅在最新权限下重跑已声明安全的只读/幂等调用，并将非幂等调用标记为已中断，交由模型先核查外部状态。
 
 ## 宿主检查点机制
 

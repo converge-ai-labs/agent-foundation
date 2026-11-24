@@ -3,7 +3,7 @@ title: Agent Composer
 description: Create, test, and tune agents using natural language conversation, secure credential entry cards, and platform MCP tools.
 ---
 
-**Agent Composer** is Service's built-in conversational agent builder. Instead of writing complex JSON specifications manually, you describe the agent's responsibilities, required tools, and guidelines in plain language. Composer inspects your workspace's available models and tools, drafts a complete configuration proposal, and asks for your approval before persisting changes as an immutable revision.
+**Agent Composer** is Service's built-in conversational agent builder. Describe an agent's responsibilities, required tools, and guidelines in plain language; Composer inspects your workspace's available models and tools, drafts a complete configuration proposal, and asks for your approval before persisting changes as an immutable revision.
 
 Composer also configures providers and schedules, analyzes recorded model usage and costs, manages Webhooks and environment egress credentials, and diagnoses executions.
 
@@ -26,12 +26,12 @@ When an agent needs a new model provider, external MCP connection, or cloud envi
 1. Ask Composer to configure a provider (e.g., *"Connect an Anthropic account for high-reasoning tasks"*).
 2. Composer presents a **Private Provider Card** directly in the chat UI.
 3. Enter your sensitive API key or secret token inside the card and click **Save provider**.
-4. The card encrypts and transmits your credentials directly to the Service provider management endpoint. **Credentials never enter LLM prompt contexts, tool arguments, or conversation history.**
+4. The card encrypts and transmits your credentials directly to the Service provider management endpoint, keeping secrets out of LLM prompt contexts, tool arguments, and conversation history.
 5. Once the credential is saved, Composer receives the newly registered provider ID and completes the remaining agent configuration.
 
 ## Analyze usage and costs
 
-Open **Usage**, select a time range and any member or Agent filter, then choose **Ask Composer**. The conversation starts with those exact filters and the browser timezone. Ask for totals, model or Agent breakdowns, expensive Sessions, context usage or request latency. Member statistics require workspace admin. Composer reports recorded model costs in USD and the number of requests without pricing; these are known costs, not an invoice or a total including environment costs.
+Open **Usage**, select a time range and any member or Agent filter, then choose **Ask Composer**. The conversation starts with those exact filters and the browser timezone. Ask for totals, model or Agent breakdowns, expensive Sessions, context usage or request latency. Member statistics require workspace admin. Composer reports recorded model token costs in USD alongside counts of unpriced requests (provider invoices and sandbox compute charges are billed separately by each vendor).
 
 ## Configure Webhooks and credentials
 
@@ -40,7 +40,7 @@ Choose **Ask Composer** from **Settings → Webhooks** or **Credentials**, inclu
 - Webhooks: inspect subscriptions and deliveries, change event filters or endpoints, enable/disable, delete, and retry dead deliveries. Creation and signing-key replacement use a private card. On creation, save the displayed signing key in your receiver, then select **I saved the secret**. Verify `webhook-signature` and deduplicate by `webhook-id`. Queued deliveries retain their original endpoint and key.
 - Environment credentials: create, edit metadata, rotate, revoke and request synchronization through a private card. Allowed domains stay fixed after creation. Credentials managed by an App must be changed through that App. Revocation in Service is permanent and leaves upstream token revocation to its provider.
 
-Tokens and signing keys go directly from the card to the existing Service APIs. Only status, resource IDs and versions return to Composer. After saving a credential, check **Session application**: active Sessions update asynchronously and idle Sessions update on next use. A sync request is a request to apply the value, not proof that every Session has applied it.
+Tokens and signing keys go directly from the card to the existing Service APIs. Only status, resource IDs and versions return to Composer. After saving a credential, check **Session application** to monitor rollout: active Sessions update asynchronously and idle Sessions update on next use.
 
 A conflict requires a fresh read and proposal. If a save result is unknown, check the resource page before requesting another write. Submitting or retrying the response after a confirmed save does not repeat the action in that open card; after reloading, reconcile the resource before repeating a create.
 

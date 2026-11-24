@@ -23,7 +23,7 @@ The connection information looks like this; translate it into your client's conf
 }
 ```
 
-Tool discovery and calls both require the key. Browser cookies are not accepted. The key retains its workspace scope and permissions; an optional `X-Workspace-ID` must name that same workspace. Credentials belong in the connection, not tool arguments.
+Tool discovery and calls authenticate exclusively with a workspace API key in the connection headers (browser cookies are rejected, and secrets belong in connection headers). The key retains its workspace scope and permissions; an optional `X-Workspace-ID` must name that same workspace.
 
 For a deployment behind a proxy, set `server.public_url` to the externally reachable Service URL and preserve its public Host. MCP checks Host and Origin against the configured ingress. Requests are stateless, so replicas need no sticky MCP sessions or second Service runtime.
 
@@ -140,7 +140,7 @@ curl --fail-with-body "$A13N_URL/api/v1/runs/$RUN_ID" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-An assignment identifies the run handling the input; it does not confirm completion. For `completed`, read `output`. For `waiting`, collect the requested answer, approval or tool result and resume explicitly. Handle `failed` and `cancelled` separately. Follow-ups and resumes can create successor runs, so track the input and its run rather than only the conversation's first run. Client disconnection leaves execution running.
+`assigned_run_id` identifies the Run processing that inbox entry; poll that Run until execution settles and the entry reaches `consumed`. For `completed`, read `output`. For `waiting`, collect the requested answer, approval or tool result and resume explicitly. Handle `failed` and `cancelled` separately. Follow-ups and resumes can create successor runs, so track each inbox entry and its assigned run across the conversation. Client disconnection leaves execution running.
 
 For live output, follow the [session stream](stream-and-read-results.md#follow-a-session-stream). Continue with [application integration](connect-application.md) for the full HTTP workflow and SDK options.
 

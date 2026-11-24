@@ -49,7 +49,7 @@ sandbox = modal.Sandbox.create(
 )
 ```
 
-这个 SDK 设置选择外层运行时。它既不是 Envd 字段，也不是新增的内置 Modal Provider 选项。使用新镜像或二进制文件时，准备当前前置条件，并重新运行[镜像验证](egress.md#verify-a-sandbox-image)。
+该 Modal SDK 选项用于在创建沙箱时直接指定外层 VM 运行时。使用新镜像或二进制文件时，准备当前前置条件，并重新运行[镜像验证](egress.md#verify-a-sandbox-image)。
 
 ### 测试准备与限制
 

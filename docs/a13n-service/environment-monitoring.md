@@ -49,7 +49,7 @@ To adapt the built-in **Environment overview** or a custom dashboard:
 
 Dashboard editing requires workspace write access. In-app navigation retains each dashboard's draft; save before a page reload or sign-out. If someone else saves first, your draft remains available until you explicitly reload it.
 
-Charts request roughly 600 evaluation steps and display up to 32 series per panel. Use **Query details** to inspect truncation, retention and coverage, then narrow large queries. A failed refresh can retain a labelled previous result alongside the error. Missing observations remain gaps rather than zero values. Dashboard layouts are durable; Local Cache samples are temporary.
+Charts request roughly 600 evaluation steps and display up to 32 series per panel. Use **Query details** to inspect truncation, retention and coverage, then narrow large queries. A failed refresh can retain a labelled previous result alongside the error. Missing observations render as visible gaps in the line. Dashboard layouts are durable; Local Cache samples are temporary.
 
 ## Choose a data source
 

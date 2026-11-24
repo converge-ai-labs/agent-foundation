@@ -4,11 +4,11 @@ sidebarTitle: 架构深度解析
 description: 深入解析 Harness、Stream Protocol、Environments、Envd、Harness UI 与 Service 的单向分层关系、单一事实权威原则及七层故障恢复机制。
 ---
 
-日常使用指南聚焦“如何配置与调用智能体”；本文则深入**水面之下**，解析 Agent Foundation 各核心组件如何单向组合、为什么每一类持久化事实只允许唯一权威所有者，以及七层故障恢复栈如何在网络抖动、上下文溢出与节点崩溃时保障状态一致性且绝不盲目重放副作用。
+日常使用指南聚焦“如何配置与调用智能体”；本文则深入**水面之下**，解析 Agent Foundation 各核心组件如何单向组合、每一类持久化事实如何归属单一权威存储，以及七层故障恢复栈如何在网络抖动、上下文溢出与节点崩溃时保障状态一致与副作用安全。
 
 ## 单向组件分层
 
-无论是本地交互工作台还是分布式多租户平台，底层均嵌入同一个核心执行引擎（`a13n-harness`）。依赖方向严格单向向下——`a13n-harness` 从不反向依赖 `a13n-harness-ui` 或 `a13n-service`，不持有任何数据库连接，也不绑定任何特定部署形态：
+本地交互工作台与分布式多租户平台均嵌入同一个核心执行引擎（`a13n-harness`）。依赖方向严格单向向下：`a13n-harness` 独立于 `a13n-harness-ui` 与 `a13n-service`，不持有数据库连接，也无需预设特定部署形态：
 
 ```mermaid
 flowchart TB
@@ -67,10 +67,10 @@ flowchart LR
     class Deliver,Stream,OTel ext
 ```
 
-1. **受理输入不等于已被模型读取：** 写入 Service 的 `inbox_entries` 或拿到 Harness UI 的 `RootRunReceipt` 仅代表宿主已受理请求，直到某次运行的已提交检查点显式记录消费序号后才算正式纳入历史。
-2. **Harness 终态返回不等于持久化提交：** `ExecutableAgent.run()` 产出的只是内存中的**候选**结果与 `HarnessState`；只有宿主的带栅栏（Fenced）存储事务成功推进检查点指针，会话历史才真正前进。
-3. **实时事件流仅作低延迟预览：** WebUI WebSocket 与 Service 的 Redis SSE 流（`GET /api/v1/sessions/{id}/stream`）专注于毫秒级界面反馈。一旦断线重连或 Worker 崩溃，客户端始终以 PostgreSQL/SQLite 中已提交的检查点为准，绝不依赖残缺流分片拼凑状态。
-4. **用量记账独立于遥测链路：** OpenTelemetry Span 可能因采样或采集器背压被丢弃；用量账本（Service 的 `usage_records` 与 Harness 的 `UsageSnapshot`）在独立事务通道中记录 Token 消耗与请求派发时的价格快照。
+1. **输入受理与模型消费分阶段记录：** 写入 Service 的 `inbox_entries` 或返回 Harness UI 的 `RootRunReceipt` 记录宿主已接收请求；当运行检查点提交消费序号后，该输入才正式进入对话历史。
+2. **检查点指针提交推进权威历史：** `ExecutableAgent.run()` 在内存中产出候选结果与 `HarnessState`；当宿主的带栅栏（Fenced）存储事务成功推进检查点指针后，会话历史正式更新。
+3. **实时事件流服务于低延迟预览：** WebUI WebSocket 与 Service 的 Redis SSE 流（`GET /api/v1/sessions/{id}/stream`）专注于毫秒级界面反馈；断线重连或 Worker 崩溃后，客户端直接与 PostgreSQL/SQLite 中已提交的检查点对账。
+4. **专用账本独立记录用量：** OpenTelemetry Span 可能因采样或采集器背压被丢弃，因此用量账本（Service 的 `usage_records` 与 Harness 的 `UsageSnapshot`）在独立事务通道中记录 Token 消耗与请求派发时的价格快照。
 
 ## 三层生命周期隔离与不可变版本锁定
 
@@ -86,13 +86,13 @@ flowchart LR
 
 ## 七层精细化故障恢复栈
 
-平台没有采用粗暴的“出错就从头重跑整个智能体”，而是由真正拥有对应故障边界的层级就地恢复，且严格遵守**缺失证据绝不伪造回滚、不确定副作用绝不静默重放**：
+每类故障均由直接拥有该边界的层级就地恢复；对于结果未知的外部写操作，系统先保留现场供显式核查，避免重复触发副作用：
 
 | 恢复层级（由内向外）              | 负责组件                     | 处理的典型故障                                  | 恢复机制与安全不变量                                                                                                  |
 | --------------------------------- | ---------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | **1. HTTP 传输层重试**            | 提供商 SDK / `RetryConfig`   | 流开始前的 TCP 重置、HTTP `429` / `502` / `503` | 在触发任何工具副作用前，于单次 HTTP 请求边界执行指数退避重试。                                                        |
 | **2. 提供商消息历史自愈**         | Harness `SelfHealingModel`   | 因中断遗留孤立工具调用导致提供商校验拒绝        | 在发送请求前对异常消息序列执行单次确定性修复，满足严格提供商格式要求。                                                |
-| **3. 语义级 `ModelAttempt` 重试** | Harness 运行协调器           | 模型流式生成中途断流                            | 在**同一次**逻辑 Run 内按 `ModelRecoveryPolicy` 发起新 `ModelAttempt`，已完成工具结果直接保留、绝不重跑。             |
+| **3. 语义级 `ModelAttempt` 重试** | Harness 运行协调器           | 模型流式生成中途断流                            | 在**同一次**逻辑 Run 内按 `ModelRecoveryPolicy` 发起新 `ModelAttempt`，并直接复用已完成的工具结果。                   |
 | **4. 上下文窗口溢出恢复**         | Harness `ContextRecovery`    | 提供商返回 `context_length_exceeded`            | 自动触发历史压缩（配合 `context_recovery_pending` 确保宿主先落盘检查点），再无缝重发请求。                            |
 | **5. 未完成工具调用对账**         | Harness `tool_recovery`      | 工具批次执行期间进程崩溃                        | 恢复时仅在全新权限检查下重跑声明为 `idempotency="read_only"` 的工具；非幂等调用标记为已中断，交由模型先核查外部状态。 |
 | **6. EIP 操作账本与会话重附着**   | `a13n-envd` 与客户端         | 宿主与远程沙箱守护进程之间网络闪断              | `terminal_evidence` 方法按 `operation_id` 直接重放已保留回执；`session.attach` 递增 `owner_epoch` 隔离旧连接。        |

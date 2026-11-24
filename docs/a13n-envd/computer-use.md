@@ -7,11 +7,11 @@ Enable `computer_use` in `a13n-envd` so an image-capable Agent can observe displ
 
 ## Platform requirements
 
-| Platform | Desktop requirement                                                             | Input & notes                                                                 |
-| -------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| macOS    | Logged-in GUI session + **Screen Recording** and **Accessibility** granted      | Pointer, key chords, `computer_type_text`, scroll                             |
-| Linux    | Authenticated X11 (`DISPLAY` + `XAUTHORITY`, RandR 1.5, XKB, XTEST; no Wayland) | Pointer, key chords, scroll steps; use clipboard paste instead of `type_text` |
-| Windows  | Signed-in, unlocked interactive user desktop                                    | Pointer, scan-code chords, `computer_type_text`, scroll steps                 |
+| Platform | Desktop requirement                                                             | Input & notes                                                                      |
+| -------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| macOS    | Logged-in GUI session + **Screen Recording** and **Accessibility** granted      | Pointer, key chords, `computer_type_text`, scroll                                  |
+| Linux    | Authenticated X11 (`DISPLAY` + `XAUTHORITY`, RandR 1.5, XKB, XTEST; no Wayland) | Pointer, key chords, scroll steps; enter text by writing the clipboard and pasting |
+| Windows  | Signed-in, unlocked interactive user desktop                                    | Pointer, scan-code chords, `computer_type_text`, scroll steps                      |
 
 Computer use requires disabled Envd OS Sandbox (`sandbox.mode = "disabled"`) and `inherit` egress.
 

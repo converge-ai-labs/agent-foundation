@@ -40,16 +40,21 @@ Apply four structural rules to every narrative page:
 | `docs/a13n-service/`                                          | Platform engineers, team admins & app teams | Deployment, RBAC & credentials, Agents, Environments, Memory, MCP & tools, Schedules, SDK/HTTP integration, and day-2 operations                |
 | `docs/environments/`, `docs/a13n-envd/`, `docs/a13n-logging/` | Infrastructure & sandbox integrators        | Native vs. Envd execution, OS sandboxing, egress policies, computer use, and provider configuration                                             |
 
-## 3. Write Direct, Anti-Defensive Prose
+## 3. Write Plain, Factual, Anti-Defensive Prose
 
-State what the system does, how to use it, and how to verify the result. Do not negotiate with an imagined critic or litter introductions and procedures with negative disclaimers.
+State what the system does, how to use it, and how to verify the result in calm, plain language:
 
-| Avoid (defensive or negative framing)                                                          | Prefer (direct, user-centric guidance)                                                                                        |
-| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| "Saving configuration alone does not test connectivity or prove model entitlement."            | "After saving the configuration, send a short test prompt to verify end-to-end model connectivity."                           |
-| "A cancellation receipt is not proof that cleanup has finished."                               | "Query the current execution status after requesting cancellation to confirm cleanup completed."                              |
-| "A Skill read records access; it does not establish that the Agent followed the instructions." | "The trace span records when `SKILL.md` is read; inspect subsequent tool calls to review how the Agent applied the workflow." |
-| "Configure requests without confusing connection settings and context budgets."                | "Configure provider connection settings and local context budgets for each Model."                                            |
+- **Default to direct statements of fact over contrastive negation:** Avoid habitual `"X, not Y"`, `"X rather than Y"`, `"Instead of X, you do Y"`, and Chinese `"不是……而是……"` / `"而非"` / `"并非"` / `"不等于"` / `"不代表"` formulations when a straightforward positive sentence conveys the exact contract. Reserve contrastive syntax strictly for genuine traps where two adjacent options or look-alike fields are routinely confused in practice.
+- **Skip defensive disclaimers and hyperbolic absolutes:** Do not negotiate with an imagined critic (`"X alone does not prove Y"`) or pepper architectural prose with emphatic `"never"` / `"绝不"` / `"从不"` claims; describe the concrete scope, mechanism, or verification step directly.
+
+| Avoid (defensive disclaimers or overused contrastive syntax)                                   | Prefer (plain, factual prose)                                                                                                  |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| "Saving configuration alone does not test connectivity or prove model entitlement."            | "After saving the configuration, send a short test prompt to verify end-to-end model connectivity."                            |
+| "A cancellation receipt is not proof that cleanup has finished."                               | "Query the current execution status after requesting cancellation to confirm cleanup completed."                               |
+| "Use the base URL rather than `/eip/control`." / "使用基础 URL，而非 `/eip/control`。"         | "Set `ENVD_ENDPOINT` to the daemon root origin (such as `https://sandbox.example:8080`; the client appends `/eip/control`)."   |
+| "Pass feature clients on `RunBindings` fields rather than `RunBindings.capabilities`."         | "Pass feature clients (such as `web` and `task_state`) on their dedicated typed `RunBindings` fields."                         |
+| "Instead of writing complex JSON specifications manually, you describe the agent in prose."    | "Describe the agent's responsibilities, tools, and guidelines in plain language; Composer drafts a complete revision for you." |
+| "A Skill read records access; it does not establish that the Agent followed the instructions." | "The trace span records when `SKILL.md` is read; inspect subsequent tool calls to review how the Agent applied the workflow."  |
 
 ## 4. Author English First, Then Idiomatic Chinese
 

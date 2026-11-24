@@ -66,13 +66,13 @@ Service 可以部署在远端：它校验并交换粘贴的回调，不请求该
 
 API 集成按顺序使用以下操作：
 
-| 任务         | `/api/v1/model-providers/{id}` 下的请求                                 | 需要保留或检查的结果                             |
-| ------------ | ----------------------------------------------------------------------- | ------------------------------------------------ |
-| 开始登录     | `POST /authorize`，请求体为 `{}`                                        | 打开 `authorization_url`，保留 `attempt_id`      |
-| 完成登录     | `POST /authorization/callback`，提交 `attempt_id` 和完整 `callback_url` | 授权状态                                         |
-| 检查状态     | `GET /authorization`                                                    | 不含凭据的状态和账号元数据                       |
-| 列出账号模型 | `GET /models`                                                           | `slug` 和 `display_name`；可见不代表有推理权限   |
-| 断开连接     | `DELETE /authorization`                                                 | 本地 token 已清除；远端访问在 ChatGPT 设置中管理 |
+| 任务         | `/api/v1/model-providers/{id}` 下的请求                                 | 需要保留或检查的结果                                                |
+| ------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| 开始登录     | `POST /authorize`，请求体为 `{}`                                        | 打开 `authorization_url`，保留 `attempt_id`                         |
+| 完成登录     | `POST /authorization/callback`，提交 `attempt_id` 和完整 `callback_url` | 授权状态                                                            |
+| 检查状态     | `GET /authorization`                                                    | 不含凭据的状态和账号元数据                                          |
+| 列出账号模型 | `GET /models`                                                           | 账号可见的 `slug` 和 `display_name`（推理可用性取决于订阅套餐权限） |
+| 断开连接     | `DELETE /authorization`                                                 | 本地 token 已清除；远端访问在 ChatGPT 设置中管理                    |
 
 再次登录会复用注册信息。**使用另一个 ChatGPT 账号**，或以 `{"new_registration": true}` 调用 `POST /authorize`，会忽略保留的账号提示。未配置 client 时会创建新的动态注册；显式配置的 client 则继续保留。Codex 凭据不能代替此授权。
 

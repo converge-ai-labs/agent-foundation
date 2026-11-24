@@ -19,7 +19,7 @@ When `executable.stream(...)` (or `run(...)`) is entered, preparation executes n
 5. **Run `input_factory`:** Executes `RunInputFactory(RunPreparationContext)` at most once if supplied.
 6. **Normalize semantic input:** Hydrates ordered text/media content and applies any pending `compaction_result` or `DeferredToolResume`.
 7. **Construct `AgentContext`:** Freezes `thread_id`, `AgentContextState`, the bound `Environment` facade, `RunConfiguration`, `RequestContext`, and built `SubagentCollection`.
-8. **Bind per-Run plugins:** Freezes `BoundPluginContext` and resolves per-logical-Run `ContextualMCP` replacements once so internal retries never re-run effectful MCP factories.
+8. **Bind per-Run plugins:** Freezes `BoundPluginContext` and resolves per-logical-Run `ContextualMCP` replacements once so internal retries reuse those resolved MCP instances.
 9. **Assemble middleware chain:** Prepares outer `AbstractHarnessPlugin.wrap_run()` hooks; actual execution begins lazily on the caller's first stream iteration.
 
 ## Logical Run vs. internal `ModelAttempt` loop
@@ -53,7 +53,7 @@ sequenceDiagram
     Harness-->>Caller: HarnessRunResultEvent (emitted strictly after cleanup)
 ```
 
-Each `ModelAttempt` passes a unique upstream attempt ID to Pydantic AI while keeping `conversation_id=thread_id` constant for telemetry correlation and gateway prompt-cache affinity. Crucially, Hosts (such as Service) map one logical Harness Run to **one** durable worker attempt—internal `ModelAttempt` retries never spend Host attempt budgets or re-execute already-completed tool calls.
+Each `ModelAttempt` passes a unique upstream attempt ID to Pydantic AI while keeping `conversation_id=thread_id` constant for telemetry correlation and gateway prompt-cache affinity. Hosts (such as Service) map one logical Harness Run to **one** durable worker attempt—internal `ModelAttempt` retries stay within that Host attempt and reuse already-completed tool results.
 
 ## Immediate steering and Host-held tool executions
 
@@ -64,7 +64,7 @@ While `steer(..., immediate=False)` queues user guidance for the next model turn
 | **Primary model generation**                | Cancels and drains the active `ModelAttempt`, settles usable partial assistant output into history, and starts the next `ModelAttempt` with the steer.                                                                                    |
 | **Tool review, validation, or execution**   | Keeps the native attempt alive, releases foreground waits on supported calls (`exec-*` Shell and top-level CodeAct), and records retained execution receipts so the model sees steering immediately without killing background processes. |
 
-Immediate steering never consumes the `ModelRecoveryPolicy` failure budget. Unincorporated steering messages are also snapshotted inside the `steering` Capability namespace on `export_state()`, preventing lost guidance across graceful restarts.
+Immediate steering leaves the `ModelRecoveryPolicy` failure budget intact. Unincorporated steering messages are also snapshotted inside the `steering` Capability namespace on `export_state()`, preserving pending guidance across graceful restarts.
 
 ## Prompt-cache prefix stability and context projection
 
@@ -88,5 +88,5 @@ Modern LLM providers cache KV prefixes across turns within a conversation; mutat
 
 When resuming from an interrupted mid-batch checkpoint (`tool_recovery="declared"`), Harness inspects unanswered `ToolCallPart` entries in `message_history`:
 
-- Calls backed by `HarnessToolMetadata(idempotency="read_only")` re-run automatically under **fresh** `RunBindings` permissions and approval rules (an earlier Run's approval never Carry-overs blindly).
+- Calls backed by `HarnessToolMetadata(idempotency="read_only")` re-run automatically under **fresh** `RunBindings` permissions and approval rules (single-Run approvals apply only to the Run that granted them).
 - Calls with side effects (or unknown tools) are synthesized into explicit interrupted `ToolReturnPart` records instructing the model that the prior process terminated mid-call and must inspect external state before retrying.

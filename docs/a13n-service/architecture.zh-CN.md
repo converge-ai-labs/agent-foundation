@@ -4,11 +4,11 @@ sidebarTitle: 内部架构解析
 description: 深入解析 Service 分布式运行时——accept/claim/execute/seal 四阶段状态机、S3 租约栅栏检查点、Outbox 对象回收、Redis 实时流与单调增量记账。
 ---
 
-本文解析 `a13n-service` 如何在无状态 `control` 副本与带租约的 `worker` 副本之间实现多租户水平扩展、崩溃无缝接管，同时严格遵守“绝不跨外部 I/O 持有数据库事务”的工程铁律。日常运维与接口调用请先参阅[运维 Service](operations.md)及[智能体、会话与运行](agents-and-runs.md)。
+本文解析 `a13n-service` 如何在无状态 `control` 副本与带租约的 `worker` 副本之间实现多租户水平扩展与崩溃接管，并将数据库事务严格收敛在毫秒级原子状态跃迁之内。日常运维与接口调用请先参阅[运维 Service](operations.md)及[智能体、会话与运行](agents-and-runs.md)。
 
 ## 四阶段运行状态机（`accept` → `claim` → `execute` → `seal`）
 
-Service 的智能体执行从不在 HTTP 请求协程内直接运行，且**在模型推理、工具等待、对象存储上传或 SSE 流推送期间绝不占用任何 PostgreSQL 会话或事务**。每个线程完全通过四个毫秒级原子数据库跃迁向前推进：
+Service 的智能体执行在独立的带租约 `worker` 副本上异步推进，将模型推理、工具等待、对象存储上传与 SSE 流推送置于数据库事务外部，仅通过四个毫秒级原子数据库跃迁推进线程状态：
 
 ```mermaid
 sequenceDiagram
@@ -39,14 +39,14 @@ sequenceDiagram
 
 ## `Run` 与 `Attempt` 分离及僵尸 Worker 栅栏（Fencing）
 
-将逻辑\*\*运行（Run）**与物理执行**尝试（Attempt）\*\*解耦，使节点崩溃接管天然免于脑裂（Split-brain）覆盖：
+将逻辑 **Run**（运行）与物理 **Attempt**（执行尝试）解耦，使节点崩溃接管天然避免脑裂（Split-brain）覆盖：
 
 - **节点崩溃后的确定性续跑：** 当某个 Worker 因 OOM 或节点抢占失联且租约到期后，后台巡检会将该 Run 重新置为可认领状态（`attempts < max_attempts`）。新 Worker 认领 `Attempt N+1` 后，从 S3 拉取最近一次已提交的 `runs.checkpoint`，自动补齐尚未写入 `incorporated_checkpoint_seq` 的已分配收件箱条目或 `resume` 审批结果，在**同一个** `run_id` 和原锁定的智能体修订版上无缝续跑。
-- **上传前租约余量守卫与指针栅栏：** 若本地租约剩余有效期不足 `objects.timeout`，Attempt 会在发起 S3 上传前直接主动放弃。即便旧僵尸 Worker 因网络卡顿延迟写完了 S3 对象，由于每个对象键均包含 `orgs/{org}/runs/{run}/state/{attempt}/{128位随机数}`，新旧 Worker 绝不会覆盖同一个键；且僵尸 Worker 随后发起的 PostgreSQL 指针切换事务会因 `runs.current_attempt_id` 已变更而被数据库直接拒绝。
+- **上传前租约余量守卫与指针栅栏：** 若本地租约剩余有效期不足 `objects.timeout`，Attempt 会在发起 S3 上传前主动放弃。即便旧 Worker 因网络延迟写完了 S3 对象，每个对象键均包含 `orgs/{org}/runs/{run}/state/{attempt}/{128位随机数}`，各 Worker 写入互不重叠的独立键；同时旧 Worker 随后发起的 PostgreSQL 指针切换事务会因 `runs.current_attempt_id` 已推进至新 Attempt 而被数据库拒绝。
 
 ## 所有者驱动的对象存储与独立清理连接池
 
-Service **不维护中心化可变对象目录表**，仅依赖普通无条件 S3 `PUT`：一个对象当且仅当被已提交的 `checkpoint`、`tail`、展示分页目录或 `compactions` 行引用时才视为可达：
+Service 直接使用无条件 S3 `PUT`，无需维护中心化可变对象目录表：一个对象当且仅当被已提交的 `checkpoint`、`tail`、展示分页目录或 `compactions` 行引用时才视为可达：
 
 | 对象键前缀                                                  | 存储内容                                                         | 异步回收机制                                                                  |
 | ----------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -55,7 +55,7 @@ Service **不维护中心化可变对象目录表**，仅依赖普通无条件 S
 | `orgs/{org}/runs/{run}/contents/` 与 `subagents/`           | 卸载的大体积二进制内容与已完成的内联子智能体状态                 | 永久保留在已封存 Run 的冻结保留集中，确保后续续聊与分支 `fork` 随时可读       |
 | `compactions/{workspace}/{hash}/{kind}.json`                | 自包含的后台异步历史压缩输入与摘要结果载荷                       | 在 `disposition` 落定且租约窗口结束后通过 `checkpoint_cleanup` 幂等清理       |
 
-在 S3 部署模式下，`control` / `all` 副本为 `checkpoint_cleanup` 分配完全独立的客户端连接池（`objects.cleanup_max_pool_connections`，默认 `4`），与前台读取连接池（`objects.max_pool_connections`，默认 `32`）物理隔离，确保大批量前缀扫描删除绝不会耗尽用户读取连接。
+在 S3 部署模式下，`control` / `all` 副本为 `checkpoint_cleanup` 分配独立的客户端连接池（`objects.cleanup_max_pool_connections`，默认 `4`），与前台读取连接池（`objects.max_pool_connections`，默认 `32`）隔离，使大批量前缀扫描删除不影响前台用户读取容量。
 
 ## 双平面观测、单调增量记账与免扩展全文检索
 

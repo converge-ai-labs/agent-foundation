@@ -82,7 +82,7 @@ if __name__ == "__main__":
 "acme.audit" = "acme_plugins:build_audit_plugin"
 ```
 
-宿主需显式按 Key 启用工厂（如 Service 中的 `plugins.keys` 或 `AppDefinition.factory_keys`）；仅安装包不会自动激活插件。
+安装扩展包后，请在宿主配置中按 Key 显式启用对应工厂（例如 Service 的 `plugins.keys` 或 `AppDefinition.factory_keys`）。
 
 ## 提供方插件
 

@@ -140,7 +140,7 @@ curl --fail-with-body "$A13N_URL/api/v1/runs/$RUN_ID" \
   -H "Authorization: Bearer $A13N_API_KEY"
 ```
 
-`assigned_run_id` 标识了负责处理该条输入的 Run，请继续跟踪该 Run 直至执行完成且条目状态变为 `consumed`。`completed` 时读取 `output`；`waiting` 时收集所需回答、审批或工具结果，再显式恢复。分别处理 `failed` 和 `cancelled`。后续输入和恢复可能产生后继运行，因此应跟踪输入及其运行，而不是只看对话的第一次运行。客户端断开连接后，执行仍会继续。
+`assigned_run_id` 标识了负责处理该条输入的 Run，请继续跟踪该 Run 直至执行完成且条目状态变为 `consumed`。`completed` 时读取 `output`；`waiting` 时收集所需回答、审批或工具结果，再显式恢复。分别处理 `failed` 和 `cancelled`。后续输入和恢复可能产生后继运行，请按每条输入及其关联的 `assigned_run_id` 持续跟踪。客户端断开连接后，执行仍会继续。
 
 实时输出可通过[会话事件流](stream-and-read-results.md#follow-a-session-stream)跟踪。完整 HTTP 流程及 SDK 选择参阅[应用集成](connect-application.md)。
 

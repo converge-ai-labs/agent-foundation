@@ -13,7 +13,7 @@ To reuse a workspace across Runs, manage the target separately from each executi
 | `EnvironmentConnector` | Describe one fixed target for repeated use, without acquiring a live client at construction                   |
 | `EnvironmentExecution` | Access supported operations after `await connector.open()`, with its own clients, handles, and `execution_id` |
 
-Reuse a connector across Runs; open a separate execution for each owner. Opening an execution connects directly to the already prepared target. If the saved target is lost, return to Host lifecycle handling rather than selecting another resource with the same name.
+Reuse a connector across Runs; open a separate execution for each owner. Opening an execution connects directly to the already prepared target. If the saved target is lost, return to Host lifecycle handling to reconcile or provision a replacement.
 
 Execution close releases resources according to the backend. Native Docker and E2B disconnect observations, Direct Local cleans up owned processes, and Envd cleans up Session resources. Closing a management client releases that client. Closing an execution or runtime releases local connection handles while preserving the underlying target for future runs.
 
@@ -104,6 +104,6 @@ Inspect the error before deciding what to do next. Management and Provider bound
 | `known`           | Handle the confirmed outcome; check separately whether retry is supported |
 | `unknown`         | Inspect or reconcile the original operation and target before retrying    |
 
-Control-plane failure is unavailable evidence, not proof that the target is absent. To reconnect, explicitly open a new execution or replace the Harness mount. Use new process, output, and computer references in the new execution.
+When a control-plane check fails, treat the target's state as unknown until the provider responds again. To reconnect, explicitly open a new execution or replace the Harness mount. Use new process, output, and computer references in the new execution.
 
 Envd can reattach a retained Session using a [Host recovery hint](remote-envd.md#state-concurrency-and-recovery). That hint is separate from portable target state. Reattachment neither replays operations nor restores old execution references. Consult the [Provider comparison](cloud-providers.md#reconnection-and-lifecycle) for stop, filesystem retention, and expiry behavior.

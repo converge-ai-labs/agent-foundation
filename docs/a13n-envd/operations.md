@@ -40,7 +40,7 @@ The Host owns download, checksum verification and installation. Restart creates 
 
 ## Plan output capacity before daemon launch
 
-Size output capacity for concurrent commands, not just the text shown to the user. Standalone daemon defaults are:
+Size output capacity for all concurrent commands and retained history. Standalone daemon defaults are:
 
 | Limit                     | Default |
 | ------------------------- | ------- |
@@ -65,11 +65,11 @@ A command result may contain a preview plus a reference to retained bytes. To co
 4. Check content completeness separately. Reaching EOF does not recover bytes omitted by a retention limit.
 5. Copy important output to application-managed files or durable logs, then release unused process/output observations through their owning EIP methods.
 
-Process inspection reports status; it does not attach output or reset the retention budget. Releasing observations and terminating a live command are separate operations. The private spool and a live connection are temporary execution resources, not durable Agent checkpoints.
+Process inspection reports status without attaching output or resetting the retention budget. Releasing observations and terminating a live command are separate operations. The private spool and live connection are temporary execution resources; persist durable Agent checkpoints in your Host store.
 
 ## Transfers and uncertain commands
 
-Finish a file transfer with an explicit writer commit and inspect its result. Closing or abandoning the writer aborts incomplete work rather than publishing the file. Keep the operation receipt so you can distinguish non-dispatch, known completion, and an unknown outcome.
+Finish a file transfer with an explicit writer commit and inspect its result; closing or abandoning the writer aborts uncommitted data. Keep the operation receipt so you can distinguish non-dispatch, known completion, and an unknown outcome.
 
 After a timeout or transport loss, reconcile the original operation where its replay class permits. If an acknowledgement is lost, inspect the target file or process state before retrying. Relaunching it as new intent can repeat the side effect.
 
@@ -87,6 +87,6 @@ Use the product's Run interrupt to stop a Run, Session close to end its executio
 | Partial preview                          | Returned reference/range and producer/completion evidence                                   |
 | Filesystem or command access denied      | Effective execution identity, Sandbox grants, and the [Host's outer boundary](isolation.md) |
 | Unknown command/write outcome            | Original operation receipt and replay/reconciliation class; do not retry as new intent      |
-| Remote target unavailable                | Provider/backend access and exact saved target identity, not another mount's fallback       |
+| Remote target unavailable                | Provider/backend access and exact saved target identity                                     |
 
-Check readiness through EIP. For deployment liveness, explicitly enable the separate [health probe](configuration.md#optional-health-probe); it works independently of the EIP transport. The EIP HTTP carrier provides authenticated control and transfer routes, not a general health or browser endpoint. With stdio, write diagnostics away from protocol stdout. Use [configuration](configuration.md) for carrier and bootstrap settings.
+Check readiness through EIP. The EIP HTTP carrier serves authenticated control and transfer routes; for deployment liveness, explicitly enable the separate [health probe](configuration.md#optional-health-probe), which operates independently of the EIP transport. With stdio, write diagnostics away from protocol stdout. Use [configuration](configuration.md) for carrier and bootstrap settings.

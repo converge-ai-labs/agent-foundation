@@ -15,11 +15,11 @@ To teach an agent Service operations, select **platform-operations** in its **Sk
 {"builtin_skills": ["platform-operations"]}
 ```
 
-Enable the relevant [platform tools](tools.md#platform-tools) too. Selecting the skill supplies instructions, not tool permissions.
+Enable the relevant [platform tools](tools.md#platform-tools) alongside the skill—selecting a skill provides procedural instructions, while toolsets grant execution permissions.
 
 `GET /api/v1/builtin-skills` lists release-owned skills. In Console, open one to browse `SKILL.md`, references and the deployment catalog, preview source, or download its ZIP. Built-in skills update with the deployment; they have no workspace ID or independent revision history. The platform package includes `schemas/agent-config.json` and `instance/catalog.json`.
 
-All agents, including custom copies and dynamic children, read selected built-in skills from read-only Host mounts at `/platform-skills` and `/platform-instance`. They require no primary environment. Only imported workspace skills use the primary environment and `skill_sync`. Host files are available through authorized file tools, not user shell processes. Selected built-in and imported skills must have distinct declared names.
+All agents, including custom copies and dynamic children, read selected built-in skills from read-only Host mounts at `/platform-skills` and `/platform-instance` through authorized file tools, requiring no primary environment. Imported workspace skills sync into the primary environment via `skill_sync`. Selected built-in and imported skills must have distinct declared names.
 
 ## Package format
 

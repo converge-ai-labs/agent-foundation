@@ -10,7 +10,7 @@ This record preserves the evidence from an earlier test campaign. Use [current e
 
 This historical record covers probes completed by **2026-09-22** using one Linux x86_64 binary on five cloud platforms. Tests used generated credentials; provider credentials stayed outside Sessions.
 
-**The matrix predates the native identity and sudo changes introduced on 2026-09-22 and has not been rerun for that implementation.** Use the [current root-launcher requirements](egress.md) for new deployments. Old non-root launches, read-only system-tree checks and named-socket denials describe the tested binary. Current behavior is explained in [files, sockets and lifetime](egress.md#files-sockets-and-lifetime). The record covers these Envd sandbox probes, not Provider/Service integration or platform-wide support.
+**The matrix predates the native identity and sudo changes introduced on 2026-09-22 and has not been rerun for that implementation.** Use the [current root-launcher requirements](egress.md) for new deployments. Old non-root launches, read-only system-tree checks and named-socket denials describe the tested binary. Current behavior is explained in [files, sockets and lifetime](egress.md#files-sockets-and-lifetime). The record covers direct Envd sandbox probes on each cloud runtime.
 
 The retained record does not identify a full source revision or image digest, so it cannot reproduce the tested binary by itself. Record the revision, binary checksum, image digest, and runtime details together when repeating the campaign.
 
@@ -49,7 +49,7 @@ sandbox = modal.Sandbox.create(
 )
 ```
 
-The SDK setting selected the outer runtime. It was neither an Envd field nor a new built-in Modal Provider option. For a new image or binary, prepare the current prerequisites and rerun [image verification](egress.md#verify-a-sandbox-image).
+This Modal SDK option selects the outer VM runtime when creating the sandbox directly. For a new image or binary, prepare the current prerequisites and rerun [image verification](egress.md#verify-a-sandbox-image).
 
 ### Test preparation and limits
 

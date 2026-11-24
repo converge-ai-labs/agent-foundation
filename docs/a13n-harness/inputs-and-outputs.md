@@ -39,7 +39,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-Choose one output contract at build time (either `output_type` or `AgentSpec.output_schema`, never both):
+Choose one mutually exclusive output contract at build time (`output_type` or `AgentSpec.output_schema`):
 
 - **Python type or `OutputSpec` (`output_type=ReviewSummary` or `output_type=str`):** Returns a validated Python instance.
 - **Configuration-driven JSON Schema (`AgentSpec(output_schema=...)` with `output_type=None`):** Validates and returns a `dict[str, JsonValue]`.
@@ -79,7 +79,7 @@ result = await executable.run(
 )
 ```
 
-When the prompt depends on the entered Environment or assigned `run_id`, pass `input_factory` instead of `input`:
+When the prompt depends on the entered Environment or assigned `run_id`, supply `input_factory`:
 
 ```python
 from a13n_harness import RunPreparationContext

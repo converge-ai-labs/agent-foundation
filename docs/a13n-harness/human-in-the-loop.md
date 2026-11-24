@@ -87,7 +87,7 @@ Set `RunBindings.deferred_tools_supported=False` when a Run cannot pause for hum
 
 ### Answer (`UserQuestionAnswers`)
 
-Map exact normalized **question texts** (not headers or call IDs) to a selected option `label`, an array of labels (when `multiSelect` is `true`), or free-text string(s), and/or supply a top-level `response`:
+Key `answers` by each question's exact normalized `question` string (matching `questions[i].question`), mapped to a selected option `label`, an array of labels (when `multiSelect` is `true`), or free-text string(s), and/or supply a top-level `response`:
 
 ```json
 {
@@ -98,7 +98,7 @@ Map exact normalized **question texts** (not headers or call IDs) to a selected 
 }
 ```
 
-If the user declines or times out, return an explicit tool failure (`ToolFailed` in embedded Harness, or `"status": "failed"` in Service) rather than `{}`.
+If the user declines or times out, return an explicit tool failure (`ToolFailed` in embedded Harness, or `"status": "failed"` in Service) so the model observes the rejection.
 
 ## Resume a waiting Run in Service
 

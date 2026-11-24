@@ -37,19 +37,19 @@ flowchart LR
 ```
 
 1. **Dual-plane multiplexing:** `ControlFrame` messages carry bounded JSON-RPC 2.0 requests and responses (no batches), while large file reads, uploads, and desktop screenshots flow over raw binary `DataFrame` streams—avoiding 33% Base64 inflation and giant JSON heap allocations.
-2. **Generation & epoch fencing:** `session.open` verifies `expected_device_id` and `expected_generation` so a restarted daemon can never silently attach to stale state. Reconnecting via `session.attach` increments `owner_epoch`, immediately fencing off any delayed packets from a superseded client connection.
+2. **Generation & epoch fencing:** `session.open` verifies `expected_device_id` and `expected_generation` so a restarted daemon rejects stale state attachments. Reconnecting via `session.attach` increments `owner_epoch`, immediately fencing off any delayed packets from a superseded client connection.
 
 ## Operation ledger and the three replay classes
 
-Every Session operation carries `EIPCallContext(operation_id, timeout_ms)`. Rather than guessing whether a dropped network connection executed a file edit or shell launch, Envd hashes `(protocol, method, canonical_params)` and classifies every method into one of three replay contracts:
+Every Session operation carries `EIPCallContext(operation_id, timeout_ms)`. Envd hashes `(protocol, method, canonical_params)` so reconnected callers can reconcile in-flight or completed mutations deterministically across three replay contracts:
 
 | Replay class        | Representative methods                                                                                                             | Daemon behavior on duplicate `operation_id`                                                                                                                                  |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ledger_external`   | `initialize`, `device.*`, `session.open`, `session.attach`, `session.close`, `egress.update`                                       | Managed by explicit `generation`, `owner_epoch`, or `expected_revision` CAS rather than the Session ledger.                                                                  |
+| `ledger_external`   | `initialize`, `device.*`, `session.open`, `session.attach`, `session.close`, `egress.update`                                       | Managed by explicit `generation`, `owner_epoch`, or `expected_revision` CAS outside the Session ledger.                                                                      |
 | `active_only`       | `file.read_text`, `file.list`, `file.search`, `process.wait`, `output.read`, `computer.observe`, `computer.a11y_*`                 | Deduplicates in-flight calls (`operation_in_progress`) and honors `operation.cancel`, without retaining completed response pages.                                            |
 | `terminal_evidence` | `file.write_text`, `file.patch_text`, `shell.exec`, `process.start`, `process.kill`, `computer.click`, `computer.{ax,uia,atspi}_*` | Registers before dispatch and retains the terminal result/error receipt: same digest replays the stored receipt; a different digest returns `conflict` without re-executing. |
 
-Similarly, command stdout/stderr is spooled to bounded disk buffers on the daemon rather than tied to a live socket. `EIPOutputReader` pages bytes via `output.read` and verifies contiguous offsets, monotonic byte counters, and immutable preview prefixes—fencing the Session with `EIPProtocolError` if corrupt evidence is ever observed.
+Command stdout and stderr spool to bounded disk buffers managed by the daemon, decoupled from any single network socket. `EIPOutputReader` pages bytes via `output.read` and verifies contiguous offsets, monotonic byte counters, and immutable preview prefixes—fencing the Session with `EIPProtocolError` if corrupt evidence is observed.
 
 ## Cross-platform OS sandboxes and microVM isolation
 
@@ -67,7 +67,7 @@ On Linux, when commands switch from root to a non-root UID, the Envd supervisor 
 
 ## Out-of-worker controlled egress broker
 
-When `egress_mode: "controlled"` is active on Linux (6.1.2+ with `unshare`, `ip`, `nft`, `seccomp`, and `pidfds`), real API credentials **never enter the Session worker's memory, environment variables, or filesystem**:
+When `egress_mode: "controlled"` is active on Linux (6.1.2+ with `unshare`, `ip`, `nft`, `seccomp`, and `pidfds`), real API credentials stay exclusively inside the privileged out-of-worker broker:
 
 ```mermaid
 sequenceDiagram

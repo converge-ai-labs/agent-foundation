@@ -71,7 +71,7 @@ For writes, choose `create` for a new file, `replace` for an existing file, `ups
 
 For a small sequence of changes, pass `FileStatOperation`, `FileMkdirOperation`, `FileWriteTextOperation`, or `FileRemoveOperation` to `batch`. One batch accepts up to 128 operations and 64 KiB of JSON in the same file scope. Batch writes support `create`, `replace`, and `upsert`; use an individual call for append. Stat and remove accept `missing_ok=True`. Execution stops at the first error, leaving completed operations in place. Inspect those effects before deciding what to do next: failure or cancellation triggers neither rollback nor replay.
 
-For a directory of files, construct `FileArchive(content=zip_bytes, entries=(("SKILL.md", size),), root="")` with relative paths and expanded sizes. An optional `root` selects a prefix within the ZIP. Extract into a new candidate directory with `write_archive`, then publish the complete candidate with a separate `move`. Extraction preserves regular file contents, not archive links or permissions. Custom `FileOperator` implementations must supply both `batch` and `write_archive`.
+For a directory of files, construct `FileArchive(content=zip_bytes, entries=(("SKILL.md", size),), root="")` with relative paths and expanded sizes. An optional `root` selects a prefix within the ZIP. Extract into a new candidate directory with `write_archive`, then publish the complete candidate with a separate `move`. Extraction writes regular file contents only (omitting archive links and permissions). Custom `FileOperator` implementations must supply both `batch` and `write_archive`.
 
 For bounded reads and searches:
 
@@ -97,16 +97,16 @@ Use a complete `**` path segment for recursion. Brace groups accept two or more 
 
 Text search defaults to case-sensitive literal matching at the Environment API. Harness's model-facing `grep` instead defaults to `regex=true`; select `regex=false` for literal code fragments and `case_sensitive=false` when needed. Portable regular expressions use literals, classes, grouping, alternation, anchors, and quantifiers. Native Local, Docker, and E2B use Python `re`; Envd uses Rust `regex`, which rejects lookaround and backreferences. Engine-specific extensions and Unicode edge cases can differ.
 
-An empty result is successful. An invalid pattern returns `environment_request_invalid` with a field, reason, and correction hint. Narrow the root and include filter before raising limits. A per-file match limit caps matches from that file; exceeding an eligible-file scan ceiling raises a limit error instead of reporting an incomplete scan as complete.
+An empty result is successful. An invalid pattern returns `environment_request_invalid` with a field, reason, and correction hint. Narrow the root and include filter before raising limits. A per-file match limit caps matches from that file; exceeding an eligible-file scan ceiling raises a limit error so truncated scans are surfaced explicitly.
 
-## Waiting is not a command deadline
+## Wait timeouts and command limits
 
-Choose a wait timeout to bound how long your application waits for an observation. Choose a supported command limit to stop execution after a deadline. For example, E2B has sandbox TTL and SDK request deadlines but rejects per-command `limits.wall_time_seconds` before launch.
+Choose a wait timeout to bound how long your application waits for an observation. Choose a supported command limit to stop execution after a deadline. For example, E2B has sandbox TTL and SDK request deadlines while rejecting per-command `limits.wall_time_seconds` before launch.
 
-Continue output reads from the returned offsets and inspect their available ranges and completeness evidence. Repeated waits do not reset an observation budget. Write to an application log file with an explicit retention policy when you need complete output beyond that budget.
+Continue output reads from the returned offsets and inspect their available ranges and completeness evidence. Repeated waits preserve the existing observation budget. Write to an application log file with an explicit retention policy when you need complete output beyond that budget.
 
 ## Recovery and portability
 
-Keep process handles with the execution that owns them. Reopening the same target creates a fresh observation scope; old handles remain invalid. A new adapter can discover only what its Provider retained and supports discovering. Inspect the outcome of an interrupted command before taking further action, and never restart a missing command automatically.
+Keep process handles with the execution that owns them. Reopening the same target creates a fresh observation scope; old handles remain invalid. A new adapter can discover only what its Provider retained and supports discovering. Inspect the outcome of an interrupted command before deciding whether to start it again.
 
 Use [Provider-specific limits](cloud-providers.md#cloud-providers) to check backend differences and [Harness Environment tools](../a13n-harness/environments.md) for model-facing signatures and policy.

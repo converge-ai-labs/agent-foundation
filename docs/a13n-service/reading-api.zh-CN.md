@@ -20,14 +20,14 @@ GET /api/v1/runs/{run_id}/items/{item_id}/content?ordinal={ordinal}&field=result
 
 Run 列表和祖先链返回元数据及 `input_preview: {text, truncated}`，预览最多包含 200 个 Unicode 码点，且不接受 `view`。完整详情通过 `/runs/{run_id}` 读取。线程内运行分页还支持用 `anchor=<run_id>` 代替 `cursor`，返回 `total`、每条记录的时间顺序编号 `number`（从 1 开始），以及指向较早运行的 `next_cursor` 和较新运行的 `previous_cursor`。Usage 汇总已经包含各运行的 `run_number`。
 
-修订版本、模型、收件箱记录、显示条目、span 和单个运行详情支持 `view=compact`；省略时保留 `view=detailed`。精简列表默认十条记录。精简列表和运行发现分页都可能因共享的 10,000 字符响应预算提前结束。应跟随返回的继续读取值，而不是假设每页必有 `limit` 条记录。
+修订版本、模型、收件箱记录、显示条目、span 和单个运行详情支持 `view=compact`；省略时保留 `view=detailed`。精简列表默认十条记录。精简列表和运行发现分页都可能因共享的 10,000 字符响应预算提前截断；请始终依据返回的续读游标翻页。
 
-将预览当作完整内容前，先检查响应元数据：
+读取预览内容时请结合响应元数据判断是否完整：
 
 - `truncated` 表示预览被截短；`omitted_sections` 指出可以单独读取的字段。
 - `source_truncated` 表示内容保存前已被截短；继续读取无法恢复丢弃的部分。
 - `representation: fragment` 提供 `text`、内容 `version`、`next_offset` 和 `has_more`。继续时同时传入返回的 offset 和 version；offset 按 Unicode 码点计数。遇到原因是 `content_changed` 的 `409 conflict` 时，重新开始读取。先拼接 JSON 片段，再解析完整值。
-- 字面 `query` 搜索返回匹配项和上下文；其 next offset 用于继续搜索，而非提取全部内容。
+- 字面 `query` 搜索返回匹配片段及上下文；传入返回的 `next_offset` 可继续查找后续匹配项。
 
 根据任务选择详情路由：
 
@@ -38,4 +38,4 @@ Run 列表和祖先链返回元数据及 `input_preview: {text, truncated}`，�
 | 检查模型        | 使用模型目录的精简搜索、能力筛选和分页，再准确选择 provider/model 读取能力或价格。                                                                                                                                                                                              |
 | 检查 trace span | 按 `status`、`kind` 或 `tool_name` 筛选 trace 列表。读取 `/traces/{trace_id}/spans/{span_id}/content?section=input` 或 `section=output`，以 version 和 offset 继续读取片段。                                                                                                    |
 
-Trace span 内容查询只获取该 span；`items` 为空表示它不在该 trace 中。单个 span 超过后端 8 MiB 响应上限时返回 `413 payload_too_large`。可读取的 trace 数据取决于后端可用性和保存期限。写入时使用完整配置和定义，不要将摘要、片段或差异当作完整值提交。
+Trace span 内容查询只获取该 span；`items` 为空表示它不在该 trace 中。单个 span 超过后端 8 MiB 响应上限时返回 `413 payload_too_large`。可读取的 trace 数据取决于后端可用性和保存期限。提交写操作前请先拉取完整的原始配置或定义对象。

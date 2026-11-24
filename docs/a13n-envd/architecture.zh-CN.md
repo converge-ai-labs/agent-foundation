@@ -49,7 +49,7 @@ flowchart LR
 | `active_only`       | `file.read_text`、`file.list`、`file.search`、`process.wait`、`output.read`、`computer.observe`、`computer.a11y_*`                 | 对运行中请求去重（返回 `operation_in_progress`）并支持 `operation.cancel`，结束后不驻留分页响应体。             |
 | `terminal_evidence` | `file.write_text`、`file.patch_text`、`shell.exec`、`process.start`、`process.kill`、`computer.click`、`computer.{ax,uia,atspi}_*` | 派发前先登记并保留终态结果/错误回执：参数摘要一致则原样重放已保存回执；摘要不同则直接返回 `conflict` 拒绝执行。 |
 
-命令的 `stdout`/`stderr` 同样不绑定当前网络连接，而是写入守护进程管理的磁盘有界缓冲。Python 侧 `EIPOutputReader` 通过 `output.read` 分页拉取，并逐页校验偏移连续性、单调递增字节计数与不可变预览前缀——一旦发现异常证据立即熔断当前会话。
+命令的 `stdout` 与 `stderr` 写入守护进程管理的磁盘有界缓冲，与单次网络连接解耦。Python 侧 `EIPOutputReader` 通过 `output.read` 分页拉取，并逐页校验偏移连续性、单调递增字节计数与不可变预览前缀——一旦发现异常证据立即熔断当前会话。
 
 ## 跨平台原生内核沙箱与轻量级虚拟机（MicroVM）
 
@@ -67,7 +67,7 @@ flowchart LR
 
 ## 工作进程外部的受控出站代理（Controlled Egress Broker）
 
-在 Linux 6.1.2+ 开启 `egress_mode: "controlled"` 时，真实的外部 API 密钥**全程驻留在独立特权代理内存中，绝不进入会话工作进程的内存、环境变量或文件系统**：
+在 Linux 6.1.2+ 开启 `egress_mode: "controlled"` 时，真实的外部 API 密钥全程保存在工作进程外部的独立特权代理内存中，工作进程仅接触随机占位符：
 
 ```mermaid
 sequenceDiagram

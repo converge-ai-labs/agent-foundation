@@ -72,13 +72,13 @@ async def test_stream_delivers_a_terminal_result() -> None:
     assert terminal is not None and terminal.output_or_raise() == "turn-1"
 ```
 
-Because Harness issues streamed Model requests, always pass `FunctionModel(stream_function=...)` (yielding `str` chunks or `DeltaToolCalls` as shown in [Tools and dependencies](tools-and-dependencies.md)). Also test your Host's real checkpoint save/load logic so failed or cancelled turns never overwrite the last committed checkpoint, and verify early consumer exit inside `async with executable.stream(...)`.
+Because Harness issues streamed Model requests, always pass `FunctionModel(stream_function=...)` (yielding `str` chunks or `DeltaToolCalls` as shown in [Tools and dependencies](tools-and-dependencies.md)). Also test your Host's real checkpoint save/load logic so failed or cancelled turns preserve the last committed checkpoint, and verify early consumer exit inside `async with executable.stream(...)`.
 
 ## Verify capabilities, prompt prefixes, and bindings
 
 - **Prompt prefix stability:** When a Capability transforms Model messages, run a multi-step test (tool call followed by final answer) and assert that the first request's message sequence matches the equal-length prefix of the second request and persists in canonical history—preserving provider prompt caching.
 - **Definition vs. Run authority:** Build static instructions and tools into the executable, and supply per-request collaborators via fresh `RunBindings` ([Tools and dependencies](tools-and-dependencies.md#supply-a-live-application-dependency)). Assert both the model-visible schema and denied policy paths.
-- **Installed plugins:** Test entry-point discovery in an isolated virtual environment with your package installed rather than patching the in-memory catalog (see [`examples/plugins`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)).
+- **Installed plugins:** Test entry-point discovery in an isolated virtual environment with your package installed (see [`examples/plugins`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)).
 
 ## Test Environments at three levels and keep one smoke test
 
@@ -90,4 +90,4 @@ Choose the lightest Environment tier that proves the contract:
 | Local integration     | Direct Local with `tmp_path`                  | Real file/process operations and cleanup        |
 | Isolation integration | Local Envd daemon (`make local-envd-test`)    | EIP negotiation, isolation, lifecycle, recovery |
 
-Keep daemon tests and one opt-in real-provider smoke test (asserting typed output contracts rather than exact prose) separate from the default offline suite. For full patterns, inspect [`examples/agent-app/tests`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app/tests) and [`packages/a13n-harness/tests`](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/tests).
+Keep daemon tests and one opt-in real-provider smoke test (asserting typed output schemas and invariants) separate from the default offline suite. For full patterns, inspect [`examples/agent-app/tests`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app/tests) and [`packages/a13n-harness/tests`](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/tests).

@@ -53,7 +53,7 @@ sequenceDiagram
     Harness-->>Caller: 严格在资源清理完成后发出 HarnessRunResultEvent
 ```
 
-每次内部 `ModelAttempt` 都会向底层传入独立的尝试 ID，同时将 `conversation_id` 固定为 `thread_id`，既保证链路追踪精确关联，又维持网关侧的会话缓存亲和性。对上层宿主（如 Service）而言，一次逻辑 Harness Run 仅对应**一次**持久化 Worker `Attempt`——内部 `ModelAttempt` 重试绝不会消耗宿主的重试配额，也绝不会重复执行已经返回结果的工具调用。
+每次内部 `ModelAttempt` 都会向底层传入独立的尝试 ID，同时将 `conversation_id` 固定为 `thread_id`，既保证链路追踪精确关联，又维持网关侧的会话缓存亲和性。对上层宿主（如 Service）而言，一次逻辑 Harness Run 对应**一次**持久化 Worker `Attempt`——内部 `ModelAttempt` 重试保持在该次宿主 `Attempt` 内，并直接复用已完成的工具返回结果。
 
 ## 即时引导（Immediate Steering）与宿主驻留工具执行
 
@@ -88,5 +88,5 @@ sequenceDiagram
 
 当从工具批次中途崩溃的检查点恢复运行（`tool_recovery="declared"`）时，Harness 会扫描 `message_history` 中尚未配对返回值的 `ToolCallPart`：
 
-- 声明为 `HarnessToolMetadata(idempotency="read_only")` 的纯读工具会在**全新** `RunBindings` 权限与审批策略下自动重跑（历史运行中的单次审批绝不会跨运行静默继承）。
+- 声明为 `HarnessToolMetadata(idempotency="read_only")` 的纯读工具会在**全新** `RunBindings` 权限与审批策略下自动重跑（单次运行授予的临时审批仅在当次运行内有效）。
 - 带有外部副作用（或未声明幂等）的工具调用则会生成明确的已中断 `ToolReturnPart` 记录，指示模型“前序进程在调用期间异常终止，重试前须先核查外部实际状态”。

@@ -92,23 +92,23 @@ asyncio.run(main())
 1. 调用一次 `start(request)`，保留返回的句柄。
 2. 通过该句柄读取输出并检查状态。需要等待完成观测时，使用有界 `wait`。
 3. 应用需要停止命令时，显式使用受支持的信号或 `kill`。
-4. 完成后释放观测。`release` 不表示终止进程。
+4. 完成后释放观测。`release` 仅解除输出观测绑定，后台进程继续运行。
 
 只选择执行对象声明支持的操作：
 
-| 方法                                                 | 行为                                                            |
-| ---------------------------------------------------- | --------------------------------------------------------------- |
-| `start(request)`                                     | 返回 `ProcessStartResult`，包含绑定的进程句柄和回执             |
-| `list(limit=...)`                                    | 在支持时进行有界发现；不附加输出                                |
-| `rebind(identity, output_policy=...)`                | 在支持时显式附加到符合条件的保留原生进程                        |
-| `inspect(handle)`                                    | 读取当前状态和可用元数据                                        |
-| `wait(handle, condition=..., timeout_seconds=...)`   | 等待 `initial_terminal` 或 `tree_cleaned`；等待期限不是命令期限 |
-| `read_output(handle, ..., policy=...)`               | 使用显式游标或偏移量进行有界 stdout/stderr 观测                 |
-| `write_stdin(handle, data, close_after_write=False)` | 写入字节并报告接受数量和输入状态                                |
-| `close_stdin(handle)`                                | 关闭输入，不读取输出                                            |
-| `signal(handle, "interrupt" or "terminate")`         | 支持的协作式控制                                                |
-| `kill(handle)`                                       | 独立的强制控制操作                                              |
-| `release(handle)`                                    | 释放观测，不隐式终止进程                                        |
+| 方法                                                 | 行为                                                                                     |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `start(request)`                                     | 返回 `ProcessStartResult`，包含绑定的进程句柄和回执                                      |
+| `list(limit=...)`                                    | 在支持时进行有界发现；不附加输出                                                         |
+| `rebind(identity, output_policy=...)`                | 在支持时显式附加到符合条件的保留原生进程                                                 |
+| `inspect(handle)`                                    | 读取当前状态和可用元数据                                                                 |
+| `wait(handle, condition=..., timeout_seconds=...)`   | 在 `timeout_seconds` 内等待 `initial_terminal` 或 `tree_cleaned`（等待超时后进程仍继续） |
+| `read_output(handle, ..., policy=...)`               | 使用显式游标或偏移量进行有界 stdout/stderr 观测                                          |
+| `write_stdin(handle, data, close_after_write=False)` | 写入字节并报告接受数量和输入状态                                                         |
+| `close_stdin(handle)`                                | 关闭输入，不读取输出                                                                     |
+| `signal(handle, "interrupt" or "terminate")`         | 支持的协作式控制                                                                         |
+| `kill(handle)`                                       | 独立的强制控制操作                                                                       |
+| `release(handle)`                                    | 解除输出观测绑定，保持进程继续运行                                                       |
 
 分别判断三个结果：命令完成、输出完成、进程树清理完成。`initial_terminal` 观测命令的终止状态，此时进程树可能仍需清理。检查可用的阶段、终止原因、退出码或信号、时间戳和清理结果。当状态为 `missing` 或 `unknown` 时，请先检查目标环境中的实际执行结果，再决定是否重新发起命令。
 
@@ -122,7 +122,7 @@ asyncio.run(main())
 
 1. 调用 `read_output()`，传入独立的 stdout/stderr 游标或起始偏移量以及策略。需要等候输出时设置 `wait_seconds`，默认值为零。
 2. 按 `start_offset` 放置每个返回块，再保留该流的下一游标。读取不消费字节，因此重复读取同一范围是安全的。
-3. 检查 `available_start` 和 `available_end`、捕获类别、覆盖范围、来源、丢弃/产生计数和完成标志。单凭预览无法确定输出完整。
+3. 检查 `read_output()` 上的 `available_start`、`available_end`、捕获类别、`coverage`、来源、丢弃/产生计数和完成标志，以确认是否保留了完整输出流。
 
 使用独立的 `outputs` 接口读取或释放保留输出引用。将每种绑定值传入所属 API：进程句柄、输出引用和输出游标是不同的值。普通 `shell.exec` 返回有界内联输出，并在返回前释放自身的保留资源。
 

@@ -49,7 +49,7 @@ OTLP 链路追踪配置见[可观测性](observation.md)，WebUI 重启恢复见
 a13n-harness-ui update
 ```
 
-启动时的版本检查仅显示提示，绝不会自动安装更新；可通过 `--no-update-check` 单次跳过，或在 `a13n-harness-ui.yaml` 中永久关闭：
+启动时的版本检查仅显示提示（升级由 `a13n-harness-ui update` 显式执行）；可通过 `--no-update-check` 单次跳过提示，或在 `a13n-harness-ui.yaml` 中永久关闭：
 
 ```yaml title="a13n-harness-ui.yaml"
 process:
