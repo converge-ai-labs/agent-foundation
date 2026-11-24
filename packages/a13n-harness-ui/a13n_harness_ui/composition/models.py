@@ -22,6 +22,7 @@ from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.mcp_oauth.models import OAuthBinding
 from a13n_harness_ui.model_thinking import ThinkingSelection
+from a13n_harness_ui.notification_origin import BrowserId
 from a13n_harness_ui.surfaces import RunModelOverrides
 
 
@@ -203,6 +204,7 @@ class ResolvedSubagent(CompositionModel):
 
 
 class ResolvedRunComposition(CompositionModel):
+    origin_browser_id: BrowserId | None = Field(default=None, exclude_if=lambda value: value is None)
     schema_version: Literal["1"] = "1"
     web_providers: tuple[WebProviderResource, ...] = Field(default=(), exclude_if=lambda value: not value)
     package_prompt_revision: str = Field(min_length=1, max_length=128)

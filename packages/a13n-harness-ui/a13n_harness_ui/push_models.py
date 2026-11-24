@@ -10,6 +10,8 @@ from urllib.parse import urlsplit
 from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from a13n_harness_ui.notification_origin import BrowserId
+
 
 def decode_key(value: str) -> bytes:
     return base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
@@ -39,6 +41,7 @@ class PushSubscriptionInput(BaseModel):
     endpoint: str = Field(max_length=4096)
     keys: PushKeys
     origin: str = Field(max_length=512)
+    only_browser_id: BrowserId | None = None
     scope: Literal["all", "bot", "inbox"] = "all"
     language: Literal["en", "zh-CN", "hi"] = "en"
 

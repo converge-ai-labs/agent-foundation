@@ -323,6 +323,7 @@ it("refreshes scope and display language without replacing the device endpoint",
   await enablePush(transport);
   fetchMock.mockClear();
   writePreference("notifications.scope", "bot");
+  writePreference("notifications.audience", "mine");
   saveLanguage("zh-CN");
   // Another tab saved Chinese; this tab's i18n instance is still English.
   await i18n.changeLanguage("en");
@@ -331,7 +332,11 @@ it("refreshes scope and display language without replacing the device endpoint",
     const put = fetchMock.mock.calls
       .map(([request]) => request as Request)
       .find((request) => request.method === "PUT")!;
-    expect(await put.json()).toMatchObject({ scope: "bot", language: "zh-CN" });
+    expect(await put.json()).toMatchObject({
+      scope: "bot",
+      language: "zh-CN",
+      only_browser_id: expect.stringMatching(/^browser_[0-9a-f]{32}$/),
+    });
     expect(subscribe).toHaveBeenCalledOnce();
     expect(unsubscribe).not.toHaveBeenCalled();
     expect(requestPermission).not.toHaveBeenCalled();

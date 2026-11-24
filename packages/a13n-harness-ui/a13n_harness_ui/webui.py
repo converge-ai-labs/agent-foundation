@@ -158,6 +158,7 @@ from a13n_harness_ui.model_authoring import (
 )
 from a13n_harness_ui.model_catalog import ModelCatalogSnapshot
 from a13n_harness_ui.model_controls import ModelControlSelection
+from a13n_harness_ui.notification_origin import browser_submission
 from a13n_harness_ui.page_presence import (
     PRESENCE_REFRESH_SECONDS,
     PRESENCE_TIMEOUT_SECONDS,
@@ -656,7 +657,12 @@ def create_webui(
     async def bot_note(thread_id: str) -> BotNote:
         return await app().bot().notes.read(caller=BOT_THREAD_ID, thread_id=thread_id)
 
-    @server.post("/api/bot/inputs", response_model=BotInput, openapi_extra=_body(BotSubmitRequest))
+    @server.post(
+        "/api/bot/inputs",
+        response_model=BotInput,
+        openapi_extra=_body(BotSubmitRequest),
+        dependencies=[Depends(browser_submission)],
+    )
     async def bot_submit(request: Request) -> BotInput:
         document = await _document(request, BotSubmitRequest)
         return await app().submit_bot_input(
@@ -1138,6 +1144,7 @@ def create_webui(
         "/api/threads/{thread_id}/apps/{view_id}/messages",
         response_model=AppMessageReceipt,
         openapi_extra=_body(AppMessageRequest),
+        dependencies=[Depends(browser_submission)],
     )
     async def send_mcp_app_message(thread_id: str, view_id: str, request: Request) -> AppMessageReceipt:
         return await app().send_mcp_app_message(thread_id, view_id, await _document(request, AppMessageRequest))
@@ -2430,7 +2437,12 @@ def create_webui(
             },
         )
 
-    @server.post("/api/threads/{thread_id}/submit", response_model=RootRunReceipt, openapi_extra=_body(SubmitRequest))
+    @server.post(
+        "/api/threads/{thread_id}/submit",
+        response_model=RootRunReceipt,
+        openapi_extra=_body(SubmitRequest),
+        dependencies=[Depends(browser_submission)],
+    )
     async def submit(thread_id: str, request: Request) -> RootRunReceipt:
         # Ordered input and its base64 CRDT capture can each contain the prompt.
         document = await _document(request, SubmitRequest, max_bytes=2 * _MAX_BODY)
@@ -2750,7 +2762,7 @@ def create_webui(
         "/threads/{thread_id}/submit",
         response_model=RootRunReceipt,
         openapi_extra=_body(RootSteerRequest),
-        dependencies=[Depends(require_prompt)],
+        dependencies=[Depends(require_prompt), Depends(browser_submission)],
     )
     async def shared_submit(share_id: str, thread_id: str, request: Request) -> RootRunReceipt:
         document = await _document(request, RootSteerRequest, max_bytes=2 * _MAX_BODY)

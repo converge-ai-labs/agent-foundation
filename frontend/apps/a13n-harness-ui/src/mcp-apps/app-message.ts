@@ -1,3 +1,4 @@
+import { browserSubmissionHeaders } from "../shell/notification-browser";
 import { result, type Schema, type Transport } from "../transport/client";
 
 export type MessageState = {
@@ -83,7 +84,11 @@ export class AppMessage {
         await result(
           this.transport.client.POST(
             "/api/threads/{thread_id}/apps/{view_id}/messages",
-            { params: { path: this.path() }, body: this.state!.request },
+            {
+              headers: await browserSubmissionHeaders(),
+              params: { path: this.path() },
+              body: this.state!.request,
+            },
           ),
         ),
       );

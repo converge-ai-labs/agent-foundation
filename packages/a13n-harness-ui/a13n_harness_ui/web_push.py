@@ -82,7 +82,11 @@ def inbox_path(thread_id: str, item_id: str) -> str:
 _BOT_PATHS = {"/bot", f"/threads/{BOT_THREAD_ID}", "/settings/notifications"}
 
 
-def in_scope(scope: str, thread_id: str, notice: RootOperationNotice | InboxNotice) -> bool:
+def in_scope(
+    scope: str, thread_id: str, notice: RootOperationNotice | InboxNotice, only_browser_id: str | None = None
+) -> bool:
+    if only_browser_id is not None and notice.origin_browser_id != only_browser_id:
+        return False
     if scope == "inbox":
         return isinstance(notice, InboxNotice)
     if scope == "bot":
@@ -156,7 +160,7 @@ class WebPush:
                         continue
                     async with create_task_group() as deliveries:
                         for subscription in await self.repository.recipients():
-                            if not in_scope(subscription.scope, thread_id, notice):
+                            if not in_scope(subscription.scope, thread_id, notice, subscription.only_browser_id):
                                 continue
                             payload = notice_payload(thread_id, thread.title, notice, language=subscription.language)
                             deliveries.start_soon(self._deliver, subscription, payload, (thread_id, notice))
@@ -192,7 +196,7 @@ class WebPush:
             current = await self.repository.get(subscription.subscription_id)
             if current is None or current.keys != subscription.keys:
                 return False
-            if source is not None and not in_scope(current.scope, *source):
+            if source is not None and not in_scope(current.scope, *source, only_browser_id=current.only_browser_id):
                 # Scope may change while this delivery waits for capacity.
                 return False
             if source is None and current.scope == "bot" and payload["path"] not in _BOT_PATHS:
