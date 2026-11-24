@@ -152,7 +152,9 @@ HTTPS cookie 名为 `__Host-a13n_session`，带有 `Secure`、`HttpOnly` 和 `Sa
 
 `A13N_AUTH__OIDC` 会替换 `service.toml` 中整段 `[auth.oidc]`。请在 JSON 中填入全部提供方及所有非默认的 OIDC 设置。`[auth]` 中的其他字段仍由各自的环境变量或 TOML 提供。如果改用 TOML 配置，则在 `[auth.oidc]` 的 `defaults` 中填写初始授权，在 `[auth.oidc.providers.team]` 中填写提供方配置。
 
-每增加一个 `[auth.oidc.providers.<id>]` 表，登录页就会多一个按钮。提供方须支持 Discovery、带 PKCE S256 的授权码流程、签名 ID token（`RS256` 或 `ES256`）以及 `openid profile email` 权限范围。默认使用 HTTP Basic；如果提供方要求 `client_secret_post`，请设置 `token_endpoint_auth_method = "client_secret_post"`。签发方为 `https://accounts.google.com` 时，Console 显示内置的 Google 图标；签发方为 `https://login.microsoftonline.com/<租户 UUID>/v2.0` 时显示 Microsoft 图标；其他签发方显示盾牌。如果受信任的身份代理始终将用户转到同一家提供方，可以将 `brand` 设为 `"google"`、`"microsoft"` 或 `"generic"` 来指定图标。请为各提供方设置易于辨认、互不重复的标签。
+每增加一个 `[auth.oidc.providers.<id>]` 表，登录页就会多一个按钮。提供方须支持 Discovery、带 PKCE S256 的授权码流程、签名 ID token（`RS256` 或 `ES256`）以及 `openid profile email` 权限范围。默认使用 HTTP Basic；如果提供方要求 `client_secret_post`，请设置 `token_endpoint_auth_method = "client_secret_post"`。请为各提供方设置易于辨认、互不重复的标签。
+
+Console 使用内置登录图标，无需加载第三方资源。Service 会识别常见的签发方 URL，包括 Authentik 的 `/application/o/<slug>/` 和 Keycloak 的 `/realms/<realm>`。如果 URL 无法识别，Service 会依次在提供方 ID 和标签中匹配完整的品牌词，例如 `Company Okta` 中的 `Okta`。可用 `brand` 指定图标，取值包括 `google`、`microsoft`、`okta`、`auth0`、`github`、`gitlab`、`cloudflare`、`authentik`、`keycloak`、`authelia` 和 `zitadel`。未识别的提供方默认显示盾牌；设置 `brand = "generic"` 可强制使用盾牌。
 
 Service 接受两种 `aud` 格式：配置的客户端 ID 字符串，或只包含该 ID 的数组。如果 ID token 提供 `azp`，它也必须匹配同一个 ID。ID token 的 `iat`、`nbf` 可比当前时间晚最多 30 秒，`exp` 也有 30 秒的到期宽限。请允许 Service 出站访问签发方的 Discovery 端点，以及 Discovery 返回的 token 和 JWKS 端点。除本机开发外，这些请求必须使用 HTTPS，不跟随重定向，只接受 `Content-Encoding: identity` 或不带内容编码的响应。浏览器需要访问 Discovery 返回的授权端点。请将反向代理访问日志配置为省略回调 URL 的查询字符串。
 
@@ -160,11 +162,16 @@ OIDC 发起请求有独立的 Redis 限流预算：同一客户端地址访问�
 
 凡是身份提供方允许向该客户端授权的用户，都可以登录。请先在身份提供方设置应用访问规则，再发布登录按钮。对于 Google Workspace，请在组织拥有的项目中创建 Web 客户端，并将 **Google Auth Platform → Audience → Internal** 设为仅本组织可用（参见 [Google 的受众指南](https://support.google.com/cloud/answer/15549945)）。External 应用可以允许组织外用户登录；Service 不会按邮箱域名限制准入。
 
-在 Microsoft Entra 员工租户中，`email` 是提供方报告的邮箱，`xms_edov` 验证的是域名所有者，并不验证用户邮箱。[可选声明参考](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference)没有把 `email_verified` 列为 Entra 的标准可选声明，另见 [ID token 声明参考](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference)。如果身份提供方或受信任的上游支持标准 `email_verified` 声明，应仅在实际验证用户邮箱后签发布尔值 `true`。没有该声明时，Service 仍使用签名 token 中的主体标识和显示名，邮箱留空。
+Service 将 ID token 中的 `email` 存入 `oidc_email`，仅供显示。`require_email_verified` 默认为 `true`，此时只有 `email_verified` 为布尔值 `true` 才会保存邮箱。显示邮箱不用于关联账号、登录、接受邀请、找回密码或授予权限。角色规则直接匹配通过验证的 ID token 声明。
+
+如果需要显示下列提供方的邮箱，请在对应的 TOML 表 `[auth.oidc.providers.<id>]` 中设置 `require_email_verified = false`，或在 `A13N_AUTH__OIDC` 的对应提供方对象中添加 `"require_email_verified": false`。**只有在用户无法随意设置未经验证的邮箱时，才可关闭此检查。** ID token 仍须包含有效的 `email` 声明，Service 才会显示邮箱。
+
+- **Microsoft Entra ID 员工租户：** Entra 不签发标准的 `email_verified` 声明。`xms_edov` 验证的是域名所有权，不是用户邮箱。参见[可选声明参考](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference)和 [ID token 声明参考](https://learn.microsoft.com/en-us/entra/identity-platform/id-token-claims-reference)。
+- **Authentik：** [默认的 `email` scope 映射](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/verify-email-address/)将 `email_verified` 写死为 `False`。
 
 如需在 Entra 中限制应用访问，请[启用分配要求并分配指定用户或组](https://learn.microsoft.com/en-us/entra/identity-platform/howto-restrict-your-app-to-a-set-of-users)。Entra 全局管理员不受此分配要求限制。
 
-未设置规则的提供方会在首次登录时创建独立的 Service 用户，并写入 `defaults` 指定的普通授权。身份提供方验证过的邮箱仅用于显示，即使某个密码账号也使用同一邮箱。请通过[成员与授权](identity.md#members-and-grants)管理权限。以后登录时，Service 会保留现有授权，不会恢复已移除的角色。
+未设置规则的提供方会在首次登录时创建独立的 Service 用户，并写入 `defaults` 指定的普通授权。请通过[成员与授权](identity.md#members-and-grants)管理权限。以后登录时，Service 会保留现有授权，不会恢复已移除的角色。
 
 ### 按 ID token 声明同步角色
 
@@ -202,7 +209,9 @@ OIDC 发起请求有独立的 Redis 限流预算：同一客户端地址访问�
 2. 在独立的浏览器会话中通过身份提供方登录，确认新管理员可以打开 **组织 → 成员** 并管理成员。
 3. 将 Service API 副本的环境变量设为 `A13N_AUTH__PASSWORD_ENABLED=false`，然后重启各副本。这会覆盖 `service.toml` 中的 `password_enabled`。现有密码会话失效，密码登录、创建和重发邀请以及密码找回停用。管理员仍可查看和撤销邀请，API 密钥继续有效。
 
-OIDC 会话在 `auth.oidc.session_seconds` 后到期（默认 12 小时），操作不会延长有效期。移除某人的身份提供方访问权时，如需立即撤销本地访问，还要使用 `--principal-id` 禁用对应的 Service 用户。需要恢复密码登录时，将环境变量设为 `A13N_AUTH__PASSWORD_ENABLED=true`，然后重启 API 副本。原有密码账户仍然保留。
+建议保留初始化时创建的密码管理员账号，用于应急恢复。`password_enabled = false` 时，该账号无法登录。需要恢复密码登录时，将环境变量设为 `A13N_AUTH__PASSWORD_ENABLED=true`，然后重启 API 副本。如果不再保留该账号作为应急入口，请先确认 OIDC 管理员已获得手动授予的组织级 `admin` 角色，再运行 `a13n-service user disable --email <bootstrap-email>`。不要直接在 PostgreSQL 中删除账号记录：审计记录和资源归属都引用 `principals.id`。
+
+OIDC 会话在 `auth.oidc.session_seconds` 后到期（默认 12 小时），操作不会延长有效期。移除某人的身份提供方访问权时，如需立即撤销本地访问，还要使用 `--principal-id` 禁用对应的 Service 用户。
 
 ## 你的账号
 

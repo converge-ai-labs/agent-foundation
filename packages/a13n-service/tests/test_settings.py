@@ -72,6 +72,36 @@ def test_environment_variables_carry_lists_maps_and_sections_as_json(
     assert loaded.memory.default_guide.record == "Keep one fact per record."
 
 
+def test_oidc_provider_email_verification_loads_from_toml_and_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, clean_environment: None
+) -> None:
+    config = tmp_path / "service.toml"
+    config.write_text(
+        '[auth.oidc]\ndefaults = [{workspace_id = "ws_test", role = "runner"}]\n'
+        '[auth.oidc.providers.team]\nlabel = "Team"\nissuer = "https://idp.example.test"\n'
+        'client_id = "console"\nclient_secret = "test-secret"\nrequire_email_verified = false\n'
+    )
+    assert load_settings(config).auth.oidc.providers["team"].require_email_verified is False
+
+    provider = {
+        "label": "Team",
+        "issuer": "https://idp.example.test",
+        "client_id": "console",
+        "client_secret": "test-secret",
+    }
+    oidc = {
+        "defaults": [{"workspace_id": "ws_test", "role": "runner"}],
+        "providers": {
+            "team": provider,
+            "managed": {**provider, "require_email_verified": False},
+        },
+    }
+    monkeypatch.setenv("A13N_AUTH__OIDC", json.dumps(oidc))
+    providers = load_settings(config).auth.oidc.providers
+    assert providers["team"].require_email_verified is True
+    assert providers["managed"].require_email_verified is False
+
+
 def test_app_bootstrap_defaults_do_not_reserve_the_app_plugins_extension_section(clean_environment: None) -> None:
     settings = load_settings(extensions={"app_plugins": Server})
     assert settings.extensions["app_plugins"] == Server()

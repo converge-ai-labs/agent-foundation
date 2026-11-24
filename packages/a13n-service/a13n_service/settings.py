@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from functools import cached_property
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
-from typing import Annotated, Any, Literal, get_args, get_origin
+from typing import Annotated, Any, Literal, cast, get_args, get_origin
 from urllib.parse import urlsplit
 
 from a13n_harness.http import (
@@ -202,7 +202,29 @@ class Mail(Section):
         return self
 
 
-type OIDCBrand = Literal["generic", "google", "microsoft"]
+type OIDCBrand = Literal[
+    "generic",
+    "google",
+    "microsoft",
+    "okta",
+    "auth0",
+    "github",
+    "gitlab",
+    "cloudflare",
+    "authentik",
+    "keycloak",
+    "authelia",
+    "zitadel",
+]
+
+_OIDC_BRAND_HOST_SUFFIXES: tuple[tuple[str, OIDCBrand], ...] = (
+    (".okta.com", "okta"),
+    (".oktapreview.com", "okta"),
+    (".okta-emea.com", "okta"),
+    (".auth0.com", "auth0"),
+    (".cloudflareaccess.com", "cloudflare"),
+    (".zitadel.cloud", "zitadel"),
+)
 
 _ENTRA_V2_ISSUER = re.compile(
     r"https://login\.microsoftonline\.com/[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/v2\.0"
@@ -255,6 +277,7 @@ class OIDCProvider(Section):
     client_id: str = Field(min_length=1, max_length=512)
     client_secret: SecretStr = Field(min_length=1, max_length=4096)
     token_endpoint_auth_method: Literal["client_secret_basic", "client_secret_post"] = "client_secret_basic"
+    require_email_verified: bool = True
     extra_scopes: list[Annotated[str, Field(min_length=1, max_length=256, pattern=_OIDC_SCOPE)]] = Field(
         default_factory=list, max_length=20
     )
@@ -265,8 +288,7 @@ class OIDCProvider(Section):
     def scopes(self) -> tuple[str, ...]:
         return tuple(dict.fromkeys(("openid", "profile", "email", *self.extra_scopes)))
 
-    @property
-    def sign_in_brand(self) -> OIDCBrand:
+    def sign_in_brand(self, provider_id: str = "") -> OIDCBrand:
         """A display hint only; never used to choose an endpoint or validate identity."""
         if self.brand is not None:
             return self.brand
@@ -274,6 +296,20 @@ class OIDCProvider(Section):
             return "google"
         if _ENTRA_V2_ISSUER.fullmatch(self.issuer):
             return "microsoft"
+        issuer = urlsplit(self.issuer)
+        host = issuer.hostname or ""
+        if host == "gitlab.com":
+            return "gitlab"
+        for suffix, brand in _OIDC_BRAND_HOST_SUFFIXES:
+            if host.endswith(suffix):
+                return brand
+        if re.fullmatch(r"/application/o/[^/]+/?", issuer.path):
+            return "authentik"
+        if re.fullmatch(r"/(?:auth/)?realms/[^/]+", issuer.path):
+            return "keycloak"
+        for token in re.split(r"[\W_]+", f"{provider_id} {self.label}".casefold()):
+            if token != "generic" and token in get_args(OIDCBrand.__value__):
+                return cast(OIDCBrand, token)
         return "generic"
 
     @field_validator("issuer")

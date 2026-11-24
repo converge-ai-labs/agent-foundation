@@ -32,7 +32,7 @@ it("falls back from a failed brand image to a safe provider logo then a generic 
   );
   const icon = container.querySelector("img")!;
   expect(icon.getAttribute("referrerpolicy")).toBe("no-referrer");
-  expect(container.querySelectorAll("img")).toHaveLength(2);
+  expect(container.querySelectorAll("img")).toHaveLength(1);
   fireEvent.error(icon);
   expect(container.querySelector("img")?.src).toBe(
     "https://logos.example/github.png",
@@ -106,29 +106,53 @@ it("resolves every built-in Web provider identity while keeping unknown provider
   expect(resolveBrand({ identity: "future-web-provider" })).toBeUndefined();
 });
 
-it.each(["google", "microsoft"])(
-  "uses the bundled %s mark and custom fallback on failure",
-  (identity) => {
-    const fallback = <svg data-testid="shield" aria-hidden />;
-    const { container, getByTestId } = render(
-      <BrandIcon identity={identity} bundledOnly fallback={fallback} />,
-    );
-    const icon = container.querySelector("img")!;
-    expect(icon.getAttribute("src")).toBe(brands[identity].icon);
-    const url = new URL(icon.src);
+it.each([
+  "google",
+  "microsoft",
+  "okta",
+  "auth0",
+  "github",
+  "gitlab",
+  "cloudflare",
+  "authentik",
+  "keycloak",
+  "authelia",
+  "zitadel",
+])("uses the bundled %s mark and custom fallback on failure", (identity) => {
+  const fallback = <svg data-testid="shield" aria-hidden />;
+  const { container, getByTestId } = render(
+    <BrandIcon identity={identity} bundledOnly fallback={fallback} />,
+  );
+  const icons = [...container.querySelectorAll("img")];
+  expect(icons).toHaveLength(1);
+  const [icon] = icons;
+  expect(icon.getAttribute("src")).toBe(brands[identity].icon);
+  const url = new URL(icon.src);
+  expect(
+    /^data:image\/svg\+xml[;,]/.test(icon.src) ||
+      (["http:", "https:"].includes(url.protocol) &&
+        url.origin === location.origin),
+  ).toBe(true);
+  expect(icon.alt).toBe("");
+  fireEvent.error(icon);
+  expect(container.querySelector("img")).toBeNull();
+  expect(getByTestId("shield")).toBeTruthy();
+});
+
+it.each([
+  { identity: "cloudflare", invert: false },
+  { identity: "zitadel", invert: true },
+])(
+  "applies the expected dark-mode rule to the bundled $identity mark",
+  ({ identity, invert }) => {
+    const { container } = render(<BrandIcon identity={identity} bundledOnly />);
     expect(
-      /^data:image\/svg\+xml[;,]/.test(icon.src) ||
-        (["http:", "https:"].includes(url.protocol) &&
-          url.origin === location.origin),
-    ).toBe(true);
-    expect(icon.alt).toBe("");
-    fireEvent.error(icon);
-    expect(container.querySelector("img")).toBeNull();
-    expect(getByTestId("shield")).toBeTruthy();
+      container.querySelector("img")?.classList.contains("dark:invert"),
+    ).toBe(invert);
   },
 );
 
-it.each(["generic", "github"])(
+it.each(["generic", "notion"])(
   "never uses remote or caller-supplied images in bundled-only mode (%s)",
   (identity) => {
     const { container, getByTestId } = render(
