@@ -220,6 +220,7 @@ if TYPE_CHECKING:
 
     from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
 
+from a13n_harness.context import AgentContext
 from a13n_harness.providers.model.oauth.models import ModelAuthenticationError
 
 from a13n_harness_ui.bot import BotController
@@ -288,6 +289,7 @@ from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor
 from a13n_harness_ui.root_input import authored_text, detach_input
+from a13n_harness_ui.root_inputs import InputDelivery, StrictRootInputs
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.saved_output_models import SavedChildOutputPage, SavedOutputTarget, SavedOutputView
 from a13n_harness_ui.saved_outputs import SavedOutputs
@@ -2775,7 +2777,12 @@ class HarnessUiApp:
         app_context: tuple[AppContextReference, ...] = (),
         mcp_app_view: AppView | None = None,
         draft: DraftCapture | None = None,
+        strict_inputs: StrictRootInputs | None = None,
+        run_capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
+        on_admitted: Callable[[RootRunReceipt], None] | None = None,
+        before_admit: Callable[[], None] | None = None,
     ) -> RootRunReceipt:
+        """Submit a user turn with optional synchronous admission guards and receipt handoff."""
         prompt = deepcopy(prompt)
         attachment_ids = tuple(attachment_ids)
         if mode not in {"normal", "goal"}:
@@ -2841,6 +2848,8 @@ class HarnessUiApp:
                             "The App message belongs to another root.", code="mcp_app_owner_unavailable"
                         )
                     await self._apps().authorize_message(mcp_app_view)
+                if before_admit is not None:
+                    before_admit()
 
             receipt = await self._root_runs.submit_prompt(
                 thread_id=thread_id,
@@ -2851,7 +2860,11 @@ class HarnessUiApp:
                 goal=goal,
                 touch=True,
                 human_input=True,
-                authorize=authorize_app_message if mcp_app_view is not None else None,
+                authorize=authorize_app_message if mcp_app_view is not None or before_admit is not None else None,
+                reject_deferred=strict_inputs is not None,
+                strict_inputs=strict_inputs,
+                run_capabilities=run_capabilities,
+                on_admitted=on_admitted,
             )
             self._tool_executions.retry(thread_id, refresh=True)
             await self._clear_submitted_draft(thread_id, draft_clear)
@@ -3181,6 +3194,10 @@ class HarnessUiApp:
                     self._browsers.handback.user_input(operation.receipt.thread_id)
                 await self._clear_submitted_draft(operation.receipt.thread_id, draft_clear)
             return result
+
+    async def steer_root_operation_strict(self, receipt_id: str, *, input_id: str, message: str) -> InputDelivery:
+        async with self._operation():
+            return await self._root_runs.steer_strict(receipt_id, input_id=input_id, message=message)
 
     async def cancel_root_operation(self, receipt_id: str) -> RootControlResult:
         async with self._operation():
@@ -4234,6 +4251,7 @@ async def open_harness_ui_app(
     configuration_path: Path | None = None,
     host_mode: Literal["local", "webui"] = "local",
     mcp_input_enabled: bool = False,
+    unattended: bool = False,
     share_computer: bool = False,
     browser_no_sandbox: bool = False,
     configuration_error: ConfigurationError | None = None,
@@ -4378,7 +4396,9 @@ async def open_harness_ui_app(
                     thread = await store.threads.get(thread.parent_thread_id)
                 await summary_hub.publish(kind="thread", thread_id=thread.thread_id if thread else thread_id)
 
-            mcp_inputs = Inputs(input_changed) if host_mode == "webui" or mcp_input_enabled else None
+            mcp_inputs = (
+                Inputs(input_changed) if not unattended and (host_mode == "webui" or mcp_input_enabled) else None
+            )
             mcp_connections = (
                 Connections(input_handler=mcp_inputs, cleanup_timeout_seconds=settings.shutdown_timeout_seconds)
                 if host_mode == "webui"
@@ -4456,6 +4476,7 @@ async def open_harness_ui_app(
             restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui" and automation_owned)
             tool_executions = ToolExecutions(store.tool_executions, environments=environment_service)
             operator = HarnessUiSubagentOperator(
+                unattended=unattended,
                 tool_executions=tool_executions,
                 mcp_apps=mcp_apps,
                 thread_files=thread_files,
@@ -4490,7 +4511,7 @@ async def open_harness_ui_app(
 
             browsers = HostBrowsers(
                 root=settings.storage.data_root / "browsers",
-                available=host_mode == "webui" and share_computer,
+                available=not unattended and host_mode == "webui" and share_computer,
                 authorize=authorize_browser,
                 no_sandbox=browser_no_sandbox,
                 configuration=None if runtime_configuration is None else runtime_configuration.document.browser,
@@ -4507,6 +4528,7 @@ async def open_harness_ui_app(
                 await app._publish_input_prediction(thread_id, continuation_id, execution_id, text)
 
             root_executor = RootRunExecutor(
+                unattended=unattended,
                 input_prediction=InputPredictionPlugin(prediction_eligible, publish_prediction)
                 if host_mode == "webui"
                 else None,

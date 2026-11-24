@@ -318,7 +318,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
         thread_files: ThreadFiles | None = None,
         mcp_apps: AppSnapshots | None = None,
         tool_executions: ToolExecutions | None = None,
+        unattended: bool = False,
     ) -> None:
+        self._unattended = unattended
         self._tool_executions = tool_executions
         self._thread_files = thread_files
         self._mcp_apps = mcp_apps
@@ -1469,6 +1471,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             environment=environment.runtime,
             instruction_reference_root=environment.instruction_reference_root,
             deferred_tools_supported=False,
+            unattended=self._unattended,
             tool_result_directory=environment.tool_result_directory,
             model_resolver=reconstructed.model_resolver.fresh(),
             usage_reporter=self._store.usage.reporter(state.thread_id, reconstructed.model_resolver.configured_models),

@@ -54,6 +54,7 @@ async def _run(request: CliRequest) -> int:
             configuration_error=source.candidate_error,
             host_mode="webui" if request.command == "webui" else "local",
             share_computer=request.command == "webui" and request.share_computer,
+            unattended=request.unattended or request.command == "run",
             browser_no_sandbox=request.browser_no_sandbox,
             codex_login=(
                 None
@@ -78,6 +79,16 @@ async def _run(request: CliRequest) -> int:
             api_key=request.web_api_key,
             dangerously_bypass_permission=request.dangerously_bypass_permission,
         )
+        return 0
+
+    if request.command == "acp":
+        from a13n_harness_ui.acp_stdio import serve
+
+        if any((request.thread_id, request.agent_id, request.environment_mode, request.environment_profile_id)):
+            raise click.UsageError(
+                "ACP selects Threads over the protocol and uses Environment and Agent configuration defaults."
+            )
+        await serve(app_factory(), unattended=request.unattended)
         return 0
 
     async with app_factory() as app:

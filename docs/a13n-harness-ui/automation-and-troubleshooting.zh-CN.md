@@ -21,7 +21,7 @@ a13n-harness-ui run "Summarize the next step" --resume thread-id --format json
 a13n-harness-ui --environment-mode sandbox run "Inspect the repository"
 ```
 
-单次运行沿用项目默认配置与权限规则，但不会弹出交互式审批卡片。若运行因等待决策而挂起，请执行 `a13n-harness-ui --resume thread-id` 进入交互界面完成审批。
+单次运行始终采用无人值守模式。需要外部输入或固定要求审批的工具不会出现在工具列表中。Shell 审查和其他依赖调用参数的检查照常执行；需要审批的调用会失败，不会挂起运行。`run --resume` 保留会话已保存的项目和根目录。若已有待处理决定导致启动失败，请在交互式终端执行 `a13n-harness-ui --resume thread-id`，先处理该决定。
 
 | 常见现象                                | 处理方式                                                                                |
 | --------------------------------------- | --------------------------------------------------------------------------------------- |
@@ -31,6 +31,8 @@ a13n-harness-ui --environment-mode sandbox run "Inspect the repository"
 | 提交被拒绝或误关草稿                    | 使用 `/recover` 恢复草稿缓冲区，修正报错原因后重新提交                                  |
 | 显示 `[System] Retrying model request…` | 瞬时网络波动自动重试（单轮最多 5 次，不会重复执行已完成的工具调用）                     |
 | 源码检出切换分支后导入报错              | 运行 `make sync`（或 `make a13n-harness-ui`）同步锁定的依赖版本                         |
+
+如需从编辑器或其他程序驱动会话，请使用 [ACP](agent-client-protocol.md)。
 
 OTLP 链路追踪配置见[可观测性](observation.md)，WebUI 重启恢复见 [WebUI](webui.md)，完整命令行语法见[命令参考](command-reference.md)。
 

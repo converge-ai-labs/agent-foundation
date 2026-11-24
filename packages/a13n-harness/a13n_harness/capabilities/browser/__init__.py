@@ -202,7 +202,11 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             raise DefinitionError("BrowserUseCapability requires a browser backend.", code="browser_binding_missing")
         return BrowserUseCapability(
             backend,
-            on_human_control=self.on_human_control,
+            on_human_control=(
+                (lambda: "Browser human control is active; handback is unavailable in unattended mode.")
+                if ctx.deps.unattended
+                else self.on_human_control
+            ),
             enabled_tools=self.enabled_tools,
             file_instructions=self.file_instructions,
         )

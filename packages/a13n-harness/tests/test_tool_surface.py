@@ -6,20 +6,30 @@ from typing import Any
 
 import pytest
 from a13n_harness import (
+    AgentDefinition,
     DefinitionError,
     HarnessBuilder,
     RunBindings,
+    SubagentDefinition,
 )
-from a13n_harness.capabilities import CodeActCapability
-from a13n_harness.tools import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
+from a13n_harness.capabilities import CodeActCapability, SubagentCapability, ToolSearchCapability, ToolSearchGroup
+from a13n_harness.tools import (
+    HarnessTool,
+    HarnessToolMetadata,
+    ToolOutputPolicy,
+    ToolPermissions,
+    ToolPermissionsCapability,
+)
 from a13n_harness.toolsets import (
     CodeActPolicyToolset,
     CodeActToolPolicy,
 )
+from pydantic_ai import CallDeferred, Tool
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.capabilities import AbstractCapability, Capability, CapabilityOrdering
-from pydantic_ai.messages import ModelMessage
-from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.capabilities import AbstractCapability, Capability, CapabilityOrdering, NativeTool
+from pydantic_ai.messages import ModelMessage, ToolReturnPart
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
+from pydantic_ai.native_tools import WebSearchTool
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset, WrapperToolset
 
 pytestmark = pytest.mark.anyio
@@ -191,3 +201,133 @@ async def test_run_replacement_cannot_wrap_outside_the_mandatory_surface() -> No
         await executable.run("inspect", bindings=RunBindings.embedded())
 
     assert exc_info.value.code == "tool_surface_order_invalid"
+
+
+@pytest.mark.parametrize("codeact", [False, True])
+async def test_unattended_tool_surface_excludes_static_approval(codeact: bool) -> None:
+    tools = FunctionToolset(
+        [
+            _tool("declared", "tools.declared"),
+            _tool("needs_permission", "tools.approval"),
+            _tool("undeclared", "tools.undeclared"),
+        ],
+        id="test-tools",
+    )
+    observed: set[str] = set()
+    catalog = ""
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal catalog
+        observed.update(tool.name for tool in info.function_tools)
+        catalog = info.instructions or ""
+        yield "done"
+
+    toolset = CodeActPolicyToolset(wrapped=tools, policy=CodeActToolPolicy(default=True)) if codeact else tools
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(
+            Capability(toolsets=[toolset], id="test-tools"),
+            ToolPermissionsCapability(ToolPermissions(rules={"tools.approval": "ask"})),
+            *((CodeActCapability(),) if codeact else ()),
+        ),
+    )
+    result = await executable.run("inspect", bindings=RunBindings.embedded(unattended=True))
+    assert result.output_or_raise() == "done"
+    if codeact:
+        assert "run_code" in observed
+        assert "`declared`" in catalog
+        assert "`needs_permission`" not in catalog and "`undeclared`" in catalog
+    else:
+        assert observed == {"declared", "undeclared"}
+
+
+@pytest.mark.parametrize("codeact", [False, True])
+async def test_unattended_proxy_directory_uses_same_admitted_surface(codeact: bool) -> None:
+    tools = FunctionToolset(
+        [
+            _tool("declared", "test.declared"),
+            _tool("must_ask", "test.ask"),
+            _tool("must_deny", "test.deny"),
+            _tool("undeclared", "test.undeclared"),
+        ],
+        id="search-test",
+    )
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[Any]:
+        assert any(isinstance(tool, WebSearchTool) for tool in info.model_request_parameters.native_tools)
+        result = next(
+            (part.content for message in messages for part in message.parts if isinstance(part, ToolReturnPart)), None
+        )
+        if result is None:
+            assert "list_tools" in {tool.name for tool in info.function_tools}
+            yield {0: DeltaToolCall(name="list_tools", json_args="{}")}
+        else:
+            assert "declared" in str(result) and "undeclared" in str(result)
+            assert "must_ask" not in str(result) and "must_deny" not in str(result)
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        output_type=str,
+        capabilities=(
+            ToolSearchCapability(groups={"fixtures": ToolSearchGroup(tools, "Fixture tools")}),
+            ToolPermissionsCapability(ToolPermissions(rules={"test.ask": "ask", "test.deny": "deny"})),
+            NativeTool(WebSearchTool()),
+            *((CodeActCapability(),) if codeact else ()),
+        ),
+    )
+    result = await executable.run("inspect", bindings=RunBindings.embedded(unattended=True))
+    assert result.output_or_raise() == "done"
+
+
+async def test_unattended_inline_child_filters_tools_and_denies_unexpected_deferral() -> None:
+    def defer() -> str:
+        raise CallDeferred()
+
+    async def child_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[Any]:
+        assert {tool.name for tool in info.function_tools} == {"declared", "undeclared", "defer"}
+        returned = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if not returned:
+            yield {0: DeltaToolCall(name="defer", json_args="{}")}
+        else:
+            assert returned[-1].outcome == "failed"
+            assert "denied in unattended mode" in str(returned[-1].content)
+            yield "child continued"
+
+    async def parent_model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[Any]:
+        returned = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if not returned:
+            assert "delegate" in {tool.name for tool in info.function_tools}
+            yield {0: DeltaToolCall(name="delegate", json_args='{"subagent":"child","prompt":"inspect"}')}
+        else:
+            assert "child continued" in str(returned[-1].content)
+            yield "parent continued"
+
+    tools = FunctionToolset(
+        [
+            _tool("declared", "child.declared"),
+            _tool("undeclared", "child.undeclared"),
+            Tool(defer),
+        ],
+        id="child-tools",
+    )
+    child = AgentDefinition(
+        agent=AgentSpec(),
+        definition_id="surface-child",
+        output_type=str,
+        model=FunctionModel(stream_function=child_model),
+        capabilities=(Capability(toolsets=[tools]),),
+    )
+    parent = AgentDefinition(
+        agent=AgentSpec(),
+        definition_id="surface-parent",
+        output_type=str,
+        model=FunctionModel(stream_function=parent_model),
+        capabilities=(SubagentCapability(),),
+        subagents=(SubagentDefinition(name="child", description="Inspect tool exposure", agent=child),),
+    )
+    result = await HarnessBuilder().build(parent).run("inspect", bindings=RunBindings.embedded(unattended=True))
+    assert result.output_or_raise() == "parent continued"

@@ -171,6 +171,7 @@ class RunBindings:
     toolset_instructions: bool | None = None
     instruction_reference_root: str | None = field(default=None, kw_only=True)
     deferred_tools_supported: bool = True
+    unattended: bool = field(default=False, kw_only=True)
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     browser_backend: BrowserBackend | None = None
     web: WebBinding | None = None
@@ -215,6 +216,8 @@ class RunBindings:
             raise TypeError("RunBindings.request_context must be a RequestContext")
         if not isinstance(self.configuration, RunConfiguration):
             raise TypeError("RunBindings.configuration must be a RunConfiguration")
+        if not isinstance(self.unattended, bool):
+            raise TypeError("unattended must be a boolean")
         if not isinstance(self.deferred_tools_supported, bool):
             raise TypeError("deferred_tools_supported must be a boolean")
         if self.tool_result_directory is not None:
@@ -281,6 +284,7 @@ class RunBindings:
         toolset_instructions: bool | None = None,
         instruction_reference_root: str | None = None,
         deferred_tools_supported: bool = True,
+        unattended: bool = False,
         model_context: ModelContextMiddleware | None = None,
         model_call_check: ModelCallCheck | None = None,
         usage_reporter: UsageReporter | UsageDeltaReporter | None = None,
@@ -319,6 +323,7 @@ class RunBindings:
             toolset_instructions=toolset_instructions,
             instruction_reference_root=instruction_reference_root,
             deferred_tools_supported=deferred_tools_supported,
+            unattended=unattended,
             model_context=model_context,
             model_call_check=model_call_check,
             usage_reporter=usage_reporter,
@@ -463,6 +468,8 @@ class AgentContext:
     configuration: RunConfiguration = field(default_factory=RunConfiguration)
     request_context: RequestContext = field(default_factory=RequestContext, repr=False)
     deferred_tools_supported: bool = True
+    unattended: bool = field(default=False, kw_only=True)
+    unattended_tool_exclusions: dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _deferred_input: DeferredInputState | None = field(default=None, repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
     _envd_session_replacements: list[str] = field(default_factory=list, repr=False, compare=False)

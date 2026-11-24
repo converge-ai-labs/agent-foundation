@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+from platform import system
 from typing import TYPE_CHECKING, Any
 
 import click
@@ -62,6 +63,7 @@ class CliRequest:
     dangerously_bypass_permission: bool = False
     share_computer: bool = True
     browser_no_sandbox: bool = False
+    unattended: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,6 +355,16 @@ def run_command(
             output_format=OutputFormat(output_format),
         )
     )
+
+
+@cli.command("acp")
+@click.option("--unattended", is_flag=True, help="Run without interactive permission requests.")
+@click.pass_context
+def acp_command(ctx: click.Context, unattended: bool) -> None:
+    """Serve Agent Client Protocol v1 over standard input and output."""
+    if system() == "Windows":
+        raise click.ClickException("ACP over stdio is not supported on Windows.")
+    _execute(_request(ctx, command="acp", unattended=unattended))
 
 
 @cli.group("config")

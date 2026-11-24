@@ -415,8 +415,13 @@ async def test_session_overrides_capture_native_context_and_resume(
         assert (await app.get_thread(thread_id)).thread.configuration.version == 1
         from a13n_harness_ui.cli_runtime import _run_one_shot
 
-        monkeypatch.chdir(tmp_path)
+        saved_configuration = (await app.get_thread(thread_id)).thread.configuration
+        other_cwd = tmp_path / "other-cwd"
+        other_cwd.mkdir()
+        monkeypatch.chdir(other_cwd)
         assert await _run_one_shot(app, CliRequest(command="run", thread_id=thread_id, prompt="One-shot resume")) == 0
+        assert (await app.get_thread(thread_id)).thread.configuration == saved_configuration
+        assert not await app.cwd_project_ids(other_cwd)
     assert efforts == ["low", "medium", "medium"]
     assert (path.parent / "models/codex.yaml").read_bytes() == before
     config = await load_harness_ui_configuration(path)

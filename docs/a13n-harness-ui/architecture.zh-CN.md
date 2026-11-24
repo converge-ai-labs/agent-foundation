@@ -4,7 +4,7 @@ sidebarTitle: 内部架构解析
 description: 深入解析 Harness UI 的进程内 HarnessUiApp 核心、YAML/SQLite/内容寻址五层混合存储模型、POSIX WAL 文件锁守卫与 CRDT 协同草稿机制。
 ---
 
-本文解析 `a13n-harness-ui` 如何在不依赖 PostgreSQL、Redis 或独立后台 Worker 集群的前提下，依靠单一进程内引擎同时驱动终端界面（TUI）、浏览器 WebUI、HTTP API、管理 MCP、常驻 Bot 与 Coordinator 多智能体协作。日常配置与嵌入开发请先参阅[配置参考](configuration.md)与[嵌入 Python 应用](embedding.md)。
+本文解析 `a13n-harness-ui` 如何在不依赖 PostgreSQL、Redis 或独立后台 Worker 集群的前提下，依靠单一进程内引擎同时驱动终端界面（TUI）、浏览器 WebUI、ACP（stdio）适配器、HTTP API、管理 MCP、常驻 Bot 与 Coordinator 多智能体协作。日常配置与嵌入开发请先参阅[配置参考](configuration.md)与[嵌入 Python 应用](embedding.md)。
 
 ## 统一驱动所有界面的 `HarnessUiApp` 内核
 
@@ -15,6 +15,7 @@ flowchart TB
     subgraph Surfaces["交互界面与自动化接入层"]
         TUI["终端界面 (TUI)"]
         WebUI["浏览器 WebUI (HTTP + WS)"]
+        ACP["ACP (stdio)"]
         MgmtMCP["管理 MCP (/api/automation/mcp)"]
         Bot["常驻 Bot 与外部连接器"]
     end
@@ -32,7 +33,7 @@ flowchart TB
     Surfaces --> App
     App --> YAML & Plugins & SQLite & Objects & Memory
 
-    class TUI,WebUI,MgmtMCP,Bot app
+    class TUI,WebUI,ACP,MgmtMCP,Bot app
     class App a13n
     class YAML,Plugins,SQLite,Objects,Memory store
 ```
