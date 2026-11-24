@@ -116,7 +116,7 @@ from a13n_harness_ui.host_git import (
     GitStatus,
 )
 from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
-from a13n_harness_ui.inbox_models import InboxItem, InboxItemMutation, InboxLocation, InboxPage
+from a13n_harness_ui.inbox_models import InboxItem, InboxItemMutation, InboxLocation, InboxMarkReadRequest, InboxPage
 from a13n_harness_ui.input_prediction import InputPredictionRequest, InputPredictionResponse
 from a13n_harness_ui.interactive_transport import (
     InteractiveAuthentication,
@@ -675,6 +675,12 @@ def create_webui(
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
     ) -> InboxPage:
         return await app().inbox().page(state=state, before=before, limit=limit)
+
+    @server.post("/api/inbox/mark-read", status_code=204, openapi_extra=_body(InboxMarkReadRequest))
+    async def inbox_mark_read(request: Request) -> Response:
+        document = await _document(request, InboxMarkReadRequest)
+        await app().inbox().mark_group_read(document.group)
+        return Response(status_code=204)
 
     @server.patch("/api/inbox/{item_id}", response_model=InboxItem, openapi_extra=_body(InboxItemMutation))
     async def inbox_update(item_id: str, request: Request) -> InboxItem:

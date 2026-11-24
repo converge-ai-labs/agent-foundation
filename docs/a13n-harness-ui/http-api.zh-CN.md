@@ -136,7 +136,7 @@ fi
 
 ### 收件箱
 
-通过 `/api/inbox/*` 读取与处理智能体推送条目，详见[查看收件箱](webui.md#read-your-inbox)。
+通过 `/api/inbox/*` 读取和处理智能体发送的条目，详见[查看收件箱](webui.md#read-your-inbox)。`GET /api/inbox` 返回待处理条目的未读总数 `unread_count` 和各栏的未读数 `unread_by_group`，统计包含所有分页。调用 `POST /api/inbox/mark-read` 时，传入 `{"group":"needs_you"}` 标记需要你处理的事项，或传入 `{"group":"updates"}` 标记结果和里程碑。返回 `204 No Content` 表示该栏的待处理条目已全部标为已读。操作不改变条目的完成状态，也不影响其他栏。
 
 ### 协调器、MCP 与宿主机工具
 

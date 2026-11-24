@@ -9,12 +9,14 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert
 
 from a13n_harness_ui.errors import ThreadError
-from a13n_harness_ui.inbox_models import InboxItem, InboxKind
+from a13n_harness_ui.inbox_models import InboxGroup, InboxItem, InboxKind, InboxUnreadCounts
 
 from .database import DatabaseSessions, short_session, transaction
 from .models import InboxItemRecord, ThreadConfigurationRecord, ThreadRecord
 
 _ROW = (InboxItemRecord, ThreadRecord.title, ThreadRecord.archived, ThreadConfigurationRecord.project_id)
+_UNREAD = InboxItemRecord.read_at.is_(None) & InboxItemRecord.done_at.is_(None)
+_NEEDS_YOU = InboxItemRecord.kind == "needs_human"
 
 
 def _item(row: Sequence[object]) -> InboxItem:
@@ -113,15 +115,20 @@ class InboxRepository:
         items = tuple(_item(row) for row in rows[:limit])
         return items, items[-1].item_id if len(rows) > limit else None
 
-    async def unread_count(self) -> int:
+    async def unread_counts(self) -> InboxUnreadCounts:
         async with short_session(self._sessions) as session:
-            return int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(InboxItemRecord)
-                    .where(InboxItemRecord.read_at.is_(None), InboxItemRecord.done_at.is_(None))
-                )
-                or 0
+            counts = await session.execute(
+                select(func.count().filter(_NEEDS_YOU), func.count().filter(~_NEEDS_YOU)).where(_UNREAD)
+            )
+            needs_you, updates = counts.one()
+        return InboxUnreadCounts(needs_you=needs_you, updates=updates)
+
+    async def mark_group_read(self, group: InboxGroup) -> None:
+        async with transaction(self._sessions) as session:
+            await session.execute(
+                update(InboxItemRecord)
+                .where(_UNREAD, _NEEDS_YOU if group == "needs_you" else ~_NEEDS_YOU)
+                .values(read_at=datetime.now(UTC))
             )
 
     async def update(self, item_id: str, *, read: bool | None = None, done: bool | None = None) -> InboxItem:

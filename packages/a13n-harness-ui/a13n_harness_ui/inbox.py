@@ -4,7 +4,7 @@ from collections.abc import Callable
 from typing import Literal
 from uuid import uuid4
 
-from a13n_harness_ui.inbox_models import InboxItem, InboxItemMutation, InboxKind, InboxLocation, InboxPage
+from a13n_harness_ui.inbox_models import InboxGroup, InboxItem, InboxItemMutation, InboxKind, InboxLocation, InboxPage
 from a13n_harness_ui.live import HarnessUiSummaryHub, InboxNotice, RootOperationNotice
 from a13n_harness_ui.notifications import reply_brief
 from a13n_harness_ui.storage.runtime import LocalStore
@@ -51,7 +51,14 @@ class InboxController:
 
     async def page(self, *, state: Literal["open", "done"], before: str | None, limit: int) -> InboxPage:
         items, cursor = await self._store.inbox.list(state=state, before=before, limit=limit)
-        return InboxPage(items=items, next_cursor=cursor, unread_count=await self._store.inbox.unread_count())
+        counts = await self._store.inbox.unread_counts()
+        return InboxPage(
+            items=items, next_cursor=cursor, unread_count=counts.needs_you + counts.updates, unread_by_group=counts
+        )
+
+    async def mark_group_read(self, group: InboxGroup) -> None:
+        await self._store.inbox.mark_group_read(group)
+        await self._summaries.publish(kind="inbox")
 
     async def update(self, item_id: str, mutation: InboxItemMutation) -> InboxItem:
         item = await self._store.inbox.update(item_id, read=mutation.read, done=mutation.done)

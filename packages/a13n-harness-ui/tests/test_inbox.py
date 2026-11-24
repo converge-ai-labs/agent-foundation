@@ -21,6 +21,7 @@ from a13n_harness_ui.live import InboxNotice, RootOperationNotice
 from a13n_harness_ui.surfaces import NewThreadDefaults
 from a13n_harness_ui.thread_capability import ThreadCollaborationCapability, ThreadToolController
 from a13n_harness_ui.web_push import in_scope, inbox_path, notice_payload
+from anyio import fail_after
 
 from .test_app import _settings, _write_configuration
 from .test_coordinators import coordinator_configuration, create_coordinator
@@ -203,10 +204,85 @@ async def test_http_routes_list_update_and_locate_items(tmp_path: Path) -> None:
                 assert page["unread_count"] == 1 and page["items"][0]["title"] == "Ready"
                 updated = await client.patch(f"/api/inbox/{item.item_id}", json={"done": True})
                 assert updated.status_code == 200 and updated.json()["read_at"] is not None
-                assert (await client.get("/api/inbox")).json() == {"items": [], "next_cursor": None, "unread_count": 0}
+                assert (await client.get("/api/inbox")).json() == {
+                    "items": [],
+                    "next_cursor": None,
+                    "unread_count": 0,
+                    "unread_by_group": {"needs_you": 0, "updates": 0},
+                }
                 location = (await client.get(f"/api/inbox/{item.item_id}/location")).json()
                 assert location["thread_id"] == thread.thread_id and location["turn_id"] is None
                 assert (await client.get("/api/inbox?limit=0")).status_code == 422
+
+
+async def test_mark_read_is_scoped_to_one_open_group_across_pages(tmp_path: Path) -> None:
+    from a13n_harness_ui.webui import create_webui
+    from httpx import ASGITransport, AsyncClient
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        thread = await app.create_thread()
+        inbox = app.inbox()
+        question, result, read, done, milestone = [
+            await inbox.post(thread_id=thread.thread_id, tool_call_id=label, kind=kind, title=label, message="Message")
+            for kind, label in (
+                ("needs_human", "Question"),
+                ("result", "Result"),
+                ("result", "Read"),
+                ("result", "Done"),
+                ("milestone", "Milestone"),
+            )
+        ]
+        read = await inbox.update(read.item_id, InboxItemMutation(read=True))
+        # The single-item API can explicitly clear read time on Done; bulk changes must still skip it.
+        done = await inbox.update(done.item_id, InboxItemMutation(done=True, read=False))
+
+        @asynccontextmanager
+        async def factory():
+            yield app
+
+        key = "test-only-key"
+        server = create_webui(factory, api_key=key)
+        async with (
+            server.router.lifespan_context(server),
+            AsyncClient(transport=ASGITransport(app=server), base_url="http://localhost") as client,
+        ):
+            path = "/api/inbox/mark-read"
+            assert (await client.post(path, json={"group": "updates"})).status_code == 401
+            client.headers["Authorization"] = f"Bearer {key}"
+            invalid = await client.post(path, json={"group": "done"})
+            assert invalid.json()["error"]["code"] == "request_invalid"
+            first = (await client.get("/api/inbox?limit=1")).json()
+            assert [item["item_id"] for item in first["items"]] == [milestone.item_id]
+            assert first["unread_count"] == 3
+            assert first["unread_by_group"] == {"needs_you": 1, "updates": 2}
+
+            async with app.summary_events() as events:
+                assert (await client.post(path, json={"group": "updates"})).status_code == 204
+                with fail_after(2):
+                    event = await events.receive()
+                assert event.kind == "inbox" and event.inbox is None
+
+            page = await inbox.page(state="open", before=None, limit=10)
+            assert page.unread_count == 1
+            assert page.unread_by_group.model_dump() == {"needs_you": 1, "updates": 0}
+            by_id = {item.item_id: item for item in page.items}
+            assert by_id[question.item_id] == question
+            assert by_id[read.item_id] == read
+            assert by_id[result.item_id].read_at == by_id[milestone.item_id].read_at is not None
+            assert by_id[result.item_id].done_at is None
+            assert (await inbox.page(state="done", before=None, limit=10)).items == (done,)
+
+            assert (await client.post(path, json={"group": "needs_you"})).status_code == 204
+            assert (await client.post(path, json={"group": "updates"})).status_code == 204
+            page = await inbox.page(state="open", before=None, limit=10)
+            assert page.unread_count == 0 and len(page.items) == 4
+            assert {item.item_id: item for item in page.items}[result.item_id] == by_id[result.item_id]
+
+            await inbox.post(
+                thread_id=thread.thread_id, tool_call_id="new", kind="result", title="New update", message="Later"
+            )
+            assert (await inbox.page(state="open", before=None, limit=1)).unread_by_group.updates == 1
 
 
 def test_inbox_notifications_follow_scope_and_open_the_item() -> None:
