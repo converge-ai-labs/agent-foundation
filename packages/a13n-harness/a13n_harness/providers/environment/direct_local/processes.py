@@ -10,6 +10,8 @@ import math
 import os
 import signal as os_signal
 import subprocess
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -234,7 +236,149 @@ class _ProcessRecord:
     output: ProcessOutputSnapshot | None = None
 
 
-class LocalProcessManager:
+class NativeProcessTrees:
+    """Own native process groups/job trees independently of output capture."""
+
+    def __init__(self, terminate_grace_seconds: float) -> None:
+        self._windows_trees: dict[int, _WindowsTree] = {}
+        self._terminate_grace_seconds = terminate_grace_seconds
+
+    @asynccontextmanager
+    async def open_pipes(
+        self, argv: tuple[str, ...], cwd: Path, environment: dict[str, str]
+    ) -> AsyncIterator[asyncio.subprocess.Process]:
+        start = asyncio.create_task(self._spawn(argv, cwd, environment))
+        process, cancellation = await _settle_task(start)
+        stdin, stdout, stderr = process.stdin, process.stdout, process.stderr
+        assert stdin is not None and stdout is not None and stderr is not None
+
+        async def drain(stream: asyncio.StreamReader) -> None:
+            while await stream.read(65536):
+                pass
+
+        stderr_drain = asyncio.create_task(drain(stderr))
+        try:
+            if cancellation is not None:
+                raise cancellation
+            yield process
+        finally:
+
+            async def settle() -> None:
+                stdin.close()
+                stdout_drain = asyncio.create_task(drain(stdout))
+                try:
+                    with suppress(TimeoutError):
+                        async with asyncio.timeout(0.25):
+                            await self._wait_initial_exit(process)
+                    await self._terminate_process(process)
+                    await process.wait()
+                finally:
+                    stdout_drain.cancel()
+                    stderr_drain.cancel()
+                    await asyncio.gather(stdout_drain, stderr_drain, return_exceptions=True)
+
+            _, cancellation = await _settle_task(asyncio.create_task(settle()))
+            if cancellation is not None:
+                raise cancellation
+
+    async def _spawn(self, argv: tuple[str, ...], cwd: Path, environment: dict[str, str]) -> asyncio.subprocess.Process:
+        job: WindowsJob | None = None
+        process: asyncio.subprocess.Process | None = None
+        if os.name == "nt":
+            from a13n_harness.providers.environment._windows_job import WindowsJob
+
+            job = WindowsJob.create()
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *argv,
+                cwd=cwd,
+                env=environment,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=job is None,
+                creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP | job.creation_flags) if job is not None else 0,
+            )
+            if job is not None:
+                job.assign_and_resume(process.pid)
+                self._windows_trees[process.pid] = _WindowsTree(job)
+            return process
+        except BaseException:
+            if process is not None:
+                if process.returncode is None:
+                    process.kill()
+                if job is not None:
+                    job.close()
+                    job = None
+                await process.wait()
+            if job is not None:
+                job.close()
+            raise
+
+    @staticmethod
+    async def _wait_initial_exit(process: asyncio.subprocess.Process) -> None:
+        # asyncio Process.wait can also wait for inherited pipe closure. Native
+        # returncode is the independent root-exit fact, even with live descendants.
+        while process.returncode is None:
+            await asyncio.sleep(0.01)
+
+    async def _terminate_process(self, process: asyncio.subprocess.Process) -> None:
+        if os.name == "nt":
+            await self._cleanup_tree(process.pid)
+            await self._wait_initial_exit(process)
+            return
+        if process.returncode is not None:
+            await self._cleanup_group(process.pid)
+            return
+        _signal_group(process.pid, os_signal.SIGTERM)
+        try:
+            await asyncio.wait_for(process.wait(), timeout=self._terminate_grace_seconds)
+        except TimeoutError:
+            _signal_group(process.pid, os_signal.SIGKILL)
+            await process.wait()
+        await self._cleanup_group(process.pid)
+
+    async def _cleanup_tree(self, process_id: int) -> None:
+        if os.name != "nt":
+            await self._cleanup_group(process_id)
+            return
+        tree = self._windows_trees.get(process_id)
+        if tree is None:
+            return
+        async with tree.lock:
+            if tree.closed:
+                return
+            cleanup = asyncio.create_task(
+                asyncio.to_thread(
+                    tree.job.terminate_and_wait,
+                    timeout_seconds=self._terminate_grace_seconds,
+                    poll_seconds=0.01,
+                )
+            )
+            try:
+                _, cancellation = await _settle_task(cleanup)
+                if cancellation is not None:
+                    raise cancellation
+            finally:
+                tree.job.close()
+                tree.closed = True
+                self._windows_trees.pop(process_id, None)
+
+    async def _cleanup_group(self, process_group: int) -> None:
+        try:
+            os.killpg(process_group, os_signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            # macOS can report EPERM when concurrent process.wait() reaps the
+            # final member of a session-owned group. No signalable child remains.
+            return
+        await asyncio.sleep(self._terminate_grace_seconds)
+        try:
+            os.killpg(process_group, os_signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+class LocalProcessManager(NativeProcessTrees):
     """Own every spawned native process tree until terminal cleanup and release."""
 
     def __init__(
@@ -268,7 +412,7 @@ class LocalProcessManager:
         self._execution_id = execution_id
         self._generation = generation
         self._records: dict[str, _ProcessRecord] = {}
-        self._windows_trees: dict[int, _WindowsTree] = {}
+        super().__init__(policy.terminate_grace_seconds)
         self._slots = asyncio.Semaphore(policy.max_concurrent_processes)
         self._operations = itertools.count(1)
         self._lock = asyncio.Lock()
@@ -429,40 +573,6 @@ class LocalProcessManager:
                 self._slots.release()
             raise
 
-    async def _spawn(self, argv: tuple[str, ...], cwd: Path, environment: dict[str, str]) -> asyncio.subprocess.Process:
-        job: WindowsJob | None = None
-        process: asyncio.subprocess.Process | None = None
-        if os.name == "nt":
-            from a13n_harness.providers.environment._windows_job import WindowsJob
-
-            job = WindowsJob.create()
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *argv,
-                cwd=cwd,
-                env=environment,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=job is None,
-                creationflags=(subprocess.CREATE_NEW_PROCESS_GROUP | job.creation_flags) if job is not None else 0,
-            )
-            if job is not None:
-                job.assign_and_resume(process.pid)
-                self._windows_trees[process.pid] = _WindowsTree(job)
-            return process
-        except BaseException:
-            if process is not None:
-                if process.returncode is None:
-                    process.kill()
-                if job is not None:
-                    job.close()
-                    job = None
-                await process.wait()
-            if job is not None:
-                job.close()
-            raise
-
     async def _reserve_output(self, policy: EnvironmentOutputPolicy) -> LocalRetentionWriter | None:
         if policy.overflow != "retain":
             return None
@@ -608,13 +718,6 @@ class LocalProcessManager:
         finally:
             record.terminal.set()
             self._slots.release()
-
-    @staticmethod
-    async def _wait_initial_exit(process: asyncio.subprocess.Process) -> None:
-        # asyncio Process.wait can also wait for inherited pipe closure. Native
-        # returncode is the independent root-exit fact, even with live descendants.
-        while process.returncode is None:
-            await asyncio.sleep(0.01)
 
     async def rebind(
         self,
@@ -842,61 +945,6 @@ class LocalProcessManager:
             stdin_open=record.stdin_open,
             output=output,
         )
-
-    async def _terminate_process(self, process: asyncio.subprocess.Process) -> None:
-        if os.name == "nt":
-            await self._cleanup_tree(process.pid)
-            await self._wait_initial_exit(process)
-            return
-        if process.returncode is not None:
-            await self._cleanup_group(process.pid)
-            return
-        _signal_group(process.pid, os_signal.SIGTERM)
-        try:
-            await asyncio.wait_for(process.wait(), timeout=self._policy.terminate_grace_seconds)
-        except TimeoutError:
-            _signal_group(process.pid, os_signal.SIGKILL)
-            await process.wait()
-        await self._cleanup_group(process.pid)
-
-    async def _cleanup_tree(self, process_id: int) -> None:
-        if os.name != "nt":
-            await self._cleanup_group(process_id)
-            return
-        tree = self._windows_trees.get(process_id)
-        if tree is None:
-            return
-        async with tree.lock:
-            if tree.closed:
-                return
-            cleanup = asyncio.create_task(
-                asyncio.to_thread(
-                    tree.job.terminate_and_wait,
-                    timeout_seconds=self._policy.terminate_grace_seconds,
-                    poll_seconds=0.01,
-                )
-            )
-            try:
-                _, cancellation = await _settle_task(cleanup)
-                if cancellation is not None:
-                    raise cancellation
-            finally:
-                tree.job.close()
-                tree.closed = True
-                self._windows_trees.pop(process_id, None)
-
-    async def _cleanup_group(self, process_group: int) -> None:
-        try:
-            os.killpg(process_group, os_signal.SIGTERM)
-        except (ProcessLookupError, PermissionError):
-            # macOS can report EPERM when concurrent process.wait() reaps the
-            # final member of a session-owned group. No signalable child remains.
-            return
-        await asyncio.sleep(self._policy.terminate_grace_seconds)
-        try:
-            os.killpg(process_group, os_signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
 
     def _receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(

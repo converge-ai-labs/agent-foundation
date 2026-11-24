@@ -1,0 +1,135 @@
+"""Project one ACP turn into the shared AG-UI display stream."""
+
+import json
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+from a13n_harness.acp import AcpUpdate
+from a13n_harness.tools.diagnostics import SYSTEM_FAILURE_METADATA_KEY
+from acp import schema
+
+
+@dataclass
+class _Tool:
+    metadata: dict[str, Any] = field(default_factory=dict)
+    arguments_sent: bool = False
+    result: Any = None
+
+
+class AcpRunStream:
+    """Pass ``update`` as the binding observer; the host owns run settlement."""
+
+    def __init__(self, thread_id: str, run_id: str, emit: Callable[[dict[str, Any]], None]) -> None:
+        self.thread_id = thread_id
+        self.run_id = run_id
+        self.emit = emit
+        self.final_text = ""
+        self._message: tuple[str, str] | None = None
+        self._sequence = 0
+        self._tools: dict[str, _Tool] = {}
+        self._completed: set[str] = set()
+        self._started = self._finished = False
+
+    def _event(self, event_type: str, **fields: Any) -> None:
+        self.emit({"type": event_type, **fields})
+
+    def start(self) -> None:
+        if not self._started:
+            self._started = True
+            self._event("RUN_STARTED", threadId=self.thread_id, runId=self.run_id)
+
+    def _close_message(self) -> None:
+        if self._message is not None:
+            kind, message_id = self._message
+            self._event(f"{kind}_END", messageId=message_id)
+            self._message = None
+
+    def _chunk(self, kind: str, text: str) -> None:
+        if not text:
+            return
+        if self._message is None or self._message[0] != kind:
+            self._close_message()
+            self._sequence += 1
+            message_id = f"{self.run_id}:message:{self._sequence}"
+            self._message = kind, message_id
+            fields = {"role": "assistant"} if kind == "TEXT_MESSAGE" else {}
+            self._event(f"{kind}_START", messageId=message_id, **fields)
+        self._event(f"{kind}_CONTENT", messageId=self._message[1], delta=text)
+
+    def update(self, update: AcpUpdate) -> None:
+        if self._finished:
+            return
+        self.start()
+        if isinstance(update, schema.AgentMessageChunk) and isinstance(update.content, schema.TextContentBlock):
+            self.final_text += update.content.text
+            self._chunk("TEXT_MESSAGE", update.content.text)
+        elif isinstance(update, schema.AgentThoughtChunk) and isinstance(update.content, schema.TextContentBlock):
+            self._chunk("REASONING_MESSAGE", update.content.text)
+        elif isinstance(update, schema.ToolCallStart | schema.ToolCallProgress):
+            self._tool(update)
+        elif isinstance(update, schema.AgentPlanUpdate | schema.AgentPlanContentUpdate | schema.AgentPlanRemovedUpdate):
+            self._event(
+                "CUSTOM", name="a13n.acp.plan", value=update.model_dump(mode="json", by_alias=True, exclude_none=True)
+            )
+        elif isinstance(update, schema.UsageUpdate):
+            self._event("CUSTOM", name="a13n.acp.usage", value={"used": update.used, "size": update.size})
+        # Authored input comes from the host. ACP user chunks may echo hidden context.
+
+    def _tool(self, update: schema.ToolCallStart | schema.ToolCallProgress) -> None:
+        self._close_message()
+        call_id = update.tool_call_id
+        if call_id in self._completed:
+            return
+        new = call_id not in self._tools
+        tool = self._tools.setdefault(call_id, _Tool())
+        values = update.model_dump(mode="json", by_alias=True, exclude_none=True)
+        tool.metadata.update(
+            {key: values[key] for key in ("title", "kind", "status", "locations", "content") if key in values}
+        )
+        if new:
+            self._event("TOOL_CALL_START", toolCallId=call_id, toolCallName=update.name or update.title or "Tool")
+        if not tool.arguments_sent and update.raw_input is not None:
+            tool.arguments_sent = True
+            self._event("TOOL_CALL_ARGS", toolCallId=call_id, delta=json.dumps(values["rawInput"], ensure_ascii=False))
+        if update.raw_output is not None:
+            tool.result = values["rawOutput"]
+        if tool.metadata:
+            self._event("CUSTOM", name="a13n.acp.tool", value={"toolCallId": call_id, **tool.metadata})
+        if update.status in {"completed", "failed"}:
+            self._close_tool(call_id, tool, failed=update.status == "failed")
+
+    def _close_tool(self, call_id: str, tool: _Tool, *, failed: bool) -> None:
+        del self._tools[call_id]
+        self._completed.add(call_id)
+        self._event("TOOL_CALL_END", toolCallId=call_id)
+        result = tool.result
+        if result is None:
+            result = "\n".join(
+                entry["content"]["text"]
+                for entry in tool.metadata.get("content", [])
+                if entry["type"] == "content" and entry["content"]["type"] == "text"
+            )
+        if not isinstance(result, str):
+            result = json.dumps(result, ensure_ascii=False)
+        self._event(
+            "TOOL_CALL_RESULT",
+            messageId=f"{self.run_id}:{call_id}:result",
+            role="tool",
+            toolCallId=call_id,
+            content=result,
+            **({"metadata": {SYSTEM_FAILURE_METADATA_KEY: True}} if failed else {}),
+        )
+
+    def finish(self, *, error: str | None = None) -> None:
+        if self._finished:
+            return
+        self.start()
+        self._finished = True
+        self._close_message()
+        for call_id, tool in tuple(self._tools.items()):
+            self._close_tool(call_id, tool, failed=True)
+        if error is not None:
+            self._event("RUN_ERROR", message=error)
+        else:
+            self._event("RUN_FINISHED", threadId=self.thread_id, runId=self.run_id)

@@ -1,0 +1,213 @@
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
+
+import pytest
+from a13n_harness.acp import (
+    AcpError,
+    AcpHostToolBridge,
+    AcpRunBinding,
+    AcpSessionRuntime,
+    AcpSessionSetup,
+    LocalStdioTransport,
+)
+from a13n_harness.context import AgentContext
+from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from acp import schema
+from pydantic_ai import FunctionToolset, RunContext
+from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import RunUsage
+
+from .environment_helpers import Source
+from .test_environment_connectors import bind
+
+pytestmark = pytest.mark.anyio
+_FIXTURE = Path(__file__).parent / "fixtures" / "acp_peer.py"
+
+
+def local(path, mode):
+    return LocalStdioTransport(sys.executable, str(path), (str(_FIXTURE), mode), inherit_environment=True)
+
+
+def setup(path):
+    return AcpSessionSetup(str(path), instructions=("guide",))
+
+
+def source(path):
+    return Source(
+        DIRECT_LOCAL.execution_connector({"root": {"path": str(path)}, "allowed_executables": [sys.executable]})
+    )
+
+
+async def test_environment_run_callbacks(tmp_path):
+    callbacks = create_environment_runtime(mounts={"workspace": source(tmp_path)}, default_mount="workspace")
+    reviewed = []
+
+    async def review(request):
+        reviewed.append(request.command.executable)
+        return request.command.executable != "denied"
+
+    async with bind(callbacks, "turn") as turn, asyncio.timeout(10):
+        transport = local(tmp_path, "callbacks")
+        async with AcpSessionRuntime.open(transport) as acp:
+            await acp.open_session(setup(tmp_path))
+            starts = []
+            response = await acp.prompt(
+                [schema.TextContentBlock(text="callbacks")],
+                binding=AcpRunBinding(
+                    environment=turn,
+                    review_command=review,
+                    on_update=starts.append,
+                ),
+            )
+            assert response.stop_reason == "end_turn"
+            assert [u.content.text for u in starts if isinstance(u, schema.AgentMessageChunk)] == ["done:callbacks"]
+            assert Path(reviewed[0]).resolve() == Path(sys.executable).resolve()
+            assert reviewed[1:] == ["denied"]
+
+
+@pytest.mark.parametrize("mode", ["load", "resume"])
+async def test_recovery_permission_steer_and_cancel(tmp_path, mode):
+    requested = asyncio.Event()
+    ended = asyncio.Event()
+    updates = []
+
+    async def permission(_, __):
+        requested.set()
+        try:
+            await asyncio.Future()
+        finally:
+            ended.set()
+
+    async with asyncio.timeout(10), AcpSessionRuntime.open(local(tmp_path, mode)) as acp:
+        assert await acp.open_session(setup(tmp_path), saved_session_id="fixture-session") == "fixture-session"
+        first = asyncio.create_task(
+            acp.prompt(
+                [schema.TextContentBlock(text="wait")],
+                binding=AcpRunBinding(
+                    permission=permission,
+                    on_update=updates.append,
+                ),
+            )
+        )
+        await requested.wait()
+        assert await acp.steer("interrupt") == ("unsupported" if mode == "load" else "accepted")
+        assert await acp.cancel()
+        assert (await first).stop_reason == "cancelled"
+        assert ended.is_set()
+        await acp.prompt([schema.TextContentBlock(text="again")], binding=AcpRunBinding(on_update=updates.append))
+        assert [u.content.text for u in updates if isinstance(u, schema.AgentMessageChunk)] == ["done:again"]
+
+
+@pytest.mark.parametrize("mode", ["remote", "http", "stdio"])
+async def test_shared_dispatch_and_call_correlation(tmp_path, mode):
+    toolset: FunctionToolset[AgentContext] = FunctionToolset()
+
+    @toolset.tool
+    async def identify(ctx: RunContext[AgentContext]) -> str:
+        assert ctx.deps.thread_id == "thread-owner"
+        assert ctx.tool_call_id is not None
+        return ctx.tool_call_id
+
+    bridge = AcpHostToolBridge([], toolsets=[toolset])
+    deps = cast(AgentContext, SimpleNamespace(run_id="run-owner", thread_id="thread-owner"))
+    ctx = RunContext(deps=deps, model=TestModel(), usage=RunUsage())
+    async with (
+        asyncio.timeout(12),
+        AcpSessionRuntime.open(
+            local(tmp_path, mode),
+            host_tools=bridge,
+            same_network=mode != "remote",
+        ) as acp,
+        bridge.prepare(ctx) as scope,
+    ):
+        await acp.open_session(setup(tmp_path))
+        updates = []
+        await acp.prompt(
+            [schema.TextContentBlock(text="tools")], binding=AcpRunBinding(host_tools=scope, on_update=updates.append)
+        )
+        assert [u.content.text for u in updates if isinstance(u, schema.AgentMessageChunk)] == [
+            "one",
+            "explicit" if mode == "remote" else "run-owner",
+            "run-owner",
+            "done:tools",
+        ]
+
+
+async def test_remote_without_advertised_bridge_fails_early(tmp_path):
+    with pytest.raises(AcpError, match="MCP-over-ACP"):
+        async with (
+            asyncio.timeout(6),
+            AcpSessionRuntime.open(local(tmp_path, "http"), host_tools=AcpHostToolBridge([]), same_network=False),
+        ):
+            pytest.fail("remote loopback fallback")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process-group probe")
+async def test_abandoned_agent_descendant_stops(tmp_path):
+    code = "import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',sys.argv[1]]); print('{}',flush=True); time.sleep(30)"
+    marker = tmp_path / "survived"
+    child = f"import time; from pathlib import Path; time.sleep(1); Path({str(marker)!r}).touch()"
+    transport = LocalStdioTransport(sys.executable, str(tmp_path), ("-c", code, child))
+    async with asyncio.timeout(6), transport.open() as channel:
+        assert await channel.receive() == {}
+    await asyncio.sleep(1.1)
+    assert not marker.exists()
+
+
+async def test_native_stdio_reads_past_command_observation_limit(tmp_path):
+    script = "import json,sys; print(json.dumps({'payload': 'x' * 150000}), flush=True); sys.stdin.read()"
+    transport = LocalStdioTransport(sys.executable, str(tmp_path), ("-c", script))
+    async with asyncio.timeout(6), transport.open() as channel:
+        assert await channel.receive() == {"payload": "x" * 150000}
+
+
+async def test_terminal_release_joins_tree_cleanup_when_turn_is_revoked():
+    from a13n_harness.acp import AcpEnvironmentClient
+    from a13n_harness.acp.client import _Terminal
+
+    waiting = asyncio.Event()
+    proceed = asyncio.Event()
+    calls = []
+
+    async def close_stdin(_):
+        pass
+
+    async def wait(_, **__):
+        waiting.set()
+        await proceed.wait()
+        return SimpleNamespace(status=SimpleNamespace(cleanup="complete"))
+
+    async def inspect(_):
+        return SimpleNamespace(status=SimpleNamespace(phase="running", cleanup="pending"))
+
+    async def kill(_):
+        calls.append("kill")
+
+    async def release(_):
+        calls.append("release")
+
+    processes = SimpleNamespace(close_stdin=close_stdin, wait=wait, inspect=inspect, kill=kill, release=release)
+    client = AcpEnvironmentClient()
+    client.session_id = "session"
+    binding = AcpRunBinding(environment=SimpleNamespace(processes=processes))
+    client.binding = binding
+    client._terminals["terminal"] = _Terminal(object(), 100)
+    async with asyncio.timeout(6):
+        callback = asyncio.create_task(client.release_terminal("session", "terminal"))
+        await waiting.wait()
+        unbind = asyncio.create_task(client._unbind(binding))
+        await asyncio.sleep(0)
+        assert not unbind.done()
+        assert "terminal" in client._terminals
+        proceed.set()
+        await unbind
+        assert callback.cancelled()
+        assert calls == ["kill", "release"]
+        assert not client._terminals

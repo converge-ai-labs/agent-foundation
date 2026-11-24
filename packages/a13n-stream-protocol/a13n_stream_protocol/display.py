@@ -486,6 +486,17 @@ class DisplayFold:
         if assembled is None:
             return None
         value: JsonValue = assembled.get("value")  # type: ignore[assignment]
+        if assembled.get("name") == "a13n.acp.tool" and isinstance(value, dict):
+            key = item_id(self.run_id, "tool_call", str(value.get("toolCallId")))
+            previous = self.items.get(key)
+            if previous is None:
+                return None
+            details: JsonValue = value
+            if not self.retain_content and _json_size(details) > MAX_OBSERVATION_BYTES:
+                details = {name: value[name] for name in ("title", "kind", "status") if name in value}
+            return self._put(
+                key, "tool_call", previous.state, {**previous.content, "acp": details}, at=_occurred(payload)
+            )
         input_event = value.get("event") if isinstance(value, dict) else None
         lifecycle = input_event.get("payload") if isinstance(input_event, dict) else None
         if (
