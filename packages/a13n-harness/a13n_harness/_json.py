@@ -122,14 +122,21 @@ def redact_json(value: JsonValue) -> JsonValue:
 
 def dump_json_text(value: Any, *, sort_keys: bool = False) -> str:
     """Serialize strict finite JSON with the Harness canonical compact encoding."""
-    require_finite_json(value)
-    return json.dumps(
-        value,
-        sort_keys=sort_keys,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    )
+    try:
+        return json.dumps(
+            value,
+            sort_keys=sort_keys,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if "Circular reference" in message:
+            raise ValueError("JSON values cannot contain cycles") from exc
+        if "Out of range float" in message:
+            raise ValueError("JSON numbers must be finite") from exc
+        raise
 
 
 def dump_json_bytes(value: Any, *, sort_keys: bool = False) -> bytes:

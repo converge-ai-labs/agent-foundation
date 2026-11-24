@@ -51,6 +51,35 @@ class SafeFailure(BaseModel):
         return _FAILURE_DETAILS_ADAPTER.validate_json(self.details_json)
 
 
+def _copy_state(state: HarnessState | None) -> HarnessState | None:
+    if state is None:
+        return None
+    if type(state) is HarnessState and not state.model_extra:
+        return state.model_copy()
+    return state.model_copy(deep=True)
+
+
+def _copy_usage_record(record: UsageRecord) -> UsageRecord:
+    if type(record) is ModelUsageRecord:
+        updates: dict[str, Any] = {}
+        if record.request_usage.details:
+            updates["request_usage"] = record.request_usage.model_copy(
+                update={"details": dict(record.request_usage.details)}
+            )
+        cb = record.context_breakdown
+        if cb is not None:
+            updates["context_breakdown"] = cb.model_copy(
+                update={
+                    "groups": {
+                        key: group.model_copy(update={"items": {ik: iv.model_copy() for ik, iv in group.items.items()}})
+                        for key, group in cb.groups.items()
+                    }
+                }
+            )
+        return record.model_copy(update=updates) if updates else record.model_copy()
+    return record.model_copy(deep=True)
+
+
 @dataclass(frozen=True, slots=True)
 class _MessageSnapshot:
     """Validated immutable history shared only between result candidates."""
@@ -146,10 +175,14 @@ class HarnessRunResult[OutputT]:
         self._status = status
         self._output = deepcopy(output)
         self._output_adapter = _output_adapter
-        self._state = state.model_copy(deep=True) if state is not None else None
+        self._state = _copy_state(state)
         self._usage = _copy_usage(usage)
-        self._usage_records = tuple(record.model_copy(deep=True) for record in usage_records)
-        self._failure = failure.model_copy(deep=True) if failure is not None else None
+        self._usage_records = tuple(_copy_usage_record(record) for record in usage_records)
+        self._failure = (
+            failure.model_copy()
+            if type(failure) is SafeFailure
+            else (failure.model_copy(deep=True) if failure is not None else None)
+        )
         self._suspend_reason = suspend_reason
         self._deferred = deepcopy(deferred)
         self._messages = messages
@@ -173,7 +206,7 @@ class HarnessRunResult[OutputT]:
 
     @property
     def state(self) -> HarnessState | None:
-        return self._state.model_copy(deep=True) if self._state is not None else None
+        return _copy_state(self._state)
 
     @property
     def usage(self) -> RunUsageSummary:
@@ -182,11 +215,13 @@ class HarnessRunResult[OutputT]:
     @property
     def usage_records(self) -> tuple[UsageRecord, ...]:
         """Return detached mixed-source attribution records captured at the terminal boundary."""
-        return tuple(record.model_copy(deep=True) for record in self._usage_records)
+        return tuple(_copy_usage_record(record) for record in self._usage_records)
 
     @property
     def failure(self) -> SafeFailure | None:
-        return self._failure.model_copy(deep=True) if self._failure is not None else None
+        if self._failure is None:
+            return None
+        return self._failure.model_copy() if type(self._failure) is SafeFailure else self._failure.model_copy(deep=True)
 
     @property
     def suspend_reason(self) -> SuspendReason | None:
@@ -217,18 +252,21 @@ class HarnessRunResult[OutputT]:
         status: Any = _UNSET,
     ) -> HarnessRunResult[Any]:
         """Create a detached replacement candidate while preserving Thread and Run correlation."""
+        base = type(self) is HarnessRunResult
         return HarnessRunResult(
             thread_id=self.thread_id,
             run_id=self.run_id,
             status=cast(RunStatus, self.status if status is _UNSET else status),
-            output=self.output if output is _UNSET else output,
-            state=self.state if state is _UNSET else state,
-            usage=self.usage if usage is _UNSET else usage,
-            usage_records=self.usage_records if usage_records is _UNSET else usage_records,
-            failure=self.failure if failure is _UNSET else failure,
+            output=(self._output if base else self.output) if output is _UNSET else output,
+            state=(self._state if base else self.state) if state is _UNSET else state,
+            usage=(self._usage if base else self.usage) if usage is _UNSET else usage,
+            usage_records=(self._usage_records if base else self.usage_records)
+            if usage_records is _UNSET
+            else usage_records,
+            failure=(self._failure if base else self.failure) if failure is _UNSET else failure,
             suspend_reason=self.suspend_reason if suspend_reason is _UNSET else suspend_reason,
-            deferred=self.deferred if deferred is _UNSET else deferred,
-            _messages=self._messages if type(self) is HarnessRunResult else self.all_messages(),
+            deferred=(self._deferred if base else self.deferred) if deferred is _UNSET else deferred,
+            _messages=self._messages if base else self.all_messages(),
             _new_message_index=self._new_message_index,
             _output_adapter=self._output_adapter,
         )

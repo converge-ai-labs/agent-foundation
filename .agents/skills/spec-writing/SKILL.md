@@ -1,6 +1,6 @@
 ---
 name: spec-writing
-description: Author, review, or reorganize accepted technical contracts under spec/, including domain models, lifecycles, APIs, protocols, ownership, security, and compatibility. Use when a task changes or evaluates those contracts; ordinary implementation details do not require a spec rewrite.
+description: Author, polish, review, or reorganize accepted technical contracts under spec/, including domain models, lifecycles, APIs, protocols, ownership, security, and compatibility. Use when a task changes, streamlines, or evaluates those contracts; ordinary implementation details do not require a spec rewrite.
 ---
 
 # Specification Authoring
@@ -33,11 +33,30 @@ Omit private classes, layouts, hooks, and algorithms that can change without aff
 
 Use a diagram or table when it clarifies the contract. Prefer Mermaid for architecture, state, or interaction diagrams, and keep diagrams, schemas, tables, and prose semantically aligned.
 
+## Write Direct, Anti-Defensive Prose
+
+Keep every material technical detail, bound, error code, and invariant while cutting defensive boilerplate, PR-diff residue, and walls of prose:
+
+- **Preserve normative exclusions; cut defensive filler.** Retain hard security boundaries, authority limits, state preconditions, and compatibility constraints (such as *"The function-tool wrapper is an Agent invocation boundary, not Python isolation."* or *"Plaintext appears once and is never saved in browser persistence."*). Remove obvious non-effects (such as *"Opening the dialog does not create credentials"*) and PR-scope disclaimers (such as *"No ordinary setup question or automatic migration is added"*).
+- **Prefer direct positive statements over habitual contrast.** Avoid routine `"X, not Y"`, `"X rather than Y"`, and `"instead of X"` when a direct rule states the exact contract. Reserve contrastive phrasing for real confusion traps between adjacent fields, authorities, or failure modes.
+- **State authority and verification directly instead of `"X alone does not prove Y"` boilerplate.** State what operation X commits and which separate state, event, or query establishes Y.
+- **Reserve `never` and `must not` for real invariants.** Use them for strict security, authority, or compatibility rules rather than rhetorical emphasis.
+- **Refactor on append; avoid walls of prose.** Keep each paragraph focused on one concern (typically 2–4 sentences). When extending a specification, break dense sections into subsections, short bullet lists, or compact tables instead of appending unrelated sentences onto an existing paragraph.
+- **Factor shared rules once and avoid restating foreign owners.** When one rule covers many controls or endpoints (such as localization coverage or conflict recovery), state the general rule plus explicit exceptions once. When linking to another owning specification, state only the binding or local delta instead of repeating its wire format, headers, or state machine.
+
+| Avoid (defensive filler or PR-diff residue)                                               | Prefer (direct contract prose)                                                                                             |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| "Cancellation acceptance does not establish completion or remote rollback."               | "Cancellation acceptance records stop intent; completion is established only when the execution reaches a terminal state." |
+| "Saving a value confirms its credential version in Service, not application to Sessions." | "Saving commits a new credential version in Service; each Session reports its applied version independently."              |
+| "Opening the dialog, reading docs, and copying instructions do not create credentials."   | *(Omit—state only the actions that do create credentials.)*                                                                |
+| "No ordinary setup question, automatic migration, or default opt-in is added."            | *(Omit PR-scope phrasing; state the steady-state default directly if it is part of the contract.)*                         |
+| "Use the resource's canonical `path_style` rather than the requester's operating system." | "Path conversion uses the Device or Session descriptor's `path_style`."                                                    |
+
 ## Check Consistency and Validate
 
 - Search changed terminology and update stale summaries, incoming links, and dependent contracts.
 - Verify one owner for each fact, consistent identity/version/state terms, and explicit independent completion boundaries.
-- Distinguish process-local observations from durable facts and transport delivery from execution authority.
+- Express separations between process-local observations and durable facts, or transport delivery and execution authority, through ownership tables, state models, and direct rules rather than repeating negative disclaimers in every paragraph.
 - Make security and compatibility failures explicit. Remove stale text, orphan sections, duplication, and editing residue so the result stands alone without issue history.
 
 For spec-only changes, format the affected files and run:

@@ -95,4 +95,4 @@ Diagrams sit on a surface panel with a dot grid that fades toward its edges. Nod
 
 ## Development Showcase
 
-`a13n-ui/dev` demonstrates primitives and compositions through its own Vite entry. It does not prove product-page composition. Package checks cover types, interactions and the showcase; app builds verify consumption. Choose checks under [Local Validation](../../CONTRIBUTING.md#local-validation), not a mandatory full visual matrix.
+`a13n-ui/dev` demonstrates primitives and compositions via its own Vite entry. Package checks cover types, interactions, and the showcase; app builds verify consumption under [Local Validation](../../CONTRIBUTING.md#local-validation).

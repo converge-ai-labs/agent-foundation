@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 430" role="img" aria-label="Four capabilities around envd: read and write workspace files, manage a Python process, capture stdout and stderr separately, and clean up resources when their execution session closes.">
+  <!-- Each branch ends at one operation on the target machine. -->
+  <path class="pf" d="M333 203h-35v-83h-29m158 83h35v-83h29M333 227h-35v89h-29m158-89h35v89h29"/>
+  <circle class="fa" cx="269" cy="120" r="3"/>
+  <circle class="fa" cx="491" cy="120" r="3"/>
+  <circle class="fa" cx="269" cy="316" r="3"/>
+  <circle class="fa" cx="491" cy="316" r="3"/>
+
+  <!-- Files: a folder containing a table, a script and the finished chart. -->
+  <g transform="translate(30 18)">
+    <text class="pt ink" x="0" y="18" style="font-size:17px">Read and write files</text>
+    <path class="pl" d="M6 141V55h61l12 11h139v75"/>
+    <path class="pf" d="M16 61h45l7 6"/>
+    <path class="pl" d="M22 133V80h45l9 9v44M67 80v9h9"/>
+    <rect class="band" x="29" y="94" width="40" height="8"/>
+    <path class="pf" d="M29 103h40m-40 9h40m-40 9h40m-27-26v31m14-31v31"/>
+    <path class="pl" d="M85 133V76h47l10 10v47m-10-57v10h10"/>
+    <path class="pa thin" d="m100 92-5 5 5 5m12-12-6 14m12-12 5 5-5 5"/>
+    <path class="pf" d="M95 114h36m-36 8h24"/>
+    <path class="pl" d="M152 133V81h45l11 11v41m-11-52v11h11"/>
+    <path class="pf" d="M159 99v26h40"/>
+    <rect class="band" x="165" y="114" width="7" height="10"/>
+    <rect class="band" x="177" y="109" width="7" height="15"/>
+    <rect class="fa" x="189" y="99" width="7" height="25"/>
+    <path class="pl" d="M0 132h224l-6 23H6z"/>
+    <text class="pt" x="8" y="178">sales.csv</text>
+    <text class="pt" x="85" y="178">analyze.py</text>
+    <text class="pt acc" x="164" y="178">chart.png</text>
+  </g>
+
+  <!-- Process: command, handle, and a clock that can be queried later. -->
+  <g transform="translate(508 18)">
+    <text class="pt ink" x="0" y="18" style="font-size:17px">Manage processes</text>
+    <rect class="pl" x="0" y="49" width="222" height="111" rx="3"/>
+    <path class="pf" d="M0 69h222"/>
+    <circle class="fi" cx="11" cy="59" r="2.2"/>
+    <circle class="ff" cx="20" cy="59" r="2.2"/>
+    <circle class="ff" cx="29" cy="59" r="2.2"/>
+    <path class="pa" d="m14 84 7 6-7 6m12 0h9"/>
+    <text class="pt ink" x="44" y="95">python analyze.py</text>
+    <circle class="pa thin" cx="26" cy="132" r="13"/>
+    <path class="pa thin" d="M26 123v9h7"/>
+    <path class="pf" d="M53 133h147"/>
+    <path class="pa" d="M53 133h73"/>
+    <circle class="fa" cx="126" cy="133" r="3.5"/>
+    <text class="pt" x="1" y="178">Start, inspect, wait or stop</text>
+  </g>
+
+  <!-- envd is the common interface for the four operations. -->
+  <rect class="pl" x="333" y="184" width="94" height="62" rx="4"/>
+  <rect class="band" x="340" y="191" width="80" height="48" rx="2"/>
+  <path class="pa thin" d="M358 177v7m14-7v7m15-7v7m15-7v7m-44 62v7m14-7v7m15-7v7m15-7v7"/>
+  <text class="pt ink" x="380" y="222" text-anchor="middle" style="font-size:22px">envd</text>
+
+  <!-- Output: two separate streams are collected from the same command. -->
+  <g transform="translate(30 244)">
+    <text class="pt ink" x="0" y="18" style="font-size:17px">Capture output</text>
+    <path class="pl" d="M0 90h14m0-25v53"/>
+    <path class="pa" d="M14 65h22m-5-4 5 4-5 4"/>
+    <path class="pl" d="M14 118h22m-5-4 5 4-5 4"/>
+    <rect class="pl" x="42" y="46" width="178" height="39" rx="2"/>
+    <rect class="band" x="49" y="53" width="52" height="25"/>
+    <text class="pt acc" x="55" y="70">stdout</text>
+    <path class="pa thin" d="M110 59h92"/>
+    <path class="pf" d="M110 67h79m-79 8h87"/>
+    <rect class="pl" x="42" y="99" width="178" height="39" rx="2"/>
+    <rect class="ff" x="49" y="106" width="52" height="25"/>
+    <text class="pt ink" x="55" y="123">stderr</text>
+    <path class="pf" d="M110 113h85m-85 8h62m-62 8h75"/>
+    <text class="pt" x="0" y="163">Read each stream by offset</text>
+  </g>
+
+  <!-- Session: bounded ownership of a process record and temporary logs. -->
+  <g transform="translate(508 244)">
+    <text class="pt ink" x="0" y="18" style="font-size:17px">Manage session resources</text>
+    <rect class="pl" x="0" y="45" width="222" height="95" rx="3"/>
+    <path class="pf" d="M0 68h222M15 78v41h13m-13-32h13"/>
+    <text class="pt ink" x="11" y="61">Execution session</text>
+    <rect class="pa thin" x="33" y="80" width="19" height="14" rx="1"/>
+    <path class="pa thin" d="m37 84 3 3-3 3m6 0h5"/>
+    <text class="pt ink" x="63" y="92">Process record</text>
+    <path class="pl thin" d="M35 111h14l4 4v12H35zm14 0v4h4"/>
+    <path class="pf" d="M39 119h10m-10 4h7"/>
+    <text class="pt ink" x="63" y="123">Temporary logs</text>
+    <text class="pt" x="0" y="163">Clean up on close or expiry</text>
+  </g>
+</svg>

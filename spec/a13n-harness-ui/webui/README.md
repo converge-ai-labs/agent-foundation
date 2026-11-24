@@ -26,12 +26,12 @@ Read `00` for the product, `04` for interaction and `06` for visual presentation
 
 ## Authority Rules
 
-1. One `HarnessUiApp` owns execution and mutations; browser state is not another Thread or configuration authority.
-2. A shared prompt draft is editable input, not a continuation checkpoint or durably accepted Run.
-3. Participants share work and report current page presence; they do not synchronize navigation/scroll or establish verified account identities.
-4. Host Files, Git views, and Host Terminal operate on the server machine, independently of the Agent's selected Environment.
-5. Access to native computer-sharing operations requires explicit startup enablement; API authentication bypass alone does not enable them.
-6. File-backed resources remain editable without the browser. Configuration UI does not create a parallel resource store.
-7. Browser disconnect neither cancels an Agent Run nor destroys a native terminal. Server process loss has different recovery consequences from browser disconnect.
-8. Scoped sharing grants restrict guest browser/API access while prompt input retains the existing Agent's execution authority.
-9. Browser assets remain part of the Harness UI distribution rather than an independently released application.
+1. One `HarnessUiApp` owns execution and mutations; browser state holds view/draft state only.
+2. A shared prompt draft is editable input, distinct from continuation checkpoints and accepted Runs.
+3. Page presence reports where participants are looking without synchronizing navigation or establishing verified identities.
+4. Host Files, Git views, and Host Terminal operate on the server machine independently of Agent Environments.
+5. Native computer-sharing operations require explicit startup enablement, separate from API authentication bypass.
+6. File-backed resources remain directly editable; the configuration UI writes to the same resource catalog.
+7. Browser disconnect leaves Agent Runs and native terminals running; server process loss follows its own recovery contract.
+8. Scoped sharing grants restrict guest browser/API access while prompt input uses the Thread's existing Agent execution authority.
+9. Browser assets ship as part of the Harness UI Python distribution.

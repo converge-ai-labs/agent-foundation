@@ -10,6 +10,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from enum import StrEnum
+from functools import partial
 from itertools import chain
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
@@ -2314,12 +2315,12 @@ class HarnessUiApp:
         """Admit Bot input and consume only its synchronized shared-draft capture."""
         async with self._operation():
             bot = self.bot()
-            prepared = self._prepare_draft_clear(BOT_THREAD_ID, draft)
+            prepared = await self._prepare_draft_clear(BOT_THREAD_ID, draft)
             accepted = await bot.submit(command)
             await self._clear_submitted_draft(BOT_THREAD_ID, prepared)
             return accepted
 
-    def _prepare_draft_clear(
+    async def _prepare_draft_clear(
         self, thread_id: str, capture: DraftCapture | None, *, reset_mode: bool = False
     ) -> tuple[SharedDraft, tuple[bytes, bytes | None]] | None:
         if capture is None:
@@ -2327,7 +2328,11 @@ class HarnessUiApp:
         draft = self._shared_drafts.get(thread_id)
         if draft is None:
             raise AppStateError("The shared draft instance changed.", code="draft_instance_conflict")
-        return draft, draft.prepare_clear(capture, reset_mode=reset_mode)
+        if len(draft._update) + len(capture.update_base64) > 16384:
+            cleared = await to_thread.run_sync(partial(draft.prepare_clear, capture, reset_mode=reset_mode))
+        else:
+            cleared = draft.prepare_clear(capture, reset_mode=reset_mode)
+        return draft, cleared
 
     async def _clear_submitted_draft(
         self, thread_id: str, prepared: tuple[SharedDraft, tuple[bytes, bytes | None]] | None
@@ -2791,7 +2796,7 @@ class HarnessUiApp:
             raise ThreadError("Send Bot messages through Bot chat.", code="bot_chat_required")
         async with self._operation():
             await self._threads.require_interactive(thread_id)
-            draft_clear = self._prepare_draft_clear(thread_id, draft, reset_mode=True)
+            draft_clear = await self._prepare_draft_clear(thread_id, draft, reset_mode=True)
             selected_context = await self._apps().capture_context(thread_id, app_context) if app_context else ()
             goal = None
             if mode == "goal":
@@ -3163,7 +3168,7 @@ class HarnessUiApp:
             if operation.receipt.thread_id == BOT_THREAD_ID:
                 raise ThreadError("Use Bot chat to send Bot input.", code="bot_chat_required")
             await self._threads.require_interactive(operation.receipt.thread_id)
-            draft_clear = self._prepare_draft_clear(operation.receipt.thread_id, draft)
+            draft_clear = await self._prepare_draft_clear(operation.receipt.thread_id, draft)
             catalog = (
                 await self._terminal_projections.skill_catalog(thread_id=operation.receipt.thread_id)
                 if skill_references
@@ -4608,6 +4613,7 @@ async def open_harness_ui_app(
                 on_human_admitted=human_admitted if host_mode == "webui" else None,
                 on_settled=notify_settled if host_mode == "webui" else None,
                 summary_hub=summary_hub,
+                live_hub=live_hub,
                 observation=observation,
                 touch_thread=store.threads.touch,
                 save_execution=store.threads.save_execution,

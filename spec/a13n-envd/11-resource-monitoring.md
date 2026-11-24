@@ -194,8 +194,4 @@ Export runs independently of EIP requests and native sampling. Transient transpo
 
 ## Consumer Interpretation
 
-Consumers identify samples by `(device_id, generation, sample.sequence)` and do not ingest repeated reads as new observations. A successful EIP response establishes report availability, not freshness or completeness. Consumers apply a maximum sample age appropriate to their polling cadence. Counter rates use distinct samples, reset after generation changes or decreases, and do not bridge missing observations.
-
-Export adapters own metric types and unit conversion: cumulative CPU/pressure/throttling times become counters in seconds, byte/inode observations become gauges, event counts become counters, and percentages become ratios where needed. Sampled maxima are not instantaneous peaks: CPU utilization is already an interval average and point observations can miss events between samples.
-
-History aggregation, delivery beyond the OTLP receiver, alerts and product UI belong to consumers and their observability infrastructure. Envd provides bounded EIP observations, standard HTTP scrape exposition and optional native OTLP export without durable storage or a Service dependency.
+Consumers identify samples by `(device_id, generation, sample.sequence)` and apply a maximum sample age matching their polling cadence. Counter rates compute deltas across distinct samples and reset on generation changes, counter decreases, or missing observations. Export adapters convert cumulative times to seconds, byte/inode values to gauges, and percentages to ratios. History aggregation, alerting, and UI belong to downstream observability systems.

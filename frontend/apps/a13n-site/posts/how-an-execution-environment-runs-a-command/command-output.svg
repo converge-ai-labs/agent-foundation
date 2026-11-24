@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 410" role="img" aria-label="envd drains stdout and stderr into separate bounded files. In this example two nine-byte messages are saved in stdout. A reader resumes at byte nine to fetch the second message; stderr has an independent offset.">
+  <text class="pt ink" x="23" y="34" style="font-size: 20px">Two output streams, two read positions</text>
+  <text class="pt ink" x="24" y="83" style="font-size: 15px">Python process</text>
+  <text class="pt ink" x="266" y="83" style="font-size: 15px">envd output files</text>
+  <text class="pt ink" x="602" y="83" style="font-size: 15px">Harness</text>
+  <rect class="pl" x="24" y="121" width="151" height="151" rx="3"/>
+  <path class="pf" d="M24 146L175 146"/>
+  <circle class="fi" cx="37" cy="133" r="2.5"/>
+  <circle class="ff" cx="46" cy="133" r="2.5"/>
+  <circle class="ff" cx="55" cy="133" r="2.5"/>
+  <path class="pa" d="m38 164 7 6-7 6m12 0h10"/>
+  <text class="pt ink" x="38" y="200" style="font-size: 14px">analyze.py</text>
+  <text class="pt " x="38" y="229" style="font-size: 11px">write progress</text>
+  <text class="pt " x="38" y="249" style="font-size: 11px">emit warnings</text>
+  <path class="pa" d="M175 193h31v-52h60m-8-5 8 5-8 5"/>
+  <path class="pl" d="M175 210h42v83h49m-8-5 8 5-8 5"/>
+  <rect class="pl" x="266" y="103" width="291" height="122" rx="2"/>
+  <text class="pt acc" x="278" y="125" style="font-size: 14px">stdout</text>
+  <path class="pf" d="M266 137L557 137"/>
+  <rect class="ff" x="278" y="148" width="131" height="37"/>
+  <rect class="band" x="409" y="148" width="134" height="37"/>
+  <path class="pa" d="M409 145L409 191"/>
+  <text class="pt ink" x="290" y="171" style="font-size: 13px">Jan done\n</text>
+  <text class="pt acc" x="423" y="171" style="font-size: 13px">Feb done\n</text>
+  <text class="pt " x="278" y="209" style="font-size: 12px">0</text>
+  <text class="pt acc" x="409" y="209" style="font-size: 12px" text-anchor="middle">9</text>
+  <text class="pt " x="543" y="209" style="font-size: 12px" text-anchor="end">18 bytes</text>
+  <rect class="pl" x="266" y="248" width="291" height="90" rx="2"/>
+  <text class="pt ink" x="278" y="270" style="font-size: 14px">stderr</text>
+  <path class="pf" d="M266 282L557 282"/>
+  <text class="pt " x="279" y="312" style="font-size: 12px">0 bytes in this example</text>
+  <path class="pa" d="M557 163h43m-7-5 7 5-7 5"/>
+  <text class="pt ink" x="612" y="137" style="font-size: 12px">Next stdout read</text>
+  <text class="pt acc" x="612" y="168" style="font-size: 13px">start offset  9</text>
+  <text class="pt " x="612" y="191" style="font-size: 12px">next offset  18</text>
+  <path class="pl" d="M557 292h43m-7-5 7 5-7 5"/>
+  <text class="pt ink" x="612" y="276" style="font-size: 12px">Next stderr read</text>
+  <text class="pt ink" x="612" y="304" style="font-size: 13px">start offset  0</text>
+  <path class="pf" d="M24 359L776 359"/>
+  <text class="pt " x="24" y="385" style="font-size: 12px">Each stream has its own byte limit. Crossing either limit stops the command.</text>
+</svg>

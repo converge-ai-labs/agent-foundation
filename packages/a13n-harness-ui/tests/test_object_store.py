@@ -91,7 +91,7 @@ async def test_object_verification_encodes_payload_once_and_preserves_canonical_
     envelope = await store.publish(
         object_kind=ObjectKind.continuation, object_schema_version="1", payload=payload, payload_codec_version=codec
     )
-    assert payload_encodes == 3  # Source, verified staging file, verified published file.
+    assert payload_encodes == 1  # Source encoding is verified directly against decompressed frames.
     path = next(layout.objects.rglob("*.json.zst"))
     raw = zstandard.ZstdDecompressor().decompress(path.read_bytes())
     dumped = envelope.model_dump(mode="json")
@@ -510,3 +510,24 @@ async def test_checkpoint_mapping_order_participates_in_identity_and_integrity(t
     with pytest.raises(ObjectIntegrityError) as error:
         await store.read(first.ref)
     assert error.value.code == "object_digest_mismatch"
+
+
+async def test_object_publication_detects_corrupted_staging_frame(tmp_path, monkeypatch):
+    store, layout = _object_store(tmp_path)
+    original_write = store._write_stage
+
+    def corrupt_stage(path, content):
+        original_write(
+            path,
+            zstandard.ZstdCompressor(level=1, write_checksum=True).compress(b'{"tampered":true}'),
+        )
+
+    monkeypatch.setattr(store, "_write_stage", corrupt_stage)
+    with pytest.raises(ObjectIntegrityError) as error:
+        await store.publish(
+            object_kind=ObjectKind.continuation,
+            object_schema_version="1",
+            payload={"k": "expected"},
+        )
+    assert error.value.code == "object_staging_mismatch"
+    assert list(layout.staging.iterdir()) == []

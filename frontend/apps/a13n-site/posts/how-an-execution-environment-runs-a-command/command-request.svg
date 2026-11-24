@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 436" role="img" aria-label="From a model tool call to a supervised Python process: Harness checks access, the client sends process.start over HTTP, envd registers the process and both output streams in the session, then returns a handle after launch.">
+  <text class="pt ink" x="22" y="33" style="font-size: 20px">Starting a background command</text>
+  <rect class="pf" x="22" y="55" width="224" height="344" rx="3"/>
+  <rect class="pf" x="448" y="55" width="330" height="344" rx="3"/>
+  <text class="pt ink" x="38" y="84" style="font-size: 17px">Harness</text>
+  <text class="pt ink" x="466" y="84" style="font-size: 16px">envd on the target machine</text>
+  <path class="pf" d="M38 96L230 96"/>
+  <path class="pf" d="M466 96L760 96"/>
+  <text class="pt acc" x="39" y="122" style="font-size: 13px">1  Tool call</text>
+  <rect class="pl" x="38" y="136" width="192" height="103" rx="2"/>
+  <rect class="band" x="39" y="137" width="190" height="27"/>
+  <text class="pt acc" x="50" y="155" style="font-size: 13px">shell_exec</text>
+  <text class="pt ink" x="50" y="187" style="font-size: 13px">python analyze.py</text>
+  <text class="pt " x="50" y="212" style="font-size: 12px">cwd  /workspace</text>
+  <rect class="pa thin" x="39" y="258" width="13" height="13" rx="1"/>
+  <path class="pa thin" d="m41 264 3 3 7-8"/>
+  <text class="pt ink" x="61" y="269" style="font-size: 11px">Command access allowed</text>
+  <text class="pt " x="39" y="304" style="font-size: 12px">Environment adapter</text>
+  <text class="pt ink" x="39" y="326" style="font-size: 14px">envd client</text>
+  <text class="pt acc" x="347" y="132" style="font-size: 13px" text-anchor="middle">2  HTTP request</text>
+  <path class="pa" d="M246 149h202m-8-5 8 5-8 5"/>
+  <text class="pt ink" x="347" y="172" style="font-size: 13px" text-anchor="middle">process.start</text>
+  <text class="pt " x="347" y="193" style="font-size: 11px" text-anchor="middle">session ID + command</text>
+  <text class="pt acc" x="467" y="122" style="font-size: 13px">3  Prepare the session</text>
+  <rect class="pl" x="466" y="136" width="293" height="119" rx="2"/>
+  <path class="pf" d="M466 165h293"/>
+  <text class="pt ink" x="478" y="155" style="font-size: 13px">Execution session</text>
+  <rect class="pf" x="480" y="175" width="11" height="11"/>
+  <path class="pa thin" d="m482 180 3 3 6-7"/>
+  <text class="pt ink" x="501" y="185" style="font-size: 12px">Reserve process capacity</text>
+  <rect class="pf" x="480" y="199" width="11" height="11"/>
+  <path class="pa thin" d="m482 204 3 3 6-7"/>
+  <text class="pt ink" x="501" y="209" style="font-size: 12px">Register stdout and stderr</text>
+  <rect class="pf" x="480" y="223" width="11" height="11"/>
+  <path class="pa thin" d="m482 228 3 3 6-7"/>
+  <text class="pt ink" x="501" y="233" style="font-size: 12px">Connect both output pipes</text>
+  <path class="pa" d="M613 255v26m-5-7 5 7 5-7"/>
+  <rect class="band" x="466" y="282" width="293" height="43"/>
+  <path class="pa" d="m481 295 8 7-8 7m13 0h10"/>
+  <text class="pt ink" x="516" y="308" style="font-size: 13px">python analyze.py</text>
+  <text class="pt ink" x="467" y="358" style="font-size: 13px">4  Program started</text>
+  <text class="pt " x="467" y="380" style="font-size: 12px">Session holds the process record</text>
+  <path class="pl" d="M448 350H246m8-5-8 5 8 5"/>
+  <text class="pt ink" x="347" y="333" style="font-size: 12px" text-anchor="middle">HTTP response</text>
+  <text class="pt acc" x="347" y="373" style="font-size: 13px" text-anchor="middle">process handle</text>
+</svg>

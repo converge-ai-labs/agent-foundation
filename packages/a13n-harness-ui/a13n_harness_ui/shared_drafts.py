@@ -224,26 +224,29 @@ class SharedDraft:
             raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
         captured = composer_document()
         captured.apply_update(update)
-        composer_values(captured)
-        # A submission may consume an older acknowledged snapshot, but must not
-        # introduce edits or deletions which the room has never accepted.
-        merged = composer_document()
-        merged.apply_update(self._update)
-        before = merged.get_update()
-        merged.apply_update(update)
-        if merged.get_update() != before:
-            raise HarnessUiError("Synchronize your edits before sending.", code="draft_not_synchronized")
+        if update != self._update:
+            composer_values(captured)
+            # A submission may consume an older acknowledged snapshot, but must not
+            # introduce edits or deletions which the room has never accepted.
+            merged = composer_document()
+            merged.apply_update(self._update)
+            before = merged.get_update()
+            merged.apply_update(update)
+            if merged.get_update() != before:
+                raise HarnessUiError("Synchronize your edits before sending.", code="draft_not_synchronized")
         options_clear = None
         if capture.options_update_base64 is not None:
+            raw_options = base64.b64decode(capture.options_update_base64, validate=True)
             selected = options_document()
-            selected.apply_update(base64.b64decode(capture.options_update_base64, validate=True))
-            composer_options(selected)
-            combined = options_document()
-            combined.apply_update(self._options_update)
-            before_options = combined.get_update()
-            combined.apply_update(selected.get_update())
-            if combined.get_update() != before_options:
-                raise HarnessUiError("Synchronize your options before sending.", code="draft_not_synchronized")
+            selected.apply_update(raw_options)
+            if raw_options != self._options_update:
+                composer_options(selected)
+                combined = options_document()
+                combined.apply_update(self._options_update)
+                before_options = combined.get_update()
+                combined.apply_update(selected.get_update())
+                if combined.get_update() != before_options:
+                    raise HarnessUiError("Synchronize your options before sending.", code="draft_not_synchronized")
             if reset_mode and "mode" in selected.get("options", type=Map):
                 del selected.get("options", type=Map)["mode"]
                 options_clear = selected.get_update()
@@ -261,16 +264,26 @@ class SharedDraft:
 
     async def clear(self, updates: tuple[bytes, bytes | None]) -> bool:
         """Consume captured identities while preserving later and concurrent edits."""
+        from anyio import to_thread
+
         async with self._lock:
             if self.closed:
                 return False
-            candidate = composer_document()
-            candidate.apply_update(self._update)
-            candidate.apply_update(updates[0])
-            options = options_document(prediction=True)
-            options.apply_update(self._options_update)
-            if updates[1] is not None:
-                options.apply_update(updates[1])
+
+            def apply_clear() -> tuple[Doc, Doc]:
+                candidate = composer_document()
+                candidate.apply_update(self._update)
+                candidate.apply_update(updates[0])
+                options = options_document(prediction=True)
+                options.apply_update(self._options_update)
+                if updates[1] is not None:
+                    options.apply_update(updates[1])
+                return candidate, options
+
+            if len(self._update) + len(self._options_update) > 16384:
+                candidate, options = await to_thread.run_sync(apply_clear)
+            else:
+                candidate, options = apply_clear()
             return await self._publish(candidate, options)
 
     async def _publish(self, candidate: Doc, options: Doc) -> bool:
@@ -339,30 +352,43 @@ class SharedDraft:
             else:
                 if command.update_base64 is None or command.presence is not None:
                     raise ValueError("Sync requires a complete document update.")
-                update = base64.b64decode(command.update_base64, validate=True)
-                if len(update) > MAX_DRAFT_BYTES:
-                    raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
-                candidate = composer_document()
-                candidate.apply_update(self._update)
-                candidate.apply_update(update)
-                _, attachments = composer_values(candidate)
-                options = options_document()
-                options.apply_update(self._options_update)
-                if command.options_update_base64 is not None:
-                    if not edit_options:
-                        raise HarnessUiError("Sharing guests cannot change composer options.", code="share_forbidden")
-                    options_update = base64.b64decode(command.options_update_base64, validate=True)
-                    if len(options_update) > MAX_DRAFT_BYTES:
+                from anyio import to_thread
+
+                current_prediction = self.prediction
+
+                def validate_sync() -> tuple[Doc, Doc, tuple[str, ...]]:
+                    update = base64.b64decode(command.update_base64, validate=True)  # type: ignore[arg-type]
+                    if len(update) > MAX_DRAFT_BYTES:
                         raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
-                    options.apply_update(options_update)
-                raw_prediction = options.get("options", type=Map).get("prediction")
-                if (raw_prediction is not None and not isinstance(raw_prediction, dict)) or (
-                    composer_options(options).prediction != self.prediction
-                ):
-                    raise ValueError("The Host owns the composer prediction.")
-                accepted_update = candidate.get_update()
-                if len(accepted_update) > MAX_DRAFT_BYTES:
-                    raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
+                    candidate = composer_document()
+                    candidate.apply_update(self._update)
+                    candidate.apply_update(update)
+                    _, attachments = composer_values(candidate)
+                    options = options_document()
+                    options.apply_update(self._options_update)
+                    if command.options_update_base64 is not None:
+                        if not edit_options:
+                            raise HarnessUiError(
+                                "Sharing guests cannot change composer options.", code="share_forbidden"
+                            )
+                        options_update = base64.b64decode(command.options_update_base64, validate=True)
+                        if len(options_update) > MAX_DRAFT_BYTES:
+                            raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
+                        options.apply_update(options_update)
+                    raw_prediction = options.get("options", type=Map).get("prediction")
+                    if (raw_prediction is not None and not isinstance(raw_prediction, dict)) or (
+                        composer_options(options).prediction != current_prediction
+                    ):
+                        raise ValueError("The Host owns the composer prediction.")
+                    accepted_update = candidate.get_update()
+                    if len(accepted_update) > MAX_DRAFT_BYTES:
+                        raise ValueError("Shared draft exceeds 512 KiB of CRDT state.")
+                    return candidate, options, attachments
+
+                if len(self._update) + len(command.update_base64) > 16384:
+                    candidate, options, attachments = await to_thread.run_sync(validate_sync)
+                else:
+                    candidate, options, attachments = validate_sync()
                 await validate_attachments(attachments)
                 # Publish only after the entire composer has validated. Rejected
                 # selections cannot partially replace the shared text.

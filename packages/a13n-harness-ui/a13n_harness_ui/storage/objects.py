@@ -336,20 +336,16 @@ class ImmutableObjectStore:
                 },
             )
         compressed = zstandard.ZstdCompressor(level=1, write_checksum=True).compress(uncompressed)
-        # Release encoding buffers before verification allocates its own copies.
-        del uncompressed
         stage = self._layout.staging / f"{uuid4().hex}.json.zst.tmp"
         try:
             self._write_stage(stage, compressed)
             del compressed
-            staged = self._read_path(stage)
-            if staged != envelope:
+            if self._decompress_path(stage) != uncompressed:
                 raise ObjectIntegrityError(
                     "Staged immutable object did not verify to its source envelope.",
                     code="object_staging_mismatch",
                 )
-            del staged
-            return self._publish_stage(stage, envelope)
+            return self._publish_stage(stage, envelope, uncompressed)
         finally:
             stage.unlink(missing_ok=True)
 
@@ -362,7 +358,7 @@ class ImmutableObjectStore:
             path.unlink(missing_ok=True)
             raise
 
-    def _publish_stage(self, stage: Path, envelope: ObjectEnvelope) -> ObjectEnvelope:
+    def _publish_stage(self, stage: Path, envelope: ObjectEnvelope, uncompressed: bytes) -> ObjectEnvelope:
         reference = envelope.ref
         target = self._path_for(reference)
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -370,17 +366,22 @@ class ImmutableObjectStore:
             os.link(stage, target)
         except FileExistsError:
             published = self._read_ref(reference)
-        else:
-            if os.name != "nt":
-                target.chmod(0o600)
-            published = self._read_path(target)
-        if published.ref != reference:
+            if published.ref != reference:
+                raise ObjectIntegrityError(
+                    "Published immutable object does not match its expected reference.",
+                    code="object_publication_mismatch",
+                    details={"logical_digest": reference.logical_digest},
+                ) from None
+            return published
+        if os.name != "nt":
+            target.chmod(0o600)
+        if self._decompress_path(target) != uncompressed:
             raise ObjectIntegrityError(
                 "Published immutable object does not match its expected reference.",
                 code="object_publication_mismatch",
                 details={"logical_digest": reference.logical_digest},
             )
-        return published
+        return envelope
 
     def _read_ref(self, reference: ObjectRef) -> ObjectEnvelope:
         envelope = self._read_path(self._path_for(reference))

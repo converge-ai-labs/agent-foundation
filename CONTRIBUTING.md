@@ -376,3 +376,13 @@ Keep commit messages in English. Do not add an agent as a co-author. If assistan
 ```text
 Assisted-by: NAME <email>
 ```
+
+### Agent Attribution
+
+If an agent materially writes or modifies changes in the PR, start the PR body with a visible Markdown blockquote before `## Summary`, even if a human opens the PR. Review or advice alone does not require attribution. Use this format:
+
+```markdown
+> This pull request includes changes prepared by <agent tool> using `<model ID>` on behalf of @<human GitHub username>.
+```
+
+Name the actual agent tool and model that produced the changes, and use the GitHub username of the human responsible for the contribution. If multiple tool/model pairs materially contributed, use one quoted paragraph per pair in the same blockquote. Confirm any unknown details before posting; do not guess. Attribution identifies responsibility; the PR checklist records whether the human author has reviewed and understood the changes.

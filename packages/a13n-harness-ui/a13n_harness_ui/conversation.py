@@ -16,6 +16,7 @@ from pydantic_ai.messages import (
     PartEndEvent,
     TextPart,
     UserContent,
+    UserPromptPart,
 )
 
 from a13n_harness_ui.background_input import ACTIVITY_SOURCES
@@ -79,21 +80,50 @@ def _projected_excerpt(content: Iterable[tuple[str | dict, ContentMetadata]]) ->
     return excerpt_text(" ".join(text or attachments))
 
 
+def _request_excerpt(message: ModelRequest) -> str:
+    if (message.metadata or {}).get("a13n.context") in {"handoff", "compaction"}:
+        return ""
+    if not any(isinstance(part, UserPromptPart) for part in message.parts):
+        return ""
+    return input_excerpt(request_input_content(message))
+
+
+def _response_excerpt(message: ModelResponse) -> str:
+    texts = [part.content for part in message.parts if isinstance(part, TextPart) and part.content]
+    return excerpt_text(" ".join(texts)) if texts else ""
+
+
 def checkpoint_excerpt(previous: ConversationExcerpt, history: Iterable[object]) -> ConversationExcerpt:
     """Derive display excerpts from a complete checkpoint without waiting for stream delivery."""
-    value = previous
-    for message in history:
+    messages = history if isinstance(history, list | tuple) else list(history)
+    if not messages:
+        return previous
+    first_input = previous.first_input
+    if not first_input:
+        for message in messages:
+            if isinstance(message, ModelRequest) and (text := _request_excerpt(message)):
+                first_input = excerpt_text(text, 512)
+                break
+    latest_reply = ""
+    for message in reversed(messages):
         if isinstance(message, ModelRequest):
-            if (message.metadata or {}).get("a13n.context") in {"handoff", "compaction"}:
-                continue
-            text = input_excerpt(request_input_content(message))
-            if text:
-                value = ConversationExcerpt(first_input=value.first_input or excerpt_text(text, 512), latest_input=text)
-        elif isinstance(message, ModelResponse):
-            text = excerpt_text(" ".join(part.content for part in message.parts if isinstance(part, TextPart)))
-            if text:
-                value = value.model_copy(update={"latest_reply": text, "reply_kind": "progress"})
-    return value
+            if text := _request_excerpt(message):
+                if latest_reply:
+                    return ConversationExcerpt(
+                        first_input=first_input or excerpt_text(text, 512),
+                        latest_input=text,
+                        latest_reply=latest_reply,
+                        reply_kind="progress",
+                    )
+                return ConversationExcerpt(
+                    first_input=first_input or excerpt_text(text, 512),
+                    latest_input=text,
+                )
+        elif not latest_reply and isinstance(message, ModelResponse):
+            latest_reply = _response_excerpt(message)
+    if latest_reply:
+        return previous.model_copy(update={"latest_reply": latest_reply, "reply_kind": "progress"})
+    return previous
 
 
 class ExcerptCollector:

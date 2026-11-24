@@ -31,11 +31,13 @@ export function RunActivity({
   submission,
   recovery,
   operation,
+  lastExecution,
 }: {
   activity?: Schema<"RootActivityView">;
   submission: Submission;
   recovery?: FocusDisplay["recovery"];
   operation?: Schema<"RootOperationView">;
+  lastExecution?: Schema<"ThreadExecution"> | null;
 }) {
   const { t } = useTranslation();
   const working =
@@ -44,10 +46,20 @@ export function RunActivity({
     ) : (
       t("Working…")
     );
+  const settled =
+    activity?.state === "inactive" &&
+    lastExecution != null &&
+    lastExecution.status !== "preparing" &&
+    lastExecution.status !== "running" &&
+    (lastExecution.execution_id === operation?.receipt.receipt_id ||
+      (submission.kind === "accepted" &&
+        submission.action !== "steer" &&
+        lastExecution.execution_id === submission.receipt));
   let label: React.ReactNode;
   if (submission.kind === "pending")
     label =
       submission.action === "steer" ? t("Sending instruction…") : t("Sending…");
+  else if (settled) return null;
   else if (
     operation &&
     operation.status !== "preparing" &&

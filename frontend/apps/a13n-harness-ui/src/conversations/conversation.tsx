@@ -1096,6 +1096,7 @@ function ConversationContent({
                             activity={operation}
                             submission={draft.submission}
                             operation={observedOperation.data}
+                            lastExecution={thread?.last_execution}
                           />
                         ) : undefined)
                       }
