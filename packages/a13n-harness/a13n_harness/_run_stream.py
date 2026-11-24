@@ -41,6 +41,7 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import ModelResolutionContext
 from pydantic_ai.run import AgentRunResult, AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
@@ -94,6 +95,7 @@ from a13n_harness.events import (
     _RunEventEmitter,
     enqueued_input_events,
 )
+from a13n_harness.fork import _PREFIX_CAPTURE_ID, ForkedAgent, PostRunSession, _PrefixCapture
 from a13n_harness.input import (
     RunInputFactory,
     RunInputValue,
@@ -380,6 +382,12 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._context: AgentContext | None = None
         self._envd_session_replacements: list[str] = []
         self._run_plugins: tuple[AbstractHarnessPlugin, ...] = ()
+        self._post_run: PostRunSession | None = None
+        self._prefix_capture = (
+            _PrefixCapture()
+            if any(type(plugin).post_run is not AbstractHarnessPlugin.post_run for plugin in executable._plugins)
+            else None
+        )
         self._exchange: PluginRunExchange | None = None
         self._run_attachments_closed = False
         self._attachments_retained = False
@@ -445,6 +453,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
     def result(self) -> HarnessRunResult[OutputT] | None:
         """Return the terminal result only after its result event was delivered."""
         return self._delivered_result
+
+    @property
+    def post_run(self) -> PostRunSession | None:
+        """Return the post-run session after terminal delivery and resource cleanup."""
+        return self._post_run
 
     @property
     def outcome(self) -> HarnessRunResult[OutputT] | None:
@@ -676,7 +689,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             retained_history_directory=bindings.retained_history_directory,
             _capability_provenance=_CapabilityProvenance(
                 definition_ids=self._executable._definition_reserved_capability_ids,
-                run_ids=self._run_reserved_capability_ids,
+                run_ids=(
+                    self._run_reserved_capability_ids | {_PREFIX_CAPTURE_ID}
+                    if self._prefix_capture is not None
+                    else self._run_reserved_capability_ids
+                ),
             ),
         )
 
@@ -875,6 +892,8 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             result = self._pending_result
             self._pending_result = None
             self._delivered_result = result
+            if result.status != "cancelled":
+                self._prepare_post_run(result)
             return HarnessRunResultEvent(
                 thread_id=self.thread_id,
                 run_id=self.run_id,
@@ -1217,6 +1236,26 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         self._refresh_live_messages()
         return await self._context.export_state(self._latest_messages)
 
+    def _prepare_post_run(self, result: HarnessRunResult[OutputT]) -> None:
+        capture = self._prefix_capture
+        plugins = tuple(
+            plugin for plugin in self._run_plugins if type(plugin).post_run is not AbstractHarnessPlugin.post_run
+        )
+        if not plugins:
+            return
+        executable, context = self._executable, self.context
+        self._post_run = PostRunSession(
+            agent=ForkedAgent(
+                executable.definition,
+                capture.prefix if capture is not None else None,
+                ModelResolutionContext(agent=executable._agent, deps=context),
+                executable._model_inference,
+                context.usage_attribution.cost_capability or executable._model_cost,
+            ),
+            plugins=plugins,
+            result=result,
+        )
+
     async def _call_plugin(
         self,
         index: int,
@@ -1445,6 +1484,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             recovery.output_limit_error = None
             response_tracker = InterruptedResponseTracker()
             attempt_token = self._observation.record_model_attempt() if self._observation is not None else None
+            capture = self._prefix_capture
+            if capture is not None:
+                capture.begin(recovery.attempt_id)
             manager = self._executable._agent.run_stream_events(
                 native_content(current_input.value) if current_input.value is not None else None,
                 message_history=current_history,
@@ -1457,6 +1499,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 capabilities=(
                     ProducerCaptureCapability(self._emitter, recovery.attempt_id),
                     *self._bindings.capabilities,
+                    *((capture,) if capture is not None else ()),
                 ),
             )
             try:

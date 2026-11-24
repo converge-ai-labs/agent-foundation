@@ -170,6 +170,8 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `worker.scan_seconds`            | `A13N_WORKER__SCAN_SECONDS`            | 数值        | maximum=30; exclusiveMinimum=0; default=1        |
 | `worker.authority_seconds`       | `A13N_WORKER__AUTHORITY_SECONDS`       | 数值        | maximum=30; exclusiveMinimum=0; default=1        |
 | `worker.drain_seconds`           | `A13N_WORKER__DRAIN_SECONDS`           | 数值        | maximum=300; exclusiveMinimum=0; default=10      |
+| `worker.post_run_concurrency`    | `A13N_WORKER__POST_RUN_CONCURRENCY`    | 整数        | minimum=1; maximum=1024; default=16              |
+| `worker.post_run_seconds`        | `A13N_WORKER__POST_RUN_SECONDS`        | 数值        | maximum=300; exclusiveMinimum=0; default=30      |
 | `worker.delivery_count`          | `A13N_WORKER__DELIVERY_COUNT`          | 整数        | minimum=1; maximum=128; default=8                |
 | `worker.delivery_bytes`          | `A13N_WORKER__DELIVERY_BYTES`          | 整数        | minimum=1024; maximum=16777216; default=262144   |
 | `worker.output_bytes`            | `A13N_WORKER__OUTPUT_BYTES`            | 整数        | minimum=1024; maximum=16777216; default=1048576  |

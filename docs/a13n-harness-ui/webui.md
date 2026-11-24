@@ -120,7 +120,8 @@ Agents post final results, milestones, and items needing your decision to **Inbo
 
 1. Open **Inbox** below conversation search. **Needs you** items appear first, followed by **Updates**.
 2. Click a row to read it in place, **Open in chat** to jump to the originating turn, or **Mark as done** to clear it.
-3. To disable Inbox posting for new runs, turn off **Settings → Chats → Inbox → Let agents post to Inbox** (`inbox.enabled: false`).
+3. Select **Mark all as read** in **Needs you** or **Updates** to clear unread marks in that section, including items you have not loaded. Items remain in **Open** until you mark them as done.
+4. To disable Inbox posting for new runs, turn off **Settings → Chats → Inbox → Let agents post to Inbox** (`inbox.enabled: false`).
 
 ## Share a Thread or Project
 

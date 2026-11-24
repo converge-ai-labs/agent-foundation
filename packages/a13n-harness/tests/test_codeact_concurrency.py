@@ -242,6 +242,7 @@ async def test_concurrent_cold_programs_initialize_one_pool_without_serializing_
         allow_init.set()
         await asyncio.wait_for(asyncio.gather(*(event.wait() for event in entered.values())), 5)
         assert len(pools) == 1
+        assert pools[0]["max_processes"] == 4
         finish.set()
         results = await asyncio.gather(*tasks)
         assert [result.completed.output for result in results] == ["A", "B"]

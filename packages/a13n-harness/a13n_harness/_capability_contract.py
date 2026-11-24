@@ -68,6 +68,7 @@ from a13n_harness.environment.dynamic import (
 )
 from a13n_harness.errors import DefinitionError
 from a13n_harness.filters.integrity import MESSAGE_INTEGRITY_FILTER_CAPABILITY_ID, MessageIntegrityFilterCapability
+from a13n_harness.fork import _PREFIX_CAPTURE_ID, _PrefixCapture
 from a13n_harness.mcp import MCPServer
 from a13n_harness.model_context import MODEL_CONTEXT_COORDINATOR_CAPABILITY_ID, ModelContextCoordinatorCapability
 from a13n_harness.models.request_headers import MODEL_REQUEST_HEADERS_CAPABILITY_ID, ModelRequestHeadersCapability
@@ -126,7 +127,7 @@ _BUILT_OWNERS: dict[str, tuple[type[AbstractCapability[AgentContext]], str]] = {
     MODEL_COST_CAPABILITY_ID: (AbstractModelCostCapability, "model-cost"),
 }
 _POLYMORPHIC_BUILT_TYPES = (ToolExecutionBoundaryCapability, ToolSurfaceCapability, AbstractModelCostCapability)
-_RESERVED_IDS = frozenset((*_BUILT_OWNERS, *_DEFINITION_OWNERS, INVOCATION_POLICY_CAPABILITY_ID))
+_RESERVED_IDS = frozenset((*_BUILT_OWNERS, *_DEFINITION_OWNERS, INVOCATION_POLICY_CAPABILITY_ID, _PREFIX_CAPTURE_ID))
 _RUN_TYPES = (MCP, MCPServer, InvocationPolicyCapability)
 
 # Source admission has a narrower type guard than built ownership. Lifecycle is
@@ -145,6 +146,7 @@ _SOURCE_RESERVED_TYPES = (
         )
     ),
     InvocationPolicyCapability,
+    _PrefixCapture,
 )
 
 
@@ -423,6 +425,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (InvocationPolicyCapability,),
             provenance.run_ids,
         ),
+        _PREFIX_CAPTURE_ID: ((_PrefixCapture,), provenance.run_ids),
         USAGE_CAPABILITY_ID: (
             (_RunUsageCapability,),
             None,

@@ -290,6 +290,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/mark-read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Inbox Mark Read */
+        post: operations["inbox_mark_read_api_inbox_mark_read_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inbox/{item_id}": {
         parameters: {
             query?: never;
@@ -6341,6 +6358,14 @@ export interface components {
             next_cursor?: string | null;
             /** Unread Count */
             unread_count: number;
+            unread_by_group: components["schemas"]["InboxUnreadCounts"];
+        };
+        /** InboxUnreadCounts */
+        InboxUnreadCounts: {
+            /** Needs You */
+            needs_you: number;
+            /** Updates */
+            updates: number;
         };
         /** InputPredictionResponse */
         InputPredictionResponse: {
@@ -10522,6 +10547,14 @@ export interface components {
             /** Paused */
             paused: boolean;
         };
+        /** InboxMarkReadRequest */
+        InboxMarkReadRequest: {
+            /**
+             * Group
+             * @enum {string}
+             */
+            group: "needs_you" | "updates";
+        };
         /** InboxItemMutation */
         InboxItemMutation: {
             /** Read */
@@ -11790,6 +11823,28 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
+            };
+        };
+    };
+    inbox_mark_read_api_inbox_mark_read_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboxMarkReadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
