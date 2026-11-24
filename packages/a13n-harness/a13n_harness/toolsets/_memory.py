@@ -14,6 +14,7 @@ from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.tools import Tool, ToolDefinition
 
 from a13n_harness.context import AgentContext
+from a13n_harness.guidance import ToolGuidance
 from a13n_harness.providers.memory import MemoryAccess
 from a13n_harness.tools.metadata import (
     HarnessTool,
@@ -23,7 +24,7 @@ from a13n_harness.tools.metadata import (
     recovery_retryable,
 )
 
-from ._instructions import InstructionFunctionToolset, ToolInstruction
+from ._instructions import InstructionFunctionToolset
 
 MemoryName = Annotated[str, Field(description="The memory's mount name")]
 
@@ -47,7 +48,7 @@ def memory_toolset[K: str](
     tools: Mapping[K, MemoryTool],
     enabled: Collection[K],
     mounts: Mapping[str, Mount],
-    instruction: ToolInstruction,
+    instruction: ToolGuidance,
 ) -> InstructionFunctionToolset | None:
     """The enabled tools some mount's access allows, each implemented by `owner`'s method of the tool's key.
 
@@ -63,7 +64,7 @@ def memory_toolset[K: str](
     return InstructionFunctionToolset(
         tools=offered,
         id=f"a13n-memory-{kind}-tools",
-        instructions=[instruction],
+        guidance=instruction,
     )
 
 

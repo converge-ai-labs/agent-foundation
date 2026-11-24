@@ -11,11 +11,18 @@ A Host-held execution delivers its result automatically when it finishes, even a
 
 Recovery is best-effort; never assume missing commands succeeded or restart them automatically.
 
-Prefer file tools for ordinary file reading, listing, searching and content editing. Use the `cwd` argument instead of embedding `cd` in a command.
+Prefer file tools for ordinary file reading, listing, searching and content editing.
 
 Treat `exec-*` and `process-*` references as opaque. Never invent or alter them or use them as native process IDs.
 
-Use `shell_wait` with your last returned `stdout.next_offset` and `stderr.next_offset` to wait boundedly and read the next available output page. Set `timeout_seconds=0` for a non-blocking poll. Reads are non-consuming, so repeating the same offsets is safe. </environment-shell>
+</environment-shell>
+
+<shell-command>
+Use the `cwd` argument instead of embedding `cd` in a command.
+</shell-command>
+
+<shell-wait>
+Use `shell_wait` with your last returned `stdout.next_offset` and `stderr.next_offset` to wait boundedly and read the next available output page. Set `timeout_seconds=0` for a non-blocking poll. Reads are non-consuming, so repeating the same offsets is safe.</shell-wait>
 
 <!-- reference -->
 

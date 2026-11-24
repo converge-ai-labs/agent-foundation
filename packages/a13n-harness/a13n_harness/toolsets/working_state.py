@@ -122,7 +122,7 @@ class WorkingStateToolset:
             InstructionFunctionToolset(
                 tools=tools,
                 id="a13n-working-state-tools",
-                instructions=_WORKING_STATE_INSTRUCTION,
+                guidance=_WORKING_STATE_INSTRUCTION,
             )
             if tools
             else None

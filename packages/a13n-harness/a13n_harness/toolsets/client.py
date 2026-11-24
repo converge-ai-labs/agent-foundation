@@ -9,6 +9,7 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, ExternalToolset
 
 from a13n_harness.context import AgentContext
+from a13n_harness.guidance import GuidanceFragment, ToolGuidance
 from a13n_harness.tools.identity import TOOL_IDENTITY_KEY, ToolIdentity, source_tool_id
 
 from ._instructions import InstructionExternalToolset
@@ -49,8 +50,8 @@ class ClientToolsToolset:
                         metadata=metadata,
                     )
                 )
-            instructions = "\n\n".join(
-                f"Client tool `{tool.name}`: {tool.instruction}"
+            fragments = tuple(
+                GuidanceFragment(text=f"Client tool `{tool.name}`: {tool.instruction}", all_of=(tool.name,))
                 for tool in toolset.tools
                 if tool.instruction is not None
             )
@@ -58,7 +59,7 @@ class ClientToolsToolset:
                 InstructionExternalToolset(
                     definitions,
                     id=toolset.toolset_id,
-                    instructions=instructions or None,
+                    guidance=ToolGuidance(toolset.toolset_id, fragments) if fragments else None,
                 )
             )
         if not native:

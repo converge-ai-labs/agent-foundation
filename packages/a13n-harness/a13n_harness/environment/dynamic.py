@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, DynamicToolset
+from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, DynamicToolset, FunctionToolset
 
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.models import EnvironmentAction
@@ -108,7 +108,7 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
             and EnvironmentAction.SHELL_EXEC in mounts[0].permission_ceiling.operations
         )
 
-        toolsets: list[AbstractToolset[AgentContext]] = []
+        toolsets: list[FunctionToolset[AgentContext]] = []
         if file_names:
             toolsets.append(
                 self._file_toolset.get_toolset(
@@ -129,13 +129,12 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         if not toolsets:
             return None
         if len(mounts) > 1 or snapshot.default_mount is None:
-            toolsets.insert(
-                0,
-                InstructionFunctionToolset(
-                    id="a13n-environment-routing",
-                    instructions=[tool_guidance("environment-routing")],
-                ),
+            routing = InstructionFunctionToolset(
+                id="a13n-environment-routing",
+                guidance=tool_guidance("environment-routing"),
+                guidance_for=tuple(toolsets),
             )
+            toolsets.insert(0, routing)
         return CombinedToolset(toolsets)
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:

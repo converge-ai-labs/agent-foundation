@@ -7,20 +7,32 @@ from typing import TYPE_CHECKING, Annotated, Literal, Protocol, TypedDict, runti
 from pydantic import Field, JsonValue
 from pydantic_ai import BinaryContent, ModelRetry, RunContext, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.messages import InstructionPart
 from pydantic_ai.toolsets import AbstractToolset, DynamicToolset
 
 from a13n_harness._tool_execution import INSPECT_ON_HANDOFF_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
-from a13n_harness.guidance import TOOL_GUIDANCE_KEY
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY, GuidanceFragment, ToolGuidance
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
-from a13n_harness.toolsets._instructions import InstructionFunctionToolset, tool_instruction
+from a13n_harness.toolsets._instructions import InstructionFunctionToolset, section, tool_guidance
 
 from .actions import Action, Clip, Condition, ElementCondition, Ref, Visual
 
 if TYPE_CHECKING:
     from a13n_harness.toolsets.codeact import CodeActToolPolicy
+
+
+_BROWSER_GUIDANCE = tool_guidance(
+    "browser",
+    section("browser", "essential-rules"),
+    section("browser", "browser-script", any_of=("browser_js", "browser_cdp")),
+    section("browser", "browser-screenshot", all_of=("browser_screenshot",)),
+    section("browser", "best-practices", reference=True),
+    *(
+        section("browser", name.replace("_", "-"), all_of=(name,), reference=True)
+        for name in ("browser_tabs", "browser_observe", "browser_read", "browser_wait", "browser_js", "browser_cdp")
+    ),
+)
 
 
 class _BrowserToolset(InstructionFunctionToolset):
@@ -211,19 +223,24 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
             file_instructions=self.file_instructions,
         )
 
-    def _instructions(self, reference_root: str | None = None) -> str:
+    def _guidance(self) -> ToolGuidance:
         takeover = (
-            "Blocked calls return immediately with Host guidance; follow it without polling or retrying. "
+            "Blocked calls return immediately with Host guidance; follow it without polling or retrying."
             if self.on_human_control is not None
-            else "Pending tool calls wait for human handback without executing their original action; then observe afresh. "
+            else "Pending tool calls wait for human handback without executing their original action; then observe afresh."
         )
-        return (
-            tool_instruction("browser", reference_root=reference_root)
-            + "\n<essential-rules>\n"
-            + takeover
-            + "For browser_files: "
-            + self.file_instructions
-            + "\n</essential-rules>"
+        # Host-authored file workflows apply only when the file tool survives.
+        return ToolGuidance(
+            "browser",
+            (
+                *_BROWSER_GUIDANCE.fragments,
+                GuidanceFragment(text=f"<essential-rules>{takeover}</essential-rules>"),
+                GuidanceFragment(
+                    text=f"<browser-files>For browser_files: {self.file_instructions}</browser-files>",
+                    all_of=("browser_files",),
+                ),
+            ),
+            reference_page=_BROWSER_GUIDANCE.reference_page,
         )
 
     async def _toolset_for_run(self, ctx: RunContext[AgentContext]) -> AbstractToolset[AgentContext]:
@@ -237,10 +254,7 @@ class BrowserUseCapability(AbstractCapability[AgentContext]):
         if backend is None:
             return DynamicToolset(self._toolset_for_run, per_run_step=False)
 
-        async def instructions(ctx: RunContext[AgentContext]) -> InstructionPart:
-            return InstructionPart(content=self._instructions(ctx.deps.instruction_reference_root), dynamic=False)
-
-        tools = _BrowserToolset(metadata={TOOL_GUIDANCE_KEY: "browser"}, instructions=instructions)
+        tools = _BrowserToolset(metadata={TOOL_GUIDANCE_KEY: "browser"}, guidance=self._guidance())
 
         def metadata(name: str, read: bool = False) -> dict[str, object]:
             effects: set[ToolEffect] = {"read"} if read else {"execute", "external_communication"}

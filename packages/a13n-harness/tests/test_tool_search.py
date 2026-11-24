@@ -699,6 +699,9 @@ async def test_proxy_instruction_switch_and_custom_names_are_consistent(referenc
     def value() -> int:
         return 1
 
+    def view() -> str:
+        return "handbook"
+
     config = ProxyToolSearchConfig(
         search_name="find_ops",
         describe_name="describe_op",
@@ -721,7 +724,7 @@ async def test_proxy_instruction_switch_and_custom_names_are_consistent(referenc
                 assert ("Exact local or" in instructions) is (reference_root is None)
 
         result, returns = await _run(
-            (_group(value, config=config),),
+            (_group(value, config=config), Capability(tools=[view])),
             [("find_ops", {"query": "", "detail": "full"})],
             inspect=inspect,
             toolset_instructions=enabled,
@@ -1998,3 +2001,122 @@ def test_plan_omits_known_disabled_plugins_but_rejects_unknown_in_each_definitio
         builder.build(
             root.with_updates(subagents=(SubagentDefinition(name="child", description="child", agent=child),))
         )
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.parametrize("as_plugin", [False, True])
+async def test_custom_guidance_uses_same_prepared_names_in_prompt_and_describe(enabled: bool, as_plugin: bool) -> None:
+    from a13n_harness.guidance import GuidanceFragment, ToolGuidance
+
+    def local() -> str:
+        return "local"
+
+    def lookup() -> str:
+        return "lookup"
+
+    def removed() -> str:
+        return "removed"
+
+    async def hide(ctx: RunContext[AgentContext], tool_def: ToolDefinition) -> None:
+        return None
+
+    guidance = ToolGuidance(
+        "plugin-guide",
+        (
+            GuidanceFragment(text="Use `local` and `lookup` together.", all_of=("local", "lookup")),
+            GuidanceFragment(text="Lookup details.", any_of=("lookup", "removed"), reference=True),
+            GuidanceFragment(text="Use `lookup` and `removed` together.", all_of=("lookup", "removed")),
+        ),
+    )
+
+    class PluginToolset(FunctionToolset[AgentContext]):
+        async def get_instructions(self, ctx):
+            part = guidance.render(ctx, toolset=self, fallback=self.tools)
+            return [part] if part is not None else None
+
+    class Plugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self):
+            return "customer-plugin"
+
+        def get_capabilities(self):
+            return (capability,)
+
+    source = PluginToolset([local, lookup, Tool(removed, prepare=hide)], id="customer-tools")
+    capability = Capability(id="customer-capability", toolsets=[source])
+    # The top-level name is visible but belongs to a different Toolset.
+    other = Capability(toolsets=[FunctionToolset([removed])])
+    prompts: list[str] = []
+
+    def inspect(_step: int, info: AgentInfo) -> None:
+        assert {tool.name for tool in info.function_tools} >= {"removed", "describe_tool"}
+        assert ("local" in {tool.name for tool in info.function_tools}) is not as_plugin
+        prompts.append(info.instructions or "")
+
+    result, returns = await _run(
+        (other,) if as_plugin else (other, capability),
+        [("describe_tool", {"group": "customers", "tool": "lookup"})],
+        inspect=inspect,
+        bindings=RunBindings.embedded(toolset_instructions=enabled),
+        plugins=(Plugin(),) if as_plugin else (),
+        tool_search=ToolSearchPlan(
+            groups={
+                "customers": ToolSearchSelection(
+                    "Customer tools",
+                    plugins=("customer-plugin",) if as_plugin else (),
+                    capabilities=() if as_plugin else (capability,),
+                    tools={} if as_plugin else {"customer-capability": frozenset({"lookup", "removed"})},
+                )
+            }
+        ),
+    )
+    assert result.output_or_raise() == "done"
+    assert len(returns) == 1
+    payload = returns[0].content
+    assert isinstance(payload, Mapping)
+    entry = payload["tool"]
+    assert isinstance(entry, Mapping)
+    expected = "<tool-name>plugin-guide</tool-name>\nUse `local` and `lookup` together.\n\nLookup details."
+    assert entry["instructions"] == ([expected] if enabled else [])
+    assert all((expected in prompt) is (enabled and not as_plugin) for prompt in prompts)
+    assert all("Use `lookup` and `removed` together." not in prompt for prompt in prompts)
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+async def test_guidance_uses_final_names_through_native_renaming(grouped: bool) -> None:
+    from a13n_harness.guidance import GuidanceFragment, ToolGuidance
+
+    def original() -> str:
+        return "original"
+
+    guide = ToolGuidance(
+        "renamed-guide",
+        (
+            GuidanceFragment(text="Shared instructions."),
+            GuidanceFragment(text="Call `original`.", all_of=("original",)),
+            GuidanceFragment(text="Call `prefix_changed`.", all_of=("prefix_changed",)),
+        ),
+    )
+
+    class Source(FunctionToolset[AgentContext]):
+        async def get_instructions(self, ctx):
+            part = guide.render(ctx, toolset=self)
+            return [part] if part is not None else None
+
+    toolset = Source([original], id="rename-source").renamed({"changed": "original"}).prefixed("prefix")
+    expected = "<tool-name>renamed-guide</tool-name>\nShared instructions.\n\nCall `prefix_changed`."
+    if grouped:
+        result, returns = await _run(
+            (ToolSearchCapability(groups={"wrapped": ToolSearchGroup(toolset, "Renamed tools")}),),
+            [("describe_tool", {"group": "wrapped", "tool": "prefix_changed"})],
+        )
+        assert result.output_or_raise() == "done"
+        assert returns[0].content["tool"]["instructions"] == [expected]
+    else:
+
+        def inspect(_step: int, info: AgentInfo) -> None:
+            assert expected in (info.instructions or "")
+            assert "Call `original`." not in (info.instructions or "")
+
+        result, _ = await _run((Capability(toolsets=[toolset]),), [], inspect=inspect)
+        assert result.output_or_raise() == "done"

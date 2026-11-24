@@ -27,7 +27,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
 )
 
-from ._instructions import InstructionFunctionToolset, tool_guidance
+from ._instructions import InstructionFunctionToolset, section, tool_guidance
 from ._results import ToolFailure, environment_failure
 from .events import ShellStatusEvent
 from .output import DEFAULT_TOOL_OUTPUT_CHARS, disclose_text_paths
@@ -41,6 +41,25 @@ from .shell_results import (
     ProcessObservationSuccess,
     ProcessSignalResult,
     ShellExecToolResult,
+)
+
+_SHELL_PAGE = "environment-shell"
+_SHELL_GUIDANCE = tool_guidance(
+    _SHELL_PAGE,
+    section(_SHELL_PAGE, "environment-shell"),
+    section(_SHELL_PAGE, "shell-command", all_of=("shell_exec",)),
+    section(_SHELL_PAGE, "shell-wait", all_of=("shell_wait",)),
+    section(_SHELL_PAGE, "environment-shell", reference=True),
+    section(_SHELL_PAGE, "shell-exec", all_of=("shell_exec",), reference=True),
+    section(
+        _SHELL_PAGE,
+        "shell-processes",
+        any_of=("shell_wait", "shell_info", "shell_input", "shell_signal"),
+        reference=True,
+    ),
+    section(_SHELL_PAGE, "shell-info", all_of=("shell_info",), reference=True),
+    section(_SHELL_PAGE, "shell-input", all_of=("shell_input",), reference=True),
+    section(_SHELL_PAGE, "shell-signal", all_of=("shell_signal",), reference=True),
 )
 
 _MAX_MODEL_OUTPUT_BYTES = 1024 * 1024
@@ -176,7 +195,7 @@ class ShellToolset:
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",
-            instructions=[tool_guidance("environment-shell")] if tools else [],
+            guidance=_SHELL_GUIDANCE,
         )
 
     async def wrap_run(

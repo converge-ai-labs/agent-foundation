@@ -27,6 +27,7 @@ async def _capture_instructions(
     *,
     run_override: bool | None,
     reference_root: str | None = None,
+    reference_view: bool = True,
 ) -> str:
     captured: list[str] = []
 
@@ -35,12 +36,17 @@ async def _capture_instructions(
         captured.append(info.instructions or "")
         yield "done"
 
+    def view() -> str:
+        return "handbook"
+
     executable = HarnessBuilder().build(
         spec,
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
-            Capability(instructions="Capability instruction."),
+            Capability(
+                instructions="Capability instruction.", tools=[view] if reference_root and reference_view else []
+            ),
             HandoffCapability(HandoffConfiguration(include_summary_reminder=False)),
         ),
     )
@@ -106,6 +112,14 @@ async def test_reference_delivery_preserves_essentials_and_the_instruction_switc
     assert ("outside CodeAct" in instructions) is enabled
     assert "The user explicitly asks to summarize and continue" not in instructions
     assert "<!-- reference -->" not in instructions
+
+
+async def test_reference_details_stay_inline_when_reader_is_absent() -> None:
+    instructions = await _capture_instructions(
+        AgentSpec(), run_override=True, reference_root="/guidance/release", reference_view=False
+    )
+    assert "The user explicitly asks to summarize and continue" in instructions
+    assert "<reference>" not in instructions
 
 
 @pytest.mark.parametrize("root", [None, "/release-guidance"])
@@ -350,3 +364,69 @@ def test_normal_operation_rules_remain_inline_without_duplicate_reference_text(p
     essentials, _, reference = load_guidance(page).partition(REFERENCE_MARKER)
     assert essentials.count(sentence) == 1
     assert sentence not in reference
+
+
+async def test_guidance_cache_projects_to_relevant_tools_and_gates_reference() -> None:
+    from types import SimpleNamespace
+
+    from a13n_harness.guidance import GuidanceFragment, ToolGuidance, _render_tool_guidance
+    from pydantic_ai.toolsets import FunctionToolset
+
+    guide = ToolGuidance(
+        "test-guide",
+        (
+            GuidanceFragment(text="Read.", all_of=("read_item",)),
+            GuidanceFragment(text="Read before writing.", all_of=("read_item", "write_item"), reference=True),
+        ),
+        reference_page="plugin/guide.md",
+    )
+    owner = FunctionToolset()
+    fallback = ("read_item", "write_item")
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(toolset_instructions=True, instruction_reference_root="/release-guidance"),
+        tool_manager=SimpleNamespace(tools={}),
+    )
+
+    def tool():
+        return SimpleNamespace(toolset=owner, tool_def=SimpleNamespace(metadata=None))
+
+    assert guide.render(ctx, toolset=owner, fallback=fallback) is None
+    ctx.tool_manager.tools = {"read_item": tool()}
+    first = guide.render(ctx, toolset=owner, fallback=fallback)
+    assert first is not None
+    assert first.content == "<tool-name>test-guide</tool-name>\nRead."
+    cache_hits = _render_tool_guidance.cache_info().hits
+    ctx.tool_manager.tools["unrelated"] = tool()
+    second = guide.render(ctx, toolset=owner)
+    assert second is not None
+    assert second.content == first.content
+    assert _render_tool_guidance.cache_info().hits == cache_hits + 1
+    ctx.tool_manager.tools["write_item"] = tool()
+    inline = guide.render(ctx, toolset=owner)
+    assert inline is not None
+    assert "Read before writing." in inline.content and "<reference>" not in inline.content
+    ctx.tool_manager.tools["view"] = tool()
+    referenced = guide.render(ctx, toolset=owner)
+    assert referenced is not None
+    assert "/release-guidance/plugin/guide.md" in referenced.content
+    assert "Read before writing." not in referenced.content
+
+
+def test_builtin_guidance_dependencies_are_tool_names() -> None:
+    from a13n_harness.environment import EnvironmentAction
+    from a13n_harness.toolsets.computer import _COMPUTER_GUIDANCE, ComputerToolset
+    from a13n_harness.toolsets.documents import _DOCUMENT_GUIDANCE, DocumentsToolset
+    from a13n_harness.toolsets.files import _FILES_GUIDANCE, FileToolset
+    from a13n_harness.toolsets.shell import _SHELL_GUIDANCE, ShellToolset
+    from a13n_harness.toolsets.web import _WEB_GUIDANCE
+
+    all_actions = frozenset(EnvironmentAction)
+    for guidance, names in (
+        (_SHELL_GUIDANCE, ShellToolset.available_names(all_actions)),
+        (_FILES_GUIDANCE, FileToolset.available_names((all_actions,)) - {"mkdir"}),
+        (_WEB_GUIDANCE, {"search", "scrape", "fetch", "download"}),
+        (_DOCUMENT_GUIDANCE, set(DocumentsToolset(object(), files=object()).get_toolset().tools)),
+    ):
+        assert guidance.referenced_tools == names
+    for fragment in _COMPUTER_GUIDANCE:
+        assert ComputerToolset.available_names().issuperset(fragment.any_of + fragment.all_of)

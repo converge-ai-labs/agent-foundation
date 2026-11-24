@@ -12,6 +12,12 @@ Public `EnvironmentState`, `EnvironmentConnector`, `EnvironmentExecution`, and s
 
 `a13n_harness.capabilities` exports `BrowserUseCapability`. Its owning `browser` module exposes the `BrowserBackend` protocol, observation/element/tab values, action types, and browser errors. `browser.cdp.Chromium` owns the CDP runtime; `browser.scope.CdpBrowserBackend` owns reusable tab scopes and the standalone `connect(cdp_url)` context manager. `cdp-use` is a normal dependency; browser installation and process provisioning remain Host-owned. [Browser Use](23-browser-use.md) defines these boundaries.
 
+## Tool Guidance API
+
+`a13n_harness.guidance` exposes `GuidanceFragment` and `ToolGuidance` to built-in and third-party Toolsets. A fragment supplies plain Markdown text and optional `any_of` and `all_of` tool-name tuples. Both nonempty conditions must hold; a one-element `all_of` selects a single tool. A fragment without requirements applies whenever its Toolset has a surviving tool.
+
+Create one `ToolGuidance` declaration and return `guidance.render(ctx, toolset=self)` from the owning Toolset's `get_instructions`. The renderer returns a static instruction part or `None`, honors the effective Run switch, and uses the prepared inventory. Tests or embedders calling the hook without a prepared manager can provide `fallback` names. The renderer caches text by the relevant available names and reference root. Hosts that supply a static page under the reference root can set `reference_page` and mark detail fragments with `reference=True`; other delivery keeps details inline. See [operational guidance](09-context-and-memory.md#file-backed-operational-guidance).
+
 ## Root Public Surface
 
 `a13n_harness.builder` owns `AgentDefinition`, `HarnessBuilder`, `SubagentDefinition`, `DelegationContextPolicy`, `SubagentIdentityPolicy`, and `derive_child_identity`. `a13n_harness.execution` exposes `ExecutableAgent` and `HarnessRunStream`; `a13n_harness.live` owns `HarnessLiveStream`. The execution module does not re-export construction APIs. The package root lazily exposes these values from their owners. Business-output adaptation is package-private.
