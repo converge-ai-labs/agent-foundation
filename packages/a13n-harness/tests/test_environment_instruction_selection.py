@@ -24,7 +24,9 @@ from a13n_harness.environment.models import (
 from a13n_harness.environment.operations import EnvironmentOperations
 from a13n_harness.environment.sources import EnvironmentMount
 from a13n_harness.model_context import ModelContextProjectionRequest, ModelContextRequestKind
+from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
 from a13n_harness.toolsets.computer import ComputerToolset
+from pydantic_ai.capabilities import Capability
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
@@ -34,13 +36,25 @@ from .test_environment_core import _Binding, _instance
 pytestmark = pytest.mark.anyio
 
 
-async def capture(actions, *, selected=None, instructions=True, computer=True, other_actions=None, reference_root=None):
+async def capture(
+    actions,
+    *,
+    selected=None,
+    instructions=True,
+    computer=True,
+    other_actions=None,
+    reference_root=None,
+    unattended=False,
+):
     calls: list[AgentInfo] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages
         calls.append(info)
         yield "done"
+
+    def view() -> str:
+        return "handbook"
 
     sources = {
         name: _Binding(
@@ -73,12 +87,17 @@ async def capture(actions, *, selected=None, instructions=True, computer=True, o
                     shell_tools=selected if not computer else None,
                 )
             ),
+            *((Capability(tools=[view]),) if reference_root is not None else ()),
+            *((ToolPermissionsCapability(ToolPermissions(default="ask")),) if unattended else ()),
         ),
     )
     result = await executable.run(
         "inspect",
         bindings=RunBindings.embedded(
-            environment=runtime, toolset_instructions=instructions, instruction_reference_root=reference_root
+            environment=runtime,
+            toolset_instructions=instructions,
+            instruction_reference_root=reference_root,
+            unattended=unattended,
         ),
     )
     assert result.output_or_raise() == "done"
@@ -105,13 +124,20 @@ async def capture(actions, *, selected=None, instructions=True, computer=True, o
         (COMPUTER_ACTIONS, frozenset()),
     ],
 )
-async def test_computer_guidance_is_grouped_while_tool_selection_and_coordinates_remain_exact(actions, selected):
+async def test_computer_guidance_tracks_selected_tools_and_coordinates(actions, selected):
     names, instructions = await capture(frozenset(actions), selected=selected)
     if selected is not None:
         assert names == selected
     assert ("<tool-name>environment-computer</tool-name>" in instructions) is bool(names)
-    for text in ("Clipboard", "Native accessibility", "selection_select", "selection_add_child"):
-        assert (text in instructions) is bool(names)
+    assert ("Clipboard" in instructions) is ("computer_read_clipboard" in names)
+    assert ("Native accessibility" in instructions) is any(
+        name.startswith("computer_accessibility_") or name in {"computer_ax", "computer_uia", "computer_atspi"}
+        for name in names
+    )
+    assert ("selection_select" in instructions) is ("computer_uia" in names)
+    assert ("selection_add_child" in instructions) is ("computer_atspi" in names)
+    assert ("`computer_describe`" in instructions) is ("computer_describe" in names)
+    assert ("`computer_zoom`" in instructions) is ("computer_zoom" in names)
     pointer_tools = {
         "computer_observe",
         "computer_zoom",
@@ -130,9 +156,9 @@ async def test_mixed_mounts_contribute_one_group_without_activation():
     assert "Native accessibility" in instructions
     assert "Computer coordinate_space" in instructions
     assert instructions.count("<tool-name>environment-computer</tool-name>") == 1
-    assert "Clipboard" in instructions
-    assert "application_outcome" in instructions
-    assert "selection_select" in instructions
+    assert "Clipboard" not in instructions
+    assert "application_outcome" not in instructions
+    assert "selection_select" not in instructions
 
 
 async def test_environment_instruction_switch_preserves_tools_but_removes_guidance():
@@ -152,17 +178,17 @@ async def test_environment_instruction_switch_preserves_tools_but_removes_guidan
         (frozenset(Action), frozenset({"shell_wait"})),
     ],
 )
-async def test_shell_guidance_is_grouped_while_exposed_controls_remain_selected(actions, selected):
+async def test_shell_guidance_tracks_selected_controls(actions, selected):
     names, instructions = await capture(frozenset(actions), selected=selected, computer=False)
     if selected is not None:
         assert names == selected
     assert instructions.count("<tool-name>environment-shell</tool-name>") == 1
-    for text in ("Use `shell_exec`", "Use `shell_wait`", "Use `shell_info", "Use `shell_input`", "Use `shell_signal`"):
-        assert text in instructions
+    for name in ("shell_exec", "shell_wait", "shell_info", "shell_input", "shell_signal"):
+        assert (name in instructions) is (name in names)
 
 
 @pytest.mark.parametrize("reference_root", [None, "/guidance/release"])
-async def test_lazy_support_narrows_context_tools_and_schemas_while_retaining_group_guidance(reference_root):
+async def test_lazy_support_narrows_context_tools_schemas_and_guidance(reference_root):
     class Source(_Binding):
         @property
         def descriptor(self):
@@ -205,9 +231,9 @@ async def test_lazy_support_narrows_context_tools_and_schemas_while_retaining_gr
         after_instructions = str(await after.get_instructions(ctx))
         assert "Native accessibility" in after_instructions
         assert "application_outcome" in after_instructions
-        assert "Clipboard" in after_instructions
+        assert "Clipboard" not in after_instructions
         assert "selection_select" in after_instructions
-        assert "selection_add_child" in after_instructions
+        assert "selection_add_child" not in after_instructions
         assert "Computer coordinate_space" not in after_instructions
         schema = after.tools["computer_uia"].function_schema.json_schema
         assert schema["$defs"]["UIACommand"]["properties"]["op"]["const"] == "invoke"
@@ -229,8 +255,17 @@ async def test_shell_and_routing_guidance_use_run_reference_root_without_activat
     assert "shell_exec" in names
     assert "Do not reissue it." in instructions
     assert "Choose the target before acting." in instructions
-    assert "Reads are non-consuming" in instructions
-    assert ("Live Shell controls end at execution settlement" in instructions) is (reference_root is None)
+    assert "Reads are non-consuming" not in instructions
+    assert ("Use `shell_exec` for shell commands" in instructions) is (reference_root is None)
     assert ("Absolute file paths and shell" in instructions) is (reference_root is None)
     for page in ("environment-shell", "environment-routing"):
         assert (f"/release-guidance/harness/{page}.md" in instructions) is (reference_root is not None)
+
+
+async def test_unattended_empty_surface_suppresses_shell_and_routing_guidance():
+    names, instructions = await capture(
+        {Action.SHELL_EXEC}, computer=False, other_actions={Action.SHELL_EXEC}, unattended=True
+    )
+    assert names == set()
+    assert "<tool-name>environment-shell</tool-name>" not in instructions
+    assert "<tool-name>environment-routing</tool-name>" not in instructions

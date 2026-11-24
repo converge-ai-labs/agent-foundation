@@ -13,7 +13,8 @@ from uuid import uuid4
 
 from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
-from pydantic_ai.native_tools import WebSearchTool
+from pydantic_ai.models import Model
+from pydantic_ai.native_tools import SUPPORTED_NATIVE_TOOLS, WebSearchTool
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import FunctionToolset
 
@@ -29,7 +30,7 @@ from a13n_harness.media_types import is_text_media_type, text_charset
 from a13n_harness.providers.web.contracts import _validate_headers
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
 
-from ._instructions import InstructionFunctionToolset, tool_guidance
+from ._instructions import InstructionFunctionToolset, section, tool_guidance
 from ._results import ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
 from .output import disclose_sequence_field, disclose_text_fields
@@ -89,7 +90,9 @@ _CLOSE_GRACE_SECONDS = 0.05
 # drain and close tasks rooted until completion, then release them in the callback.
 _RESPONSE_CLOSE_TASKS: set[asyncio.Task[None]] = set()
 
-_WEB_INSTRUCTION = tool_guidance("web")
+_WEB_GUIDANCE = tool_guidance(
+    "web", *(section("web", name, all_of=(name,)) for name in ("search", "scrape", "fetch", "download"))
+)
 
 
 def _prefer_native_web_search(
@@ -97,6 +100,25 @@ def _prefer_native_web_search(
     tool_def: ToolDefinition,
 ) -> ToolDefinition:
     return replace(tool_def, unless_native=WebSearchTool.kind)
+
+
+class _WebFunctionToolset(InstructionFunctionToolset):
+    def __init__(self, tools: Sequence[HarnessTool], native_search: WebSearchTool | None) -> None:
+        super().__init__(tools=tools, id="a13n-web-tool-functions", guidance=_WEB_GUIDANCE)
+        self._native_search = native_search
+
+    def _instruction_names(self, ctx: RunContext[AgentContext]) -> frozenset[str]:
+        names = super()._instruction_names(ctx)
+        # Native tools are resolved by the Model, outside the function inventory.
+        if self._native_search is not None and isinstance(model := ctx.model, Model):
+            try:
+                supported = model.profile.get("supported_native_tools", SUPPORTED_NATIVE_TOOLS)
+            except NotImplementedError:
+                # Fallback models resolve the profile separately for each provider attempt.
+                return names
+            if WebSearchTool in supported and not model.unsupported_native_tool_settings(self._native_search):
+                return names | {"search"}
+        return names
 
 
 class WebToolset:
@@ -138,11 +160,10 @@ class WebToolset:
         )
         self._file_access = ScopedFileAccess(files, file_scopes)
 
-    def get_toolset(self) -> FunctionToolset[AgentContext]:
+    def get_toolset(self, *, native_search: WebSearchTool | None = None) -> FunctionToolset[AgentContext]:
         tools: list[HarnessTool] = []
         search_mode = self.configuration.search.mode
         host_search = search_mode in {"host", "auto"} and bool(self._binding.search_backends)
-        search_enabled = host_search or search_mode in {"native", "auto"}
         if host_search:
             tools.append(
                 self._tool(
@@ -182,11 +203,7 @@ class WebToolset:
                     effects=frozenset({"read", "write", "external_communication"}),
                 )
             )
-        return InstructionFunctionToolset(
-            tools=tools,
-            id="a13n-web-tool-functions",
-            instructions=[_WEB_INSTRUCTION] if tools or search_enabled else [],
-        )
+        return _WebFunctionToolset(tools, native_search)
 
     def _tool(
         self,

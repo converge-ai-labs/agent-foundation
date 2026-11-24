@@ -331,3 +331,27 @@ async def test_unattended_inline_child_filters_tools_and_denies_unexpected_defer
     )
     result = await HarnessBuilder().build(parent).run("inspect", bindings=RunBindings.embedded(unattended=True))
     assert result.output_or_raise() == "parent continued"
+
+
+async def test_superseded_toolset_emits_no_guidance() -> None:
+    from a13n_harness.toolsets._instructions import InstructionFunctionToolset
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        assert {tool.name for tool in info.function_tools} == {"replacement"}
+        assert "Guidance for old operation." not in (info.instructions or "")
+        yield "done"
+
+    old = InstructionFunctionToolset(
+        id="old-toolset",
+        tools=[_tool("old", "tools.old", superseded_by=frozenset({"tools.replacement"}))],
+        instructions="Guidance for old operation.",
+    )
+    replacement = FunctionToolset([_tool("replacement", "tools.replacement")], id="replacement-toolset")
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(Capability(toolsets=[old, replacement]),),
+    )
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
+    assert result.output_or_raise() == "done"

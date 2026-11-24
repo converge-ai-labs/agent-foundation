@@ -3,8 +3,8 @@
 - Read large text files in focused chunks.
 - Read an existing target before overwriting it.
 - Read the target snippet immediately before editing when context may be stale.
-- Prefer `multi_edit` over multiple edits to the same file.
-- Use `ls` for shallow directory inspection, `glob` for recursive discovery, and `grep` for content search.
+- Batch multiple edits to the same file when possible.
+- Use exposed tools according to their scope: shallow directory inspection, recursive discovery, or content search.
 - Narrow the pattern and root before increasing result limits.
 - `pattern` is a regular expression by default. For exact code fragments, punctuation, or uncertain escaping, set `regex=false`; set `case_sensitive=false` to ignore case.
 </essential-rules>
@@ -12,7 +12,7 @@
 <move>
 - Use explicit source and destination pairs and review broad batches before moving them.
 - Enable overwrite only when replacement is intentional.
-- Use `edit` or `multi_edit` for content changes rather than moving files through temporary paths.
+- Use a targeted edit for content changes rather than moving files through temporary paths.
 </move>
 
 <copy>
@@ -23,7 +23,7 @@
 
 <delete>
 - Prefer specific file or directory paths over broad parent directories.
-- Verify broad recursive targets with `ls` or `glob` before deleting.
+- Verify broad recursive targets before deleting.
 - Use recursive and force together only when broad cleanup is intentional.
 </delete>
 
@@ -37,16 +37,16 @@
 </view>
 
 <write>
-- For new files, verify the parent directory exists with `ls`.
-- Use `edit` or `multi_edit` for partial changes.
+- For new files, verify that the parent directory exists.
+- Prefer a targeted edit for partial changes.
 - Avoid whole-file rewrites when preserving unrelated changes matters.
 </write>
 
 <edit>
 - `old_string` must match exactly, including whitespace and indentation.
-- Preserve indentation from `view` output and ignore displayed line-number prefixes.
+- Preserve indentation in the source text and ignore displayed line-number prefixes.
 - Include enough surrounding context to make the match unique.
-- Use `multi_edit` for multiple changes to the same file.
+- Batch multiple changes to the same file when possible.
 </edit>
 
 <multi-edit>
@@ -62,7 +62,7 @@
 </ls>
 
 <glob>
-- Prefer `glob` before `grep` when candidate paths are not yet known.
+- Discover candidate paths before searching their contents.
 - Patterns are relative to `root`. Bare `*.py` searches all depths; `/*.py` selects only root-level names; `src/*.py` does not descend below `src`; `src/**/*.py` does.
 - Use brace alternatives for multiple paths or extensions: `{src,tests}/**/*.{py,rs}`. Groups must be non-nested with nonempty alternatives (at most 256 expanded patterns). No backslash escapes or numeric ranges; `**` must occupy a whole path segment.
 - Empty results are successful. If `has_more` is true, use `next_offset` with unchanged arguments for the next page; offsets assume a stable filesystem.
@@ -77,7 +77,7 @@
 - Matching is line-based. Portable regex uses literals, classes, grouping, alternation, anchors and quantifiers. Direct Local and E2B use Python `re`; envd uses Rust `regex` and rejects lookaround and backreferences. Engine-specific syntax and Unicode edge cases are not portable.
 - Zero matches are success. Invalid patterns return `error.details.field`, `reason`, and a correction `hint`; fix that field rather than retrying unchanged. Prefer literal mode when regex syntax is unnecessary.
 - If `has_more` is true, continue at `next_offset` with unchanged filters on a stable filesystem. `max_matches_per_file` caps each file; `max_files` is a scan ceiling, not a request for silently incomplete results.
-- Prefer `glob` first when candidate file names are not yet known.
+- Narrow candidate file names before searching their contents.
 - Keep context low for broad scans and raise it for focused inspection.
 - Increase per-file or total result limits only after narrowing the search.
 - Include hidden or ignored paths only when the target is likely there.

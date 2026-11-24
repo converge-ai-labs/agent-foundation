@@ -79,7 +79,7 @@ class MediaUrlToolset:
             ),
         )
         return InstructionFunctionToolset(
-            tools=[tool], id="a13n-media-url-functions", instructions=tool_guidance("read_media_url")
+            tools=[tool], id="a13n-media-url-functions", guidance=tool_guidance("read_media_url")
         )
 
     async def read_media_url(

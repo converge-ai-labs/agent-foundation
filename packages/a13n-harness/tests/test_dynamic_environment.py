@@ -554,8 +554,8 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_mount_snap
     assert "Agent-wide tool timeout" in info.instructions
     assert "<tool-name>files</tool-name>" in info.instructions
     assert "<tool-name>environment-shell</tool-name>" in info.instructions
-    assert "<copy>" in info.instructions
-    assert "<delete>" in info.instructions
+    assert "<view>" in info.instructions
+    assert all(f"<{tool}>" not in info.instructions for tool in ("move", "copy", "delete"))
     mount_parts = [
         item.content
         for message in messages

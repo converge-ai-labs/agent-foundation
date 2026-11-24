@@ -29,7 +29,7 @@ from a13n_harness.providers.memory import (
     validate_path,
 )
 
-from ._instructions import InstructionFunctionToolset, tool_guidance
+from ._instructions import InstructionFunctionToolset, section, tool_guidance
 from ._memory import MemoryName, MemoryTool, failure, memory_tool_name, memory_toolset, mounted
 
 if TYPE_CHECKING:
@@ -72,7 +72,15 @@ _TOOLS: dict[FileToolKey, MemoryTool] = {
 }
 FILE_READ_TOOL_NAMES = frozenset(memory_tool_name("file", key) for key, spec in _TOOLS.items() if spec.access == "read")
 FILE_TOOL_KEYS: tuple[FileToolKey, ...] = tuple(_TOOLS)
-_INSTRUCTION = tool_guidance("memory-files")
+_WRITE_NAMES = tuple(memory_tool_name("file", key) for key, spec in _TOOLS.items() if spec.access == "write")
+_MEMORY_FILES_GUIDANCE = tool_guidance(
+    "memory-files",
+    section("memory-files", "overview"),
+    section("memory-files", "context", all_of=("memory_file_view",), reference=True),
+    section("memory-files", "writes", any_of=_WRITE_NAMES, reference=True),
+    section("memory-files", "write-recovery", any_of=_WRITE_NAMES, all_of=("memory_file_view",), reference=True),
+    section("memory-files", "best-practices", all_of=("memory_file_grep",), reference=True),
+)
 
 _FilePath = Annotated[
     str, Field(min_length=1, description="File path relative to the memory root, such as notes/tea.md")
@@ -106,7 +114,7 @@ class MemoryFileToolset:
         self._reads = reads
 
     def get_toolset(self) -> InstructionFunctionToolset | None:
-        return memory_toolset(self, "file", _TOOLS, self._enabled, self._mounts, _INSTRUCTION)
+        return memory_toolset(self, "file", _TOOLS, self._enabled, self._mounts, _MEMORY_FILES_GUIDANCE)
 
     async def view(
         self,

@@ -27,9 +27,10 @@ from a13n_harness.environment.computer import (
 from a13n_harness.environment.configuration import ComputerConfiguration, ComputerCoordinateSpace
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.guidance import GuidanceFragment
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 
-from ._instructions import InstructionFunctionToolset, ToolInstruction, tool_guidance
+from ._instructions import InstructionFunctionToolset, section, tool_guidance
 from ._results import environment_failure
 from .accessibility import AccessibilityToolset
 
@@ -63,6 +64,23 @@ _COMPUTER_TOOLS = {
     "computer_read_clipboard": (EnvironmentAction.COMPUTER_READ_CLIPBOARD, True),
     "computer_write_clipboard": (EnvironmentAction.COMPUTER_WRITE_CLIPBOARD, False),
 }
+
+
+_COMPUTER_PAGE = "environment-computer"
+_POINTER_TOOLS = ("computer_click", "computer_move", "computer_drag", "computer_scroll")
+_ACCESSIBILITY_MUTATIONS = ("computer_ax", "computer_uia", "computer_atspi")
+_COMPUTER_GUIDANCE = (
+    section(_COMPUTER_PAGE, "environment-computer"),
+    section(_COMPUTER_PAGE, "computer-describe", all_of=("computer_describe",)),
+    section(_COMPUTER_PAGE, "computer-observe", all_of=("computer_observe",)),
+    section(_COMPUTER_PAGE, "computer-zoom", all_of=("computer_zoom",)),
+    section(_COMPUTER_PAGE, "computer-clipboard", any_of=("computer_read_clipboard", "computer_write_clipboard")),
+    section(_COMPUTER_PAGE, "computer-input", any_of=(*_POINTER_TOOLS, "computer_type_text", "computer_press_keys")),
+    section(_COMPUTER_PAGE, "computer-accessibility", any_of=tuple(sorted(AccessibilityToolset.available_names()))),
+    section(_COMPUTER_PAGE, "computer-accessibility-mutation", any_of=_ACCESSIBILITY_MUTATIONS),
+    section(_COMPUTER_PAGE, "computer-uia", all_of=("computer_uia",)),
+    section(_COMPUTER_PAGE, "computer-atspi", all_of=("computer_atspi",)),
+)
 
 
 class ComputerToolset:
@@ -107,21 +125,17 @@ class ComputerToolset:
             if action in actions and (allowed_names is None or name in allowed_names)
         ]
         tools.extend(self._accessibility.tools(allowed_names=allowed_names))
-        names = {tool.name for tool in tools}
-        instructions: list[ToolInstruction] = [tool_guidance("environment-computer")] if tools else []
-        if names & {
-            "computer_observe",
-            "computer_zoom",
-            "computer_click",
-            "computer_move",
-            "computer_drag",
-            "computer_scroll",
-        }:
-            instructions.append(self._coordinate_instruction())
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-computer-tools",
-            instructions=instructions,
+            guidance=tool_guidance(
+                _COMPUTER_PAGE,
+                *_COMPUTER_GUIDANCE,
+                GuidanceFragment(
+                    text=self._coordinate_instruction(),
+                    any_of=("computer_observe", "computer_zoom", *_POINTER_TOOLS),
+                ),
+            ),
         )
 
     async def computer_describe(self, *, alias: _ComputerAlias = None) -> Any:

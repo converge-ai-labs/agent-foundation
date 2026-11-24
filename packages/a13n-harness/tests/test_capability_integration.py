@@ -230,5 +230,7 @@ async def test_core_capabilities_compose_through_run_and_stream(tmp_path: Path) 
     assert all("Review the current implementation." in instructions for instructions in observed_instructions)
     assert all("<tool-name>files</tool-name>" in instructions for instructions in observed_instructions)
     assert all("<tool-name>environment-shell</tool-name>" in instructions for instructions in observed_instructions)
-    assert all("<copy>" in instructions for instructions in observed_instructions)
-    assert all("<delete>" in instructions for instructions in observed_instructions)
+    assert all("<view>" in instructions for instructions in observed_instructions)
+    assert all(
+        "<copy>" not in instructions and "<delete>" not in instructions for instructions in observed_instructions
+    )

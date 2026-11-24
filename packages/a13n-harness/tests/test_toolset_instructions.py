@@ -22,11 +22,52 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 pytestmark = pytest.mark.anyio
 
 
+async def test_read_only_memories_omit_write_guidance() -> None:
+    from a13n_harness.capabilities import FileMemoryCapability, FileMount, RecordMemoryCapability, RecordMount
+
+    from .memory_helpers import FakeFileStore, FakeRecordStore
+
+    captured: list[AgentInfo] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages
+        captured.append(info)
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(
+            FileMemoryCapability([FileMount("files", FakeFileStore(), "read")]),
+            RecordMemoryCapability([RecordMount("records", FakeRecordStore(), "read")]),
+        ),
+    )
+    result = await executable.run("inspect", bindings=RunBindings.embedded())
+
+    assert result.output_or_raise() == "done"
+    info = captured[0]
+    assert {tool.name for tool in info.function_tools if tool.name.startswith("memory_")} == {
+        "memory_file_view",
+        "memory_file_grep",
+        "memory_record_search",
+        "memory_record_list",
+    }
+    instructions = info.instructions or ""
+    assert "<tool-name>memory-files</tool-name>" in instructions
+    assert "<tool-name>memory-records</tool-name>" in instructions
+    assert "`memory_file_grep` matches literal text" in instructions
+    assert "<recall>" in instructions
+    for write_details in ("<writes>", "<update>", "<write-recovery>", "read_conflict", "write_unconfirmed"):
+        assert write_details not in instructions
+
+
 async def _capture_instructions(
     spec: PydanticAgentSpec,
     *,
     run_override: bool | None,
     reference_root: str | None = None,
+    reference_view: bool = True,
 ) -> str:
     captured: list[str] = []
 
@@ -35,12 +76,17 @@ async def _capture_instructions(
         captured.append(info.instructions or "")
         yield "done"
 
+    def view() -> str:
+        return "handbook"
+
     executable = HarnessBuilder().build(
         spec,
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
-            Capability(instructions="Capability instruction."),
+            Capability(
+                instructions="Capability instruction.", tools=[view] if reference_root and reference_view else []
+            ),
             HandoffCapability(HandoffConfiguration(include_summary_reminder=False)),
         ),
     )
@@ -106,6 +152,14 @@ async def test_reference_delivery_preserves_essentials_and_the_instruction_switc
     assert ("outside CodeAct" in instructions) is enabled
     assert "The user explicitly asks to summarize and continue" not in instructions
     assert "<!-- reference -->" not in instructions
+
+
+async def test_reference_details_stay_inline_when_reader_is_absent() -> None:
+    instructions = await _capture_instructions(
+        AgentSpec(), run_override=True, reference_root="/guidance/release", reference_view=False
+    )
+    assert "The user explicitly asks to summarize and continue" in instructions
+    assert "<reference>" not in instructions
 
 
 @pytest.mark.parametrize("root", [None, "/release-guidance"])
@@ -350,3 +404,166 @@ def test_normal_operation_rules_remain_inline_without_duplicate_reference_text(p
     essentials, _, reference = load_guidance(page).partition(REFERENCE_MARKER)
     assert essentials.count(sentence) == 1
     assert sentence not in reference
+
+
+async def test_guidance_cache_projects_to_relevant_tools_and_gates_reference() -> None:
+    from types import SimpleNamespace
+
+    from a13n_harness.guidance import GuidanceFragment, ToolGuidance
+    from pydantic_ai.toolsets import FunctionToolset
+
+    guide = ToolGuidance(
+        "test-guide",
+        (
+            GuidanceFragment(text="Read.", all_of=("read_item",)),
+            GuidanceFragment(text="Read before writing.", all_of=("read_item", "write_item"), reference=True),
+        ),
+        reference_page="plugin/guide.md",
+    )
+    owner = FunctionToolset()
+    fallback = ("read_item", "write_item")
+    ctx = SimpleNamespace(
+        deps=SimpleNamespace(toolset_instructions=True, instruction_reference_root="/release-guidance"),
+        tool_manager=SimpleNamespace(tools={}),
+    )
+
+    def tool():
+        return SimpleNamespace(toolset=owner, tool_def=SimpleNamespace(metadata=None))
+
+    assert guide.render(ctx, toolset=owner, fallback=fallback) is None
+    ctx.tool_manager.tools = {"read_item": tool()}
+    first = guide.render(ctx, toolset=owner, fallback=fallback)
+    assert first is not None
+    assert first.content == "<tool-name>test-guide</tool-name>\nRead."
+    cache_hits = guide._render.cache_info().hits
+    other = ToolGuidance(guide.name, guide.fragments, reference_page=guide.reference_page)
+    assert other.render(ctx, toolset=owner) == first
+    assert guide._render.cache_info().hits == cache_hits
+    ctx.tool_manager.tools["unrelated"] = tool()
+    second = guide.render(ctx, toolset=owner)
+    assert second is not None
+    assert second.content == first.content
+    assert guide._render.cache_info().hits == cache_hits + 1
+    ctx.tool_manager.tools["write_item"] = tool()
+    inline = guide.render(ctx, toolset=owner)
+    assert inline is not None
+    assert "Read before writing." in inline.content and "<reference>" not in inline.content
+    ctx.tool_manager.tools["view"] = tool()
+    referenced = guide.render(ctx, toolset=owner)
+    assert referenced is not None
+    assert "/release-guidance/plugin/guide.md" in referenced.content
+    assert "Read before writing." not in referenced.content
+
+
+def test_builtin_guidance_dependencies_are_tool_names() -> None:
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_harness.capabilities import (
+        FileMemoryCapability,
+        FileMount,
+        RecordMemoryCapability,
+        RecordMount,
+        WorkingState,
+        WorkingStateCapability,
+        WorkingStateConfiguration,
+    )
+    from a13n_harness.capabilities.browser import _BROWSER_GUIDANCE, BrowserBackend, BrowserUseCapability
+    from a13n_harness.context import AgentContext
+    from a13n_harness.environment import EnvironmentAction
+    from a13n_harness.toolsets.computer import _COMPUTER_GUIDANCE, ComputerToolset
+    from a13n_harness.toolsets.documents import _DOCUMENT_GUIDANCE, DocumentsToolset
+    from a13n_harness.toolsets.files import _FILES_GUIDANCE, FileToolset
+    from a13n_harness.toolsets.memory_files import _MEMORY_FILES_GUIDANCE
+    from a13n_harness.toolsets.memory_records import _MEMORY_RECORDS_GUIDANCE
+    from a13n_harness.toolsets.shell import _SHELL_GUIDANCE, ShellToolset
+    from a13n_harness.toolsets.web import _WEB_GUIDANCE
+    from a13n_harness.toolsets.working_state import _WORKING_STATE_GUIDANCE, WorkingStateToolset
+    from pydantic_ai.toolsets import FunctionToolset
+
+    from .memory_helpers import FakeFileStore, FakeRecordStore
+
+    all_actions = frozenset(EnvironmentAction)
+    browser = BrowserUseCapability(AsyncMock(spec=BrowserBackend)).get_toolset()
+    assert isinstance(browser, FunctionToolset)
+    assert set(browser.tools).issuperset(_BROWSER_GUIDANCE.referenced_tools)
+    memory_files = FileMemoryCapability([FileMount("files", FakeFileStore(), "write")]).get_toolset()
+    memory_records = RecordMemoryCapability([RecordMount("records", FakeRecordStore(), "write")]).get_toolset()
+    configuration = WorkingStateConfiguration()
+    working_state = WorkingStateToolset(
+        owner=WorkingStateCapability(configuration),
+        context=Mock(spec=AgentContext),
+        state=WorkingState(),
+        configuration=configuration,
+    ).get_toolset(tasks=True, notes=True)
+    assert isinstance(memory_files, FunctionToolset)
+    assert isinstance(memory_records, FunctionToolset)
+    assert isinstance(working_state, FunctionToolset)
+    for guidance, names in (
+        (_SHELL_GUIDANCE, ShellToolset.available_names(all_actions)),
+        (_FILES_GUIDANCE, FileToolset.available_names((all_actions,)) - {"mkdir"}),
+        (_WEB_GUIDANCE, {"search", "scrape", "fetch", "download"}),
+        (_MEMORY_FILES_GUIDANCE, set(memory_files.tools)),
+        (_MEMORY_RECORDS_GUIDANCE, set(memory_records.tools)),
+        (_WORKING_STATE_GUIDANCE, set(working_state.tools)),
+        (_DOCUMENT_GUIDANCE, set(DocumentsToolset(object(), files=object()).get_toolset().tools)),
+    ):
+        assert guidance.referenced_tools == names
+    for fragment in _COMPUTER_GUIDANCE:
+        assert ComputerToolset.available_names().issuperset(fragment.any_of + fragment.all_of)
+
+
+@pytest.mark.parametrize("external", [False, True])
+def test_native_toolsets_default_to_declared_names_without_preparation(external: bool) -> None:
+    from types import SimpleNamespace
+
+    from a13n_harness.guidance import GuidanceFragment, ToolGuidance
+    from pydantic_ai.tools import ToolDefinition
+    from pydantic_ai.toolsets import ExternalToolset, FunctionToolset
+
+    def lookup() -> str:
+        return "item"
+
+    owner = ExternalToolset([ToolDefinition(name="lookup")]) if external else FunctionToolset([lookup])
+    guide = ToolGuidance("test", (GuidanceFragment(text="Look up an item.", all_of=("lookup",)),))
+    ctx = SimpleNamespace(deps=SimpleNamespace(toolset_instructions=True), tool_manager=None)
+    assert guide.render(ctx, toolset=owner) is not None
+    assert guide.render(ctx, toolset=owner, fallback=()) is None
+    ctx.tool_manager = SimpleNamespace(tools={})
+    assert guide.render(ctx, toolset=owner) is None
+
+
+def test_fragmented_handbooks_declare_every_static_section() -> None:
+    from a13n_harness.capabilities.browser import _BROWSER_GUIDANCE
+    from a13n_harness.guidance import REFERENCE_MARKER, load_guidance
+    from a13n_harness.toolsets.computer import _COMPUTER_GUIDANCE
+    from a13n_harness.toolsets.documents import _DOCUMENT_GUIDANCE
+    from a13n_harness.toolsets.files import _FILES_GUIDANCE
+    from a13n_harness.toolsets.memory_files import _MEMORY_FILES_GUIDANCE
+    from a13n_harness.toolsets.memory_records import _MEMORY_RECORDS_GUIDANCE
+    from a13n_harness.toolsets.shell import _SHELL_GUIDANCE
+    from a13n_harness.toolsets.web import _WEB_GUIDANCE
+    from a13n_harness.toolsets.working_state import _WORKING_STATE_GUIDANCE
+
+    def normalize(text: str) -> str:
+        return re.sub(r"(?m)^\s*$", "", text).replace("\n\n", "\n").strip()
+
+    pages = {
+        guide.name: guide.fragments
+        for guide in (
+            _BROWSER_GUIDANCE,
+            _DOCUMENT_GUIDANCE,
+            _FILES_GUIDANCE,
+            _MEMORY_FILES_GUIDANCE,
+            _MEMORY_RECORDS_GUIDANCE,
+            _SHELL_GUIDANCE,
+            _WEB_GUIDANCE,
+            _WORKING_STATE_GUIDANCE,
+        )
+    }
+    pages["environment-computer"] = _COMPUTER_GUIDANCE
+    for name, fragments in pages.items():
+        assert name is not None
+        essentials, _, details = load_guidance(name).partition(REFERENCE_MARKER)
+        for reference, source in ((False, essentials), (True, details)):
+            sections = "\n\n".join(fragment.text for fragment in fragments if fragment.reference is reference)
+            assert normalize(sections) == normalize(source), (name, reference)

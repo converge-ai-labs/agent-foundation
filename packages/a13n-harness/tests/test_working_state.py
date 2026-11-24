@@ -81,6 +81,10 @@ async def test_working_state_instructions_follow_enabled_tool_groups(
     assert ({"task_create", "task_get", "task_list", "task_update"} <= names) is tasks_enabled
     assert ({"note_write", "note_delete", "note_get"} <= names) is notes_enabled
     assert ("<tool-name>working-state</tool-name>" in instructions) is (tasks_enabled or notes_enabled)
+    assert ("<task-manager>" in instructions) is tasks_enabled
+    assert ("`task_list()`" in instructions) is tasks_enabled
+    assert ("<note>" in instructions) is notes_enabled
+    assert ("`note_get()`" in instructions) is notes_enabled
     if notes_enabled:
         note_write = next(tool for tool in captured[0].function_tools if tool.name == "note_write")
         assert set(note_write.parameters_json_schema["required"]) == {"key", "value"}

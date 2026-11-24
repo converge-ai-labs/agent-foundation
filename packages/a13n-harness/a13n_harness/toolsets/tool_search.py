@@ -30,7 +30,7 @@ from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import EnvironmentActivationError
-from a13n_harness.guidance import TOOL_GUIDANCE_KEY
+from a13n_harness.guidance import TOOL_GUIDANCE_KEY, _reference_root, _source_chain, _tool_names
 from a13n_harness.tools._deferred_dispatch import FORWARDED_TOOL_KEY, ToolCallForwarder, forward_tool_call
 from a13n_harness.tools.tool_search import (
     PROXY_CONTROL_KEY,
@@ -52,7 +52,6 @@ from a13n_harness.tools.tool_search import (
 from a13n_harness.toolsets._instructions import tool_instruction
 from a13n_harness.toolsets.codeact import (
     CodeActPolicyToolset,
-    CodeActSourceToolCarrier,
     CodeActToolPolicy,
     is_codeact_tool_eligible,
     resolve_codeact_eligibility,
@@ -152,11 +151,11 @@ class _GroupedToolset(WrapperToolset[AgentContext]):
     async def get_instructions(
         self, ctx: RunContext[AgentContext]
     ) -> str | InstructionPart | Sequence[str | InstructionPart] | None:
-        if None not in self.groups and any(
-            name not in self.groups and proxy_membership(tool.tool_def) is None
-            for name, tool in (await self.wrapped.get_tools(ctx)).items()
-        ):
-            return await self.wrapped.get_instructions(ctx)
+        if None not in self.groups:
+            owners: list[AbstractToolset[AgentContext]] = []
+            self.wrapped.apply(owners.append)
+            if _tool_names(ctx, tuple(owners), direct_only=True):
+                return await self.wrapped.get_instructions(ctx)
         # Proxy source guidance is returned with discovery, not eagerly for every tool.
         return None
 
@@ -278,13 +277,25 @@ class ToolSearchSurfaceToolset(WrapperToolset[AgentContext]):
             return wrapped
         if not proxy_directory(ctx.tool_manager.tools, groups=self.groups):
             return wrapped
+        controls = (
+            self.config.search_name,
+            self.config.describe_name,
+            self.config.call_name,
+            self.config.list_name,
+            self.config.groups_name,
+        )
+        if any(
+            (tool := ctx.tool_manager.tools.get(name)) is None or proxy_control_groups(tool.tool_def) != self.groups
+            for name in controls
+        ):
+            return wrapped
         parts: list[str | InstructionPart] = []
         if isinstance(wrapped, str | InstructionPart):
             parts.append(wrapped)
         elif wrapped is not None:
             parts.extend(wrapped)
         parts.append(
-            tool_instruction("tool_search", reference_root=ctx.deps.instruction_reference_root).format(
+            tool_instruction("tool_search", reference_root=_reference_root(ctx)).format(
                 search_name=self.config.search_name,
                 describe_name=self.config.describe_name,
                 call_name=self.config.call_name,
@@ -629,14 +640,14 @@ async def proxy_discovery_entry(ctx: RunContext[AgentContext], tool: ToolsetTool
 async def _source_instructions(ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]) -> list[str]:
     if not ctx.deps.toolset_instructions:
         return []
-    current = tool
-    while isinstance(current, CodeActSourceToolCarrier):
+    for current in _source_chain(tool):
         if isinstance(current, _GroupTool):
+            # Keep the prepared manager: the shared renderer resolves this source's
+            # surviving local names (including proxy members and direct tools).
             value = await current.source_toolset.get_instructions(ctx)
             if value is None:
                 return []
             if isinstance(value, str | InstructionPart):
                 return [value.content if isinstance(value, InstructionPart) else value]
             return [part.content if isinstance(part, InstructionPart) else part for part in value]
-        current = current.source_tool
     return []

@@ -13,21 +13,24 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize("reference_root", [None, "/release-guidance"])
 @pytest.mark.parametrize("host_handback", [False, True])
-def test_browser_dynamic_guidance_uses_flat_xml_sections(reference_root, host_handback):
+async def test_browser_dynamic_guidance_uses_flat_xml_sections(reference_root, host_handback):
+    from types import SimpleNamespace
     from xml.etree import ElementTree
 
     owner = BrowserUseCapability(
+        AsyncMock(spec=BrowserBackend),
         on_human_control=AsyncMock() if host_handback else None,
         file_instructions="Upload paths use Host asset IDs.",
     )
-    sections = ElementTree.fromstring(f"<guidance>{owner._instructions(reference_root)}</guidance>")
+    ctx = SimpleNamespace(deps=SimpleNamespace(toolset_instructions=True, instruction_reference_root=reference_root))
+    parts = await owner.get_toolset().get_instructions(ctx)
+    assert parts is not None and len(parts) == 1
+    sections = ElementTree.fromstring(f"<guidance>{parts[0].content}</guidance>")
     assert not (sections.text or "").strip()
     assert all(not section.attrib and not list(section) and not (section.tail or "").strip() for section in sections)
-    dynamic = sections[-1]
-    assert dynamic.tag == "essential-rules"
-    assert "Upload paths use Host asset IDs." in dynamic.text
-    assert ("Blocked calls return immediately" in dynamic.text) is host_handback
-    assert ("Pending tool calls wait" in dynamic.text) is not host_handback
+    assert "Upload paths use Host asset IDs." in parts[0].content
+    assert ("Blocked calls return immediately" in parts[0].content) is host_handback
+    assert ("Pending tool calls wait" in parts[0].content) is not host_handback
 
 
 async def test_native_tools_keep_compact_refs_local_and_invalidate_after_navigation():
@@ -470,6 +473,8 @@ async def test_host_tool_selection_survives_run_binding():
 
     async def model(messages, info):
         assert {tool.name for tool in info.function_tools if tool.name.startswith("browser_")} == {"browser_tabs"}
+        assert "`browser_tabs`" in info.instructions
+        assert all(name not in info.instructions for name in ("browser_js", "browser_navigate", "browser_files"))
         yield "Done"
 
     executable = HarnessBuilder().build(
