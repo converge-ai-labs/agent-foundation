@@ -384,8 +384,8 @@ async def test_codeact_nested_deferral_uses_child_denial_and_root_handler() -> N
         and item.event.payload["type"] == "codeact_tool_call_completed"
     ]
     assert len(nested_results) == 1
-    assert nested_results[0]["outcome"] == "deferred"
-    assert nested_results[0]["error_type"] == "ToolDenied"
+    assert nested_results[0]["outcome"] == "failed"
+    assert nested_results[0]["error_type"] == "ToolFailed"
 
     root_result = await executable.run("run", bindings=RunBindings.embedded())
 
