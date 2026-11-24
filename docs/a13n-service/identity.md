@@ -1,49 +1,84 @@
 ---
-title: Identity, roles, and access
-description: Manage organizations, workspaces, RBAC roles, invitations, service accounts, API keys, and audit logs in Service.
+title: Identity and access
+description: Manage multi-tenant organizations, workspaces, member invitations, service accounts, OIDC SSO, RBAC roles (runner, builder, admin), and API keys.
 ---
 
-Service isolates resources by **Organization** and **Workspace**, and enforces role-based access control (RBAC) for both human users and automated service accounts.
+Service authenticates **principals** (human user accounts and automated service accounts) via browser login sessions or workspace-scoped API keys, and authorizes every request against the principal's current **grants** on the organization and workspace.
 
 ## Organizations and workspaces
 
-- **Organization:** Top-level tenant boundary owning members, billing/quotas, and workspaces.
-- **Workspace:** Scopes agents, threads, environments, providers, connections, and API keys.
+- **Organization:** Top-level tenant boundary created at [bootstrap](get-started.md#register-your-administrator-account), grouping members and workspaces.
+- **Workspace:** Owns agents, threads, environments, providers, connections, and API keys. Create workspaces in **Organization settings → Workspaces** (`POST /api/v1/organizations/{organization_id}/workspaces`), and archive retired ones via `POST /api/v1/workspaces/{workspace_id}/archive`. Login sessions select a workspace via `X-Workspace-ID`; API keys are already bound to one workspace.
 
 ## Roles
 
-| Role      | Permissions                                                              |
-| --------- | ------------------------------------------------------------------------ |
-| `viewer`  | `read` — inspect agents, runs, and resources                             |
-| `runner`  | `read` + `run` — execute agents, manage threads, and use environments    |
-| `builder` | `read` + `run` + `write` — create/edit agents, templates, and providers  |
-| `admin`   | Full workspace/organization administration, members, and security policy |
+| Role      | Effective verbs                 | Typical assignment                                   |
+| --------- | ------------------------------- | ---------------------------------------------------- |
+| `viewer`  | `read`                          | Inspect agents, conversations, and results           |
+| `runner`  | `read`, `run`                   | Execute agents, manage threads, and use environments |
+| `builder` | `read`, `run`, `write`          | Create and edit agents, templates, and providers     |
+| `admin`   | `read`, `run`, `write`, `admin` | Manage members, keys, workspace settings, and audit  |
 
-## Members and grants
+Organization grants apply across every workspace in the organization and combine additively with workspace grants.
 
-Manage user roles under **Workspace settings → Members** or **Organization settings → Members**. Removing a grant immediately revokes access on subsequent requests.
+## Invitations, members, and grants
 
 ### Invitations
 
-Admins invite new users under **Organization settings → Invitations**. Invited users sign in and automatically receive their assigned organization and workspace grants.
+Invite new users in **Invitations** (`POST /api/v1/workspaces/{workspace_id}/invitations` or the organization equivalent with `{email, role}`, requires a login session). Service emails the link when [SMTP is configured](configuration.md#identity-and-mail) or returns a one-time `invitation_url`.
 
-## Service accounts
+### Members and grants
 
-Create dedicated **Service accounts** for backend applications and CI pipelines instead of using personal user credentials. Assign the minimum workspace role needed (for example, `runner` for an app that only executes published agents).
+Manage existing principals' access via `GET /api/v1/organizations/{organization_id}/members` and `POST` / `PATCH` / `DELETE` on `/api/v1/workspaces/{workspace_id}/grants` (or `/api/v1/organizations/{organization_id}/grants`) with `{principal_id, role}`.
 
 ## API keys
 
-Create workspace-scoped API keys under **API keys** (personal or service-account). Send them in `Authorization: Bearer $A13N_API_KEY`. Keep API keys on your server—never embed them in browser code.
+Issue personal keys in **API keys** (`POST /api/v1/users/me/keys` with `{name, workspace_id, expires_at?}`, login session required). Copy the returned `secret` once and send it as `Authorization: Bearer $A13N_API_KEY`:
+
+```sh
+curl "$A13N_URL/api/v1/workspaces/$WORKSPACE_ID" -H "Authorization: Bearer $A13N_API_KEY"
+```
+
+Revoke keys via `DELETE /api/v1/users/me/keys/{key_id}` (or `/api/v1/workspaces/{workspace_id}/keys` as workspace admin) with `If-Match`.
+
+## Service accounts
+
+Create dedicated per-workspace service accounts for applications in **Workspace settings → Service accounts** (`POST /api/v1/workspaces/{workspace_id}/service-accounts` with `{"name": "Support app", "role": "runner"}`), then issue keys at `POST …/service-accounts/{account_id}/keys`. Pause with `PATCH {"status": "disabled"}` or retire with `DELETE` (with `If-Match`).
+
+## Sign in, sessions, and OIDC SSO
+
+- **Login sessions:** Cookie-authenticated browser requests (`/api/v1/auth/login`, `/session`, `/logout`) require `X-CSRF-Token` on state-changing calls. Users manage active sessions, passwords, email, and self-disablement under **Personal settings**.
+- **OIDC SSO (`[auth.oidc]` / `A13N_AUTH__OIDC`):** Register callback `{server.public_url}/api/v1/auth/oidc/{provider_id}/callback` at your IdP (PKCE S256, `RS256`/`ES256`, `openid profile email`) and configure `defaults` plus optional claim-based `role_rules`:
+
+```json
+{
+  "defaults": [{"workspace_id": "ws_example", "role": "runner"}],
+  "providers": {
+    "team": {
+      "label": "Team Identity",
+      "issuer": "https://identity.example.com/realms/team",
+      "client_id": "a13n-console",
+      "client_secret": "replace-at-deploy-time",
+      "extra_scopes": ["groups"],
+      "role_rules": [
+        {"match": {"groups": "console-admins"}, "organization_id": "org_example", "role": "admin"}
+      ]
+    }
+  }
+}
+```
+
+Set `A13N_AUTH__PASSWORD_ENABLED=false` after promoting an OIDC organization admin to enforce OIDC-only sign-in.
 
 ## Operator account control
 
-Operators can disable or re-enable compromised accounts from the CLI:
+Operators can suspend or restore any user account from the CLI (use `--principal-id usr_...` for OIDC accounts):
 
 ```sh
-a13n-service user disable --email user@example.com
-a13n-service user enable --email user@example.com
+a13n-service --config service.toml user disable --email person@example.com
+a13n-service --config service.toml user enable --email person@example.com
 ```
 
 ## Audit
 
-Service records resource mutations, membership changes, and security events in the workspace and organization audit trail (**Settings → Audit** or `/api/v1/audit-events`).
+Inspect immutable access and security events (`actor_id`, `action`, `outcome`) under **Organization settings → Audit** (`/api/v1/organizations/{organization_id}/audit-events`), **Workspace settings → Audit** (`/api/v1/workspaces/{workspace_id}/audit-events`), or `GET /api/v1/users/me/audit-events`.

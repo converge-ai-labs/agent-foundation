@@ -1,23 +1,106 @@
 ---
 title: 委派与 CodeAct
-description: 在 Harness 中将边界清晰的任务委派给内联或宿主托管的子智能体，并通过 CodeAct 执行受限 Python 程序。
+description: 在 Harness 中通过子智能体编排多角色协作，或使用 CodeAct 以异步 Python 控制流并发调用外部工具。
 ---
 
-使用**子智能体**在干净的上下文窗口中隔离专项任务，使用 **CodeAct** 让智能体在受限 Python 中编排多步工具调用。
+\*\*委派（Delegation）\*\*将专项任务隔离在独立的提示词上下文与模型中；**CodeAct** 则让智能体在受限 Python 环境内直接通过循环、条件过滤与 `asyncio.gather` 并发调用工具，减少多轮模型往返。
 
-## 子智能体
+| 编排需求                           | 机制                                             |
+| ---------------------------------- | ------------------------------------------------ |
+| 角色隔离或专用审查/领域专家        | 内联 `SubagentCapability`（`delegate`）          |
+| 跨越父轮次存活的后台子任务         | [异步子智能体](#asynchronous-children)           |
+| 循环批处理、结果过滤或并发工具扇出 | `CodeActCapability`（`run_code`、`run_program`） |
 
-<span id="asynchronous-children"></span>
+## 内联委派
 
-通过 `HarnessBuilder().build(..., subagents=...)`（或 `SubagentCapability`）挂载命名子定义：
+声明子 `AgentDefinition`，并通过 `SubagentCapability` 与 `SubagentDefinition` 注册到父智能体：
 
-- **内联子智能体：** 在父运行流中执行，共享父级环境，并将结果直接返回给父智能体。
-- **宿主托管子智能体：** 作为独立子运行由宿主（如 Service 或 Harness UI）管理，拥有独立检查点与并发上限。
+```python title="delegation_demo.py"
+import os
+from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder, SubagentDefinition
+from a13n_harness.capabilities import SubagentCapability
 
-### 宿主托管反馈
+reviewer = AgentDefinition(
+    agent=AgentSpec(
+        model=os.environ["HARNESS_MODEL"],
+        instructions="Analyze the plan and report concrete architectural risks.",
+    ),
+    output_type=str,
+    definition_id="plan-reviewer-v1",
+)
 
-内置内联子智能体默认设置 `RunBindings.deferred_tools_supported=False`，因其无法独立暂停等待人工输入。支持子运行暂停与恢复的宿主在其自有子生命周期中处理延迟反馈。
+parent = HarnessBuilder().build(
+    AgentDefinition(
+        agent=AgentSpec(
+            model=os.environ["HARNESS_MODEL"],
+            instructions="Delegate deep reviews to 'reviewer', then synthesize.",
+        ),
+        output_type=str,
+        definition_id="coordinator-v1",
+        capabilities=(SubagentCapability(),),
+        subagents=(
+            SubagentDefinition(
+                name="reviewer",
+                description="Reviews plans for architectural and security risks.",
+                agent=reviewer,
+            ),
+        ),
+    )
+)
+```
+
+父模型调用 `delegate(subagent="reviewer", prompt=...)` 启动子线程，并通过 `resume_subagent(execution_id=..., prompt=...)` 在同一子线程上继续追问。子线程谱系随父级 `HarnessState` 一并序列化保存。
 
 ## CodeAct
 
-`CodeActCapability` 允许模型运行受限 Python 代码片段来调用智能体已有工具（受相同权限与审批约束），并通过 `store`、`load` 与 `forget` 在步骤间持久化 JSON 状态。
+启用 `CodeActCapability` 并用 `CodeActPolicyToolset` 包装允许在 Python 中调用的工具集：
+
+```python title="codeact_demo.py"
+import os
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.capabilities import CodeActCapability, CodeActConfig
+from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.toolsets import FunctionToolset
+
+
+def double(value: int) -> int:
+    return value * 2
+
+
+math_tools = Capability(
+    id="math-tools",
+    toolsets=[
+        CodeActPolicyToolset(
+            wrapped=FunctionToolset([double], id="math-functions"),
+            policy=CodeActToolPolicy(tools={"double": True}),
+            reject_unknown_tools=True,
+        )
+    ],
+)
+
+calculator = HarnessBuilder().build(
+    AgentSpec(model=os.environ["HARNESS_MODEL"]),
+    output_type=str,
+    capabilities=(
+        math_tools,
+        CodeActCapability(CodeActConfig(max_tool_calls=32, max_concurrency=8, timeout_seconds=60)),
+    ),
+)
+```
+
+在 `run_code` 内，模型可使用 `await asyncio.gather(double(value=10), double(value=20))` 并发调用工具，通过 `run_program` 执行工作区中的 `.codeact.py` 脚本，并使用 `await store(key, value)`、`await load(key)` 与 `await forget(key)` 在 `HarnessState` 中跨轮次持久化 JSON 状态。
+
+## 异步子智能体
+
+当子任务需要跨越父轮次在后台持续运行时，由宿主提供 `SubagentOperator`：
+
+```python
+capability = SubagentCapability(async_enabled=True, operator=host_operator)
+```
+
+该模式向模型开放 `delegate`、`subagent_info`、`wait_subagent`、`steer_subagent`、`cancel_subagent` 与 `resume_subagent`。
+
+### 宿主托管反馈
+
+内置内联子智能体默认设置 `RunBindings.deferred_tools_supported=False`，因其无法独立挂起。配合异步 `SubagentOperator` 时，子智能体遇到提问或工具审批会进入 `suspended` 并保存自身 `HarnessState`，待宿主收集反馈后通过 `DeferredToolResume` 恢复。

@@ -1,31 +1,23 @@
 ---
 title: Native tools and Web providers
-description: Enable web search, page scraping, provider-native search, and AI image generation with automatic workspace file saving in Harness UI.
+description: Enable Host web search and scraping, third-party Web providers, provider-native tools, and AI image generation with workspace saving in Harness UI.
 ---
 
-Use **Host Web** to search, scrape, or download public pages through Harness UI. Use **native tools** when you want the Model's provider to run search, fetch, code execution, file search, or image generation directly. Both are configured on the Agent.
+Use **Host Web** (`capability: web`) to search, scrape, or download public pages from the Harness UI host, and **provider-native tools** (`NativeTool` and `native_image_generation`) when the Model's upstream provider should run search, fetch, code execution, file search, or image generation directly.
 
-| Task                             | Tool / Capability                   | Where it runs                               |
-| -------------------------------- | ----------------------------------- | ------------------------------------------- |
-| Search and read public web pages | Host `web` or native search/fetch   | Harness UI or the Model provider            |
-| Download a URL to disk           | Host `web` download                 | The selected Environment's writable storage |
-| Generate and save an image       | `native_image_generation`           | Provider generation, saved to Thread `tmp/` |
-| Run code against Project files   | Environment shell                   | The selected Environment                    |
-| Provider-side code / file search | Native Code Execution / File Search | The Model provider's environment            |
+| Task                             | Capability                                     | Execution owner                             |
+| -------------------------------- | ---------------------------------------------- | ------------------------------------------- |
+| Search and read public web pages | Host `web` or `NativeTool`                     | Harness UI or the Model provider            |
+| Download a URL to disk           | Host `web` download                            | The selected Environment's writable storage |
+| Generate and save an image       | `native_image_generation`                      | Provider generation, saved to Thread `tmp/` |
+| Run code against Project files   | Environment shell                              | The selected Environment                    |
+| Provider-side code / file search | `NativeTool` (`code_execution`, `file_search`) | The Model provider's environment            |
 
-## Guided setup
-
-1. Run `a13n-harness-ui setup` (or **Add Agent** in WebUI) and connect your Model.
-2. In **Choose native Agent tools**, toggle the provider-native tools supported by your connection and supply any required resource IDs (such as File Search store IDs).
-3. Save the Agent and run a small prompt that invokes one selected tool to verify it end to end.
-
-By default, enabling native Web Search disables Host search (keeping Host scrape/fetch/download), and enabling native Web Fetch disables Host scrape. Changing an Agent's Model later does not automatically rewrite its tools—review its Capabilities when switching providers.
+Run `a13n-harness-ui setup` (or **Add Agent** in WebUI) for guided selection, or configure Agent YAML directly and check with `a13n-harness-ui config validate`.
 
 ## Host Web Capability: every built-in provider
 
-The built-in Host Web backends (`DuckDuckGoSearchProvider` for search, `HtmlScrapeProvider` for Markdown scraping, and `HttpxWebClient` for fetch/download) require no API key.
-
-Add `web` to an Agent's `capabilities`:
+Built-in Host Web backends (`DuckDuckGoSearchProvider`, `HtmlScrapeProvider`, and `HttpxWebClient`) require no API key. For JavaScript-rendered interactive sites, use [Host browser](host-browser.md#browse-on-the-host):
 
 ```yaml title="agents/web-reader.yaml"
 schema_version: "1"
@@ -41,13 +33,11 @@ capabilities:
       scrape: {mode: host, backend: default}
 ```
 
-- `search.mode` accepts `host`, `native`, `auto`, or `off`; `scrape.mode` accepts `host` or `off`.
-- Optional limits under `configuration`: `deadline_seconds` (60), `max_redirects` (8), `max_search_results` (10), `max_text_bytes` (262144), `max_scrape_bytes` (524288), `max_download_bytes` (268435456).
-- Scraping reads static HTTP responses without executing JavaScript; use [Host browser](host-browser.md#browse-on-the-host) for interactive sites.
+`search.mode` accepts `host`, `native`, `auto` (with optional `provider_settings`, such as `{openrouter: {engine: exa, max_results: 5}}`), or `"off"`; `scrape.mode` accepts `host` or `"off"`. Optional limits include `deadline_seconds` (`60`), `max_redirects` (`8`), `max_search_results` (`10`), `max_text_bytes` (`262144`), `max_scrape_bytes` (`524288`), and `max_download_bytes` (`268435456`).
 
 ### Web provider accounts
 
-Add third-party search/scrape providers (Tavily, Exa, Firecrawl, Brave Search, Jina, Perplexity, SerpApi, Keenable, etc.) under **Settings → Connections → Web providers → Add Web provider**, or create `web_providers/*.yaml`:
+Register third-party search/scrape accounts (`tavily`, `exa`, `firecrawl`, `brave`, `jina`, `perplexity`, `serpapi`, `keenable`, etc.) under **Settings → Connections → Web providers** or `web_providers/*.yaml`, then reference the ID via `backend: web-provider-research` or `backend_priority: [web-provider-research, default]`:
 
 ```yaml title="web_providers/research.yaml"
 schema_version: "1"
@@ -60,18 +50,37 @@ credential:
   api_key: {env: TAVILY_API_KEY} # or {credential_ref: key-research}
 ```
 
-Select the account in the Agent's **Web options**, or reference it in YAML with `backend: web-provider-research` (or `backend_priority: [web-provider-research, default]` for fallback).
-
 ## Native search and image generation
 
-Enable provider-native tools directly in an Agent's `capabilities`:
+Merge `NativeTool` entries and `native_image_generation` into an Agent's `capabilities` list (setting Host `web.search.mode: "off"` so the Model sees one search tool while keeping Host scraping and file downloads):
 
 ```yaml title="agents/creative.yaml — capabilities fragment"
 capabilities:
-  - capability: native_web_search
+  - capability: NativeTool
+    configuration:
+      kind: web_search
+      external_web_access: true
   - capability: native_image_generation
+    configuration:
+      output_format: png
+      provider_settings:
+        openai:
+          quality: auto
+  - capability: web
+    configuration:
+      search: {mode: "off"}
+      scrape: {mode: host}
 ```
 
-- Generated images are automatically saved into the Thread's `tmp/` directory and returned as workspace paths.
-- Pass provider-specific native search options via `provider_settings` (for example, `provider_settings: {openrouter: {engine: exa}}`).
-- Check your provider's documentation for supported native tool combinations on each model.
+Generated images are automatically saved into the Thread's `tmp/` directory (copy important outputs into a Project directory for long-term retention). Repeat `NativeTool` to enable additional provider-executed tools supported by your Model's adapter:
+
+| Capability / `NativeTool` `kind`      | Key `configuration` fields                                                                                    |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `NativeTool` (`kind: web_search`)     | Optional `search_context_size`, `external_web_access`                                                         |
+| `NativeTool` (`kind: web_fetch`)      | Fetches URLs on the provider side (set Host `web.scrape.mode: "off"` if desired)                              |
+| `native_image_generation`             | `output_format`, `provider_settings` (Harness UI saves images to Thread `tmp/`)                               |
+| `NativeTool` (`kind: code_execution`) | Provider-side sandbox compute (separate from local Project files)                                             |
+| `NativeTool` (`kind: x_search`)       | xAI native X search (such as `allowed_x_handles`)                                                             |
+| `NativeTool` (`kind: file_search`)    | `file_store_ids: [vs_your_store_id]` (provider vector/file store IDs)                                         |
+| `NativeTool` (`kind: mcp_server`)     | `id`, public `url`, `allowed_tools` (provider-dialed; use [Host MCP](mcp.md) for local/authenticated servers) |
+| `NativeTool` (`kind: advisor`)        | `model` (provider advisor model ID) and `max_tokens`                                                          |

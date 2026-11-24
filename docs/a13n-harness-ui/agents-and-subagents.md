@@ -110,33 +110,32 @@ subagents:
 
 ## Reference an existing Agent as a subagent
 
-When a subagent needs its own Model, Capabilities, or MCP servers, define it as a normal `agents/*.yaml` file and reference it by ID:
+When a subagent needs its own Model, Capabilities, or MCP servers, define it as a normal `agents/*.yaml` file and reference it by ID (its `name` and `instructions` come from that Agent file):
 
 ```yaml title="agents/coder.yaml"
 subagents:
   - agent: agent-specialist
-    name: specialist
-    description: Run specialized analysis with a dedicated Model.
 ```
 
 ## Instructions and guidance
 
-- **`instructions` / `system_prompt`:** Defined on the Agent YAML.
+- **`instructions`:** Defined on the Agent YAML.
 - **Global `AGENTS.md`:** Placed in your Harness UI config directory; injected into root and child conversations.
 - **Project `AGENTS.md`:** Discovered automatically from the active workspace root.
 
 ## Tool search groups
 
-When an Agent has many tools (such as large MCP servers), configure `tool_search` groups in the Agent's Capabilities to defer tool schemas until the Agent searches for them, reducing prompt token usage without changing tool permissions.
+When an Agent has many tools (such as large MCP servers), configure `tool_search` groups on the Agent to defer tool schemas until the Agent searches for them, reducing prompt token usage without changing tool permissions.
 
 ## Agent file reference
 
-| Field          | Default  | Purpose                                                             |
-| -------------- | -------- | ------------------------------------------------------------------- |
-| `id`, `name`   | Required | Unique `agent-` ID and display name                                 |
-| `model`        | Required | Saved Model ID                                                      |
-| `instructions` | `""`     | Role prompt for the Agent                                           |
-| `capabilities` | `[]`     | Enabled Capabilities (`dynamic_environment`, `web`, `skills`, etc.) |
-| `tools`        | `null`   | Optional exact-name allowlist filtering visible tools               |
-| `subagents`    | `[]`     | List of `markdown:` or `agent:` child entries                       |
-| `defaults`     | `{}`     | Default `mcp_servers`, `harness_plugins`, and run extensions        |
+| Field                            | Default  | Purpose                                                             |
+| -------------------------------- | -------- | ------------------------------------------------------------------- |
+| `id`, `name`                     | Required | Unique `agent-` ID and display name                                 |
+| `model`                          | Required | Saved Model ID                                                      |
+| `instructions`                   | `""`     | Role prompt for the Agent                                           |
+| `capabilities`                   | `[]`     | Enabled Capabilities (`dynamic_environment`, `web`, `skills`, etc.) |
+| `tools`                          | `null`   | Optional exact-name allowlist filtering visible tools               |
+| `subagents`                      | `[]`     | List of `markdown:` or `agent:` child entries                       |
+| `mcp_servers`, `harness_plugins` | `null`   | Selected MCP server IDs (`null` inherits defaults) and plugin IDs   |
+| `tool_search`                    | `null`   | Optional grouped tool discovery plan                                |

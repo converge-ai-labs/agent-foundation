@@ -4,108 +4,103 @@ sidebarTitle: 概览
 description: 统一且可移植的执行运行时，支持在本地路径、容器及云端沙箱中无缝读写文件、执行 Shell 命令并实现桌面自动化。
 ---
 
-\*\*Environments（执行环境）\*\*子系统为与文件系统和操作系统进程交互提供了统一、高度可移植的抽象接口。无论您的应用或 Agent 是在本地宿主机上修改源码、在隔离的 Docker 容器中编译二进制，还是在云端临时沙箱微虚拟机中驱动浏览器交互，Environments 均提供完全一致的操作 API。
+\*\*Environments（执行环境）\*\*为文件系统、操作系统进程与桌面图形界面操作提供统一的可移植接口。无论应用或智能体是在本地目录修改源码、在 Docker 容器中编译构建，还是在云端微虚拟机中操控桌面，均使用同一套 API。
 
-Environments 作为 `a13n-harness` 的核心基础模块发布，完全可以作为独立的无大模型依赖执行库在普通 Python 项目中使用。
+Environments 随 `a13n-harness` 发布，也可在不接入大模型的情况下作为独立 Python 执行库直接使用。
 
 ## 从这里开始
 
-建议从[环境快速入门](getting-started.md)开始，体验打开工作空间、写入文件、读取并安全释放资源的完整流程，随后探索进阶场景：
+建议先跟随[环境快速开始](getting-started.md)体验打开工作区、读写文件并安全释放资源的完整流程，再按任务查阅：
 
-| 运维场景                             | 参考指南                                                               |
-| :----------------------------------- | :--------------------------------------------------------------------- |
-| **挑选具体的执行目标**               | [选择后端](#choose-a-backend)（覆盖本地路径、Docker、E2B、云端沙箱等） |
-| **配置运行时鉴权凭证与选项**         | [Provider 配置手册](configuration.md)                                  |
-| **执行命令与消费输出流**             | [命令与进程管理](commands.md)                                          |
-| **文件检索、遍历与受控读取**         | [文件操作](operations.md)                                              |
-| **管理目标生命周期并跨轮重连**       | [生命周期与状态](lifecycle.md)                                         |
-| **通过 EIP 协议连接已有守护进程**    | [远程 Envd 指南](remote-envd.md)                                       |
-| **将环境能力以工具形式暴露给 Agent** | [Harness 集成规范](../a13n-harness/environments.md)                    |
+| 任务                                 | 指南                                                               |
+| :----------------------------------- | :----------------------------------------------------------------- |
+| **挑选具体的执行目标**               | [选择后端](#choose-a-backend)（本地路径、Docker、E2B、云端沙箱等） |
+| **配置运行时鉴权凭据与选项**         | [提供方配置](configuration.md)                                     |
+| **执行命令与消费输出流**             | [命令与进程](commands.md)                                          |
+| **文件检索、遍历与有界读取**         | [文件操作](operations.md)                                          |
+| **管理目标生命周期并跨轮重连**       | [生命周期与状态](lifecycle.md)                                     |
+| **通过 EIP 协议连接已有守护进程**    | [远程 Envd](remote-envd.md)                                        |
+| **将环境能力以工具形式暴露给智能体** | [Harness 集成](../a13n-harness/environments.md)                    |
 
 ## 选择后端
 
-Environments 支持两大互为补充的执行路径：
+Environments 支持两条互补的执行路径：
 
-- **原生执行（Native Execution）：** 直接使用底层后端的原生系统接口进行文件读写与 Shell 调度。原生支持 Direct Local 本地路径、Docker 容器、E2B 云端微虚拟机、Vercel 沙箱、Sprites 以及 Runloop Devbox。
-- **Envd 守护进程执行（Envd Execution）：** 基于高效的 Environment Inter-Process (EIP) 协议同 Envd 守护程序通信。此路径可开启操作系统内核级强隔离沙箱、网络出网白名单拦截审计（Egress Policy）、桌面图形界面自动化（Computer Use）以及硬件监控指标采集。
+- **原生执行（Native）：** 直接调用底层后端的原生文件与 Shell 接口（支持 `direct_local`、`docker`、`e2b`、`vercel`、`sprites`、`runloop`、`boxd`）。
+- **Envd 守护进程执行（Envd）：** 基于环境交互协议（EIP）与 `a13n-envd` 通信，支持原生内核沙箱隔离、受控出站网络（Controlled Egress）、桌面图形操控（Computer Use）与实时设备监控。
 
-| 目标提供商       | 执行路径    | 底层机制说明                                                      |
-| :--------------- | :---------- | :---------------------------------------------------------------- |
-| `direct_local`   | 原生执行    | 直接在宿主机当前操作系统进程身份下读写指定目录                    |
-| `docker`         | 原生 / Envd | 在受管的独立 Docker 容器内执行                                    |
-| `e2b`            | 原生 / Envd | 在 E2B 托管的安全云端微虚拟机沙箱中运行                           |
-| `local_envd`     | Envd        | 基于标准输入输出（stdio）与本地 Rust 编写的原生 Envd 守护进程通信 |
-| `daytona`        | Envd        | 在隔离的 Daytona 云端工作区中执行                                 |
-| `modal`          | Envd        | 在 Serverless 架构的 Modal 安全容器中运行                         |
-| `vercel`         | 原生 / Envd | 调度至 Vercel 托管的安全沙箱环境中                                |
-| `sprites`        | 原生 / Envd | 通过私有隧道连接至临时的 Sprite 沙箱实例                          |
-| `http_envd`      | Envd        | 通过 HTTP/HTTPS 协议连接远程已部署的守护程序                      |
-| `websocket_envd` | Envd        | 通过 WebSocket 反向长连接隧道穿透至 Envd 实例                     |
+| 提供方           | 执行路径    | 底层机制                                           |
+| :--------------- | :---------- | :------------------------------------------------- |
+| `direct_local`   | 原生        | 以宿主机当前进程身份直接访问本地目录               |
+| `local_envd`     | Envd        | 通过 stdio 连接宿主拉起的本地 `a13n-envd` 守护进程 |
+| `docker`         | 原生 / Envd | 在受管 Docker 容器内执行                           |
+| `e2b`            | 原生 / Envd | 在隔离的 E2B 云沙箱中运行                          |
+| `daytona`        | Envd        | 在 Daytona 云工作区中运行                          |
+| `modal`          | Envd        | 在 Serverless Modal 沙箱中运行                     |
+| `vercel`         | 原生 / Envd | 在 Vercel Sandbox 中运行                           |
+| `sprites`        | 原生 / Envd | 在 Fly.io Sprite 实例中运行                        |
+| `runloop`        | 原生        | 在 Runloop Devbox 中运行                           |
+| `boxd`           | 原生        | 在网络隔离的 boxd 虚拟机中运行                     |
+| `http_envd`      | Envd        | 通过 HTTP(S) 连接已部署的远程 Envd 守护进程        |
+| `websocket_envd` | Envd        | 通过反向 WebSocket 隧道连接内网 Envd 守护进程      |
 
 ## 管理、连接与执行
 
-Environments 将物理环境的编排配置与单次业务任务的执行完全解耦：
-
 ```mermaid
 flowchart TB
-    Host["宿主平台：准备目标环境（本地目录 / 容器 / 云端 VM）"] --> Connector["构建环境连接器 EnvironmentConnector"]
-    Connector --> Exec["通过 connector.open() 开启单次执行会话"]
-    Exec --> Ops["执行文件读写、检索与进程调度操作"]
-    Ops --> Close["安全关闭本次执行会话"]
-    Close --> Target["底层物理目标安全保留，等待下次复用"]
+    Host["宿主：准备目标环境（本地目录 / 容器 / 云端 VM）"] --> Connector["构造 EnvironmentConnector"]
+    Connector --> Exec["调用 connector.open() 打开执行会话"]
+    Exec --> Ops["执行文件、Shell 与桌面操作"]
+    Ops --> Close["关闭单次执行"]
+    Close --> Target["底层目标保留以供后续复用"]
 
     class Host app
     class Connector,Exec,Ops,Close a13n
     class Target store
 ```
 
-1. **准备目标（Target）：** 宿主环境分配本地目录、启动 Docker 容器或绑定已有的远程守护进程。
-2. **构建连接器（Connector）：** 实例化 `EnvironmentConnector`。该对象仅代表一个确定的可寻址目标，构造过程不发生任何网络 I/O。
-3. **开启执行（Execution）：** 调用 `connector.open()` 会生成一个活跃的 `EnvironmentExecution` 会话。业务应用通过该句柄安全操作文件或执行进程，任务结束后关闭该会话。底层的容器或云端虚拟机依然完好保留，等待下一次会话秒级复用。
+1. **准备目标：** 宿主分配目录、容器或云沙箱（或选择已注册的设备）。
+2. **构造连接器：** `EnvironmentConnector` 描述固定可寻址目标，构造过程不发生网络 I/O。
+3. **打开执行：** `await connector.open()` 返回活跃的 `EnvironmentExecution` 句柄；关闭句柄会释放本次执行资源，同时保留底层容器或虚拟机。
 
-## 与 Harness 一起使用
+## 与 Harness 配合使用
 
-若需将执行环境挂载给 Agent，只需声明一个 `EnvironmentSource` 并注入 `DynamicEnvironmentCapability`：
+提供实现 `ensure_ready()` 的 `EnvironmentSource`（见[提供环境源](../a13n-harness/environments.md#supply-a-source)），按需配合 `EnvironmentMount` 限定挂载路径与权限上限，并在 `HarnessBuilder` 上注册 `DynamicEnvironmentCapability`：
 
 ```python
-from a13n_harness.capabilities import DynamicEnvironmentCapability
-from a13n_harness.environments import EnvironmentMount, PreparedSource
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 
-# 1. 将 Connector 包装为就绪源
-source = PreparedSource(connector)
-
-# 2. 配置挂载路径与操作权限上限
-mount = EnvironmentMount(
-    source=source,
-    mount_path="/workspace",
-    read_only=False,
+executable = HarnessBuilder().build(
+    AgentSpec(),
+    output_type=str,
+    model=model,
+    capabilities=(
+        DynamicEnvironmentCapability(
+            DynamicEnvironmentConfiguration(files_enabled=True, shell_enabled=True)
+        ),
+    ),
 )
-
-# 3. 为智能体构建器挂载能力
-builder.add_capability(
-    DynamicEnvironmentCapability(mounts=[mount])
-)
+# 调用 await executable.run("...", environment=source) 时传入环境源
 ```
-
-Harness 会自动在模型侧生成受权限约束的 `read_file`、`write_file`、`exec_command` 等操作工具，模型只能在挂载的路径范围内工作。
 
 ## 使用 Local Envd
 
-当在单台宿主机上运行不可信的智能体代码，需要硬件级的 Linux 内核隔离（Namespaces / Cgroups）、出网 IP 白名单封锁或桌面截屏操作时，推荐使用本地 Envd 运行时：
+在单机需要原生沙箱隔离、受控出站网络或桌面操控时，构造由宿主管理的 `LocalEnvdProviderRuntime`（详见[提供方与运行时](providers.md#local-envd-runtime)）：
 
 ```python
-from a13n_harness.environments.providers.local_envd import LocalEnvdProviderRuntime
+from a13n_harness.providers.environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+    resolve_a13n_envd_executable,
+)
 
-runtime = LocalEnvdProviderRuntime(binary_path="/usr/local/bin/envd")
-connector = runtime.create_connector(workspace_path="/tmp/sandbox")
+runtime = LocalEnvdProviderRuntime(
+    executable=resolve_a13n_envd_executable(),
+    allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
+)
 ```
-
-Envd 会在操作系统内核层面实施严格隔离，杜绝 Agent 代码越权访问主宿主系统。
 
 ## 保留目标与管理状态
 
-为了在分布式集群中跨多轮会话复用同一个沙箱容器：
-
-1. 将提供商返回的 `EnvironmentState` 序列化，并与 `HarnessState` 一同持久化至应用数据库中。
-2. 下次发起后续轮次时，直接基于该状态重新生成连接器，无需重复冷启动容器。
-3. 仅在整个业务流程彻底完结或租约超期时，再发起显式的销毁释放操作。
+在创建或启动目标后持久化返回的 `EnvironmentState`，后续运行直接从保存的状态重建连接器，并在业务会话结束时显式停止或销毁底层实例。托管模板与生命周期编排详见 [Service 执行环境](../a13n-service/environments.md)。

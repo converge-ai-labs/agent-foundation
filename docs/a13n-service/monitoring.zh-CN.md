@@ -1,116 +1,47 @@
 ---
-title: 平台监控、指标采集与故障排查
-description: 从 Service 导出 Prometheus 指标与 OpenTelemetry 追踪，关联 HTTP 请求与 Worker Run，快速定位队列积压与投递异常。
+title: 监控与排障
+description: 从 Service 导出 Prometheus 指标与 OpenTelemetry 链路追踪，关联 HTTP 请求 ID 与运行记录，并查询工作区用量与费用。
 ---
 
-先明确要回答的问题。请求失败时，沿请求 ID 查日志；运行缓慢时，检查队列和执行尝试；查看成本时，读取工作空间保存的用量。
+| 排查问题                           | 入口                                                 |
+| ---------------------------------- | ---------------------------------------------------- |
+| 为什么某次请求或运行失败了？       | [排查请求与运行故障](#troubleshoot-a-request-or-run) |
+| Worker 或队列是否出现积压？        | [Prometheus 指标](#metrics)                          |
+| 智能体在某次尝试内部做了什么？     | 运行尝试的[链路追踪](inspect-runs.md#traces)         |
+| 消耗了多少 Token 和费用？          | [工作区用量](#usage)                                 |
+| 沙箱容器是否缺少 CPU、内存或磁盘？ | [运行环境资源监控](environment-monitoring.md)        |
 
-| 问题                         | 从哪里开始                                       |
-| ---------------------------- | ------------------------------------------------ |
-| 请求或运行为什么失败？       | [请求与运行排障](#troubleshoot-a-request-or-run) |
-| Worker 能跟上工作量吗？      | [Service 指标](#metrics)                         |
-| Agent 在一次尝试中做了什么？ | 该尝试的 [trace](inspect-runs.md#traces)         |
-| 哪些 agent 或模型用量最多？  | [工作空间用量](#usage)                           |
-| 环境是否缺少 CPU 或内存？    | [环境监控](environment-monitoring.md)            |
+## 排查请求与运行故障
 
-排查请求需要访问进程日志。指标需要配置抓取端点，trace 需要配置追踪后端。工作空间用量来自 PostgreSQL，可独立于这些后端使用。
+1. 记录响应中的 `X-Request-Id`（即错误体中的 `error.request_id`），在 `control` 日志中按 `request_id` 检索 `Request finished` 与 `Run accepted`。
+2. 提取 `run_id`，跨 `control` 与 `worker` 日志追踪生命周期（`Run accepted` → `Attempt claimed` → `Attempt ended` → `Run sealed`），并调用 `GET /api/v1/runs/{run_id}` 查看保存的状态与失败原因。
+3. 若已启用追踪后端（[遥测配置](configuration.md#logs-metrics-and-traces)），访问 `GET /api/v1/runs/{run_id}/attempts/{attempt_id}/trace` 查看完整 Span。
+4. 若 Webhook 或邮件未送达，按 `Outbox`（`outbox_id`、`kind`）检索日志并检查[发件箱容量](operations.md#outbox-retention-and-capacity)。
 
-工作空间成员可按已有权限[检查运行](inspect-runs.md)和读取[用量](#usage)。下方日志访问与进程指标配置属于运维人员的职责。
+默认向标准输出打印 JSON 日志；也可在 `service.toml` 中配置滚动日志文件（`telemetry.log_file`、`log_file_max_mb`、`log_file_backups`）。
 
-## 排查请求或运行
+## 指标（Metrics）
 
-保留失败响应的状态、错误体和 `X-Request-Id`。错误体中的 `request_id` 与该响应头相同。然后按以下步骤追踪：
-
-1. 在进程日志中搜索 `request_id`。`Request finished` 给出路由模板、状态和时长。
-2. 在同一请求的记录中找到 `Run accepted`，复制 `run_id`。如果请求被拒绝，根据错误码修正请求，此时没有接收运行。如果消息排在活跃运行之后，跟进其[收件箱条目](agents-and-runs.md)，直到条目指明取走消息的运行。
-3. 在所有相关进程日志中搜索 `run_id`，包括 worker 日志。根据下表选择下一步检查项，再调用 `GET /api/v1/runs/{run_id}` 查看当前保存的状态和失败消息。
-4. 对于正在执行或已失败的尝试，如果配置了追踪，检查其 trace。调用 `GET /api/v1/runs/{run_id}/attempts/{attempt_id}/trace`，或在后端搜索 `service_run_id` 和 `run_attempt_id`。
-
-| 记录              | 说明                    | 下一步检查                                                                                            |
-| ----------------- | ----------------------- | ----------------------------------------------------------------------------------------------------- |
-| `Run accepted`    | 工作已被接收。          | 如果没有后续尝试，检查 worker 就绪状态、空闲槽位和队列等待时间。                                      |
-| `Attempt claimed` | Worker 开始了一次尝试。 | 检查该尝试的 trace 和后续尝试记录。                                                                   |
-| `Attempt ended`   | 本次尝试已停止。        | 阅读 `status` 和 `reason`；重试或继续执行会出现新的 `Attempt claimed`，封存则表示运行已结束。         |
-| `Run sealed`      | 运行已结束。            | 阅读保存的状态和原因；等待结果可能需要[人工输入和后继运行](agents-and-runs.md#resume-a-waiting-run)。 |
-
-端点策略失败会说明违反的规则，例如必须使用 HTTPS。再次启动前先修正配置；相同的被拒绝配置不会重试。模型认证失败可能包含 `HTTP 401`。失败消息不包含上游原始响应体。
-
-Webhook 或邮件未送达时，先按 `kind` 搜索 `Outbox` 记录，再按 `outbox_id` 追踪。`Outbox delivery failed` 会重试；`Outbox delivery dead` 记录最终原因。投递持续积压时，检查 [outbox 保留与容量](operations.md#outbox-retention-and-capacity)。
-
-## 日志
-
-默认的 JSON stdout 日志可以交给进程管理器或日志采集器。本地阅读时，可设置 `telemetry.log_format = "pretty"`。部署需要文件日志时，在配置中添加轮转 JSON 日志：
-
-```toml
-[telemetry]
-log_level = "INFO"
-log_file = "/var/log/a13n/service.log"
-log_file_max_mb = 100
-log_file_backups = 5
-log_stdout = false
-```
-
-为每个进程选择独立且可写的路径，然后重启该进程。本例保留当前文件和最多五份备份，只向文件输出日志。`migrate` 等运维命令继续向 stdout 输出。
-
-根据正在追踪的工作选择 ID：
-
-| 工作              | 日志字段                                                                           |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| HTTP 请求         | `request_id`；`Request finished` 还包含 `method`、`route`、`status`、`duration_ms` |
-| Worker 与执行尝试 | `worker_id`，以及 `run_id` 和 `attempt_id`                                         |
-| 后台扫描          | `sweep`；`Sweep failed` 包含 `error_type` 和有界 `exception_details`               |
-| Webhook 或邮件    | `outbox_id`、`kind` 和投递 `reason`                                                |
-
-请求日志不记录健康和就绪探测。Service 日志与指标不包含凭据、请求和响应体、原始 URL 或查询字符串。反向代理的访问日志需要单独配置查询字符串隐藏。Trace 内容有独立的[导出设置](configuration.md#logs-metrics-and-traces)；向后端发送提示、输出或工具载荷前，先选择 `telemetry.trace_content`。
-
-## 指标
-
-监控 Service 进程：
-
-1. 在部署配置中添加指标端口，该端口必须与 `server.port` 不同：
+在 `service.toml` 中配置独立于 `server.port` 的私网指标端口，并将**每一个 `control` 与 `worker` 副本**加入 Prometheus / VictoriaMetrics 抓取目标（预置 Grafana 看板与告警规则位于 [`deploy/monitoring`](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/monitoring)）：
 
 ```toml
 [telemetry]
 metrics_port = 9464
 ```
 
-2. 重启进程。从私有监控网络访问 `server.host` 上配置端口的 `/metrics`。进程可通过本机访问时：
+| 观测维度          | 关键 Prometheus 指标                                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| HTTP 延迟与错误率 | `http_server_request_duration_seconds`（筛选 `a13n_request_kind="api"`）                                   |
+| 运行吞吐          | `a13n_runs_accepted_total`、`a13n_runs_sealed_total`                                                       |
+| Worker 饱和度     | `a13n_worker_slots`（`free`/`busy`）、`a13n_attempt_queue_wait_seconds`、`a13n_attempt_duration_seconds`   |
+| 队列积压          | `a13n_backlog_size`、`a13n_backlog_oldest_age_seconds`（配合 `a13n_backlog_updated_seconds` 校验新鲜度）   |
+| 发件箱与后台巡检  | `a13n_outbox_deliveries_total`、`a13n_outbox_backlog_alert`、`a13n_outbox_dead`、`a13n_sweep_passes_total` |
 
-```sh
-curl --fail http://127.0.0.1:9464/metrics
-```
+已安装的 App 插件也可通过同一监听端口[上报自定义业务指标](app-plugins.md#report-custom-metrics)。
 
-3. 将**每个 control 和 worker 进程**加入 Prometheus 或 VictoriaMetrics 抓取配置。抓取间隔不超过 30 秒，并相应设置数据源的最小间隔。使用仓库[监控套件](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/monitoring)时，将任务名设为 `a13n-service`。
-4. 按需导入套件的可编辑 Operations 看板。选择数据源、job 和 deployment，再检查 API/SSE、运行、队列新鲜度、worker 容量、调度和投递。只启用需要的告警预设；看板与告警彼此独立。
+## 用量统计
 
-指标监听器独立于 API 监听器，应保留在私有网络中。为每个目标添加唯一的共享 `deployment` 域及其 `role`（`all`、`control` 或 `worker`）。Helm chart 的可选 PodMonitor 提供 namespace/release 和 role 标签；套件说明 operator 和静态主机配置。抓取成功只表示指标监听器可达；就绪状态应另行检查 `/readyz`。
-
-| 运维问题               | 可用指标                                                                                                 |
-| ---------------------- | -------------------------------------------------------------------------------------------------------- |
-| 请求是否缓慢或失败？   | `http_server_request_duration_seconds`，按方法、路由模板和状态码分组                                     |
-| 运行是否被接收并完成？ | `a13n_runs_accepted_total`、`a13n_runs_sealed_total`，按触发源或结果分组                                 |
-| Worker 是否饱和？      | `a13n_worker_slots`（`free`/`busy`）、`a13n_attempt_queue_wait_seconds`、`a13n_attempt_duration_seconds` |
-| 到期工作是否积压？     | `a13n_backlog_size` 和 `a13n_backlog_oldest_age_seconds`，按 `queue` 分组                                |
-| 投递是否失败？         | `a13n_outbox_deliveries_total`、`a13n_outbox_backlog_alert`、`a13n_outbox_dead`                          |
-| 后台任务是否失败？     | `a13n_sweep_passes_total`，按 `sweep` 和 `result` 分组                                                   |
-
-积压指当前符合消费者执行条件的工作：已到期的 accepted run、空闲线程中可处理的收件箱条目、调度规划与 occurrence 派发、过期的非 shell 工具租约，以及已到期且未被租约占用的 outbox 工作。排除 waiting run 和未来的重试退避。收件箱年龄从条目创建开始，可能包含此前被其他 Run 阻塞的时间；其分配延迟与到期 Run 的领取延迟使用独立面板。`all` 和 `control` 副本每 15 秒刷新共享快照。先使用 `a13n_backlog_updated_seconds`，按 job/deployment/instance/queue 匹配，排除至少 60 秒未更新的快照，再取**每个 deployment/queue 的最大值**。缺失库存表示不可用，不是零。`a13n_backlog_limit` 给出有界计数上限：达到上限时，size 只是下界。进程本地的 worker 槽位和开放 SSE 连接则跨进程求和。
-
-两个 outbox gauge 使用相同的先过滤新鲜度、再取最大值规则，新鲜度来自 `a13n_outbox_updated_seconds`。某类型持续超过阈值达 `backlog_alert_seconds` 后，`a13n_outbox_backlog_alert` 变为 1；进程重启会重置计时。保留有 dead 投递时，`a13n_outbox_dead` 为 1。容量预设使用持续超出策略阈值的信号；执行预设针对新产生的 dead 投递事件告警，不会因历史保留记录一直保持告警。
-
-计算 API 延迟和错误比例时，选择 `a13n_request_kind="api"`，避免探测、静态响应和长连接 SSE 干扰。SSE 单独记录响应头延迟、活跃连接、关闭结果及 reader gap/drop；HTTP 200 的流仍可能在响应头发出后失败。Sweep pass 成功只表示扫描正常返回，还应检查独立条目失败和扫描新鲜度。条目的 `sweep` 标签表示所属工作流：`advance_threads` 包含封存和投递后的快路径；Browser/Desktop control 条目可以在外层扫描完成后才结束。调度提交表示收件箱条目已提交，不表示执行已开始。Waiting run 会封存；人工等待和恢复后的后继 run 分开处理。
-
-Worker 还导出 [Harness 指标](../a13n-harness/observation.md)，包括 `a13n_harness_run_duration_seconds` 和模型 token 用量 `gen_ai_client_token_usage`。进程指标会移除租户配置的请求/响应模型名称；按模型核算应使用持久化用量。Service 指标描述进程健康和全局工作情况；工作空间级数据使用用量 API。
-
-已安装的 App 插件可以使用标准 OpenTelemetry API，通过同一个监听器[上报自定义业务指标](app-plugins.md#report-custom-metrics)。每个 App 负责自己的指标名称前缀和有限属性值；宿主已经测量其 HTTP 路由和组织 sweep pass。自定义 Grafana 面板和告警由运维人员管理。
-
-## 用量
-
-通过 Console 或 API 读取工作空间保存的运行和模型用量记录。运维人员需要组织级报告时，可以通过只读 PostgreSQL 角色导入可选 Usage 看板；套件提供查询和选择器所需的列级授权，包括 `agents`。从旧版整表授权升级时，应重新应用其 SQL；Run 载荷、调用者请求头和配置列保持不可访问。两份看板 JSON 均可导入、编辑、另存自定义副本和导出，无需 Service 集成。
-
-PostgreSQL 看板仅供运维人员使用。Organization/Workspace 选择器只是分析筛选，不执行 Service 授权：任何能查询该数据源的人都能读取所有已授予的行。租户侧访问应使用已授权的 API 或适当限制的数据库/视图。看板按 UTC 划分日期，所选时间范围为半开区间 `[from,to)`；明细表最多显示前 100 行，概览总计覆盖完整人口。
-
-生成 API 报告时，设置 `A13N_URL`，并提供具有读取权限的工作空间 `A13N_API_KEY`。将 `START` 和 `END` 设为 RFC 3339 时间戳，范围大于零且不超过 366 天；`END` 为不包含的结束边界。以下请求按 UTC 日期分组：
+在 Console 打开 **Insights → Usage** 查看 Token 总量、缓存命中率与 USD 预估费用（工作区管理员支持按成员筛选），或在左闭右开 `[start, end)` RFC 3339 时间窗（最长 366 天）内通过 API 查询：
 
 ```sh
 curl --get "$A13N_URL/api/v1/usage/overview" \
@@ -120,33 +51,6 @@ curl --get "$A13N_URL/api/v1/usage/overview" \
   --data-urlencode "timezone=UTC"
 ```
 
-读取概览总计和每日分桶。使用相同时间范围调用 `GET /api/v1/usage/agents` 或 `/api/v1/usage/models`，得到分页明细（`limit` 和 `cursor`）。`GET /api/v1/usage` 提供运行、线程和会话汇总；参阅[用量查询](inspect-runs.md#usage)。
+分页明细端点包括 `/api/v1/usage/agents`、`/api/v1/usage/models` 与 `/api/v1/usage/members`（需 `admin` 权限），单次运行/线程/会话汇总位于 `GET /api/v1/usage`（见[检查运行记录](inspect-runs.md#usage)）。
 
-### Console 中的工作空间用量
-
-1. 在工作空间中打开 **洞察 → 用量**。
-2. 选择最近 7 天、30 天，或最长 366 天的自定义范围。
-3. 比较费用、运行数、模型请求数、平均运行时长和 token 总量。
-4. 在 **费用** 和 **Token 数** 之间切换每日图表，再比较 agent 或模型明细。
-
-![Console 中的成本、token、缓存命中率与每日花费](../../.github/assets/service-console.webp)
-
-*截图使用本地 Seed 数据中的虚构历史。*
-
-结合以下口径理解数据：
-
-- **成本：** 记录的模型成本以美元计。未定价请求单独计数。部分小计只包含已知成本；成本全部未知时显示不可用。
-- **缓存：** 缓存输入已包含在输入 token 中。缓存命中率为缓存输入总量除以输入总量，不是各请求比例的平均值。
-- **时间：** 用量按入库时间分组，运行按启动时间计数。平均运行时长覆盖已启动且封存的运行，从启动到封存计算，包括中途的执行等待。等待运行会在人工审批前封存；恢复后的后继运行单独计数。
-
-延迟到达的用量可能更新较早的总计。Console 按浏览器时区划分日期；将 API 报告与图表对比时，使用相同的时区和时间范围。
-
-工作空间管理员可以按成员查看用量：
-
-1. 在时间范围旁的**成员**选择器中选择用户或服务账号。总览、每日趋势及 agent/模型明细会一起筛选。
-2. 在明细中选择**按成员**以比较账号，点击一行的**查看用量**检查该账号。
-3. 点击**清除成员筛选**恢复工作空间视图。
-
-`GET /api/v1/usage/members` 返回分页成员明细。总览、agent、模型和成员接口均接受可选的 `principal_id`。成员查询和任何按身份筛选的查询都需要工作空间 `admin` 权限；未筛选的总览、agent 和模型查询需要 `read`。不存在或属于其他工作空间的身份返回空用量，不暴露其资料。
-
-用量归属依据运行的执行身份。共享 bot 账号的请求计入该账号，不会拆分为外部聊天用户。停用或移除成员后仍保留其历史用量；显示的名称和状态取当前值。
+<span id="bind-and-verify-an-environment"></span> <span id="system-information-and-resource-monitoring"></span>

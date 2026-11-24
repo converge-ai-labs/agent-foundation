@@ -1,31 +1,23 @@
 ---
-title: 原生工具与 Web 提供方
-description: 在 Harness UI 中启用联网搜索、网页抓取、模型提供方原生搜索以及自动保存到工作区的 AI 图像生成。
+title: 原生工具与 Web 服务提供方
+description: 在 Harness UI 中启用宿主机网页搜索与抓取、第三方 Web 服务提供方、模型厂商原生工具，以及自动落盘到工作区的 AI 图像生成。
 ---
 
-需要由 Harness UI 发起联网搜索、抓取公开网页或下载文件时，使用 **Host Web**；需要由模型提供方直接执行搜索、抓取、代码执行、文件检索或图像生成时，使用**原生工具**。两者均在智能体上配置。
+通过**宿主机 Web**（`capability: web`）由 Harness UI 执行公网搜索、正文抓取与文件下载；当希望由上游模型提供商直接执行搜索、网页读取、代码运行、文件检索或图像生成时，启用**厂商原生工具**（`NativeTool` 与 `native_image_generation`）。
 
-| 任务                   | 工具 / 能力                       | 执行位置                          |
-| ---------------------- | --------------------------------- | --------------------------------- |
-| 搜索并阅读公开网页     | Host `web` 或原生搜索/抓取        | Harness UI 或模型提供方           |
-| 将 URL 下载到本地磁盘  | Host `web` 下载                   | 所选环境的可写存储                |
-| 生成并保存图像         | `native_image_generation`         | 提供方生成，自动保存到线程 `tmp/` |
-| 针对项目文件执行代码   | 环境 Shell                        | 所选运行环境                      |
-| 提供方侧代码或文件检索 | 原生 Code Execution / File Search | 模型提供方环境                    |
+| 任务                        | 能力声明                                        | 执行位置                      |
+| --------------------------- | ----------------------------------------------- | ----------------------------- |
+| 搜索并阅读公开网页          | 宿主机 `web` 或 `NativeTool`                    | Harness UI 或模型提供商       |
+| 将 URL 文件下载到磁盘       | 宿主机 `web` 下载工具                           | 当前执行环境的可写存储        |
+| 生成图像并保存文件          | `native_image_generation`                       | 提供商生成，保存至会话 `tmp/` |
+| 针对项目代码执行命令        | 执行环境 Shell                                  | 当前选定的执行环境            |
+| 提供商侧代码运行 / 文件检索 | `NativeTool`（`code_execution`、`file_search`） | 模型提供商托管环境            |
 
-## 引导式配置
+可运行 `a13n-harness-ui setup`（或在 WebUI 点击 **Add Agent**）完成向导式勾选，也可直接编辑智能体 YAML 并运行 `a13n-harness-ui config validate` 校验。
 
-1. 运行 `a13n-harness-ui setup`（或在 WebUI 中点击 **Add Agent**）并连接模型。
-2. 在 **Choose native Agent tools** 中勾选当前连接支持的原生工具，并按需填写资源 ID（如 File Search 存储 ID）。
-3. 保存智能体后，发送一条会触发所选工具的简短测试消息，确认端到端可用。
+## 宿主机 Web 能力与内置后端
 
-默认情况下，启用原生 Web Search 会关闭 Host 搜索（保留抓取/获取/下载），启用原生 Web Fetch 会关闭 Host 抓取。后续更换智能体模型时不会自动改写工具列表，切换提供方后请检查能力配置。
-
-## Host Web 能力：所有内置提供方
-
-内置 Host Web 后端（`DuckDuckGoSearchProvider` 搜索、`HtmlScrapeProvider` 转 Markdown、`HttpxWebClient` 获取与下载）无需任何 API 密钥。
-
-在智能体的 `capabilities` 中加入 `web`：
+宿主机内置 Web 后端（`DuckDuckGoSearchProvider`、`HtmlScrapeProvider` 与 `HttpxWebClient`）无需 API 密钥即可开箱即用。对于依赖 JavaScript 动态渲染的交互式站点，请改用[宿主机浏览器](host-browser.md#browse-on-the-host)：
 
 ```yaml title="agents/web-reader.yaml"
 schema_version: "1"
@@ -41,13 +33,11 @@ capabilities:
       scrape: {mode: host, backend: default}
 ```
 
-- `search.mode` 支持 `host`、`native`、`auto` 或 `off`；`scrape.mode` 支持 `host` 或 `off`。
-- `configuration` 支持的可选限额：`deadline_seconds`（60）、`max_redirects`（8）、`max_search_results`（10）、`max_text_bytes`（262144）、`max_scrape_bytes`（524288）、`max_download_bytes`（268435456）。
-- 抓取仅读取静态 HTTP 响应，不执行 JavaScript；需要交互式页面请使用[宿主机浏览器](host-browser.md#browse-on-the-host)。
+`search.mode` 支持 `host`、`native`、`auto`（可附加 `provider_settings`，如 `{openrouter: {engine: exa, max_results: 5}}`）或 `"off"`；`scrape.mode` 支持 `host` 或 `"off"`。常用上限参数包括 `deadline_seconds`（`60`）、`max_redirects`（`8`）、`max_search_results`（`10`）、`max_text_bytes`（`262144`）、`max_scrape_bytes`（`524288`）与 `max_download_bytes`（`268435456`）。
 
-### Web 提供方账号
+### Web 服务提供方账号
 
-在 **Settings → Connections → Web providers → Add Web provider** 添加第三方搜索/抓取服务（Tavily、Exa、Firecrawl、Brave Search、Jina、Perplexity、SerpApi、Keenable 等），或在 `web_providers/*.yaml` 中定义：
+在 **Settings → Connections → Web providers** 或 `web_providers/*.yaml` 中注册第三方搜索/抓取账号（支持 `tavily`、`exa`、`firecrawl`、`brave`、`jina`、`perplexity`、`serpapi`、`keenable` 等），随后通过 `backend: web-provider-research` 或带回退顺序的 `backend_priority: [web-provider-research, default]` 引用：
 
 ```yaml title="web_providers/research.yaml"
 schema_version: "1"
@@ -60,18 +50,37 @@ credential:
   api_key: {env: TAVILY_API_KEY} # 或 {credential_ref: key-research}
 ```
 
-随后在智能体的 **Web options** 中勾选该账号，或在 YAML 中设置 `backend: web-provider-research`（支持 `backend_priority: [web-provider-research, default]` 作为回退顺序）。
-
 ## 原生搜索与图像生成
 
-在智能体的 `capabilities` 中直接启用提供方原生工具：
+在智能体的 `capabilities` 列表中合并 `NativeTool` 与 `native_image_generation`（同时将宿主机 `web.search.mode` 设为 `"off"`，避免重复暴露搜索工具，同时保留宿主机网页抓取与下载）：
 
 ```yaml title="agents/creative.yaml — capabilities 片段"
 capabilities:
-  - capability: native_web_search
+  - capability: NativeTool
+    configuration:
+      kind: web_search
+      external_web_access: true
   - capability: native_image_generation
+    configuration:
+      output_format: png
+      provider_settings:
+        openai:
+          quality: auto
+  - capability: web
+    configuration:
+      search: {mode: "off"}
+      scrape: {mode: host}
 ```
 
-- 生成的图像会自动保存到当前线程的 `tmp/` 目录，并以工作区路径返回。
-- 可通过 `provider_settings` 传递提供方专属参数（例如 `provider_settings: {openrouter: {engine: exa}}`）。
-- 各模型支持的具体原生工具组合请以对应提供方文档为准。
+生成的图片会自动保存到当前会话的 `tmp/` 目录下（重要产物建议复制到项目目录长期保存）。重复添加 `NativeTool` 条目即可按模型适配器支持情况启用更多厂商原生工具：
+
+| 能力 / `NativeTool` `kind`             | 核心 `configuration` 字段说明                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------------- |
+| `NativeTool`（`kind: web_search`）     | 可选 `search_context_size`、`external_web_access`                                   |
+| `NativeTool`（`kind: web_fetch`）      | 由模型提供商直接拉取 URL（可按需将宿主机 `web.scrape.mode` 设为 `"off"`）           |
+| `native_image_generation`              | `output_format`、`provider_settings`（Harness UI 自动落盘至会话 `tmp/`）            |
+| `NativeTool`（`kind: code_execution`） | 提供商侧沙箱计算（与本地项目文件相互独立）                                          |
+| `NativeTool`（`kind: x_search`）       | xAI 原生 X 检索（如 `allowed_x_handles`）                                           |
+| `NativeTool`（`kind: file_search`）    | `file_store_ids: [vs_your_store_id]`（提供商侧向量库/文件库 ID）                    |
+| `NativeTool`（`kind: mcp_server`）     | `id`、公网可达 `url`、`allowed_tools`（本地或需鉴权服务请改用[宿主机 MCP](mcp.md)） |
+| `NativeTool`（`kind: advisor`）        | `model`（提供商顾问模型 ID）与 `max_tokens`                                         |

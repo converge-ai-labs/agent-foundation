@@ -1,23 +1,106 @@
 ---
 title: Delegation and CodeAct
-description: Delegate bounded tasks to inline or host-managed subagents and execute restricted Python programs with CodeAct in Harness.
+description: Orchestrate multi-agent workflows with subagents or execute concurrent Python control flow over external tools using CodeAct.
 ---
 
-Use **subagents** to isolate focused work in a clean context window, and **CodeAct** to let an Agent compose multi-step tool calls in restricted Python.
+Use **Delegation** to isolate specialist roles in separate prompt contexts and models, and **CodeAct** to let an Agent compose loops, filtering, and `asyncio.gather` concurrency over tools in restricted Python without extra model round-trips.
 
-## Subagents
+| Requirement                                      | Mechanism                                       |
+| ------------------------------------------------ | ----------------------------------------------- |
+| Role separation or dedicated reviewer/specialist | Inline `SubagentCapability` (`delegate`)        |
+| Background child work outliving the parent turn  | [Asynchronous children](#asynchronous-children) |
+| Loops, filtering, or parallel tool fan-out       | `CodeActCapability` (`run_code`, `run_program`) |
 
-<span id="asynchronous-children"></span>
+## Inline delegation
 
-Attach named child definitions on `HarnessBuilder().build(..., subagents=...)` (or via `SubagentCapability`):
+Declare a child `AgentDefinition` and attach it to the parent with `SubagentCapability` and `SubagentDefinition`:
 
-- **Inline subagents:** Run inside the parent Run's stream, share the parent's Environment, and return their result directly to the parent.
-- **Host-managed subagents:** Run as independent child Runs managed by the Host (such as Service or Harness UI) with their own checkpoints and concurrency limits.
+```python title="delegation_demo.py"
+import os
+from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder, SubagentDefinition
+from a13n_harness.capabilities import SubagentCapability
 
-### Host-managed feedback
+reviewer = AgentDefinition(
+    agent=AgentSpec(
+        model=os.environ["HARNESS_MODEL"],
+        instructions="Analyze the plan and report concrete architectural risks.",
+    ),
+    output_type=str,
+    definition_id="plan-reviewer-v1",
+)
 
-Built-in inline children set `RunBindings.deferred_tools_supported=False` because they cannot pause independently for human input. Hosts that support pausing and resuming child Runs manage deferred feedback on their own child lifecycle.
+parent = HarnessBuilder().build(
+    AgentDefinition(
+        agent=AgentSpec(
+            model=os.environ["HARNESS_MODEL"],
+            instructions="Delegate deep reviews to 'reviewer', then synthesize.",
+        ),
+        output_type=str,
+        definition_id="coordinator-v1",
+        capabilities=(SubagentCapability(),),
+        subagents=(
+            SubagentDefinition(
+                name="reviewer",
+                description="Reviews plans for architectural and security risks.",
+                agent=reviewer,
+            ),
+        ),
+    )
+)
+```
+
+The parent calls `delegate(subagent="reviewer", prompt=...)` to start a child thread and `resume_subagent(execution_id=..., prompt=...)` to continue that same child thread. Child lineages persist inside the parent's `HarnessState`.
 
 ## CodeAct
 
-`CodeActCapability` lets the Model run restricted Python snippets that invoke the Agent's existing tools (subject to the same permissions and approvals) and persist JSON values across steps with `store`, `load`, and `forget`.
+Enable `CodeActCapability` and wrap eligible toolsets in `CodeActPolicyToolset` so the Model can call them as async Python functions inside `run_code` or `run_program`:
+
+```python title="codeact_demo.py"
+import os
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.capabilities import CodeActCapability, CodeActConfig
+from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.toolsets import FunctionToolset
+
+
+def double(value: int) -> int:
+    return value * 2
+
+
+math_tools = Capability(
+    id="math-tools",
+    toolsets=[
+        CodeActPolicyToolset(
+            wrapped=FunctionToolset([double], id="math-functions"),
+            policy=CodeActToolPolicy(tools={"double": True}),
+            reject_unknown_tools=True,
+        )
+    ],
+)
+
+calculator = HarnessBuilder().build(
+    AgentSpec(model=os.environ["HARNESS_MODEL"]),
+    output_type=str,
+    capabilities=(
+        math_tools,
+        CodeActCapability(CodeActConfig(max_tool_calls=32, max_concurrency=8, timeout_seconds=60)),
+    ),
+)
+```
+
+Inside `run_code`, the Model can fan out with `await asyncio.gather(double(value=10), double(value=20))`, execute workspace `.codeact.py` scripts via `run_program`, and persist JSON values across turns in `HarnessState` using `await store(key, value)`, `await load(key)`, and `await forget(key)`.
+
+## Asynchronous children
+
+For child runs that outlive the parent turn, supply a host `SubagentOperator`:
+
+```python
+capability = SubagentCapability(async_enabled=True, operator=host_operator)
+```
+
+This exposes `delegate`, `subagent_info`, `wait_subagent`, `steer_subagent`, `cancel_subagent`, and `resume_subagent`.
+
+### Host-managed feedback
+
+Built-in inline children set `RunBindings.deferred_tools_supported=False` because they cannot pause independently. With an async `SubagentOperator`, a child encountering a deferred question or approval transitions to `suspended`, saves its `HarnessState`, and resumes via `DeferredToolResume` once the Host collects user feedback.

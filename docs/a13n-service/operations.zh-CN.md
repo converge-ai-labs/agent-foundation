@@ -1,119 +1,45 @@
 ---
-title: Service 生产运维、备份与升级
-description: 规划 control 与 worker 角色分离部署，监控健康探针，执行安全的数据库迁移、全量数据备份与跨版本升级。
+title: 运维 Service
+description: 规模化运行 control 与 worker 角色，检查就绪探针，执行数据库迁移，备份核心状态并调优发件箱（Outbox）投递。
 ---
 
-运维 Service 时，使用运行中进程所用的配置和凭据。以下示例假定当前环境已安装 `a13n-service`，且 `service.toml` 指向该部署的[配置](configuration.md)。容器部署应在已配置的容器或迁移 Job 中运行运维命令。
+执行所有 `a13n-service` 运维命令时，均须在子命令**之前**传入 `--config service.toml`，并保持与线上进程一致的存储及加密密钥配置。
 
-升级按以下步骤进行，Compose 或 Helm 的具体命令见对应部署指南：
+## 进程角色与健康探针
 
-1. 选择目标版本，阅读该版本的发布说明和 [Service 升级说明](upgrade-notes.md)，确认是否有额外的切换要求。涉及 schema 变更时，预留维护窗口。如果需要暂停接收新任务或等待活动运行结束，请在迁移前完成。
-2. 为数据库、对象和加密密钥创建[一致备份](#backups)，并保留原部署配置和版本，以便一并恢复。
-3. 执行目标版本的 [schema 迁移](#schema-migrations)，启动新版本进程。
-4. [检查每个副本的就绪状态](#health-and-readiness)，打开一条历史运行记录，再发起一次新运行，验证部署依赖的功能。如果暂停了任务接收，等这些检查通过后再恢复。
-
-## 进程角色
-
-单进程部署选用 `all`。API 流量与 agent 执行需要独立扩容时，拆分为 `control` 和 `worker`：
-
-| 角色          | 职责                                                             |
-| ------------- | ---------------------------------------------------------------- |
-| `all`（默认） | API、Console、维护任务和 agent 执行。                            |
-| `control`     | API、Console、会话事件流和维护任务。                             |
-| `worker`      | 领取已接受的运行并通过 Harness 执行；HTTP 仅提供健康和就绪端点。 |
-
-在独立进程中分别运行以下命令，每个进程使用自己的监听地址或容器：
+| 角色          | 职责                                                                        |
+| ------------- | --------------------------------------------------------------------------- |
+| `all`（默认） | 提供 API、Console、后台巡检、自动迁移以及智能体执行                         |
+| `control`     | 提供 API、Console、SSE 事件流与后台巡检                                     |
+| `worker`      | 认领并经由 Harness 执行运行尝试（HTTP 仅暴露 `/healthz` 与 `/readyz` 探针） |
 
 ```sh
 a13n-service --config service.toml run --role control
 a13n-service --config service.toml run --role worker
 ```
 
-所有副本共享 PostgreSQL、Redis、对象存储和加密密钥环。将 control 副本放在 API 负载均衡器后。拆分部署时，将 `server.control_url` 设为 worker 可访问的地址，用于内部平台调用；默认使用 `server.public_url`。明确配置共享执行资源，因为工作空间自动初始化仅在 `all` 角色中运行。
+逐个副本检查 `/healthz`（`200 ok`）与 `/readyz`（`200 ready`；若返回 `"degraded": ["redis"]` 说明 Redis 暂不可达，持久化 PostgreSQL 读取仍可用）。在进程监管器中预留不少于 `worker.drain_seconds` + `tool_executions.shutdown_grace_seconds` + `finalization_seconds` 的优雅退出宽限期。
 
-每个 worker 可并发执行 `worker.slots` 个尝试。关闭时先停止领取任务，再给运行中的尝试最多 `worker.drain_seconds`，以便通过检查点交接。随后，保留执行的工具获得独立的 `tool_executions.shutdown_grace_seconds` 和收尾时限。为进程管理器预留足够时间完成这些阶段，再强制终止。
+## 备份与恢复
 
-进程崩溃或排空超时后，租约过期允许其他 worker 在新尝试中从最后检查点继续。外部副作用可能已经发生；恢复不会回滚这些操作，也不保证重复执行安全。运行耗尽 `worker.max_attempts` 次计入上限的尝试后失败。
+版本升级前请从同一一致性时间点完整备份以下三项（升级注意事项见[升级说明](upgrade-notes.md)）：
 
-## 健康与就绪
+1. **PostgreSQL：** 账号、配置资源、运行记录与对象引用。
+2. **对象存储：** 检查点、对话历史、工作区资产与技能包。
+3. **加密密钥（`encryption.key_file` 或密钥环）：** 解密已保存提供方与连接凭据所必需的密钥。
 
-检查每个副本的地址，而不只是负载均衡器。对于监听本机 8080 端口的进程：
+## 数据库迁移
 
-```sh
-curl --fail-with-body http://127.0.0.1:8080/healthz
-curl --fail-with-body http://127.0.0.1:8080/readyz
-```
-
-| 结果                                     | 含义与下一步                                                                              |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `/healthz`：`200`，`status: ok`          | 进程正在提供 HTTP 服务。继续用就绪检查确认运行时状态。                                    |
-| `/readyz`：`200`，`status: ready`        | 启动完成、后台服务运行且数据库 schema 匹配。确认 `role` 符合预期。                        |
-| `/readyz`：`503`，`dependency: runtime`  | 启动未完成或某个后台服务已停止。检查进程日志。                                            |
-| `/readyz`：`503`，`dependency: database` | Schema 校验失败或超过 `server.readiness_timeout`。检查连接和迁移结果。                    |
-| `/readyz`：`200`，`degraded: [redis]`    | 恢复 Redis。持久数据仍可读取，但实时输出丢失，限流不再执行。Worker 领取任务改用周期扫描。 |
-
-升级后还应打开一条历史运行，并提交一次仅调用模型的提示。所需工具或环境另行测试。就绪检查不调用模型供应商，也不验证全部已保存对象的内容。
-
-## 备份
-
-保留同一恢复时间点的三个部分：
-
-| 部分                               | 保存的内容                             |
-| ---------------------------------- | -------------------------------------- |
-| PostgreSQL                         | 账号、资源、运行事实和存储对象的引用。 |
-| 对象存储                           | 检查点、显示历史、资产和 skill 包。    |
-| 加密密钥环或 `encryption.key_file` | 解密已保存供应商和连接凭据所需的密钥。 |
-
-1. 升级前创建一致的数据库和对象存储备份。单机 Compose 流程会在备份期间停止 Service。
-2. 将对应密钥和部署配置保存在部署之外的私有存储中。
-3. 在依赖备份之前，先在独立部署中验证恢复。打开历史数据，并确认已保存凭据可用。
-
-具体命令见 [Compose 备份指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose#backups-and-upgrades)或 [Helm 升级指南](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#upgrades-and-backups)。更换镜像或执行 `helm rollback` 不会恢复已迁移的数据库，也不会转换保存的对象。
-
-## Schema 迁移
-
-选择一种迁移方式：
-
-- **自动迁移：** `database.auto_migrate = true`（默认值）时，`all` 和 `control` 在启动时迁移。
-- **专用 Job：** 在副本上设置 `database.auto_migrate = false`，启动副本前使用新构建执行迁移命令。
-
-Worker 永不迁移。并发迁移进程通过 PostgreSQL advisory lock 协调；`database.migration_advisory_lock_timeout` 限制等待时间。
-
-采用专用迁移步骤时，先完成备份和发布兼容性检查，再运行：
+`all` 与 `control` 默认在启动时通过 PostgreSQL 咨询锁自动执行迁移（`database.auto_migrate = true`）；`worker` 从不执行迁移。若使用独立迁移 Job，请在副本上设置 `database.auto_migrate = false` 并提前运行：
 
 ```sh
 a13n-service --config service.toml migrate
 a13n-service --config service.toml migrate --check
 ```
 
-检查成功表示数据库符合当前构建预期的 schema，且不存在旧的不分页运行指针。如果命令报告旧版对象，先完成[对象转换](upgrade-notes.md#convert-legacy-run-objects)，再启动副本。
+## 发件箱（Outbox）保留期与吞吐容量
 
-启动和就绪检查都要求 schema 与当前构建精确匹配。迁移可能让旧副本在新副本就绪前变为未就绪，即使旧进程仍在运行。若升级中断，请先检查数据库当前的迁移版本，再决定是继续向前修复还是回滚镜像。如果数据已经变更，而你必须退回旧版本，请将升级前的一致备份作为恢复点。恢复后的部署不包含该时间点之后的写入。
-
-## 日志与指标
-
-从失败请求的 `X-Request-Id` 开始排查。找到对应日志，再沿运行和尝试 ID 定位失败操作。请求日志使用路由模板，不记录原始 URL 或查询字符串。参阅[监控与排障](monitoring.md)，启用指标、检查运行失败或配置追踪。
-
-## 后台任务
-
-Control 副本通过数据库领取机制协调维护任务。扫描失败后记录错误，并在下一个间隔重试。任务停滞时，先识别受影响的操作，再决定是否增加 worker 容量：
-
-| 现象                         | 检查项                                                          |
-| ---------------------------- | --------------------------------------------------------------- |
-| 已接受的运行持续排队         | Worker 是否可用、是否有空闲槽位、检查点是否兼容，以及领取错误。 |
-| 崩溃的尝试仍显示活动状态     | 租约过期情况和 control 侧恢复扫描。                             |
-| 空闲环境仍占用资源           | 模板空闲策略和供应商维护错误。                                  |
-| 云环境过期                   | 续期失败和供应商连接情况。                                      |
-| 记忆整理或后台压缩一直未结算 | 操作已保存的状态和 control 对账日志。                           |
-| Webhook 或邮件停止到达       | Outbox 错误、目标可用性和 dead 投递告警。                       |
-
-Outbox 提供至少一次投递。失败投递按指数退避重试，间隔最长一小时，达到对应类型的 `max_attempts` 后标记为 dead。修复目标后，工作空间管理员可检查并重新投递 [webhook](webhooks.md#webhooks)。
-
-## Outbox 保留与容量
-
-保留策略控制已结束投递的历史；容量决定待处理投递的推进速度。默认成功记录保留一天，dead 记录保留十四天。清理扫描每分钟执行，每批最多删除 1000 条，持续最多五秒。待处理记录不会因时间或队列深度被删除。
-
-例如，将 webhook 历史保留七天，并降低检查点清理并发度，其他字段继续使用共享默认值：
+Webhook、邮件与异步清理通过持久化 Outbox 提供至少一次投递。可在 `service.toml` 中按类型调整保留时长与并发度：
 
 ```toml
 [outbox.by_kind.webhook]
@@ -124,40 +50,16 @@ delivered_retention_seconds = 3600
 parallel = 2
 ```
 
-`outbox.defaults` 配置共享策略，`outbox.by_kind` 配置按类型覆盖。各类型继承未指定字段。环境变量 `A13N_OUTBOX__DEFAULTS` 和 `A13N_OUTBOX__BY_KIND` 接收完整 JSON 对象，替换对应 TOML 字段。修改配置后重启进程。完整限制和默认值见[配置参考](configuration-reference.md)。
+针对 `all` / `control` 副本监控 `a13n_outbox_backlog_alert == 1` 与 `a13n_outbox_dead == 1` 告警。集成 vmagent / Alloy 拉取监控时，每个采集器仅保留唯一一个 `writer = true` 副本（见[采集器初始化](environment-collectors.md#bootstrap-an-optional-collector)）。
 
-对 `a13n_outbox_backlog_alert == 1` 和 `a13n_outbox_dead == 1` 设置告警，并取 `all` 和 `control` 副本中的最大值。先恢复目标可用性；若生产速度仍超过消费速度，再调整投递容量。缩短保留时间无法清空待处理任务。
+## 运维 CLI 命令速查
 
-## 环境监控采集器
-
-启用可选的 vmagent 或 Grafana Alloy 集成时，先按[采集器初始化](environment-collectors.md#bootstrap-an-optional-collector)操作。每个采集器只运行一个 `writer = true` 的 `all` 或 `control` 进程；其他 API 副本使用 `writer = false`。Worker 不同步采集器配置。
-
-修改或停用采集器时，按以下顺序操作：
-
-1. 保留写入进程与采集器共享的受保护配置目录。备份运维管理的转发配置和凭据；Service 根据环境绑定重新生成自己的片段。
-2. 修改后检查环境的采集器状态、采集器活动目标，以及后端的新鲜样本。`reload_requested` 确认的是请求已接受，而非数据已入库。
-3. 外部模式下，先移除托管片段并重载采集器，再停止写入进程或禁用监控。停止 Service 不会停用已加载的抓取任务。
-
-Helm 托管的 vmagent 使用专用写入进程/采集器 Recreate Pod，并保留队列 PVC。停用前先解除绑定或禁用数据源，确认目标移除，再排空待写入数据。在交付完成或明确决定丢弃之前保留队列。强制替换失联节点前，先将其隔离；RWO 存储和文件锁不能隔离另一节点。详见 [Helm 采集器生命周期](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/kubernetes#environment-monitoring-collectors)。
-
-轮换部署预设令牌后，重启普通 control Pod，并明确替换已保存数据源的凭据。移除预设或允许列表项只影响后续确认，不影响已保存或后端仍接受的凭据。
-
-## 运维命令
-
-将 `--config service.toml` 放在命令名之前。使用该部署的环境和存储访问权限，容器内执行时也相同。
-
-| `a13n-service --config service.toml` 后的命令                 | 用途                                                                     |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `bootstrap --email EMAIL [--password-stdin]`                  | 创建首个组织、工作空间和管理员；参阅[初始设置](get-started.md)。         |
-| `user disable --email EMAIL` / `user enable --email EMAIL`    | 通过[运维账号控制](identity.md#operator-account-control)暂停或恢复账号。 |
-| `migrate [--check]`                                           | 升级或校验当前构建的 schema。                                            |
-| `migrate-run-objects [--apply --backup-dir PATH] [--limit N]` | 在全部副本停止期间检查或转换旧版对象。                                   |
-| `run [--role ROLE]`                                           | 启动 Service 进程。                                                      |
-
-`a13n-service --version` 输出已安装版本。Bootstrap 提示输入密码，或读取标准输入首行；成功后以 JSON 输出新 ID，已初始化时不做修改并以 `3` 退出。`bootstrap`、`user` 和 `run` 都要求数据库符合该构建的 schema。
-
-## Run 搜索部署
+| 命令（`a13n-service --config service.toml ...`）              | 用途                                                                         |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `bootstrap --email EMAIL [--password-stdin]`                  | 初始化首个组织、工作区与管理员（见[快速开始](get-started.md)）               |
+| `user disable --email EMAIL` / `user enable --email EMAIL`    | 停用或恢复用户账号（见[运维账号控制](identity.md#operator-account-control)） |
+| `migrate [--check]`                                           | 升级或校验当前构建所需的数据库结构                                           |
+| `migrate-run-objects [--apply --backup-dir PATH] [--limit N]` | 在所有副本停机期间检查或转换旧版运行对象                                     |
+| `run [--role all\|control\|worker]`                           | 启动指定角色的 Service 进程                                                  |
 
 <span id="convert-legacy-run-objects"></span>
-
-- [Service 升级说明](upgrade-notes.md)

@@ -22,7 +22,7 @@ a13n-harness-ui config validate
 | `subscription_groups/*.yaml` | [有序订阅账号组](models-and-authentication.md#account-store-locations)              |
 | `projects/*.yaml`            | [工作目录、设备绑定与默认值](environments-and-projects.md#project-file-reference)   |
 | `devices/*.yaml`             | [远程 Envd 设备连接](environments-and-projects.md#add-device-bindings)              |
-| `mcp_servers/*.yaml`         | [MCP 服务器定义](mcp.md#mcp-field-reference)                                        |
+| `mcp/*.yaml`                 | [MCP 服务器定义](mcp.md#mcp-field-reference)                                        |
 | `subagents/*.md`             | [轻量级 Markdown 子智能体](agents-and-subagents.md#write-a-markdown-subagent)       |
 | `AGENTS.md`                  | [全局智能体指令](agents-and-subagents.md#instructions-and-guidance)                 |
 
@@ -68,8 +68,10 @@ subagents:
 security:
   shell_review:
     enable: true
-    reviewer_model: model-reviewer
-    ask_at_or_above: extra_high
+    model: model-reviewer
+    risk_threshold: extra_high
+    on_flagged: approval_required
+    on_error: allow
 ```
 
 审批阈值与 Codex Guardian 关联见[配置 Shell 审查](configuration-recipes.md#configure-shell-review)。
@@ -89,7 +91,9 @@ security:
 ```yaml title="a13n-harness-ui.yaml — memory"
 memory:
   enabled: true
-  auto_organize: true
+  auto_organize:
+    enabled: true
+    model: model-primary
 ```
 
 可在 WebUI 的 **Memory** 面板中查看记忆文件与自动整理记录。
@@ -101,7 +105,7 @@ memory:
 
 ## 本地 envd 运行时
 
-配置托管或自定义 `a13n-envd` 可执行文件、本地计算机使用（`computer_use: true`）及资源监控采样间隔（`monitoring_interval_seconds: 60`，范围 10–60）。详见[管理本地 envd](environments-and-projects.md#manage-local-envd)。
+在 `a13n-harness-ui.yaml` 的 `envd:` 下配置托管或自定义 `a13n-envd` 可执行文件、本地计算机使用（`computer_use: true`）及资源监控采样间隔（`monitoring_interval_seconds: 60`，范围 10–60）。详见[管理本地 envd](environments-and-projects.md#manage-local-envd)。
 
 ## 宿主机浏览器
 
@@ -121,7 +125,7 @@ webui:
 
 ## WebUI Bot
 
-在 `a13n-harness-ui.yaml` 的 `bot:` 下配置常驻 Bot，详见 [Bot](bot.md)。
+在 `a13n-harness-ui.yaml` 的 `webui.bot:` 下配置常驻 Bot，详见 [Bot](bot.md)。
 
 ## MCP 宿主连接管理
 
@@ -130,4 +134,4 @@ webui:
 
 ## 对象存储
 
-配置 `object_store` 以在工具调用与运行之间持久化大型工具输出和媒体产物。
+Harness UI 自动维护会话级本地对象存储（嵌入调用时可通过 `HarnessUiSettings` 的 `ObjectStoreSettings` 配置），支持通过 `object_ref_tools` 在工具调用间直接传递媒体与大型输出引用，避免在模型历史中重复携带 Base64 字节。

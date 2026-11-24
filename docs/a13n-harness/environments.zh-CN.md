@@ -1,50 +1,99 @@
 ---
 title: 运行环境
-description: 将 Harness 智能体连接到本地目录、Docker/云沙箱或远程 Envd 守护进程，支持挂载权限与按需延迟准备。
+description: 为 Harness 运行挂载沙箱工作区，强制执行文件与 Shell 权限上限，并跨本地与云目标管理后台进程。
 ---
 
-`DynamicEnvironmentCapability` 为智能体提供由 `EnvironmentRuntime` 支撑的文件、Shell 及可选桌面工具。通过向 `run()` 或 `stream()` 传入 `EnvironmentSource` 或 `EnvironmentMount`，由宿主掌控环境准备与权限边界。
+`DynamicEnvironmentCapability` 为智能体提供由宿主 `EnvironmentSource` 驱动的文件、Shell 与可选桌面工具。Harness 在首次使用时按需打开环境、执行挂载权限上限，并在 Run 结束时释放执行资源，而底层目标的创建与销毁由宿主负责。
 
 ## 提供环境来源
 
-实现 `EnvironmentSource`（或包装已准备好的连接器），将工作区交给本次 Run：
+实现 `EnvironmentSource`（在 `async def ensure_ready()` 中返回 `EnvironmentConnector`），并传给 `run(environment=...)`：
 
-```python
-from a13n_harness.environment import (
-    EnvironmentConnector,
-    EnvironmentMount,
-    EnvironmentPermissionCeiling,
-    EnvironmentSource,
-)
+```python title="environment_demo.py"
+import asyncio
+from dataclasses import dataclass
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
-
-class PreparedSource(EnvironmentSource):
-    def __init__(self, connector: EnvironmentConnector) -> None:
-        self._connector = connector
-
-    async def prepare(self, request):
-        return self._connector
+from a13n_harness import AgentSpec, HarnessBuilder
+from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
+from a13n_harness.environment.execution import EnvironmentConnector
+from a13n_harness.environment.models import EnvironmentDescriptor, EnvironmentState
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from pydantic_ai.models.test import TestModel
 
 
-# 直接传入，或用 EnvironmentMount 控制路径与权限上限：
-mount = EnvironmentMount(
-    alias="workspace",
-    source=PreparedSource(connector),
-    permission_ceiling=EnvironmentPermissionCeiling.read_write(),
-)
-result = await executable.run("List files", environment=mount)
+@dataclass(frozen=True)
+class PreparedSource:
+    connector: EnvironmentConnector
+
+    @property
+    def provider_key(self) -> str:
+        return self.connector.provider_key
+
+    @property
+    def environment_id(self) -> str:
+        return self.connector.environment_id
+
+    @property
+    def descriptor(self) -> EnvironmentDescriptor:
+        return self.connector.descriptor
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        return self.connector.state
+
+    async def ensure_ready(self) -> EnvironmentConnector:
+        return self.connector
+
+
+async def main() -> None:
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=TestModel(),
+        capabilities=(DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),),
+    )
+    with TemporaryDirectory() as directory:
+        root = Path(directory).resolve()
+        (root / "message.txt").write_text("Hello from the workspace.\n", encoding="utf-8")
+        connector = DIRECT_LOCAL.execution_connector(
+            {"root": {"path": str(root)}}, environment_id="env-workspace"
+        )
+        result = await executable.run("Read message.txt.", environment=PreparedSource(connector))
+        print(result.output_or_raise())
+
+
+asyncio.run(main())
 ```
 
-- `workspace` 为默认挂载（`/workspace`）；其他命名挂载（如 `data`）位于 `/mnt/data`。
-- 默认延迟准备——除非显式要求预热，否则在首次调用工具时才准备环境。
+## 多挂载、路径路由与权限上限
 
-## 权限与安全
+传入 `environment=source` 默认挂载到 `/workspace`；或通过 `environments=` 搭配 `EnvironmentMount` 组合多个目录并收窄操作权限：
 
-- **权限上限：** `EnvironmentMount.permission_ceiling` 限制智能体在该挂载上可执行的 `EnvironmentAction`（文件读写、Shell、桌面等）。
-- **多挂载组合：** 传入 `EnvironmentMount` 元组，可将只读参考目录与可写工作区组合使用。
-- **清理：** Run 结束时 Harness 自动分离连接并执行清理钩子；长生命周期沙箱的停止与销毁由宿主负责。
+```python
+from a13n_harness import EnvironmentMount
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 
-## 相关指南
+result = await executable.run(
+    "Build output from reference data",
+    environments={
+        "build": build_source,
+        "data": EnvironmentMount(
+            data_source,
+            permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
+            working_directory="/reference",
+        ),
+    },
+    default_environment="build",
+)
+```
 
-- [运行环境概览](../environments/index.md) —— Local、Docker、Kubernetes 与云提供方
-- [远程 Envd](../environments/remote-envd.md) —— 通过 HTTP 或反向 WebSocket 连接外部机器
+- **挂载路径：** 默认挂载位于 `/workspace`，命名挂载位于 `/environment/{name}`（除非显式指定 `mount_path`）。
+- **内置权限集：** `FILE_READ_ACTIONS`（`view`、`ls`、`glob`、`grep`）、`FILE_ACTIONS`（增加 `write`、`edit`、`multi_edit`、`mkdir`、`move`、`copy`、`delete`）、`FILE_EXECUTION_ACTIONS`（默认，增加 `shell_exec` 与进程控制）以及 `COMPUTER_ACTIONS`（桌面工具，需显式开启）。
+- **系统隔离边界：** 权限上限仅约束模型可调用的环境操作；操作系统级隔离由所选后端提供（见 [Envd 隔离](../a13n-envd/isolation.md)、Docker 或[云沙箱](../environments/index.md)）。
+
+## Shell 进程控制与状态归属
+
+- **前后台 Shell：** `shell_exec` 默认前台等待 `ToolExecutionConfig.foreground_wait_seconds`（5 秒），超时未结束则返回活跃句柄（带宿主 `ToolExecutionRuntime` 时为 `exec-*`，否则为本轮 `process-*`），供模型通过 `shell_info`、`shell_wait`（显式传入 `next_offset`）、`shell_input` 与 `shell_signal` 继续跟进。
+- **宿主状态生命周期：** 返回连接器前请在宿主存储中持久化权威 `EnvironmentState`（见[生命周期与状态](../environments/lifecycle.md)）；关闭 Run 不会销毁底层容器或目录。

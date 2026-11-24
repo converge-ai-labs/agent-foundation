@@ -117,8 +117,8 @@ fi
 
 ### 配置项目与线程
 
-- **编辑可复用资源：** 通过 `GET/PUT /api/configuration/sources/{path}` 读写 YAML（如 `devices/build.yaml`、`web_providers/research.yaml`），通过 `/api/auth/keys` 管理密钥。
-- **修改线程已保存选择：** 使用 `PATCH /api/threads/{id}/configuration` 或预览并应用项目默认值。
+- <span id="edit-reusable-resources"></span>**编辑可复用资源：** 通过 `GET/PUT /api/configuration/sources/{path}` 读写 YAML（如 `devices/build.yaml`、`web_providers/research.yaml`），通过 `/api/auth/keys` 管理密钥。
+- <span id="change-saved-thread-selections"></span>**修改线程已保存选择：** 使用 `PATCH /api/threads/{id}/configuration` 或预览并应用项目默认值。
 
 ### Bot
 

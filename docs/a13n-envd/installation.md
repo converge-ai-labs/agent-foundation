@@ -4,164 +4,78 @@ sidebarTitle: Installation
 description: Download verified a13n-envd release binaries, choose between standard, slim, desktop, and VM flavors, or build from Cargo source.
 ---
 
-Install Envd on the computer that will execute file, command, or desktop operations. Harness UI acquires its own matching binary for local Sandbox mode. Use this guide when connecting another computer as a Device or when your application manages Envd directly.
+Install `a13n-envd` on any machine that will execute file, command, or desktop operations. Harness UI automatically downloads its matching binary for local Sandbox mode; use this guide when registering a computer as a remote Device or managing `a13n-envd` directly.
 
 ## Choose a binary flavor
 
-Starting with Envd 0.8.1, all six Linux, macOS and Windows targets publish `slim` and ordinary (`default`) archives. Linux also publishes the opt-in `vm` flavor. All flavors share the same version and EIP schema.
+All six Linux, macOS, and Windows release targets publish `slim` and `default` builds, and Linux additionally publishes `vm`. Every flavor speaks the same EIP schema (inspect an installed binary with `a13n-envd --build-variant`):
 
-| Flavor       | Included capabilities                                                                                                                     | Archive suffix |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `slim`       | Files, Shell/processes, transfers, native isolation and egress, all transports/TLS, monitoring/export, enrollment, supervision and update | `-slim`        |
-| `default`    | Slim capabilities plus native desktop capture, input, clipboard and accessibility                                                         | None           |
-| `vm` (Linux) | Ordinary capabilities plus both embedded VM backends                                                                                      | `-vm`          |
+| Flavor       | Included capabilities                                                                                                | Archive suffix |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `slim`       | Files, Shell/processes, transfers, native isolation & egress, transports/TLS, monitoring/export, enrollment, updater | `-slim`        |
+| `default`    | `slim` plus native desktop screenshots, input, clipboard, and accessibility                                          | None           |
+| `vm` (Linux) | `default` plus embedded microVM backends                                                                             | `-vm`          |
 
-Standalone installers and ordinary Cargo builds keep `default` as their default. Harness UI keeps acquiring the ordinary non-VM build. Select slim for headless workloads with `--variant slim` or `A13N_ENVD_VARIANT=slim`. Build it from source with `cargo build --locked --package a13n-envd --no-default-features`. Slim rejects `--computer-use true` before opening a transport. Inspect the installed flavor with `a13n-envd --build-variant`; `--version` retains its existing output.
+Installers default to `default`; pass `--variant slim` (`A13N_ENVD_VARIANT=slim`) for headless servers or `--variant vm` (`A13N_ENVD_VARIANT=vm`) on Linux when using microVM isolation.
 
 ## Build the matching binary
 
-For repository development, build the daemon and Python client from the same checkout. These pages track `main`; Local Envd checks that their release versions match.
-
-1. Install Rust and build Envd from the repository root.
-2. In the same shell, set `A13N_ENVD_EXECUTABLE` to the resulting binary.
+When developing from source, build `a13n-envd` from the same checkout as `a13n-envd-client` so their versions match:
 
 ```bash
 cargo build --locked --package a13n-envd
-```
-
-Select the built executable:
-
-```bash
 export A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd"
 ```
 
-The build produces `target/debug/a13n-envd`. Your Provider or Host launches it and chooses the transport; `a13n-envd-client` supplies the Python protocol client.
-
-For a published Local Envd installation, match the native release to the installed `a13n-envd-client`, which is versioned independently of Harness and Harness UI. Python RC version `1.2.3rc1` maps to native `1.2.3-rc.1`.
-
-The default build excludes VM backends and runtime assets. On Linux, opt into both VM backends with `BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1 cargo build --locked --package a13n-envd --features vm`; this also requires a C compiler and `protoc` 3.12 or newer. Native execution remains available in a VM-enabled build.
+Use `--no-default-features` for a `slim` build, or `BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1 cargo build --locked --package a13n-envd --features vm` on Linux (with a C compiler and `protoc >= 3.12`) for a `vm` build.
 
 ## Connect this computer from Console
 
-After approval, users and service accounts with Run permission in the selected workspace can use this computer within the approved operation limits.
+Register your workstation with a Service workspace under **Console → Environments → Instances → Connect my computer**:
 
-For a source checkout on macOS, build the matching binary above, then install the optional link launcher:
-
-```bash
-make envd-app-install
-# To upgrade an existing app after disconnecting:
-make envd-app-install ENVD_APP_ARGS=--replace
-```
-
-This requires Xcode Command Line Tools and installs a native app at `~/Applications/A13N Envd.app`, registers `a13n-envd://` links, and copies the selected binary (`ENVD_BINARY` overrides the default debug build). Replacement is explicit and saves the previous app in a hidden `.a13n-envd-previous.*` directory under `~/Applications`. The development app is locally signed, not a published notarized installer, and adds no login service.
-
-1. Open **Console → Environments → Instances → Connect my computer** .
-2. Accept the browser's external-app prompt if shown. If the app did not open automatically, choose **Open A13N Envd**.
-3. For a new registration, in the app check the Service address and workspace, choose a starting directory and whether to include desktop access, then click **Allow and connect**. Files and Shell run as your operating-system user; the directory does not restrict access to other files.
-4. For a new registration, enter the six-digit code shown in the app into Console, check the computer details, and approve.
-5. Wait for **Online**, then select this environment in your Agent or conversation settings. Once approved, the Device is ready for you to select it in a conversation and start a task.
-
-Envd runs as an app-owned process without opening Terminal. Closing the window keeps it connected; use the menu bar to reopen it. **Disconnect** or quitting the app stops Envd, including if the app crashes. Repeated links while running bring the current connection forward instead of starting another daemon. To switch connections, disconnect first and reopen the new link. The app remembers the last approved Service profile, directory and desktop choice for an explicit **Reconnect**, but never copies the device credential into app preferences. If upgrading from the Terminal launcher, stop its old process with Ctrl+C before connecting in the app. Desktop access additionally requires macOS Screen Recording and Accessibility permission. Complete any system prompts before expecting the computer to appear online.
-
-Other systems, or macOS without the launcher, can use **Connect from a terminal** in the dialog. The copied `connect-service --pairing-id` command requires a compatible binary on PATH and uses your local configuration. Set `A13N_ENVD_FULL_CONTROL=1` locally to allow arbitrary Shell commands; add `--computer-use true` only when desktop access is intended. The webpage does not install software or grant native permissions. Pairing expires after ten minutes; create a new request if it expires. Saved host profiles reconnect without an API key using `a13n-envd connect-service <saved-host-name>`.
-
-After refreshing Console, **Connect my computer** opens Envd to check the saved registration again. An existing registration is reused without a new code or device ID. Online connections keep running; offline computers can reconnect in Envd. A missing or rejected saved credential is an error and does not create a replacement registration.
+- **macOS launcher app (source checkout):** Build the binary above, run `make envd-app-install` (or `ENVD_APP_ARGS=--replace` when upgrading) to install `~/Applications/A13N Envd.app`, click **Connect my computer**, choose a working directory and optional desktop access in the app, and enter the 6-digit pairing code in Console. Grant macOS Screen Recording and Accessibility permissions if enabling desktop use.
+- **Terminal pairing (Linux, Windows, or macOS without launcher):** Choose **Connect from a terminal** in Console and run the copied `a13n-envd connect-service --pairing-id ...` command within 10 minutes (`A13N_ENVD_FULL_CONTROL=1` enables unrestricted Shell; `--computer-use true` enables desktop control). Reconnect saved profiles anytime with `a13n-envd connect-service <saved-host-name>`.
 
 ## Install a published binary
 
-The standalone scripts install the native executable from GitHub Releases. To select a version for a Python application, first install the [Python client](python-client.md#install) in the environment that will use Envd. The commands below read that installed package's version.
+Match the native `a13n-envd` version to your installed Python [`a13n-envd-client`](python-client.md#install) (`1.2.3rc1` maps to `1.2.3-rc.1`). Both installers verify `SHA256SUMS` before atomic extraction.
 
 ### Linux and macOS
-
-Prepare a POSIX shell, `curl`, `tar`, and `sha256sum` or `shasum`. Automatic stable-version selection also needs `jq`; the explicit version below does not.
-
-1. Select the Python environment containing your published client.
-2. Download and inspect the installer before running it.
-3. Read the client version, install the matching executable, and check `--version`.
 
 ```bash
 curl -fsSLo install-a13n-envd.sh \
   https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/scripts/install-a13n-envd.sh
-# Inspect install-a13n-envd.sh before running it.
 ENVD_VERSION="$(python -c 'from importlib.metadata import version; import re; print(re.sub(r"rc([0-9]+)$", r"-rc.\1", version("a13n-envd-client")))')"
 sh install-a13n-envd.sh --version "$ENVD_VERSION" --install-dir "$HOME/.local/bin"
 "$HOME/.local/bin/a13n-envd" --version
 ```
 
-The installer defaults to the native-only archive. Linux users can select the larger VM-enabled archive with `--variant vm` or `A13N_ENVD_VARIANT=vm`. VM archives append `-vm` to the target name, for example `a13n-envd-<version>-x86_64-unknown-linux-gnu-vm.tar.gz`. Missing VM assets fail without falling back. Historical releases such as `0.7.0` retain their original assets; use a release that publishes split builds. To retain VM support when migrating from an unsplit release, use the installer with `--variant vm`; older updaters select the ordinary archive.
-
-### Windows
-
-Use Windows PowerShell 5.1 or PowerShell 7.
-
-1. Select the Python environment containing your published client.
-2. Download and inspect the installer.
-3. Install the matching version and check the executable at the printed path.
+### Windows (PowerShell)
 
 ```powershell
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/scripts/install-a13n-envd.ps1' -OutFile install-a13n-envd.ps1
-# Inspect the downloaded script before running it.
 $envdVersion = python -c "from importlib.metadata import version; import re; print(re.sub(r'rc([0-9]+)$', r'-rc.\1', version('a13n-envd-client')))"
 & .\install-a13n-envd.ps1 --version $envdVersion --install-dir "$env:LOCALAPPDATA\A13N\bin"
 & "$env:LOCALAPPDATA\A13N\bin\a13n-envd.exe" --version
 ```
 
-Run scripts according to your organization's PowerShell execution policy; the installer does not change that policy.
-
-### Options and behavior
-
-Choose an exact version and destination with these options. Both installers use the same names:
-
-| Option                               | Environment default             | Behavior                                                                                                                                                                                 |
-| ------------------------------------ | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | Exact native version; canonical RCs such as `0.0.6-rc.1` require explicit selection. Omit both to read Envd's published stable version pointer, without calling the GitHub Releases API. |
-| `--install-dir PATH`                 | `A13N_ENVD_INSTALL_DIR`         | Absolute destination directory. Defaults to `~/.local/bin` for POSIX users, `/usr/local/bin` for POSIX root, or `%LOCALAPPDATA%\A13N\bin` on Windows.                                    |
-| `--add-to-path` / `--no-add-to-path` | `A13N_ENVD_ADD_TO_PATH=1` / `0` | Mutually exclusive. Default is no PATH modification. Explicit flags override environment values.                                                                                         |
-| `--help`                             | —                               | Show usage without installing.                                                                                                                                                           |
-
-PATH opt-in updates only the current user's configuration: Bash `.bashrc` (`.bash_profile` on macOS), Zsh `${ZDOTDIR:-$HOME}/.zshrc`, POSIX shell `.profile`, Fish `${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish`, or Windows user `Path`. Re-running does not append the same entry again. Open a new terminal afterward. Unsupported shells can use `--no-add-to-path` and configure PATH manually.
-
-The installers support x86_64 and ARM64 on Linux, macOS, and Windows. They verify the selected archive against the release's `SHA256SUMS` **before extraction**, stage the executable on the destination filesystem, and atomically install or replace it. Download, checksum, archive, or replacement failures leave an existing executable unchanged. SHA256 verifies the archive against the manifest delivered by GitHub; it is not a separate signature or trust source.
+| Installer flag                       | Environment variable            | Behavior                                                                                   |
+| ------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------ |
+| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | Exact native version (omit to install the latest published stable pointer)                 |
+| `--install-dir PATH`                 | `A13N_ENVD_INSTALL_DIR`         | Target directory (`~/.local/bin`, `/usr/local/bin` for root, or `%LOCALAPPDATA%\A13N\bin`) |
+| `--variant default\|slim\|vm`        | `A13N_ENVD_VARIANT`             | Archive flavor (`default` unless overridden)                                               |
+| `--add-to-path` / `--no-add-to-path` | `A13N_ENVD_ADD_TO_PATH=1` / `0` | Opt into adding the install directory to the current user's shell/profile `PATH`           |
 
 ## Update an existing installation
 
-Use the installation owner's account and update during a stop/restart window. Envd starts workers from its executable path, so replacing a running daemon's binary can mix versions or prevent worker startup.
-
-1. Check the selected version and destination with `update --check`.
-2. Stop every daemon using that executable.
-3. Run the update, choosing an exact version below when needed.
-4. Verify `a13n-envd --version`, then restart Envd with its usual command or service.
+Stop running `a13n-envd` daemons using that binary first so worker spawns never mix versions, then run the built-in updater:
 
 ```console
 a13n-envd update --check
 a13n-envd update
-```
-
-The default reads the **Envd** stable pointer at `release-metadata/a13n-envd/stable.txt` through `raw.githubusercontent.com`, then downloads the selected version's immutable release assets. Release CI advances this pointer only after all Envd publication channels succeed; RCs and older release retries do not advance it. Neither installer nor updater needs a GitHub API token, and the POSIX installer does not require jq.
-
-If the pointer is unavailable or invalid, discovery fails without falling back to the GitHub API or changing your executable. Before the first stable release using this automation, the pointer does not exist; select an exact version. To match a client, install an RC, explicitly downgrade, or bypass stable discovery, select an exact published version:
-
-```console
+# Pin a specific client-matched version, reinstall, or switch flavors:
 a13n-envd update --version 1.2.3
-a13n-envd update --version 1.2.3 --force
+a13n-envd update --version 1.2.3 --variant slim
 ```
 
-`--force` reinstalls the selected version and cannot be combined with `--check`. The updater replaces the actual executable you invoked, including when reached through a symlink. It leaves PATH and configuration unchanged, uses your current privileges, and leaves service shutdown and restart to you.
-
-The updater preserves its compiled flavor by default. Select another flavor explicitly, for example `a13n-envd update --version 0.8.1 --variant slim`. A flavor change replaces even an already-installed matching version; `--force` is only needed to reinstall the same version and flavor. Missing assets fail without fallback. Updaters older than 0.8.1 do not accept the new flavor option: use the standalone installer with `--variant slim` once, or upgrade the existing flavor first and then switch. Older unsplit VM releases still require the installer with `--variant vm` to retain VM support.
-
-Envd downloads the matching release archive, verifies `SHA256SUMS`, checks the extracted binary's `--version` and (from 0.8.1) `--build-variant`, then replaces the executable. Download and validation failures preserve the existing binary. If interrupted during replacement, inspect the executable with `--version` before retrying. A forcibly terminated standalone updater can leave a `.a13n-envd-update-*` scratch directory beside the executable; remove that specific directory only after confirming the updater has exited.
-
-Hosts can install another exact version into a separate absolute directory with `--version ... --install-dir ...`, retaining the source installation. `--staging-dir` accepts an existing caller-owned scratch directory for cleanup after an interrupted child process exits. Harness UI uses these options for its version-selected cache. A `.a13n-envd-version` marker pins a managed destination; update it through Harness UI rather than changing the cache entry to another version.
-
-For binaries without `update` support, use the standalone installer above once to install a release with this command. Stop the daemon before that replacement as well. On macOS, follow [Restore macOS permissions after an upgrade](computer-use.md#restore-macos-permissions-after-an-upgrade) only if Envd reports missing permissions; its permission-timeout error includes recovery guidance.
-
-## Run the sandbox image
-
-Use the standard [sandbox image](sandbox.md) for an agent development container with shell commands enabled. Envd runs as root; commands and file operations use the provisioned `1000:1000` account with passwordless sudo. Enable controlled egress explicitly when needed. The image guide covers local builds, stdio and outbound Host connections, persistence, and overrides.
-
-Sandbox images also default to native-only Envd. Choose `vm`, `slim-vm`, or `desktop-vm` for VM support; exact-version tags are `<version>-vm`, `<version>-slim-vm`, and `<version>-desktop-vm`. Development equivalents are `dev-vm`, `dev-slim-vm`, and `dev-desktop-vm`. For local source image builds, pass `--build-arg ENVD_VARIANT=vm`; `SANDBOX_VARIANT` still selects the independent tooling variant. Service automatic acquisition uses ordinary archives and image tags. Existing Service version pins take effect on a later release update.
-
-## Next step
-
-With the matching binary selected, try the [Local Envd Provider](index.md#try-local-envd) or [configure your own daemon](configuration.md). Before running untrusted work, choose the Host's outer boundary using [Execution boundaries](isolation.md).
+After updating on macOS, follow [Restore macOS permissions](computer-use.md#restore-macos-permissions-after-an-upgrade) if Screen Recording or Accessibility prompts reappear. For containerized workloads, see the [Sandbox image](sandbox.md) (`<version>`, `<version>-vm`, `<version>-slim-vm`, `<version>-desktop-vm`), [Daemon configuration](configuration.md), and [Execution boundaries](isolation.md).

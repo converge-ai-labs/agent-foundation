@@ -1,62 +1,80 @@
 ---
 title: MCP 服务器
-description: 在 Harness UI 中接入 stdio 与 Streamable HTTP MCP 服务器，配置 OAuth、工具过滤、宿主托管连接与人工输入。
+description: 在 Harness UI 中接入 stdio 与 Streamable HTTP MCP 服务器，配置 OAuth DCR 与工具过滤，并管理宿主常驻连接与人工输入。
 ---
 
-通过 Model Context Protocol（MCP）服务器为智能体接入外部工具与数据源。在 `mcp_servers/*.yaml` 或 **Settings → Connections → MCP** 中定义服务器。
+分三步接入模型上下文协议（MCP）服务器：在根配置 `a13n-harness-ui.yaml` 同级的 `mcp/*.yaml` 下注册服务定义（或在 **Settings → Connections → MCP** 中添加），在智能体或项目中勾选启用，最后运行 `a13n-harness-ui config validate` 校验。
 
 ## 添加 MCP 服务器
 
-在根配置旁创建 stdio 或 Streamable HTTP 服务器文件：
+在 `mcp/` 目录下保存 **Streamable HTTP** 远程传输或本地 **stdio 命令**传输定义：
 
-```yaml title="mcp_servers/docs.yaml — stdio 服务器"
-schema_version: "1"
+```yaml title="mcp/docs.yaml — Streamable HTTP 远程服务"
+schema_version: "2"
 kind: mcp_server
 id: mcp-docs
-name: Docs MCP
-transport: stdio
-command: npx
-args: ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/docs"]
+name: Documentation service
+transport:
+  url: https://mcp.example.com/mcp
+  init_timeout_seconds: 20
+  headers:
+    Authorization:
+      env: DOCS_MCP_AUTHORIZATION
 ```
 
-```yaml title="mcp_servers/remote.yaml — Streamable HTTP 服务器"
-schema_version: "1"
+```yaml title="mcp/local.yaml — stdio 本地命令服务"
+schema_version: "2"
 kind: mcp_server
-id: mcp-remote
-name: Remote MCP
-transport: streamable_http
-url: https://mcp.example.com/mcp
-headers:
-  Authorization:
-    env: REMOTE_MCP_TOKEN
+id: mcp-local
+name: Local tools
+transport:
+  command: /absolute/path/to/mcp-server
+  arguments: ["--readonly"]
+  environment:
+    API_TOKEN:
+      env: LOCAL_MCP_TOKEN
 ```
 
-在项目 `defaults.mcp_servers`、智能体 `defaults.mcp_servers` 或对话设置中启用该服务器，然后运行 `a13n-harness-ui config validate`。
+在智能体文件（`agents/*.yaml`）的 `mcp_servers: [mcp-docs]`、项目的 `defaults.mcp_servers` 或会话设置中启用该服务（`null` 继承默认，`[]` 不启用任何服务）。也可在 **Settings → Connections** 中直接粘贴标准客户端 `{"mcpServers": {...}}` JSON 配置。
 
 ## MCP 字段参考
 
-| 字段                     | 用途                                  |
-| ------------------------ | ------------------------------------- |
-| `id`、`name`             | 唯一 `mcp-` 前缀 ID 与显示名称        |
-| `transport`              | `stdio` 或 `streamable_http`          |
-| `command`、`args`、`env` | `stdio` 模式的进程启动配置            |
-| `url`、`headers`         | `streamable_http` 模式的端点与请求头  |
-| `tools`                  | 可选的暴露工具白名单/黑名单           |
-| `oauth`                  | 远程鉴权服务器的可选 OAuth / DCR 配置 |
+| 字段                     | 用途                                                                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `schema_version`、`kind` | 固定为 `"2"` 与 `mcp_server`                                                                                                           |
+| `id`、`name`             | 唯一 `mcp-` 前缀 ID 与显示名称                                                                                                         |
+| `transport`              | `{url, init_timeout_seconds, headers, oauth}`（HTTPS 或无请求头的本机回环 HTTP）或 `{command, arguments, environment}`（在宿主机启动） |
+| `tools`                  | `null`/省略（允许全部工具，含后续新增）、`[]`（禁用全部）或 `[exact_name, ...]` 精确工具名白名单                                       |
+| `object_ref_tools`       | 启用[对象引用传输](../a13n-harness/capabilities.md#object-reference-transport)的工具名称或通配模式列表                                 |
+| `on_error`               | 启动失败策略（如 `fail` 或 `skip`）                                                                                                    |
 
-### 字面值与环境变量引用
+### 字面量与密钥引用
 
-在 `env` 与 `headers` 中请使用 `{env: VAR_NAME}` 或 `{credential_ref: key-id}` 引用密钥，避免写入明文字面值。
+在 `transport.headers` 与 `transport.environment` 中，请使用 `{env: VAR_NAME}` 或 `{credential_ref: key-id}`（或受支持的字符串环境变量插值）引用凭据，切勿将明文密钥写入 YAML。
 
 ## OAuth 授权
 
-对于需要 OAuth（含动态客户端注册 DCR）的 MCP 服务器，可在配置中声明 `oauth` 或在 WebUI **Settings → Connections** 中添加，通过 WebUI 完成登录与重连，令牌保存在本地凭据库中。
+对于支持 OAuth 动态客户端注册（DCR）的 HTTPS 服务，省略 `headers` 并配置 `transport.oauth`：
 
-## 连接生命周期与协议
+```yaml title="mcp/oauth-docs.yaml"
+schema_version: "2"
+kind: mcp_server
+id: mcp-oauth-docs
+name: OAuth documentation service
+transport:
+  url: https://mcp.example.com/mcp
+  oauth:
+    registration: dcr
+    scope: read
+```
 
-- 默认情况下 MCP 客户端作用域仅限单次 Run。将服务器 ID 加入 `a13n-harness-ui.yaml` 的 `mcp.host_owned_servers` 可跨运行保持连接。
-- 通过 `mcp.protocol_overrides` 按服务器覆盖协议协商（`auto`、`legacy` 或 `2026-07-28`）。
+在 WebUI 中打开 **Settings → Connections**，选中该服务并点击 **Connect** 完成浏览器授权（远程访问 WebUI 时，需在 `webui.allowed_origins` 中配置精确的公网 HTTPS 源并转发 `/oauth/mcp/callback`）。保存后的令牌会在共享同一数据目录的 WebUI 与 TUI 运行中自动刷新。
+
+## 连接生命周期与协议覆盖
+
+- **单次运行连接与宿主常驻连接：** MCP 客户端默认随每次运行建立与关闭。将服务 ID 加入 `a13n-harness-ui.yaml` 的 `mcp.host_owned_servers` 可跨运行保持长连接存活（可通过 `mcp_status` 或 WebUI **Connections** 查看与断开）。
+- **协议版本覆盖：** 当服务端要求特定协议版本时，可在 `mcp.protocol_overrides` 中按服务 ID 指定 `auto`、`legacy` 或 `2026-07-28`。
 
 ## 来自 MCP 服务器的人工输入
 
-当 MCP 服务器发起交互式问询（elicitation）或采样审批时，Harness UI 会在 iframe 之外的宿主界面展示决策卡片，在此回答或拒绝即可继续执行。
+当运行中的 MCP 服务器发起表单征询（Elicitation）或 URL 确认请求时，Harness UI 会在工具 iframe 之外弹出原生 WebUI 或 TUI 交互卡片，选择 `accept`（附表单数据）、`decline` 或 `cancel` 即可继续当前调用。

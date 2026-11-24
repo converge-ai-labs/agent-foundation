@@ -1,155 +1,133 @@
 ---
 title: 工具与依赖
-description: 为 Agent 挂载带类型约束的 Python 函数工具，借助 RunContext 优雅注入业务依赖，并精细管控重试策略与输出上限。
+description: 在 Capability 中注册带类型注解的 Python 函数工具，读取 RunContext[AgentContext]，并安全绑定单次运行的应用服务依赖。
 ---
 
-Agent 通过\*\*工具（Tools）\*\*与物理世界和业务系统交互。在 Harness 中，任何带有标准类型注解的 Python 函数或异步协程均可直接暴露为 Agent 工具。Harness 底层基于 Pydantic 自动生成符合 JSON Schema 规范的工具描述，在调用前自动校验模型入参，并将执行结果规范封装回传。
+将带类型注解的 Python 函数或异步协程注册进 `Capability`，再传入 `HarnessBuilder().build(...)` 即可向模型暴露工具。Pydantic AI 负责生成 JSON Schema 并校验参数；Harness 负责结果长度边界与执行生命周期。
 
 ## 离线运行函数工具
 
-无需依赖外部大模型 API，借助确定性的 `FunctionModel` 即可在本地秒级验证工具绑定与参数传递：
+将以下自包含示例保存为 `tools_example.py` 并运行 `uv run python tools_example.py`：
 
-```python title="tools_demo.py"
+```python title="tools_example.py"
 import asyncio
 from collections.abc import AsyncIterator
 
 from a13n_harness import AgentSpec, HarnessBuilder
-from pydantic_ai.messages import ModelMessage, ModelResponse, ToolCallPart, ToolReturnPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
-from pydantic_ai.tools import Tool
+from pydantic_ai.capabilities import Capability
+from pydantic_ai.messages import ModelMessage, ToolReturnPart
+from pydantic_ai.models.function import (
+    AgentInfo,
+    DeltaToolCall,
+    DeltaToolCalls,
+    FunctionModel,
+)
 
 
-# 1. 定义具备明确类型约束的 Python 工具函数
 def double(value: int) -> int:
-    """返回输入整数的两倍。"""
+    """Return twice the supplied integer."""
     return value * 2
 
 
-# 2. 模拟确定性发起 double(4) 调用的模型
-async def mock_tool_model(
-    messages: list[ModelMessage],
-    info: AgentInfo,
-) -> AsyncIterator[str | ToolCallPart]:
+async def respond(
+    messages: list[ModelMessage], info: AgentInfo
+) -> AsyncIterator[str | DeltaToolCalls]:
     del info
-    has_tool_call = any(
-        isinstance(part, ToolCallPart)
-        for msg in messages
-        if isinstance(msg, ModelResponse)
-        for part in msg.parts
-    )
-    if not has_tool_call:
-        yield ToolCallPart(tool_name="double", args={"value": 4})
+    results = [
+        part.content
+        for message in messages
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_name == "double"
+    ]
+    if results:
+        yield f"Result: {results[-1]}"
     else:
-        # 从前序消息中提取工具返回结果
-        return_val = next(
-            part.content
-            for msg in messages
-            if hasattr(msg, "parts")
-            for part in msg.parts
-            if isinstance(part, ToolReturnPart)
-        )
-        yield f"计算得到的两倍结果是 {return_val}。"
+        yield {
+            0: DeltaToolCall(
+                name="double", json_args='{"value": 4}', tool_call_id="call-double"
+            )
+        }
 
 
 async def main() -> None:
     executable = HarnessBuilder().build(
-        AgentSpec(instructions="在收到请求时对数字执行翻倍计算。"),
+        AgentSpec(),
         output_type=str,
-        model=FunctionModel(stream_function=mock_tool_model),
-        tools=[Tool(double)],
+        model=FunctionModel(stream_function=respond),
+        capabilities=(Capability(id="math", tools=[double]),),
     )
-
-    result = await executable.run("请计算 4 的两倍")
-    print(result.output_or_raise())
+    result = await executable.run("Double four.")
+    print(result.output_or_raise())  # Result: 8
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-使用 `uv run python tools_demo.py` 运行：
+类型注解定义模型可见的参数结构，文档字符串说明调用时机。工具数量较多时，可使用 `pydantic_ai.toolsets` 中的 `FunctionToolset([...], id="...")` 装入 `Capability(toolsets=[...])`。
 
-```text
-计算得到的两倍结果是 8。
-```
+## 访问当前运行上下文
 
-Harness 自动编排了中间的交互生命周期：模型发起工具调用请求，Harness 调度并执行 `double(4)`，将计算返回值 `8` 规范打包回填至上下文，并继续驱动模型产出最终文本。
-
-## 访问当前 Run
-
-当工具内部需要感知当前的执行上下文——如当前执行的 `run_id`、会话 `thread_id` 或模型请求元数据时，只需声明一个类型为 `RunContext` 的入参即可：
+当工具需要读取运行标识、执行环境、插件、状态或有界 JSON 元数据时，将首个参数声明为 `ctx: RunContext[AgentContext]`。Harness 会在调用时自动注入 `ctx`，且不会将其暴露到模型可见的 Schema 中：
 
 ```python
+from a13n_harness import AgentContext, RunBindings
 from pydantic_ai import RunContext
 
 
-def audit_logger(ctx: RunContext, event_name: str) -> str:
-    """记录与当前运行绑定的审计事件。"""
-    run_id = getattr(ctx, "run_id", "local_run")
-    return f"已在 Run [{run_id}] 下成功记录事件 '{event_name}'"
+def request_label(ctx: RunContext[AgentContext]) -> str:
+    """Return the application's label for this request."""
+    label = ctx.deps.metadata.get("request_label", "unlabeled")
+    if not isinstance(label, str):
+        raise TypeError("request_label must be a string")
+    return label
+
+
+# 通过 RunBindings 传入单次运行的 JSON 元数据：
+# bindings = RunBindings.embedded(metadata={"request_label": "support-triage"})
 ```
 
-Harness 在调度工具时会自动注入当前的上下文句柄；该参数对模型透明，绝不会出现在暴露给模型的 JSON Schema 中。
+`ctx` 暴露消息、用量与限额；`ctx.deps`（`AgentContext`）暴露 `run_id`、`thread_id`、`instance`、`environment`、`plugins`、`state` 与 `metadata`。请勿将凭据或活跃客户端塞入 `metadata` 或 `HarnessState`。
 
-## 提供活跃的应用依赖
+## 注入活跃应用依赖
 
-在实际业务系统中，工具往往需要依赖运行时活跃的系统句柄，例如数据库连接池、外部 HTTP 客户端或当前租户上下文对象：
+Harness 将 Pydantic AI 的依赖类型固定为 `AgentContext`，不支持自定义第二套 `deps_type`。请根据可执行体的复用周期选择注入模式：
+
+| 应用模式                   | 依赖注入方式                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 每次请求构建一个可执行体   | 在工具函数中直接闭包捕获已鉴权的服务实例                                                                                                         |
+| 跨多个请求复用同一可执行体 | 通过 `AbstractCapability[AgentContext].for_run(ctx)` 或 [Harness 插件](plugins.md#plugin-lifecycle)（`ctx.deps.plugins.require(...)`）按运行解析 |
+| 使用内置集成               | 通过 `RunBindings` 对应的类型化字段传入（如 `environment`、`web`、`document_converter`）                                                         |
+
+单次请求构建可执行体时，直接闭包捕获已鉴权服务，并将数据库事务收敛在单次查询内，切勿跨整个智能体循环持有事务：
 
 ```python
-from dataclasses import dataclass
-from pydantic_ai import RunContext
+from a13n_harness import AgentSpec, HarnessBuilder
+from pydantic_ai.capabilities import Capability
 
 
-@dataclass
-class DatabaseConnection:
-    connection_string: str
+async def inspect_inventory(inventory, model):
+    async def stock_count(sku: str) -> int:
+        """Look up stock for one product in the current authorized inventory."""
+        return await inventory.stock_count(sku)
 
-    async def query_user(self, user_id: str) -> dict:
-        return {"user_id": user_id, "name": "Alice", "role": "admin"}
-
-
-# 通过泛型在工具入参中声明所需的业务依赖类型
-async def lookup_user(ctx: RunContext[DatabaseConnection], user_id: str) -> dict:
-    """从业务数据库中查询用户档案详情。"""
-    db = ctx.deps
-    return await db.query_user(user_id=user_id)
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=model,
+        capabilities=(Capability(id="inventory", tools=[stock_count]),),
+    )
+    return await executable.run("Check stock for SKU-123")
 ```
 
-在发起单次运行调用时，通过 `RunBindings` 动态注入依赖实例：
+## 工具执行路径、重试与输出边界
 
-```python
-from a13n_harness import RunBindings
+| 目标动作                         | 对应集成                                                        |
+| -------------------------------- | --------------------------------------------------------------- |
+| 调用受信任的 Python 应用代码     | `Capability(tools=[...])` 中的 Python 函数                      |
+| 在沙箱策略下编辑文件或运行命令   | [受管工具](managed-tools.md)与[执行环境](environments.md)       |
+| 连接外部工具服务器               | [MCP](mcp.md)                                                   |
+| 挂起等待人工审批或前端执行       | [人机协同](human-in-the-loop.md)或[客户端工具](client-tools.md) |
+| 让智能体用 Python 编排多工具调用 | [子智能体委派与 CodeAct](delegation-and-codeact.md)             |
 
-db_pool = DatabaseConnection(connection_string="postgresql://localhost:5432/app")
-
-result = await executable.run(
-    "查询 user_123 的用户信息",
-    bindings=RunBindings.embedded(deps=db_pool),
-)
-```
-
-这一依赖注入设计保证了 Agent 的静态定义能够跨请求共享复用，同时允许不同请求安全绑定各自独立的数据库连接或特定租户凭证。
-
-## 工具执行路径
-
-Harness 支持三大类工具执行模式：
-
-| 工具类别          | 执行通道                                | 典型应用场景                                 |
-| :---------------- | :-------------------------------------- | :------------------------------------------- |
-| **原生进程工具**  | 进程内直接调用的异步 Python 原生函数    | 业务数据库查询、数值计算、本地数据转换       |
-| **执行环境工具**  | 调度至沙箱文件系统或 Docker 容器执行    | 源码审查、文件批量修改、Shell 脚本构建       |
-| **远程 MCP 工具** | 基于 HTTP/SSE 或 Stdio MCP 标准协议通信 | SaaS 企业应用互联、GitHub、Slack、知识库检索 |
-
-## 错误、重试与输出限制
-
-借助多层保护屏障保障宿主系统稳定，避免模型上下文被异常冲垮：
-
-- **参数校验防御：** 若模型给出了不符合类型契约的入参，Harness 会自动拦截并生成清晰的校验提示，协助模型在下一轮尝试中自我纠错。
-- **大输出自动截断：** 如果工具输出了海量数据（如误查出一万行数据），为避免撑爆上下文窗口，可通过 `max_content_bytes` 自动进行安全截断，并将完整原始内容另存为临时文件。
-- **重试上限限制：** 为工具调用配置最大重试次数预算，防止下游服务不可用时引发无休止的模型死循环。
-
-## 下一步
-
-1. [受管工具与权限审批](managed-tools.md)：在执行敏感变更类工具前要求必须获得人工授权。
-2. [Model Context Protocol (MCP)](mcp.md)：通过标准协议即插即用各类外部工具服务。
-3. [委派与 CodeAct](delegation-and-codeact.md)：让 Agent 通过 Python 并发代码高效调度与编排多个工具。
+参数校验失败会将结构化错误反馈给模型自纠（上限由 `AgentSpec.retries` 控制；包含外部副作用的操作在重试前应先确认状态）。超大工具返回结果会在写入模型消息历史前自动截断落盘。

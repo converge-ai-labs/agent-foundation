@@ -117,8 +117,8 @@ Upload attachments first via `POST /api/threads/{thread_id}/attachments`.
 
 ### Configure Projects and Threads
 
-- **Edit reusable resources** (`#edit-reusable-resources`): Read and update YAML files under `GET/PUT /api/configuration/sources/{path}` (for example, `devices/build.yaml` or `web_providers/research.yaml`), and manage secrets via `/api/auth/keys`.
-- **Change saved Thread selections** (`#change-saved-thread-selections`): Update `PATCH /api/threads/{id}/configuration` or preview/apply Project defaults.
+- <span id="edit-reusable-resources"></span>**Edit reusable resources:** Read and update YAML files under `GET/PUT /api/configuration/sources/{path}` (for example, `devices/build.yaml` or `web_providers/research.yaml`), and manage secrets via `/api/auth/keys`.
+- <span id="change-saved-thread-selections"></span>**Change saved Thread selections:** Update `PATCH /api/threads/{id}/configuration` or preview/apply Project defaults.
 
 ### Bot
 

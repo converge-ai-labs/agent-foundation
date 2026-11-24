@@ -1,32 +1,99 @@
 ---
-title: Remote Envd
-description: Connect Harness, Harness UI, or Service to an external machine running a13n-envd over HTTP(S) or reverse WebSocket.
+title: Connect to Remote Envd
+sidebarTitle: Remote Envd
+description: Connect existing physical machines, VMs, or containers running Envd to your Host over direct HTTP(S) or reverse WebSocket tunnels.
 ---
 
-Use **Remote Envd** when an Agent should work on a machine you already operate (a build box, workstation, or VM) instead of a newly provisioned container.
+Connect to an operator-managed machine running `a13n-envd` in either direction:
+
+- **`http_envd`:** Your Host dials an existing HTTP(S) Envd daemon.
+- **`websocket_envd`:** Envd dials outbound to your Host's WebSocket listener (works behind NAT/firewalls).
+
+Both providers are connect-only—closing an execution detaches the Session while leaving the remote machine and workspace files intact.
 
 ## Connect to an existing HTTP daemon
 
-1. Start `a13n-envd` on the target machine with `A13N_ENVD_TRANSPORT=http`, a stable `A13N_ENVD_DEVICE_ID`, and a protected credential file (`0600`). Use HTTPS outside loopback (`127.0.0.1`).
-2. Configure TLS trust (`SSL_CERT_FILE` or a custom CA) on the Host; plain HTTP is accepted only on loopback or an explicitly trusted private link.
-3. Wrap the connected client in a [`PreparedSource`](../a13n-harness/environments.md#supply-a-source) (Harness) or register it in Service.
+Pass the daemon's base HTTPS origin (or loopback HTTP), expected `device_id`, and bearer token to the built-in `http_envd` provider, then wrap it in [`PreparedSource`](../a13n-harness/environments.md#supply-a-source):
 
-## Connect to the Service
+```python
+from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 
-- **Outbound (recommended behind NAT/firewalls):** Run `a13n-envd connect-service` or pair from Console (**Environments → Instances → Connect my computer**). See [Connect a client computer](../a13n-service/environments.md#connect-a-client-computer).
-- **Direct HTTP:** Register the HTTPS origin and token via `POST /api/v1/environments`. See [Register an external target](../a13n-service/environments.md#register-an-external-target).
+(http_envd,) = select_builtin_environment_providers(("http_envd",))
+connector = http_envd.execution_connector(
+    {"working_directory": "/work/project"},
+    configuration={"endpoint": "https://envd.example.com"},
+    credential={"token": token_from_your_secret_store},
+    environment_id="env-my-project",
+    state=EnvironmentState(
+        provider_key=http_envd.type,
+        state_version="1",
+        state={"device_id": "env-remote-machine"},
+    ),
+)
+result = await executable.run("Inspect the workspace", environment=PreparedSource(connector))
+```
 
-## Connect to Harness UI
+Keep TLS verification enabled for remote endpoints (configure custom CAs via `HttpEnvdProviderRuntime.verify`).
 
-- Pair a Device via `a13n-envd connect https://your-webui-host.example.com` and approve it in WebUI ([Connect and approve Envd](../a13n-harness-ui/environments-and-projects.md#connect-and-approve-envd)).
-- Attach the Device to a Project or Thread ([Add Device bindings](../a13n-harness-ui/environments-and-projects.md#add-device-bindings)).
-- Revoke trust anytime under **Settings → Environments → Devices** ([Revoke a Device](../a13n-harness-ui/environments-and-projects.md#revoke-a-device)).
-- Enable shell commands on the daemon with `A13N_ENVD_FULL_CONTROL=1` or explicit shell profiles ([Enable commands](../a13n-envd/configuration.md#enable-commands)), and preserve [saved instances and Hosts](../a13n-envd/configuration.md#saved-instances-and-hosts) across restarts.
+## Integrate a reverse WebSocket Host
+
+Own a `WebSocketEnvdConnections` registry in your server process, authenticate incoming `eip.v1` upgrades, and construct a `websocket_envd` connector:
+
+```python
+from a13n_harness.environment.models import EnvironmentState
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.remote_envd.configuration import WebSocketEnvdConnectionConfiguration
+from a13n_harness.providers.environment.remote_envd.websocket import WebSocketEnvdProviderRuntime
+
+# 1. Inside your authenticated WebSocket route handler:
+# await connections.attach(trusted_registration.device_id, connection)
+
+# 2. Build a connector targeting the attached device_id:
+(websocket_envd,) = select_builtin_environment_providers(("websocket_envd",))
+connector = websocket_envd.execution_connector(
+    {"working_directory": "/work/project"},
+    environment_id="env-my-project",
+    state=EnvironmentState(
+        provider_key=websocket_envd.type,
+        state_version="1",
+        state={"device_id": "env-remote-machine"},
+    ),
+    runtime=WebSocketEnvdProviderRuntime(
+        connections, WebSocketEnvdConnectionConfiguration(connection_timeout=30)
+    ),
+)
+```
 
 ## Session egress and credential references
 
-Configure `egress_mode: controlled` in Session configuration to restrict outbound destinations and inject HTTPS secrets without exposing raw tokens in environment variables. See [Session egress](../a13n-envd/egress.md).
+Pass `session` policy in the connector recipe to enforce controlled egress and inject Host-side secrets as placeholders on a compatible Linux Envd (or select guest VM isolation via `session.isolation`):
+
+```python
+recipe = {
+    "working_directory": "/work/project",
+    "session": {
+        "egress_mode": "controlled",
+        "egress": {
+            "destinations": {"mode": "allowlist", "hosts": ["api.github.com"]},
+            "secrets": [{
+                "env": "GH_TOKEN",
+                "source": {"kind": "environment", "name": "HOST_GITHUB_TOKEN"},
+                "inject_hosts": ["api.github.com"],
+            }],
+        },
+    },
+}
+```
+
+See [Controlled Session egress](../a13n-envd/egress.md) and [Execution isolation](../a13n-envd/isolation.md) for daemon prerequisites.
 
 ## State, concurrency, and recovery
 
-Hosts can store a Session recovery hint to reattach to a retained Session within the same daemon generation before its idle or max-lifetime expiry. Reattachment does not replay commands; if the daemon restarted or the Session expired, open a fresh Session.
+- **`EnvironmentState`** stores the portable `device_id` (no URLs or secrets).
+- **`EnvdSessionRecovery`** (`a13n_harness.environment.session_recovery`) stores a Host-private `EnvdSessionState` checkpoint so consecutive Runs can reattach to the same retained Session within the same daemon generation. Reattachment never replays uncertain commands.
+
+## Connect to the Service
+
+- **Harness UI:** Pair with `a13n-envd connect` ([Connect and approve Envd](../a13n-harness-ui/environments-and-projects.md#connect-and-approve-envd)), attach via [Add Device bindings](../a13n-harness-ui/environments-and-projects.md#add-device-bindings), [enable commands](../a13n-envd/configuration.md#enable-commands), keep [saved instances and Hosts](../a13n-envd/configuration.md#saved-instances-and-hosts), or [revoke a Device](../a13n-harness-ui/environments-and-projects.md#revoke-a-device).
+- **Service:** Pair outbound via [Connect a client computer](../a13n-service/environments.md#connect-a-client-computer) or register an HTTP daemon via [Register an external target](../a13n-service/environments.md#register-an-external-target).

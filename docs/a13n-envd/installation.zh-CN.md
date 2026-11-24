@@ -1,167 +1,81 @@
 ---
-title: 安装与升级 Envd
-sidebarTitle: 安装
-description: 下载经校验的 a13n-envd 官方二进制发行包，按需选择 standard、slim、desktop 或 VM 版本，或从 Rust 源码编译。
+title: 安装 Envd
+sidebarTitle: 安装与升级
+description: 下载经校验的 a13n-envd 发布版二进制文件，在标准版、精简版与虚拟机版之间按需选择，或从 Cargo 源码构建。
 ---
 
-在实际执行文件、命令或桌面操作的计算机上安装 Envd。Harness UI 会为本地 Sandbox 模式获取匹配的二进制文件。当你要把另一台计算机连接为 Device，或由应用直接管理 Envd 时，使用本指南。
+在需要执行文件、命令或桌面操作的机器上安装 `a13n-envd`。Harness UI 本地沙箱模式会自动拉取匹配的二进制文件；当你需要将某台电脑注册为远程设备或直接管理守护进程时，请参考本指南。
 
-## 选择二进制类型
+## 选择二进制构建变体
 
-从 Envd 0.8.1 起，Linux、macOS 和 Windows 的六个目标平台均发布 `slim` 和普通版（`default`）归档。Linux 额外发布显式启用的 `vm` 版。各类型共享版本号和 EIP schema。
+Linux、macOS 与 Windows 六大平台均发布 `slim` 与标准 `default` 构建，Linux 额外提供 `vm` 构建。所有变体共享同一套 EIP 协议（可通过 `a13n-envd --build-variant` 查看已安装变体）：
 
-| 类型          | 包含的能力                                                                                    | 归档后缀 |
-| ------------- | --------------------------------------------------------------------------------------------- | -------- |
-| `slim`        | 文件、Shell/进程、传输、原生隔离和 egress、全部传输协议/TLS、监控及导出、注册、进程监督和更新 | `-slim`  |
-| `default`     | Slim 的能力，加上原生桌面截图、输入、剪贴板和无障碍访问                                       | 无       |
-| `vm`（Linux） | 普通版的能力，加上两个嵌入式 VM 后端                                                          | `-vm`    |
+| 构建变体     | 包含能力                                                                                 | 归档后缀 |
+| ------------ | ---------------------------------------------------------------------------------------- | -------- |
+| `slim`       | 文件、Shell/进程、传输、原生隔离与受控出站、全部传输/TLS、监控导出、设备注册、内置升级器 | `-slim`  |
+| `default`    | 在 `slim` 基础上增加原生桌面截图、键鼠输入、剪贴板与无障碍树                             | 无后缀   |
+| `vm` (Linux) | 在 `default` 基础上内置轻量级虚拟机（microVM）后端                                       | `-vm`    |
 
-独立安装脚本和常规 Cargo 构建仍默认选择 `default`。Harness UI 继续获取不含 VM 的普通版。无桌面工作负载可通过 `--variant slim` 或 `A13N_ENVD_VARIANT=slim` 选择精简版；源码构建使用 `cargo build --locked --package a13n-envd --no-default-features`。Slim 在启动传输前拒绝 `--computer-use true`。用 `a13n-envd --build-variant` 查看已安装类型；`--version` 输出保持不变。
+安装脚本默认选择 `default`；无头服务器可传入 `--variant slim`（`A13N_ENVD_VARIANT=slim`），需要 microVM 隔离的 Linux 主机可传入 `--variant vm`（`A13N_ENVD_VARIANT=vm`）。
 
-## 构建匹配版本的二进制文件
+## 从源码构建匹配版本的二进制
 
-在仓库中开发时，从同一份检出构建守护进程和 Python 客户端。本文档跟随 `main`；Local Envd 会检查两者的发布版本是否匹配。
-
-1. 安装 Rust，在仓库根目录构建 Envd。
-2. 在同一个 shell 中，将 `A13N_ENVD_EXECUTABLE` 设为构建出的二进制文件路径。
+在仓库内开发时，请从同一源码检出构建 `a13n-envd` 与 `a13n-envd-client` 以确保版本严格一致：
 
 ```bash
 cargo build --locked --package a13n-envd
-```
-
-选择构建出的可执行文件：
-
-```bash
 export A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd"
 ```
 
-构建产物是 `target/debug/a13n-envd`。Provider 或 Host 负责启动它并选择传输方式；`a13n-envd-client` 提供 Python 协议客户端。
+如需构建 `slim` 版可加 `--no-default-features`；在 Linux 上构建 `vm` 版（需 C 编译器与 `protoc >= 3.12`）可执行 `BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1 cargo build --locked --package a13n-envd --features vm`。
 
-使用已发布的 Local Envd 时，让原生版本与已安装的 `a13n-envd-client` 匹配；该客户端独立于 Harness 和 Harness UI 发版。Python RC 版本 `1.2.3rc1` 对应原生版本 `1.2.3-rc.1`。
+## 从控制台连接当前电脑
 
-默认构建不包含 VM 后端及其运行时资源。Linux 上可显式启用两个 VM 后端：`BOXLITE_DEPS_STUB=2 BOXLITE_EMBED_RUNTIME=1 cargo build --locked --package a13n-envd --features vm`。该构建还需要 C 编译器及 3.12 或更新版本的 `protoc`。启用 VM 后仍可使用原生执行。
+通过 **Console → Environments → Instances → Connect my computer** 将个人电脑注册到 Service 工作区：
 
-## 从 Console 连接这台电脑
+- **macOS 启动器应用（源码检出）：** 先按上节构建二进制，执行 `make envd-app-install`（升级已有应用加 `ENVD_APP_ARGS=--replace`）安装 `~/Applications/A13N Envd.app`，点击网页上的 **Connect my computer**，在弹窗中选择起始目录与是否开启桌面访问，再将显示的 6 位配对码填入控制台审批（开启桌面操控需授予 macOS 录屏与辅助功能权限）。
+- **终端命令行配对（Linux、Windows 或未安装启动器的 macOS）：** 在弹窗中选择 **Connect from a terminal**，在 10 分钟有效期内执行复制出的 `a13n-envd connect-service --pairing-id ...` 命令（设置 `A13N_ENVD_FULL_CONTROL=1` 允许任意 Shell 命令；按需加 `--computer-use true`）。已保存的主机配置后续可直接通过 `a13n-envd connect-service <saved-host-name>` 重连。
 
-批准后，所选工作空间中拥有运行权限的用户和服务账号都能在已批准的操作权限内使用这台电脑。
+## 安装已发布的二进制包
 
-macOS 源码开发时，先按上文构建匹配的二进制，再安装可选的链接启动器：
+请将原生 `a13n-envd` 版本与环境中已安装的 Python [`a13n-envd-client`](python-client.md#install) 对齐（`1.2.3rc1` 对应 `1.2.3-rc.1`）。安装脚本会在原子替换前自动校验 `SHA256SUMS`。
 
-```bash
-make envd-app-install
-# 升级前先断开现有连接：
-make envd-app-install ENVD_APP_ARGS=--replace
-```
-
-安装需要 Xcode Command Line Tools。脚本生成原生 `~/Applications/A13N Envd.app`，注册 `a13n-envd://` 链接，并复制所选二进制（可用 `ENVD_BINARY` 指定路径）。更新时会把旧 App 备份到 `~/Applications/.a13n-envd-previous.*`。该开发 App 只做本地签名，不是经过公证的正式安装包，也不会添加登录启动服务。
-
-1. 打开 **Console → 环境 → 实例 → 连接我的电脑**。
-2. 如果浏览器询问是否打开外部应用，确认后继续。未自动打开时，点击**打开 A13N Envd**。
-3. 首次注册时，在 App 内核对服务地址和工作区，选择起始目录及是否允许桌面操作，然后点击**允许并连接**。文件和 Shell 使用当前操作系统用户权限，所选目录不限制对其他文件的访问。
-4. 首次注册时，将 App 显示的六位验证码填入 Console，核对电脑信息并批准。
-5. 等待**在线**，再在 Agent 或对话设置中选择该环境。批准配对后，你即可在会话中选择该设备并下发任务。
-
-Envd 由 App 管理，不再打开 Terminal。关闭窗口后仍保持连接，可从菜单栏重新打开。点击**断开连接**或退出 App 会停止 Envd；App 异常退出也会停止它。运行中重复打开链接只会回到现有连接，不会再启动第二个进程。需要切换连接时，先断开，再打开新链接。App 会记住最后批准的 Service 配置名、目录和桌面选项，供下次点击**重新连接**；设备凭据不会复制到 App 偏好设置中。从旧启动器升级时，先在旧 Terminal 中按 Ctrl+C 停止进程。桌面功能还需要 macOS 的屏幕录制和辅助功能权限，出现系统提示时需先完成授权。
-
-其他系统或未安装启动器的 macOS，可以使用对话框中的**从终端连接**。复制的 `connect-service --pairing-id` 命令需要 PATH 中有兼容的二进制，并使用本机配置。需要任意 Shell 命令时，在本机设置 `A13N_ENVD_FULL_CONTROL=1`；需要桌面操作时再添加 `--computer-use true`。网页不会安装软件或授予本机权限。配对十分钟后过期，过期后重新发起即可。已保存的配置可以通过 `a13n-envd connect-service <保存的主机名>` 重连，无需 API key。
-
-刷新 Console 后，再点**连接我的电脑**会打开 Envd 检查已有注册。已注册的电脑直接复用，不需要新的验证码或 device ID。在线连接保持运行；离线时可在 Envd 中重新连接。已有凭据缺失或失效会报错，不会自动创建替代实例。
-
-## 安装已发布的二进制文件
-
-独立脚本从 GitHub Releases 安装原生可执行文件。为 Python 应用选择版本时，先在将使用 Envd 的环境中安装 [Python 客户端](python-client.md#install)。下方命令读取该环境中已安装包的版本。
-
-### Linux 和 macOS
-
-准备 POSIX shell、`curl`、`tar`，以及 `sha256sum` 或 `shasum`。自动选择稳定版本还需要 `jq`；下方显式指定版本的方式不需要。
-
-1. 选择已安装发布版客户端的 Python 环境。
-2. 下载并检查安装脚本，再执行安装。
-3. 读取客户端版本，安装匹配的可执行文件，并检查 `--version`。
+### Linux 与 macOS
 
 ```bash
 curl -fsSLo install-a13n-envd.sh \
   https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/scripts/install-a13n-envd.sh
-# Inspect install-a13n-envd.sh before running it.
 ENVD_VERSION="$(python -c 'from importlib.metadata import version; import re; print(re.sub(r"rc([0-9]+)$", r"-rc.\1", version("a13n-envd-client")))')"
 sh install-a13n-envd.sh --version "$ENVD_VERSION" --install-dir "$HOME/.local/bin"
 "$HOME/.local/bin/a13n-envd" --version
 ```
 
-安装脚本默认选择不含 VM 的原生归档。Linux 用户可通过 `--variant vm` 或 `A13N_ENVD_VARIANT=vm` 选择较大的 VM 归档。VM 归档在目标名后添加 `-vm`，例如 `a13n-envd-<version>-x86_64-unknown-linux-gnu-vm.tar.gz`。缺少所选 VM 资源时直接失败，不会回退。`0.7.0` 等历史发布保留原有资源；请使用提供拆分构建的新版本。从尚未拆分的旧版本迁移并保留 VM 支持时，请使用安装脚本指定 `--variant vm`；旧更新器会选择普通归档。
-
-### Windows
-
-使用 Windows PowerShell 5.1 或 PowerShell 7。
-
-1. 选择已安装发布版客户端的 Python 环境。
-2. 下载并检查安装脚本。
-3. 安装匹配版本，并检查输出路径中的可执行文件。
+### Windows (PowerShell)
 
 ```powershell
 Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/converge-ai-labs/agent-foundation/main/scripts/install-a13n-envd.ps1' -OutFile install-a13n-envd.ps1
-# Inspect the downloaded script before running it.
 $envdVersion = python -c "from importlib.metadata import version; import re; print(re.sub(r'rc([0-9]+)$', r'-rc.\1', version('a13n-envd-client')))"
 & .\install-a13n-envd.ps1 --version $envdVersion --install-dir "$env:LOCALAPPDATA\A13N\bin"
 & "$env:LOCALAPPDATA\A13N\bin\a13n-envd.exe" --version
 ```
 
-按照组织的 PowerShell 执行策略运行脚本；安装程序不会修改该策略。
+| 安装参数                             | 环境变量                        | 行为说明                                                                                      |
+| ------------------------------------ | ------------------------------- | --------------------------------------------------------------------------------------------- |
+| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | 指定精确版本号（省略时自动读取已发布的最新稳定版指针）                                        |
+| `--install-dir PATH`                 | `A13N_ENVD_INSTALL_DIR`         | 安装目录（普通用户 `~/.local/bin`、root `/usr/local/bin`、Windows `%LOCALAPPDATA%\A13N\bin`） |
+| `--variant default\|slim\|vm`        | `A13N_ENVD_VARIANT`             | 选择二进制变体（默认为 `default`）                                                            |
+| `--add-to-path` / `--no-add-to-path` | `A13N_ENVD_ADD_TO_PATH=1` / `0` | 是否将安装目录写入当前用户的 Shell 配置文件或用户 `Path`                                      |
 
-### 选项与行为
+## 升级现有安装
 
-用下列选项选择精确版本和目标目录。两个安装脚本使用相同的选项名：
-
-| 选项                                 | 环境变量默认值                  | 行为                                                                                                                              |
-| ------------------------------------ | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `--version X.Y.Z`                    | `A13N_ENVD_VERSION`             | 精确的原生版本；`0.0.6-rc.1` 等规范 RC 版本需要显式选择。两者都省略时，读取 Envd 发布的稳定版指针，不调用 GitHub Releases API。   |
-| `--install-dir PATH`                 | `A13N_ENVD_INSTALL_DIR`         | 绝对目标目录。POSIX 普通用户默认为 `~/.local/bin`，POSIX root 默认为 `/usr/local/bin`，Windows 默认为 `%LOCALAPPDATA%\A13N\bin`。 |
-| `--add-to-path` / `--no-add-to-path` | `A13N_ENVD_ADD_TO_PATH=1` / `0` | 两个选项互斥。默认不修改 PATH。显式选项覆盖环境变量值。                                                                           |
-| `--help`                             | —                               | 显示用法，不执行安装。                                                                                                            |
-
-选择修改 PATH 时，只更新当前用户的配置：Bash 的 `.bashrc`（macOS 上为 `.bash_profile`）、Zsh 的 `${ZDOTDIR:-$HOME}/.zshrc`、POSIX shell 的 `.profile`、Fish 的 `${XDG_CONFIG_HOME:-$HOME/.config}/fish/config.fish`，或 Windows 用户 `Path`。重复运行不会重复追加相同条目。完成后打开新的终端。不支持的 shell 可以使用 `--no-add-to-path`，再手动配置 PATH。
-
-安装程序支持 Linux、macOS 和 Windows 上的 x86_64 与 ARM64。它们在**解压前** 根据该版本的 `SHA256SUMS` 验证归档，将可执行文件暂存到目标文件系统，再以原子方式安装或替换。下载、校验、解压或替换失败都不会改动已有可执行文件。SHA256 将归档与 GitHub 提供的清单核对；它不是独立的签名或信任来源。
-
-## 更新已有安装
-
-使用安装所有者的账号，在安排好的停机重启窗口中更新。Envd 从自身可执行文件路径启动 worker，替换正在运行的守护进程的二进制文件可能混用版本或导致 worker 无法启动。
-
-1. 用 `update --check` 检查所选版本和目标路径。
-2. 停止所有使用该可执行文件的守护进程。
-3. 执行更新；需要时按下方示例指定精确版本。
-4. 验证 `a13n-envd --version`，再通过原命令或服务重启 Envd。
+升级前请先停止使用该可执行文件的所有 `a13n-envd` 守护进程，防止新旧工作进程混用，然后执行内置升级命令：
 
 ```console
 a13n-envd update --check
 a13n-envd update
-```
-
-默认通过 `raw.githubusercontent.com` 读取 `release-metadata/a13n-envd/stable.txt` 中的 **Envd** 稳定版指针，再下载所选版本的不可变发布资源。发布 CI 仅在 Envd 所有发布渠道都成功后推进该指针；RC 和旧版本重跑不会推进。安装脚本和更新器均不需要 GitHub API token，POSIX 安装脚本也不再需要 jq。
-
-指针不可用或内容无效时，版本发现直接失败，不会回退到 GitHub API 或改动已有可执行文件。首次使用这套自动化完成稳定版发布之前，指针尚不存在，请指定精确版本。要匹配客户端、安装 RC、显式降级或跳过稳定版发现，请指定精确的已发布版本：
-
-```console
+# 锁定与客户端匹配的版本号、强制重装或切换构建变体：
 a13n-envd update --version 1.2.3
-a13n-envd update --version 1.2.3 --force
+a13n-envd update --version 1.2.3 --variant slim
 ```
 
-`--force` 重新安装所选版本，不能与 `--check` 同时使用。更新器替换实际调用的可执行文件，包括通过符号链接访问的情况。它保留 PATH 和配置，使用当前账号权限，服务的停止和重启由你负责。
-
-更新器默认保留自身编译类型。显式指定其他类型即可切换，例如 `a13n-envd update --version 0.8.1 --variant slim`。即使版本号相同，切换类型也会替换程序；只有重新安装相同版本、相同类型时才需要 `--force`。缺少资源直接失败，不会回退。0.8.1 以前的更新器不支持新类型参数：先用独立安装脚本加 `--variant slim` 安装一次，或先升级现有类型再切换。更早的未拆分 VM 版本仍需通过安装脚本指定 `--variant vm` 保留 VM 支持。
-
-Envd 下载匹配的发布归档，验证 `SHA256SUMS`，检查解压后程序的 `--version` 及（从 0.8.1 起）`--build-variant`，然后替换可执行文件。下载和验证失败会保留已有程序。如果在替换期间中断，请先用 `--version` 检查安装，再决定是否重试。强制终止独立更新器可能在可执行文件旁留下 `.a13n-envd-update-*` 暂存目录；确认更新器已退出后，才可删除本次操作对应的目录。
-
-Host 可通过 `--version ... --install-dir ...` 将另一个精确版本安装到独立的绝对目录，同时保留源安装。`--staging-dir` 接受调用方拥有的已有暂存目录，便于中断子进程退出后清理。Harness UI 使用这些选项维护按版本选择的缓存。`.a13n-envd-version` 标记固定托管目标版本；请通过 Harness UI 更新，不要将缓存条目替换为另一个版本。
-
-对于不支持 `update` 的旧版程序，先用上面的独立安装脚本安装一次支持该命令的版本。替换前同样需要停止守护进程。在 macOS 上，仅当 Envd 报告缺少权限时，按[升级后恢复 macOS 权限](computer-use.md#restore-macos-permissions-after-an-upgrade)操作；权限等待超时错误会附带恢复指引。
-
-## 运行沙箱镜像
-
-使用标准[沙箱镜像](sandbox.md)，获得已启用 shell 命令的 agent 开发容器。Envd 以 root 运行；命令和文件操作使用预置的 `1000:1000` 账号，并支持免密码 sudo。需要受控出站网络时显式开启。镜像指南介绍本地构建、stdio 和向外连接 Host、持久化与配置覆盖。
-
-沙箱镜像也默认使用不含 VM 的 Envd。需要 VM 时，选择 `vm`、`slim-vm` 或 `desktop-vm`；精确版本标签为 `<version>-vm`、`<version>-slim-vm` 和 `<version>-desktop-vm`，开发标签为 `dev-vm`、`dev-slim-vm` 和 `dev-desktop-vm`。本地源码构建镜像时添加 `--build-arg ENVD_VARIANT=vm`；`SANDBOX_VARIANT` 仍独立选择工具组合。Service 自动获取使用普通归档和镜像标签。已有 Service 版本固定值需在后续发布更新后采用新构建。
-
-## 下一步
-
-选好匹配的二进制文件后，试用 [Local Envd Provider](index.md#try-local-envd)，或[配置自己的守护进程](configuration.md)。运行不可信工作前，按[执行边界](isolation.md)选择 Host 的外层边界。
+macOS 升级后若提示录屏或辅助功能权限缺失，请按[升级后恢复 macOS 权限](computer-use.md#restore-macos-permissions-after-an-upgrade)处理。容器化运行请参阅[官方沙箱镜像](sandbox.md)（提供 `<version>`、`<version>-vm`、`<version>-slim-vm`、`<version>-desktop-vm` 标签）、[守护进程配置](configuration.md)与[安全隔离边界](isolation.md)。

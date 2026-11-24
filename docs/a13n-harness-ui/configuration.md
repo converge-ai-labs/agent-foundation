@@ -22,7 +22,7 @@ Default root path: `~/.a13n-harness-ui/a13n-harness-ui.yaml`. Pass `--config /pa
 | `subscription_groups/*.yaml` | [Ordered subscription account groups](models-and-authentication.md#account-store-locations)                  |
 | `projects/*.yaml`            | [Working roots, Device bindings, and defaults](environments-and-projects.md#project-file-reference)          |
 | `devices/*.yaml`             | [Remote Envd Device connections](environments-and-projects.md#add-device-bindings)                           |
-| `mcp_servers/*.yaml`         | [MCP server definitions](mcp.md#mcp-field-reference)                                                         |
+| `mcp/*.yaml`                 | [MCP server definitions](mcp.md#mcp-field-reference)                                                         |
 | `subagents/*.md`             | [Lightweight Markdown subagents](agents-and-subagents.md#write-a-markdown-subagent)                          |
 | `AGENTS.md`                  | [Global agent instructions](agents-and-subagents.md#instructions-and-guidance)                               |
 
@@ -68,8 +68,10 @@ Enable automatic LLM review of `environment.shell_exec` calls across root and ch
 security:
   shell_review:
     enable: true
-    reviewer_model: model-reviewer
-    ask_at_or_above: extra_high
+    model: model-reviewer
+    risk_threshold: extra_high
+    on_flagged: approval_required
+    on_error: allow
 ```
 
 See [Configure shell review](configuration-recipes.md#configure-shell-review) for approval thresholds and Codex Guardian linking.
@@ -89,7 +91,9 @@ Enable persistent Global and Project Markdown memory under `memory/`:
 ```yaml title="a13n-harness-ui.yaml — memory"
 memory:
   enabled: true
-  auto_organize: true
+  auto_organize:
+    enabled: true
+    model: model-primary
 ```
 
 View memory files and organization history in WebUI's **Memory** panel.
@@ -101,7 +105,7 @@ View memory files and organization history in WebUI's **Memory** panel.
 
 ## Local envd runtime
 
-Configure the managed or custom `a13n-envd` executable, local Computer Use (`computer_use: true`), and resource monitoring interval (`monitoring_interval_seconds: 60`, range 10–60). See [Manage local envd](environments-and-projects.md#manage-local-envd).
+Configure the managed or custom `a13n-envd` executable, local Computer Use (`computer_use: true`), and resource monitoring interval (`monitoring_interval_seconds: 60`, range 10–60) under `envd:` in `a13n-harness-ui.yaml`. See [Manage local envd](environments-and-projects.md#manage-local-envd).
 
 ## Host browser
 
@@ -121,7 +125,7 @@ Default `[]` allows only the listener address; `["*"]` permits any origin. See [
 
 ## WebUI Bot
 
-Configure the optional always-on Bot under `bot:` in `a13n-harness-ui.yaml`. See [Bot](bot.md).
+Configure the optional always-on Bot under `webui.bot:` in `a13n-harness-ui.yaml`. See [Bot](bot.md).
 
 ## MCP host ownership
 
@@ -130,4 +134,4 @@ Configure the optional always-on Bot under `bot:` in `a13n-harness-ui.yaml`. See
 
 ## Object store
 
-Configure `object_store` to persist large tool outputs and media artifacts across tool calls and runs.
+Harness UI automatically retains a local Thread-scoped Object Store (`ObjectStoreSettings` in `HarnessUiSettings` when embedding) so media and large outputs can be reused across tool calls via `object_ref_tools` without repeating base64 payloads in model history.
