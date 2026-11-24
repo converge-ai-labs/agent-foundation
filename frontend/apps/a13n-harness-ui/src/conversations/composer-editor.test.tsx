@@ -954,20 +954,28 @@ it("does not accept a ghost prediction during IME composition", () => {
   expect(draft.undo.undoStack).toHaveLength(0);
 });
 
-it("offers a button to fill the prediction without a keyboard", () => {
+it("offers clickable accept and dismiss controls outside the textbox", () => {
   const draft = new ThreadDraft();
+  const dismiss = vi.fn();
   render(
     <ComposerEditor
       draft={draft}
       profile={{ display_name: "Alice", color: "#2563eb" }}
       presence={() => {}}
       submit={() => {}}
-      prediction={{ text: "Add an example.", dismiss: () => {} }}
+      prediction={{ text: "Add an example.", dismiss }}
     />,
   );
   const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
   const useSuggestion = screen.getByRole("button", { name: "Use suggestion" });
+  const dismissSuggestion = screen.getByRole("button", {
+    name: "Dismiss suggestion",
+  });
   expect(textbox.contains(useSuggestion)).toBe(false);
+  expect(useSuggestion.contains(screen.getByText("Tab"))).toBe(true);
+  expect(textbox.contains(dismissSuggestion)).toBe(false);
+  fireEvent.click(dismissSuggestion);
+  expect(dismiss).toHaveBeenCalledTimes(1);
   fireEvent.click(useSuggestion);
   expect(draft.doc.getText("text").toString()).toBe("Add an example.");
   expect(document.activeElement).toBe(textbox);

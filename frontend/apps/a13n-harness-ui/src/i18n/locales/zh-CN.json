@@ -3626,6 +3626,8 @@
   "Tab": "Tab",
   "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.": "后续消息建议：{{text}}。按 Tab 填入，或按 Escape 关闭建议。",
   "Use suggestion": "填入建议",
+  "Dismiss suggestion": "关闭建议",
+  "Dismiss suggestion (Esc)": "关闭建议（Esc）",
   "Let agents post to Inbox": "允许智能体发送到收件箱",
   "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "智能体会把结果、问题和重要进展发到收件箱，并会收到相应提醒。关闭后，之后的运行不再提供收件箱工具和提醒；已有消息会保留。"
 }

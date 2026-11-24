@@ -4,33 +4,97 @@
 
 .ghost {
   color: var(--harness-placeholder);
-  font-style: italic;
 }
 
 .actions {
   display: flex;
-  justify-content: flex-end;
-  padding-inline: var(--composer-text-inset, 0px);
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: 2px var(--composer-text-inset, 8px) 4px;
 }
 
-.action {
-  align-items: center;
-  justify-content: center;
-  padding-inline: 0.5em;
-  border: 1px solid var(--border);
+.accept[data-slot] {
+  height: 26px;
+  min-width: 0;
+  max-width: 100%;
+  gap: 6px;
+  padding-inline: 8px 4px;
+  border: 1px solid var(--a13n-border);
   border-radius: var(--harness-radius-control);
-  background: transparent;
-  color: var(--muted-foreground);
-  font: inherit;
-  font-size: var(--a13n-text-2xs);
+  background: var(--a13n-hover);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
   line-height: 1.4;
+  cursor: pointer;
+}
+
+.accept[data-slot] > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.accept[data-slot] > svg {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  margin-inline: 0;
+  opacity: 0.78;
+}
+
+.accept[data-slot]:is(:hover, :focus-visible) {
+  border-color: var(--a13n-input-border);
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+
+.accept[data-slot]:is(:hover, :focus-visible) > svg {
+  opacity: 1;
 }
 
 .key {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 17px;
+  padding-inline: 5px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--a13n-tertiary);
+  font-family: var(--a13n-font);
+  font-size: var(--a13n-text-2xs);
+  font-weight: 400;
+  line-height: 1;
 }
 
-.touch,
+.accept[data-slot]:is(:hover, :focus-visible) .key {
+  border-color: var(--a13n-input-border);
+  color: var(--a13n-secondary);
+}
+
+.dismiss[data-slot] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: var(--harness-radius-control);
+  color: var(--a13n-tertiary);
+  cursor: pointer;
+}
+
+.dismiss[data-slot] > svg {
+  width: 13px;
+  height: 13px;
+}
+
+.dismiss[data-slot]:is(:hover, :focus-visible) {
+  background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+
 .editor:has(.composing) .actions {
   display: none;
 }
@@ -40,15 +104,34 @@
 }
 
 @media (pointer: coarse) {
-  .key {
-    display: none;
+  .actions {
+    gap: 6px;
+    padding-block: 4px 6px;
   }
 
-  .touch {
-    display: inline-flex;
-    min-block-size: 44px;
-    min-inline-size: 44px;
-    padding-inline: 0.75em;
+  .accept[data-slot] {
+    height: 32px;
+    padding-inline: 10px;
+    font-size: var(--a13n-text-sm);
+  }
+
+  .accept[data-slot] > svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .dismiss[data-slot] {
+    width: 32px;
+    height: 32px;
+  }
+
+  .dismiss[data-slot] > svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .key {
+    display: none;
   }
 }
 

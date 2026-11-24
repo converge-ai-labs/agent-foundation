@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
-import { X } from "@phosphor-icons/react";
+import { Sparkle, X } from "@phosphor-icons/react";
+import { Button } from "a13n-ui";
 import { useAppearance } from "../appearance/react";
 import { useTranslation } from "../i18n";
 import {
@@ -547,22 +548,35 @@ export function ComposerEditor({
         <div ref={host} data-presence-anchor="composer" />
         {prediction && (
           <div className={predictionStyles.actions}>
-            <kbd
-              className={`${predictionStyles.action} ${predictionStyles.key}`}
-              aria-hidden="true"
-            >
-              {t("Tab")}
-            </kbd>
-            <button
-              type="button"
-              className={`${predictionStyles.action} ${predictionStyles.touch}`}
+            <Button
+              variant="ghost"
+              size="xs"
+              className={predictionStyles.accept}
+              aria-keyshortcuts="Tab"
+              onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 const view = currentView.current;
                 if (view && acceptRef.current?.(view)) view.focus();
               }}
             >
-              {t("Use suggestion")}
-            </button>
+              <Sparkle aria-hidden="true" />
+              <span>{t("Use suggestion")}</span>
+              <kbd className={predictionStyles.key} aria-hidden="true">
+                {t("Tab")}
+              </kbd>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={predictionStyles.dismiss}
+              aria-label={t("Dismiss suggestion")}
+              aria-keyshortcuts="Escape"
+              title={t("Dismiss suggestion (Esc)")}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => prediction.dismiss()}
+            >
+              <X aria-hidden="true" />
+            </Button>
           </div>
         )}
       </div>
