@@ -38,7 +38,7 @@ class GuidanceFragment:
 class ToolGuidance:
     """Reusable guidance for a Toolset's ``get_instructions`` hook."""
 
-    name: str
+    name: str | None
     fragments: tuple[GuidanceFragment, ...]
     reference_page: str | None = None
     referenced_tools: frozenset[str] = field(init=False)
@@ -89,7 +89,10 @@ def _render_tool_guidance(guide: ToolGuidance, names: frozenset[str], reference_
         inline.append(_reference(f"{reference_root}/{guide.reference_page}"))
     else:
         inline.extend(details)
-    return f"<tool-name>{guide.name}</tool-name>\n" + "\n\n".join(inline) if inline else None
+    if not inline:
+        return None
+    body = "\n\n".join(inline)
+    return f"<tool-name>{guide.name}</tool-name>\n{body}" if guide.name is not None else body
 
 
 def _source_chain(tool: ToolsetTool[AgentContext]) -> Iterator[ToolsetTool[AgentContext]]:

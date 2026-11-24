@@ -59,7 +59,7 @@ class ClientToolsToolset:
                 InstructionExternalToolset(
                     definitions,
                     id=toolset.toolset_id,
-                    guidance=ToolGuidance(toolset.toolset_id, fragments) if fragments else None,
+                    guidance=ToolGuidance(None, fragments) if fragments else None,
                 )
             )
         if not native:
