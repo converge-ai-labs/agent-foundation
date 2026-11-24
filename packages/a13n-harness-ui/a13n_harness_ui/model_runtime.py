@@ -6,9 +6,10 @@ import hashlib
 import json
 import os
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Self
 
 from a13n_harness import AgentContext
 from a13n_harness.configuration import RunConfiguration
@@ -25,7 +26,9 @@ from a13n_harness.providers.model.oauth import (
 )
 from a13n_harness.providers.model.routes import build_api_key_model
 from a13n_harness.token_pricing import TokenPricingCapability
+from anyio import CancelScope
 from pydantic_ai.models import Model, ModelResolutionContext
+from pydantic_ai.models.wrapper import WrapperModel
 
 from a13n_harness_ui.configuration import (
     ApiKeyAuthentication,
@@ -33,12 +36,17 @@ from a13n_harness_ui.configuration import (
     CodexSubscriptionAuthentication,
     CopilotSubscriptionAuthentication,
     GrokSubscriptionAuthentication,
+    PluginSubscriptionAuthentication,
 )
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.model_accounts.managed import SubscriptionAccount, SubscriptionAccounts
 from a13n_harness_ui.model_accounts.routing import AccountSelectionEvent, SubscriptionGroupModel
 from a13n_harness_ui.model_accounts.usage_cache import SubscriptionUsage
 from a13n_harness_ui.model_presets import configured_price_entry
+from a13n_harness_ui.model_providers import BuildModelContext
+from a13n_harness_ui.model_providers.catalog import Registration
+from a13n_harness_ui.model_providers.credentials import PluginAccountStore, PluginCredentialSource
+from a13n_harness_ui.model_providers.transport import provider_http_client
 
 if TYPE_CHECKING:
     from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentialSource
@@ -83,12 +91,70 @@ class ManagedSubscriptionSource:
     selected: Callable[[str, str, AccountSelectionEvent], None] | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class PluginSubscriptionSource:
+    managed: ManagedSubscriptionSource
+    registration: Registration
+
+
+class _PluginModel(WrapperModel):
+    def __init__(
+        self,
+        registration: Registration,
+        recipe: ResolvedModelRecipe,
+        credentials: PluginCredentialSource,
+        configuration: RunConfiguration,
+    ) -> None:
+        self.registration = registration
+        self.recipe = recipe
+        self.credentials = credentials
+        self.configuration = configuration
+        self.client = provider_http_client(registration.declaration, configuration)
+        super().__init__(self._build())
+        self._resources = AsyncExitStack()
+
+    def _build(self) -> Model:
+        try:
+            model = self.registration.plugin.build_model(
+                BuildModelContext(
+                    self.client,
+                    self.credentials.bearer_auth,
+                    _model_name(self.recipe),
+                    self.registration.configuration(self.recipe.model_configuration),
+                )
+            )
+            if not isinstance(model, Model):
+                raise TypeError("Expected a native Model")
+            return model
+        except Exception:
+            raise ModelResolutionError(
+                "Model Provider construction failed.", code="model_reconstruction_failed"
+            ) from None
+
+    async def __aenter__(self) -> Self:
+        async with AsyncExitStack() as resources:
+            if self.client.is_closed:
+                self.client = provider_http_client(self.registration.declaration, self.configuration)
+                await resources.enter_async_context(self.client)
+                self.wrapped = self._build()
+            else:
+                await resources.enter_async_context(self.client)
+            await resources.enter_async_context(self.wrapped)
+            self._resources = resources.pop_all()
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        with CancelScope(shield=True):
+            await self._resources.aclose()
+
+
 type SubscriptionSource = (
     ChatGPTSubscriptionSource
     | CodexSubscriptionSource
     | GrokSubscriptionSource
     | CopilotSubscriptionSource
     | ManagedSubscriptionSource
+    | PluginSubscriptionSource
 )
 
 
@@ -162,6 +228,23 @@ class HarnessUiModelResolver:
             if isinstance(header, str):
                 return RequestHeadersModel(model, common_headers={header: derive_model_affinity_id(thread_id)})
             return model
+        if isinstance(authentication, PluginSubscriptionAuthentication):
+            plugin_source = self._subscription_sources.get(f"plugin_subscription:{authentication.provider}")
+            if (
+                not isinstance(plugin_source, PluginSubscriptionSource)
+                or recipe.model_provider != plugin_source.registration.provenance()
+            ):
+                raise ModelResolutionError(
+                    "The captured Model Provider is unavailable or changed.", code="model_provider_unavailable"
+                )
+            return await self._managed_model(
+                recipe,
+                plugin_source.managed,
+                thread_id=thread_id,
+                prediction=prediction,
+                prediction_account=prediction_account,
+                registration=plugin_source.registration,
+            )
         if self.configuration.allowed_hosts is not None:
             raise ModelResolutionError(
                 "This subscription Model transport cannot enforce Run allowed hosts.",
@@ -224,6 +307,7 @@ class HarnessUiModelResolver:
         thread_id: str,
         prediction: bool,
         prediction_account: str | None,
+        registration: Registration | None = None,
     ) -> Model:
         from a13n_harness.models.codex import CodexRequestModel
         from a13n_harness.providers.model.oauth import build_grok_model
@@ -233,6 +317,8 @@ class HarnessUiModelResolver:
         from a13n_harness_ui.model_accounts.grok import GrokAccountStore
 
         provider = "codex" if isinstance(recipe.authentication, CodexSubscriptionAuthentication) else "grok"
+        if registration is not None:
+            provider = registration.declaration.provider_key
         # Historical recipes have no captured group; their former single identity remains native.
         group = recipe.subscription_group or SubscriptionGroupResource(
             schema_version="1",
@@ -245,6 +331,11 @@ class HarnessUiModelResolver:
 
         def factory(account: SubscriptionAccount) -> Model:
             store = source.accounts.store(account)
+            if isinstance(store, PluginAccountStore) and registration is not None:
+                credentials = PluginCredentialSource(
+                    store, registration, self.configuration, expected_generation=account.login_generation
+                )
+                return _PluginModel(registration, recipe, credentials, self.configuration)
             if isinstance(store, CodexAccountStore):
                 return CodexRequestModel(
                     _model_name(recipe),

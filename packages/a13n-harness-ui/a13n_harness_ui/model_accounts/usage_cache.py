@@ -8,15 +8,20 @@ from collections.abc import Awaitable, Callable, Mapping
 
 import httpx2
 from a13n_harness.http import outbound_tls_verify
-from anyio import sleep
+from anyio import fail_after, sleep
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from a13n_harness_ui.model_providers import AccountContext, PluginUsageSnapshot
+from a13n_harness_ui.model_providers.catalog import ModelProviderCatalog
+from a13n_harness_ui.model_providers.credentials import PluginAccountStore, PluginCredentialSource
+from a13n_harness_ui.model_providers.transport import provider_http_client
 
 from ._common import read_json_snapshot, write_json_if_unchanged
 from .codex import CodexAccountStore
 from .coordination import store_lock
 from .grok import GrokAccountStore
 from .managed import SubscriptionAccount, SubscriptionAccounts
-from .models import AccountStoreError, Provider
+from .models import AccountStoreError
 from .provider_usage import GrokUsage, read_grok_usage
 from .usage import CodexUsage, CodexUsageClient, PaidCredits, UsageLimits, UsageWindow
 
@@ -29,9 +34,10 @@ class UsageSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     login_revision: int = 0
+    login_generation: str | None = Field(default=None, exclude_if=lambda value: value is None)
     checked_at: float = 0
     observed_at: float = 0
-    usage: CodexUsage | GrokUsage | None = None
+    usage: CodexUsage | GrokUsage | PluginUsageSnapshot | None = None
     error: str | None = None
     # A rejected request suppresses this model briefly, not unrelated model buckets.
     rejected: dict[str, float] = Field(default_factory=dict)
@@ -42,10 +48,13 @@ class SubscriptionUsage:
         self,
         accounts: SubscriptionAccounts,
         *,
-        reader: Callable[[SubscriptionAccount], Awaitable[CodexUsage | GrokUsage]] | None = None,
+        model_providers: ModelProviderCatalog | None = None,
+        reader: Callable[[SubscriptionAccount], Awaitable[CodexUsage | GrokUsage | PluginUsageSnapshot | None]]
+        | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self.accounts = accounts
+        self.model_providers = model_providers
         self.clock = clock
         self._reader = reader or self._read_provider
 
@@ -53,17 +62,29 @@ class SubscriptionUsage:
         return self.accounts.root / "state" / f"{account.id}.json"
 
     async def read(self, account: SubscriptionAccount) -> UsageSnapshot:
-        raw = await read_json_snapshot(self._path(account), provider=Provider(account.provider))
+        raw = await read_json_snapshot(self._path(account), provider=account.provider)
         try:
             value = UsageSnapshot.model_validate(raw.document or {})
         except ValidationError:
             value = UsageSnapshot()
-        if value.login_revision != account.login_revision:
-            return UsageSnapshot(login_revision=account.login_revision)
+        if (value.login_revision, value.login_generation) != (account.login_revision, account.login_generation):
+            return UsageSnapshot(login_revision=account.login_revision, login_generation=account.login_generation)
         return value
 
-    async def _read_provider(self, account: SubscriptionAccount) -> CodexUsage | GrokUsage:
+    async def _read_provider(self, account: SubscriptionAccount) -> CodexUsage | GrokUsage | PluginUsageSnapshot | None:
         store = self.accounts.store(account)
+        if isinstance(store, PluginAccountStore):
+            registration = self.model_providers.get(account.provider) if self.model_providers is not None else None
+            if registration is None or not registration.declaration.supports_usage:
+                return None
+            source = PluginCredentialSource(store, registration, expected_generation=account.login_generation)
+            try:
+                with fail_after(10):
+                    async with provider_http_client(registration.declaration) as client:
+                        usage = await registration.plugin.fetch_usage(AccountContext(client, source.bearer_auth))
+                        return PluginUsageSnapshot.model_validate(usage)
+            except Exception:
+                raise ValueError("Model Provider usage refresh failed") from None
         async with httpx2.AsyncClient(verify=outbound_tls_verify()) as client:
             if isinstance(store, GrokAccountStore):
                 return await read_grok_usage(store, client, expected_account_id=account.upstream_account_id)
@@ -85,9 +106,12 @@ class SubscriptionUsage:
         # Only the short publication is serialized. Duplicate reads from two TUIs are harmless.
         async with store_lock(self._path(account)):
             current_account = await self.accounts.get(account_id)
-            if current_account.login_revision != account.login_revision:
+            if (current_account.login_revision, current_account.login_generation) != (
+                account.login_revision,
+                account.login_generation,
+            ):
                 return await self.read(current_account)
-            raw = await read_json_snapshot(self._path(account), provider=Provider(account.provider))
+            raw = await read_json_snapshot(self._path(account), provider=account.provider)
             current = await self.read(account)
             if max(current.checked_at, current.observed_at) > started:
                 return current
@@ -103,7 +127,7 @@ class SubscriptionUsage:
                 }
             )
             await write_json_if_unchanged(
-                self._path(account), updated.model_dump(mode="json"), raw.digest, provider=Provider(account.provider)
+                self._path(account), updated.model_dump(mode="json"), raw.digest, provider=account.provider
             )
             return updated
 
@@ -138,9 +162,9 @@ class SubscriptionUsage:
         observed = self.clock()
         async with store_lock(self._path(account)):
             latest = await self.accounts.get(account.id)
-            if latest.login_revision != account.login_revision:
+            if (latest.login_revision, latest.login_generation) != (account.login_revision, account.login_generation):
                 return
-            raw = await read_json_snapshot(self._path(account), provider=Provider(account.provider))
+            raw = await read_json_snapshot(self._path(account), provider=account.provider)
             current = await self.read(account)
             if max(current.checked_at, current.observed_at) > observed:
                 return
@@ -164,15 +188,15 @@ class SubscriptionUsage:
                 }
             )
             await write_json_if_unchanged(
-                self._path(account), updated.model_dump(mode="json"), raw.digest, provider=Provider(account.provider)
+                self._path(account), updated.model_dump(mode="json"), raw.digest, provider=account.provider
             )
 
     async def reject(self, account: SubscriptionAccount, model_name: str) -> None:
         async with store_lock(self._path(account)):
             latest = await self.accounts.get(account.id)
-            if latest.login_revision != account.login_revision:
+            if (latest.login_revision, latest.login_generation) != (account.login_revision, account.login_generation):
                 return
-            raw = await read_json_snapshot(self._path(account), provider=Provider(account.provider))
+            raw = await read_json_snapshot(self._path(account), provider=account.provider)
             current = await self.read(account)
             now = self.clock()
             rejected = {key: stamp for key, stamp in current.rejected.items() if now - stamp < REJECTION_SECONDS}
@@ -181,7 +205,7 @@ class SubscriptionUsage:
                 self._path(account),
                 current.model_copy(update={"rejected": rejected}).model_dump(mode="json"),
                 raw.digest,
-                provider=Provider(account.provider),
+                provider=account.provider,
             )
 
     async def poll(self) -> None:

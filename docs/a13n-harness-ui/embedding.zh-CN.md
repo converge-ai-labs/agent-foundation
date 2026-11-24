@@ -116,3 +116,77 @@ receipt = await app.submit_thread(
 构建实时界面时，进入 `async with app.watch_thread(root_thread_id=...) as watch:`——它会在抓取 `watch.snapshot` 前先建立订阅，确保消费 `watch.events` 时不漏掉中间状态切换（断线重连可使用带游标的 `live_events` 与 `summary_events`）。
 
 通过 `open_harness_ui_app(..., integrations=HarnessUiIntegrations(...))` 可注册受信任[连接器](connectors.md#develop-a-trusted-connector)、宿主能力、环境提供方与[插件](extensions-and-mcp.md)；OpenTelemetry 追踪接入见[可观测性](observation.md)。编写隔离测试时，请指定临时 `data_root`、关闭 `pricing_auto_update` 并设置 `A13N_OFFICIAL_MODELS_AUTO_UPDATE=0`。
+
+## 开发 OAuth 模型提供方
+
+把 `AcmeProvider` 放进 `acme_provider.py`。这个可运行的 SDK 示例使用模拟授权和固定回复的模型，可以在没有上游服务的情况下体验 Harness UI 的登录和模型选择。正式接入时，在设备授权和刷新方法里通过 `ctx.http_client` 调用 OAuth 服务，在 `build_model` 中返回原生 Pydantic AI Model。使用 Bearer 鉴权时，将 `ctx.bearer_auth()` 配合宿主提供的客户端使用。
+
+```python
+from a13n_harness_ui.model_providers import (
+    AuthorizedAccount, BuildModelContext, DeviceChallenge,
+    ModelProviderDeclaration, ModelProviderPlugin, OAuthContext, PluginModelSuggestion,
+)
+from pydantic_ai.models.test import TestModel
+
+
+class AcmeProvider(ModelProviderPlugin):
+    def declaration(self) -> ModelProviderDeclaration:
+        return ModelProviderDeclaration(
+            provider_key="acme-cloud",
+            display_name="Acme Cloud",
+            login_methods=("device",),
+            allowed_origins=("https://models.acme.example",),
+            models=(PluginModelSuggestion(model_id="demo", label="Acme Demo"),),
+            default_model="demo",
+        )
+
+    async def start_device_login(self, ctx: OAuthContext) -> DeviceChallenge:
+        return DeviceChallenge(
+            verification_url="https://models.acme.example/activate",
+            user_code="DEMO-1234", expires_in=60, poll_interval=2, state={},
+        )
+
+    async def poll_device_login(
+        self, ctx: OAuthContext, challenge: DeviceChallenge
+    ) -> AuthorizedAccount | None:
+        return AuthorizedAccount(
+            upstream_account_id="demo-user", credentials={"access_token": "demo-token"}
+        )
+
+    async def refresh_credentials(
+        self, ctx: OAuthContext, current: AuthorizedAccount
+    ) -> AuthorizedAccount:
+        return current
+
+    def build_model(self, ctx: BuildModelContext) -> TestModel:
+        return TestModel(custom_output_text="Hello from Acme")
+```
+
+任选一种注册方式。发布插件时，在插件包的 `pyproject.toml` 中添加以下入口，与 Harness UI 一起安装，然后重启已打开的应用：
+
+```toml
+[project.entry-points."a13n_harness_ui.model_providers"]
+acme-cloud = "acme_provider:AcmeProvider"
+```
+
+```bash
+uv tool install a13n-harness-ui --with acme-provider
+a13n-harness-ui extensions
+a13n-harness-ui login acme-cloud
+a13n-harness-ui auth status acme-cloud
+```
+
+嵌入应用也可以直接注册同一个类：
+
+```python
+from a13n_harness_ui.app import HarnessUiIntegrations, open_harness_ui_app
+from a13n_harness_ui.settings import HarnessUiSettings
+from acme_provider import AcmeProvider
+
+app_context = open_harness_ui_app(
+    HarnessUiSettings(),
+    integrations=HarnessUiIntegrations(model_providers=(AcmeProvider(),)),
+)
+```
+
+两种注册方式都会在初始设置和 **设置 → 模型** 中显示 Acme Cloud。插件以受信任的 Python 代码在 Harness UI 进程内运行；导入、构造和声明阶段不执行 I/O。非机密设置用 `configuration_model` 定义。要支持浏览器或粘贴回调，声明 `LoopbackCallbackSpec`，并使用宿主提供的重定向地址、PKCE 和 state 构造授权 URL。

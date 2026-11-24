@@ -60,7 +60,9 @@ function mount({
   failResetOnce = false,
   groups = false,
   usable = true,
+  provider = "codex",
 } = {}) {
+  const selectedAccount = { ...account, provider };
   const writes: { path: string; method: string; body: any }[] = [];
   vi.stubGlobal(
     "fetch",
@@ -84,7 +86,7 @@ function mount({
           path.endsWith("/reset")
             ? { code: "reset", windows_reset: 1 }
             : path === "/api/subscriptions/accounts"
-              ? account
+              ? selectedAccount
               : {},
         );
       }
@@ -92,13 +94,28 @@ function mount({
         return json({
           accounts: [
             {
-              account,
+              account: selectedAccount,
               authentication: { availability: "available", usable },
               usage: { account_id: account.id, usage: null },
             },
           ],
           groups: [group],
           adoption: {},
+        });
+      if (path === "/api/models/choices")
+        return json({
+          connections: [
+            {
+              account: {
+                provider: "codex",
+                label: "Codex",
+                login_methods: ["device"],
+                managed_accounts: true,
+                supports_groups: true,
+                supports_allow_credits: true,
+              },
+            },
+          ],
         });
       if (path === "/api/configuration/sources")
         return json({
@@ -136,7 +153,16 @@ function mount({
         ) : (
           <SubscriptionAccounts
             connections={[
-              { provider: "codex", label: "Codex", login_methods: ["device"] },
+              {
+                provider,
+                managed_accounts: true,
+                supports_groups: true,
+                supports_usage: true,
+                supports_allow_credits: provider === "codex",
+                supports_reset_vouchers: provider === "codex",
+                label: provider === "codex" ? "Codex" : "Example Cloud",
+                login_methods: ["device"],
+              },
             ]}
             renderConnection={(connection) => (
               <p>Connect: {connection.provider}</p>
@@ -334,4 +360,20 @@ it("switches group editor language without losing the unsaved name", async () =>
       await i18n.changeLanguage("en");
     });
   }
+});
+
+it("uses managed metadata to create a plugin account and open its login", async () => {
+  const writes = mount({ provider: "example-cloud" });
+  await screen.findByRole("region", { name: "Example Cloud accounts" });
+  fireEvent.click(screen.getByRole("button", { name: "Add account" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Account name" }), {
+    target: { value: "Inference" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+  await screen.findByText("Login target: acct-work");
+  expect(writes).toContainEqual({
+    path: "/api/subscriptions/accounts",
+    method: "POST",
+    body: { provider: "example-cloud", name: "Inference" },
+  });
 });

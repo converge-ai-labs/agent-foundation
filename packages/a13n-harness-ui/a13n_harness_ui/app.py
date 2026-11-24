@@ -35,7 +35,7 @@ from a13n_harness.providers.memory import DirectoryFileStore, MemoryStoreError
 from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
-from anyio import CancelScope, Event, Lock, create_task_group, sleep, to_thread
+from anyio import CancelScope, Event, Lock, create_task_group, fail_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from pydantic_ai import BinaryContent, ToolReturn, prices
 from pydantic_ai.capabilities import AbstractCapability
@@ -251,15 +251,22 @@ from a13n_harness_ui.model_authoring import (
     ModelOptionsRequest,
     ModelRecipe,
     ModelRecipeRequest,
+    model_connections,
     model_options,
+    plugin_connection,
+    plugin_model_choice,
     prepare_model,
 )
 from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
+from a13n_harness_ui.model_providers import AccountContext, ModelProviderPlugin
+from a13n_harness_ui.model_providers.credentials import PluginAccountStore, PluginCredentialSource
+from a13n_harness_ui.model_providers.transport import provider_http_client
 from a13n_harness_ui.model_runtime import (
     ChatGPTSubscriptionSource,
     CopilotSubscriptionSource,
     HarnessUiModelResolver,
     ManagedSubscriptionSource,
+    PluginSubscriptionSource,
     SubscriptionSource,
     model_recipe_id,
 )
@@ -390,6 +397,7 @@ class HarnessUiIntegrations:
     environment_run_extension_factories: tuple[EnvironmentRunExtensionFactory, ...] = ()
     provider_runtime_factories: Mapping[str, ProviderRuntimeFactory] = field(default_factory=dict)
     connectors: tuple[ConnectorDefinition, ...] = ()
+    model_providers: tuple[ModelProviderPlugin, ...] = ()
 
 
 class AppState(StrEnum):
@@ -524,6 +532,7 @@ class HarnessUiApp:
         self._content_plugin_root = store.layout.content_plugins
         self._subscription_sources = subscription_sources
         self._catalog = catalog
+        self._discovered_models: dict[str, tuple[ModelChoice, ...]] = {}
         self._configurations = configurations
         self._threads = threads
         self._projections = projections
@@ -672,7 +681,7 @@ class HarnessUiApp:
     async def _utility_model(
         self, source: LoadedHarnessUiConfiguration, model_id: str, thread_id: str
     ) -> tuple[Model, ResolvedModelRecipe]:
-        recipe = AgentCompositionResolver().model_recipe(source.models[model_id], source)
+        recipe = AgentCompositionResolver(self._catalog).model_recipe(source.models[model_id], source)
         key = model_recipe_id(recipe)
         resolver = HarnessUiModelResolver(
             {key: recipe},
@@ -808,7 +817,7 @@ class HarnessUiApp:
                 "Choose cove or another Codex V3 voice in Live settings before starting voice.",
                 code="live_voice_incompatible",
             )
-        recipe = AgentCompositionResolver().model_recipe(source.models[source.document.live.model], source)
+        recipe = AgentCompositionResolver(self._catalog).model_recipe(source.models[source.document.live.model], source)
         group = recipe.subscription_group
         assert group is not None
         account = await choose_account(
@@ -859,6 +868,22 @@ class HarnessUiApp:
         async with self._operation():
             if self._logins is None:
                 raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
+            registration = self._catalog.model_providers.get(request.provider)
+            if registration is not None:
+                account_id = request.account_id
+                account = (
+                    await self.subscription_accounts.ensure_default(
+                        request.provider, registration.declaration.display_name
+                    )
+                    if account_id is None or account_id == f"acct-{request.provider}-default"
+                    else await self.subscription_accounts.get(account_id, available=True)
+                )
+                store = self.subscription_accounts.store(account)
+                if account.provider != request.provider or not isinstance(store, PluginAccountStore):
+                    raise AppStateError("The provider does not match this account.", code="account_provider_mismatch")
+                return self._logins.start(
+                    request.model_copy(update={"account_id": account.id}), account=store, plugin=(registration, account)
+                )
             if request.provider in {"codex", "grok"}:
                 account_id = request.account_id or f"acct-{request.provider}-default"
                 account = await self.subscription_accounts.get(account_id)
@@ -870,6 +895,7 @@ class HarnessUiApp:
                     request.model_copy(update={"account_id": account_id}),
                     account=self.subscription_accounts.store(account),
                 )
+            self._builtin_account_provider(request.provider)
             if request.account_id is not None:
                 raise AppStateError("This provider does not use subscription groups.", code="account_provider_mismatch")
             return self._logins.start(request)
@@ -3279,6 +3305,23 @@ class HarnessUiApp:
                             diagnostic=str(exc),
                         )
                     )
+            for key in self._catalog.model_providers.registrations:
+                try:
+                    account = await self._inspect_plugin_account(key)
+                    providers.append(
+                        SetupProvider(
+                            provider=key,
+                            available=account.usable,
+                            selected=account.usable,
+                            action=account.required_action.value,
+                        )
+                    )
+                except AccountStoreError as exc:
+                    providers.append(
+                        SetupProvider(
+                            provider=key, available=False, selected=False, action="retry", diagnostic=str(exc)
+                        )
+                    )
             current = await self._configurations.current()
             defaults = None if current is None else current.document.defaults
             path = self._require_configuration_path()
@@ -3313,18 +3356,25 @@ class HarnessUiApp:
 
     async def model_choices(self) -> ModelChoices:
         async with self._operation():
-            return await to_thread.run_sync(ModelChoices)
+            catalog = self._catalog.model_providers
+            return ModelChoices(
+                connections=(
+                    *model_connections(),
+                    *(plugin_connection(item) for item in catalog.registrations.values()),
+                ),
+                diagnostics=tuple(catalog.diagnostics),
+            )
 
     async def model_account_candidates(self, provider: Provider | str) -> tuple[AccountCandidate, ...]:
         async with self._operation():
-            account = self._account(Provider(provider))
+            account = self._account(self._builtin_account_provider(provider))
             from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
 
             return await account.candidates() if isinstance(account, CopilotAccountStore | ChatGPTAccountStore) else ()
 
     async def select_model_account(self, provider: Provider | str, selection: AccountSelection) -> AccountProjection:
         async with self._operation():
-            account = self._account(Provider(provider))
+            account = self._account(self._builtin_account_provider(provider))
             from a13n_harness_ui.model_accounts.chatgpt import ChatGPTAccountStore
 
             if not isinstance(account, CopilotAccountStore | ChatGPTAccountStore):
@@ -3333,12 +3383,57 @@ class HarnessUiApp:
                 )
             return await account.select(selection)
 
-    async def discover_account_models(self, provider: Provider | str) -> tuple[ModelChoice, ...]:
+    async def discover_account_models(
+        self, provider: Provider | str, account_id: str | None = None
+    ) -> tuple[ModelChoice, ...]:
         """Explicit account-scoped discovery, separate from the public model directory."""
         from a13n_harness.providers.model.oauth import discover_copilot_models
 
         async with self._operation():
-            if Provider(provider) is Provider.CHATGPT:
+            registration = self._catalog.model_providers.get(provider)
+            if registration is not None:
+                if not registration.declaration.supports_model_discovery:
+                    raise AppStateError(
+                        "This provider does not offer model discovery.", code="model_discovery_unsupported"
+                    )
+                accounts = (
+                    (await self.subscription_accounts.get(account_id, available=True),)
+                    if account_id
+                    else tuple(
+                        sorted(
+                            await self.subscription_accounts.list(), key=lambda a: a.id != f"acct-{provider}-default"
+                        )
+                    )
+                )
+                for account in accounts:
+                    if account.provider != provider or not account.enabled:
+                        continue
+                    store = self.subscription_accounts.store(account)
+                    assert isinstance(store, PluginAccountStore)
+                    if (await store.read()).account is None:
+                        continue
+                    source = PluginCredentialSource(store, registration)
+                    try:
+                        with fail_after(10):
+                            async with provider_http_client(registration.declaration, discovery=True) as client:
+                                models = await registration.plugin.discover_models(
+                                    AccountContext(client, source.bearer_auth)
+                                )
+                                choices = tuple(plugin_model_choice(item) for item in models)
+                        self._discovered_models[provider] = choices
+                        return choices
+                    except Exception:
+                        raise AppStateError(
+                            "Model discovery failed for the selected account.", code="model_discovery_failed"
+                        ) from None
+                raise AppStateError(
+                    "Connect an available account to discover models.", code="subscription_account_unavailable"
+                )
+            if account_id is not None:
+                raise AppStateError(
+                    "This provider does not accept a managed account.", code="account_provider_mismatch"
+                )
+            if self._builtin_account_provider(provider) is Provider.CHATGPT:
                 from a13n_harness.providers.model.chatgpt import discover_chatgpt_models
 
                 try:
@@ -3349,7 +3444,7 @@ class HarnessUiApp:
                         "ChatGPT model discovery failed. Check the selected registration and account access.",
                         code="model_discovery_failed",
                     ) from None
-            if Provider(provider) is not Provider.COPILOT:
+            if self._builtin_account_provider(provider) is not Provider.COPILOT:
                 raise AppStateError("This account has no model-discovery action.", code="model_discovery_unsupported")
             try:
                 before = await self._copilot_account.load()
@@ -3370,11 +3465,19 @@ class HarnessUiApp:
 
     async def model_options(self, request: ModelOptionsRequest) -> ModelOptions:
         async with self._operation():
-            return await to_thread.run_sync(model_options, request)
+            return model_options(
+                request,
+                self._catalog.model_providers.get(request.connection),
+                self._discovered_models.get(request.connection, ()),
+            )
 
     async def prepare_model(self, request: ModelRecipeRequest) -> ModelRecipe:
         async with self._operation():
-            return await to_thread.run_sync(prepare_model, request)
+            return prepare_model(
+                request,
+                self._catalog.model_providers.get(request.connection),
+                self._discovered_models.get(request.connection, ()),
+            )
 
     async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
         async with self._operation(), self._configuration_lock:
@@ -3594,10 +3697,23 @@ class HarnessUiApp:
                 self._sandbox_ready_paths.add(path)
             return result
 
+    @staticmethod
+    def _builtin_account_provider(provider: str) -> Provider:
+        try:
+            return Provider(provider)
+        except ValueError:
+            raise AppStateError("The Model Provider is unavailable.", code="model_provider_unavailable") from None
+
+    async def _inspect_plugin_account(self, provider: str) -> AccountProjection:
+        return await PluginAccountStore(
+            self._store.layout.root / "oauth", provider=provider, account_id=f"acct-{provider}-default"
+        ).inspect()
+
     async def inspect_model_account(self, provider: Provider | str) -> AccountProjection:
         async with self._operation():
-            selected = Provider(provider)
-            return await self._account(selected).inspect()
+            if self._catalog.model_providers.get(provider) is not None:
+                return await self._inspect_plugin_account(provider)
+            return await self._account(self._builtin_account_provider(provider)).inspect()
 
     async def login_model_account(
         self,
@@ -3629,9 +3745,9 @@ class HarnessUiApp:
 
     async def logout_model_account(self, provider: Provider | str) -> bool:
         async with self._operation():
-            if Provider(provider) in {Provider.CODEX, Provider.GROK}:
+            if self._catalog.model_providers.get(provider) is not None or provider in {Provider.CODEX, Provider.GROK}:
                 return await self.subscription_accounts.logout(f"acct-{provider}-default")
-            return await self._account(Provider(provider)).logout()
+            return await self._account(self._builtin_account_provider(provider)).logout()
 
     @asynccontextmanager
     async def live_events(
@@ -3847,6 +3963,7 @@ class HarnessUiApp:
         async with self._operation():
             views = []
             for account in await self.subscription_accounts.list():
+                account = await self.subscription_accounts.get(account.id)
                 views.append(
                     SubscriptionAccountView(
                         account=account,
@@ -3863,11 +3980,19 @@ class HarnessUiApp:
 
     async def inspect_subscription_account(self, account_id: str) -> AccountProjection:
         async with self._operation():
+            for provider in self._catalog.model_providers.registrations:
+                if account_id == f"acct-{provider}-default":
+                    return await self._inspect_plugin_account(provider)
             account = await self.subscription_accounts.get(account_id)
             return await self.subscription_accounts.store(account).inspect()
 
     async def create_subscription_account(self, request: SubscriptionAccountCreate) -> SubscriptionAccount:
         async with self._operation():
+            if (
+                request.provider not in {"codex", "grok"}
+                and self._catalog.model_providers.get(request.provider) is None
+            ):
+                raise AppStateError("The Model Provider is unavailable.", code="model_provider_unavailable")
             return await self.subscription_accounts.create(request.provider, request.name)
 
     async def update_subscription_account(
@@ -4147,6 +4272,7 @@ async def open_harness_ui_app(
             subscription_accounts = SubscriptionAccounts(store.layout.root)
             selected_integrations = integrations or HarnessUiIntegrations()
             catalog = HarnessUiExtensionCatalog(
+                host_model_providers=selected_integrations.model_providers,
                 provider_plugins=settings.provider_plugins,
                 host_capabilities=dict(selected_integrations.capabilities),
                 host_providers=selected_integrations.environment_providers,
@@ -4309,8 +4435,15 @@ async def open_harness_ui_app(
                 "copilot_subscription": CopilotSubscriptionSource(source=copilot_account),
             }
             managed_source = ManagedSubscriptionSource(
-                subscription_accounts, SubscriptionUsage(subscription_accounts), grok_refresh=grok_refresh
+                subscription_accounts,
+                SubscriptionUsage(subscription_accounts, model_providers=catalog.model_providers),
+                grok_refresh=grok_refresh,
             )
+            plugin_sources: dict[str, SubscriptionSource] = {
+                f"plugin_subscription:{key}": PluginSubscriptionSource(managed_source, item)
+                for key, item in catalog.model_providers.registrations.items()
+            }
+            subscription_sources.update(plugin_sources)
             subscription_sources["codex_subscription"] = managed_source
             subscription_sources["grok_subscription"] = managed_source
 
@@ -4507,6 +4640,7 @@ async def open_harness_ui_app(
                     errors[Provider.GROK] = exc
                 sources["codex_subscription"] = managed_source
                 sources["grok_subscription"] = managed_source
+                sources.update(plugin_sources)
                 root_executor.replace_subscription_sources(sources)
                 operator.replace_subscription_sources(sources)
                 return discovered_codex, discovered_grok, errors

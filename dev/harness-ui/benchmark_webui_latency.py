@@ -50,6 +50,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models.function import AgentInfo, DeltaThinkingPart, DeltaToolCall, FunctionModel
 from websockets.asyncio.client import ClientConnection, connect
+from websockets.typing import Origin
 
 
 def percentile(values: list[float], p: float) -> float:
@@ -376,7 +377,9 @@ async def recv_until(ws: ClientConnection, pred) -> dict[str, Any]:
 async def measure_focus_subscribe(
     ws_url: str, origin: str, thread_id: str, after: str | None = None
 ) -> dict[str, float]:
-    async with connect(ws_url + "/api/realtime/connect", proxy=None, origin=origin, max_size=16 * 1024 * 1024) as ws:
+    async with connect(
+        ws_url + "/api/realtime/connect", proxy=None, origin=Origin(origin), max_size=16 * 1024 * 1024
+    ) as ws:
         await ws.send('{"api_key":"bench-key"}')
         await ws.send(json.dumps({"version": 1, "kind": "subscribe", "channel": "sum", "stream": "summary"}))
         await recv_until(ws, lambda f: f.get("channel") == "sum")
@@ -441,9 +444,12 @@ async def exercise_turn(
     headers = {"Authorization": "Bearer bench-key"}
     async with (
         httpx.AsyncClient(base_url=http_url, headers=headers, trust_env=False, timeout=30.0) as api,
-        connect(ws_url + "/api/realtime/connect", proxy=None, origin=http_url, max_size=16 * 1024 * 1024) as rt,
+        connect(ws_url + "/api/realtime/connect", proxy=None, origin=Origin(http_url), max_size=16 * 1024 * 1024) as rt,
         connect(
-            ws_url + f"/api/threads/{thread_id}/draft/connect", proxy=None, origin=http_url, max_size=16 * 1024 * 1024
+            ws_url + f"/api/threads/{thread_id}/draft/connect",
+            proxy=None,
+            origin=Origin(http_url),
+            max_size=16 * 1024 * 1024,
         ) as draft_ws,
     ):
         await rt.send('{"api_key":"bench-key"}')

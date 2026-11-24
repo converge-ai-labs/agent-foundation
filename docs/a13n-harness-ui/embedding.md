@@ -116,3 +116,77 @@ receipt = await app.submit_thread(
 For race-free live UI updates, enter `async with app.watch_thread(root_thread_id=...) as watch:`—it subscribes before capturing `watch.snapshot` so you can consume `watch.events` without missing transitions (`live_events` and `summary_events` support cursor reconnects).
 
 Pass `HarnessUiIntegrations` to `open_harness_ui_app(..., integrations=...)` to register trusted [Connectors](connectors.md#develop-a-trusted-connector), Host Capabilities, Environment providers, and [Plugins](extensions-and-mcp.md), and see [Tracing](observation.md) for OpenTelemetry integration. For isolated tests, use a temporary `data_root`, disable `pricing_auto_update`, and set `A13N_OFFICIAL_MODELS_AUTO_UPDATE=0`.
+
+## Develop an OAuth Model Provider
+
+Put `AcmeProvider` in `acme_provider.py`. This runnable SDK example uses a fake grant and a deterministic model. It exercises Harness UI's setup and model selection without an upstream service. Replace the device and refresh methods with your OAuth requests through `ctx.http_client`; return your native Pydantic AI Model from `build_model`. Use `ctx.bearer_auth()` with the supplied client for bearer authentication.
+
+```python
+from a13n_harness_ui.model_providers import (
+    AuthorizedAccount, BuildModelContext, DeviceChallenge,
+    ModelProviderDeclaration, ModelProviderPlugin, OAuthContext, PluginModelSuggestion,
+)
+from pydantic_ai.models.test import TestModel
+
+
+class AcmeProvider(ModelProviderPlugin):
+    def declaration(self) -> ModelProviderDeclaration:
+        return ModelProviderDeclaration(
+            provider_key="acme-cloud",
+            display_name="Acme Cloud",
+            login_methods=("device",),
+            allowed_origins=("https://models.acme.example",),
+            models=(PluginModelSuggestion(model_id="demo", label="Acme Demo"),),
+            default_model="demo",
+        )
+
+    async def start_device_login(self, ctx: OAuthContext) -> DeviceChallenge:
+        return DeviceChallenge(
+            verification_url="https://models.acme.example/activate",
+            user_code="DEMO-1234", expires_in=60, poll_interval=2, state={},
+        )
+
+    async def poll_device_login(
+        self, ctx: OAuthContext, challenge: DeviceChallenge
+    ) -> AuthorizedAccount | None:
+        return AuthorizedAccount(
+            upstream_account_id="demo-user", credentials={"access_token": "demo-token"}
+        )
+
+    async def refresh_credentials(
+        self, ctx: OAuthContext, current: AuthorizedAccount
+    ) -> AuthorizedAccount:
+        return current
+
+    def build_model(self, ctx: BuildModelContext) -> TestModel:
+        return TestModel(custom_output_text="Hello from Acme")
+```
+
+Choose one registration path. To distribute the plugin, add this entry to the plugin package's `pyproject.toml`, install it alongside Harness UI, and restart any open app:
+
+```toml
+[project.entry-points."a13n_harness_ui.model_providers"]
+acme-cloud = "acme_provider:AcmeProvider"
+```
+
+```bash
+uv tool install a13n-harness-ui --with acme-provider
+a13n-harness-ui extensions
+a13n-harness-ui login acme-cloud
+a13n-harness-ui auth status acme-cloud
+```
+
+For embedded apps, register the same class directly:
+
+```python
+from a13n_harness_ui.app import HarnessUiIntegrations, open_harness_ui_app
+from a13n_harness_ui.settings import HarnessUiSettings
+from acme_provider import AcmeProvider
+
+app_context = open_harness_ui_app(
+    HarnessUiSettings(),
+    integrations=HarnessUiIntegrations(model_providers=(AcmeProvider(),)),
+)
+```
+
+Both registration paths expose Acme Cloud in Setup and in **Settings → Models**. The plugin runs as trusted Python in the Harness UI process; keep import, construction, and declaration free of I/O. Use `configuration_model` for nonsecret settings. For browser or pasted callbacks, declare `LoopbackCallbackSpec` and build the authorization URL with the supplied redirect, PKCE, and state.

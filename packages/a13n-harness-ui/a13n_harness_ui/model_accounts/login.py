@@ -24,6 +24,9 @@ from pydantic_ai.exceptions import UserError
 from a13n_harness_ui.configuration.models import StrictModel
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.model_authoring import account_connection
+from a13n_harness_ui.model_providers.catalog import Registration
+from a13n_harness_ui.model_providers.credentials import PluginAccountStore
+from a13n_harness_ui.model_providers.oauth import authorize_plugin
 
 from .callback import receive_callback
 from .codex import CodexAccountStore, CodexLoginRequest
@@ -35,7 +38,7 @@ from .grok import (
     GrokAccountStore,
     GrokLoginRequest,
 )
-from .managed import SubscriptionAccounts
+from .managed import SubscriptionAccount, SubscriptionAccounts
 from .models import AccountStoreError, Provider
 
 if TYPE_CHECKING:
@@ -45,7 +48,7 @@ if TYPE_CHECKING:
 
 
 class LoginRequest(StrictModel):
-    provider: Literal["chatgpt", "codex", "grok", "copilot"]
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,62}$")
     method: Literal["device", "browser", "manual_callback"] = "device"
     allow_account_switch: bool = False
     account_id: str | None = Field(default=None, pattern=r"^acct-[a-zA-Z0-9_-]+$", max_length=128)
@@ -58,7 +61,7 @@ class LoginCallbackInput(StrictModel):
 class LoginStatus(StrictModel):
     session_id: str
     account_id: str | None = None
-    provider: Literal["chatgpt", "codex", "grok", "copilot"]
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,62}$")
     method: Literal["device", "browser", "manual_callback"]
     state: Literal["starting", "waiting", "succeeded", "failed", "cancelled", "expired"] = "starting"
     verification_url: str | None = None
@@ -76,6 +79,7 @@ class _Session:
     callback_ready: Event = field(default_factory=Event)
     callback_url: str | None = field(default=None, repr=False)
     flow: ChatGPTAuthorization | None = field(default=None, repr=False)
+    plugin_callback: Callable[[str], dict[str, str]] | None = field(default=None, repr=False)
 
 
 async def authorize_codex(request: CodexLoginRequest, method: str, present: Callable[..., None]) -> CodexLoginResult:
@@ -157,9 +161,18 @@ class LoginSessions:
         self._sessions: dict[str, _Session] = {}
 
     def start(
-        self, request: LoginRequest, *, account: CodexAccountStore | GrokAccountStore | None = None
+        self,
+        request: LoginRequest,
+        *,
+        account: CodexAccountStore | GrokAccountStore | PluginAccountStore | None = None,
+        plugin: tuple[Registration, SubscriptionAccount] | None = None,
     ) -> LoginStatus:
-        if request.method not in account_connection(request.provider).login_methods:
+        methods = (
+            plugin[0].declaration.login_methods
+            if plugin is not None
+            else account_connection(request.provider).login_methods
+        )
+        if request.method not in methods:
             raise HarnessUiError("This account does not support that login method.", code="login_method_unsupported")
         if any(not session.done.is_set() for session in self._sessions.values()):
             raise HarnessUiError("A login is already active. Finish or cancel it first.", code="login_active")
@@ -174,7 +187,7 @@ class LoginSessions:
         )
         session = _Session(status, CancelScope(), Event())
         self._sessions[status.session_id] = session
-        self._tasks.start_soon(self._run, session, request, selected_account)
+        self._tasks.start_soon(self._run, session, request, selected_account, plugin)
         return status
 
     def _get(self, session_id: str) -> _Session:
@@ -191,10 +204,18 @@ class LoginSessions:
 
     def submit_callback(self, session_id: str, callback_url: str) -> LoginStatus:
         session = self._get(session_id)
-        if session.status.state != "waiting" or session.flow is None or session.callback_ready.is_set():
+        if (
+            session.status.state != "waiting"
+            or (session.flow is None and session.plugin_callback is None)
+            or session.callback_ready.is_set()
+        ):
             raise HarnessUiError("This sign-in is not waiting for a callback.", code="login_callback_unavailable")
         try:
-            session.flow.validate_callback(callback_url)
+            if session.plugin_callback is not None:
+                session.plugin_callback(callback_url)
+            else:
+                assert session.flow is not None
+                session.flow.validate_callback(callback_url)
         except UserError:
             raise HarnessUiError(
                 "The callback URL does not match this sign-in. Paste the complete URL from the browser address bar.",
@@ -253,7 +274,8 @@ class LoginSessions:
         self,
         session: _Session,
         request: LoginRequest,
-        account: ChatGPTAccountStore | CodexAccountStore | GrokAccountStore | CopilotAccountStore,
+        account: ChatGPTAccountStore | CodexAccountStore | GrokAccountStore | CopilotAccountStore | PluginAccountStore,
+        plugin: tuple[Registration, SubscriptionAccount] | None = None,
     ) -> None:
         from .chatgpt import ChatGPTAccountStore
 
@@ -279,7 +301,26 @@ class LoginSessions:
         try:
             with session.scope:
                 with fail_after(900):
-                    if (
+                    if plugin is not None:
+                        registration, before = plugin
+                        assert isinstance(account, PluginAccountStore) and self._subscriptions is not None
+                        observed = await account.read()
+
+                        async def receive_parameters(validate, listen):
+                            session.plugin_callback = validate
+                            listen(lambda url: self.submit_callback(session.status.session_id, url))
+                            await session.callback_ready.wait()
+                            assert session.callback_url is not None
+                            return validate(session.callback_url)
+
+                        authorized = await authorize_plugin(registration, method, present, receive_parameters)
+                        await self._subscriptions.publish_plugin_login(
+                            before,
+                            observed.digest,
+                            authorized,
+                            allow_account_switch=request.allow_account_switch,
+                        )
+                    elif (
                         request.account_id is not None
                         and self._subscriptions is not None
                         and isinstance(account, CodexAccountStore)
@@ -330,12 +371,15 @@ class LoginSessions:
                 update={
                     "state": "failed",
                     "error_code": code,
-                    "message": "Login did not complete. Check account status before retrying; no fallback was started.",
+                    "message": str(exc)
+                    if plugin is not None and isinstance(exc, HarnessUiError | AccountStoreError)
+                    else "Login did not complete. Check account status before retrying; no fallback was started.",
                 }
             )
         finally:
             session.callback_url = None
             session.flow = None
+            session.plugin_callback = None
             if isinstance(account, ChatGPTAccountStore):
                 with CancelScope(shield=True):
                     await account.cancel(session.status.session_id)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from types import FunctionType, MethodType
@@ -39,6 +40,8 @@ from a13n_harness_ui.configuration.models import (
     DEFAULT_CAPABILITY_KEYS,
     CapabilitySelection,
     MarkdownSubagentSelection,
+    PluginSubscriptionAuthentication,
+    SubscriptionGroupMember,
     SubscriptionGroupResource,
 )
 from a13n_harness_ui.environment_bindings import (
@@ -820,6 +823,38 @@ class AgentCompositionResolver:
 
     def model_recipe(self, item: ModelResource, source: LoadedHarnessUiConfiguration) -> ResolvedModelRecipe:
         _validate_auth_route(item)
+        auth = item.authentication
+        if isinstance(auth, PluginSubscriptionAuthentication):
+            registration = self.catalog.model_providers.get(auth.provider)
+            if registration is None:
+                raise CompositionError(
+                    f"Model Provider {auth.provider} is unavailable.", code="model_provider_unavailable"
+                )
+            try:
+                registration.configuration(item.model_configuration)
+            except ValueError as exc:
+                raise CompositionError(str(exc), code="model_configuration_invalid") from None
+            group_id = auth.group or f"{auth.provider}-default"
+            group = source.subscription_groups.get(group_id)
+            return ResolvedModelRecipe(
+                model_id=item.id,
+                route=item.route,
+                base_model=item.base_model,
+                authentication=auth,
+                settings=item.settings,
+                model_configuration=item.model_configuration,
+                model_characteristics=item.model_characteristics,
+                model_provider=registration.provenance(),
+                subscription_group=group
+                or SubscriptionGroupResource(
+                    schema_version="1",
+                    kind="subscription_group",
+                    id=group_id,
+                    name=f"{registration.declaration.display_name} default",
+                    provider=auth.provider,
+                    accounts=(SubscriptionGroupMember(account=f"acct-{auth.provider}-default"),),
+                ),
+            )
         normalized = self._model_adapter.validate(
             route=item.route,
             settings=item.settings,
@@ -907,11 +942,12 @@ class AgentCompositionResolver:
                         raise CompositionError(
                             "Auxiliary Model settings must be an object.", code="capability_model_settings_invalid"
                         )
-                    self._model_adapter.validate(
-                        route=model.route,
-                        settings={**model.settings, **overrides},
-                        model_cfg=model.model_configuration,
-                    )
+                    if not isinstance(model.authentication, PluginSubscriptionAuthentication):
+                        self._model_adapter.validate(
+                            route=model.route,
+                            settings={**model.settings, **overrides},
+                            model_cfg=model.model_configuration,
+                        )
                 validated = self.catalog.capabilities(((item.capability, configuration),))
             except CompositionError as exc:
                 # Never drop authorization rules because optional review is misconfigured.
@@ -1156,12 +1192,16 @@ class AgentCompositionResolver:
         nodes = [root]
         plugin_keys: set[str] = set()
         capability_keys: set[str] = set()
+        model_providers: dict[str, DependencyProvenance] = {}
         while nodes:
             node = nodes.pop()
             plugin_keys.update(item.plugin_key for item in node.harness_plugins)
             capability_keys.update(item.capability for item in node.capabilities)
+            for model in (node.model, *(item.model for item in node.capabilities)):
+                if model is not None and model.model_provider is not None:
+                    model_providers[model.model_provider.key] = model.model_provider
             nodes.extend(item.definition for item in node.children)
-        dependencies: list[DependencyProvenance] = []
+        dependencies = [model_providers[key] for key in sorted(model_providers)]
         if plugin_keys:
             catalog = self.catalog.plugin_catalog(tuple(sorted(plugin_keys)))
             registrations = {item.plugin_key: item for item in catalog.registrations}
@@ -1260,6 +1300,10 @@ def _registration_provenance(
 def _validate_auth_route(item: ModelResource) -> None:
     prefix = item.route.split(":", 1)[0]
     authentication = item.authentication
+    if isinstance(authentication, PluginSubscriptionAuthentication):
+        if prefix != authentication.provider or not re.fullmatch(r"[^\s:]+:[^\s]+", item.route):
+            raise CompositionError("The model route must match its Model Provider.", code="model_auth_invalid")
+        return
     if not isinstance(authentication, ApiKeyAuthentication) and item.model_configuration:
         raise CompositionError(
             "Subscription connection configuration cannot be overridden.", code="model_configuration_unsupported"

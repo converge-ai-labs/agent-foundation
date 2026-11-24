@@ -22,10 +22,11 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.usage import RequestUsage
 
 from a13n_harness_ui.configuration.models import SubscriptionGroupResource
+from a13n_harness_ui.model_providers.credentials import PluginAccountStore
 
 from ._common import read_json_snapshot
 from .managed import SubscriptionAccount, SubscriptionAccounts
-from .models import AccountStoreError, Availability, MainAccountSelection, Provider
+from .models import AccountStoreError, Availability, MainAccountSelection
 from .provenance import main_request
 from .usage_cache import SubscriptionUsage
 
@@ -91,7 +92,10 @@ async def choose_account(
             account = await accounts.get(account_id, available=True)
             if account.provider != group.provider:
                 continue
-            projection = await accounts.store(account).inspect()
+            store = accounts.store(account)
+            if isinstance(store, PluginAccountStore) and account.login_generation is None:
+                continue
+            projection = await store.inspect()
             if projection.availability != Availability.AVAILABLE:
                 continue
             tier = await usage.tier(account, model_name, allow_credits=group.allow_credits)
@@ -201,8 +205,11 @@ class SubscriptionGroupModel(WrapperModel):
     async def _model(self, account: SubscriptionAccount, request_scope: _RequestScope) -> Model:
         async with self._entry_lock:
             store = self.accounts.store(account)
-            assert store.policy.path is not None
-            snapshot = await read_json_snapshot(store.policy.path, provider=Provider(account.provider))
+            if isinstance(store, PluginAccountStore):
+                snapshot = await store.read()
+            else:
+                assert store.policy.path is not None
+                snapshot = await read_json_snapshot(store.policy.path, provider=account.provider)
             cached = self._models.get(account.id)
             if cached is None or cached[:2] != (account.login_revision, snapshot.digest):
                 previous = cached[2] if cached is not None else None

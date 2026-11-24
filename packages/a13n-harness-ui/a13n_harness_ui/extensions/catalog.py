@@ -53,6 +53,8 @@ from pydantic_ai.native_tools import ImageGenerationTool
 
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_SOURCE_ID, EnvironmentPathLayout
 from a13n_harness_ui.errors import CompositionError
+from a13n_harness_ui.model_providers import ModelProviderPlugin
+from a13n_harness_ui.model_providers.catalog import ModelProviderCatalog
 
 from .environment_adapters import (
     EnvironmentProjectAdapter,
@@ -112,7 +114,7 @@ class SkillsConfiguration(BaseModel):
 class CatalogReference(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
-    kind: Literal["capability", "harness_plugin", "environment_provider", "environment_run_extension"]
+    kind: Literal["capability", "harness_plugin", "environment_provider", "environment_run_extension", "model_provider"]
     key: str = Field(min_length=1, max_length=200)
     source: Literal["pydantic", "harness", "harness_ui", "installed", "host"]
     distribution_name: str | None = None
@@ -144,6 +146,7 @@ class HarnessUiExtensionCatalog:
     def __init__(
         self,
         *,
+        host_model_providers: tuple[ModelProviderPlugin, ...] = (),
         host_capabilities: dict[str, type[AbstractCapability[Any]]] | None = None,
         host_providers: tuple[EnvironmentProviderDefinition, ...] = (),
         provider_plugins: tuple[str, ...] = (),
@@ -151,6 +154,7 @@ class HarnessUiExtensionCatalog:
         host_plugin_factories: tuple[HarnessPluginFactory, ...] = (),
         host_run_extension_factories: tuple[EnvironmentRunExtensionFactory, ...] = (),
     ) -> None:
+        self.model_providers = ModelProviderCatalog(host_model_providers)
         self._host_capabilities = MappingProxyType(dict(host_capabilities or {}))
         self._host_providers = host_providers
         self._provider_plugins = load_provider_plugins(provider_plugins)
@@ -214,7 +218,21 @@ class HarnessUiExtensionCatalog:
         )
         self._capability_entry_points = capability_entry_points
         self._ambiguous = ambiguous
-        self._references = references
+        self._references = (
+            *references,
+            *(
+                CatalogReference(
+                    kind="model_provider",
+                    key=key,
+                    source="installed" if item.source == "entry_point" else "host",
+                    distribution_name=item.distribution_name,
+                    distribution_version=item.distribution_version,
+                    import_target=item.implementation,
+                    configurable=True,
+                )
+                for key, item in sorted(self.model_providers.registrations.items())
+            ),
+        )
         return self.references
 
     def capabilities(

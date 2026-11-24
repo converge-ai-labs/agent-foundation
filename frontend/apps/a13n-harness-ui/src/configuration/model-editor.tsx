@@ -1,3 +1,5 @@
+import { SchemaForm } from "../forms/schema-form";
+import type { FormSchema, Json } from "../forms/schema";
 import { CredentialSourceField } from "./credential-source";
 import { useTranslation } from "../i18n";
 import { ModelIcon } from "../shell/model-identity";
@@ -37,6 +39,7 @@ export type ModelEditorDraft = {
   modelId: string;
   baseUrl: string;
   authentication?: Recipe["authentication"];
+  configuration?: Record<string, Json>;
 };
 
 export function connectionId(
@@ -169,25 +172,56 @@ function LoadedModelEditor({
     if (previousUrl.current !== savedBaseUrl) setBaseUrl(savedBaseUrl);
     previousUrl.current = savedBaseUrl;
   }, [savedBaseUrl]);
-  useEffect(() => {
-    onDraftChange?.({ connection, modelId, baseUrl, authentication });
-  }, [connection, modelId, baseUrl, authentication, onDraftChange]);
   const selected = choices.connections?.find((item) => item.id === connection);
   const effectiveId =
     modelId || (!value ? (selected?.default_model ?? "") : "");
   const effectiveUrl = baseUrl || (!value ? (selected?.base_url ?? "") : "");
   const api = selected?.authentication === "api_key";
   const nativeProvider =
-    selected?.account?.provider === "codex" ||
-    selected?.account?.provider === "grok"
+    selected?.account?.managed_accounts && selected.account.supports_groups
       ? selected.account.provider
       : undefined;
+  const [pluginConfiguration, setPluginConfiguration] = useState<
+    Record<string, Json>
+  >(() => draft?.configuration ?? {});
+  useEffect(() => {
+    onDraftChange?.({
+      connection,
+      modelId,
+      baseUrl,
+      authentication,
+      configuration: pluginConfiguration,
+    });
+  }, [
+    connection,
+    modelId,
+    baseUrl,
+    authentication,
+    pluginConfiguration,
+    onDraftChange,
+  ]);
+  const selectedConfiguration =
+    savedConnection === connection && value
+      ? (value.model_configuration ?? {})
+      : pluginConfiguration;
+  const readyMember = (id: string) =>
+    subscriptions.data?.accounts.some(
+      (item) =>
+        item.account.id === id &&
+        item.account.enabled &&
+        item.authentication.availability === "available",
+    );
   const subscriptions = useSubscriptions(!!nativeProvider);
   const selectedGroup =
-    authentication?.kind === "codex_subscription" ||
-    authentication?.kind === "grok_subscription"
+    authentication && "group" in authentication
       ? authentication.group
       : undefined;
+  const adopted = nativeProvider
+    ? (
+        subscriptions.data?.adoption as
+          Record<string, { group_created?: boolean }> | undefined
+      )?.[nativeProvider]?.group_created
+    : false;
   const groupId = selectedGroup ?? `${nativeProvider}-default`;
   const nativeGroup = subscriptions.data?.groups.find(
     (item) => item.id === groupId && item.provider === nativeProvider,
@@ -222,7 +256,10 @@ function LoadedModelEditor({
             connection,
             model_id: effectiveId,
             base_url: effectiveUrl,
-            base_model: value?.base_model,
+            base_model:
+              value?.route === `${selected?.provider}:${effectiveId}`
+                ? value?.base_model
+                : undefined,
             settings: value?.settings,
           },
           signal,
@@ -258,9 +295,7 @@ function LoadedModelEditor({
     : nativeProvider
       ? nativeGroup
         ? !!groupReady
-        : !selectedGroup &&
-          !subscriptions.data?.adoption[nativeProvider]?.group_created &&
-          accountReady
+        : !selectedGroup && !adopted && accountReady
       : accountReady;
   // Publishing a recipe is independent of account login. Never publish the
   // previous recipe while the editor displays unapplied connection choices.
@@ -277,6 +312,7 @@ function LoadedModelEditor({
     effectiveId,
     effectiveUrl,
     authentication,
+    selectedConfiguration,
     value,
   ]);
   const latest = useRef(revision);
@@ -297,14 +333,24 @@ function LoadedModelEditor({
             connection,
             model_id: effectiveId,
             base_url: effectiveUrl,
-            base_model: value?.base_model,
+            base_model:
+              value?.route === `${selected?.provider}:${effectiveId}`
+                ? value?.base_model
+                : undefined,
+            ...(selected?.configuration_schema
+              ? { model_configuration: selectedConfiguration }
+              : {}),
             ...(!reset && value
               ? {
                   settings: value.settings ?? {},
                   model_characteristics: value.model_characteristics ?? {},
                 }
               : {}),
-            ...(authentication?.kind === selected?.authentication
+            ...(authentication &&
+            selected &&
+            authentication.kind === selected.authentication &&
+            (authentication.kind !== "plugin_subscription" ||
+              authentication.provider === selected.provider)
               ? { authentication }
               : {}),
           },
@@ -317,9 +363,10 @@ function LoadedModelEditor({
         prepared.recipe.route.slice(prepared.recipe.route.indexOf(":") + 1),
       );
       setBaseUrl(String(prepared.recipe.model_configuration?.base_url ?? ""));
+      const { pricing: _pricing, ...recipe } = prepared.recipe;
       onChange(
         {
-          ...prepared.recipe,
+          ...recipe,
           model_configuration: api
             ? {
                 ...value?.model_configuration,
@@ -340,21 +387,28 @@ function LoadedModelEditor({
   const discoveryEpoch = useRef(0);
   useEffect(() => {
     discoveryEpoch.current += 1;
-  }, [connection, accountReady, accountIdentity]);
+  }, [connection, accountReady, accountIdentity, groupId]);
   const discovery = useMutation({
     mutationFn: async () => {
       const epoch = discoveryEpoch.current;
       const provider = selected!.account!.provider;
       const models = await result(
         client.POST("/api/auth/accounts/{provider}/models", {
-          params: { path: { provider } },
+          params: {
+            path: { provider },
+            query: {
+              account_id: nativeGroup?.accounts?.find((member) =>
+                readyMember(member.account),
+              )?.account,
+            },
+          },
         }),
       );
       return { epoch, models, identity: accountIdentity, connection };
     },
   });
   const currentDiscovery =
-    accountReady &&
+    (accountReady || groupReady) &&
     discovery.data?.epoch === discoveryEpoch.current &&
     discovery.data.identity === accountIdentity &&
     discovery.data.connection === connection
@@ -400,7 +454,7 @@ function LoadedModelEditor({
       candidates.set(item.value, {
         value: item.value,
         label: item.label,
-        description: t("Account catalog - Chat Completions"),
+        description: t("Account catalog"),
       });
   if (effectiveId && !candidates.has(effectiveId))
     candidates.set(effectiveId, {
@@ -487,6 +541,7 @@ function LoadedModelEditor({
                 setModelId(next.default_model);
                 setBaseUrl(next.base_url ?? "");
                 setAuthentication(undefined);
+                setPluginConfiguration({});
                 setAccountReady(false);
               }}
             />
@@ -572,6 +627,25 @@ function LoadedModelEditor({
               />
             )}
           </SettingsSection>
+          {choices.diagnostics?.map((diagnostic) => (
+            <p key={diagnostic} role="status">
+              {diagnostic}
+            </p>
+          ))}
+          {selected?.configuration_schema && (
+            <SettingsSection title={t("Provider configuration")}>
+              <SchemaForm
+                schema={selected.configuration_schema as FormSchema}
+                value={selectedConfiguration as Json}
+                preserveOmitted
+                onChange={(next) => {
+                  const config = (next ?? {}) as Record<string, Json>;
+                  if (matches) update({ model_configuration: config });
+                  else setPluginConfiguration(config);
+                }}
+              />
+            </SettingsSection>
+          )}
           {selected && (api || selected.account) && (
             <SettingsSection title={t("Authentication")}>
               {selected &&
@@ -588,23 +662,26 @@ function LoadedModelEditor({
                     <ChoiceField
                       label={t("Account group")}
                       value={selectedGroup ?? ""}
-                      onValueChange={(group) =>
-                        setAuth({
-                          kind:
-                            nativeProvider === "codex"
-                              ? "codex_subscription"
-                              : "grok_subscription",
-                          ...(group ? { group } : {}),
-                        })
-                      }
+                      onValueChange={(group) => {
+                        const kind = selected.authentication;
+                        if (kind === "plugin_subscription")
+                          setAuth({
+                            kind,
+                            provider: nativeProvider,
+                            group: group || undefined,
+                          });
+                        else if (
+                          kind === "codex_subscription" ||
+                          kind === "grok_subscription"
+                        )
+                          setAuth({ kind, group: group || undefined });
+                      }}
                       options={[
                         {
                           value: "",
                           label: t("Default group"),
                           hint:
-                            !nativeGroup &&
-                            subscriptions.data?.adoption[nativeProvider]
-                              ?.group_created
+                            !nativeGroup && adopted
                               ? t(
                                   "Default group is missing. Select or create a group.",
                                 )
@@ -625,9 +702,7 @@ function LoadedModelEditor({
                           })) ?? []),
                       ]}
                     />
-                    {(!nativeGroup &&
-                      !subscriptions.data?.adoption[nativeProvider]
-                        ?.group_created) ||
+                    {(!nativeGroup && !adopted) ||
                     nativeGroup?.accounts?.some(
                       (member) =>
                         member.account === `acct-${nativeProvider}-default`,
@@ -664,16 +739,14 @@ function LoadedModelEditor({
               {selected?.account?.model_discovery && (
                 <>
                   <Button
-                    disabled={!accountReady}
+                    disabled={!accountReady && !groupReady}
                     loading={discovery.isPending}
                     onClick={() => discovery.mutate()}
                   >
                     {t("Load models")}
                   </Button>
                   <small>
-                    {t(
-                      "Loads this account's Chat Completions models. Availability depends on your plan and organization settings.",
-                    )}
+                    {t("Loads models available to the connected account.")}
                   </small>
                   <ErrorNotice error={discovery.error} />
                   {currentDiscovery?.length === 0 && (

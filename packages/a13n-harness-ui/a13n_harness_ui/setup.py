@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Literal
 
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.models import EnvironmentError
@@ -20,7 +19,7 @@ from a13n_harness_ui.sandbox import validate_local_envd_runtime, validate_sandbo
 
 
 class SetupProvider(StrictModel):
-    provider: Literal["chatgpt", "codex", "grok", "copilot"]
+    provider: str
     available: bool
     selected: bool
     action: str

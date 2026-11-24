@@ -4293,7 +4293,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ModelRecipe"
+                  "$ref": "#/components/schemas/PreparedModelRecipe"
                 }
               }
             }
@@ -4870,7 +4870,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/Provider"
+              "type": "string",
+              "title": "Provider"
             }
           }
         ],
@@ -4906,7 +4907,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/Provider"
+              "type": "string",
+              "title": "Provider"
             }
           }
         ],
@@ -4945,7 +4947,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/Provider"
+              "type": "string",
+              "title": "Provider"
             }
           }
         ],
@@ -4987,7 +4990,8 @@
             "in": "path",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/Provider"
+              "type": "string",
+              "title": "Provider"
             }
           }
         ],
@@ -5035,7 +5039,24 @@
             "in": "path",
             "required": true,
             "schema": {
-              "$ref": "#/components/schemas/Provider"
+              "type": "string",
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "account_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Id"
             }
           }
         ],
@@ -10030,12 +10051,6 @@
         "properties": {
           "provider": {
             "type": "string",
-            "enum": [
-              "chatgpt",
-              "codex",
-              "grok",
-              "copilot"
-            ],
             "title": "Provider"
           },
           "label": {
@@ -10063,6 +10078,68 @@
             "type": "boolean",
             "title": "Source Selection",
             "default": false
+          },
+          "brand": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brand"
+          },
+          "logo_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Logo Url"
+          },
+          "managed_accounts": {
+            "type": "boolean",
+            "title": "Managed Accounts",
+            "default": false
+          },
+          "supports_groups": {
+            "type": "boolean",
+            "title": "Supports Groups",
+            "default": false
+          },
+          "supports_reset_vouchers": {
+            "type": "boolean",
+            "title": "Supports Reset Vouchers",
+            "default": false
+          },
+          "supports_allow_credits": {
+            "type": "boolean",
+            "title": "Supports Allow Credits",
+            "default": false
+          },
+          "supports_usage": {
+            "type": "boolean",
+            "title": "Supports Usage",
+            "default": false
+          },
+          "allowance_view": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "chatgpt",
+                  "copilot"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowance View"
           }
         },
         "additionalProperties": false,
@@ -10073,12 +10150,13 @@
           "login_methods"
         ],
         "title": "AccountConnection",
-        "description": "Built-in account actions shared by terminal and browser authoring."
+        "description": "Provider account actions shared by terminal and browser authoring."
       },
       "AccountProjection": {
         "properties": {
           "provider": {
-            "$ref": "#/components/schemas/Provider"
+            "type": "string",
+            "title": "Provider"
           },
           "availability": {
             "$ref": "#/components/schemas/Availability"
@@ -11427,7 +11505,8 @@
           "chatgpt_subscription",
           "codex_subscription",
           "grok_subscription",
-          "copilot_subscription"
+          "copilot_subscription",
+          "plugin_subscription"
         ]
       },
       "AuthorizationStatus": {
@@ -13011,7 +13090,8 @@
               "capability",
               "harness_plugin",
               "environment_provider",
-              "environment_run_extension"
+              "environment_run_extension",
+              "model_provider"
             ],
             "title": "Kind"
           },
@@ -18900,12 +18980,7 @@
           },
           "provider": {
             "type": "string",
-            "enum": [
-              "chatgpt",
-              "codex",
-              "grok",
-              "copilot"
-            ],
+            "pattern": "^[a-z][a-z0-9_-]{1,62}$",
             "title": "Provider"
           },
           "method": {
@@ -19652,6 +19727,9 @@
           },
           {
             "$ref": "#/components/schemas/CopilotSubscriptionAuthentication"
+          },
+          {
+            "$ref": "#/components/schemas/PluginSubscriptionAuthentication"
           }
         ],
         "discriminator": {
@@ -19661,7 +19739,8 @@
             "chatgpt_subscription": "#/components/schemas/ChatGPTSubscriptionAuthentication",
             "codex_subscription": "#/components/schemas/CodexSubscriptionAuthentication",
             "copilot_subscription": "#/components/schemas/CopilotSubscriptionAuthentication",
-            "grok_subscription": "#/components/schemas/GrokSubscriptionAuthentication"
+            "grok_subscription": "#/components/schemas/GrokSubscriptionAuthentication",
+            "plugin_subscription": "#/components/schemas/PluginSubscriptionAuthentication"
           }
         }
       },
@@ -19714,6 +19793,27 @@
           "label": {
             "type": "string",
             "title": "Label"
+          },
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
+          "characteristics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelCharacteristics"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -19739,6 +19839,14 @@
             },
             "type": "array",
             "title": "Connections"
+          },
+          "diagnostics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Diagnostics",
+            "default": []
           },
           "session_affinity_presets": {
             "items": {
@@ -19801,6 +19909,41 @@
               }
             ]
           },
+          "source": {
+            "type": "string",
+            "enum": [
+              "builtin",
+              "entry_point",
+              "embedded"
+            ],
+            "title": "Source",
+            "default": "builtin"
+          },
+          "distribution_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distribution Name"
+          },
+          "configuration_schema": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Schema"
+          },
           "base_url": {
             "type": "string",
             "title": "Base Url",
@@ -19853,6 +19996,27 @@
       },
       "ModelOptions": {
         "properties": {
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
+          "pricing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelPricingEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "name": {
             "type": "string",
             "title": "Name"
@@ -19943,6 +20107,136 @@
           "reasoning_mode"
         ],
         "title": "ModelOptions"
+      },
+      "ModelPriceRule": {
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Rule Id"
+          },
+          "constraint": {
+            "$ref": "#/components/schemas/PricingConstraint"
+          },
+          "service_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1,
+                "pattern": "^[a-z][a-z0-9_-]*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Service Tier"
+          },
+          "max_input_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Input Tokens"
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/PriceComponent"
+            },
+            "type": "array",
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Prices"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "rule_id",
+          "prices"
+        ],
+        "title": "ModelPriceRule",
+        "description": "One complete set of prices and the condition selecting it."
+      },
+      "ModelPricingEntry": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Provider"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Model"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/ModelPriceRule"
+            },
+            "type": "array",
+            "maxItems": 128,
+            "minItems": 1,
+            "title": "Rules"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source"
+          },
+          "source_revision": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Source Revision"
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2083,
+                "minLength": 1,
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "provider",
+          "model",
+          "rules",
+          "source",
+          "source_revision"
+        ],
+        "title": "ModelPricingEntry",
+        "description": "Complete pricing declaration for one provider-qualified model."
       },
       "ModelRecipe": {
         "properties": {
@@ -20989,6 +21283,123 @@
         ],
         "title": "PendingDecisionSummary"
       },
+      "PluginSubscriptionAuthentication": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "plugin_subscription",
+            "title": "Kind"
+          },
+          "provider": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{1,62}$",
+            "title": "Provider"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "provider"
+        ],
+        "title": "PluginSubscriptionAuthentication"
+      },
+      "PluginUsageSnapshot": {
+        "properties": {
+          "windows": {
+            "items": {
+              "$ref": "#/components/schemas/UsageWindow"
+            },
+            "type": "array",
+            "maxItems": 64,
+            "title": "Windows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "windows"
+        ],
+        "title": "PluginUsageSnapshot"
+      },
+      "PreparedModelRecipe": {
+        "properties": {
+          "route": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 3,
+            "title": "Route"
+          },
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512,
+                "pattern": "^[^\\s:]+:[^\\s:]+$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/ModelAuthentication"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Settings"
+          },
+          "model_configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Model Configuration"
+          },
+          "model_characteristics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelCharacteristics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pricing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelPricingEntry"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "route",
+          "authentication"
+        ],
+        "title": "PreparedModelRecipe",
+        "description": "Authoring response with read-only pricing, separate from persisted recipes."
+      },
       "PresenceFrame": {
         "additionalProperties": false,
         "properties": {
@@ -21137,6 +21548,125 @@
         "additionalProperties": false,
         "type": "object",
         "title": "Pressures"
+      },
+      "PriceComponent": {
+        "properties": {
+          "price_key": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Price Key"
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/PriceTier"
+            },
+            "type": "array",
+            "maxItems": 32,
+            "title": "Tiers",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "price_key",
+          "price"
+        ],
+        "title": "PriceComponent",
+        "description": "One genai-prices usage dimension and its USD unit price."
+      },
+      "PriceTier": {
+        "properties": {
+          "start": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Start"
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Price"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "start",
+          "price"
+        ],
+        "title": "PriceTier",
+        "description": "One cliff-pricing threshold applied to the complete usage quantity."
+      },
+      "PricingConstraint": {
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/PricingConstraintKind",
+            "default": "always"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Time"
+          },
+          "end_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Time"
+          },
+          "weekdays": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "maxItems": 7,
+            "title": "Weekdays",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PricingConstraint",
+        "description": "A stable condition selecting one ordered model price rule."
+      },
+      "PricingConstraintKind": {
+        "type": "string",
+        "enum": [
+          "always",
+          "start_date",
+          "daily_time"
+        ]
       },
       "ProjectDefaults": {
         "properties": {
@@ -21487,16 +22017,6 @@
           "roots"
         ],
         "title": "ProjectSummary"
-      },
-      "Provider": {
-        "type": "string",
-        "enum": [
-          "codex",
-          "grok",
-          "copilot",
-          "chatgpt"
-        ],
-        "title": "Provider"
       },
       "PublicDestinations": {
         "additionalProperties": false,
@@ -22775,12 +23295,6 @@
         "properties": {
           "provider": {
             "type": "string",
-            "enum": [
-              "chatgpt",
-              "codex",
-              "grok",
-              "copilot"
-            ],
             "title": "Provider"
           },
           "available": {
@@ -23621,7 +24135,9 @@
             "title": "Id"
           },
           "provider": {
-            "$ref": "#/components/schemas/SubscriptionProvider"
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{1,62}$",
+            "title": "Provider"
           },
           "name": {
             "type": "string",
@@ -23780,10 +24296,7 @@
           },
           "provider": {
             "type": "string",
-            "enum": [
-              "codex",
-              "grok"
-            ],
+            "pattern": "^[a-z][a-z0-9_-]{1,62}$",
             "title": "Provider"
           },
           "strategy": {
@@ -26966,6 +27479,17 @@
             "title": "Login Revision",
             "default": 0
           },
+          "login_generation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Login Generation"
+          },
           "checked_at": {
             "type": "number",
             "title": "Checked At",
@@ -26983,6 +27507,9 @@
               },
               {
                 "$ref": "#/components/schemas/GrokUsage"
+              },
+              {
+                "$ref": "#/components/schemas/PluginUsageSnapshot"
               },
               {
                 "type": "null"
@@ -30705,7 +31232,9 @@
       "SubscriptionAccountCreate": {
         "properties": {
           "provider": {
-            "$ref": "#/components/schemas/SubscriptionProvider"
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{1,62}$",
+            "title": "Provider"
           },
           "name": {
             "type": "string",
@@ -30777,12 +31306,7 @@
         "properties": {
           "provider": {
             "type": "string",
-            "enum": [
-              "chatgpt",
-              "codex",
-              "grok",
-              "copilot"
-            ],
+            "pattern": "^[a-z][a-z0-9_-]{1,62}$",
             "title": "Provider"
           },
           "method": {

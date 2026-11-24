@@ -21,8 +21,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 const connections = [
-  { provider: "codex", label: "Codex", login_methods: ["device"] },
-  { provider: "grok", label: "Grok", login_methods: ["device"] },
+  {
+    provider: "codex",
+    managed_accounts: true,
+    supports_groups: true,
+    supports_usage: true,
+    supports_allow_credits: true,
+    supports_reset_vouchers: true,
+    label: "Codex",
+    login_methods: ["device"],
+  },
+  {
+    provider: "grok",
+    managed_accounts: true,
+    supports_groups: true,
+    supports_usage: true,
+    label: "Grok",
+    login_methods: ["device"],
+  },
   {
     provider: "copilot",
     label: "GitHub Copilot",
