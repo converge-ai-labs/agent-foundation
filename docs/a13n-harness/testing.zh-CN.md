@@ -78,7 +78,7 @@ async def test_stream_delivers_a_terminal_result() -> None:
 
 - **提示词前缀稳定性：** 若某项能力会改写模型消息，请执行多步请求测试（先调工具再给最终回答），断言首轮消息序列与次轮等长前缀完全一致且保存在规范历史中，以保护模型提供商的 Prompt 缓存命中率。
 - **定义与运行期权限分离：** 将静态指令与工具构建进可执行体，通过全新的 `RunBindings` 注入单次请求协作者（参见[工具与依赖](tools-and-dependencies.md#supply-a-live-application-dependency)），同时断言可见 Schema 与权限拒绝分支。
-- **已安装插件发现：** 在安装了扩展包的独立虚拟环境中测试 Entry Point 发现机制，而非直接打补丁修改内存目录（参考 [`examples/plugins`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)）。
+- **已安装插件发现：** 在安装了扩展包的独立虚拟环境中测试 Entry Point 发现机制（参考 [`examples/plugins`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins)）。
 
 ## 分三级验证执行环境并保留冒烟测试
 
@@ -90,4 +90,4 @@ async def test_stream_delivers_a_terminal_result() -> None:
 | 本地集成   | 搭配 `tmp_path` 的 Direct Local                     | 真实文件/进程读写与目录清理            |
 | 隔离层集成 | 本地 `a13n-envd` 守护进程（`make local-envd-test`） | EIP 协议协商、沙箱隔离、生命周期与恢复 |
 
-将守护进程测试与一项可选开启的真实提供商冒烟测试（断言结构化输出契约而非具体措辞）与默认离线套件分开维护。完整范例可参考 [`examples/agent-app/tests`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app/tests) 与 [`packages/a13n-harness/tests`](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/tests)。
+将守护进程测试与一项可选开启的真实提供商冒烟测试（断言结构化输出 Schema 与业务不变量）同默认离线套件分开维护。完整范例可参考 [`examples/agent-app/tests`](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/agent-app/tests) 与 [`packages/a13n-harness/tests`](https://github.com/converge-ai-labs/agent-foundation/tree/main/packages/a13n-harness/tests)。

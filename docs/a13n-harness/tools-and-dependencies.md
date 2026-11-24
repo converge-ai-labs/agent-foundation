@@ -99,7 +99,7 @@ Harness fixes the Pydantic AI dependency type to `AgentContext`—do not pass a 
 | Reuse one executable across requests | Resolve a fresh service via `AbstractCapability[AgentContext].for_run(ctx)` or a [Harness plugin](plugins.md#plugin-lifecycle) (`ctx.deps.plugins.require(...)`) |
 | Use a built-in integration           | Pass its typed `RunBindings` field (such as `environment`, `web`, or `document_converter`)                                                                       |
 
-For a single-request executable, close over the pre-authorized service and scope database transactions to individual queries rather than the entire Agent loop:
+For a single-request executable, close over the pre-authorized service and scope database transactions to individual tool queries:
 
 ```python
 from a13n_harness import AgentSpec, HarnessBuilder

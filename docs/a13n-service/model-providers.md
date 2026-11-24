@@ -8,7 +8,7 @@ Use this reference for provider-specific setup after choosing your [model workfl
 ## Model providers
 
 1. Open **Models → Add model**. An empty workspace opens the connection form directly. If providers already exist, select one or choose **Connect a new provider**.
-2. Choose the provider type and enter its connection details. Put API keys in the credential fields, not in model settings or agent instructions.
+2. Choose the provider type and enter its connection details, placing API keys in the dedicated credential fields.
 3. Save the provider, then continue to [Add a model](models.md#add-a-model). To manage the account later, open **Workspace settings → Providers**.
 
 ![Console model provider catalog](../../.github/assets/console-model-providers.webp)
@@ -55,7 +55,7 @@ For a gateway that routes or bills by header, add up to 32 **extra request heade
 
 ## ChatGPT subscription provider
 
-Use `openai_chatgpt` to authorize ChatGPT plan usage for the workspace. Authorization belongs to the provider and is shared by the workspace, rather than stored as a personal connection.
+Use `openai_chatgpt` to authorize workspace-wide ChatGPT plan usage stored on the provider resource.
 
 1. In **Workspace settings → Providers**, add a **ChatGPT** provider. The default flow dynamically registers a public OAuth client and needs no static credential.
 2. Choose **Continue with ChatGPT** and open the authorization link. Grant ChatGPT plan usage consent during sign-in so the connection can invoke models.
@@ -66,13 +66,13 @@ The Service can run remotely: it validates and exchanges the pasted callback wit
 
 For an API integration, use these operations in order:
 
-| Task                | Request under `/api/v1/model-providers/{id}`                                 | What to retain or inspect                                          |
-| ------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Start sign-in       | `POST /authorize` with `{}`                                                  | Open `authorization_url`; retain `attempt_id`                      |
-| Finish sign-in      | `POST /authorization/callback` with `attempt_id` and the full `callback_url` | Authorization state                                                |
-| Check status        | `GET /authorization`                                                         | Credential-free state and account metadata                         |
-| List account models | `GET /models`                                                                | `slug` and `display_name`; visibility is not inference entitlement |
-| Disconnect          | `DELETE /authorization`                                                      | Local tokens are cleared; manage remote access in ChatGPT settings |
+| Task                | Request under `/api/v1/model-providers/{id}`                                 | What to retain or inspect                                                                |
+| ------------------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Start sign-in       | `POST /authorize` with `{}`                                                  | Open `authorization_url`; retain `attempt_id`                                            |
+| Finish sign-in      | `POST /authorization/callback` with `attempt_id` and the full `callback_url` | Authorization state                                                                      |
+| Check status        | `GET /authorization`                                                         | Credential-free state and account metadata                                               |
+| List account models | `GET /models`                                                                | Account-visible `slug` and `display_name` (inference access depends on plan entitlement) |
+| Disconnect          | `DELETE /authorization`                                                      | Local tokens are cleared; manage remote access in ChatGPT settings                       |
 
 Returning login reuses registration metadata. **Use another ChatGPT account**, or `POST /authorize` with `{"new_registration": true}`, omits retained account hints. It creates a new dynamic registration when no client is configured and retains an explicitly configured client. Codex credentials cannot replace this authorization.
 

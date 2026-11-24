@@ -68,7 +68,7 @@ Startup update checks only display a notice. To turn the check off for one invoc
 
 ### Dependency compatibility
 
-Let the package manager upgrade Harness UI and resolve its compatible dependencies together. These include Harness, Stream Protocol, Envd Client, and logging. If resolution fails, inspect any version constraints you added rather than upgrading those dependencies independently.
+Let the package manager upgrade Harness UI and resolve its compatible dependencies together (Harness, Stream Protocol, Envd Client, and logging). If resolution fails, inspect and relax any custom version pins in your environment.
 
 ### Sandbox runtime
 

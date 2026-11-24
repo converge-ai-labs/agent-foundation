@@ -35,7 +35,7 @@ Use **Reconnect** when authorization expires or a refresh cannot be completed sa
 
 Connectors present concrete services such as GitHub, with account setup defined by that service's provider. The Add connection chooser lists installed service integrations.
 
-Configure an arbitrary MCP server through the separate [MCP servers](mcp.md) settings. These remain Agent-selected resources usable through the TUI as well. Remote MCP support in the Connector SDK is a code library for developers implementing concrete service integrations, not another generic MCP setup screen.
+Configure an arbitrary MCP server through the separate [MCP servers](mcp.md) settings; those remain Agent-selected resources usable in the TUI as well. Remote MCP support in the Connector SDK is a Python library for developers implementing concrete service integrations.
 
 ## Agent tool access
 
@@ -49,7 +49,7 @@ With CodeAct enabled, an agent can await those same controls inside `run_code` o
 
 An agent can offer a connection setup card. The offer accepts no credentials and creates no account or setup session by itself. Choose an existing account or **Add another account**, then open the same setup dialog as Settings. Forms never expand inside the transcript. A ready account resolves the card to a compact confirmation with a **Manage** link.
 
-Ordinary chat cards remain visible outside collapsed work, including offers made through CodeAct. Bot publishes an intentional setup card in its normal conversation rather than exposing its internal tool stream. Shared guests can view an intentionally published card but cannot configure the instance.
+Ordinary chat cards remain visible outside collapsed work, including offers made through CodeAct. Bot publishes an intentional setup card directly in its normal conversation while keeping its internal tool stream collapsed. Shared guests can view an intentionally published card; instance configuration requires full workbench access.
 
 Setup success updates saved configuration. It starts no Run and replays no blocked operation. Send a new deliberate message when you want the agent to use the connection.
 
@@ -78,9 +78,9 @@ example = "example_connector:Example"
 
 Use the bound Context for private credentials, scoped state, atomic state/input commits and typed service lookup. External I/O happens before the short commit. Include a codec version in your own state document. When a selected event is retained, commit its input and cursor together; a rejected commit must not advance the cursor. Respect the captured configuration version and configured Bot-delivery policy.
 
-The form profile supports objects, strings/passwords, booleans, numbers, enums, nullable fields, arrays/rows and acyclic local references. Use `writeOnly` on secret setup fields. A root `readOnly: true` configuration schema keeps the account summary visible while delegating edits to setup. Optional form hints are `x-a13n-saved` (root array of JSON Pointer paths identifying stored secret fields), `x-a13n-null-label`, `x-a13n-selected-label`, `x-a13n-empty-label` and `x-a13n-add-label` (field-level display strings). These hints carry presence and copy only, never credential values. Never return secrets in status, context, captures, setup values, logs or model-visible input. Unsupported schemas are unavailable rather than rendered as raw JSON.
+The form profile supports objects, strings/passwords, booleans, numbers, enums, nullable fields, arrays/rows and acyclic local references. Use `writeOnly` on secret setup fields. A root `readOnly: true` configuration schema keeps the account summary visible while delegating edits to setup. Optional form hints are `x-a13n-saved` (root array of JSON Pointer paths identifying stored secret fields), `x-a13n-null-label`, `x-a13n-selected-label`, `x-a13n-empty-label` and `x-a13n-add-label` (field-level display strings). These hints carry presence and copy only; omit credential values from status, context, captures, setup values, logs, and model-visible input. Schemas outside this profile are marked unavailable.
 
-Controllers own shared resources until admitted root users drain. Native tools remain per-Run Capabilities. A background producer is restarted on configuration changes. Setup actions are explicit and serialized; reads observe the current Step, and an optional flow worker advances external waits. Close optional flow resources after cancellation. Plugins are trusted Host Python code, not sandboxed scripts.
+Controllers own shared resources until admitted root users drain. Native tools remain per-Run Capabilities. A background producer is restarted on configuration changes. Setup actions are explicit and serialized; reads observe the current Step, and an optional flow worker advances external waits. Close optional flow resources after cancellation. Connector plugins execute in-process as trusted Host Python code.
 
 ### Presentation conventions
 
@@ -90,7 +90,7 @@ All Connectors use the same account list and setup renderer. In `Declaration`, o
 
 ### Implement a service using Remote MCP
 
-Subclass `a13n_harness_ui.connectors.remote_mcp.RemoteMcp` to reuse native tools and typed programmatic access. This is a Controller base, not a registered Definition. Your Definition owns the concrete service's name, configuration model and setup. Its `open()` yields your Controller. Implement `connection(configuration)` to return a safe `ResolvedMcpRecipe`, or `None` while the account is incomplete. Fix the service endpoint and transport policy in code, and use `McpPrivateValueSource` for private headers. Never put credential values in the recipe.
+Subclass `a13n_harness_ui.connectors.remote_mcp.RemoteMcp` as your Controller base class to reuse native tools and typed programmatic access. Pair it with a `Definition` that owns the concrete service's name, configuration model, and setup, yielding your Controller from `open()`. Implement `connection(configuration)` to return a safe `ResolvedMcpRecipe`, or `None` while the account is incomplete. Fix the service endpoint and transport policy in code, and reference private headers through `McpPrivateValueSource` so credential values stay out of the recipe.
 
 The library supplies native MCP capture, Capability creation, credential resolution and generation/enabled-state checks. For DCR OAuth, set the remote recipe's `oauth` configuration and consume the bound Context's application-owned OAuth service; use an `oauth` setup action for the shared authorization controls. Linear and Notion demonstrate this path without duplicating token storage or refresh. A provider can select native tools in its recipe (`None` permits all; an empty tuple permits none) without exposing MCP transport controls in the frontend. See the [GitHub provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-harness-ui/a13n_harness_ui/connectors/github.py) for a concrete implementation.
 

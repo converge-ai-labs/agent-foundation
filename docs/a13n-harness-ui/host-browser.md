@@ -11,7 +11,7 @@ Use the Host browser when the Agent needs to operate a website or you want to re
 
 ### First-time setup
 
-1. [Install Host components](#install-host-components) on the server, not on the device displaying WebUI. Leave computer sharing enabled when starting WebUI.
+1. [Install Host components](#install-host-components) on the server machine running WebUI (client devices viewing WebUI only need an ordinary browser). Leave computer sharing enabled when starting WebUI.
 2. Start WebUI with the default `browser.mode: auto`. Harness UI detects installed components and prepares the shared browser. Check **Settings → Environments → Browser** for runtime status and components. If startup fails, resolve the error and use **Retry browser startup**.
 3. Start a **Full Control** conversation and ask the Agent to browse. A Run receives browser tools when the browser is ready at admission; first navigation or tab creation opens the conversation's window. You can also choose **Browser → Open browser**, including during a Run.
 4. First live browser use reveals the viewer without moving keyboard focus. If Files/Changes is open or the screen is narrow, choose **View browser**. Closing the viewer keeps the browser running and prevents another automatic reveal in that Run.
@@ -34,7 +34,7 @@ Optional window controls and TigerVNC resizing:
 sudo apt-get install --no-install-recommends openbox x11-xserver-utils
 ```
 
-These commands install desktop components, not Chromium. Harness includes cdp-use and generates VNC passwords/X11 authentication; no separate Node.js, `vncpasswd`, `xauth`, or websockify setup is required. In Docker, install components inside the server image/container. **Manual installation commands** are instructions for you to run, not UI-executed installation.
+Install Chrome, Chromium, or Edge separately—the commands above add the VNC/window-manager display layer. Harness includes cdp-use and generates VNC passwords/X11 authentication; no separate Node.js, `vncpasswd`, `xauth`, or websockify setup is required. In Docker, install components inside the server image/container. Run any displayed **Manual installation commands** yourself in a shell on the Host.
 
 Run as non-root with Chromium's sandbox enabled. Root requires an explicit `--browser-no-sandbox` or `A13N_HARNESS_UI_BROWSER_NO_SANDBOX=1`; this removes Chromium's sandbox protection. `--browser-sandbox` overrides that environment opt-out. WayVNC/Sway independently requires a non-root account.
 
@@ -59,13 +59,13 @@ Automatic selection uses installed browsers, preferring Chrome, Chromium, then E
 | x11vnc               | x11vnc and Xvfb                                    | Fixed desktop                 |
 | WayVNC               | Compatible WayVNC, headless Sway, non-root account | Fixed desktop                 |
 
-Automatic discovery prefers a complete adapter in that order. WayVNC needs private Unix sockets and input-disabled viewing support. Linux desktops use private display/runtime resources, not the user's existing desktop. An X11 window manager such as Openbox, Fluxbox, IceWM, or twm supplies window dragging and close controls; basic browsing works without it.
+Automatic discovery prefers a complete adapter in that order. WayVNC needs private Unix sockets and input-disabled viewing support. Linux desktops allocate dedicated private display/runtime directories isolated from any logged-in user desktop. An X11 window manager such as Openbox, Fluxbox, IceWM, or twm supplies window dragging and close controls; basic browsing works without it.
 
-To override a path, open **Settings → Environments → Browser**, choose a detected executable or **Other** with an absolute path, then save and restart. **Automatic** clears an override. Invalid explicit paths fail instead of falling back. **Scan** checks the current draft and refreshes required/optional component results without saving or launching. Successful detection can still be followed by a startup error, such as missing shared libraries or display permissions.
+To override a path, open **Settings → Environments → Browser**, choose a detected executable or **Other** with an absolute path, then save and restart. **Automatic** clears an override. Invalid explicit paths fail immediately so misconfigurations surface clearly. **Scan** checks the current draft and refreshes required/optional component results without saving or launching. Successful detection can still be followed by a startup error, such as missing shared libraries or display permissions.
 
-**Active configuration** shows the settings used by this App. Saved browser changes take effect after restarting Harness UI. Retry uses the active configuration, not saved pending changes or the unsaved draft, and opens no conversation pages.
+**Active configuration** shows the settings currently running in this App; saved browser edits apply after restarting Harness UI, and **Retry** uses the active configuration without opening conversation pages.
 
-On macOS, settings show optional **Window preview** instead of a VNC executable selector or password.
+On macOS, settings display an optional **Window preview** toggle (VNC executables and passwords apply only to Linux).
 
 The shared profile lives at `<data_root>/browsers/profile`, normally `~/.a13n-harness-ui/data/browsers/profile`. It has no separate location setting. Conversations and Projects share one Chromium instance and profile, with separate windows/Agent tabs. Personal profiles are not imported, and existing profile directories are not moved or merged.
 
@@ -75,7 +75,7 @@ On Linux, the managed browser uses basic password storage to avoid waiting for a
 
 Viewing starts read-only. On Linux, **Take control** pauses browser tools and page collection across all conversations and focuses this conversation's window. Only one viewer controls input. **Hand back to Agent** revokes human input and requires fresh page observation. You can hand back from another conversation, including one with no open tabs. Taking control from another conversation transfers input and focuses its window while all Agent browser tools stay paused.
 
-Each model request includes compact Browser availability context. During takeover, the Agent can call `browser_notify_on_handback` to request a reminder without accessing the page or waiting. A blocked page-tool call also registers the same reminder. Repeated requests coalesce. If control has already returned, the tool reports availability without creating a future reminder. The Agent can finish independent work or end its turn instead of polling. Handback notifies only these conversations, including those whose turn has ended, so the Agent can observe afresh and continue relevant work. Pending approvals still require your decision. Stop, archive, and clearing context cancel pending notices. Notices are kept only while this server and browser runtime remain running; a previous Goal is not resumed.
+Each model request includes compact Browser availability context. During takeover, the Agent can call `browser_notify_on_handback` to request a reminder without accessing the page or waiting. A blocked page-tool call also registers the same reminder. Repeated requests coalesce. If control has already returned, the tool reports availability without creating a future reminder. The Agent can finish independent work or end its turn without polling. Handback notifies only these conversations, including those whose turn has ended, so the Agent can observe afresh and continue relevant work. Pending approvals still require your decision. Stop, archive, and clearing context cancel pending notices. Notices live in the running server and browser runtime; finished Goals stay finished.
 
 To change devices, open the same Thread in another browser and choose **Take control here**. The previous controller loses input while the Agent stays paused; opening the Thread alone remains read-only. After a disconnection, choose **Reconnect control** to reconnect while keeping the Agent paused, or **Hand back to Agent** to resume automation.
 
@@ -85,7 +85,7 @@ On macOS, choose **Pause automation** before interacting with the real browser l
 
 On Linux, click the remote desktop before typing. Local input methods compose on your device and paste committed text into the remote field. The field must accept paste and the Host needs suitable fonts. Linux Unicode transfer requires an extended-clipboard server such as TigerVNC or WayVNC; the tested x11vnc server lacks it.
 
-During Linux human control, focused desktop text clipboards synchronize up to 65,536 characters. HTTPS or localhost and browser clipboard permission are required. Client Command shortcuts map to Linux Ctrl shortcuts. Handback, disconnection, and closing the viewer stop synchronization. The remote bridge transfers text, not images/files; file dialogs use Host files.
+During Linux human control, focused desktop text clipboards synchronize up to 65,536 characters. HTTPS or localhost and browser clipboard permission are required. Client Command shortcuts map to Linux Ctrl shortcuts. Handback, disconnection, and closing the viewer stop synchronization. The remote clipboard bridge transfers plain text only; file dialogs browse Host files.
 
 On Linux with supported resizing, take control and choose a Viewport preset for responsive layout checks. The dimensions describe the page's CSS viewport; other viewers see the same size. Resizing preserves login and avoids reload. It does not emulate a mobile OS, user agent, or touch device. Close conversation tabs and Reset retain the selection until server restart.
 
@@ -100,7 +100,7 @@ On Linux with supported resizing, take control and choose a Viewport preset for 
 
 If only the control connection drops, Harness UI reconnects to the same running Chromium and reattaches surviving conversation tabs. Observe the page to check what happened before repeating an interrupted action; Harness UI does not replay it.
 
-Reset or recovery after a runtime failure creates a new read-only session. Choose **Try again** after the shared runtime stops. Send a new prompt for the affected conversation to use its replacement window; old actions are not replayed, and waiting tools fail rather than remaining paused indefinitely. Other conversations retain their windows on a single-conversation Reset. Unsaved page data can be lost on a crash. After server restart, Auto mode prepares the shared browser again. Closing individual tabs during human control leaves automation paused until handback. **Close conversation tabs** also releases human control when that conversation is the controller.
+Reset or recovery after a runtime failure creates a new read-only session. Choose **Try again** after the shared runtime stops. Send a new prompt for the affected conversation to use its replacement window; old actions remain unrepeated and waiting tools fail immediately. Other conversations retain their windows on a single-conversation Reset. Unsaved page data can be lost on a crash. After server restart, Auto mode prepares the shared browser again. Closing individual tabs during human control leaves automation paused until handback. **Close conversation tabs** also releases human control when that conversation is the controller.
 
 Linux human controllers can see and operate other windows on the shared private desktop. macOS preview is limited to one window, while website logins, saved passwords, and preferences still share the Chromium profile across conversations. Browser authority and networking belong to the Host, outside Sandbox isolation. Linux uses noVNC; its source/license notice is served at `/assets/LICENSE.noVNC`, with other bundled notices at `/third-party-licenses.txt`.
 
@@ -112,6 +112,6 @@ Linux human controllers can see and operate other windows on the shared private 
 4. Finish text with Ctrl/Cmd+Enter or cancel it with Escape. Outside text input, **Copy PNG** or Ctrl/Cmd+Enter copies the result and returns focus to chat.
 5. Paste explicitly into the composer, inspect the attachment, add your instruction, and send.
 
-Capture needs no takeover and does not pause the Agent. The editor suspends only this viewer's remote input and text synchronization. Copy waits for previously issued text clipboard writes. Capture/copy never upload, attach, or send automatically.
+Capture needs no takeover and leaves the Agent running. The editor suspends only this viewer's remote input and text synchronization. Copy waits for previously issued text clipboard writes; paste the copied image into the composer explicitly when you are ready to send it.
 
 PNG dimensions follow the source-pixel crop, independent of preview zoom or screen density. Keyboard controls support editing existing marks; creating marks/crops requires a pointer. Copy/export failure preserves edits. Retry or use **Download PNG**, which leaves the editor open. Closing asks for confirmation when text or undo/redo history would be discarded. Pasting into chat follows ordinary attachment limits.

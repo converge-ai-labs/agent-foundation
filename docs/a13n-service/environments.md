@@ -73,7 +73,7 @@ Add non-secret command defaults in the template's **Environment variables** (`co
 {"environment":{"APP_MODE":"agent","TOOL_ENDPOINT":"https://tools.example.com"}}
 ```
 
-Commands inherit these values and can override them per run via [execution policy](execution-options.md#execution-policy). Keep secrets in [egress credentials](#https-credentials-in-commands), not template variables.
+Commands inherit these values and can override them per run via [execution policy](execution-options.md#execution-policy). Store secrets in [egress credentials](#https-credentials-in-commands); template variables hold readable run configuration.
 
 ### Docker image versions
 
@@ -239,7 +239,7 @@ kind load docker-image a13n-sandbox:local --name my-cluster
 
 ### Outbound WebSocket for managed sandboxes
 
-Set `execution: "envd_ws"` in a Docker, E2B, Daytona, Modal, Sprites, or Vercel template so the sandbox's Envd connects outbound to Control instead of exposing an HTTP port. Configure `server.public_url` as an HTTPS origin reachable from the sandbox with WebSocket forwarding enabled. Note that standalone Console desktop preview is not currently available for `envd_ws`.
+Set `execution: "envd_ws"` in a Docker, E2B, Daytona, Modal, Sprites, or Vercel template so the sandbox's Envd connects outbound to Control without exposing an inbound HTTP port. Configure `server.public_url` as an HTTPS origin reachable from the sandbox with WebSocket forwarding enabled (standalone Console desktop preview requires `envd_http`).
 
 ### Envd installation and upgrades
 

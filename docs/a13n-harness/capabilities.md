@@ -65,7 +65,7 @@ asyncio.run(main())
 | Enabled Harness plugin | Return instances from `plugin.get_capabilities()`                  |
 | Per-Run policy / MCP   | `RunBindings.capabilities` (invocation policy and MCP composition) |
 
-Pass feature clients (such as `web`, `document_converter`, `skill_selection`, `task_state`) on typed `RunBindings` fields rather than `RunBindings.capabilities`.
+Pass feature clients (such as `web`, `document_converter`, `skill_selection`, `task_state`) on their dedicated typed `RunBindings` fields.
 
 ## Built-in Capabilities
 
@@ -88,7 +88,7 @@ Add `LoopDetectionCapability` to detect repeated tool calls, identical results, 
 
 ## Reuse original media with Object Store
 
-Attach an Object Store to capture large tool outputs and binary media once, then pass compact references instead of repeating base64 payloads in conversation history.
+Attach an Object Store to capture large tool outputs and binary media once, passing compact references across turns to avoid repeating base64 payloads in conversation history.
 
 ### Object Reference Transport
 

@@ -82,7 +82,7 @@ To make a plugin discoverable by Hosts (such as Service or Harness UI), register
 "acme.audit" = "acme_plugins:build_audit_plugin"
 ```
 
-Hosts explicitly enable factories by key (e.g., `plugins.keys` in Service or `AppDefinition.factory_keys`); installing a package alone does not activate it.
+After installing the package, enable its factory key explicitly in your Host configuration (for example, `plugins.keys` in Service or `AppDefinition.factory_keys`).
 
 ## Provider plugins
 

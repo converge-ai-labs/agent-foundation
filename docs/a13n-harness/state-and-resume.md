@@ -54,7 +54,7 @@ resumed = await executable.run(
 
 ## Resume unanswered tool calls
 
-If a process crashes mid-tool-batch and you resume from an interrupted checkpoint, Harness reconciles unanswered tool calls using their declared idempotency/retryability (such as `HarnessToolMetadata(idempotency="read_only")`) and your resume policy—re-running only declared-safe calls under fresh permissions while reporting non-retryable calls as interrupted rather than replaying uncertain writes.
+If a process crashes mid-tool-batch and you resume from an interrupted checkpoint, Harness reconciles unanswered tool calls using their declared idempotency/retryability (such as `HarnessToolMetadata(idempotency="read_only")`) and your resume policy—re-running only declared-safe calls under fresh permissions and marking non-idempotent calls as interrupted so the model inspects external state first.
 
 ## Host checkpointing
 

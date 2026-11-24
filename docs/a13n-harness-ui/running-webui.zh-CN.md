@@ -25,7 +25,7 @@ description: 配置 WebUI 监听地址与反向代理，管理实例访问密钥
 
 2. 配置 TLS 终止和 WebSocket 升级。保留外部 `Host`（含端口）及浏览器 `Origin`，通过 `X-Forwarded-Proto: https` 转发 HTTPS 协议。
 
-3. 如果代理对端不是可信回环 `127.0.0.1`，在 WebUI 进程环境用 `FORWARDED_ALLOW_IPS` 设置该进程/容器实际看到的代理 IP/网段。让代理覆盖客户端传入的转发头。
+3. 当反向代理从回环地址 `127.0.0.1` 以外的地址连接时，在 WebUI 进程环境中通过 `FORWARDED_ALLOW_IPS` 设置该进程/容器实际看到的代理 IP 或网段，并让代理覆盖客户端传入的转发头。
 
 4. 重启 WebUI，打开外部地址登录，并检查对话和交互式连接。
 
@@ -72,7 +72,7 @@ Device 配对返回相对根路径，按配对的 Host URL 解析并保留公开
 
 ## 容器与安装资源
 
-在工作台 Host 安装 Python 分发包。wheel/sdist 包含 WebUI 资源，用户不需 Node.js 或前端 checkout。Harness UI 不发布官方容器镜像；自建部署应固定分发版本并配置监听器、认证和持久挂载。`a13n-sandbox` 是 Agent 执行镜像，不是 WebUI 服务器。
+在工作台 Host 安装 Python 分发包；wheel/sdist 已内置编译好的 WebUI 资源，无需安装 Node.js 或检出前端代码。Harness UI 以 Python 包形式分发；自建容器部署请固定包版本并配置监听器、认证和持久挂载（官方 `a13n-sandbox` 镜像专供 Agent 沙箱执行使用）。
 
 仓库开发用 `make webui` 构建/安装资源，在 `var/harness-ui/` 下以隔离配置/数据启动前台服务器。未提供密钥时输出生成密钥登录链接。`WEBUI_ARGS` 传服务器选项，`CLI_ARGS` 传全局选项：
 

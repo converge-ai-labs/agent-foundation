@@ -65,7 +65,7 @@ asyncio.run(main())
 | 已启用的 Harness 插件 | 在 `plugin.get_capabilities()` 中返回实例         |
 | 单次运行策略 / MCP    | `RunBindings.capabilities`（调用策略与 MCP 组合） |
 
-功能客户端（如 `web`、`document_converter`、`skill_selection`、`task_state`）应通过 `RunBindings` 的类型化字段传入，而非 `RunBindings.capabilities`。
+功能客户端（如 `web`、`document_converter`、`skill_selection`、`task_state`）通过 `RunBindings` 上的对应具名类型化字段传入。
 
 ## 内置能力一览
 

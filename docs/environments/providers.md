@@ -41,7 +41,7 @@ For a managed Docker target:
 
 1. Set `DockerConnectionConfiguration.docker_host` to the Engine the Host can reach. Reconnecting later requires access to the same Engine. Service's [Compose deployment](https://github.com/converge-ai-labs/agent-foundation/tree/main/deploy/docker/compose) shows socket access for its non-root process.
 2. Choose an image and execution route. Service's `DockerRecipe` defaults to `execution="native"` and `ghcr.io/converge-ai-labs/a13n-sandbox:dev`. Native execution uses Docker exec; `execution="envd_http"` uses the image's Envd daemon.
-3. Add resource limits and optional bind mounts. Mount `source` paths must already exist on the Engine's machine; `read_only` defaults to true. Keep `/workspace` and private command metadata under the container's own filesystem. Named volumes are not a recipe option.
+3. Add resource limits and optional host bind mounts. Mount `source` paths must already exist on the Engine's machine; `read_only` defaults to true (Docker named volumes are unsupported). Keep `/workspace` and private command metadata under the container's own filesystem.
 4. Create the target, save its state, and open a connector. Pulling or rebuilding an image tag does not replace an existing container.
 
 The default `pull_policy="if_missing"` pulls only absent images. `"never"` reports `environment_image_missing` when the image is absent. Use an immutable digest when you need exact image identity. Native user selection uses an explicit recipe `user`, then `ai.a13n.environment.user`, then the image USER. The standard sandbox image selects UID/GID 1000.
@@ -50,9 +50,9 @@ Custom native images need Linux, Python 3.10+, the configured shell, and writabl
 
 For HTTP EIP, configure the connection's `envd_http` with a Worker-reachable host and bind address. Service preserves the image entrypoint and publishes container port 8888 to a Docker-assigned host port. Use a compatible Envd image and keep networking enabled. The image owns execution identities, so this route rejects recipe `user` overrides. Add `desktop: true` to include observable, input-ready desktop readiness. Plain HTTP requires loopback or an explicitly trusted private link. Follow [Create a Docker desktop](../a13n-service/computer-use.md#create-a-docker-desktop) for the Console steps.
 
-For headless Envd, select an official `-slim` sandbox tag matching your deployment and `execution="envd_http"` with `desktop=false`. Management bootstrap and credential reads need POSIX shell/core utilities, not guest Python or jq. Native Docker file operations still require Python.
+For headless Envd, select an official `-slim` sandbox tag matching your deployment and `execution="envd_http"` with `desktop=false`. Management bootstrap and credential reads rely only on POSIX shell and core utilities; Native Docker file operations additionally require Python in the container.
 
-To use a custom base, build an explicitly compatible wrapper image: install a compatible Envd binary and the common `a13n-sandbox-entrypoint`, provision its Session user and writable workspace, and select the wrapper plus the daemon command in your Dockerfile. Service preserves that entrypoint/command and starts it as root. A plain base image is not an automatic installation request. Match the binary's architecture and userspace requirements; adding a shell script cannot make a glibc binary run on musl. Desktop wrappers additionally supply the desktop launcher and its dependencies.
+To use a custom base, build an explicitly compatible wrapper image: install a compatible Envd binary and the common `a13n-sandbox-entrypoint`, provision its Session user and writable workspace, and select the wrapper plus the daemon command in your Dockerfile. Service starts the image as root with its declared entrypoint and command, requiring Envd to be preinstalled in the image. Match the binary's architecture and userspace requirements (for example, pair glibc binaries with a glibc userspace). Desktop wrappers additionally supply the desktop launcher and its dependencies.
 
 An embedding Host can borrow its own Engine client:
 

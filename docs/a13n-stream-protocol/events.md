@@ -19,7 +19,7 @@ async with executable.stream(input_value, bindings=bindings) as run_stream:
         await host.persist_and_publish(new_events)
 ```
 
-`new_events` contains only events produced by the current item. A text part with initial content can produce both a start and a content event. An omitted observation can produce an empty batch. Publish these incremental batches rather than repeatedly sending the accumulated snapshot.
+`new_events` contains only events produced by the current item. A text part with initial content can produce both a start and a content event. An omitted observation can produce an empty batch. Publish each incremental batch as it arrives.
 
 Create one stream observer per independently executed root or asynchronous child Run. It binds `thread_id` and `run_id` on the first successful observation and tracks forwarded inline children separately. A strictly single-Run source can use `HarnessAguiObserver`.
 
@@ -60,7 +60,7 @@ Use standard event types for messages, tool calls, and Run outcomes. Handle CUST
 | Native `CapabilityEvent`               | `CUSTOM` using its native `kind`                                                         |
 | Other unmatched public observation     | Namespaced `CUSTOM`, such as `a13n.harness.lifecycle` or `a13n.pydantic_ai.final_result` |
 
-A completed argument list marks the tool call's input, not successful execution. Read the result separately. [Terminal events](api-reference.md#terminal-events) describes outcomes and deferred-call IDs.
+`TOOL_CALL_END` marks the end of streamed input arguments; `TOOL_CALL_RESULT` or a terminal event reports the execution outcome. [Terminal events](api-reference.md#terminal-events) describes outcomes and deferred-call IDs.
 
 ### Content and large custom events
 
@@ -126,6 +126,6 @@ for start in range(0, stop, 100):
     inspect_batch(events)
 ```
 
-Returned events are detached copies. Changes to those copies leave the observer unchanged. The journal has no retention cap, and its positions are local indices rather than transport cursors.
+Returned events are detached copies. Changes to those copies leave the observer unchanged. The journal grows unboundedly in memory and uses zero-based local list indices; track wire reconnect cursors in your Host transport envelope.
 
 With `retain_events=False`, `observe()` returns the same converted events, `event_count` stays zero, and `snapshot()` raises `AguiObservationError`. Choose [DisplayFold checkpoints](replay.md#restore-a-compact-display-checkpoint) when you need accumulated display content without retaining every token event.

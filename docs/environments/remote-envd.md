@@ -91,7 +91,7 @@ See [Controlled Session egress](../a13n-envd/egress.md) and [Execution isolation
 ## State, concurrency, and recovery
 
 - **`EnvironmentState`** stores the portable `device_id` (no URLs or secrets).
-- **`EnvdSessionRecovery`** (`a13n_harness.environment.session_recovery`) stores a Host-private `EnvdSessionState` checkpoint so consecutive Runs can reattach to the same retained Session within the same daemon generation. Reattachment never replays uncertain commands.
+- **`EnvdSessionRecovery`** (`a13n_harness.environment.session_recovery`) stores a Host-private `EnvdSessionState` checkpoint so consecutive Runs can reattach to the same retained Session within the same daemon generation without replaying uncertain commands.
 
 ## Connect to the Service
 

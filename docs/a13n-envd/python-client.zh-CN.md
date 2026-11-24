@@ -21,7 +21,7 @@ uv add a13n-envd-client
 
 ## 连接已有 HTTP 守护进程
 
-准备运行中的 HTTP 守护进程，将 `ENVD_ENDPOINT` 设为其基础 URL，`ENVD_CREDENTIAL` 设为 Host 签发的凭据，`ENVD_DEVICE_ID` 设为预期身份。使用基础 URL，而非 `/eip/control`。然后运行：
+准备运行中的 HTTP 守护进程，将 `ENVD_ENDPOINT` 设为其根地址（如 `https://sandbox.example:8080`，客户端会自动拼接 `/eip/control` 等协议路径），`ENVD_CREDENTIAL` 设为 Host 签发的凭据，`ENVD_DEVICE_ID` 设为预期身份。然后运行：
 
 ```python
 import asyncio
@@ -79,7 +79,7 @@ if __name__ == "__main__":
 | ------------------------------ | ----------------- | ----------------------------------------------------------------------- |
 | `verify`                       | `True`            | TLS 验证；支持 SSL context 或 CA 路径；显式 `False` 关闭证书/主机名检查 |
 | `request_timeout`              | `30.0` 秒         | 连接/请求超时；控制读取预算会计入操作超时                               |
-| `allow_plaintext_private_link` | `False`           | 显式允许支持的私有链路 HTTP 场景，并非不受限制的明文访问                |
+| `allow_plaintext_private_link` | `False`           | 针对受支持的私有链路场景显式开启明文 HTTP                               |
 | 请求、响应和帧限制             | 各 `1048576` 字节 | 传输侧边界                                                              |
 
 HTTPS 连接通过 `httpx2` 遵循 `HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及其小写形式。部署运维人员的代理属于可信路由基础设施。明文回环和受支持的 provider 私有链路保持直连，让凭据留在预期链路上。重定向被禁用。
@@ -113,7 +113,7 @@ HTTPS 连接通过 `httpx2` 遵循 `HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及�
 
 ## 读写二进制文件
 
-传入**设备文件系统命名空间**中的绝对路径。POSIX 使用 `/work/report.txt` 等路径；Windows 使用 `/C:/work/report.txt` 或 `/UNC/server/share/report.txt`。这些既不是挂载相对路径，也不是 Harness 聚合路径。工作目录提供默认位置，执行账号和配置的边界决定访问权限。
+传入**设备文件系统命名空间**中的绝对路径（POSIX 如 `/work/report.txt`，Windows 如 `/C:/work/report.txt` 或 `/UNC/server/share/report.txt`）；挂载别名与聚合虚拟路径由上层 Harness Environment 层负责映射。工作目录提供默认位置，执行账号和配置的边界决定访问权限。
 
 已有就绪会话、所需方法及文件系统访问权限时，可写入并读取文件：
 
@@ -132,7 +132,7 @@ async with session.open_reader(path) as reader:
     completion = reader.completion
 ```
 
-此例写入 ASCII 字节。处理任意 UTF-8 流时，使用增量解码器，因为分块可能在字符中间结束。大型传输应转发到有界接收端，不要将整个文件累积在内存中。
+此例写入 ASCII 字节。处理任意 UTF-8 流时，使用增量解码器，因为分块可能在字符中间结束。处理大型传输时，请将分块流式写入有界接收端以控制内存占用。
 
 ### 文件读取器（Reader）
 
@@ -169,7 +169,7 @@ reader 检查引用身份、连续偏移量、单调计数器/完成状态、不
 
 显式 `timeout_ms` 设置操作预算。本地接纳有独立期限，响应等待允许该预算再加协调器余量：未配置请求超时时，余量为 30 秒。60 秒操作加上该余量，可以等待响应 90 秒。未提供操作预算时，采用配置的请求超时。初始化和就绪保留各自外层期限。
 
-取消、连接丢失或本地超时后，先检查已发送的修改，再决定下一步。使用 `receipt.get`、方法和保留证据窗口允许的重放，或原生状态检查。客户端不会自动重试结果不确定的操作，`operation.cancel` 也不证明回滚。
+取消、连接丢失或本地超时后，先检查已发送的修改，再决定下一步。使用 `receipt.get`、方法和保留证据窗口允许的重放，或原生状态检查。客户端将结果不确定的操作留给调用方显式核对；`operation.cancel` 仅发送终止请求，请检查目标资源确认最终状态。
 
 自定义传输集成使用 `RequestCoordinator` 管理设备的单个 reader、请求关联和有界接纳，使用 `SessionRequester` 管理会话范围内的操作与传输。已发送但被调用者放弃的请求，在响应或传输终结事件到来前保留关联状态和容量。调用者取消后，共享 stdio 写入继续运行。普通集成使用这些组件之上的 `EIPSession` 和生成客户端。
 
@@ -183,7 +183,7 @@ reader 检查引用身份、连续偏移量、单调计数器/完成状态、不
 | `EIPProtocolError`        | 无效的消息帧、关联或协议证据                  |
 | `EIPTransportError`       | 收到有效关联响应前传输失败                    |
 | `EIPTransportClosedError` | 传输通道已关闭，可能仍有在途请求              |
-| `EIPConnectionError`      | 连接建立/交换失败，不能证明未分派             |
+| `EIPConnectionError`      | 连接建立或交换中断；重试前请先核查操作回执    |
 | `EIPRequestTimeoutError`  | 本地等待过期；检查 `dispatched`               |
 | `EIPMethodError`          | 有效关联的 EIP 错误；检查类型化 `error`       |
 | `EIPSessionStateError`    | 本地会话/辅助组件状态无效，或方法不可用       |

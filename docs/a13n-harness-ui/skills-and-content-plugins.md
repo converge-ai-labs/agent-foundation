@@ -3,7 +3,7 @@ title: Skills and Content Plugins
 description: Extend your agent with reusable procedural instructions (Skills) and distribute teams of subagents and workflows via Git-backed Content Plugins.
 ---
 
-A **Skill** is a specialized procedure packaged as a directory containing a `SKILL.md` instruction file. Rather than inflating your agent's initial prompt with endless procedural rules, Skills are discovered just-in-time: the model reviews their short descriptions and loads their full instructions only when a matching task arises.
+A **Skill** packages a reusable procedure as a directory containing a `SKILL.md` instruction file. Skills load on demand: the model sees concise catalog descriptions first and reads the full `SKILL.md` only when a matching task arises.
 
 A **Content Plugin** takes this further, allowing you to package multiple Skills and specialized subagent roles into a version-controlled Git repository that any team member can install with a single command.
 

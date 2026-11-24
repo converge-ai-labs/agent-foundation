@@ -49,7 +49,7 @@ Import `DisplayFold`, `DisplaySnapshot`, `DisplayContinuation`, `Item`, and `Str
 | `fold.capture_delta()`                                                  | Detach items changed since the last capture, with current continuation |
 | `fold.export_continuation()`                                            | Detach parser state separately                                         |
 
-Default previews cap each text, argument, or result field at 262,144 characters and mark truncation. Large observation payloads retain their name rather than a full payload copy. `full_content=True` keeps full display content; retained conversation size still grows with the number and size of items. Use the [checkpoint procedure](replay.md#restore-a-compact-display-checkpoint) to keep content, continuation, and suffix selection together.
+Default previews cap each text, argument, or result field at 262,144 characters and mark truncation. Large observation payloads record only their event name in default previews. `full_content=True` keeps full display content; retained conversation size still grows with the number and size of items. Use the [checkpoint procedure](replay.md#restore-a-compact-display-checkpoint) to keep content, continuation, and suffix selection together.
 
 ## Fragment a complete custom event
 

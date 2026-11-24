@@ -80,7 +80,7 @@ For manual turn boundaries where supported, call `commit_audio()`, `clear_audio(
 
 ## Tools, inline approvals, continuation, and usage
 
-Native tool schemas are advertised when the connection opens. To approve sensitive calls or supply external tool results while keeping the voice socket open, install `HandleDeferredToolCalls` in the Agent's capabilities or `RunBindings` rather than suspending for `DeferredToolResume`. Harness projects initial Context into session instructions and appends refreshed Context after tool calls complete.
+Native tool schemas are advertised when the connection opens. To approve sensitive calls or supply external tool results while keeping the voice socket open, register `HandleDeferredToolCalls` in the Agent's capabilities or `RunBindings` so deferred calls resolve inline on the active connection. Harness projects initial Context into session instructions and appends refreshed Context after tool calls complete.
 
 Call `close()` for normal completion (or `cancel()` to abort), finish iterating through `HarnessRunResultEvent` (`result.output` is always `None` because speech lives in messages), and persist `await live.export_state()`. Pass `previous_state=restored` to `agent.live(...)` to continue the Thread over a new connection.
 

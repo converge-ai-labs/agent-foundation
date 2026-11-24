@@ -96,21 +96,21 @@ For a long-running command, open an execution and obtain its optional `processes
 
 Select only actions advertised by the execution:
 
-| Method                                               | Behavior                                                                                 |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `start(request)`                                     | Return `ProcessStartResult` with a bound process handle and receipt                      |
-| `list(limit=...)`                                    | Bounded discovery where supported; does not attach output                                |
-| `rebind(identity, output_policy=...)`                | Explicitly attach an eligible retained native process where supported                    |
-| `inspect(handle)`                                    | Read current status and available metadata                                               |
-| `wait(handle, condition=..., timeout_seconds=...)`   | Wait for `initial_terminal` or `tree_cleaned`; a wait deadline is not a command deadline |
-| `read_output(handle, ..., policy=...)`               | Bounded stdout/stderr observation using explicit cursors or offsets                      |
-| `write_stdin(handle, data, close_after_write=False)` | Write bytes and report accepted count/input state                                        |
-| `close_stdin(handle)`                                | Close input without reading output                                                       |
-| `signal(handle, "interrupt" or "terminate")`         | Supported cooperative control                                                            |
-| `kill(handle)`                                       | Separate forceful control operation                                                      |
-| `release(handle)`                                    | Release observation; not an implicit kill                                                |
+| Method                                               | Behavior                                                                                                           |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `start(request)`                                     | Return `ProcessStartResult` with a bound process handle and receipt                                                |
+| `list(limit=...)`                                    | Bounded discovery where supported; does not attach output                                                          |
+| `rebind(identity, output_policy=...)`                | Explicitly attach an eligible retained native process where supported                                              |
+| `inspect(handle)`                                    | Read current status and available metadata                                                                         |
+| `wait(handle, condition=..., timeout_seconds=...)`   | Wait up to `timeout_seconds` for `initial_terminal` or `tree_cleaned` (leaves the process running on wait timeout) |
+| `read_output(handle, ..., policy=...)`               | Bounded stdout/stderr observation using explicit cursors or offsets                                                |
+| `write_stdin(handle, data, close_after_write=False)` | Write bytes and report accepted count/input state                                                                  |
+| `close_stdin(handle)`                                | Close input without reading output                                                                                 |
+| `signal(handle, "interrupt" or "terminate")`         | Supported cooperative control                                                                                      |
+| `kill(handle)`                                       | Separate forceful control operation                                                                                |
+| `release(handle)`                                    | Detach output observation while leaving the process running                                                        |
 
-Keep three outcomes separate: command completion, output completion, and process-tree cleanup. `initial_terminal` observes the command's terminal status; the tree may still need cleanup. Inspect phase, termination reason, exit code or signal, timestamps, and cleanup outcome when available. Treat `missing` or `unknown` as uncertainty about the command, not permission to launch it again.
+Keep three outcomes separate: command completion, output completion, and process-tree cleanup. `initial_terminal` observes the command's terminal status; the tree may still need cleanup. Inspect phase, termination reason, exit code or signal, timestamps, and cleanup outcome when available. When status is `missing` or `unknown`, inspect the target environment before deciding whether to start the command again.
 
 Use the Provider's returned handle unchanged. `ProcessIdentity` identifies the Provider, Environment, generation, and native process; access still depends on the current execution. Use `list` and `rebind` only where advertised, and keep Harness Run-local process references out of Provider calls.
 
@@ -122,11 +122,11 @@ Read process output in bounded pages:
 
 1. Call `read_output()` with independent stdout/stderr cursors or start offsets and a policy. Set `wait_seconds` if the read should wait for output; its default is zero.
 2. Place each returned chunk at its `start_offset`, then retain the next cursor for that stream. Reads do not consume bytes, so rereading the same range is safe.
-3. Check `available_start` and `available_end`, capture kind, coverage, origin, dropped/produced counts, and completion flags. Check the `coverage` and completion flags on `read_output()` when you need the complete stream rather than an inline preview.
+3. Check `available_start` and `available_end`, capture kind, coverage, origin, dropped/produced counts, and completion flags on `read_output()` to confirm that the full stream was retained.
 
 Use the separate `outputs` interface to read or release a retained output reference. Pass each bound value to its owning API: a process handle, output reference, and output cursor are distinct. Ordinary `shell.exec` returns bounded inline output and releases its own retention resources before returning.
 
-SDK-text observations can have unknown producer totals or gaps in history. Further waits cannot recover discarded bytes or reset an observation budget. Write an application log file with explicit retention when complete output matters beyond that budget. After a disconnect or missing observation, inspect the command's outcome rather than replaying it.
+SDK-text observations can have unknown producer totals or gaps in history. Further waits cannot recover discarded bytes or reset an observation budget. Write an application log file with explicit retention when complete output matters beyond that budget. After a disconnect or missing observation, inspect the command's outcome before deciding whether to run it again.
 
 ## Ports and lifecycle
 

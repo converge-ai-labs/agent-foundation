@@ -17,11 +17,11 @@ uv add a13n-envd-client
 
 The client and native daemon share an Envd release version. Upgrade them together, including the daemon in custom images and remote endpoints. Recreate environments that still retain an older image. For source examples, use the repository lockfile and matching source daemon.
 
-Initialization does not negotiate or compare protocol versions. Cross-release interoperability is best effort through the actual schemas and advertised methods, without legacy protocol branches. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Harness, Harness UI and Service require client `>=0.8.3,<0.9.0` for publication. Envd `0.8.3` is the deployment baseline; this deployment line requires Envd `0.8.x` peers. Upgrade daemon and client together. The EIP schema identifier remains `0.5` and is not a cross-release compatibility guarantee.
+Initialization exchanges capabilities without negotiating legacy protocol branches; cross-release interoperability relies on actual schemas and advertised methods. The generated Python namespace remains `eip.v1`, and the binary data-frame profile remains `1`. Harness, Harness UI and Service require client `>=0.8.3,<0.9.0` for publication. Envd `0.8.3` is the deployment baseline; this deployment line requires Envd `0.8.x` peers. The EIP schema identifier is `0.5`; upgrade daemon and client together within the same `0.8.x` line.
 
 ## Connect to an existing HTTP daemon
 
-Prepare a running HTTP daemon and set `ENVD_ENDPOINT` to its base URL, `ENVD_CREDENTIAL` to the Host-issued credential, and `ENVD_DEVICE_ID` to its expected identity. Use the base URL rather than `/eip/control`. Then run:
+Prepare a running HTTP daemon and set `ENVD_ENDPOINT` to its root origin (such as `https://sandbox.example:8080`—the client appends `/eip/control` automatically), `ENVD_CREDENTIAL` to the Host-issued credential, and `ENVD_DEVICE_ID` to its expected identity. Then run:
 
 ```python
 import asyncio
@@ -79,7 +79,7 @@ Request, response and transfer-frame limits default to 1 MiB each through `max_r
 | ----------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------- |
 | `verify`                            | `True`               | TLS verification; supports SSL context or CA path; explicit `False` disables certificate/hostname checks |
 | `request_timeout`                   | `30.0` seconds       | Connection/request timeouts; control-read budgets account for operation timeouts                         |
-| `allow_plaintext_private_link`      | `False`              | Explicit permission for the supported private-link HTTP case; not unrestricted plaintext                 |
+| `allow_plaintext_private_link`      | `False`              | Opt-in plaintext HTTP for supported provider-private links                                               |
 | Request, response, and frame limits | `1048576` bytes each | Carrier-side bounds                                                                                      |
 
 HTTPS connections honor `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase equivalents through `httpx2`. Treat the deployment operator's proxy as trusted routing infrastructure. Plaintext loopback and supported provider-private links connect directly to keep credentials on the intended link. Redirects are disabled.
@@ -97,7 +97,7 @@ Initialization also accepts a client name/version, `initialization_timeout=10.0`
 - `descriptor` reads cached Device information; `describe()` fetches a fresh view. Both expose system information, path style, default directory and directory-discovery availability.
 - `metrics()` reads the latest cached sample when `device.metrics` is advertised. It opens no Session and starts no collection; `sample` remains `None` until the first collection completes. See [monitoring and sample semantics](monitoring.md#system-information-and-resource-monitoring).
 - `list_directories(DirectoryListParams(...))` lists one directory level with an absolute path, offset, limit, expected Device ID and generation. It opens no Session.
-- `open_session(configuration=None, required_methods=(), readiness_timeout=10.0)` creates a fresh Session. The client sends an empty configuration when omitted, inheriting launch defaults. Use `SessionConfiguration` to select the cwd, Sandbox, egress mode, lifecycle and command availability within deployment authority. Supply `configuration.egress` exactly when the effective Session mode is controlled; inherit and deny reject it. `required_methods` checks compatibility rather than granting permissions.
+- `open_session(configuration=None, required_methods=(), readiness_timeout=10.0)` creates a fresh Session. The client sends an empty configuration when omitted, inheriting launch defaults. Use `SessionConfiguration` to select the cwd, Sandbox, egress mode, lifecycle and command availability within deployment authority. Supply `configuration.egress` when the effective Session mode is controlled; inherit and deny reject it. `required_methods` verifies that the daemon advertises those methods; effective permissions come from the execution boundary.
 - `attach_session(descriptor, owner_epoch=None)` takes over the exact existing Session before expiry in the same Device generation. The default epoch is the saved descriptor's epoch plus one. Hosts with concurrent recovery owners must allocate and persist a newer epoch under their execution lock. Operations and transfers are not replayed or resumed.
 - `close()` closes locally owned Sessions, then the physical connection.
 
@@ -113,7 +113,7 @@ Descriptor refresh can narrow methods and limits. A not-ready response or Sessio
 
 ## Read and write binary files
 
-Pass absolute paths in the **Device filesystem namespace**. POSIX uses paths such as `/work/report.txt`; Windows uses `/C:/work/report.txt` or `/UNC/server/share/report.txt`. These are neither mount-relative nor Harness aggregate paths. The working directory supplies a default, while the execution account and configured boundary determine access.
+Pass absolute paths in the **Device filesystem namespace** (for example, `/work/report.txt` on POSIX, or `/C:/work/report.txt` and `/UNC/server/share/report.txt` on Windows); mount aliases and virtual aggregate paths belong to the higher-level Harness Environment layer. The working directory supplies a default, while the execution account and configured boundary determine access.
 
 Given a ready Session with the required methods and filesystem access, write and read a file:
 
@@ -132,7 +132,7 @@ async with session.open_reader(path) as reader:
     completion = reader.completion
 ```
 
-This example writes ASCII bytes. For arbitrary UTF-8 streams, use an incremental decoder because a chunk can end within a character. Forward large transfers to a bounded sink rather than collecting the entire file in memory.
+This example writes ASCII bytes. For arbitrary UTF-8 streams, use an incremental decoder because a chunk can end within a character. Stream large transfers into a bounded sink to keep memory usage predictable.
 
 ### Reader
 
@@ -177,23 +177,23 @@ Custom transport integrations use `RequestCoordinator` for the Device's single r
 
 Use the exception and its evidence to distinguish local state, transport failure and a correlated daemon error:
 
-| Exception                 | Meaning / evidence                                                   |
-| ------------------------- | -------------------------------------------------------------------- |
-| `EIPClientError`          | Base client failure                                                  |
-| `EIPProtocolError`        | Invalid framing, correlation, or protocol evidence                   |
-| `EIPTransportError`       | Transport failed before a valid correlated response                  |
-| `EIPTransportClosedError` | Closed carrier, potentially with in-flight requests                  |
-| `EIPConnectionError`      | Connection establishment/exchange failure, not proof of non-dispatch |
-| `EIPRequestTimeoutError`  | Local wait expired; inspect `dispatched`                             |
-| `EIPMethodError`          | Valid correlated EIP error; inspect typed `error`                    |
-| `EIPSessionStateError`    | Invalid local Session/helper state or unavailable method             |
-| `EIPTransferError`        | Transfer reset/failure; optional `status` and `offset` evidence      |
+| Exception                 | Meaning / evidence                                                       |
+| ------------------------- | ------------------------------------------------------------------------ |
+| `EIPClientError`          | Base client failure                                                      |
+| `EIPProtocolError`        | Invalid framing, correlation, or protocol evidence                       |
+| `EIPTransportError`       | Transport failed before a valid correlated response                      |
+| `EIPTransportClosedError` | Closed carrier, potentially with in-flight requests                      |
+| `EIPConnectionError`      | Connection or exchange failure; check operation receipts before retrying |
+| `EIPRequestTimeoutError`  | Local wait expired; inspect `dispatched`                                 |
+| `EIPMethodError`          | Valid correlated EIP error; inspect typed `error`                        |
+| `EIPSessionStateError`    | Invalid local Session/helper state or unavailable method                 |
+| `EIPTransferError`        | Transfer reset/failure; optional `status` and `offset` evidence          |
 
 Custom carriers implement `EIPTransport`, exchanging `ControlFrame` or generated binary `DataFrame` values through `EIPTransportFrame`. Preserve framing, size limits, serialization and lifecycle semantics. The Host continues to own provisioning.
 
 ## Generated method reference
 
-Import parameter/result models, enums, codecs, `EIP_PROTOCOL_VERSION` and low-level `EIPClient` from `a13n_envd_client.eip.v1`. The table follows that module's `METHODS` metadata. The IDL and generator own wire definitions; change their source rather than editing generated files.
+Import parameter/result models, enums, codecs, `EIP_PROTOCOL_VERSION` and low-level `EIPClient` from `a13n_envd_client.eip.v1`. The table follows that module's `METHODS` metadata. The IDL and generator own wire definitions; update the IDL source and regenerate client modules when schemas change.
 
 Check the initialized descriptor before calling a method. Generated Python availability and a configured daemon's advertised methods are separate checks.
 

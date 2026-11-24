@@ -3,7 +3,7 @@ title: 会话出站网络控制
 description: 在 Envd 中按会话实施出站域名白名单，并通过本地出站代理注入与轮换 HTTPS 凭据，全程不向工作进程暴露明文密钥。
 ---
 
-受控出站（Controlled Egress）允许 Linux 会话访问受批上游域名，同时让命令环境中仅持有不透明占位符（Sentinel）而非真实密钥。位于工作进程外部的 Envd 代理负责校验目标地址、在 `443` 端口允许的 HTTPS 请求头中替换为真实凭据，并从响应头与响应体中脱敏精确匹配的密钥字符串。
+受控出站（Controlled Egress）允许 Linux 会话访问受批上游域名，同时仅向命令环境提供不透明占位符（Sentinel）。位于工作进程外部的 Envd 代理负责校验目标地址、在 `443` 端口允许的 HTTPS 请求头中替换为真实凭据，并从响应头与响应体中脱敏精确匹配的密钥字符串。
 
 在具备 root 命名空间权限、`seccomp`、`pidfds` 以及 `/usr/bin/unshare`、`/usr/sbin/ip`、`/usr/sbin/nft`、`/usr/bin/ldd` 的 Linux 6.1.2+ 环境（[官方沙箱镜像](sandbox.md)已预装）中开启受控出站（`A13N_ENVD_EGRESS_MODE=controlled`、`--egress-mode controlled` 或 JSON 配置）：
 
@@ -61,7 +61,7 @@ flowchart TB
     Broker -->|"未授权域名或非公网地址"| Refused["拒绝连接"]
 ```
 
-Envd 会通过 `SSL_CERT_FILE`、`REQUESTS_CA_BUNDLE`、`CURL_CA_BUNDLE` 与 `NODE_EXTRA_CA_CERTS` 注入合并后的系统与会话 CA 证书束。`443` 端口拦截支持 HTTP/1.1；明文 `80` 端口会直接拒绝携带占位符的请求头且绝不注入凭据。
+Envd 会通过 `SSL_CERT_FILE`、`REQUESTS_CA_BUNDLE`、`CURL_CA_BUNDLE` 与 `NODE_EXTRA_CA_CERTS` 注入合并后的系统与会话 CA 证书束。`443` 端口拦截支持 HTTP/1.1；明文 `80` 端口会直接拒绝携带占位符的请求头。
 
 ## 目标地址策略与在线轮换
 

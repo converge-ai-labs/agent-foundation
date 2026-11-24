@@ -58,7 +58,7 @@ Read the program in three stages:
 2. `await connector.open()` opens a ready execution. Its file operator maps logical `/hello.txt` to `workspace / "hello.txt"`.
 3. Leaving the async context closes the execution. The following assertion proves the file still exists; the outer `TemporaryDirectory` block removes it afterward.
 
-Direct Local uses the Host account. Its directory mapping is a path interface, not OS isolation. For a sandboxed target, continue to [backend selection](index.md#choose-a-backend).
+Direct Local runs under the Host OS account and maps logical paths to the workspace directory. For OS-level sandbox isolation, continue to [backend selection](index.md#choose-a-backend).
 
 ## Use the connector with Harness
 

@@ -35,7 +35,7 @@ Linear 默认允许读写。要切换模式，打开账户设置，将 **Access*
 
 连接器展示 GitHub 等具体服务，账户配置由该服务的 provider 定义。添加连接菜单列出已安装的具体服务集成。
 
-任意 MCP 服务仍通过独立的 [MCP 服务](mcp.md)设置配置，是由 Agent 选择的资源，也可在 TUI 中使用。连接器 SDK 的 Remote MCP 能力是供开发者实现具体服务集成的代码库，不是另一套通用 MCP 配置界面。
+任意 MCP 服务仍通过独立的 [MCP 服务](mcp.md)设置配置，是由 Agent 选择的资源，也可在 TUI 中使用。连接器 SDK 中的 Remote MCP 能力是供开发者编写具体服务集成的 Python 代码库。
 
 ## Agent 工具访问
 
@@ -80,7 +80,7 @@ example = "example_connector:Example"
 
 表单支持对象、字符串/密码、布尔值、数字、枚举、可空字段、数组/重复行以及无环本地引用。秘密配置字段使用 `writeOnly`。配置 schema 根节点的 `readOnly: true` 保留账户摘要展示，并把编辑交给配置流程。可选表单提示包括：`x-a13n-saved`（根节点 JSON Pointer 路径数组，用于标识已保存的秘密字段），以及字段级显示文案 `x-a13n-null-label`、`x-a13n-selected-label`、`x-a13n-empty-label`、`x-a13n-add-label`。这些提示只携带存在状态和文案，不能包含凭据值。不要在状态、上下文、capture、配置值、日志或模型可见输入中返回秘密。不支持的 schema 会标记为不可用，不会降级为原始 JSON 编辑器。
 
-Controller 持有共享资源，直到已接纳的根运行完成清理。原生工具仍是每次运行的 Capability。后台采集器在配置变化后重启。配置 action 必须显式执行并串行处理；读取只观察当前 Step，可选流程 worker 用于推进外部等待。取消后关闭流程资源。插件是可信 Host Python 代码，不是沙箱脚本。
+Controller 持有共享资源，直到已接纳的根运行完成清理。原生工具仍是每次运行的 Capability。后台采集器在配置变化后重启。配置 action 必须显式执行并串行处理；读取只观察当前 Step，可选流程 worker 用于推进外部等待。取消后关闭流程资源。连接器插件作为受信任的 Host Python 代码在进程内运行。
 
 ### 展示约定
 
@@ -90,7 +90,7 @@ Controller 持有共享资源，直到已接纳的根运行完成清理。原生
 
 ### 用 Remote MCP 实现具体服务
 
-继承 `a13n_harness_ui.connectors.remote_mcp.RemoteMcp`，复用原生工具和类型化编程访问。这是 Controller 基类，不是已注册的 Definition。你的 Definition 负责具体服务的名称、配置模型和配置流程，其 `open()` 产出你的 Controller。实现 `connection(configuration)`，返回安全的 `ResolvedMcpRecipe`，账户配置未完成时返回 `None`。服务地址与传输策略由代码确定，私密请求头使用 `McpPrivateValueSource` 引用，不能把凭据值放入 recipe。
+将 `a13n_harness_ui.connectors.remote_mcp.RemoteMcp` 作为 Controller 基类继承，即可复用原生工具和类型化编程访问；再由配套的 `Definition` 定义具体服务的名称、配置模型与配置流程，并在 `open()` 中产出该 Controller。实现 `connection(configuration)`，返回安全的 `ResolvedMcpRecipe`，账户配置未完成时返回 `None`。服务地址与传输策略由代码确定，私密请求头使用 `McpPrivateValueSource` 引用，确保 recipe 中不含明文凭据。
 
 代码库提供原生 MCP capture、Capability 创建、凭据解析，以及配置代际与启用状态检查。provider 可以在 recipe 中选择原生工具（`None` 允许全部，空元组不允许任何工具），无需在前端展示 MCP 传输参数。[GitHub provider](https://github.com/converge-ai-labs/agent-foundation/blob/main/packages/a13n-harness-ui/a13n_harness_ui/connectors/github.py)提供了具体实现。
 

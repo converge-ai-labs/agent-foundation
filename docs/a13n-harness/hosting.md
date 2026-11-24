@@ -65,7 +65,7 @@ Bound Agents receive `tool_execution_info`, `tool_execution_result`, `tool_execu
 
 ## Fresh authority and pre-dispatch checks
 
-Reconstruct identity, credentials, `RequestContext(headers={...})`, and `EnvironmentSource` mounts on fresh `RunBindings` for every Run—`HarnessState` stores conversation history only, never secrets or live sockets.
+Reconstruct identity, credentials, `RequestContext(headers={...})`, and `EnvironmentSource` mounts on fresh `RunBindings` for every Run; `HarnessState` stores conversation history and serializable capability state only.
 
 ### Check model calls before dispatch
 

@@ -77,7 +77,7 @@ if __name__ == "__main__":
 | `completed` | 读取 `output` 并按需持久化 `state`    | `output`、`state`、`usage`            |
 | `suspended` | 收集延迟工具结果或审批后恢复运行      | `state`、`deferred`、`suspend_reason` |
 | `failed`    | 检查 `failure` 并决定是否保留 `state` | `failure`、可选 `state`               |
-| `cancelled` | 按取消处理，不视为已完成输出          | 可选 `state`                          |
+| `cancelled` | 处理取消状态并按需检查部分 `state`    | 可选 `state`                          |
 
 使用 `all_messages()` 获取完整历史，`new_messages()` 获取本次 Run 新增消息。检查点持久化见[状态与恢复](state-and-resume.md)，延迟工具流程见[客户端工具](client-tools.md)。
 

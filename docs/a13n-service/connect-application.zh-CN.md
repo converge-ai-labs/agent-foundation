@@ -64,4 +64,4 @@ curl --fail-with-body -sS "$A13N_URL/api/v1/runs/$RUN_ID" \
   -H "Authorization: Bearer $A13N_API_KEY" | jq '{status, output, pending, failure}'
 ```
 
-确认该收件箱条目已被 `RUN_ID` 标记为 `consumed`；后续追问使用新 `Idempotency-Key` 发送至 `POST /api/v1/threads/$THREAD_ID/inbox`。如需实时流式输出而非轮询，可订阅[会话 SSE 流](stream-and-read-results.md#follow-a-session-stream)（`$SESSION_ID`）或 [Webhook](webhooks.md)。
+确认该收件箱条目已被 `RUN_ID` 标记为 `consumed`；后续追问使用新 `Idempotency-Key` 发送至 `POST /api/v1/threads/$THREAD_ID/inbox`。如需接收实时输出事件，可订阅[会话 SSE 流](stream-and-read-results.md#follow-a-session-stream)（`$SESSION_ID`）或 [Webhook](webhooks.md)。

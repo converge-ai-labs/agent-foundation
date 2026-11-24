@@ -4,11 +4,11 @@ sidebarTitle: Architecture deep dive
 description: Explore how Harness, Stream Protocol, Environments, Envd, Harness UI, and Service layer together, separate durable state authority, and coordinate multi-layer failure recovery.
 ---
 
-Everyday guides show how to configure and run agents. This page looks **beneath the surface**: how Agent Foundation's components compose in one direction, why every durable fact has a single owner, and how seven distinct recovery layers handle transient faults, context overflows, and worker crashes without corrupting state or silently replaying side effects.
+Everyday guides show how to configure and run agents. This page looks **beneath the surface**: how Agent Foundation's components compose in one direction, how every durable fact is owned by a single store, and how seven recovery layers handle transient faults, context overflows, and worker crashes while preserving state consistency and side-effect safety.
 
 ## One-way component layering
 
-Every interactive workbench and distributed runtime in Agent Foundation embeds the exact same core execution engine (`a13n-harness`). Dependencies flow strictly downward—`a13n-harness` never imports `a13n-harness-ui` or `a13n-service`, holds no database connections, and assumes no specific deployment topology:
+Every interactive workbench and distributed runtime in Agent Foundation embeds the same core execution engine (`a13n-harness`). Dependencies flow strictly downward—`a13n-harness` stays independent of `a13n-harness-ui` and `a13n-service`, holds no database connections, and makes no deployment-topology assumptions:
 
 ```mermaid
 flowchart TB
@@ -67,14 +67,14 @@ flowchart LR
     class Deliver,Stream,OTel ext
 ```
 
-1. **Input acceptance != execution:** Recording a message in Service's `inbox_entries` or issuing a `RootRunReceipt` in Harness UI proves admission, not model observation.
-2. **Harness terminal result != durable commit:** `ExecutableAgent.run()` produces a *candidate* `HarnessRunResult` and `HarnessState`. The conversation advances only when the Host's fenced storage write commits that pointer.
-3. **Live streams are provisional:** Browser WebSockets and Service Redis SSE streams (`GET /api/v1/sessions/{id}/stream`) optimize for low-latency rendering. If a stream drops or a worker crashes mid-generation, clients reconcile against committed PostgreSQL/SQLite state—never by guessing from partial stream frames.
-4. **Usage accounting != telemetry spans:** OpenTelemetry spans can be sampled or dropped under collector backpressure. Usage ledgers (`usage_records` in Service, `UsageSnapshot` in Harness) track token consumption and dispatch-time price snapshots independently.
+1. **Separate admission and consumption records:** Recording a message in Service's `inbox_entries` or issuing a `RootRunReceipt` in Harness UI records Host admission; a committed Run checkpoint records when the model incorporates that input into conversation history.
+2. **Fenced checkpoint commit advances history:** `ExecutableAgent.run()` produces an in-memory candidate `HarnessRunResult` and `HarnessState`. The conversation advances once the Host's fenced storage write commits that checkpoint pointer.
+3. **Live streams serve low-latency previews:** Browser WebSockets and Service Redis SSE streams (`GET /api/v1/sessions/{id}/stream`) optimize for low-latency rendering. On reconnect or worker crash, clients reconcile directly against committed PostgreSQL/SQLite state.
+4. **Dedicated ledgers track usage accounting:** OpenTelemetry spans can be sampled or dropped under collector backpressure, so usage ledgers (`usage_records` in Service, `UsageSnapshot` in Harness) record token consumption and dispatch-time price snapshots in their own storage path.
 
 ## Three-lifetime separation and immutable pinning
 
-Across every host, state is partitioned into three non-overlapping lifetimes so credentials and live sockets never leak into checkpoints, and mid-flight config edits never destabilize active Runs:
+Across every host, state is partitioned into three distinct lifetimes, keeping credentials and live sockets in per-Run memory while isolating active Runs from concurrent config edits:
 
 | Lifetime                      | Harness primitive               | Harness UI realization                           | Service realization                                         |
 | ----------------------------- | ------------------------------- | ------------------------------------------------ | ----------------------------------------------------------- |
@@ -86,7 +86,7 @@ When Service accepts a Run (or Harness UI starts an operation), it **freezes** t
 
 ## The seven-layer failure and recovery stack
 
-Instead of a single coarse "retry the whole agent" loop, recovery is handled at the lowest layer that actually owns the fault—and **never** Fabricates rollback or silently replays non-idempotent tool mutations:
+Each fault is recovered at the lowest layer that owns its boundary, preserving uncertain external state for explicit inspection before any side-effecting tool runs again:
 
 | Layer (innermost to outermost)          | Owner                        | Fault handled                                                       | Mechanism & safety invariant                                                                                                                        |
 | --------------------------------------- | ---------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
