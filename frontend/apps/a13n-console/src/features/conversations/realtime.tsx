@@ -1,6 +1,10 @@
-import { PhoneDisconnectIcon, WaveformIcon } from "@phosphor-icons/react";
+import {
+  PhoneDisconnectIcon,
+  SpeakerSlashIcon,
+  WaveformIcon,
+} from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -14,6 +18,7 @@ interface Selection {
   agentId?: string;
   revisionId?: string | null;
   threadId?: string;
+  forkRunId?: string;
 }
 
 interface Availability {
@@ -31,12 +36,12 @@ export interface RealtimeReceipt {
 }
 
 export function useRealtimeAvailability(
-  { agentId, revisionId, threadId }: Selection,
+  { agentId, revisionId, threadId, forkRunId }: Selection,
   busy = false,
 ) {
   const { workspace, can } = useWorkspace();
   const client = useClient();
-  const identity = [workspace.id, agentId, revisionId, threadId];
+  const identity = [workspace.id, agentId, revisionId, threadId ?? forkRunId];
   return useQuery<Availability>({
     queryKey: ["realtime", ...identity, busy],
     placeholderData: (previous, query) =>
@@ -56,6 +61,7 @@ export function useRealtimeAvailability(
               agent_id: agentId!,
               agent_revision_id: revisionId ?? undefined,
               thread_id: threadId,
+              fork_run_id: forkRunId,
             },
           },
           signal,
@@ -68,7 +74,7 @@ export function useRealtimeAvailability(
           reason: value.reason,
           transports: value.transports,
         })),
-  }).data;
+  });
 }
 
 type Message = {
@@ -86,8 +92,17 @@ type Approval = {
 type Event =
   | Approval
   | ({ type: "accepted" } & RealtimeReceipt)
+  | { type: "sealed"; run_id: string; status: string }
+  | {
+      type:
+        | "barge_in"
+        | "interrupted"
+        | "playback_start"
+        | "input_discontinuity"
+        | "draining";
+    }
   | { type: "answer"; sdp: string }
-  | { type: "ready"; accepts_text: boolean }
+  | { type: "ready"; accepts_text: boolean; supports_interruption: boolean }
   | ({ type: "transcript"; final: boolean } & Message)
   | { type: "error"; message: string };
 
@@ -95,6 +110,8 @@ export function RealtimeComposer({
   agentId,
   revisionId,
   threadId,
+  forkRunId,
+  freshEnvironments,
   displayedRunId,
   availability,
   onFinished,
@@ -102,6 +119,7 @@ export function RealtimeComposer({
   initial,
 }: Selection & {
   availability: Availability;
+  freshEnvironments?: boolean;
   displayedRunId?: string;
   agentName?: string;
   initial?: Schema["MessagePayload"];
@@ -109,6 +127,9 @@ export function RealtimeComposer({
 }) {
   const { t } = useTranslation();
   const { workspace } = useWorkspace();
+  const client = useClient();
+  const cache = useQueryClient();
+  const interruptPlayback = useRef<(() => void) | null>(null);
   const [phase, setPhase] = useState<
     "idle" | "connecting" | "ready" | "ending"
   >("idle");
@@ -116,6 +137,7 @@ export function RealtimeComposer({
   const [messages, setMessages] = useState<Message[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [previewRunId, setPreviewRunId] = useState<string>();
+  const [supportsInterruption, setSupportsInterruption] = useState(false);
   const [acceptsText, setAcceptsText] = useState(availability.accepts_text);
   const socket = useRef<WebSocket | null>(null);
   const cleanup = useRef<(() => void) | null>(null);
@@ -142,8 +164,43 @@ export function RealtimeComposer({
     let startupTimer: ReturnType<typeof setTimeout> | undefined;
     let connection: WebSocket | undefined;
     let ready = false;
-    let serverReady: { accepts_text: boolean } | undefined;
+    let serverReady: Extract<Event, { type: "ready" }> | undefined;
+    let sealed = false;
+    let interrupting = false;
+    let playedBytes = 0;
+    const playing = new Map<
+      AudioBufferSourceNode,
+      { start: number; samples: number }
+    >();
     let next = 0;
+    const playbackTime = () =>
+      context?.getOutputTimestamp?.().contextTime ?? context?.currentTime ?? 0;
+    const interrupt = () => {
+      if (
+        !ready ||
+        interrupting ||
+        mediaStopped ||
+        connection?.readyState !== WebSocket.OPEN
+      )
+        return;
+      interrupting = true;
+      const playedUntil = playbackTime();
+      for (const [source, chunk] of playing) {
+        playedBytes +=
+          Math.min(
+            chunk.samples,
+            Math.max(0, Math.floor((playedUntil - chunk.start) * 24000)),
+          ) * 2;
+        source.onended = null;
+        source.stop();
+      }
+      playing.clear();
+      next = 0;
+      if (speaker) speaker.muted = true;
+      connection.send(
+        JSON.stringify({ type: "interrupt", played_bytes: playedBytes }),
+      );
+    };
     let receipt: RealtimeReceipt | undefined;
     let disposed = false;
     let mediaStopped = false;
@@ -160,6 +217,7 @@ export function RealtimeComposer({
     };
     const dispose = () => {
       disposed = true;
+      interruptPlayback.current = null;
       abort.abort();
       clearTimeout(startupTimer);
       stopMedia.current?.();
@@ -174,6 +232,12 @@ export function RealtimeComposer({
     const failMedia = (message: string) => {
       if (disposed || mediaStopped) return;
       setError(message);
+      if (connection) {
+        stopMedia.current?.();
+        setPhase("ending");
+        connection.close();
+        return;
+      }
       dispose();
       setPhase("idle");
     };
@@ -196,15 +260,16 @@ export function RealtimeComposer({
         if (speaker) speaker.muted = false;
       }
       setAcceptsText(serverReady.accepts_text);
+      setSupportsInterruption(serverReady.supports_interruption);
       setPhase("ready");
       if (firstText && serverReady.accepts_text) {
-        connection.send(JSON.stringify({ type: "text", text: firstText }));
         addText(firstText);
         settleFirst?.();
       } else {
         settleFirst?.(new Error(t("Realtime connection failed")));
       }
     };
+    interruptPlayback.current = interrupt;
     cleanup.current = dispose;
     setError("");
     setPhase("connecting");
@@ -235,10 +300,14 @@ export function RealtimeComposer({
           if (
             ready &&
             !mediaStopped &&
-            connection?.readyState === WebSocket.OPEN &&
-            connection.bufferedAmount < 64 * 1024
-          )
+            connection?.readyState === WebSocket.OPEN
+          ) {
+            if (connection.bufferedAmount >= 64 * 1024) {
+              failMedia(t("Realtime connection failed"));
+              return;
+            }
             connection.send(data);
+          }
         };
       } else {
         const rtc = new RTCPeerConnection();
@@ -278,12 +347,31 @@ export function RealtimeComposer({
         offer = rtc.localDescription?.sdp;
         if (!offer) throw new Error(t("Realtime connection failed"));
       }
-      const url = new URL(
-        `/api/v1/workspaces/${workspace.id}/realtime`,
-        window.location.href,
-      );
+      const ticket = await client
+        .workspace(workspace.id)
+        .POST("/api/v1/realtime/sessions", {
+          body: {
+            agent_id: agentId,
+            agent_revision_id: revisionId,
+            thread_id: threadId,
+            fork_run_id: forkRunId,
+            fresh_environments: freshEnvironments,
+            audio: true,
+            draft: firstText,
+            transport: offer ? "webrtc" : "websocket",
+          },
+          signal: abort.signal,
+        })
+        .then(data);
+      if (disposed) return false;
+      receipt = {
+        session_id: ticket.session_id,
+        thread_id: ticket.thread_id,
+        run_id: ticket.run_id,
+      };
+      const url = new URL(ticket.websocket_path, window.location.href);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-      const connected = new WebSocket(url);
+      const connected = new WebSocket(url, [ticket.subprotocol, ticket.ticket]);
       connection = connected;
       socket.current = connected;
       connected.binaryType = "arraybuffer";
@@ -299,21 +387,12 @@ export function RealtimeComposer({
           30_000,
         );
       connected.onopen = () => {
-        connected.send(
-          JSON.stringify({
-            agent_id: agentId,
-            agent_revision_id: revisionId,
-            thread_id: threadId,
-            audio: true,
-            ...(offer ? { transport: "webrtc" } : {}),
-          }),
-        );
         if (offer)
           connected.send(JSON.stringify({ type: "offer", sdp: offer }));
       };
       connected.onmessage = ({ data }: MessageEvent<ArrayBuffer | string>) => {
         if (typeof data !== "string") {
-          if (!context || mediaStopped) return;
+          if (!context || mediaStopped || interrupting || !serverReady) return;
           const pcm = new Int16Array(data);
           const buffer = context.createBuffer(1, pcm.length, 24000);
           const samples = buffer.getChannelData(0);
@@ -322,11 +401,27 @@ export function RealtimeComposer({
           playback.buffer = buffer;
           playback.connect(context.destination);
           next = Math.max(next, context.currentTime + 0.02);
+          const playedUntil = playbackTime();
+          for (const [source, chunk] of playing) {
+            if (chunk.start + chunk.samples / 24000 > playedUntil) break;
+            playedBytes += chunk.samples * 2;
+            playing.delete(source);
+          }
+          playing.set(playback, { start: next, samples: pcm.length });
           playback.start(next);
           next += buffer.duration;
           return;
         }
         const event = JSON.parse(data) as Event;
+        if (event.type === "sealed" && receipt?.run_id === event.run_id)
+          sealed = true;
+        if (event.type === "barge_in") interrupt();
+        if (event.type === "interrupted") interrupting = false;
+        if (event.type === "playback_start" && speaker && !mediaStopped)
+          speaker.muted = false;
+        if (event.type === "draining") stopMedia.current?.();
+        if (event.type === "input_discontinuity")
+          setError(t("Voice input was interrupted. Please repeat that part."));
         if (event.type === "accepted") {
           receipt = event;
           setPreviewRunId(event.run_id);
@@ -364,14 +459,58 @@ export function RealtimeComposer({
         }
       };
       connected.onerror = () => setError(t("Realtime connection failed"));
-      connected.onclose = (event) => {
+      connected.onclose = async (event) => {
         if (disposed) return;
-        dispose();
+        stopMedia.current?.();
+        clearTimeout(startupTimer);
         setApprovals([]);
-        setPhase("idle");
+        setPhase("ending");
         if (!ready || event.code !== 1000)
           setError((value) => value || t("Realtime connection failed"));
-        if (receipt && ready && event.code === 1000) onFinished(receipt);
+        try {
+          if (!receipt) return;
+          if (!sealed) {
+            // The Run page follows an accepted or running Run through lease recovery.
+            const api = client.workspace(workspace.id);
+            const run = await api.GET("/api/v1/runs/{run_id}", {
+              params: { path: { run_id: receipt.run_id } },
+              signal: abort.signal,
+            });
+            if (run.response.status === 404) return;
+            data(run);
+            const availability = await api
+              .GET("/api/v1/realtime", {
+                params: {
+                  query: {
+                    agent_id: agentId,
+                    agent_revision_id: revisionId ?? undefined,
+                    thread_id: receipt.thread_id,
+                  },
+                },
+                signal: abort.signal,
+              })
+              .then(data);
+            cache.setQueryData(
+              [
+                "realtime",
+                workspace.id,
+                agentId,
+                revisionId,
+                receipt.thread_id,
+                false,
+              ],
+              availability,
+            );
+          }
+          if (!disposed) onFinished(receipt);
+        } catch {
+          if (!disposed) setError(t("Realtime connection failed"));
+        } finally {
+          if (!disposed) {
+            dispose();
+            setPhase("idle");
+          }
+        }
       };
       return await firstMessage;
     } catch (cause) {
@@ -492,37 +631,41 @@ export function RealtimeComposer({
             : t("Start voice chat")
         }
         submitIcon={<WaveformIcon size={17} weight="bold" />}
-        submitOnEnter
-        emptyAction={
+        onEmptySubmit={
           phase === "idle"
-            ? {
-                label: t("Start voice chat"),
-                icon: <WaveformIcon size={17} weight="bold" />,
-                disabled: !availability.can_start,
-                onClick: () => {
-                  void start().catch((cause: unknown) => {
-                    setError(
-                      cause instanceof Error
-                        ? cause.message
-                        : t("Realtime connection failed"),
-                    );
-                  });
-                },
+            ? () => {
+                void start().catch((cause: unknown) => {
+                  setError(
+                    cause instanceof Error
+                      ? cause.message
+                      : t("Realtime connection failed"),
+                  );
+                });
               }
             : undefined
         }
+        primaryAction={
+          phase === "idle"
+            ? undefined
+            : {
+                label: t("End realtime chat"),
+                icon: <PhoneDisconnectIcon size={16} />,
+                disabled: phase === "ending",
+                onClick: stop,
+              }
+        }
         actionBeforeSubmit={
-          phase !== "idle" && (
+          phase === "ready" &&
+          supportsInterruption && (
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              disabled={phase === "ending"}
-              aria-label={t("End realtime chat")}
-              title={t("End realtime chat")}
-              onClick={stop}
+              aria-label={t("Interrupt response")}
+              title={t("Interrupt response")}
+              onClick={() => interruptPlayback.current?.()}
             >
-              <PhoneDisconnectIcon size={16} />
+              <SpeakerSlashIcon size={16} />
             </Button>
           )
         }

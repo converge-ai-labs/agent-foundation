@@ -13013,6 +13013,19 @@ export interface components {
        * @default true
        */
       audio?: boolean;
+      /**
+       * Draft
+       * @default
+       */
+      draft?: string;
+      /** Fork Run Id */
+      fork_run_id?: string | null;
+      /**
+       * Fresh Environments
+       * @default false
+       */
+      fresh_environments?: boolean;
+      max_usage?: components["schemas"]["UsageLimit"] | null;
       /** Thread Id */
       thread_id?: string | null;
       /** @default websocket */
@@ -13025,12 +13038,18 @@ export interface components {
        * @description Ticket lifetime in seconds.
        */
       expires_in: number;
+      /** Run Id */
+      run_id: string;
+      /** Session Id */
+      session_id: string;
       /**
        * Subprotocol
        * @description Offer this protocol first and the ticket second.
        * @constant
        */
       subprotocol: "a13n.realtime.v1";
+      /** Thread Id */
+      thread_id: string;
       /**
        * Ticket
        * @description Single-use connection credential. Pass it as the second WebSocket subprotocol.
@@ -15865,6 +15884,7 @@ export interface components {
     Transport: "websocket" | "webrtc";
     /** @enum {string} */
     Trigger:
+      | "realtime"
       | "input"
       | "queued"
       | "resume"
@@ -23876,6 +23896,7 @@ export interface operations {
         agent_id: string;
         agent_revision_id?: string | null;
         thread_id?: string | null;
+        fork_run_id?: string | null;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */

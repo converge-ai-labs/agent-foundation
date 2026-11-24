@@ -621,7 +621,7 @@ it("only treats a completed direct call as a candidate for older saved displays"
 it("keeps typed and spoken realtime turns distinct from steering", () => {
   const realtime = {
     ...run,
-    options: { labels: { "realtime-session": "connection" } },
+    trigger: "realtime" as const,
   };
   const items = display(
     text("first-typed-message", "user", "Hello from the keyboard"),

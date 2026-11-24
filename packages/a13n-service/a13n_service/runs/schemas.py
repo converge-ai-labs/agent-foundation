@@ -47,6 +47,7 @@ from a13n_service.tenancy.schemas import PrincipalSummary
 
 type RunStatus = Literal["accepted", "running", "waiting", "completed", "failed", "cancelled"]
 type Trigger = Literal[
+    "realtime",
     "input",
     "queued",
     "resume",

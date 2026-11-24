@@ -20862,6 +20862,40 @@
             "title": "Audio",
             "type": "boolean"
           },
+          "draft": {
+            "default": "",
+            "maxLength": 8192,
+            "title": "Draft",
+            "type": "string"
+          },
+          "fork_run_id": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fork Run Id"
+          },
+          "fresh_environments": {
+            "default": false,
+            "title": "Fresh Environments",
+            "type": "boolean"
+          },
+          "max_usage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UsageLimit"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "thread_id": {
             "anyOf": [
               {
@@ -20893,10 +20927,22 @@
             "title": "Expires In",
             "type": "integer"
           },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          },
           "subprotocol": {
             "const": "a13n.realtime.v1",
             "description": "Offer this protocol first and the ticket second.",
             "title": "Subprotocol",
+            "type": "string"
+          },
+          "thread_id": {
+            "title": "Thread Id",
             "type": "string"
           },
           "ticket": {
@@ -20911,6 +20957,9 @@
           }
         },
         "required": [
+          "run_id",
+          "thread_id",
+          "session_id",
           "websocket_path",
           "subprotocol",
           "ticket",
@@ -29458,6 +29507,7 @@
       },
       "Trigger": {
         "enum": [
+          "realtime",
           "input",
           "queued",
           "resume",
@@ -51501,6 +51551,24 @@
                 }
               ],
               "title": "Thread Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fork_run_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Fork Run Id"
             }
           },
           {

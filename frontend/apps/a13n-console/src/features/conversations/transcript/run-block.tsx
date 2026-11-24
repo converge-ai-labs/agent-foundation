@@ -60,7 +60,10 @@ export function RunBlock({
   const finished =
     !!run.sealed_at && !isActiveRun(run.status) && run.status !== "waiting";
   const branch = finished && can("run") && !run.finding_analysis_id;
-  const copy = finished && reply?.state === "completed" ? reply : null;
+  const copy =
+    run.trigger !== "realtime" && finished && reply?.state === "completed"
+      ? reply
+      : null;
   return (
     <article className={styles.turn} data-run-id={run.id}>
       {run.lineage === "fork" && (
@@ -76,6 +79,7 @@ export function RunBlock({
       />
       <AgentTurn
         blocks={blocks}
+        copyMessages={run.trigger === "realtime"}
         runId={run.id}
         durationMs={
           run.status === "completed" ? timeline.totals.durationMs : null

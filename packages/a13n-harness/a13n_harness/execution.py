@@ -19,7 +19,7 @@ from a13n_harness.environment.sources import EnvironmentEntry
 from a13n_harness.errors import RunError
 from a13n_harness.events import HarnessRunResultEvent
 from a13n_harness.input import RunInputFactory, RunInputValue
-from a13n_harness.live import HarnessLiveStream, LiveWebRTC, RealtimeApprovalHandler
+from a13n_harness.live import HarnessLiveStream, LiveWebRTC
 from a13n_harness.models.binding import RunModelResolver
 from a13n_harness.observation import _ObservationRuntime
 from a13n_harness.plugins import AbstractHarnessPlugin, PluginActivation
@@ -312,7 +312,7 @@ class ExecutableAgent[OutputT]:
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
         audio_retention: AudioRetention = "transcript_only",
-        approval_handler: RealtimeApprovalHandler | None = None,
+        memory_context_bytes: int = 32768,
         webrtc: LiveWebRTC | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -328,7 +328,7 @@ class ExecutableAgent[OutputT]:
             bindings=bindings,
             previous_state=previous_state,
             audio_retention=audio_retention,
-            approval_handler=approval_handler,
+            memory_context_bytes=memory_context_bytes,
             webrtc=webrtc,
             usage=usage,
             usage_limits=usage_limits,

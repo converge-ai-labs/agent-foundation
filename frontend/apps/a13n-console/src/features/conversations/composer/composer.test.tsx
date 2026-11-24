@@ -196,31 +196,25 @@ it("keeps an unsent draft when opening the microphone is cancelled", async () =>
   }
 });
 
-it("uses Enter to open a voice session or submit its draft while preserving IME and Shift+Enter", async () => {
+it("uses the ordinary composer shortcuts for a voice draft", async () => {
   const submit = vi.fn(async (_payload: unknown) => {});
   const open = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <Composer
-        submit={submit}
-        submitOnEnter
-        emptyAction={{
-          label: "Start voice chat",
-          icon: <span />,
-          onClick: open,
-        }}
-      />
+      <Composer submit={submit} onEmptySubmit={open} />
     </QueryClientProvider>,
   );
   const input = screen.getByRole("textbox", { name: "Message" });
   fireEvent.keyDown(input, { key: "Enter" });
-  expect(open).toHaveBeenCalledOnce();
+  expect(open).not.toHaveBeenCalled();
 
   fireEvent.change(input, { target: { value: "Typed input" } });
   fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
   fireEvent.keyDown(input, { key: "Enter", isComposing: true });
   expect(submit).not.toHaveBeenCalled();
   fireEvent.keyDown(input, { key: "Enter" });
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
   await waitFor(() => expect(submit).toHaveBeenCalledOnce());
   expect(submit.mock.calls[0]![0]).toEqual({
     content: [{ type: "text", text: "Typed input" }],

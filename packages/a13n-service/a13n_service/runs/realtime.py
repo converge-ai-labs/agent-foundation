@@ -1,45 +1,51 @@
-"""Client transport for an all-role Service realtime preview."""
+"""Client ingress and attempt-side channel for Service realtime conversations."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field, replace
+from datetime import timedelta
 from functools import partial
 from secrets import token_urlsafe
-from time import monotonic
 from typing import TYPE_CHECKING, Annotated, Literal
 from urllib.parse import urlsplit
-from uuid import uuid4
 
-from fastapi import APIRouter, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, model_validator
+from redis.exceptions import RedisError
+from sqlalchemy import delete, func, select
 
 from a13n_service.infra.crypto import secret_hash
-from a13n_service.infra.db import short_session
+from a13n_service.infra.db import now, short_session, transaction
 from a13n_service.infra.errors import ServiceError, invalid
-from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.ids import ObjectId, new_object_id
 from a13n_service.infra.websocket import secure
 from a13n_service.providers.realtime import PROTOCOLS
+from a13n_service.resources.agents import stored
 from a13n_service.resources.models.service import resolve_model
+from a13n_service.runs.admission import requires_model_reservation
+from a13n_service.runs.attempts import Lease, prove
+from a13n_service.runs.realtime_transport import HEARTBEAT_SECONDS, Offer, Pipe, unavailable
 from a13n_service.runs.requests import CurrentRuntime
 from a13n_service.runs.schemas import (
-    JsonPart,
-    Message,
-    MessagePayload,
-    NewThread,
     RunOptions,
     SessionCreate,
     SessionOrigin,
+    UsageLimit,
 )
+from a13n_service.runs.tables import AttemptRow, RealtimeCallRow, RealtimeTicketRow, RunRow, ThreadRow
+from a13n_service.runs.threads import get_run
 from a13n_service.tenancy.access import Authenticated, reauthenticate, workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, execution_authority
 from a13n_service.tenancy.requests import Actor, Credential, WorkspaceId
+from a13n_service.tenancy.tables import WorkspaceRow
 
 if TYPE_CHECKING:
     from a13n_service.runs.runtime import Runtime
 
-LABEL = "realtime-session"
 INBOX_METADATA = "a13n.realtime-inbox"
 BUDGET_RESTRICTION = "Realtime conversations are unavailable when per-call budget reservations are required."
 SUBPROTOCOL = "a13n.realtime.v1"
@@ -53,37 +59,63 @@ type Transport = Literal["websocket", "webrtc"]
 class Channel:
     principal_id: str
     workspace_id: str
-    incoming: asyncio.Queue[bytes | str] = field(default_factory=lambda: asyncio.Queue(64))
-    outgoing: asyncio.Queue[Frame] = field(default_factory=lambda: asyncio.Queue(128))
+    incoming: asyncio.Queue[bytes | str | Media] = field(default_factory=lambda: asyncio.Queue(64))
+    outgoing: asyncio.Queue[dict[str, str | int | bool]] = field(default_factory=lambda: asyncio.Queue(128))
+    pcm: asyncio.Queue[bytes] = field(default_factory=lambda: asyncio.Queue(32))
+    decided: set[str] = field(default_factory=set)
+    dispatched: set[str] = field(default_factory=set)
+    approved: set[str] = field(default_factory=set)
+    expired: set[str] = field(default_factory=set)
     closed: asyncio.Event = field(default_factory=asyncio.Event)
     finished: asyncio.Event = field(default_factory=asyncio.Event)
+    failed: bool = False
     attached: bool = False
-    disconnected: bool = False
+    audio: bool = True
+    draft: str = ""
+    mute_pcm: bool = False
+    verify_dispatch: Callable[[str], Awaitable[None]] | None = None
     approvals: dict[str, asyncio.Future[bool]] = field(default_factory=dict)
     webrtc_offer: str | None = None
 
     async def answer_webrtc(self, sdp: str) -> None:
         if self.closed.is_set():
             raise ServiceError("conflict", "The realtime connection closed during WebRTC setup")
-        await self.outgoing.put({"type": "answer", "sdp": sdp})
+        self.emit({"type": "answer", "sdp": sdp})
 
-    def finish(self, *, failed: bool) -> None:
-        if failed and not self.outgoing.full():
+    def emit(self, frame: Frame) -> None:
+        try:
+            if isinstance(frame, bytes):
+                self.pcm.put_nowait(frame)
+            else:
+                self.outgoing.put_nowait(frame)
+        except asyncio.QueueFull:
+            self.failed = True
+            self.closed.set()
+            raise ServiceError("unavailable", "The realtime client is not keeping up") from None
+
+    def finish(self, run_id: str, status: str) -> None:
+        if status == "failed" and not self.outgoing.full():
             self.outgoing.put_nowait({"type": "error", "message": "The realtime run failed"})
+        self.emit({"type": "sealed", "run_id": run_id, "status": status})
         self.finished.set()
 
     async def approve(self, call_id: str, name: str, arguments: str) -> bool:
-        if self.closed.is_set():
+        if self.closed.is_set() or call_id in self.decided:
+            self.expired.add(call_id)
             return False
+        self.decided.add(call_id)
         answer = asyncio.get_running_loop().create_future()
         self.approvals[call_id] = answer
         disconnected = asyncio.create_task(self.closed.wait())
         try:
-            await self.outgoing.put(
-                {"type": "approval_required", "call_id": call_id, "name": name, "arguments": arguments}
-            )
+            self.emit({"type": "approval_required", "call_id": call_id, "name": name, "arguments": arguments})
             done, _ = await asyncio.wait((answer, disconnected), return_when=asyncio.FIRST_COMPLETED)
-            return answer in done and not self.closed.is_set() and answer.result()
+            if self.closed.is_set() or answer not in done:
+                self.expired.add(call_id)
+                return False
+            if answer.result():
+                self.approved.add(call_id)
+            return answer.result()
         finally:
             self.approvals.pop(call_id, None)
             answer.cancel()
@@ -95,26 +127,39 @@ class RealtimeSessionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     agent_id: ObjectId
     thread_id: ObjectId | None = None
+    fork_run_id: ObjectId | None = None
+    fresh_environments: bool = False
     agent_revision_id: ObjectId | None = None
     audio: bool = True
     transport: Transport = "websocket"
+    max_usage: UsageLimit | None = None
+    draft: str = Field(default="", max_length=8192)
 
     @model_validator(mode="after")
     def require_webrtc_audio(self) -> RealtimeSessionCreate:
+        if self.fork_run_id and self.thread_id:
+            raise ValueError("Choose an existing Thread or a Run to fork")
+        if self.fresh_environments and not self.fork_run_id:
+            raise ValueError("Fresh environments require a fork")
+        if self.fork_run_id and self.max_usage is not None:
+            raise ValueError("A fork inherits the source Run usage limit")
         if self.transport == "webrtc" and not self.audio:
             raise ValueError("WebRTC requires audio input")
         return self
 
 
-@dataclass(frozen=True, slots=True)
-class ConnectionTicket:
-    workspace_id: str
+class ConnectionTicket(BaseModel):
+    run_id: str
+    thread_id: str
+    session_id: str
     start: RealtimeSessionCreate
     credential: Authenticated
-    expires: float
 
 
 class RealtimeSessionTicket(BaseModel):
+    run_id: str
+    thread_id: str
+    session_id: str
     websocket_path: str = Field(description="WebSocket path relative to the Service origin.")
     subprotocol: Literal["a13n.realtime.v1"] = Field(description="Offer this protocol first and the ticket second.")
     ticket: str = Field(description="Single-use connection credential. Pass it as the second WebSocket subprotocol.")
@@ -134,13 +179,21 @@ class Approval(BaseModel):
     approve: bool = Field(strict=True)
 
 
+class Media(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["interrupt", "audio_commit", "input_discontinuity"]
+    played_bytes: int = Field(default=0, ge=0)
+
+
 class WebRTCOffer(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["offer"]
     sdp: str = Field(min_length=1, max_length=32_768)
 
 
-_COMMAND = TypeAdapter(Annotated[Input | Approval, Field(discriminator="type")])
+_COMMAND = TypeAdapter(Annotated[Input | Approval | Media, Field(discriminator="type")])
+_AUTH = TypeAdapter(Authenticated)
+_OUTPUT = TypeAdapter(dict[str, str | int | bool])
 
 
 class RealtimeAvailability(BaseModel):
@@ -154,10 +207,10 @@ class RealtimeAvailability(BaseModel):
 router = APIRouter()
 
 
-def _preview_unavailable(runtime: Runtime) -> str | None:
-    if runtime.realtime_channels is None:
-        return "Realtime preview is disabled"
-    if runtime.admission is not None:
+def _unavailable_reason(runtime: Runtime) -> str | None:
+    if runtime.realtime_bridge is None:
+        return "Realtime ingress is unavailable"
+    if requires_model_reservation(runtime.admission):
         return BUDGET_RESTRICTION
     return None
 
@@ -170,13 +223,18 @@ async def realtime_availability(
     agent_id: ObjectId,
     agent_revision_id: ObjectId | None = None,
     thread_id: ObjectId | None = None,
+    fork_run_id: ObjectId | None = None,
 ) -> RealtimeAvailability:
     """Report realtime input for the selected Agent and Thread."""
+    if thread_id and fork_run_id:
+        raise invalid("fork_run_id", "Choose an existing Thread or a Run to fork")
     availability, _ = await _inspect(
         runtime,
         actor,
         workspace_id,
-        RealtimeSessionCreate(agent_id=agent_id, agent_revision_id=agent_revision_id, thread_id=thread_id),
+        RealtimeSessionCreate(
+            agent_id=agent_id, agent_revision_id=agent_revision_id, thread_id=thread_id, fork_run_id=fork_run_id
+        ),
     )
     return availability
 
@@ -185,31 +243,47 @@ async def _inspect(
     runtime: Runtime, actor: Principal, workspace_id: str, start: RealtimeSessionCreate
 ) -> tuple[RealtimeAvailability, ExecutionAuthority]:
     from a13n_service.runs import definitions
-    from a13n_service.runs.accept import run_revision
+    from a13n_service.runs.accept import eligible, run_revision
     from a13n_service.runs.threads import get_thread
 
     async with short_session(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
         authority = execution_authority(actor, scope)
-        thread = (
-            await get_thread(session, scope.workspace_id, start.thread_id, history=False)
-            if start.thread_id is not None
-            else None
-        )
+        origin = await get_run(session, workspace_id, start.fork_run_id) if start.fork_run_id else None
+        thread_id = origin.thread_id if origin else start.thread_id
+        thread = await get_thread(session, workspace_id, thread_id, history=False) if thread_id else None
+        options = RunOptions()
+        revision_id = start.agent_revision_id
+        if origin:
+            if origin.trigger != "realtime" or not origin.sealed_at:
+                raise invalid("fork_run_id", "Choose a sealed realtime Run")
+            if origin.agent_id != start.agent_id or (
+                revision_id is not None and origin.agent_revision_id != revision_id
+            ):
+                raise invalid("agent_id", "A realtime fork uses the source Run's Agent revision")
+            revision_id = origin.agent_revision_id
+            options = stored.require(RunOptions, origin.options, kind="run", id=origin.id)
         if thread is not None and thread.agent_snapshot is not None:
-            revision = await definitions.resolve(
-                session, thread, start.agent_id, start.agent_revision_id, None, accepting=True
-            )
+            revision = await definitions.resolve(session, thread, start.agent_id, revision_id, None, accepting=True)
         else:
             revision, _ = await run_revision(
-                session, runtime, actor, scope, start.agent_id, start.agent_revision_id, None, authority=authority
+                session,
+                runtime,
+                actor,
+                scope,
+                start.agent_id,
+                revision_id,
+                options.overrides,
+                authority=authority,
             )
-        model = await resolve_model(session, actor, scope, revision.config.model, authority=authority)
+        last = await session.get(RunRow, thread.last_run_id) if thread and thread.last_run_id and not origin else None
+        effective = stored.require_effective(revision.config, options.overrides, revision_id=revision.definition_id)
+        model = await resolve_model(session, actor, scope, effective.model, authority=authority)
     protocol = PROTOCOLS.get(model.config.model_api)
     if protocol is None:
         return RealtimeAvailability(), authority
-    reason = _preview_unavailable(runtime)
-    if reason is None and thread is not None and (thread.archived_at is not None or thread.current_run_id is not None):
+    reason = _unavailable_reason(runtime)
+    if reason is None and start.thread_id and thread is not None and not eligible(thread, last):
         reason = "Wait until this Thread is open and idle"
     return RealtimeAvailability(
         realtime=True,
@@ -227,7 +301,9 @@ async def create_realtime_session(
     """Issue a one-use WebSocket ticket for the selected Agent and optional Thread."""
     if credential.platform is not None:
         raise ServiceError("forbidden", "Run platform credentials cannot open realtime conversations")
-    if (reason := _preview_unavailable(runtime)) is not None:
+    if type(credential) is not Authenticated:
+        raise ServiceError("unavailable", "This credential type does not support realtime tickets")
+    if (reason := _unavailable_reason(runtime)) is not None:
         raise ServiceError("unavailable", reason)
     principal = credential.constrain(credential.principal)
     availability, authority = await _inspect(runtime, principal, workspace_id, body)
@@ -237,25 +313,56 @@ async def create_realtime_session(
         raise invalid("transport", "The Agent's primary model does not support WebRTC; use websocket")
     if availability.reason is not None:
         raise ServiceError("conflict", availability.reason)
-    tickets = runtime.realtime_tickets
-    now = monotonic()
-    for key in [key for key, entry in tickets.items() if entry.expires <= now]:
-        del tickets[key]
-    if len(tickets) >= runtime.settings.worker.slots:
-        raise ServiceError("unavailable", "Realtime connection tickets are busy; try again shortly")
-    ticket = token_urlsafe(32)
-    tickets[secret_hash(ticket)] = ConnectionTicket(
-        workspace_id, body, replace(credential, authority=authority), now + TICKET_SECONDS
-    )
+    token = token_urlsafe(32)
+    async with transaction(runtime.storage) as session:
+        await session.get_one(WorkspaceRow, workspace_id, with_for_update={"key_share": True})
+        current = await now(session)
+        await session.execute(
+            delete(RealtimeTicketRow).where(
+                RealtimeTicketRow.workspace_id == workspace_id,
+                RealtimeTicketRow.expires_at <= current,
+            )
+        )
+        outstanding = await session.scalar(
+            select(func.count()).select_from(RealtimeTicketRow).where(RealtimeTicketRow.workspace_id == workspace_id)
+        )
+        if (outstanding or 0) >= runtime.settings.worker.realtime_ticket_limit:
+            raise ServiceError("unavailable", "Realtime connection tickets are busy")
+        if body.fork_run_id:
+            origin = await get_run(session, workspace_id, body.fork_run_id)
+            session_id = origin.session_id
+            body = body.model_copy(update={"agent_revision_id": origin.agent_revision_id})
+        elif body.thread_id:
+            session_id = (await session.get_one(ThreadRow, body.thread_id)).session_id
+        else:
+            session_id = new_object_id("sess")
+        value = ConnectionTicket(
+            start=body,
+            credential=replace(credential, authority=authority),
+            session_id=session_id,
+            thread_id=body.thread_id or new_object_id("thread"),
+            run_id=new_object_id("run"),
+        )
+        session.add(
+            RealtimeTicketRow(
+                digest=secret_hash(token),
+                workspace_id=workspace_id,
+                expires_at=current + timedelta(seconds=TICKET_SECONDS),
+                request=value.model_dump(mode="json"),
+            )
+        )
     return RealtimeSessionTicket(
         websocket_path=CONNECT_PATH.format(workspace_id=workspace_id),
         subprotocol=SUBPROTOCOL,
-        ticket=ticket,
+        ticket=token,
+        session_id=value.session_id,
+        run_id=value.run_id,
+        thread_id=value.thread_id,
         expires_in=TICKET_SECONDS,
     )
 
 
-def _redeem(runtime: Runtime, socket: WebSocket, workspace_id: str, protocols: list[str]) -> ConnectionTicket:
+async def _lookup(runtime: Runtime, socket: WebSocket, workspace_id: str, protocols: list[str]) -> ConnectionTicket:
     host = urlsplit(runtime.settings.server.public_url).hostname or ""
     local = host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost")
     if (
@@ -265,63 +372,185 @@ def _redeem(runtime: Runtime, socket: WebSocket, workspace_id: str, protocols: l
         or not secure(socket, allow_loopback_ws=local and not runtime.settings.server.https)
     ):
         raise ServiceError("unauthenticated", "Invalid realtime connection ticket")
-    key = secret_hash(protocols[1])
-    entry = runtime.realtime_tickets.get(key)
-    if entry is None or entry.expires <= monotonic() or entry.workspace_id != workspace_id:
-        raise ServiceError("unauthenticated", "Invalid or expired realtime connection ticket")
-    return runtime.realtime_tickets.pop(key)
-
-
-async def _ticket_principal(runtime: Runtime, ticket: ConnectionTicket) -> Principal:
     async with short_session(runtime.storage) as session:
-        principal = await reauthenticate(session, runtime.access, ticket.credential)
-        await workspace_scope(session, principal, ticket.workspace_id, "run")
+        raw = await session.scalar(
+            select(RealtimeTicketRow.request).where(
+                RealtimeTicketRow.digest == secret_hash(protocols[1]),
+                RealtimeTicketRow.workspace_id == workspace_id,
+                RealtimeTicketRow.expires_at > func.clock_timestamp(),
+            )
+        )
+    if raw is None:
+        raise ServiceError("unauthenticated", "Invalid or expired realtime connection ticket")
+    return ConnectionTicket.model_validate(raw)
+
+
+async def _redeem(runtime: Runtime, workspace_id: str, token: str, ticket: ConnectionTicket) -> None:
+    from a13n_service.runs import definitions
+    from a13n_service.runs.accept import (
+        Source,
+        eligible,
+        require_message_source,
+        run_revision,
+        snapshot_options,
+        start_run,
+    )
+    from a13n_service.runs.sessions import new_session
+    from a13n_service.runs.submit import fork_thread
+    from a13n_service.runs.threads import get_thread, new_thread
+
+    start = ticket.start
+    if reason := _unavailable_reason(runtime):
+        raise ServiceError("unavailable", reason)
+    async with transaction(runtime.storage) as session:
+        await session.get_one(WorkspaceRow, workspace_id, with_for_update={"key_share": True})
+        redeemed = await session.scalar(
+            delete(RealtimeTicketRow)
+            .where(
+                RealtimeTicketRow.digest == secret_hash(token),
+                RealtimeTicketRow.workspace_id == workspace_id,
+                RealtimeTicketRow.expires_at > func.clock_timestamp(),
+            )
+            .returning(RealtimeTicketRow.digest)
+        )
+        if redeemed is None:
+            raise ServiceError("unauthenticated", "Invalid or expired realtime connection ticket")
+        actor = await reauthenticate(session, runtime.access, ticket.credential)
+        scope = await workspace_scope(session, actor, workspace_id, "run")
+        authority = execution_authority(actor, scope)
+        active, queued, pcm = (
+            await session.execute(
+                select(
+                    func.count(),
+                    func.count().filter(RunRow.status == "accepted"),
+                    func.count().filter(RealtimeCallRow.transport == "websocket"),
+                )
+                .select_from(RunRow)
+                .join(RealtimeCallRow, RealtimeCallRow.run_id == RunRow.id)
+                .where(RunRow.workspace_id == workspace_id, RunRow.status.in_(("accepted", "running")))
+            )
+        ).one()
+        limits = runtime.settings.worker
+        if (
+            active >= limits.realtime_call_limit
+            or queued >= limits.realtime_accepted_limit
+            or (start.transport == "websocket" and pcm >= limits.realtime_pcm_limit)
+        ):
+            raise ServiceError("unavailable", "Workspace realtime call limit reached")
+        options = RunOptions(max_usage=start.max_usage)
+        if start.fork_run_id:
+            origin = await get_run(session, workspace_id, start.fork_run_id)
+            thread = await fork_thread(
+                session,
+                runtime,
+                actor,
+                scope,
+                origin,
+                start.agent_id,
+                start.agent_revision_id,
+                fresh_environments=start.fresh_environments,
+                thread_id=ticket.thread_id,
+            )
+            options = stored.require(RunOptions, origin.options, kind="run", id=origin.id)
+        elif start.thread_id:
+            thread = await get_thread(session, workspace_id, start.thread_id, lock="acceptance")
+            last = await session.get(RunRow, thread.last_run_id) if thread.last_run_id else None
+            if not eligible(thread, last):
+                raise ServiceError("conflict", "Wait until this Thread is open and idle")
+        else:
+            details = (
+                SessionCreate(
+                    labels={"a13n.console": "debug"}, origin=SessionOrigin(application="a13n-console", name="Console")
+                )
+                if ticket.credential.kind == "session"
+                else None
+            )
+            owner = new_session(scope.organization_id, workspace_id, actor.id, details)
+            owner.id = ticket.session_id
+            thread = new_thread(owner, mcp_headers={})
+            thread.id = ticket.thread_id
+            session.add_all((owner, thread))
+            await session.flush()
+        await require_message_source(session, thread, start.agent_id)
+        if thread.agent_snapshot is not None:
+            revision = await definitions.resolve(
+                session, thread, start.agent_id, start.agent_revision_id, None, accepting=True
+            )
+            options = await snapshot_options(session, thread, options)
+        else:
+            revision, overrides = await run_revision(
+                session,
+                runtime,
+                actor,
+                scope,
+                start.agent_id,
+                start.agent_revision_id,
+                options.overrides,
+                authority=authority,
+            )
+            options = options.model_copy(update={"overrides": overrides})
+        await start_run(
+            session,
+            runtime,
+            thread,
+            Source(
+                trigger="realtime",
+                principal=actor,
+                authority=authority,
+                revision=revision,
+                revision_selection="snapshot"
+                if thread.agent_snapshot is not None
+                else "pinned"
+                if start.agent_revision_id
+                else "default",
+                options=options,
+                options_digest=options.digest(),
+            ),
+            preallocated_id=ticket.run_id,
+            realtime_transport=start.transport,
+        )
+        session.add(
+            RealtimeCallRow(
+                run_id=ticket.run_id, transport=start.transport, credential=ticket.model_dump(mode="json")["credential"]
+            )
+        )
+
+
+async def _connection_principal(runtime: Runtime, credential: Authenticated, workspace_id: str) -> Principal:
+    async with short_session(runtime.storage) as session:
+        principal = await reauthenticate(session, runtime.access, credential)
+        await workspace_scope(session, principal, workspace_id, "run")
         return principal
 
 
 async def connect(socket: WebSocket, workspace_id: str) -> None:
-    from a13n_service.runs.submit import create_thread, submit_message
-
     runtime: Runtime = socket.app.state.runtime
-    channels = runtime.realtime_channels
-    if channels is None or runtime.admission is not None:
-        await socket.close(code=1008)
-        return
+    bridge = runtime.realtime_bridge
     protocols = socket.scope.get("subprotocols", [])
-    ticket = None
-    reauthorize = None
     try:
-        if protocols:
-            if len(channels) >= runtime.settings.worker.slots:
-                raise ServiceError("unavailable", "Realtime connections are busy")
-            ticket = _redeem(runtime, socket, workspace_id, protocols)
-            reauthorize = partial(_ticket_principal, runtime, ticket)
-            principal = await reauthorize()
-        else:
-            if socket.headers.get("origin") not in runtime.settings.server.public_origins:
-                raise ServiceError("forbidden", "Invalid realtime connection origin")
-            scope = {**socket.scope, "type": "http", "method": "GET"}
-            credential = await runtime.access.authenticator.authenticate(Request(scope), Response())
-            if credential is None or credential.kind != "session":
-                raise ServiceError("unauthenticated", "A realtime connection requires a login session or ticket")
-            principal = credential.principal
-    except ServiceError:
-        await socket.close(code=1008)
+        if bridge is None:
+            raise unavailable()
+        ticket = await _lookup(runtime, socket, workspace_id, protocols)
+        await _connection_principal(runtime, ticket.credential, workspace_id)
+        await bridge.start()
+        await bridge.redis.ping()
+    except (RedisError, ServiceError) as error:
+        status = 401 if isinstance(error, ServiceError) and error.code == "unauthenticated" else 503
+        await socket.send_denial_response(
+            JSONResponse({"error": "Realtime connection unavailable"}, status_code=status)
+        )
         return
-    if len(channels) >= runtime.settings.worker.slots:
-        await socket.close(code=1008)
-        return
-    session = uuid4().hex
-    channel = Channel(principal.id, workspace_id)
-    channels[session] = channel
+    reauthorize = partial(_connection_principal, runtime, ticket.credential, workspace_id)
+    session = ticket.run_id
+    webrtc_offer = None
+    pipe = Pipe(bridge, session, side="control")
+    run_id = None
+    finished = False
+    stack = AsyncExitStack()
     try:
-        await socket.accept(subprotocol=SUBPROTOCOL if ticket is not None else None)
+        await socket.accept(subprotocol=SUBPROTOCOL)
         async with asyncio.timeout(10):
-            start = (
-                ticket.start
-                if ticket is not None
-                else RealtimeSessionCreate.model_validate_json(await socket.receive_text())
-            )
+            start = ticket.start
             if start.transport == "webrtc":
                 offer = WebRTCOffer.model_validate_json(await socket.receive_text())
                 lines = [line.strip() for line in offer.sdp.splitlines()]
@@ -336,135 +565,331 @@ async def connect(socket: WebSocket, workspace_id: str) -> None:
                     or media[0][2] not in {"UDP/TLS/RTP/SAVPF", "TCP/TLS/RTP/SAVPF"}
                 ):
                     raise invalid("sdp", "Expected an audio-only WebRTC offer")
-                channel.webrtc_offer = offer.sdp
-            message = Message(
-                agent_id=start.agent_id,
-                agent_revision_id=start.agent_revision_id,
-                delivery="next_run",
-                payload=MessagePayload(
-                    content=(
-                        JsonPart(
-                            type="json",
-                            value={
-                                "type": "realtime_session_requested",
-                                "audio_input": start.audio,
-                                "transport": start.transport,
-                            },
-                        ),
-                    )
-                ),
-                options=RunOptions(labels={LABEL: session, "realtime-audio": "yes" if start.audio else "no"}),
+                webrtc_offer = offer.sdp
+            await _redeem(runtime, workspace_id, protocols[1], ticket)
+            run_id = ticket.run_id
+            await stack.enter_async_context(pipe.subscribe())
+            await pipe.publish_offer(
+                Offer(
+                    control_id=bridge.id,
+                    draft=start.draft,
+                    principal_id=ticket.credential.principal.id,
+                    workspace_id=workspace_id,
+                    audio=start.audio,
+                )
             )
-            if start.thread_id is None:
-                accepted, _ = await create_thread(
-                    runtime,
-                    principal,
-                    workspace_id,
-                    NewThread(
-                        **message.model_dump(),
-                        session=(
-                            SessionCreate(
-                                labels={"a13n.console": "debug"},
-                                origin=SessionOrigin(application="a13n-console", name="Console"),
-                            )
-                            if ticket is None
-                            else None
-                        ),
-                    ),
-                    request_key=session,
-                )
-            else:
-                accepted, _ = await submit_message(
-                    runtime, principal, workspace_id, start.thread_id, message, request_key=session
-                )
-            if accepted.run is None:
-                raise ServiceError("conflict", "Wait for the current run to finish before starting realtime")
             await socket.send_json(
-                {
-                    "type": "accepted",
-                    "thread_id": accepted.thread.id,
-                    "session_id": accepted.thread.session_id,
-                    "run_id": accepted.run.id,
-                }
+                {"type": "accepted", "thread_id": ticket.thread_id, "session_id": ticket.session_id, "run_id": run_id}
             )
-        await relay(socket, channel, reauthorize=reauthorize, interval=runtime.settings.worker.authority_seconds)
-        if not channel.disconnected:
+        disconnected = await relay(
+            socket,
+            pipe,
+            offer=webrtc_offer,
+            authorize_attachment=partial(_authorize_attachment, runtime, workspace_id, run_id),
+            reauthorize=reauthorize,
+            interval=runtime.settings.worker.authority_seconds,
+        )
+        finished = True
+        if not disconnected:
             await socket.close()
     except WebSocketDisconnect:
         pass
-    except (ServiceError, ValidationError, TimeoutError) as error:
+    except (RedisError, ServiceError, ValidationError, TimeoutError) as error:
         message = error.message if isinstance(error, ServiceError) else "The realtime request could not be accepted."
         await socket.send_json({"type": "error", "message": message})
         await socket.close(code=1008)
     finally:
-        channel.closed.set()
-        channels.pop(session, None)
+        try:
+            await stack.aclose()
+            if run_id is not None:
+                await pipe.discard_offer()
+        finally:
+            if run_id is not None and not finished:
+                await _stop_abandoned(runtime, workspace_id, run_id)
+
+
+async def _stop_abandoned(runtime: Runtime, workspace_id: str, run_id: str) -> None:
+    from a13n_service.runs.schemas import Outcome
+    from a13n_service.runs.seal import seal
+    from a13n_service.runs.threads import get_run, get_thread
+
+    async with transaction(runtime.storage) as session:
+        run = await get_run(session, workspace_id, run_id)
+        thread = await get_thread(session, workspace_id, run.thread_id, lock=True)
+        run = await get_run(session, workspace_id, run_id, lock=True)
+        if run.status == "accepted":
+            await seal(
+                session,
+                runtime,
+                thread,
+                run,
+                None,
+                Outcome.failed("realtime_unavailable", "Realtime Worker did not attach"),
+                at=await now(session),
+            )
+
+
+async def _authorize_attachment(runtime: Runtime, workspace_id: str, run_id: str, attempt_id: str) -> None:
+    async with short_session(runtime.storage) as session:
+        current = await session.scalar(
+            select(AttemptRow.id)
+            .join(RunRow, RunRow.current_attempt_id == AttemptRow.id)
+            .where(
+                RunRow.id == run_id,
+                RunRow.workspace_id == workspace_id,
+                RunRow.status == "running",
+                AttemptRow.id == attempt_id,
+                AttemptRow.status == "leased",
+                AttemptRow.lease_expires_at > func.now(),
+            )
+        )
+    if current is None:
+        raise ServiceError("conflict", "The realtime Worker no longer owns this Run")
 
 
 async def relay(
     socket: WebSocket,
-    channel: Channel,
+    pipe: Pipe,
     *,
-    reauthorize: Callable[[], Awaitable[Principal]] | None = None,
-    interval: float = 1,
-) -> None:
-    async def receive() -> None:
+    offer: str | None,
+    authorize_attachment: Callable[[str], Awaitable[None]],
+    reauthorize: Callable[[], Awaitable[Principal]],
+    interval: float,
+) -> bool:
+    """Return whether the client disconnected. A normal stop waits for the Worker to seal."""
+    attached = asyncio.Event()
+    ready = asyncio.Event()
+
+    async def pulse() -> None:
+        await attached.wait()
+        while True:
+            await asyncio.sleep(HEARTBEAT_SECONDS)
+            await pipe.send(b"ping")
+
+    async def receive() -> bool:
         while True:
             event = await socket.receive()
             if event["type"] == "websocket.disconnect":
-                channel.disconnected = True
-                return
+                await pipe.shutdown()
+                return True
             if (audio := event.get("bytes")) is not None:
-                if channel.webrtc_offer is not None:
+                if not ready.is_set():
+                    raise invalid("audio", "Wait for realtime ready")
+                if offer is not None:
                     raise invalid("audio", "Send audio over the WebRTC peer connection")
                 if len(audio) > 16_384 or not audio or len(audio) % 2:
-                    raise ServiceError("invalid_argument", "Expected a short PCM16 audio frame")
-                await channel.incoming.put(audio)
+                    raise invalid("audio", "Expected a short PCM16 audio frame")
+                frame = b"b" + audio
             else:
                 command = _COMMAND.validate_json(event.get("text") or "")
+                if isinstance(command, Input) and command.type == "stop":
+                    return False
+                if isinstance(command, Media):
+                    if command.type == "input_discontinuity":
+                        raise invalid("type", "This event is server-generated")
+                    if command.type == "audio_commit":
+                        if offer is not None or not ready.is_set():
+                            raise invalid("audio", "Audio commit requires a ready PCM stream")
+                        await pipe.send(b"commit:" + str(pipe.sent).encode())
+                        continue
+                    pipe.epoch += 1
+                if isinstance(command, Approval):
+                    await reauthorize()
+                frame = b"j" + command.model_dump_json().encode()
+            await attached.wait()
+            await pipe.send(frame)
+
+    async def send() -> None:
+        attachment = await pipe.receive(attaching=True)
+        if not attachment.startswith(b"a"):
+            raise unavailable()
+        await authorize_attachment(pipe.attempt_id)
+        await pipe.send(b"o" + (offer or "").encode())
+        attached.set()
+        while True:
+            raw = await pipe.receive()
+            if raw == b"closed":
+                raise unavailable()
+            if raw == b"finish":
+                return
+            if raw == b"ping":
+                continue
+            async with asyncio.timeout(5):
+                if raw.startswith(b"b"):
+                    if ready.is_set():
+                        await socket.send_bytes(raw[1:])
+                else:
+                    event = _OUTPUT.validate_json(raw[1:])
+                    if event.get("type") == "ready":
+                        ready.set()
+                    await socket.send_json(event)
+
+    async def verify() -> None:
+        while True:
+            await asyncio.sleep(interval)
+            await reauthorize()
+
+    reader = asyncio.create_task(receive())
+    writer = asyncio.create_task(send())
+    tasks = (reader, writer, asyncio.create_task(pulse()), asyncio.create_task(verify()))
+    try:
+        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        if writer in done:
+            # A terminal frame follows the committed outcome. The Worker can unsubscribe before our next ping.
+            writer.result()
+            return reader in done and reader.exception() is None and reader.result()
+        for task in done:
+            task.result()
+        if reader not in done:
+            return False
+        if not writer.done():
+            async with asyncio.timeout(15):
+                if attached.is_set():
+                    await pipe.send(b"stop")
+                elif reader.result():
+                    raise WebSocketDisconnect()
+                else:
+                    raise ServiceError("conflict", "The realtime Worker has not attached")
+                await writer
+        return reader.result()
+    finally:
+        try:
+            await pipe.shutdown()
+        finally:
+            for task in tasks:
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@asynccontextmanager
+async def worker_channel(runtime: Runtime, lease: Lease) -> AsyncIterator[Channel]:
+    bridge, session_id = runtime.realtime_bridge, lease.run_id
+    assert bridge is not None and session_id is not None
+    if lease.number != 1:
+        raise ServiceError("conflict", "Start a new connection to continue this realtime Thread")
+    await prove(runtime.storage, lease)
+    pipe = Pipe(bridge, session_id, side="worker")
+    offer = await pipe.attach(lease)
+    async with pipe.subscribe():
+        await pipe.send(b"a" + lease.attempt_id.encode() + b"/" + bridge.id.encode())
+        start = await pipe.receive()
+        if not start.startswith(b"o"):
+            raise unavailable()
+        channel = Channel(
+            offer.principal_id, offer.workspace_id, audio=offer.audio, webrtc_offer=start[1:].decode() or None
+        )
+
+        async def verify_dispatch(call_id: str) -> None:
+            try:
+                if channel.closed.is_set():
+                    raise unavailable()
+                await prove(runtime.storage, lease)
+                async with short_session(runtime.storage) as session:
+                    call = await session.get_one(RealtimeCallRow, lease.run_id)
+                    actor = await reauthenticate(session, runtime.access, _AUTH.validate_python(call.credential))
+                    await workspace_scope(session, actor, offer.workspace_id, "run")
+                if await pipe.redis.get(pipe.inbox + ":close") == pipe.fence or channel.closed.is_set():
+                    raise unavailable()
+            except (ServiceError, RedisError):
+                channel.expired.add(call_id)
+                raise ServiceError("conflict", "Approval expired before dispatch") from None
+            if call_id in channel.dispatched:
+                raise ServiceError("conflict", "This tool call was already dispatched")
+            channel.dispatched.add(call_id)
+
+        channel.verify_dispatch = verify_dispatch
+        channel.draft = offer.draft
+        async with _worker_io(pipe, channel):
+            yield channel
+
+
+@asynccontextmanager
+async def _worker_io(pipe: Pipe, channel: Channel) -> AsyncIterator[None]:
+
+    async def receive() -> None:
+        try:
+            while True:
+                raw = await pipe.receive()
+                if raw in {b"closed", b"stop"}:
+                    return
+                if raw == b"ping":
+                    continue
+                if raw.startswith(b"commit:"):
+                    last_seq = int(raw[7:])
+                    if last_seq != pipe.received:
+                        # Allow frames from the other Redis lane to arrive, without blocking stop or approvals.
+                        pipe.commit_seq = last_seq
+                        pipe.wake.set()
+                    else:
+                        channel.incoming.put_nowait(Media(type="audio_commit"))
+                    continue
+                if raw == b"commit":
+                    channel.incoming.put_nowait(Media(type="audio_commit"))
+                    continue
+                if raw == b"gap":
+                    channel.emit({"type": "input_discontinuity"})
+                    channel.incoming.put_nowait(Media(type="input_discontinuity"))
+                    continue
+                if raw.startswith(b"b"):
+                    channel.incoming.put_nowait(raw[1:])
+                    continue
+                command = _COMMAND.validate_json(raw[1:])
                 if isinstance(command, Approval):
                     answer = channel.approvals.get(command.call_id)
                     if answer is not None and not answer.done():
-                        if reauthorize is not None and command.approve:
-                            await reauthorize()
-                        if not answer.done():
-                            answer.set_result(command.approve)
-                    continue
-                if command.type == "stop":
-                    return
-                if command.text.strip():
-                    await channel.incoming.put(command.text)
+                        answer.set_result(command.approve)
+                elif isinstance(command, Media):
+                    if command.type == "interrupt":
+                        pipe.epoch += 1
+                        while not channel.pcm.empty():
+                            channel.pcm.get_nowait()
+                    channel.incoming.put_nowait(command)
+                elif command.text.strip():
+                    channel.incoming.put_nowait(command.text)
+        except (ServiceError, ValidationError, asyncio.QueueFull):
+            channel.failed = True
+        finally:
+            channel.closed.set()
 
     async def send() -> None:
-        while not channel.finished.is_set() or not channel.outgoing.empty():
-            try:
-                async with asyncio.timeout(0.25):
-                    frame = await channel.outgoing.get()
-            except TimeoutError:
-                continue
-            if isinstance(frame, bytes):
-                await socket.send_bytes(frame)
-            else:
-                await socket.send_json(frame)
+        try:
+            while True:
+                frame = await channel.outgoing.get()
+                await pipe.send(b"j" + _OUTPUT.dump_json(frame))
+                if frame.get("type") == "sealed":
+                    await pipe.send(b"finish")
+                    return
+        except ServiceError:
+            channel.failed = True
+            channel.closed.set()
 
-    async def verify(authorize: Callable[[], Awaitable[Principal]]) -> None:
-        while True:
-            await asyncio.sleep(interval)
-            await authorize()
+    async def media() -> None:
+        try:
+            while True:
+                await pipe.send(b"b" + await channel.pcm.get())
+        except ServiceError:
+            channel.failed = True
+            channel.closed.set()
 
-    tasks = [asyncio.create_task(receive()), asyncio.create_task(send())]
-    if reauthorize is not None:
-        tasks.append(asyncio.create_task(verify(reauthorize)))
+    async def heartbeat() -> None:
+        try:
+            while True:
+                await pipe.send(b"ping")
+                await asyncio.sleep(HEARTBEAT_SECONDS)
+        except ServiceError:
+            channel.failed = True
+            channel.closed.set()
+
+    reader = asyncio.create_task(receive())
+    writer = asyncio.create_task(send())
+    workers = (reader, writer, asyncio.create_task(media()), asyncio.create_task(heartbeat()))
     try:
-        done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-        for task in done:
-            task.result()
-        channel.closed.set()
-        # A stop command keeps the socket open until the Worker commits its checkpoint.
-        if tasks[0] in done and tasks[1] not in done:
-            async with asyncio.timeout(15):
-                await tasks[1]
+        yield
+        if channel.finished.is_set():
+            await asyncio.wait((writer,), timeout=2 * HEARTBEAT_SECONDS)
     finally:
-        for task in tasks:
+        for task in workers:
             task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*workers, return_exceptions=True)
+        if not channel.finished.is_set():
+            await pipe.shutdown()

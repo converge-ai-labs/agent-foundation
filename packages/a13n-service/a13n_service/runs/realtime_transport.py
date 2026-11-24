@@ -1,0 +1,264 @@
+"""Process-multiplexed Redis bridge for the lifetime of one realtime Attempt."""
+
+from __future__ import annotations
+
+import asyncio
+import struct
+from collections import deque
+from collections.abc import AsyncIterator
+from contextlib import AsyncExitStack, asynccontextmanager
+from typing import TYPE_CHECKING, Literal, cast
+from uuid import uuid4
+
+from pydantic import BaseModel, ConfigDict
+from redis.asyncio import Redis
+from redis.asyncio.client import PubSub
+from redis.exceptions import RedisError
+
+from a13n_service.infra.errors import ServiceError
+
+if TYPE_CHECKING:
+    from a13n_service.runs.attempts import Lease
+
+ATTACH_SECONDS = 20
+HEARTBEAT_SECONDS = 1
+_PEER_TIMEOUT = 6
+_STREAM_LIMIT = 128
+_PCM_HEADER = struct.Struct("!QQ")
+
+
+def unavailable() -> ServiceError:
+    return ServiceError("unavailable", "The realtime transport is unavailable")
+
+
+class Offer(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    control_id: str
+    audio: bool
+    draft: str = ""
+    principal_id: str
+    workspace_id: str
+
+
+class Bridge:
+    """Two independent subscriptions shared by every local call. Start lazily so Redis is optional for batch Runs."""
+
+    def __init__(self, redis: Redis):
+        self.redis = redis
+        self.id = uuid4().hex
+        self.calls: dict[bytes, Pipe] = {}
+        self.lock = asyncio.Lock()
+        self.listeners: AsyncExitStack | None = None
+
+    async def start(self) -> None:
+        async with self.lock:
+            if self.listeners is not None:
+                return
+            async with AsyncExitStack() as stack:
+                for lane in ("control", "pcm"):
+                    sub = await stack.enter_async_context(self.redis.pubsub())
+                    await sub.subscribe(f"a13n:rt:{self.id}:{lane}")
+                    if not await sub.get_message(timeout=_PEER_TIMEOUT):
+                        raise unavailable()
+                    task = asyncio.create_task(self._listen(sub, pcm=lane == "pcm"))
+                    stack.push_async_callback(self._stop, task)
+                self.listeners = stack.pop_all()
+
+    async def close(self) -> None:
+        if self.listeners is not None:
+            await self.listeners.aclose()
+
+    async def _stop(self, task: asyncio.Task) -> None:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    async def _listen(self, sub: PubSub, *, pcm: bool) -> None:
+        while True:
+            try:
+                async for message in sub.listen():
+                    if message["type"] != "message":
+                        continue
+                    address, _, payload = message["data"].partition(b" ")
+                    pipe = self.calls.get(address)
+                    if pipe is None:
+                        continue
+                    if pcm:
+                        fence, _, audio = payload.partition(b" ")
+                        if fence != pipe.fence or len(audio) <= _PCM_HEADER.size:
+                            continue
+                        pipe.audio.append(audio)
+                    else:
+                        pipe.scan = True
+                    pipe.wake.set()
+            except RedisError:
+                for pipe in tuple(self.calls.values()):
+                    pipe.failed = True
+                    pipe.wake.set()
+                await asyncio.sleep(HEARTBEAT_SECONDS)
+
+
+class Pipe:
+    def __init__(self, bridge: Bridge, run_id: str, *, side: Literal["control", "worker"]):
+        self.bridge, self.redis = bridge, bridge.redis
+        self.side = side
+        self.base = f"a13n:rt:{run_id}"
+        other = "worker" if side == "control" else "control"
+        self.inbox, self.outbox = f"{self.base}:{side}", f"{self.base}:{other}"
+        self.offer = self.base + ":offer"
+        self.control_id = bridge.id if side == "control" else ""
+        self.attempt_id = ""
+        self.peer = ""
+        self.cursor = b"0-0"
+        self.pending: deque[bytes] = deque()
+        self.audio: deque[bytes] = deque(maxlen=32)
+        self.wake = asyncio.Event()
+        self.scan = True
+        self.failed = False
+        self.sent = self.received = self.epoch = 0
+        self.commit_seq: int | None = None
+        self.commit_deadline = 0.0
+        self.control_sent = self.control_received = 0
+        self.last_check = 0.0
+        self.started = asyncio.get_running_loop().time()
+
+    @property
+    def fence(self) -> bytes:
+        return f"{self.control_id}/{self.attempt_id}".encode()
+
+    async def publish_offer(self, offer: Offer) -> None:
+        await self.redis.set(self.offer, offer.model_dump_json(), ex=ATTACH_SECONDS)
+
+    async def attach(self, lease: Lease) -> Offer:
+        async with asyncio.timeout(ATTACH_SECONDS):
+            while (raw := await self.redis.getdel(self.offer)) is None:
+                await asyncio.sleep(0.05)
+        offer = Offer.model_validate_json(raw)
+        if offer.workspace_id != lease.workspace_id:
+            raise unavailable()
+        self.peer = self.control_id = offer.control_id
+        self.attempt_id = lease.attempt_id
+        return offer
+
+    @asynccontextmanager
+    async def subscribe(self) -> AsyncIterator[None]:
+        await self.bridge.start()
+        address = self.inbox.encode()
+        self.bridge.calls[address] = self
+        try:
+            yield
+        finally:
+            self.bridge.calls.pop(address, None)
+
+    async def shutdown(self) -> None:
+        if self.peer:
+            async with self.redis.pipeline(transaction=False) as batch:
+                batch.set(self.outbox + ":close", self.fence, ex=_PEER_TIMEOUT)
+                batch.publish(f"a13n:rt:{self.peer}:control", self.outbox.encode())
+                await batch.execute()
+
+    async def send(self, frame: bytes) -> None:
+        try:
+            if frame == b"ping":
+                await self.redis.set(self.inbox + ":alive", self.fence, ex=_PEER_TIMEOUT)
+                return
+            if frame.startswith(b"b"):
+                self.sent += 1
+                packet = _PCM_HEADER.pack(self.sent, self.epoch) + frame[1:]
+                await self.redis.publish(
+                    f"a13n:rt:{self.peer}:pcm", self.outbox.encode() + b" " + self.fence + b" " + packet
+                )
+                return
+            self.control_sent += 1
+            async with self.redis.pipeline(transaction=True) as batch:
+                batch.xadd(
+                    self.outbox,
+                    {b"seq": self.control_sent, b"fence": self.fence, b"frame": frame},
+                    maxlen=_STREAM_LIMIT,
+                    approximate=False,
+                )
+                batch.expire(self.outbox, ATTACH_SECONDS * 2)
+                batch.publish(f"a13n:rt:{self.peer}:control", self.outbox.encode())
+                await batch.execute()
+        except RedisError:
+            raise unavailable() from None
+
+    async def receive(self, *, attaching: bool = False) -> bytes:
+        deadline = self.started + ATTACH_SECONDS
+        try:
+            while True:
+                if self.failed:
+                    raise unavailable()
+                clock = asyncio.get_running_loop().time()
+                periodic = clock - self.last_check >= HEARTBEAT_SECONDS
+                if self.scan or periodic:
+                    self.scan = False
+                    close, alive = await self.redis.mget(self.inbox + ":close", self.outbox + ":alive")
+                    if close == self.fence:
+                        return b"closed"
+                    if periodic:
+                        self.last_check = clock
+                        if not attaching and clock - self.started > _PEER_TIMEOUT and alive != self.fence:
+                            raise unavailable()
+                    rows = await self.redis.xread({self.inbox: self.cursor}, count=_STREAM_LIMIT)
+                    for _, entries in cast(list[tuple[bytes, list[tuple[bytes, dict[bytes, bytes]]]]], rows):
+                        for cursor, fields in entries:
+                            self.cursor = cursor
+                            frame = fields[b"frame"]
+                            fence = fields[b"fence"]
+                            if (
+                                attaching
+                                and frame.startswith(b"a")
+                                and fence.startswith(self.control_id.encode() + b"/")
+                            ):
+                                self.attempt_id, self.peer = frame[1:].decode().split("/")
+                            if fence != self.fence:
+                                continue
+                            self.control_received += 1
+                            if int(fields[b"seq"]) != self.control_received:
+                                raise unavailable()
+                            self.pending.append(frame)
+                if self.pending:
+                    return self.pending.popleft()
+                if self.commit_seq is not None:
+                    if not self.commit_deadline:
+                        self.commit_deadline = clock + 0.15
+                    if self.received >= self.commit_seq or clock >= self.commit_deadline:
+                        gap = self.received != self.commit_seq
+                        self.received = max(self.received, self.commit_seq)
+                        self.commit_seq = None
+                        self.commit_deadline = 0.0
+                        return b"gap" if gap else b"commit"
+                if self.audio:
+                    packet = self.audio.popleft()
+                    seq, epoch = _PCM_HEADER.unpack_from(packet)
+                    if seq <= self.received:
+                        continue
+                    gap = seq != self.received + 1
+                    self.received = seq
+                    if self.side == "control" and epoch != self.epoch:
+                        continue
+                    if gap:
+                        if self.side == "worker":
+                            return b"gap"
+                        raise unavailable()
+                    return b"b" + packet[_PCM_HEADER.size :]
+                if attaching and clock >= deadline:
+                    raise unavailable()
+                self.wake.clear()
+                try:
+                    await asyncio.wait_for(
+                        self.wake.wait(),
+                        min(HEARTBEAT_SECONDS, max(0, self.commit_deadline - clock))
+                        if self.commit_deadline
+                        else HEARTBEAT_SECONDS,
+                    )
+                except TimeoutError:
+                    pass
+        except RedisError:
+            raise unavailable() from None
+
+    async def discard_offer(self) -> None:
+        try:
+            await self.redis.delete(self.offer)
+        except RedisError:
+            pass

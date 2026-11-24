@@ -262,7 +262,7 @@ function RunBody({
   const realtime = useRealtimeAvailability(
     { agentId: run.agent_id, threadId: thread.id },
     !!thread.current_run_id,
-  );
+  ).data;
   const interactive = useInteractiveThread(thread);
   const transcript = useRef<HTMLDivElement>(null);
   const scroll = useTranscriptScroll(transcript, level, inspectionId);

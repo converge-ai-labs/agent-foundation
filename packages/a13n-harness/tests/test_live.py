@@ -49,6 +49,8 @@ from pydantic_ai.messages import (
     PartDeltaEvent,
     PartEndEvent,
     PartStartEvent,
+    RealtimeInputSpeechEndEvent,
+    RealtimeInputSpeechStartEvent,
     RealtimeSessionErrorEvent,
     RealtimeTurnCompleteEvent,
     RetryPromptPart,
@@ -65,6 +67,7 @@ from pydantic_ai.realtime.codec import (
     ClearAudio,
     CommitAudio,
     CreateResponse,
+    InputTranscript,
     OutputTranscript,
     RealtimeCodecEvent,
     RealtimeConnection,
@@ -570,7 +573,7 @@ async def test_live_external_retry_preserves_native_control_signal(retry: RetryP
     assert returns[0].tool_name == "lookup" and returns[0].tool_call_id == "call-1"
 
 
-async def test_live_missing_approval_handler_fails_tool_without_executing_it() -> None:
+async def test_live_unresolved_approval_fails_tool_without_executing_it() -> None:
     def change() -> None:
         raise AssertionError("unapproved tool must not run")
 
@@ -1021,6 +1024,60 @@ async def test_realtime_preloads_file_memory_and_recalls_records_before_typed_tu
         await collector
 
 
+async def test_late_spoken_recall_is_silent_at_the_next_turn_boundary() -> None:
+    store = FakeRecordStore(["winter juniper"])
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def delay(operation: str) -> None:
+        if operation == "search":
+            started.set()
+            await release.wait()
+
+    store.before = delay
+    agent = HarnessBuilder().build(
+        AgentDefinition(
+            output_type=str,
+            agent=AgentSpec(),
+            capabilities=(RecordMemoryCapability([RecordMount("facts", store, "read", recall=True)]),),
+        )
+    )
+    model = _Model()
+    async with asyncio.timeout(5), agent.live(model=model) as live:
+        turns = asyncio.Queue[None]()
+
+        async def observe():
+            async for item in live:
+                if isinstance(item, HarnessEvent) and isinstance(item.event, RealtimeTurnCompleteEvent):
+                    turns.put_nowait(None)
+
+        observer = asyncio.create_task(observe())
+        for event in (
+            RealtimeInputSpeechStartEvent(item_id="speech"),
+            RealtimeInputSpeechEndEvent(item_id="speech"),
+            InputTranscript("What is the code?", is_final=True, item_id="speech"),
+            OutputTranscript("First reply", is_final=True),
+            ResponseDone(),
+        ):
+            await model.connection.events.put(event)
+        await started.wait()
+        await turns.get()
+        release.set()
+        while not store.searches:
+            await asyncio.sleep(0)
+        assert model.connection.sent.empty()
+        await model.connection.events.put(OutputTranscript("Second reply", is_final=True))
+        await model.connection.events.put(ResponseDone())
+        await turns.get()
+        injection = await model.connection.sent.get()
+        assert isinstance(injection, TextContext)
+        context = json.loads(injection.text)
+        assert context["turn"] == 1 and context["trust"] == "untrusted" and context["mount"] == "facts"
+        assert context["query"] == "What is the code?" and "winter juniper" in context["content"]
+        assert model.connection.sent.empty()
+        await live.close()
+        await observer
+
+
 @pytest.mark.parametrize("approved", [False, True])
 async def test_realtime_waits_for_host_decision_before_an_approved_tool(approved: bool) -> None:
     pending, answer = asyncio.Event(), asyncio.Event()
@@ -1030,21 +1087,28 @@ async def test_realtime_waits_for_host_decision_before_an_approved_tool(approved
         calls.append("called")
         return "lookup proof"
 
-    async def approve(call):
+    from pydantic_ai.capabilities import HandleDeferredToolCalls
+    from pydantic_ai.tools import DeferredToolResults
+
+    async def approve(ctx, requests):
+        (call,) = requests.approvals
         assert call.tool_name == "lookup"
         pending.set()
         await answer.wait()
-        return approved
+        return DeferredToolResults(approvals={call.tool_call_id: approved})
 
     executable = HarnessBuilder().build(
         AgentDefinition(
             output_type=str,
             agent=AgentSpec(),
-            capabilities=(Capability(tools=[Tool(lookup, requires_approval=True)]),),
+            capabilities=(
+                Capability(tools=[Tool(lookup, requires_approval=True)]),
+                HandleDeferredToolCalls(handler=approve),
+            ),
         )
     )
     model = _Model()
-    async with asyncio.timeout(5), executable.live(model=model, approval_handler=approve) as live:
+    async with asyncio.timeout(5), executable.live(model=model) as live:
         collector = asyncio.create_task(_collect(live))
         request = asyncio.create_task(_call(model, "lookup"))
         await pending.wait()

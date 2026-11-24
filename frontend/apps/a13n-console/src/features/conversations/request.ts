@@ -42,7 +42,7 @@ export type RunRequest =
   | { kind: "delegated_task"; text: string; parentTask: string | null };
 
 export function isRealtimeRun(run: Run): boolean {
-  return Boolean(run.options?.labels?.["realtime-session"]);
+  return run.trigger === "realtime";
 }
 
 export function runRequest(run: Run, thread?: Thread | null): RunRequest {

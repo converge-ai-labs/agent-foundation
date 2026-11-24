@@ -5313,6 +5313,7 @@
     },
     "Trigger": {
       "enum": [
+        "realtime",
         "input",
         "queued",
         "resume",

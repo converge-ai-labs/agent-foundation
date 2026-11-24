@@ -34,13 +34,13 @@ export function Composer({
   disabled = false,
   submitDisabled = false,
   submitIcon,
-  submitOnEnter = false,
+  onEmptySubmit,
   agentName,
   textInput = true,
   attachmentsEnabled = true,
   options,
+  primaryAction,
   actionBeforeSubmit,
-  emptyAction,
   stop,
   stopping = false,
 }: {
@@ -58,16 +58,15 @@ export function Composer({
   /** Block sending while keeping configuration controls available for correction. */
   submitDisabled?: boolean;
   submitIcon?: ReactNode;
-  submitOnEnter?: boolean;
+  onEmptySubmit?: () => void;
   agentName?: string;
   textInput?: boolean;
   attachmentsEnabled?: boolean;
   /** Option chips shown beside the attachment control. */
   options?: ReactNode;
-  /** An action beside the primary send button. */
   actionBeforeSubmit?: ReactNode;
-  /** Replaces the send arrow when there is no draft. */
-  emptyAction?: {
+  /** Replaces the primary button while keyboard submission still sends a draft. */
+  primaryAction?: {
     label: string;
     icon: ReactNode;
     onClick: () => void;
@@ -183,7 +182,6 @@ export function Composer({
     (!textInput || !text.trim()) && !attachments.length && !structured.trim();
   // A run in flight and nothing to say: the one round button stops it instead.
   const stopMode = !!stop && empty;
-  const alternate = empty && !stopMode ? emptyAction : undefined;
   return (
     <form
       ref={form}
@@ -191,11 +189,8 @@ export function Composer({
       onSubmit={(event) => {
         event.preventDefault();
         if (disabled || submitDisabled || busy) return;
-        if (alternate) {
-          if (!alternate.disabled) alternate.onClick();
-        } else if (!empty || (textInput && !submitOnEnter)) {
-          mutation.mutate();
-        }
+        if (empty && onEmptySubmit) onEmptySubmit();
+        else if (!empty || !primaryAction) mutation.mutate();
       }}
     >
       <fieldset disabled={disabled || busy} className={styles.fields}>
@@ -206,11 +201,7 @@ export function Composer({
             unstyled
             className={styles.messageInput}
             aria-label={t("Message")}
-            aria-keyshortcuts={
-              submitOnEnter
-                ? "Enter Meta+Enter Control+Enter"
-                : "Meta+Enter Control+Enter"
-            }
+            aria-keyshortcuts="Meta+Enter Control+Enter"
             placeholder={
               placeholder ??
               (agentName
@@ -230,7 +221,7 @@ export function Composer({
               }
               if (
                 event.key !== "Enter" ||
-                !(submitOnEnter || event.metaKey || event.ctrlKey) ||
+                !(event.metaKey || event.ctrlKey) ||
                 event.shiftKey ||
                 event.altKey ||
                 event.nativeEvent.isComposing
@@ -292,19 +283,11 @@ export function Composer({
           {options}
         </div>
       </fieldset>
-      {(textInput ||
-        stopMode ||
-        alternate ||
-        submitIcon ||
-        actionBeforeSubmit) && (
+      {(textInput || stopMode || submitIcon || primaryAction) && (
         <div className={styles.send}>
-          {!alternate && (textInput || stopMode) && (
+          {(textInput || stopMode) && (
             <span className={styles.hint}>
-              {stopMode
-                ? t("Esc stops")
-                : submitOnEnter
-                  ? t("Enter to send")
-                  : t("⌘ / Ctrl + Enter to send")}
+              {stopMode ? t("Esc stops") : t("⌘ / Ctrl + Enter to send")}
             </span>
           )}
           {actionBeforeSubmit}
@@ -321,18 +304,18 @@ export function Composer({
             >
               <SquareIcon size={12} weight="fill" />
             </Button>
-          ) : alternate ? (
+          ) : primaryAction ? (
             <Button
               type="button"
               size="icon-sm"
               variant="default"
               className={styles.sendButton}
-              aria-label={alternate.label}
-              title={alternate.label}
-              disabled={disabled || busy || alternate.disabled}
-              onClick={alternate.onClick}
+              aria-label={primaryAction.label}
+              title={primaryAction.label}
+              disabled={disabled || primaryAction.disabled}
+              onClick={primaryAction.onClick}
             >
-              {alternate.icon}
+              {primaryAction.icon}
             </Button>
           ) : (
             <Button
@@ -342,7 +325,9 @@ export function Composer({
               className={styles.sendButton}
               aria-label={action}
               title={action}
-              disabled={empty || disabled || submitDisabled || busy}
+              disabled={
+                (empty && !onEmptySubmit) || disabled || submitDisabled || busy
+              }
               loading={mutation.isPending && !submitIcon}
             >
               {submitIcon ?? <ArrowUpIcon size={15} />}

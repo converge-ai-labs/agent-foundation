@@ -14,10 +14,7 @@ async def prepare(config: LocalProvisioning) -> Defaults:
         TemplateConfig(
             recipe={
                 "root": {"path": str(config.root)},
-                "shell_profiles": [
-                    {"profile_id": "default", "executable": "/bin/sh"},
-                    {"profile_id": "sh", "executable": "/bin/sh"},
-                ],
+                "shell_profiles": [{"profile_id": "sh", "executable": "/bin/sh"}],
             }
         ),
     )

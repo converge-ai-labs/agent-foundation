@@ -47,7 +47,7 @@ from a13n_harness.capabilities import (
 from a13n_harness.capabilities.web import WebCapability
 from a13n_harness.compaction import CompactionOperator
 from a13n_harness.environment import DynamicEnvironmentCapability
-from a13n_harness.live import HarnessLiveStream, LiveWebRTC, RealtimeApprovalHandler
+from a13n_harness.live import HarnessLiveStream, LiveWebRTC
 from a13n_harness.metering import ModelUsageBinding
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
@@ -69,6 +69,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.realtime import RealtimeModelSettings
 from pydantic_ai.settings import ModelSettings
+from pydantic_ai.usage import UsageLimits
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.app_plugins import AppActivation, AppCatalog
@@ -264,7 +265,7 @@ async def open_realtime(
     bindings: RunBindings,
     previous_state: HarnessState | None = None,
     model_settings: RealtimeModelSettings | None = None,
-    approval_handler: RealtimeApprovalHandler | None = None,
+    usage_limits: UsageLimits | None = None,
     webrtc: LiveWebRTC | None = None,
 ) -> AsyncIterator[HarnessLiveStream]:
     """Open the Agent's primary model for a caller that owns admission and continuation."""
@@ -281,7 +282,8 @@ async def open_realtime(
             model_settings=model_settings,
             bindings=bindings,
             previous_state=previous_state,
-            approval_handler=approval_handler,
+            usage_limits=usage_limits,
+            memory_context_bytes=runtime.settings.memory.context_bytes,
             webrtc=webrtc,
         ) as stream,
     ):

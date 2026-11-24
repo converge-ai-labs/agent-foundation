@@ -9,7 +9,6 @@ import pytest
 from a13n_service.app import build_app
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session, transaction
-from a13n_service.providers.environments.local import _recipe
 from a13n_service.provisioning import docker
 from a13n_service.provisioning.service import Initializer
 from a13n_service.provisioning.tables import WorkspaceProvisioningRow
@@ -79,19 +78,6 @@ async def test_defaults_are_off_and_local_requires_an_explicit_absolute_root():
         Settings.model_validate({"environments": {"allow_local": True}})
 
 
-@pytest.mark.parametrize("profile", ["sh", "default"])
-async def test_earlier_builtin_local_recipes_keep_both_shell_names(tmp_path, profile):
-    recipe = _recipe(
-        {"root": {"path": str(tmp_path)}, "shell_profiles": [{"profile_id": profile, "executable": "/bin/sh"}]},
-        "env_00000000000000000000",
-        None,
-    )
-    assert [(item.profile_id, str(item.executable)) for item in recipe.shell_profiles] == [
-        ("default", "/bin/sh"),
-        ("sh", "/bin/sh"),
-    ]
-
-
 async def test_concurrent_initialization_creates_one_atomic_pair_per_component(runtime, tenant, initializer):
     await asyncio.gather(*(initializer(tenant.workspace_id) for _ in range(5)))
     rows = await receipts(runtime, tenant.workspace_id)
@@ -113,10 +99,7 @@ async def test_concurrent_initialization_creates_one_atomic_pair_per_component(r
             else:
                 assert template.config["recipe"] == {
                     "root": {"path": str(runtime.settings.provisioning.local.root)},
-                    "shell_profiles": [
-                        {"profile_id": "default", "executable": "/bin/sh"},
-                        {"profile_id": "sh", "executable": "/bin/sh"},
-                    ],
+                    "shell_profiles": [{"profile_id": "sh", "executable": "/bin/sh"}],
                 }
         audit = list(await session.scalars(select(AuditEventRow).where(AuditEventRow.actor_id.is_(None))))
         assert len(audit) == 4

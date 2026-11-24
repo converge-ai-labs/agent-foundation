@@ -21,10 +21,11 @@ from pydantic_ai.messages import ModelMessage, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
+from a13n_service.infra.errors import ServiceError
 from a13n_service.runs.display import Snapshot, open_tool_calls
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class Staged:
     """One immutable checkpoint cut and its pre-effect completion signal."""
 
@@ -49,6 +50,9 @@ class Boundaries(AbstractCapability[AgentContext]):
         self._closed = False
         self.staged_length = -1
         self.wait_for_model = False
+        self.staging = asyncio.Lock()
+        self.pending_live: Staged | None = None
+        self.before_dispatch: Callable[[str], Awaitable[None]] | None = None
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(
@@ -83,6 +87,8 @@ class Boundaries(AbstractCapability[AgentContext]):
         while True:
             staged = await self._queue.get()
             try:
+                if staged is self.pending_live:
+                    self.pending_live = None
                 if staged is None:
                     return
                 try:
@@ -144,10 +150,31 @@ class Boundaries(AbstractCapability[AgentContext]):
     async def before_tool_execute(
         self, ctx: RunContext[AgentContext], *, call: ToolCallPart, tool_def: ToolDefinition, args: ValidatedToolArgs
     ) -> ValidatedToolArgs:
+        if self.before_dispatch and self.primary is None:
+            raise ServiceError("conflict", "The realtime call is not ready for tools")
         if ctx.run_id == self.primary:
-            completed = await self._stage(ctx, ctx.messages, "tool")
+            async with self.staging:
+                self.pending_live = None
+                completed = await self._stage(ctx, ctx.messages, "tool")
             await asyncio.shield(completed)
+            if self.before_dispatch is not None:
+                await self.before_dispatch(call.tool_call_id)
         return args
+
+    async def stage_live(self, capture: Callable[[], Awaitable[HarnessState]]) -> None:
+        async with self.staging:
+            if self._closed:
+                return
+            state = await capture()
+            assert self.freeze_display is not None
+            display = self.freeze_display(open_tool_calls(state.message_history))
+            cursors = self.cursors()
+            self.staged_length = -1
+            if self.pending_live is not None:
+                self.pending_live.state, self.pending_live.display, self.pending_live.cursors = state, display, cursors
+            else:
+                self.pending_live = Staged("input", state, cursors, display, asyncio.get_running_loop().create_future())
+                await self._queue.put(self.pending_live)
 
     async def _stage(
         self, ctx: RunContext[AgentContext], messages: list[ModelMessage], at: Literal["input", "model", "tool"]

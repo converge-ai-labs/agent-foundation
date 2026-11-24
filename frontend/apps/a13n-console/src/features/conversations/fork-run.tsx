@@ -19,6 +19,7 @@ import {
   runPath,
   type ViewLevel,
 } from "./api";
+import { RealtimeComposer, useRealtimeAvailability } from "./realtime";
 import { runRequest } from "./request";
 import { useInteractiveThread } from "./transcript/run-actions";
 import styles from "./fork.module.css";
@@ -48,6 +49,13 @@ export function ForkRun({
   const [fresh, setFresh] = useState(false);
   const idempotency = useIdempotency();
   const agent = useAgent(open ? run.agent_id : undefined);
+  const voice = run.trigger === "realtime";
+  const Container = voice ? "div" : "form";
+  const realtime = useRealtimeAvailability({
+    agentId: open && voice ? run.agent_id : undefined,
+    revisionId: run.agent_revision_id,
+    forkRunId: run.id,
+  });
   const interactive = useInteractiveThread(thread);
   const allowed = can("run") && interactive;
   const sealed = !!run.sealed_at && !isActiveRun(run.status);
@@ -134,12 +142,16 @@ export function ForkRun({
       )}
       closeLabel={t("Close")}
     >
-      <form
+      <Container
         className={styles.form}
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!mutation.isPending) mutation.mutate();
-        }}
+        onSubmit={
+          voice
+            ? undefined
+            : (event) => {
+                event.preventDefault();
+                if (!mutation.isPending) mutation.mutate();
+              }
+        }
       >
         <div className={styles.source}>
           <div className={styles.sourceHeading}>
@@ -171,14 +183,16 @@ export function ForkRun({
             )}
           </p>
         )}
-        <TextAreaField
-          label={t("What would you like to continue in the new branch?")}
-          value={message}
-          onChange={setMessage}
-          disabled={mutation.isPending}
-          required
-          rows={4}
-        />
+        {!voice && (
+          <TextAreaField
+            label={t("What would you like to continue in the new branch?")}
+            value={message}
+            onChange={setMessage}
+            disabled={mutation.isPending}
+            required
+            rows={4}
+          />
+        )}
         <div className={styles.agent}>
           <AgentAvatar
             name={agent.data?.name ?? t("Agent")}
@@ -214,15 +228,48 @@ export function ForkRun({
             />
           </DisclosureSection>
         </div>
-        <ErrorNotice error={mutation.error} />
-        {reason && <p className={styles.warning}>{reason}</p>}
-        <FormActions
-          pending={mutation.isPending}
-          disabled={!message.trim() || !!reason || mutation.isPending}
-          label={t("Create branch and send")}
-          onCancel={() => setOpen(false)}
-        />
-      </form>
+        {voice ? (
+          realtime.data ? (
+            <RealtimeComposer
+              agentId={run.agent_id}
+              agentName={agent.data?.name}
+              revisionId={run.agent_revision_id}
+              forkRunId={run.id}
+              freshEnvironments={fresh}
+              availability={realtime.data}
+              onFinished={(receipt) => {
+                void invalidateConversation(cache, workspace.id, {
+                  sessionId: receipt.session_id,
+                  threadId: receipt.thread_id,
+                  runId: receipt.run_id,
+                });
+                setOpen(false);
+                const params = new URLSearchParams(search);
+                params.set("view", level);
+                navigate(runPath(basePath, receipt) + "?" + params);
+              }}
+            />
+          ) : realtime.error ? (
+            <ErrorNotice
+              error={realtime.error}
+              retry={() => void realtime.refetch()}
+            />
+          ) : (
+            <p role="status">{t("Loading…")}</p>
+          )
+        ) : (
+          <>
+            <ErrorNotice error={mutation.error} />
+            {reason && <p className={styles.warning}>{reason}</p>}
+            <FormActions
+              pending={mutation.isPending}
+              disabled={!message.trim() || !!reason || mutation.isPending}
+              label={t("Create branch and send")}
+              onCancel={() => setOpen(false)}
+            />
+          </>
+        )}
+      </Container>
     </ModalFrame>
   );
 }

@@ -25,7 +25,6 @@ The tables are generated from `Settings`. Contributors updating those definition
 | `server.request_timeout`   | `A13N_SERVER__REQUEST_TIMEOUT`   | number          | maximum=60; exclusiveMinimum=0; default=10      |
 | `server.readiness_timeout` | `A13N_SERVER__READINESS_TIMEOUT` | number          | maximum=30; exclusiveMinimum=0; default=2       |
 | `server.shutdown_timeout`  | `A13N_SERVER__SHUTDOWN_TIMEOUT`  | integer         | minimum=1; maximum=300; default=15              |
-| `server.realtime_preview`  | `A13N_SERVER__REALTIME_PREVIEW`  | boolean         | default=false                                   |
 | `server.tls_certificate`   | `A13N_SERVER__TLS_CERTIFICATE`   | string or null  | format="path"; default=null                     |
 | `server.tls_key`           | `A13N_SERVER__TLS_KEY`           | string or null  | format="path"; default=null                     |
 
@@ -166,6 +165,11 @@ The tables are generated from `Settings`. Contributors updating those definition
 
 | Setting                          | Environment variable                   | Type / choices | Constraints and default                          |
 | -------------------------------- | -------------------------------------- | -------------- | ------------------------------------------------ |
+| `worker.realtime_slots`          | `A13N_WORKER__REALTIME_SLOTS`          | integer        | minimum=1; maximum=1024; default=8               |
+| `worker.realtime_call_limit`     | `A13N_WORKER__REALTIME_CALL_LIMIT`     | integer        | minimum=1; default=32                            |
+| `worker.realtime_pcm_limit`      | `A13N_WORKER__REALTIME_PCM_LIMIT`      | integer        | minimum=1; default=8                             |
+| `worker.realtime_accepted_limit` | `A13N_WORKER__REALTIME_ACCEPTED_LIMIT` | integer        | minimum=1; default=16                            |
+| `worker.realtime_ticket_limit`   | `A13N_WORKER__REALTIME_TICKET_LIMIT`   | integer        | minimum=1; default=128                           |
 | `worker.slots`                   | `A13N_WORKER__SLOTS`                   | integer        | minimum=1; maximum=1024; default=128             |
 | `worker.max_attempts`            | `A13N_WORKER__MAX_ATTEMPTS`            | integer        | minimum=1; maximum=20; default=3                 |
 | `worker.lease_seconds`           | `A13N_WORKER__LEASE_SECONDS`           | integer        | minimum=3; maximum=300; default=30               |

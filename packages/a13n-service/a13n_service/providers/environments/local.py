@@ -14,7 +14,6 @@ from a13n_harness.providers.environment.definition import EnvironmentProviderDef
 from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
 )
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from anyio import to_thread
@@ -37,18 +36,7 @@ def _recipe(
     if state is not None:
         raise provider_error(LOCAL_TYPE, "provider_state_invalid", EnvironmentProviderErrorCategory.INVALID)
     recipe = DirectLocalEnvironmentConfiguration.model_validate(environment)
-    # Earlier built-in templates advertised /bin/sh under a single name.
-    default = DirectLocalShellProfile(profile_id="default", executable=Path("/bin/sh"))
-    legacy = default.model_copy(update={"profile_id": "sh"})
-    profiles = recipe.shell_profiles
-    if profiles in ((legacy,), (default,)):
-        profiles = (default, legacy)
-    return recipe.model_copy(
-        update={
-            "root": DirectLocalRootConfiguration(path=recipe.root.path / environment_id),
-            "shell_profiles": profiles,
-        }
-    )
+    return recipe.model_copy(update={"root": DirectLocalRootConfiguration(path=recipe.root.path / environment_id)})
 
 
 class LocalProvider(EnvironmentProvider[DirectLocalEnvironmentConfiguration]):

@@ -53,6 +53,11 @@ class AdmissionPolicy(Protocol):
     async def proceed(self, session: AsyncSession, call: CallContext) -> None: ...
 
 
+def requires_model_reservation(policy: AdmissionPolicy | None) -> bool:
+    """Existing proceed policies reserve every paid dispatch. Soft-budget policies explicitly opt out for live models."""
+    return policy is not None and getattr(policy, "requires_per_dispatch_reservation", True)
+
+
 @dataclass(frozen=True, slots=True)
 class AppCallContext:
     """A direct user action attributed to a saved App, without inventing a worker attempt."""

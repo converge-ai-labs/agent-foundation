@@ -369,8 +369,8 @@ Retained-execution list, detail and bounded-result queries are admitted to MCP u
 | `/sessions/{session}/threads`           | GET                | [05](05-runs.md#reads)                            |
 | `/sessions/{session}/stream`            | GET                | [07](07-facts-and-delivery.md#the-session-stream) |
 | `/threads`                              | GET, POST          | [05](05-runs.md#submit-and-accept)                |
-| `/realtime`                             | GET                | [09](09-runtime.md#realtime-preview)              |
-| `/realtime/sessions`                    | POST               | [09](09-runtime.md#realtime-preview)              |
+| `/realtime`                             | GET                | [09](09-runtime.md#realtime-conversations)        |
+| `/realtime/sessions`                    | POST               | [09](09-runtime.md#realtime-conversations)        |
 | `/threads/{thread}`                     | GET, PATCH         | [05](05-runs.md#reads)                            |
 | `/threads/{thread}/archive`             | POST               | [05](05-runs.md#waiting-interrupt-and-fork)       |
 | `/threads/{thread}/runs`                | GET                | [05](05-runs.md#reads)                            |

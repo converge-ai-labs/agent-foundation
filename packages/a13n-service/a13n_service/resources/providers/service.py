@@ -478,7 +478,7 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
             if protocol.provider == definition.type:
                 described.model_apis.append(api)
                 described.model_api_labels[api] = protocol.label
-                described.settings_schemas[api] = {"type": "object", "properties": {}, "additionalProperties": False}
+                described.settings_schemas[api] = dict(registry.model_settings[api])
         described.catalog_providers = list(definition.catalog_providers)
     elif isinstance(definition, WebProviderDefinition):
         described.operations = list(web_operations(definition))

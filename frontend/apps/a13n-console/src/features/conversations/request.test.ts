@@ -213,12 +213,12 @@ it("only enables interaction for the matching Console session and a human-driven
   ).toBe(false);
 });
 
-it("treats a realtime start as session metadata, including historical placeholder payloads", () => {
+it("treats a realtime start as session metadata, without an Inbox entry", () => {
   expect(
     runRequest(
       run({
-        options: { labels: { "realtime-session": "connection" } },
-        input: message("Started a realtime conversation."),
+        trigger: "realtime" as const,
+        input: null,
       }),
     ),
   ).toEqual({ kind: "realtime_session", text: "" });

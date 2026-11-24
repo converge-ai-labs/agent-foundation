@@ -277,9 +277,10 @@ def model_settings(
     if (protocol := PROTOCOLS.get(config.model_api)) is not None:
         if protocol.provider != definition.type:
             raise invalid("config.model_api", f"{config.model_api} requires a {protocol.provider} provider")
-        if config.defaults() or settings:
-            raise invalid(field, "Realtime models currently use their provider defaults")
-        return {}
+        return cast(
+            ModelSettings,
+            registry.check_model_settings(config.model_api, {**config.defaults(), **settings}, field=field),
+        )
     _check_api(definition, config)
     effective = registry.check_model_settings(
         config.model_api, effective_settings(config.model_api, config.defaults(), settings), field=field

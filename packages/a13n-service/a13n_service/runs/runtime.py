@@ -31,6 +31,7 @@ from a13n_service.providers.traces import TraceProvider
 from a13n_service.resources.builtin_skills import BuiltinPackage, BuiltinSkillName
 from a13n_service.runs.admission import AdmissionPolicy
 from a13n_service.runs.mailbox import Mailbox
+from a13n_service.runs.realtime_transport import Bridge
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Access
 from a13n_service.tenancy.workspaces import WorkspaceCreated
@@ -43,7 +44,6 @@ if TYPE_CHECKING:
     from a13n_service.runs.environments.clients.sessions import Sessions
     from a13n_service.runs.environments.contexts import Contexts
     from a13n_service.runs.environments.monitoring.proxy import Proxy
-    from a13n_service.runs.realtime import Channel, ConnectionTicket
     from a13n_service.runs.tool_executions.owner import Executions
 
 
@@ -81,7 +81,7 @@ class Runtime:
     has_environment_subscribers: bool = False
     # The backend trace queries read; None when tracing is off.
     traces: TraceProvider | None = None
-    realtime_channels: dict[str, Channel] | None = field(default=None, repr=False)
+    realtime_bridge: Bridge | None = field(default=None, repr=False)
 
     @cached_property
     def post_run_tasks(self) -> set[asyncio.Task[None]]:
@@ -117,10 +117,6 @@ class Runtime:
     @cached_property
     def seal_publish_tasks(self) -> set[asyncio.Task[None]]:
         return set()
-
-    @cached_property
-    def realtime_tickets(self) -> dict[str, ConnectionTicket]:
-        return {}
 
     @cached_property
     def mailbox(self) -> Mailbox:

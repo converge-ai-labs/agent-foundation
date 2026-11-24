@@ -198,7 +198,7 @@ export function NewConversation() {
   const realtime = useRealtimeAvailability({
     agentId: selected?.id,
     revisionId,
-  });
+  }).data;
   return (
     <div className={styles.startPage}>
       <div className={styles.startColumn}>

@@ -25,7 +25,6 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 | `server.request_timeout`   | `A13N_SERVER__REQUEST_TIMEOUT`   | 数值          | maximum=60; exclusiveMinimum=0; default=10      |
 | `server.readiness_timeout` | `A13N_SERVER__READINESS_TIMEOUT` | 数值          | maximum=30; exclusiveMinimum=0; default=2       |
 | `server.shutdown_timeout`  | `A13N_SERVER__SHUTDOWN_TIMEOUT`  | 整数          | minimum=1; maximum=300; default=15              |
-| `server.realtime_preview`  | `A13N_SERVER__REALTIME_PREVIEW`  | 布尔值        | default=false                                   |
 | `server.tls_certificate`   | `A13N_SERVER__TLS_CERTIFICATE`   | 字符串或 null | format="path"; default=null                     |
 | `server.tls_key`           | `A13N_SERVER__TLS_KEY`           | 字符串或 null | format="path"; default=null                     |
 
@@ -166,6 +165,11 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 | 设置                             | 环境变量                               | 类型 / 选项 | 约束与默认值                                     |
 | -------------------------------- | -------------------------------------- | ----------- | ------------------------------------------------ |
+| `worker.realtime_slots`          | `A13N_WORKER__REALTIME_SLOTS`          | 整数        | minimum=1; maximum=1024; default=8               |
+| `worker.realtime_call_limit`     | `A13N_WORKER__REALTIME_CALL_LIMIT`     | 整数        | minimum=1; default=32                            |
+| `worker.realtime_pcm_limit`      | `A13N_WORKER__REALTIME_PCM_LIMIT`      | 整数        | minimum=1; default=8                             |
+| `worker.realtime_accepted_limit` | `A13N_WORKER__REALTIME_ACCEPTED_LIMIT` | 整数        | minimum=1; default=16                            |
+| `worker.realtime_ticket_limit`   | `A13N_WORKER__REALTIME_TICKET_LIMIT`   | 整数        | minimum=1; default=128                           |
 | `worker.slots`                   | `A13N_WORKER__SLOTS`                   | 整数        | minimum=1; maximum=1024; default=128             |
 | `worker.max_attempts`            | `A13N_WORKER__MAX_ATTEMPTS`            | 整数        | minimum=1; maximum=20; default=3                 |
 | `worker.lease_seconds`           | `A13N_WORKER__LEASE_SECONDS`           | 整数        | minimum=3; maximum=300; default=30               |
