@@ -31,6 +31,9 @@ it("does not refresh HTTP queries for presentation events, and routes usage and 
   expect(
     focusRefresh(event("CUSTOM", { name: "a13n.harness_ui.checkpoint" })),
   ).toBe("checkpoint");
+  expect(
+    focusRefresh(event("CUSTOM", { name: "a13n.harness_ui.root_settled" })),
+  ).toBe("lifecycle");
   expect(focusRefresh(event("RUN_FINISHED"))).toBe("lifecycle");
   expect(focusRefresh({ kind: "reset" } as FocusFrame)).toBe("reconcile");
 });
@@ -125,4 +128,30 @@ it("reconciles control truth without refetching immutable pages, including an in
       ?.isInvalidated,
   ).toBe(false);
   client.clear();
+});
+
+it("dispatches lifecycle refreshes within 25ms and upgrades slower pending timers", async () => {
+  vi.useFakeTimers();
+  const client = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity } },
+  });
+  const usageFn = vi.fn(async () => ({}));
+  const options = { queryKey: ["thread", "one", "usage"], queryFn: usageFn };
+  await client.fetchQuery(options);
+  const unsubscribe = new QueryObserver(client, options).subscribe(() => {});
+  try {
+    refreshThread(client, "one", "usage");
+    await vi.advanceTimersByTimeAsync(10);
+    expect(usageFn).toHaveBeenCalledTimes(1);
+
+    // Lifecycle upgrades the pending 200ms usage timer to 25ms.
+    refreshThread(client, "one", "lifecycle");
+    await vi.advanceTimersByTimeAsync(24);
+    expect(usageFn).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(usageFn).toHaveBeenCalledTimes(2);
+  } finally {
+    unsubscribe();
+    client.clear();
+  }
 });

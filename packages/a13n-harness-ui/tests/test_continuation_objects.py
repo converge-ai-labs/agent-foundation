@@ -143,3 +143,25 @@ async def test_wrong_payload_owner_and_unknown_format_are_rejected(tmp_path):
         )
         with pytest.raises(ObjectIntegrityError):
             await read_continuation(store.objects, unsupported.ref)
+
+
+async def test_continuation_publication_skips_message_history_decoding_and_roundtrips(tmp_path, monkeypatch):
+    from a13n_harness import state as state_module
+
+    value = checkpoint()
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        archive = await seal_display(store.objects, value.display)
+        prepared = value.model_copy(update={"display": archive})
+        decode_calls = 0
+        original_decode = state_module.decode_messages
+
+        def counted_decode(raw):
+            nonlocal decode_calls
+            decode_calls += 1
+            return original_decode(raw)
+
+        monkeypatch.setattr(state_module, "decode_messages", counted_decode)
+        ref = await publish_continuation(store.objects, prepared)
+        assert decode_calls == 0
+        restored = await read_continuation(store.objects, ref, include_display=True)
+        assert restored == prepared

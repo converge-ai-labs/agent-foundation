@@ -198,3 +198,33 @@ it("distinguishes pending steering without starting another preparation indicato
   );
   expect(screen.queryByRole("status")).toBeNull();
 });
+
+it("dismisses working feedback when activity is inactive and durable lastExecution settled the receipt", () => {
+  const settledExecution: Schema<"ThreadExecution"> = {
+    execution_id: "receipt-one",
+    status: "completed",
+    submitted_at: "2026-09-30T00:00:00Z",
+    completed_at: "2026-09-30T00:00:01Z",
+    run_id: "run-one",
+  };
+  const view = render(
+    <RunActivity
+      activity={{ state: "inactive" }}
+      submission={accepted}
+      operation={operation("running")}
+      lastExecution={settledExecution}
+    />,
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+
+  // An earlier settled receipt must not hide an in-flight newer receipt.
+  view.rerender(
+    <RunActivity
+      activity={{ state: "inactive" }}
+      submission={accepted}
+      operation={operation("running")}
+      lastExecution={{ ...settledExecution, execution_id: "receipt-older" }}
+    />,
+  );
+  expect(screen.getByRole("status").textContent).toBe("Working…");
+});

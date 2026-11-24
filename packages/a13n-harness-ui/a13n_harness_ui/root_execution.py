@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import errno
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -40,7 +40,7 @@ from anyio import CancelScope, get_cancelled_exc_class, to_thread
 from opentelemetry.trace import StatusCode
 from pydantic_ai import RunContext, ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent
+from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent, ModelMessage
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
 from a13n_harness_ui.bot_environments import BotEnvironmentsCapability
@@ -108,7 +108,7 @@ from a13n_harness_ui.storage.continuations import publish_continuation, remove_c
 from a13n_harness_ui.storage.contracts import StoredDeferredInput, ThreadReadModel
 from a13n_harness_ui.storage.display import DisplayArchive, seal_display
 from a13n_harness_ui.storage.read_models import project_continuation
-from a13n_harness_ui.storage.tool_executions import completion_ids, execution_composition
+from a13n_harness_ui.storage.tool_executions import completion_ids, execution_composition, state_completion_ids
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
 from a13n_harness_ui.thread_files import ThreadFiles
@@ -368,8 +368,11 @@ class RootRunExecutor:
             )
             if browser_id is not None:
                 captured = captured.model_copy(update={"origin_browser_id": browser_id})
-            envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
-            published = PublishedRunComposition(value=captured, reference=envelope.ref)
+            if captured != published.value:
+                envelope = await self._store.objects.publish_model(
+                    object_kind=ObjectKind.run_composition, value=captured
+                )
+                published = PublishedRunComposition(value=captured, reference=envelope.ref)
         browser_binding = None
         browser_unavailable = "Host browser is unavailable."
         if published.value.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:
@@ -449,7 +452,11 @@ class RootRunExecutor:
                 # an ordinary prompt can never reactivate a checkpointed Goal.
                 selected_goal = saved_goal(previous_state) if admission.prompt is None else goal
                 state, saved = detach_display_history(previous_state)
-                display = DisplayHistoryCollector(state.message_history, archive.tail if archive is not None else saved)
+                saved_tail = archive.tail if archive is not None else saved
+                history_for_display = (
+                    state.message_history if saved_tail is None or saved_tail.pending_response is not None else ()
+                )
+                display = DisplayHistoryCollector(history_for_display, saved_tail)
                 # The collector owns inspection history during execution. Native
                 # snapshots need not repeatedly decode and serialize that history;
                 # _select_state reattaches it at every durable root boundary.
@@ -475,7 +482,9 @@ class RootRunExecutor:
                     state, steers = strict_inputs.prepare_cut(state, primary=True)
                 history = await to_thread.run_sync(lambda: state.message_history)
                 frozen = display.capture(history)
-                excerpt = await to_thread.run_sync(checkpoint_excerpt, thread.excerpt, history)
+                excerpt, completions = await to_thread.run_sync(
+                    lambda h=history: (checkpoint_excerpt(thread.excerpt, h), completion_ids(h))
+                )
                 del history
                 # RootCheckpointCapability joins this operation and its marker
                 # before propagating either native or AnyIO cancellation.
@@ -490,6 +499,7 @@ class RootRunExecutor:
                     display_base=archive,
                     excerpt=excerpt,
                     activity_changed=excerpt != thread.excerpt,
+                    tool_completions=completions,
                 )
                 if selected.status != "selected" or selected.reference is None:
                     assert selected.error is not None
@@ -878,6 +888,12 @@ class RootRunExecutor:
                 )
                 if paused_state is not None:
                     paused_state = terminal_state(paused_state)
+                    paused_history = await to_thread.run_sync(lambda: paused_state.message_history)
+                    paused_display = display.capture(paused_history) if display is not None else None
+                    paused_excerpt, paused_completions = await to_thread.run_sync(
+                        lambda h=paused_history: (checkpoint_excerpt(thread.excerpt, h), completion_ids(h))
+                    )
+                    del paused_history
                     continuation = await self._select_state(
                         thread=thread,
                         superseded=run_checkpoint,
@@ -885,10 +901,11 @@ class RootRunExecutor:
                         memory_positions=reconstructed.memory_cursors.snapshot(),
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=paused_state,
-                        display=display.capture(paused_state.message_history) if display is not None else None,
+                        display=paused_display,
                         display_base=archive,
-                        excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
+                        excerpt=paused_excerpt,
                         activity_changed=True,
+                        tool_completions=paused_completions,
                     )
                 elif interrupted is not None:
                     # The old model request joined without a response. Reuse its
@@ -925,13 +942,14 @@ class RootRunExecutor:
                             if run_error is not None
                             else result.status
                         )
-                        result = result.replace(
-                            state=await goal_capability.finish(
-                                terminal_state(result.state),
-                                status=goal_status,
-                                usage=result.usage,
-                            )
+                        current_state = result.state
+                        updated_state = await goal_capability.finish(
+                            terminal_state(current_state),
+                            status=goal_status,
+                            usage=result.usage,
                         )
+                        if updated_state != current_state:
+                            result = result.replace(state=updated_state)
                     run_completed = stream is not None and result.status == "completed" and run_error is None
                     completed_run_id = stream.run_id if stream is not None and run_completed else None
                     if thread.thread_id == BOT_THREAD_ID and completed_run_id is not None:
@@ -939,6 +957,32 @@ class RootRunExecutor:
                             direct_reply=isinstance(result.output, str) and bool(result.output.strip())
                         ):
                             completed_run_id = None
+                    result_display: DisplayHistory | None = None
+                    result_completions: tuple[str, ...] | None = None
+                    if result.state is not None:
+                        final_result_state = result.state
+                        raw_final = final_result_state.message_history_json
+                        needs_history = display is not None and not (
+                            isinstance(raw_final, bytes) and b'"suspended"' not in raw_final
+                        )
+                        needs_completions = not (
+                            isinstance(raw_final, bytes) and b"tool_execution.completion" not in raw_final
+                        )
+                        if needs_history or needs_completions:
+
+                            def decode_result_metadata() -> tuple[Sequence[ModelMessage], tuple[str, ...]]:
+                                history = final_result_state.message_history
+                                return (
+                                    history if needs_history else (),
+                                    completion_ids(history) if needs_completions else (),
+                                )
+
+                            result_history, result_completions = await to_thread.run_sync(decode_result_metadata)
+                        else:
+                            result_history, result_completions = (), ()
+                        if display is not None:
+                            result_display = display.capture(result_history, completed=run_completed)
+                        del result_history
                     continuation = await self._select_state(
                         thread=thread,
                         superseded=run_checkpoint,
@@ -947,15 +991,12 @@ class RootRunExecutor:
                         accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                         state=result.state,
                         display_base=archive,
-                        display=(
-                            display.capture(result.state.message_history, completed=run_completed)
-                            if display is not None and result.state is not None
-                            else None
-                        ),
+                        display=result_display,
                         deferred=result.deferred,
                         completed_run_id=completed_run_id,
                         excerpt=thread.excerpt if excerpts is None else excerpts.finish(result),
                         activity_changed=excerpts is not None and excerpts.changed,
+                        tool_completions=result_completions,
                     )
                 elif stream is not None and stream_entry_attempted:
                     try:
@@ -967,6 +1008,28 @@ class RootRunExecutor:
                             terminal_state(state),
                             status="cancelled" if isinstance(run_error, get_cancelled_exc_class()) else "failed",
                         )
+
+                        raw_exported = state.message_history_json
+                        needs_history = display is not None and not (
+                            isinstance(raw_exported, bytes) and b'"suspended"' not in raw_exported
+                        )
+                        needs_completions = not (
+                            isinstance(raw_exported, bytes) and b"tool_execution.completion" not in raw_exported
+                        )
+                        if needs_history or needs_completions:
+
+                            def decode_exported_metadata() -> tuple[Sequence[ModelMessage], tuple[str, ...]]:
+                                history = state.message_history
+                                return (
+                                    history if needs_history else (),
+                                    completion_ids(history) if needs_completions else (),
+                                )
+
+                            exported_history, exported_completions = await to_thread.run_sync(decode_exported_metadata)
+                        else:
+                            exported_history, exported_completions = (), ()
+                        exported_display = display.capture(exported_history) if display is not None else None
+                        del exported_history
                         continuation = await self._select_state(
                             thread=thread,
                             superseded=run_checkpoint,
@@ -974,10 +1037,11 @@ class RootRunExecutor:
                             memory_positions=reconstructed.memory_cursors.snapshot(),
                             accepted=deferred_resume if stream is None else stream.pending_deferred_input,
                             state=state,
-                            display=display.capture(state.message_history) if display is not None else None,
+                            display=exported_display,
                             display_base=archive,
                             excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
                             activity_changed=excerpts is not None and excerpts.changed,
+                            tool_completions=exported_completions,
                         )
                 else:
                     continuation = RootContinuationSelection(status="not_available")
@@ -1149,13 +1213,14 @@ class RootRunExecutor:
         completed_run_id: str | None = None,
         superseded: ObjectRef | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
+        tool_completions: tuple[str, ...] | None = None,
     ) -> RootContinuationSelection:
         """Select native state with a display already frozen on the producer's event loop."""
         if state is None:
             return RootContinuationSelection(status="not_available")
         published_ref: ObjectRef | None = None
 
-        def prepare_continuation() -> tuple[Continuation, ThreadReadModel]:
+        def prepare_continuation() -> tuple[Continuation, ThreadReadModel, tuple[str, ...]]:
             continuation = Continuation(
                 harness_release=harness_version,
                 run_composition=composition,
@@ -1173,13 +1238,14 @@ class RootRunExecutor:
                 accepted_input=StoredDeferredInput.capture(accepted, state),
                 created_at=datetime.now(UTC),
             )
-            return continuation, project_continuation(continuation)
+            completions = tool_completions if tool_completions is not None else state_completion_ids(state)
+            return continuation, project_continuation(continuation), completions
 
         try:
             # The request checkpoint joins this work before model execution or
             # cancellation; terminal saving starts only after stream teardown.
             # Join serialization before propagating cancellation.
-            continuation, read_model = await to_thread.run_sync(prepare_continuation)
+            continuation, read_model, completions = await to_thread.run_sync(prepare_continuation)
             # New checkpoint payloads are immutable and privately owned until CAS.
             # Serialization, verification and compression do not need the head gate.
             published_ref = await publish_continuation(self._store.objects, continuation)
@@ -1194,7 +1260,7 @@ class RootRunExecutor:
                     excerpt=excerpt,
                     activity_changed=activity_changed,
                     compaction_settlement=settlement,
-                    tool_completions=completion_ids(state.message_history),
+                    tool_completions=completions,
                 )
                 # Only this Run's previous successful checkpoint is replaceable.
                 # Previous Runs, completions, and finalized restart handoffs stay immutable.

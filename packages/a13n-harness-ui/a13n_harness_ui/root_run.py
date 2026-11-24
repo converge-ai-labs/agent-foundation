@@ -21,6 +21,7 @@ from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
 from a13n_harness.usage import RunUsageSummary
 from a13n_logging import get_logger
+from ag_ui.core import CustomEvent
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -34,7 +35,7 @@ from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.interaction_timeout import timeout_response
-from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
+from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.memory import MemoryOrganizationRun
 from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.notification_origin import notification_origin
@@ -132,6 +133,7 @@ class RootRunCoordinator:
         executor: RootRunExecutor,
         *,
         summary_hub: HarnessUiSummaryHub | None = None,
+        live_hub: HarnessUiLiveHub | None = None,
         terminal_retention: int = 256,
         observation: UiObservation | None = None,
         touch_thread: Callable[[str], Awaitable[None]] | None = None,
@@ -156,6 +158,7 @@ class RootRunCoordinator:
         self._touch_thread = touch_thread
         self._save_execution = save_execution
         self._summary_hub = summary_hub
+        self._live_hub = live_hub
         self._notify = notify
         self._on_settled = on_settled
         self._on_human_admitted = on_human_admitted
@@ -1089,6 +1092,31 @@ class RootRunCoordinator:
                 self._notify(operation.receipt.thread_id, notice)
             except Exception:
                 pass  # Optional delivery cannot change execution settlement.
+        if (
+            self._live_hub is not None
+            and not operation.observation_only
+            and operation.run_id is not None
+            and operation.status not in (RootOperationStatus.preparing, RootOperationStatus.running)
+        ):
+            try:
+                await self._live_hub.publish(
+                    run_kind="root",
+                    root_thread_id=operation.receipt.thread_id,
+                    parent_thread_id=None,
+                    thread_id=operation.receipt.thread_id,
+                    run_id=operation.run_id,
+                    events=(
+                        CustomEvent(
+                            name="a13n.harness_ui.root_settled",
+                            value={
+                                "receipt_id": operation.receipt.receipt_id,
+                                "status": operation.status.value,
+                            },
+                        ),
+                    ),
+                )
+            except Exception:
+                pass
         if self._summary_hub is None:
             return
         try:

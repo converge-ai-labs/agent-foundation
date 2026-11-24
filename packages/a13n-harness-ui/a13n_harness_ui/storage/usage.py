@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from functools import cache
+from functools import cache, lru_cache
 from time import monotonic
 from typing import TYPE_CHECKING, Annotated, Literal
 
@@ -223,13 +223,13 @@ class _Aggregation:
         self,
         sequence: int,
         descendant: bool,
-        payload: str,
+        payload: str | UsageRecord,
         observed: datetime,
         observed_through: datetime,
         recent_sequence: int | None,
         configured: str | None = None,
     ) -> None:
-        record = _RECORD.validate_json(payload)
+        record = _RECORD.validate_json(payload) if isinstance(payload, str) else payload
         observed = observed.replace(tzinfo=UTC)
         observed_through = observed_through.replace(tzinfo=UTC)
         self.first = observed if self.first is None else min(self.first, observed)
@@ -305,6 +305,93 @@ class _Aggregation:
             ),
             other_groups=self.other_groups.view(),
         )
+
+
+@lru_cache(maxsize=4096)
+def _decode_usage_row(payload_json: str) -> tuple[datetime | None, tuple[UsageRecord, ...]]:
+    """Decode one immutable JSON payload string into frozen usage contributions."""
+    if '"kind":"snapshot"' in payload_json[:64] or '"kind": "snapshot"' in payload_json[:64]:
+        try:
+            stored = _StoredSnapshot.model_validate_json(payload_json)
+            return stored.observed_through, stored.snapshot.records
+        except ValueError:
+            pass
+    return None, (_RECORD.validate_json(payload_json),)
+
+
+def _latest_root_from_rows(
+    raw_rows: list[tuple[int, str]],
+    *,
+    run_id: str | None,
+) -> ModelUsageRecord | None:
+    seen: set[str] = set()
+    latest: ModelUsageRecord | None = None
+    for _, payload_json in raw_rows:
+        _, records = _decode_usage_row(payload_json)
+        for record in records:
+            if record.record_id in seen:
+                continue
+            seen.add(record.record_id)
+            if (
+                isinstance(record, ModelUsageRecord)
+                and record.source == "agent"
+                and record.usage_status != "unavailable"
+                and (run_id is None or record.run_id == run_id)
+            ):
+                latest = record
+    return latest
+
+
+def _build_usage_snapshot(
+    thread_id: str,
+    raw_rows: list[tuple[int, bool, str, datetime, datetime | None]],
+    recipe_rows: list[tuple[str, str | None, str | None]],
+    model_identities: Mapping[str, tuple[str, str]] | None,
+) -> ThreadUsageView:
+    catalog = get_current_pricing_catalog()
+
+    @cache
+    def display_name(route: str) -> str:
+        entry = configured_price_entry(catalog, route)
+        return (entry.key if entry else route).replace(":", "/", 1)
+
+    recipes = {recipe_id: (model_id, route) for recipe_id, model_id, route in recipe_rows}
+    deduped: list[tuple[int, bool, UsageRecord, datetime, datetime]] = []
+    seen: set[str] = set()
+    run_last_seq: dict[str, int] = {}
+    for sequence, descendant, payload_json, observed_at, extracted_through in raw_rows:
+        decoded_through, records = _decode_usage_row(payload_json)
+        observed_through = extracted_through if extracted_through is not None else decoded_through
+        effective_through = observed_through if observed_through is not None else observed_at
+        for record in records:
+            if record.record_id in seen:
+                continue
+            seen.add(record.record_id)
+            deduped.append((sequence, descendant, record, observed_at, effective_through))
+            previous_seq = run_last_seq.get(record.run_id)
+            if previous_seq is None or sequence > previous_seq:
+                run_last_seq[record.run_id] = sequence
+
+    recent_runs = dict(sorted(run_last_seq.items(), key=lambda item: (-item[1], item[0]))[:_GROUPS])
+    models = dict(model_identities or {})
+    aggregate = _Aggregation()
+    for sequence, descendant, record, observed_at, effective_through in deduped:
+        configured_id: str | None = None
+        if isinstance(record, ModelUsageRecord) and record.model_id is not None:
+            model_id, route = recipes.get(record.model_id, (None, None))
+            configured_id = model_id
+            if model_id and route and model_id not in models:
+                models[model_id] = (display_name(route), route)
+        aggregate.add(
+            sequence,
+            descendant,
+            record,
+            observed_at,
+            effective_through,
+            recent_runs.get(record.run_id),
+            configured=configured_id,
+        )
+    return aggregate.view(thread_id, models)
 
 
 def _contributions(root_id: str | Select[tuple[str]], *, root_only: bool = False):
@@ -624,74 +711,75 @@ class ThreadUsageRepository:
 
     async def latest_root_request(self, *, thread_id: str, run_id: str | None = None) -> ModelUsageRecord | None:
         """Return the latest primary root request with reported usage for context occupancy."""
-        facts = _contributions(thread_id, root_only=True)
-        query = select(facts.c.payload).where(
-            facts.c.descendant.is_(False),
-            func.json_extract(facts.c.payload, "$.kind") == "model",
-            func.coalesce(func.json_extract(facts.c.payload, "$.source"), "agent") == "agent",
-            func.coalesce(func.json_extract(facts.c.payload, "$.usage_status"), "complete") != "unavailable",
-        )
-        if run_id is not None:
-            query = query.where(func.json_extract(facts.c.payload, "$.run_id") == run_id)
         async with short_session(self._sessions) as session:
-            payload = await session.scalar(query.order_by(facts.c.sequence.desc(), facts.c.ordinal.desc()).limit(1))
-        return None if payload is None else ModelUsageRecord.model_validate_json(payload)
+            raw_rows = [
+                (int(seq), str(payload))
+                for seq, payload, _ in (
+                    await session.execute(
+                        select(
+                            ThreadUsageRecord.sequence,
+                            ThreadUsageRecord.payload_json,
+                            type_coerce(
+                                func.json_extract(ThreadUsageRecord.payload_json, "$.observed_through"),
+                                DateTime(timezone=True),
+                            ).label("observed_through"),
+                        )
+                        .where(
+                            ThreadUsageRecord.root_thread_id == thread_id,
+                            ThreadUsageRecord.descendant.is_(False),
+                        )
+                        .order_by(ThreadUsageRecord.sequence)
+                    )
+                ).all()
+            ]
+        if not raw_rows:
+            return None
+        return await to_thread.run_sync(lambda: _latest_root_from_rows(raw_rows, run_id=run_id))
 
     async def snapshot(
         self, *, thread_id: str, model_identities: Mapping[str, tuple[str, str]] | None = None
     ) -> ThreadUsageView:
         """Rebuild bounded groups in a pinned read transaction; no stale cross-process cache."""
-        catalog = await to_thread.run_sync(get_current_pricing_catalog)
-
-        @cache
-        def display_name(route: str) -> str:
-            entry = configured_price_entry(catalog, route)
-            return (entry.key if entry else route).replace(":", "/", 1)
-
         async with short_session(self._sessions) as session:
             # aiosqlite's legacy transaction mode does not BEGIN for SELECT statements.
             await session.execute(text("BEGIN"))
             root_id = await self._root_id(session, thread_id)
             if root_id != thread_id:
                 raise ValueError("Thread usage is available for root Threads.")
-            # Both recent-Run selection and totals consume the same de-duplicated
-            # facts. Materialize once within this statement rather than flattening
-            # and sorting the complete family again in a second query.
-            facts = select(_contributions(root_id)).cte("selected_usage").prefix_with("MATERIALIZED")
-            run_id = func.json_extract(facts.c.payload, "$.run_id")
-            recent = (
-                select(run_id.label("run_id"), func.max(facts.c.sequence).label("last_sequence"))
-                .group_by(run_id)
-                .order_by(func.max(facts.c.sequence).desc(), run_id)
-                .limit(_GROUPS)
-                .cte("recent_usage_runs")
-            )
-            models = dict(model_identities or {})
-            aggregate = _Aggregation()
-            rows = await session.stream(
-                select(
-                    facts.c.sequence,
-                    facts.c.descendant,
-                    facts.c.payload,
-                    facts.c.observed_at,
-                    facts.c.observed_through,
-                    recent.c.last_sequence,
-                    UsageModelRecord.model_id,
-                    UsageModelRecord.route,
-                )
-                .outerjoin(recent, run_id == recent.c.run_id)
-                .outerjoin(
-                    UsageModelRecord, UsageModelRecord.recipe_id == func.json_extract(facts.c.payload, "$.model_id")
-                )
-                .order_by(facts.c.sequence, facts.c.ordinal)
-            )
-            async for batch in rows.partitions(_BATCH):
-                for row in batch:
-                    *fact, model_id, route = row
-                    if model_id and route and model_id not in models:
-                        models[model_id] = (display_name(route), route)
-                    aggregate.add(*fact, configured=model_id)
-            return aggregate.view(thread_id, models)
+            raw_rows = [
+                (int(seq), bool(desc), str(payload), obs, obs_through)
+                for seq, desc, payload, obs, obs_through in (
+                    await session.execute(
+                        select(
+                            ThreadUsageRecord.sequence,
+                            ThreadUsageRecord.descendant,
+                            ThreadUsageRecord.payload_json,
+                            ThreadUsageRecord.observed_at,
+                            type_coerce(
+                                func.json_extract(ThreadUsageRecord.payload_json, "$.observed_through"),
+                                DateTime(timezone=True),
+                            ).label("observed_through"),
+                        )
+                        .where(ThreadUsageRecord.root_thread_id == root_id)
+                        .order_by(ThreadUsageRecord.sequence)
+                    )
+                ).all()
+            ]
+            recipe_rows = [
+                (str(recipe_id), model_id, route)
+                for recipe_id, model_id, route in (
+                    await session.execute(
+                        select(UsageModelRecord.recipe_id, UsageModelRecord.model_id, UsageModelRecord.route)
+                    )
+                ).all()
+            ]
+        return await to_thread.run_sync(
+            _build_usage_snapshot,
+            thread_id,
+            raw_rows,
+            recipe_rows,
+            model_identities,
+        )
 
     @staticmethod
     async def _root_id(session: AsyncSession, thread_id: str) -> str:

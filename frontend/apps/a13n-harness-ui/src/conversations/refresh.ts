@@ -1,13 +1,17 @@
 import type { Query, QueryClient } from "@tanstack/react-query";
 import { invalidateWorkRead } from "./work";
 
-const scheduled = new WeakMap<Query, ReturnType<typeof setTimeout>>();
+const scheduled = new WeakMap<
+  Query,
+  { timer: ReturnType<typeof setTimeout>; delayMs: number }
+>();
 
 // Summary and focused channels can describe the same transition. Batch observations,
 // and never cancel pagination or an in-flight read to start a duplicate request.
 export function scheduleRefresh(
   client: QueryClient,
   matches: (query: Query) => boolean,
+  delayMs = 200,
 ) {
   const cache = client.getQueryCache();
   for (const query of cache.getAll().filter(matches)) {
@@ -24,10 +28,14 @@ export function scheduleRefresh(
     )
       continue;
     invalidateWorkRead(query);
-    if (scheduled.has(query)) continue;
-    scheduled.set(
-      query,
-      setTimeout(() => {
+    const existing = scheduled.get(query);
+    if (existing) {
+      if (delayMs >= existing.delayMs) continue;
+      clearTimeout(existing.timer);
+    }
+    scheduled.set(query, {
+      delayMs,
+      timer: setTimeout(() => {
         void (async () => {
           try {
             await query.promise;
@@ -42,8 +50,8 @@ export function scheduleRefresh(
             { cancelRefetch: false },
           );
         })();
-      }, 200),
-    );
+      }, delayMs),
+    });
   }
 }
 
@@ -89,16 +97,20 @@ export function refreshThread(
     children: ["work", "children", "child-review", "tool-executions"],
     work: ["work"],
   };
-  scheduleRefresh(client, (query) => {
-    const [kind, id, section] = query.queryKey;
-    // Collection changes are coalesced into scoped activity lookups by summary.
-    if (kind === "threads") return false;
-    if (kind === "child-saved-output")
-      return reason === "children" || reason === "reconcile";
-    return (
-      kind === "thread" &&
-      id === threadId &&
-      (reason === "reconcile" || sections[reason].includes(String(section)))
-    );
-  });
+  scheduleRefresh(
+    client,
+    (query) => {
+      const [kind, id, section] = query.queryKey;
+      // Collection changes are coalesced into scoped activity lookups by summary.
+      if (kind === "threads") return false;
+      if (kind === "child-saved-output")
+        return reason === "children" || reason === "reconcile";
+      return (
+        kind === "thread" &&
+        id === threadId &&
+        (reason === "reconcile" || sections[reason].includes(String(section)))
+      );
+    },
+    reason === "lifecycle" ? 25 : 200,
+  );
 }

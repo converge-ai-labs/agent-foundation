@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+import json
+from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
 from a13n_harness import HarnessState
 from anyio import to_thread
-from pydantic import Field, RootModel
+from pydantic import Field, RootModel, model_serializer
 
 from a13n_harness_ui.display_history import detach_display_history
 from a13n_harness_ui.errors import ObjectIntegrityError
@@ -27,6 +28,26 @@ class ContinuationState(StoredContract):
     schema_version: Literal["1"] = "1"
     checkpoint_id: str
     harness_state: HarnessState
+
+    @model_serializer(mode="plain")
+    def _serialize(self) -> dict[str, Any]:
+        state = self.harness_state
+        if (
+            type(state) is not HarnessState
+            or not isinstance(state.message_history_json, bytes)
+            or not isinstance(state.environment_states_json, bytes)
+        ):
+            state_payload = state.model_dump(mode="json")
+        else:
+            state_payload = state.model_dump(mode="json", exclude={"message_history", "environment_states"})
+            state_payload["message_history"] = json.loads(state.message_history_json)
+            state_payload["environment_states"] = json.loads(cast(bytes, state.environment_states_json))
+        return {
+            **(self.model_extra or {}),
+            "schema_version": self.schema_version,
+            "checkpoint_id": self.checkpoint_id,
+            "harness_state": state_payload,
+        }
 
 
 class ContinuationDisplay(StoredContract):
@@ -59,9 +80,9 @@ async def read_continuation(
         state = native.harness_state
         archive = None
         if include_display and stored.display is not None:
-            display_payload = await objects.read_model(stored.display, ContinuationDisplay)
-            _check_owner(stored.checkpoint_id, display_payload.checkpoint_id)
-            archive = display_payload.archive
+            display = await objects.read_model(stored.display, ContinuationDisplay)
+            _check_owner(stored.checkpoint_id, display.checkpoint_id)
+            archive = display.archive
     return Continuation.model_validate(
         {**_metadata(stored), "harness_state": state, "display": archive, "display_loaded": include_display},
         extra="allow",
@@ -84,12 +105,10 @@ async def publish_continuation(objects: ImmutableObjectStore, value: Continuatio
     if archive is None and legacy_display is not None:
         archive = DisplayArchive(tail=legacy_display)
     checkpoint_id = uuid4().hex
-    native_ref = (
-        await objects.publish_model(
-            object_kind=ObjectKind.continuation_state,
-            value=ContinuationState(checkpoint_id=checkpoint_id, harness_state=state),
-        )
-    ).ref
+    native = await objects.publish_model(
+        object_kind=ObjectKind.continuation_state,
+        value=ContinuationState(checkpoint_id=checkpoint_id, harness_state=state),
+    )
     display_ref = None
     if archive is not None:
         display_ref = (
@@ -99,7 +118,7 @@ async def publish_continuation(objects: ImmutableObjectStore, value: Continuatio
             )
         ).ref
     manifest = ReferencedContinuation.model_validate(
-        {**_metadata(value), "checkpoint_id": checkpoint_id, "native_state": native_ref, "display": display_ref},
+        {**_metadata(value), "checkpoint_id": checkpoint_id, "native_state": native.ref, "display": display_ref},
         extra="allow",
     )
     return (await objects.publish_model(object_kind=ObjectKind.continuation, value=manifest)).ref

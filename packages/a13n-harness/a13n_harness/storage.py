@@ -76,8 +76,15 @@ class RunStorage:
             return state.model_copy(update={"refs": tuple(refs.values())})
         return HarnessState.model_validate({**value, "refs": [ref.model_dump() for ref in refs.values()]})
 
-    async def resolve_messages(self, messages: Sequence[ModelMessage]) -> tuple[ModelMessage, ...]:
+    async def resolve_messages(
+        self,
+        messages: Sequence[ModelMessage],
+        *,
+        raw_json: bytes | None = None,
+    ) -> tuple[ModelMessage, ...]:
         """The messages with every saved content part loaded again."""
+        if raw_json is not None and b"a13n.stored" not in raw_json:
+            return tuple(messages)
         value = ModelMessagesTypeAdapter.dump_python(list(messages), mode="json")
         if not await self._resolve(value):
             return tuple(messages)
