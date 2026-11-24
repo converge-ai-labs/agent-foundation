@@ -8,6 +8,7 @@ import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotSubmit
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+from a13n_harness_ui.notification_origin import notification_origin
 from a13n_harness_ui.thread_capability import ThreadToolController
 from anyio import Event, fail_after
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -66,11 +67,13 @@ async def test_intermediate_text_notifies_before_slow_work_and_survives_terminal
             input_id = (await app._store.bot.inputs())[-1].input_id
         else:
             input_id = "visible-prose"
-            await bot.submit(BotSubmit(input_id=input_id, text="Report important progress"))
+            with notification_origin("browser_" + "a" * 32):
+                await bot.submit(BotSubmit(input_id=input_id, text="Report important progress"))
         with fail_after(10):
             await started.wait()
             await notified.wait()
         assert [notice.brief for notice in notices] == ["Important progress before slow work."]
+        assert notices[0].origin_browser_id == (None if automatic else "browser_" + "a" * 32)
         before = await app._threads.get(BOT_THREAD_ID)
         assert before.unread and before.read_state_version == 1
         assert (await app._root_runs.active(BOT_THREAD_ID)) is not None
@@ -102,6 +105,7 @@ async def test_intermediate_text_notifies_before_slow_work_and_survives_terminal
         await bot.submit(BotSubmit(input_id="later", text="Next short task"))
         assert (await consumed(app, "later")).state == "completed"
         assert [notice.brief for notice in notices][-1] == "Another result."
+        assert notices[-1].origin_browser_id is None
         assert len(notices) == (2 if ending == "silent" else 3)
 
 

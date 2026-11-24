@@ -220,8 +220,8 @@
   "New message from Bot": "Bot 给你发了消息",
   "Bot needs your response": "Bot 需要你的回应",
   "View message": "查看消息",
-  "Notify me about": "通知范围",
-  "Notification scope": "通知范围",
+  "Notify me about": "通知类型",
+  "Notification scope": "通知类型",
   "Bot only": "只 Bot",
   "Applies to in-app notices and background notifications on this browser.": "同时适用于当前浏览器的站内提示和后台通知。",
   "Enable system alerts on this browser. Previews may appear on your lock screen.": "在当前浏览器启用系统通知。消息预览可能出现在锁屏上。",
@@ -3634,5 +3634,9 @@
   "Dismiss suggestion": "关闭建议",
   "Dismiss suggestion (Esc)": "关闭建议（Esc）",
   "Let agents post to Inbox": "允许智能体发送到收件箱",
-  "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "智能体会把结果、问题和重要进展发到收件箱，并会收到相应提醒。关闭后，之后的运行不再提供收件箱工具和提醒；已有消息会保留。"
+  "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "智能体会把结果、问题和重要进展发到收件箱，并会收到相应提醒。关闭后，之后的运行不再提供收件箱工具和提醒；已有消息会保留。",
+  "Receive notifications from": "接收范围",
+  "My runs are those started from this browser.": "“我的运行”指从此浏览器发起的运行。",
+  "Entire workspace": "整个工作区",
+  "My runs only": "仅我的运行"
 }

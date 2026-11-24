@@ -81,6 +81,7 @@ from a13n_harness_ui.memory import MemoryOrganizationRun
 from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.model_accounts.provenance import MainAccountCapability
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver, SubscriptionSource
+from a13n_harness_ui.notification_origin import origin_browser
 from a13n_harness_ui.observation import (
     phase,
     record_configuration,
@@ -352,6 +353,11 @@ class RootRunExecutor:
             previous_state = await self._store.usage.restore(thread_id=thread_id, state=previous_state)
         else:
             captured = await self._environments.admit(published.value)
+            browser_id = (
+                previous.origin_browser_id if response is not None and previous is not None else origin_browser.get()
+            )
+            if browser_id is not None:
+                captured = captured.model_copy(update={"origin_browser_id": browser_id})
             envelope = await self._store.objects.publish_model(object_kind=ObjectKind.run_composition, value=captured)
             published = PublishedRunComposition(value=captured, reference=envelope.ref)
         browser_binding = None

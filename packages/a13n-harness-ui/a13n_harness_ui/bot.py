@@ -30,6 +30,7 @@ from a13n_harness_ui.connectors.models import SetupOffer
 from a13n_harness_ui.display_history import DisplayPublication, assistant_text
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
+from a13n_harness_ui.notification_origin import origin_browser
 from a13n_harness_ui.notifications import reply_brief
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import LocalStore, ThreadConfigurationMutation
@@ -455,6 +456,7 @@ class BotController:
             receipt_id = receipt_id or (active.receipt.receipt_id if active is not None else None)
             notice = (
                 RootOperationNotice(
+                    origin_browser_id=origin_browser.get(),
                     receipt_id=receipt_id,
                     message_id=message.message_id,
                     status="completed",

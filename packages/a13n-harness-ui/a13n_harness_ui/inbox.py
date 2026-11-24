@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from a13n_harness_ui.inbox_models import InboxGroup, InboxItem, InboxItemMutation, InboxKind, InboxLocation, InboxPage
 from a13n_harness_ui.live import HarnessUiSummaryHub, InboxNotice, RootOperationNotice
+from a13n_harness_ui.notification_origin import origin_browser
 from a13n_harness_ui.notifications import reply_brief
 from a13n_harness_ui.storage.runtime import LocalStore
 from a13n_harness_ui.thread_projection import ThreadProjectionService
@@ -33,7 +34,13 @@ class InboxController:
         )
         if not created:
             return item
-        notice = InboxNotice(item_id=item.item_id, kind=kind, title=title, brief=reply_brief(message) or title)
+        notice = InboxNotice(
+            origin_browser_id=origin_browser.get(),
+            item_id=item.item_id,
+            kind=kind,
+            title=title,
+            brief=reply_brief(message) or title,
+        )
         await self._summaries.publish(kind="inbox", root_thread_id=thread_id, thread_id=thread_id, inbox=notice)
         if self._notify is not None:
             self._notify(thread_id, notice)

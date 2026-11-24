@@ -885,8 +885,11 @@ it("continues with the shared draft and attachments and clears only accepted inp
   const transport = { client: { POST: post } } as unknown as Transport;
   const pending = submitContinuation(draft, transport, "thread-one");
   await submitContinuation(draft, transport, "thread-one");
-  expect(post).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
   expect(post).toHaveBeenCalledWith("/api/threads/{thread_id}/submit", {
+    headers: {
+      "X-Harness-Browser": expect.stringMatching(/^browser_[0-9a-f]{32}$/),
+    },
     params: { path: { thread_id: "thread-one" } },
     body: {
       parts: [

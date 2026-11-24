@@ -33,6 +33,7 @@ from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.memory import MemoryOrganizationRun
 from a13n_harness_ui.model_accounts.models import MainAccountSelection
+from a13n_harness_ui.notification_origin import notification_origin
 from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.restart import GracefulRestart
@@ -685,9 +686,12 @@ class RootRunCoordinator:
         operation: _RootOperation,
         admission: RootRunAdmission,
     ) -> None:
-        with self._observation.operation(
-            "root", thread_id=operation.receipt.thread_id, operation_id=operation.receipt.receipt_id
-        ) as span:
+        with (
+            notification_origin(admission.published.value.origin_browser_id),
+            self._observation.operation(
+                "root", thread_id=operation.receipt.thread_id, operation_id=operation.receipt.receipt_id
+            ) as span,
+        ):
             record_input(
                 admission.prompt if admission.response is None else admission.response,
                 kind="prompt" if admission.response is None else "deferred_response",
