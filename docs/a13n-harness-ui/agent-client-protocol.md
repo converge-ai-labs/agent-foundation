@@ -71,9 +71,11 @@ The `initialize` response advertises `dev.a13n.harness-ui` (`version: 1`) under 
 | `session/update` and `_a13n/usage_report` | Server notifications                               | `usage_update` carries `usageReport` when context size and occupancy are known. Otherwise the server sends `_a13n/usage_report`. Standard ACP clients may ignore the extension.          |
 | `session/prompt` result                   | Response `_meta["dev.a13n.harness-ui"]`            | Carries `finalOutput`, `finalOutputOmitted`, and committed `finalMessage` (`continuationId`, `position`), separating the committed final answer from earlier live commentary.            |
 
+Use a new `turnId` for each prompt where you supply an ID in the same session and connection. The server only tracks the open turn, so the client must prevent reuse.
+
 ### Pass session-scoped stdio MCP servers
 
-Pass stdio MCP entries in `mcpServers` on `session/new` or `session/resume` (they are connection-local and must be sent again after reconnecting). In `--unattended` mode, explicitly declare servers whose tools need no human input under `_meta["dev.a13n.harness-ui"]` in the same request:
+Pass stdio MCP entries in `mcpServers` on `session/new` or `session/resume` (they are connection-local and must be sent again after reconnecting). In `--unattended` mode, list the client-supplied stdio commands you trust to start without a person under `_meta["dev.a13n.harness-ui"]` in the same request. This declaration only permits launch. Each tool call still follows the configured permissions, and MCP servers cannot ask the user for input through elicitation:
 
 ```json
 {

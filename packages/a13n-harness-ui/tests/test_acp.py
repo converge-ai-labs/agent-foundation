@@ -1,4 +1,4 @@
-"""ACP contract tests use real subprocess pipes and an in-process provider fake."""
+"""ACP wire and turn-lifecycle contract tests."""
 
 from __future__ import annotations
 
@@ -8,10 +8,23 @@ import os
 import socket
 import sys
 from contextlib import ExitStack, asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 import yaml
+from a13n_harness.context import AgentContext
+from a13n_harness_ui.acp_server import AcpAgent, _Turn
+from a13n_harness_ui.app import HarnessUiApp
+from a13n_harness_ui.live import LiveSubscription
+from a13n_harness_ui.surfaces import RootRunReceipt
+from acp import Client
+from acp.schema import AgentThoughtChunk, RequestPermissionResponse, TextContentBlock
+from pydantic_ai import DeferredToolRequests, RunContext
+from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.tools import ToolDenied
 
 from .test_interactive import _seed
 
@@ -788,6 +801,122 @@ async def test_steer_and_cancel_exact_open_turn(tmp_path, monkeypatch):
         assert reply["result"]["delivery"] == "not_delivered"
 
 
+def _approval_turn(**app_methods):
+    agent = AcpAgent(cast(HarnessUiApp, SimpleNamespace(**app_methods)))
+    turn = _Turn(
+        "turn", receipt=RootRunReceipt(receipt_id="receipt", thread_id="session", submitted_at=datetime.now(UTC))
+    )
+    agent.turns["session"] = turn
+    return agent, turn
+
+
+async def _request_approval(agent: AcpAgent, turn: _Turn):
+    call = ToolCallPart("example_tool", {}, "call")
+    return await agent._permission_handler(turn)(
+        cast(RunContext[AgentContext], None), DeferredToolRequests(approvals=[call])
+    )
+
+
+@pytest.mark.anyio
+async def test_disconnect_denies_approval_queued_behind_blocked_update():
+    update_started = asyncio.Event()
+    blocked = asyncio.Event()
+
+    async def session_update(*args):
+        update_started.set()
+        await blocked.wait()
+
+    async def wait_for_teardown(*args):
+        await blocked.wait()
+        raise AssertionError("Expected transport teardown to abandon the observer")
+
+    agent, turn = _approval_turn(wait_root_operation=wait_for_teardown)
+    agent.on_connect(cast(Client, SimpleNamespace(session_update=session_update)))
+    turn.notifications.put_nowait(AgentThoughtChunk(content=TextContentBlock(type="text", text="thinking")))
+    events = cast(LiveSubscription, SimpleNamespace(receive=wait_for_teardown))
+    observer = asyncio.create_task(agent._stream("session", turn, events))
+    tasks = [observer]
+    try:
+        async with asyncio.timeout(3):
+            await update_started.wait()
+            approval = asyncio.create_task(_request_approval(agent, turn))
+            tasks.append(approval)
+            await asyncio.sleep(0)  # Queue the approval while the output is blocked.
+            assert turn.notifications.qsize() == 1
+            assert not approval.done()
+            agent.disconnect()
+            assert (await approval).approvals == {"call": ToolDenied()}
+            assert not observer.done()
+            assert not turn.approvals
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_cancel_denies_late_allow_before_app_stops_run():
+    sent = asyncio.Event()
+    late_reply = asyncio.Event()
+    stop_started = asyncio.Event()
+    blocked = asyncio.Event()
+    allow = asyncio.get_running_loop().create_future()
+
+    async def session_update(*args):
+        pass
+
+    async def request_permission(*args):
+        sent.set()
+        response = await allow
+        late_reply.set()
+        return response
+
+    async def cancel_root_operation(*args):
+        stop_started.set()
+        await blocked.wait()
+
+    agent, turn = _approval_turn(cancel_root_operation=cancel_root_operation)
+    agent.on_connect(
+        cast(Client, SimpleNamespace(session_update=session_update, request_permission=request_permission))
+    )
+    approval = asyncio.create_task(_request_approval(agent, turn))
+    tasks = [approval]
+    try:
+        async with asyncio.timeout(3):
+            request = await turn.notifications.get()
+            observer = asyncio.create_task(agent._notify("session", turn, request))
+            tasks.append(observer)
+            await sent.wait()
+            # Make the reply runnable but latch cancellation before yielding to it.
+            allow.set_result(
+                RequestPermissionResponse.model_validate({"outcome": {"outcome": "selected", "optionId": "allow-once"}})
+            )
+            await agent.cancel("session")
+            assert turn.stopping is not None
+            tasks.append(turn.stopping)
+            await stop_started.wait()
+            await late_reply.wait()
+            assert (await approval).approvals == {"call": ToolDenied()}
+            await observer
+            assert not turn.stopping.done()
+            assert not turn.approvals
+    finally:
+        agent.disconnect()
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_approval_requested_after_disconnect_is_denied_without_queueing():
+    agent, turn = _approval_turn()
+    agent.disconnect()
+    async with asyncio.timeout(3):
+        assert (await _request_approval(agent, turn)).approvals == {"call": ToolDenied()}
+    assert turn.notifications.empty()
+    assert not turn.approvals
+
+
 @pytest.mark.anyio
 async def test_permission_choices_and_cancel_pending_interactive_request(tmp_path, monkeypatch):
     path = await _seed(tmp_path, monkeypatch, shell_review=True)
@@ -828,6 +957,13 @@ async def test_permission_choices_and_cancel_pending_interactive_request(tmp_pat
                 assert (
                     next(f["params"]["requestId"] for f in received if f.get("method") == "$/cancel_request")
                     == permission_id
+                )
+                updates = [frame.get("params", {}).get("update", {}) for frame in received]
+                assert any(
+                    update.get("sessionUpdate") == "tool_call_update"
+                    and update.get("toolCallId") == params["toolCall"]["toolCallId"]
+                    and update.get("status") == "failed"
+                    for update in updates
                 )
                 assert not marker.exists()
                 continue

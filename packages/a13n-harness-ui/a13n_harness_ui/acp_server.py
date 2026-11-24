@@ -88,7 +88,14 @@ class _Turn:
     plan: dict[str, PlanEntry] = field(default_factory=dict)
     run_id: str | None = None
     tool_calls: dict[str, str] = field(default_factory=dict)
-    started_calls: set[str] = field(default_factory=set)
+    open_calls: set[str] = field(default_factory=set)
+    approvals: set[asyncio.Future[ToolApproved | ToolDenied]] = field(default_factory=set)
+
+    def cancel(self) -> None:
+        self.cancel_requested = True
+        for answer in self.approvals:
+            if not answer.done():
+                answer.set_result(ToolDenied())
 
 
 class AcpAgent:
@@ -113,6 +120,7 @@ class AcpAgent:
         # Only the App owns Runs. Stop waiting for their settlement in the
         # transport when no peer remains to receive the result.
         for turn in self.turns.values():
+            turn.cancel()
             if turn.stopping is not None:
                 turn.stopping.cancel()
 
@@ -248,7 +256,7 @@ class AcpAgent:
                 if turn.cancel_requested and not self.disconnected:
                     self._request_stop(turn)
                 result = await self._stream(session_id, turn, watch.events)
-            for call_id in turn.tool_calls.values():
+            for call_id in turn.open_calls:
                 await self.client.session_update(session_id, ToolCallProgress(tool_call_id=call_id, status="failed"))
             if result.status is RootOperationStatus.cancelled:
                 return PromptResponse(stop_reason="cancelled")
@@ -289,12 +297,21 @@ class AcpAgent:
         async def handle(ctx: RunContext[AgentContext], requests: DeferredToolRequests) -> DeferredToolResults:
             approvals = {}
             for call in requests.approvals:
-                if self.disconnected:
+                if self.disconnected or turn.cancel_requested:
                     approvals[call.tool_call_id] = ToolDenied()
                     continue
-                answer = asyncio.get_running_loop().create_future()
+                answer: asyncio.Future[ToolApproved | ToolDenied] = asyncio.get_running_loop().create_future()
+                turn.approvals.add(answer)
                 turn.notifications.put_nowait(_Approval(call, answer))
-                approvals[call.tool_call_id] = await answer
+                try:
+                    decision = await answer
+                except asyncio.CancelledError:
+                    if not turn.cancel_requested:
+                        raise
+                    decision = ToolDenied()
+                finally:
+                    turn.approvals.discard(answer)
+                approvals[call.tool_call_id] = ToolDenied() if turn.cancel_requested else decision
             return DeferredToolResults(
                 approvals=approvals,
                 calls={
@@ -306,38 +323,44 @@ class AcpAgent:
         return handle
 
     async def _ask_approval(self, session_id: str, turn: _Turn, request: _Approval) -> None:
-        if request.answer.done():
+        if request.answer.done() or turn.cancel_requested:
             return
         call = request.call
         answer: ToolApproved | ToolDenied = ToolDenied()
+
+        async def ask() -> ToolApproved | ToolDenied:
+            if turn.cancel_requested:
+                return ToolDenied()
+            raw_input = call.args
+            with suppress(ValueError, TypeError, AssertionError):
+                raw_input = call.args_as_dict()
+            response = await self.client.request_permission(
+                session_id,
+                ToolCallUpdate(tool_call_id=call.tool_call_id, title=call.tool_name, raw_input=raw_input),
+                [
+                    PermissionOption(option_id="allow-once", name="Allow once", kind="allow_once"),
+                    PermissionOption(option_id="reject-once", name="Reject once", kind="reject_once"),
+                ],
+            )
+            outcome = response.outcome
+            if not turn.cancel_requested and outcome.outcome == "selected" and outcome.option_id == "allow-once":
+                return ToolApproved()
+            return ToolDenied()
+
         try:
-            if not self.disconnected:
-                # A fast model can request approval before the live observer sees
-                # the start event. Publish the start here if needed and dedupe it.
-                await self._start_tool_call(session_id, turn, call.tool_call_id, call.tool_name)
-                raw_input = call.args
-                with suppress(ValueError, TypeError, AssertionError):
-                    raw_input = call.args_as_dict()
-                pending = asyncio.create_task(
-                    self.client.request_permission(
-                        session_id,
-                        ToolCallUpdate(tool_call_id=call.tool_call_id, title=call.tool_name, raw_input=raw_input),
-                        [
-                            PermissionOption(option_id="allow-once", name="Allow once", kind="allow_once"),
-                            PermissionOption(option_id="reject-once", name="Reject once", kind="reject_once"),
-                        ],
-                    )
-                )
-                try:
-                    ready, _ = await asyncio.wait((pending, request.answer), return_when=asyncio.FIRST_COMPLETED)
-                    if pending in ready:
-                        outcome = pending.result().outcome
-                        if outcome.outcome == "selected" and outcome.option_id == "allow-once":
-                            answer = ToolApproved()
-                finally:
-                    if not pending.done():
-                        pending.cancel()
-                    await asyncio.gather(pending, return_exceptions=True)
+            # Publish the start before the approval, even if the live event is still queued.
+            await self._start_tool_call(session_id, turn, call.tool_call_id, call.tool_name)
+            if turn.cancel_requested:
+                return
+            pending = asyncio.create_task(ask())
+            try:
+                ready, _ = await asyncio.wait((pending, request.answer), return_when=asyncio.FIRST_COMPLETED)
+                if pending in ready:
+                    answer = pending.result()
+            finally:
+                if not pending.done():
+                    pending.cancel()
+                await asyncio.gather(pending, return_exceptions=True)
         except (ConnectionError, RequestError):
             pass
         finally:
@@ -348,13 +371,14 @@ class AcpAgent:
         turn = self.turns.get(session_id)
         if turn is None or self.disconnected:
             return
-        turn.cancel_requested = True
-        if turn.receipt is not None:
+        if turn.receipt is None:
+            turn.cancel()
+        else:
             self._request_stop(turn)
 
     def _request_stop(self, turn: _Turn) -> asyncio.Task[None]:
         assert turn.receipt is not None
-        turn.cancel_requested = True
+        turn.cancel()
         if turn.stopping is None:
             turn.stopping = asyncio.create_task(self._stop_run(turn.receipt.receipt_id))
         return turn.stopping
@@ -549,11 +573,11 @@ class AcpAgent:
             await self.client.session_update(session_id, update)
 
     async def _start_tool_call(self, session_id: str, turn: _Turn, call_id: str, name: str) -> None:
-        if call_id not in turn.started_calls:
+        if call_id not in turn.open_calls:
             await self.client.session_update(
                 session_id, ToolCallStart(tool_call_id=call_id, title=name, status="in_progress")
             )
-            turn.started_calls.add(call_id)
+            turn.open_calls.add(call_id)
 
     async def _update(self, session_id: str, event: LiveEvent) -> None:
         if event.run_kind != "root":
@@ -576,6 +600,7 @@ class AcpAgent:
                     await self._start_tool_call(session_id, turn, call_id, name)
             elif item.state in {"completed", "failed", "interrupted"}:
                 if (call_id := turn.tool_calls.pop(item.id, None)) is not None:
+                    turn.open_calls.discard(call_id)
                     status = "completed" if item.state == "completed" else "failed"
                     await self.client.session_update(session_id, ToolCallProgress(tool_call_id=call_id, status=status))
         if event.event_type == "CUSTOM":

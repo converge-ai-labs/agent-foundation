@@ -71,9 +71,11 @@ description: 在 Zed 或 JetBrains 中使用 Harness UI 的 ACP v1 Agent，或�
 | `session/update` 与 `_a13n/usage_report` | 服务端通知                                       | 上下文容量和用量已知时，`usage_update` 携带 `usageReport`。否则，服务端发送 `_a13n/usage_report`。标准 ACP 客户端可以忽略此扩展。              |
 | `session/prompt` 响应                    | 响应 `_meta["dev.a13n.harness-ui"]`              | 携带 `finalOutput`、`finalOutputOmitted` 及已提交的 `finalMessage`（`continuationId`、`position`），用于将最终提交答案与先前的实时输出区分开。 |
 
+在同一连接的同一会话中，每次传入 `turnId` 时都要使用新 ID。服务端只跟踪当前轮次，由客户端保证 ID 不重复。
+
 ### 传入会话级 stdio MCP 服务
 
-可在 `session/new` 或 `session/resume` 的 `mcpServers` 中传入 stdio MCP 配置（仅在当前连接有效，重连后需重新传入）。在 `--unattended` 模式下，需在同一请求的 `_meta["dev.a13n.harness-ui"]` 中显式声明无需人工输入的服务：
+可在 `session/new` 或 `session/resume` 的 `mcpServers` 中传入 stdio MCP 配置（仅在当前连接有效，重连后需重新传入）。在 `--unattended` 模式下，请在同一请求的 `_meta["dev.a13n.harness-ui"]` 中列出你信任且允许无人值守启动的 stdio 服务。此声明仅允许启动服务。工具调用仍遵循配置的权限，MCP 服务也不能通过 elicitation 向用户请求输入：
 
 ```json
 {
