@@ -32,7 +32,7 @@ OUTPUT = EnvironmentOutputPolicy(max_inline_bytes=4096, max_output_bytes=65536, 
 async def _processes(
     root: Path,
     *,
-    powershell: bool = False,
+    powershell: bool | str = False,
     max_wall_time_seconds: float = 10,
     inherit_environment: bool = False,
     allowed_environment_keys: tuple[str, ...] | None = ("SYSTEMROOT", "PATH"),
@@ -40,7 +40,8 @@ async def _processes(
     provider = DIRECT_LOCAL
     profiles = []
     if powershell:
-        executable = shutil.which("pwsh") or shutil.which("powershell")
+        names = (powershell,) if isinstance(powershell, str) else ("pwsh", "powershell")
+        executable = next((found for name in names if (found := shutil.which(name))), None)
         if executable is None:
             pytest.skip("PowerShell is unavailable")
         profiles = [
@@ -252,6 +253,37 @@ async def test_native_powershell_unicode_and_quoting(tmp_path: Path) -> None:
         assert result.output.stdout.inline.decode().strip() == '中文 "quoted"'
         assert result.output.stderr.inline is not None
         assert "中文 failure" in result.output.stderr.inline.decode()
+        assert "CLIXML" not in result.output.stderr.inline.decode()
+
+
+@pytest.mark.parametrize("shell", ["pwsh", "powershell"])
+@pytest.mark.parametrize(
+    ("script", "exit_code"),
+    [
+        ("Write-Output done", 0),
+        ("Write-Error failed", 1),
+        ("Write-Error failed; Write-Output recovered", 0),
+        ("Write-Progress -Activity working -Status half; Write-Output done", 0),
+        ("exit 5", 5),
+        ("Write-Output 'unclosed `", 1),
+    ],
+)
+async def test_native_powershell_exit_status_follows_the_last_statement(
+    tmp_path: Path, shell: str, script: str, exit_code: int
+) -> None:
+    # Windows PowerShell 5.1 and PowerShell 7 must agree, and neither may write CLIXML records.
+    async with _processes(tmp_path, powershell=shell, max_wall_time_seconds=60) as processes:
+        result = await processes.exec(
+            CommandRequest(
+                command=ShellCommand(profile_id="powershell", script=script),
+                environment=CommandEnvironment(
+                    set={key: os.environ[key] for key in ("SYSTEMROOT", "PATH") if key in os.environ}
+                ),
+                output_policy=OUTPUT,
+            )
+        )
+        assert result.status.exit_code == exit_code, (result.status, result.output)
+        assert result.output.stderr.inline is not None
         assert "CLIXML" not in result.output.stderr.inline.decode()
 
 
