@@ -28,8 +28,9 @@ Apply four structural rules to every narrative page:
 2. **Cut implementation details that do not change user action:**
    - Omit internal storage layouts, background garbage-collection mechanics, internal queue plumbing, and repetitive negative disclaimers unless the user must configure or act on them.
    - Keep paragraphs concise (2–4 sentences). Prefer a compact table or bulleted list over a dense wall of prose.
-3. **Keep guides substantive—never compress into hollow stubs:**
-   - Trimming spec bloat must never remove runnable code/CLI/YAML/TOML examples, essential parameter/status tables, or copy-pasteable recipes. Every guide should stand on its own so a developer or operator can complete the task without reading source code.
+3. **Separate task guides from under-the-hood deep dives:**
+   - **Task guides** stay concise and workflow-focused while keeping runnable code/CLI/YAML/TOML examples, essential parameter/status tables, and copy-pasteable recipes—never compress them into hollow stubs, and never clutter them with internal plumbing.
+   - **Architecture deep dives (`architecture.md`)** explain how the system works beneath the surface (state machines, wire framing, hybrid storage, lease fencing, prompt-cache preservation, and multi-layer crash recovery) using Mermaid diagrams and concise invariants grounded in `spec/`. Link to them for curious engineers rather than repeating internals across task pages.
 4. **Target the audience for each surface** (defined in [Documentation Changes](../../../CONTRIBUTING.md#documentation-changes)):
 
 | Surface                                                       | Target audience                             | Primary focus                                                                                                                                   |

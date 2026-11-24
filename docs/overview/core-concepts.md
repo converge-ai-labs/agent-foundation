@@ -52,3 +52,5 @@ When you need to debug tool calls, inspect token usage, or understand failure re
 - **Service:** Groups related threads (including subagent delegations) inside a **session**, and tracks each **run** and worker execution **attempt**. Open Console's Debug view or read [How Service conversations work](../a13n-service/core-concepts.md#understand-execution-when-you-need-it).
 - **Harness UI:** Toggle `Ctrl+O` in the TUI to expand full tool arguments and diffs, run `/usage` and `/subagents` to inspect costs and child work, or view structured traces.
 - **Harness (Python SDK):** Attach [OpenTelemetry and observation hooks](../a13n-harness/observation.md) or convert streams into frontend-ready AG-UI events with [Stream Protocol](../a13n-stream-protocol/index.md).
+
+For internal state machines, storage layouts, lease fencing, and multi-layer crash recovery, continue to the [Platform architecture deep dive](architecture.md).

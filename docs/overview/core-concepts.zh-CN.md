@@ -52,3 +52,5 @@ Service、Harness UI 以及嵌入 Harness 的 Python 应用共享同一套核心
 - **Service：** 将主对话线程与子 agent 委派线程统一归入一个 **session（会话）**，并记录每次 **run（运行）** 及其在 Worker 上的每次 **attempt（执行尝试）**。可在 Console 的 Debug 视图中审查，或参阅 [Service 执行模型](../a13n-service/core-concepts.md#understand-execution-when-you-need-it)。
 - **Harness UI：** 在 TUI 中按 `Ctrl+O` 展开完整的工具参数、输出与 diff，使用 `/usage` 和 `/subagents` 查看用量成本与子任务详情。
 - **Harness (Python SDK)：** 接入 [OpenTelemetry 与观测钩子](../a13n-harness/observation.md)，或使用 [Stream Protocol](../a13n-stream-protocol/index.md) 将运行流转换为前端可直接渲染的 AG-UI 事件。
+
+如需深入了解水面之下的状态机、混合存储模型、租约栅栏与多层故障恢复机制，请继续阅读[平台架构深度解析](architecture.md)。
