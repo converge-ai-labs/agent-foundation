@@ -38,3 +38,21 @@ Standard `mcpServers` accepts stdio entries for `session/new` and `session/resum
 With `--unattended`, an MCP entry is omitted unless the same request includes `_meta["dev.a13n.harness-ui"]` with `version: 1` and `unattendedSafeMcpServers`, an array naming entries declared safe by the client. Duplicate names and names not supplied in `mcpServers` are invalid parameters. For every omitted entry, the response carries `omittedMcpServers: [{"name": "…", "reason": "unattended_safety_not_declared"}]` in the same namespace, and stderr records the omission. Omitted entries do not launch. The declaration permits launching the supplied stdio command only. Tool calls still follow effective permissions, and elicitation remains unavailable.
 
 Unattended operations do not suspend for a human. The effective Tool Surface hides external-input tools and tools with static approval or denied permission, including through Tool Search, CodeAct and children. Configured MCP servers do not require a trust declaration; their tools follow effective permissions. MCP elicitation and browser handback waits are unavailable. Argument-dependent approval and unexpected deferral fail the call without granting approval. A saved pending decision blocks admission. One-shot `run` uses this policy without an opt-out.
+
+## Outbound ACP in local chats
+
+WebUI runs configured external ACP executables on the local Full Control Host without Device bindings. The child inherits the Host environment except the two private MCP bridge variables; on POSIX, an existing `~/.local/bin` is appended when absent. The first local root is `cwd`; supported `additionalDirectories` contains only other project roots. Attachments use Host paths or negotiated image content, without listing internal Thread storage as a project root. System guidance uses standard `systemPrompt` append when advertised, or Antigravity's `_meta.antigravity.systemPrompt.append` when negotiated.
+
+### Discovery, authentication, and options
+
+`GET /api/acp-agents/presets` reports the supported local CLI commands and executable discovery. Opening a saved ACP Agent in Settings probes `initialize` and `session/new`, then closes the test session when supported. Successful session creation means ready; ACP `-32000` means sign-in is required. Advertised protocol login can present URL and form requests. Antigravity also supports terminal login with `agy acp --login`. A chat that receives `acp_auth_required` links to the Agent's authentication settings.
+
+An idle chat prepares its ACP session on the first options read. Discovery exposes the Host tool catalog; tool execution is authorized only while a real prompt owns the session. The initial prompt reuses the matching resident session. WebUI shows the peer's effective model, thinking level, and mode when offered. Standard `configOptions` take precedence; peers with only legacy `models` use `session/set_model`. The peer's option response replaces the current choice list, including thinking levels that change with the model.
+
+The Thread stores the matching session identity and effective option values separately from its continuation. Recovering a session reapplies supported values with the model first. If the peer cannot resume or load, an unprompted session can be recreated with the saved selections; a prompted session cannot silently discard its history. Clear context retires the resident and clears its recoverable identity.
+
+### Active prompts and transcript
+
+Peers can negotiate `_meta.steering.supported` at initialization. `_session/steering` sends the active `sessionId` and `prompt`; `injected` confirms delivery and `promptRequired` does not. WebUI never overlaps two ordinary ACP prompts. If steering is unavailable, WebUI can hold one follow-up in the composer. Normal completion sends it. Failure and ordinary Stop leave the draft paused. **Send now** sends cancellation to the captured receipt and waits for its `cancelled` status before submitting the follow-up; an unknown outcome does not trigger submission.
+
+Live and retained tool rows carry ACP title, kind, status, locations, and content. File locations open through the existing Host file viewer when available. Structured diffs use the standard unified diff viewer; plan and context usage are compact execution observations.

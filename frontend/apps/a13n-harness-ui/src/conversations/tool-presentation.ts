@@ -30,10 +30,41 @@ export type ToolView = {
   editPath?: string;
   provider?: string;
   shellCommand?: string;
+  acp?: Record<string, unknown>;
 };
 export function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+export function acpEdit(
+  acp?: Record<string, unknown>,
+): AppliedEdit | undefined {
+  if (!Array.isArray(acp?.content)) return;
+  const diff = acp.content.find(
+    (item) =>
+      record(item) && item.type === "diff" && typeof item.path === "string",
+  );
+  if (diff)
+    return {
+      file_path: diff.path,
+      before: typeof diff.oldText === "string" ? diff.oldText : "",
+      after: typeof diff.newText === "string" ? diff.newText : "",
+    };
+}
+
+export function acpPaths(acp?: Record<string, unknown>): string[] {
+  return Array.isArray(acp?.locations)
+    ? [
+        ...new Set(
+          acp.locations.flatMap((location) =>
+            record(location) && typeof location.path === "string"
+              ? [location.path]
+              : [],
+          ),
+        ),
+      ]
+    : [];
+}
+
 export function parsed(value: unknown): unknown {
   if (typeof value !== "string") return value;
   try {
@@ -109,12 +140,22 @@ export function describeTool(tool: ToolView) {
     tool.editPath ||
     text(result.file_path) ||
     text(args.file_path) ||
-    (tool.name === "view" ? text(args.path) : "");
+    (tool.acp
+      ? acpPaths(tool.acp)[0] ||
+        text(args.Path) ||
+        text(args.filePath) ||
+        text(args.path)
+      : tool.name === "view"
+        ? text(args.path)
+        : "");
   const shell =
+    tool.acp?.kind === "execute" ||
     tool.name.startsWith("shell_") ||
     (!!tool.shellCommand &&
       ["tool_execution_result", "tool_execution_wait"].includes(tool.name));
-  const command = shell ? text(args.command) || tool.shellCommand || "" : "";
+  const command = shell
+    ? text(args.CommandLine) || text(args.command) || tool.shellCommand || ""
+    : "";
   const status = record(result.status) ? result.status : {};
   const exitCode =
     typeof status.exit_code === "number"
@@ -124,6 +165,7 @@ export function describeTool(tool: ToolView) {
         : undefined;
   const error = record(result.error) ? result.error : {};
   const failed =
+    tool.acp?.status === "failed" ||
     tool.outcome === "failed" ||
     tool.outcome === "denied" ||
     !!tool.failure ||
@@ -420,6 +462,37 @@ export function describeTool(tool: ToolView) {
     generatedLabel = true;
     kind = "edit";
   }
+  if (tool.acp) {
+    switch (tool.acp.kind) {
+      case "read":
+        kind = "file";
+        break;
+      case "edit":
+      case "delete":
+      case "move":
+        kind = "edit";
+        break;
+      case "search":
+        kind = "search";
+        break;
+      case "execute":
+        kind = "shell";
+        break;
+      case "fetch":
+        kind = "web";
+        break;
+      case "think":
+        kind = "code";
+        break;
+    }
+    const title = text(tool.acp.title);
+    if (title) {
+      label = title;
+      generatedLabel = false;
+    }
+    summary = command || path || text(args.toolSummary) || summary;
+    if (label === summary) summary = "";
+  }
   if (
     hasResult &&
     !tool.retry &&
@@ -588,6 +661,7 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
           name: part.tool_name || "Tool",
           input: part.value ?? part.text ?? undefined,
           provider: part.provider ?? undefined,
+          acp: record(part.metadata?.acp) ? part.metadata.acp : undefined,
           inputOmitted: part.value_omitted,
           inputComplete: true,
           stopped: true,
@@ -615,6 +689,7 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
           outcome: part.outcome ?? undefined,
           durationMs: part.duration_ms ?? undefined,
           provider: part.provider ?? view?.provider,
+          acp: record(part.metadata?.acp) ? part.metadata.acp : view?.acp,
           edit:
             part.applied_edit?.before != null &&
             part.applied_edit?.after != null
@@ -623,7 +698,9 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
                   before: part.applied_edit.before,
                   after: part.applied_edit.after,
                 }
-              : undefined,
+              : acpEdit(
+                  record(part.metadata?.acp) ? part.metadata.acp : view?.acp,
+                ),
           images: part.tool_images,
           imageUnavailable: part.tool_image_unavailable,
           editOmitted: part.applied_edit?.omitted,
@@ -801,14 +878,18 @@ export function activitySummary(tools: ToolView[]) {
   else if (kind === "edit")
     title = `File changes - ${files ? count(files, "file") : count(tools.length, "operation")}`;
   else if (kind === "shell") {
-    const commands = tools.filter((tool) => tool.name === "shell_exec").length;
+    const commands = tools.filter(
+      (tool) => tool.name === "shell_exec" || tool.acp?.kind === "execute",
+    ).length;
     title = `${pending ? "Running" : "Ran"} ${commands ? count(commands, "command") : count(tools.length, "process operation")}`;
     if (!pending && (issues.length || shellStatus))
       title = `Shell - ${count(tools.length, "operation")}`;
   } else if (kind === "web")
     title = `${pending ? "Browsing" : "Browsed"} the web - ${count(tools.length, "action")}`;
   else {
-    const reads = tools.filter((tool) => tool.name === "view").length;
+    const reads = tools.filter(
+      (tool) => tool.name === "view" || tool.acp?.kind === "read",
+    ).length;
     const searches = tools.length - reads;
     title = `${pending ? "Exploring" : "Explored"} ${[reads && count(files || reads, "file"), searches && count(searches, "lookup")].filter(Boolean).join(" - ")}`;
   }

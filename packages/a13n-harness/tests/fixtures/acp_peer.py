@@ -21,7 +21,7 @@ SESSION = "fixture-session"
 MODE = sys.argv[1]
 RESIDENT_ONLY = MODE == "ui" and "resident" in sys.argv[2:]
 CATALOG = ["identify", "ask_user_question"] if "questions" in sys.argv[2:] else ["identify"]
-STEERING = not RESIDENT_ONLY and MODE not in {"load", "new-no-system"}
+STEERING = not RESIDENT_ONLY and MODE not in {"load", "new-no-system", "legacy"}
 PENDING = None
 ADDITIONAL = ()
 CONFIG_OPTIONS = [
@@ -75,7 +75,7 @@ def file_content(message):
         for line in lines
         if line.startswith("File path for ACP readers: ")
     )
-    assert any(os.path.commonpath((directory, path)) == directory for directory in ADDITIONAL), ADDITIONAL
+    assert not any(os.path.commonpath((directory, path)) == directory for directory in ADDITIONAL), ADDITIONAL
     content = session_call("fs/read_text_file", path=path)["content"]
     with open(path, encoding="utf-8") as file:
         assert file.read() == content
@@ -120,8 +120,10 @@ for line in sys.stdin:
     ident = frame.get("id")
     if method == "initialize":
         caps = {"mcpCapabilities": {"acp": MODE == "remote", "http": MODE == "http"}, "loadSession": not RESIDENT_ONLY}
-        if MODE == "auth":
+        if MODE in {"auth", "auth-required"}:
             caps["auth"] = {"logout": {}}
+        if MODE == "legacy":
+            caps["_meta"] = {"antigravity": {"systemPrompt": {"append": True}}}
         if STEERING:
             caps["sessionCapabilities"] = {"resume": {}, "systemPrompt": {}, "additionalDirectories": {}}
         send(
@@ -140,9 +142,13 @@ for line in sys.stdin:
                     },
                     {"id": "unknown", "name": "Unknown flow", "type": "env"},
                 ]
-                if MODE == "auth"
+                if MODE in {"auth", "auth-required"}
                 else [],
-                "_meta": {"dev.a13n.harness-ui": {"version": 1}} if STEERING else {},
+                "_meta": {"steering": {"supported": True}}
+                if MODE == "standard-steer"
+                else {"dev.a13n.harness-ui": {"version": 1}}
+                if STEERING
+                else {},
             },
         )
     elif MODE == "auth" and method == "authenticate":
@@ -161,11 +167,15 @@ for line in sys.stdin:
             send(id=ident, error={"code": -32800, "message": "Cancelled"})
     elif MODE == "auth" and method == "logout":
         send(id=ident, result={})
+    elif MODE == "auth-required" and method == "session/new":
+        send(id=ident, error={"code": -32000, "message": "Authentication required"})
     elif method in {"session/new", "session/load", "session/resume"}:
         ADDITIONAL = params.get("additionalDirectories", ())
         assert (method == "session/load") == (MODE == "load")
-        if STEERING and MODE != "ui":
+        if STEERING and MODE not in {"ui", "auth"}:
             assert params["systemPrompt"] == {"mode": "append", "content": [{"type": "text", "text": "guide"}]}
+        if MODE == "legacy":
+            assert params["_meta"]["antigravity"]["systemPrompt"]["append"] == "guide"
         if method == "session/load":
             text("OLD TRANSCRIPT")
         if params.get("mcpServers"):
@@ -189,7 +199,22 @@ for line in sys.stdin:
         response = {"sessionId": SESSION} if method == "session/new" else {}
         if MODE == "ui":
             response["configOptions"] = CONFIG_OPTIONS
+        if MODE == "legacy":
+            response["models"] = {
+                "currentModelId": "a",
+                "availableModels": [{"modelId": "a", "name": "A"}, {"modelId": "b", "name": "B"}],
+            }
         send(id=ident, result=response)
+    elif method == "session/set_model" and MODE == "legacy":
+        assert params == {"sessionId": SESSION, "modelId": "b"}
+        update("current_model_update", currentModelId="b")
+        send(id=ident, result={})
+    elif method == "_session/steering" and MODE == "standard-steer":
+        assert params["sessionId"] == SESSION
+        assert params["prompt"][0]["type"] == "text"
+        send(
+            id=ident, result={"outcome": "injected" if params["prompt"][0]["text"] == "interrupt" else "promptRequired"}
+        )
     elif method == "session/set_config_option" and MODE == "ui":
         assert params["configId"] == "mode" and params["value"] in {"chat", "plan"}, params
         CONFIG_OPTIONS[0]["currentValue"] = params["value"]

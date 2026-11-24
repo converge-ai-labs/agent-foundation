@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from acp import Client, RequestError, connect_to_agent, schema
 from acp.client.connection import ClientSideConnection
+from pydantic import ValidationError
 
 from a13n_harness.environment.models import EnvironmentError
 
@@ -48,23 +49,41 @@ class _SessionWire:
 
     def __init__(self, channel: AcpChannel) -> None:
         self.channel = channel
-        self.system_prompt = False
+        self.system_prompt: Literal["standard", "antigravity"] | None = None
         self.instructions: tuple[str, ...] = ()
         self._initialize_id: object = object()
+        self._session_request: object = object()
+        self.legacy_model: schema.SessionConfigOptionSelect | None = None
+        self.session_id: str | None = None
         self.error: Exception | None = None
 
     async def send(self, message: dict[str, Any]) -> None:
         method = message.get("method")
         if method == "initialize":
             self._initialize_id = message["id"]
-        elif method in {"session/new", "session/load", "session/resume"} and self.system_prompt and self.instructions:
-            params = dict(message["params"])
+        elif method in {"session/new", "session/load", "session/resume"}:
+            self._session_request = message["id"]
+            if self.system_prompt and self.instructions:
+                message = {**message, "params": self._system_prompt_params(message["params"])}
+        elif method == "_session/set_model":
+            message = {**message, "method": "session/set_model"}
+        await self.channel.send(message)
+
+    def _system_prompt_params(self, original: dict[str, Any]) -> dict[str, Any]:
+        params = dict(original)
+        if self.system_prompt == "standard":
             params["systemPrompt"] = {
                 "mode": "append",
                 "content": [{"type": "text", "text": text} for text in self.instructions],
             }
-            message = {**message, "params": params}
-        await self.channel.send(message)
+        else:
+            metadata = params.get("_meta") or {}
+            antigravity = metadata.get("antigravity") or {}
+            params["_meta"] = {
+                **metadata,
+                "antigravity": {**antigravity, "systemPrompt": {"append": "\n\n".join(self.instructions)}},
+            }
+        return params
 
     async def receive(self) -> dict[str, Any] | None:
         try:
@@ -72,12 +91,36 @@ class _SessionWire:
         except (AcpError, OSError, EnvironmentError) as exc:
             self.error = exc
             return None
+        while message is not None and message.get("method") == "session/update":
+            params = message.get("params")
+            update = params.get("update") if isinstance(params, dict) else None
+            if not isinstance(update, dict) or update.get("sessionUpdate") != "current_model_update":
+                break
+            model_id = update.get("currentModelId") or update.get("modelId")
+            if (
+                self.legacy_model is not None
+                and isinstance(model_id, str)
+                and isinstance(params, dict)
+                and params.get("sessionId") == self.session_id
+            ):
+                self.legacy_model = self.legacy_model.model_copy(update={"current_value": model_id})
+            try:
+                message = await self.channel.receive()
+            except (AcpError, OSError, EnvironmentError) as exc:
+                self.error = exc
+                return None
         if message is not None and message.get("id") == self._initialize_id and "result" in message:
             result = message["result"]
             if isinstance(result, dict):
                 capabilities = result.get("agentCapabilities") or {}
                 sessions = capabilities.get("sessionCapabilities") or {} if isinstance(capabilities, dict) else {}
-                self.system_prompt = isinstance(sessions, dict) and isinstance(sessions.get("systemPrompt"), dict)
+                if isinstance(sessions, dict) and isinstance(sessions.get("systemPrompt"), dict):
+                    self.system_prompt = "standard"
+                meta = capabilities.get("_meta") if isinstance(capabilities, dict) else None
+                antigravity = meta.get("antigravity") if isinstance(meta, dict) else None
+                prompt = antigravity.get("systemPrompt") if isinstance(antigravity, dict) else None
+                if self.system_prompt is None and isinstance(prompt, dict) and prompt.get("append") is True:
+                    self.system_prompt = "antigravity"
                 methods = result.get("authMethods")
                 if isinstance(methods, list):
                     # An omitted type means agent; the SDK's union otherwise selects terminal first.
@@ -87,6 +130,28 @@ class _SessionWire:
                         if isinstance(method, dict) and method.get("type", "agent") in ("agent", "terminal")
                     ]
                     message = {**message, "result": {**result, "authMethods": methods}}
+        if message is not None and message.get("id") == self._session_request:
+            result = message.get("result")
+            models = result.get("models") if isinstance(result, dict) else None
+            if isinstance(models, dict) and isinstance(models.get("availableModels"), list):
+                with suppress(ValidationError):
+                    self.legacy_model = schema.SessionConfigOptionSelect.model_validate(
+                        {
+                            "id": "model",
+                            "name": "Model",
+                            "category": "model",
+                            "currentValue": models.get("currentModelId"),
+                            "options": [
+                                {
+                                    "value": choice.get("modelId"),
+                                    "name": choice.get("name"),
+                                    "description": choice.get("description"),
+                                }
+                                for choice in models["availableModels"]
+                                if isinstance(choice, dict)
+                            ],
+                        }
+                    )
         return message
 
     @asynccontextmanager
@@ -129,7 +194,10 @@ class AcpSessionRuntime:
         self._broken = False
         self._initializing = False
         self._initial_instructions: tuple[str, ...] = ()
-        profile = (initialization.field_meta or {}).get("dev.a13n.harness-ui")
+        metadata = initialization.field_meta or {}
+        profile = metadata.get("dev.a13n.harness-ui")
+        steering = metadata.get("steering")
+        self._session_steering = isinstance(steering, dict) and steering.get("supported") is True
         self._a13n_steering = isinstance(profile, dict) and profile.get("version") == 1
         self._host_server: McpServer | None = None
 
@@ -190,7 +258,11 @@ class AcpSessionRuntime:
 
     @property
     def config_options(self) -> tuple[ConfigOption, ...]:
-        return tuple(self.client.config_options)
+        options = tuple(self.client.config_options)
+        legacy = self._wire.legacy_model
+        if legacy is not None and not any(option.category == "model" or option.id == "model" for option in options):
+            return (legacy, *options)
+        return options
 
     async def open_session(
         self, setup: AcpSessionSetup, *, saved_session_id: str | None = None, discovery: AcpHostToolScope | None = None
@@ -239,14 +311,38 @@ class AcpSessionRuntime:
                 session_id = saved_session_id
             else:
                 raise AcpError("acp_resume_unsupported", "This agent cannot recover its saved ACP session.")
-            self.client.session_id = session_id
+            self._wire.session_id = self.client.session_id = session_id
             self.client.config_options = list(response.config_options or ()) if response is not None else []
             if saved_session_id is None and not self._wire.system_prompt:
                 self._initial_instructions = self._wire.instructions
             return session_id
+        except RequestError as exc:
+            if exc.code == -32000:
+                raise AcpError("acp_auth_required", "Sign in to the external ACP Agent.") from exc
+            raise
         finally:
             self._initializing = False
             self._wire.instructions = ()
+
+    async def restore_options(self, values: dict[str, str | bool]) -> None:
+        # A model change may replace the choice lists for the remaining options.
+        offered = sorted(self.config_options, key=lambda item: item.category != "model" and item.id != "model")
+        for candidate in offered:
+            option = next((item for item in self.config_options if item.id == candidate.id), None)
+            value = values.get(candidate.id)
+            if option is None or value is None or value == option.current_value:
+                continue
+            if isinstance(option, schema.SessionConfigOptionSelect):
+                choices = (
+                    item.value
+                    for choice in option.options
+                    for item in (choice.options if isinstance(choice, schema.SessionConfigSelectGroup) else (choice,))
+                )
+                if not isinstance(value, str) or value not in choices:
+                    continue
+            elif not isinstance(value, bool):
+                continue
+            await self.set_config_option(option.id, value)
 
     def _idle_session(self) -> str:
         if self._broken:
@@ -261,8 +357,22 @@ class AcpSessionRuntime:
         session_id = self._idle_session()
         self._initializing = True
         try:
-            response = await self.connection.set_config_option(config_id=config_id, session_id=session_id, value=value)
-            self.client.config_options = response.config_options
+            legacy = self._wire.legacy_model
+            if (
+                config_id == "model"
+                and legacy is not None
+                and not any(option.category == "model" or option.id == "model" for option in self.client.config_options)
+            ):
+                if not isinstance(value, str):
+                    raise AcpError("acp_option_invalid", "A legacy ACP model selection requires a model ID.")
+                await self.connection.ext_method("session/set_model", {"sessionId": session_id, "modelId": value})
+                if self._wire.legacy_model is legacy:
+                    self._wire.legacy_model = legacy.model_copy(update={"current_value": value})
+            else:
+                response = await self.connection.set_config_option(
+                    config_id=config_id, session_id=session_id, value=value
+                )
+                self.client.config_options = response.config_options
             return self.config_options
         finally:
             self._initializing = False
@@ -312,6 +422,10 @@ class AcpSessionRuntime:
             if self.client._update_error is not None:
                 raise self.client._update_error
             return response
+        except RequestError as exc:
+            if exc.code == -32000:
+                raise AcpError("acp_auth_required", "Sign in to the external ACP Agent.") from exc
+            raise
         except asyncio.CancelledError:
             self.client._revoke()
             if not self._stopping:
@@ -340,22 +454,28 @@ class AcpSessionRuntime:
 
     @property
     def supports_steering(self) -> bool:
-        return self._a13n_steering
+        return self._a13n_steering or self._session_steering
 
     async def steer(self, text: str) -> SteeringOutcome:
         if self._turn is None or self._stopping or self.session_id is None:
             return "not_delivered"
-        if not self._a13n_steering:
+        if not self.supports_steering:
             return "unsupported"
         try:
+            if self._session_steering:
+                result = await self.connection.ext_method(
+                    "session/steering", {"sessionId": self.session_id, "prompt": [{"type": "text", "text": text}]}
+                )
+                match result.get("outcome"):
+                    case "injected":
+                        return "accepted"
+                    case "promptRequired":
+                        return "not_delivered"
+                    case _:
+                        return "unknown"
             result = await self.connection.ext_method(
                 "a13n/steer",
-                {
-                    "sessionId": self.session_id,
-                    "turnId": self._turn,
-                    "inputId": uuid4().hex,
-                    "text": text,
-                },
+                {"sessionId": self.session_id, "turnId": self._turn, "inputId": uuid4().hex, "text": text},
             )
         except ConnectionError:
             return "unknown"

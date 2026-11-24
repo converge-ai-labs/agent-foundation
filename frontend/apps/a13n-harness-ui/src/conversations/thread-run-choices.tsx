@@ -159,6 +159,8 @@ type RunChoiceProps = ModelControlProps & {
   onAgentChange: (value: string) => void;
   onModelChange: (value: string | undefined) => void;
   externalOptions?: ReactNode;
+  externalModel?: string;
+  externalThinking?: string;
 };
 
 export function ThreadRunChoices(props: RunChoiceProps) {
@@ -184,7 +186,7 @@ export function ThreadRunChoices(props: RunChoiceProps) {
       : undefined;
   const isAcp = agent?.kind === "acp_agent";
   const modelName =
-    (isAcp ? t("External ACP agent") : model?.name) ??
+    (isAcp ? (props.externalModel ?? t("External ACP agent")) : model?.name) ??
     (selectedModelId
       ? t("{{name}} (unavailable)", { name: selectedModelId })
       : t("Model unavailable"));
@@ -202,9 +204,16 @@ export function ThreadRunChoices(props: RunChoiceProps) {
         label={
           <span className={panelStyles.modelSummary}>
             {isAcp ? (
-              agent.name
+              props.externalModel ? (
+                `${agent.name} · ${props.externalModel}`
+              ) : (
+                agent.name
+              )
             ) : (
               <ModelIdentity model={model} name={modelName} />
+            )}
+            {isAcp && props.externalThinking && (
+              <small>{props.externalThinking}</small>
             )}
             {!isAcp && thinking && <small>{thinking}</small>}
             {!isAcp && <SpeedIndicator speed={speed} />}

@@ -5738,6 +5738,28 @@
         }
       }
     },
+    "/api/acp-agents/presets": {
+      "get": {
+        "summary": "Acp Agent Presets",
+        "operationId": "acp_agent_presets_api_acp_agents_presets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AcpPresetView"
+                  },
+                  "type": "array",
+                  "title": "Response Acp Agent Presets Api Acp Agents Presets Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/acp-agents/{agent_id}/auth": {
       "post": {
         "summary": "Acp Auth",
@@ -10506,6 +10528,17 @@
         "title": "AccountSelection",
         "type": "object"
       },
+      "AcpAgentPreset": {
+        "type": "string",
+        "enum": [
+          "antigravity",
+          "claude_code",
+          "codex",
+          "opencode",
+          "gemini_cli",
+          "custom"
+        ]
+      },
       "AcpAgentSource": {
         "properties": {
           "kind": {
@@ -10588,11 +10621,45 @@
             "type": "string",
             "enum": [
               "executable_missing",
-              "available",
+              "ready",
+              "auth_required",
               "login_completed",
               "logout_completed"
             ],
             "title": "State"
+          },
+          "agent_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Name"
+          },
+          "agent_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Version"
+          },
+          "default_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model"
           },
           "methods": {
             "items": {
@@ -10693,6 +10760,65 @@
           "name"
         ],
         "title": "AcpOptionValue"
+      },
+      "AcpPresetView": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/AcpAgentPreset"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "executable": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executable"
+          },
+          "detected_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Path"
+          },
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Args",
+            "default": []
+          },
+          "install_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Install Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AcpPresetView"
       },
       "ActivitySummary": {
         "properties": {

@@ -170,10 +170,19 @@ class RunCompositionService:
         *,
         model_overrides: RunModelOverrides | None = None,
     ) -> PublishedRunComposition:
+        return await self.save(await self.resolve(source, selection, model_overrides=model_overrides))
+
+    async def resolve(
+        self,
+        source: LoadedHarnessUiConfiguration,
+        selection: ThreadCompositionSelection,
+        *,
+        model_overrides: RunModelOverrides | None = None,
+    ) -> ResolvedRunComposition:
         value = self._resolver.resolve_run(source, selection, model_overrides=model_overrides)
         if self.connector_capture is not None and value.root.source_kind not in {"live", "memory"}:
             value = value.model_copy(update={"connectors": await self.connector_capture()})
-        return await self.save(await self._bind_oauth(value))
+        return await self._bind_oauth(value)
 
     async def resolve_child_resume(
         self,

@@ -8,7 +8,7 @@ from pathlib import Path
 from shutil import which
 from typing import Any, Literal
 
-from a13n_harness.acp import AcpError, AcpRunBinding, AcpSessionRuntime
+from a13n_harness.acp import AcpError, AcpRunBinding, AcpSessionRuntime, AcpSessionSetup
 from acp import RequestError, schema
 from pydantic import BaseModel, Field, model_validator
 
@@ -40,7 +40,10 @@ class AcpAuthMethod(BaseModel):
 
 
 class AcpAuthStatus(BaseModel):
-    state: Literal["executable_missing", "available", "login_completed", "logout_completed"]
+    state: Literal["executable_missing", "ready", "auth_required", "login_completed", "logout_completed"]
+    agent_name: str | None = None
+    agent_version: str | None = None
+    default_model: str | None = None
     methods: tuple[AcpAuthMethod, ...] = ()
     logout_supported: bool = False
 
@@ -62,7 +65,13 @@ async def acp_auth(
         return AcpAuthStatus(state="executable_missing")
 
     capabilities = schema.ClientCapabilities(
-        elicitation=schema.ElicitationCapabilities(url=schema.ElicitationUrlCapabilities()) if inputs else None
+        elicitation=(
+            schema.ElicitationCapabilities(
+                form=schema.ElicitationFormCapabilities(), url=schema.ElicitationUrlCapabilities()
+            )
+            if inputs
+            else None
+        )
     )
     try:
         async with asyncio.timeout(310 if request.action == "login" else 15):
@@ -80,14 +89,59 @@ async def acp_auth(
                     else AcpAuthMethod(id=method.id, name=method.name, description=method.description, kind="agent")
                     for method in runtime.initialization.auth_methods or ()
                 }
+                info = runtime.initialization.agent_info
+                if (
+                    info is not None
+                    and info.name == "Antigravity ACP Server"
+                    and not any(method.kind == "terminal" for method in methods.values())
+                ):
+                    methods["agy-terminal"] = AcpAuthMethod(
+                        id="agy-terminal",
+                        name="Terminal login",
+                        kind="terminal",
+                        argv=(transport.executable, *transport.arguments, "--login"),
+                    )
                 status = AcpAuthStatus(
-                    state="available",
+                    state="auth_required",
+                    agent_name=info.name if info else None,
+                    agent_version=info.version if info else None,
                     methods=tuple(methods.values()),
                     logout_supported=runtime.capabilities.auth is not None
                     and runtime.capabilities.auth.logout is not None,
                 )
                 if request.action == "probe":
-                    return status
+                    try:
+                        session_id = await runtime.open_session(AcpSessionSetup(cwd=str(cwd)))
+                    except AcpError as exc:
+                        if exc.code != "acp_auth_required":
+                            raise
+                        return status
+                    session_capabilities = runtime.capabilities.session_capabilities
+                    if session_capabilities is not None and session_capabilities.close is not None:
+                        await runtime.connection.close_session(session_id)
+                    model = next(
+                        (
+                            option
+                            for option in runtime.config_options
+                            if isinstance(option, schema.SessionConfigOptionSelect)
+                            and (option.category == "model" or option.id == "model")
+                        ),
+                        None,
+                    )
+                    default_model = None
+                    if model is not None:
+                        default_model = next(
+                            (
+                                choice.name
+                                for entry in model.options
+                                for choice in (
+                                    entry.options if isinstance(entry, schema.SessionConfigSelectGroup) else (entry,)
+                                )
+                                if choice.value == model.current_value
+                            ),
+                            model.current_value,
+                        )
+                    return status.model_copy(update={"state": "ready", "default_model": default_model})
                 if request.action == "logout":
                     await runtime.logout()
                     return status.model_copy(update={"state": "logout_completed"})
@@ -109,9 +163,6 @@ async def acp_auth(
                     async def elicitation(
                         message: str, mode: str, params: dict[str, Any]
                     ) -> schema.CreateElicitationResponse:
-                        # The provider collects credentials in its own browser flow.
-                        if mode != "url":
-                            return schema.CancelElicitationResponse()
                         return await interaction.elicitation(message, mode, params)
 
                     binding.elicitation = elicitation

@@ -55,6 +55,12 @@ export function ResourceFields({
     queryKey: ["catalog"],
     queryFn: ({ signal }) => result(client.GET("/api/catalog", { signal })),
   });
+  const presets = useQuery({
+    queryKey: ["acp-presets"],
+    enabled: readDocument(source)?.get("kind") === "acp_agent",
+    queryFn: ({ signal }) =>
+      result(client.GET("/api/acp-agents/presets", { signal })),
+  });
   const root = useRootConfiguration(
     readDocument(source)?.get("kind") === "agent",
   );
@@ -251,15 +257,43 @@ export function ResourceFields({
             <ResourceChoice
               label={t("ACP preset")}
               value={text(["preset"]) || "custom"}
-              onValueChange={(value) => set(["preset"], value)}
-              options={[
-                { value: "custom", label: t("Custom") },
-                { value: "antigravity", label: "Antigravity" },
-                { value: "claude_code", label: "Claude Code" },
-                { value: "codex", label: "Codex" },
-                { value: "opencode", label: "OpenCode" },
-              ]}
+              onValueChange={(value) => {
+                const preset = presets.data?.find((item) => item.id === value);
+                let next = updateDocument(source, ["preset"], value);
+                if (preset?.executable) {
+                  next = updateDocument(
+                    next,
+                    ["command"],
+                    preset.detected_path ?? preset.executable,
+                  );
+                  next = updateDocument(next, ["args"], preset.args ?? []);
+                }
+                onChange(next);
+              }}
+              options={(presets.data ?? []).map((item) => ({
+                value: item.id,
+                label: !item.executable
+                  ? t("Custom ACP Agent")
+                  : item.detected_path
+                    ? t("{{name}} · Detected", { name: item.name })
+                    : t("{{name}} · Not installed", { name: item.name }),
+              }))}
             />
+            {presets.data
+              ?.filter(
+                (item) =>
+                  item.id === text(["preset"]) &&
+                  item.install_url &&
+                  !item.detected_path,
+              )
+              .map((item) => (
+                <SettingsRow key={item.id} label={t("Install on the Host")}>
+                  <a target="_blank" rel="noreferrer" href={item.install_url!}>
+                    {t("Installation instructions")}
+                  </a>
+                </SettingsRow>
+              ))}
+            <ErrorNotice error={presets.error} />
             <TextField
               label={t("Executable")}
               value={text(["command"])}
@@ -268,6 +302,24 @@ export function ResourceFields({
                 "Use a command on the Host PATH or an absolute path. Leave blank to use the preset executable.",
               )}
             />
+            <SettingsRow
+              label={t("Arguments")}
+              description={t(
+                "One argument per line. Antigravity’s skip-permissions flag grants unattended access as the Host account.",
+              )}
+            >
+              <Textarea
+                aria-label={t("Arguments")}
+                rows={3}
+                key={text(["preset"])}
+                defaultValue={
+                  Array.isArray(raw.args) ? raw.args.join("\n") : ""
+                }
+                onChange={(event) =>
+                  set(["args"], event.target.value.split("\n").filter(Boolean))
+                }
+              />
+            </SettingsRow>
             {list(
               t("MCP servers"),
               ["mcp_servers"],

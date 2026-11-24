@@ -1796,12 +1796,20 @@ class HarnessUiApp:
     ) -> ThreadSummary:
         # Serialize with this App's generation acceptance, not with Agent execution.
         async with self._operation(), self._configuration_lock:
-            await self._threads.apply_project_defaults(
-                thread_id=thread_id,
-                expected_version=request.expected_version,
-                defaults_digest=request.defaults_digest,
-                environments_only=environments_only,
+            preview = await self._threads.preview_project_defaults(thread_id, environments_only=environments_only)
+            acp = (
+                preview.current.agent_source.kind in {"acp_agent", "bot"}
+                or preview.replacement.agent_source.kind == "acp_agent"
             )
+            async with self._root_runs.require_inactive(thread_id, clear_interaction=False) if acp else nullcontext():
+                await self._threads.apply_project_defaults(
+                    thread_id=thread_id,
+                    expected_version=request.expected_version,
+                    defaults_digest=request.defaults_digest,
+                    environments_only=environments_only,
+                )
+                if acp:
+                    await self._acp_sessions.retire(thread_id)
             await self._retire_mcp_owners()
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
@@ -1834,16 +1842,7 @@ class HarnessUiApp:
 
     async def acp_options(self, thread_id: str, change: AcpOptionChange | None = None) -> tuple[AcpOption, ...]:
         async with self._operation():
-            if change is None:
-                thread = await self._threads.get(thread_id)
-                if thread.configuration.agent_source.kind not in {"acp_agent", "bot"}:
-                    return ()
-                return self._acp_sessions.options(thread_id)
-            async with self._root_runs.require_inactive(thread_id, clear_interaction=False):
-                thread = await self._threads.require_interactive(thread_id)
-                if thread.configuration.agent_source.kind not in {"acp_agent", "bot"}:
-                    raise ThreadError("This Thread does not use an ACP Agent.", code="acp_session_missing")
-                return await self._acp_sessions.set_option(thread_id, change)
+            return await self._root_runs.acp_options(thread_id, change)
 
     async def acp_auth(self, agent_id: str, request: AcpAuthRequest) -> AcpAuthStatus:
         async with self._operation():
@@ -2112,15 +2111,13 @@ class HarnessUiApp:
                 raise AppStateError(
                     "Child Threads are managed through their parent execution.", code="child_thread_scoped"
                 )
-            old_source = thread.configuration.agent_source
-            replacing_acp = (
-                old_source.kind == "acp_agent"
-                and "agent_source" in mutation.patch.model_fields_set
-                and old_source != mutation.patch.agent_source
+            patch = mutation.patch
+            acp = thread.configuration.agent_source.kind in {"acp_agent", "bot"} or (
+                patch.agent_source is not None and patch.agent_source.kind == "acp_agent"
             )
-            async with self._root_runs.require_inactive(thread_id) if replacing_acp else nullcontext():
+            async with self._root_runs.require_inactive(thread_id, clear_interaction=False) if acp else nullcontext():
                 await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
-                if replacing_acp:
+                if acp:
                     await self._acp_sessions.retire(thread_id)
             await self._retire_mcp_owners()
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
@@ -2170,6 +2167,7 @@ class HarnessUiApp:
                 await self._threads.clear_context(
                     thread_id=thread_id, expected_continuation_id=expected_continuation_id
                 )
+                await self._acp_sessions.retire(thread_id)
                 self._root_runs.cancel_prediction(thread_id)
                 draft = None
                 async with self._shared_drafts_lock:

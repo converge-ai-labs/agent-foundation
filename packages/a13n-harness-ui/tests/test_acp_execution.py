@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,12 +40,26 @@ def _resource(*peer_flags: str) -> AcpAgentResource:
     )
 
 
-def test_native_launch_does_not_copy_host_credentials() -> None:
+def test_native_launch_inherits_local_cli_environment(tmp_path: Path) -> None:
+    user_bin = tmp_path / ".local" / "bin"
+    user_bin.mkdir(parents=True)
+    inherited = {
+        "PATH": "/bin",
+        "HOME": str(tmp_path),
+        "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/test-bus",
+        "HTTPS_PROXY": "http://localhost:8080",
+        "GEMINI_HOME": "/test/profile",
+    }
     transport = local_transport(
-        _resource(), "/workspace", environ={"PATH": "/bin", "HOME": "/home/test", "CONNECTOR_TOKEN": "private"}
+        _resource(),
+        "/workspace",
+        environ={**inherited, "A13N_ACP_MCP_URL": "internal", "A13N_ACP_MCP_TOKEN": "internal"},
     )
     assert not transport.inherit_environment
-    assert transport.environment == {"PATH": "/bin", "HOME": "/home/test"}
+    assert transport.environment == {
+        **inherited,
+        "PATH": f"/bin{os.pathsep}{user_bin}" if os.name == "posix" else "/bin",
+    }
 
 
 async def test_acp_auth_probe_and_browser_login(tmp_path: Path) -> None:
@@ -57,7 +73,9 @@ async def test_acp_auth_probe_and_browser_login(tmp_path: Path) -> None:
     missing = resource.model_copy(update={"command": str(tmp_path / "missing")})
     assert (await acp_auth(missing, tmp_path, AcpAuthRequest(action="probe"), inputs)).state == "executable_missing"
     status = await acp_auth(resource, tmp_path, AcpAuthRequest(action="probe"), inputs)
-    assert status.state == "available" and status.logout_supported
+    assert status.state == "ready" and status.logout_supported
+    logged_out = resource.model_copy(update={"args": (str(_PEER), "auth-required")})
+    assert (await acp_auth(logged_out, tmp_path, AcpAuthRequest(action="probe"), inputs)).state == "auth_required"
     browser, terminal = status.methods
     assert browser.id == "browser" and browser.kind == "agent"
     assert terminal.kind == "terminal" and terminal.argv == (sys.executable, str(_PEER), "auth", "--login")
@@ -312,14 +330,22 @@ async def test_acp_host_inputs_and_inbox_links(tmp_path: Path, flow: str) -> Non
                 await app.get_thread(thread.thread_id)
             ).thread.excerpt.latest_reply == "Files readSteering file read"
         else:
+            options = await app.acp_options(thread.thread_id)
+            assert [(item.id, item.value) for item in options] == [("mode", "chat")]
+            prewarmed = await app._store.threads.acp_state(thread.thread_id)
+            assert prewarmed is not None
+            assert (await app.get_thread(thread.thread_id)).continuation_id is None
+            changed = await app.acp_options(thread.thread_id, AcpOptionChange(id="mode", value="plan"))
+            assert changed[0].value == "plan"
             for prompt in ("inbox exact", "inbox fallback"):
                 receipt = await app.submit_thread(thread_id=thread.thread_id, prompt=prompt)
                 outcome = await app.wait_root_operation(receipt.receipt_id)
                 assert outcome.status is RootOperationStatus.completed, outcome.failure
             options = await app.acp_options(thread.thread_id)
-            assert [(item.id, item.value) for item in options] == [("mode", "chat")]
-            changed = await app.acp_options(thread.thread_id, AcpOptionChange(id="mode", value="plan"))
-            assert changed[0].value == "plan"
+            assert [(item.id, item.value) for item in options] == [("mode", "plan")]
+            assert app._acp_sessions.matches(
+                thread.thread_id, json.loads(prewarmed)["digest"], json.loads(prewarmed)["session_id"]
+            )
             history = await app.get_thread_transcript(thread_id=thread.thread_id)
             items = (await app.inbox().page(state="open", before=None, limit=10)).items
             assert len(items) == len(history.turns) == 2
@@ -328,6 +354,26 @@ async def test_acp_host_inputs_and_inbox_links(tmp_path: Path, flow: str) -> Non
             for item, turn in zip(reversed(items), history.turns, strict=True):
                 location = await app.inbox().location(item.item_id)
                 assert (location.continuation_id, location.turn_id) == (history.continuation_id, turn.turn_id)
+
+
+async def test_acp_prewarm_replays_options_after_host_restart(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    config = tmp_path / "a13n-harness-ui.yaml"
+    config.write_text('schema_version: "1"\ndefaults:\n  agent: acp-fixture\n')
+    resources = tmp_path / "acp_agents"
+    resources.mkdir()
+    resource = _resource().model_copy(update={"args": (str(_PEER), "ui", "resident")})
+    (resources / "fixture.yaml").write_text(resource.model_dump_json(exclude_none=True))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        thread = await app.create_thread()
+        selection = await app.acp_options(thread.thread_id, AcpOptionChange(id="mode", value="plan"))
+        assert selection[0].value == "plan"
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        assert (await app.acp_options(thread.thread_id))[0].value == "plan"
+        assert (await app.get_thread(thread.thread_id)).continuation_id is None
 
 
 async def test_acp_shell_review_on_app_callbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

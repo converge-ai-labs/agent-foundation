@@ -26,7 +26,8 @@ class _Row:
 
 def _parts(item: Item) -> list[dict[str, Any]]:
     content = item.content
-    metadata = content.get("metadata") or {}
+    raw_metadata = content.get("metadata")
+    metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
     duration = max(0, round((item.ended_at - item.started_at).total_seconds() * 1000)) if item.ended_at else None
     if item.kind in {"text_message", "reasoning_message"}:
         media = content.get("input_media")
@@ -46,6 +47,8 @@ def _parts(item: Item) -> list[dict[str, Any]]:
             }
         ]
     if item.kind == "tool_call":
+        if isinstance(acp := content.get("acp"), dict):
+            metadata = {**metadata, "acp": acp}
         common = {
             "metadata": metadata,
             "tool_name": content.get("toolCallName"),

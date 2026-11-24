@@ -458,6 +458,25 @@ function NewConversation({
               )}
             </p>
           )}
+          {effectiveAgent?.kind === "acp_agent" &&
+            effective?.environment_profile_id === "environment-native" &&
+            !effective.environment_bindings?.length &&
+            !composerDraft.doc.getText("text").length &&
+            !composerDraft.annotations.length &&
+            !draft.attempted && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={
+                  choicesDisabled || create.isPending || preview.isFetching
+                }
+                onClick={() =>
+                  create.mutate(undefined, { onSuccess: openConversation })
+                }
+              >
+                {t("Open chat to configure Agent options")}
+              </Button>
+            )}
           <Composer
             dictation={
               selectors.data?.dictation

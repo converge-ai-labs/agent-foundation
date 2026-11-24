@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 from collections.abc import AsyncIterator, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from a13n_harness.acp import AcpChannel, AcpError, AcpHostToolBridge, AcpSessionRuntime, LocalStdioTransport
 from acp import RequestError, schema
 
-from a13n_harness_ui.configuration.models import AcpAgentResource
+from a13n_harness_ui.configuration.models import ACP_AGENT_PRESETS, AcpAgentPreset, AcpAgentResource
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.surfaces import SurfaceModel
 
@@ -35,47 +37,62 @@ class AcpOptionChange(SurfaceModel):
     value: str | bool
 
 
-# Start the executable with the user's ordinary path, home, and OS support. Host
-# credential variables are not a provider authentication mechanism.
-_LOCAL_ENVIRONMENT = frozenset(
-    {
-        "APPDATA",
-        "COMSPEC",
-        "HOME",
-        "LANG",
-        "LC_ALL",
-        "LC_CTYPE",
-        "LOCALAPPDATA",
-        "PATH",
-        "PATHEXT",
-        "SHELL",
-        "SYSTEMROOT",
-        "TEMP",
-        "TMP",
-        "TMPDIR",
-        "USER",
-        "USERPROFILE",
-        "WINDIR",
-        "XDG_CACHE_HOME",
-        "XDG_CONFIG_HOME",
-        "XDG_DATA_HOME",
-        "XDG_RUNTIME_DIR",
-        "XDG_STATE_HOME",
+# These variables belong to the Host's stdio MCP child, not the ACP executable.
+_BRIDGE_ENVIRONMENT = frozenset({"A13N_ACP_MCP_URL", "A13N_ACP_MCP_TOKEN"})
+
+
+def local_environment(environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    inherited = os.environ if environ is None else environ
+    environment = {key: value for key, value in inherited.items() if key not in _BRIDGE_ENVIRONMENT}
+    if os.name == "posix":
+        user_bin = str(Path(environment.get("HOME") or Path.home()) / ".local" / "bin")
+        path = environment.get("PATH", os.defpath).split(os.pathsep)
+        if user_bin not in path and Path(user_bin).is_dir():
+            environment["PATH"] = os.pathsep.join([*path, user_bin])
+    return environment
+
+
+class AcpPresetView(SurfaceModel):
+    id: AcpAgentPreset
+    name: str
+    executable: str | None = None
+    detected_path: str | None = None
+    args: tuple[str, ...] = ()
+    install_url: str | None = None
+
+
+def acp_presets() -> tuple[AcpPresetView, ...]:
+    path = local_environment().get("PATH", os.defpath)
+    metadata = {
+        "antigravity": ("Antigravity", "https://antigravity.google/docs/getting-started?tab=cli"),
+        "claude_code": ("Claude Code", "https://github.com/agentclientprotocol/claude-agent-acp"),
+        "codex": ("Codex", "https://github.com/agentclientprotocol/codex-acp"),
+        "opencode": ("OpenCode", "https://opencode.ai/docs/"),
+        "gemini_cli": ("Gemini CLI", "https://github.com/google-gemini/gemini-cli"),
     }
-)
+    return (
+        *(
+            AcpPresetView(
+                id=key,
+                name=metadata[key][0],
+                executable=command,
+                detected_path=shutil.which(command, path=path),
+                args=("acp", "--dangerously-skip-permissions", "--process-per-session")
+                if key == "antigravity"
+                else args,
+                install_url=metadata[key][1],
+            )
+            for key, (command, args) in ACP_AGENT_PRESETS.items()
+        ),
+        AcpPresetView(id="custom", name="Custom ACP Agent"),
+    )
 
 
 def local_transport(
     resource: AcpAgentResource, cwd: str, *, environ: Mapping[str, str] | None = None
 ) -> LocalStdioTransport:
     executable, *arguments = resource.argv()
-    inherited = os.environ if environ is None else environ
-    return LocalStdioTransport(
-        executable,
-        cwd,
-        tuple(arguments),
-        environment={key: value for key, value in inherited.items() if key.upper() in _LOCAL_ENVIRONMENT},
-    )
+    return LocalStdioTransport(executable, cwd, tuple(arguments), environment=local_environment(environ))
 
 
 @dataclass(slots=True)
@@ -155,6 +172,11 @@ class AcpSessions:
                 if not (isinstance(exc, AcpError) and exc.code == "acp_input_unsupported"):
                     await entry.retire()
                 raise
+
+    def matches(self, thread_id: str, digest: str, session_id: str) -> bool:
+        entry = self._threads.get(thread_id)
+        resident = entry.resident if entry is not None else None
+        return resident is not None and resident.digest == digest and resident.runtime.session_id == session_id
 
     def options(self, thread_id: str) -> tuple[AcpOption, ...]:
         entry = self._threads.get(thread_id)

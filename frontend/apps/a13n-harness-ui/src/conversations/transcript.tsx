@@ -27,7 +27,13 @@ import {
   restoreReadingAnchor,
   type ReadingAnchor,
 } from "./reading-anchor";
-import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  CaretRight,
+  CheckCircle,
+  Circle,
+  CircleHalf,
+} from "@phosphor-icons/react";
 import { executionTime } from "./execution-time";
 import { ExecutionDetails } from "./execution-details";
 import { AppCard } from "../mcp-apps/app-card";
@@ -120,26 +126,41 @@ function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
   if (row.acp?.kind === "usage") {
     const percent = Math.round((100 * row.acp.used) / row.acp.size);
     return (
-      <div className={styles.activity}>
+      <small
+        className={styles.acpUsage}
+        title={`${row.acp.used.toLocaleString()} / ${row.acp.size.toLocaleString()}`}
+      >
         {t("Context window: {{percent}}% used", { percent })}
-      </div>
+      </small>
     );
   }
   if (row.acp?.kind === "plan")
     return (
-      <details open className={styles.activity}>
+      <details open className={styles.acpPlan}>
         <summary>{t("Agent plan")}</summary>
         <ul>
-          {row.acp.entries.map((entry, index) => (
-            <li key={index}>
-              {entry.content} —{" "}
-              {entry.status === "completed"
+          {row.acp.entries.map((entry, index) => {
+            const StatusIcon =
+              entry.status === "completed"
+                ? CheckCircle
+                : entry.status === "in_progress"
+                  ? CircleHalf
+                  : Circle;
+            const status =
+              entry.status === "completed"
                 ? t("Completed")
                 : entry.status === "in_progress"
                   ? t("In progress")
-                  : t("Pending")}
-            </li>
-          ))}
+                  : t("Pending");
+            return (
+              <li key={index} data-status={String(entry.status)}>
+                <span role="img" aria-label={status} title={status}>
+                  <StatusIcon aria-hidden="true" />
+                </span>
+                {entry.content}
+              </li>
+            );
+          })}
         </ul>
       </details>
     );

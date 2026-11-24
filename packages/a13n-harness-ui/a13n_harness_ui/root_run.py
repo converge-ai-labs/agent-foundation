@@ -31,6 +31,7 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent
 
 from a13n_harness_ui.acp_execution import AcpTurn
+from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser_handback import BrowserHandback
 from a13n_harness_ui.diagnostics import exception_feedback
@@ -336,6 +337,17 @@ class RootRunCoordinator:
             yield
             if clear_interaction and (pending := self._interaction_waits.pop(thread_id, None)) is not None:
                 pending.cancelled.set()
+
+    async def acp_options(self, thread_id: str, change: AcpOptionChange | None) -> tuple[AcpOption, ...]:
+        if change is None and thread_id in self._active_by_thread:
+            return self._executor.acp_sessions.options(thread_id)
+        try:
+            async with self.require_inactive(thread_id, clear_interaction=False):
+                return await self._executor.prepare_acp_options(thread_id, change)
+        except RunCoordinationError as exc:
+            if change is None and exc.code == "thread_run_active":
+                return self._executor.acp_sessions.options(thread_id)
+            raise
 
     @asynccontextmanager
     async def message_branch_source(

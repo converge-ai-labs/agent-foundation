@@ -26,7 +26,7 @@ from a13n_harness import (
     RunModelResolver,
 )
 from a13n_harness import __version__ as harness_version
-from a13n_harness.acp import AcpRunBinding, AcpSessionSetup
+from a13n_harness.acp import AcpError, AcpRunBinding, AcpSessionSetup
 from a13n_harness.capabilities import AskUserQuestionRequest, UserQuestionAnswers
 from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillCatalogResolvedEvent, SkillsCapability
@@ -37,15 +37,16 @@ from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageDeltaReporter, UsageReporter, UsageSnapshot
 from a13n_logging import get_logger
-from anyio import CancelScope, get_cancelled_exc_class, to_thread
+from acp import RequestError
+from anyio import CancelScope, fail_after, get_cancelled_exc_class, to_thread
 from opentelemetry.trace import StatusCode
 from pydantic_ai import RunContext, ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent, ModelMessage
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
-from a13n_harness_ui.acp_execution import AcpTurn
-from a13n_harness_ui.acp_sessions import AcpSessions
+from a13n_harness_ui.acp_execution import AcpTurn, _SessionState
+from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange, AcpSessions
 from a13n_harness_ui.bot_environments import BotEnvironmentsCapability
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser import HostBrowsers
@@ -178,6 +179,7 @@ class RootRunAdmission:
     browser_binding: str | None = None
     browser_unavailable: str = ""
     external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
+    acp_state: _SessionState | None = field(default=None, repr=False)
     strict_inputs: StrictRootInputs | None = field(default=None, repr=False)
     run_capabilities: tuple[AbstractCapability[AgentContext], ...] = field(default=(), repr=False)
 
@@ -255,6 +257,127 @@ class RootRunExecutor:
         self, publisher: Callable[[DisplayPublication | None, bool, str | None], Awaitable[None]]
     ) -> None:
         self._bot_display_publisher = publisher
+
+    async def _read_acp_state(self, thread_id: str) -> _SessionState | None:
+        value = await self._store.threads.acp_state(thread_id)
+        return _SessionState.model_validate_json(value) if value is not None else None
+
+    async def _save_acp_state(self, thread_id: str, state: _SessionState) -> None:
+        await self._store.threads.save_acp_state(thread_id, state.model_dump_json())
+
+    def _acp_turn(
+        self,
+        composition: ResolvedRunComposition,
+        source: LoadedHarnessUiConfiguration,
+        saved: _SessionState | None,
+        *,
+        goal: GoalCapability | None = None,
+    ) -> AcpTurn:
+        node = composition.root
+        assert isinstance(node, ResolvedAcpNode)
+        thread_id = composition.thread_id
+        is_bot = thread_id == BOT_THREAD_ID
+        if composition.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID or composition.environment_bindings:
+            raise RunCoordinationError(
+                "Launching a local ACP executable requires Full Control without Device bindings.",
+                code="acp_requires_native_environment",
+            )
+        workspaces = composition.project_roots
+        cwd = workspaces[0] if workspaces else str(self._store.settings.data_root)
+        thread_files = (
+            self._thread_files.directory(thread_id) if not is_bot and self._thread_files is not None else None
+        )
+        return AcpTurn(
+            sessions=self.acp_sessions,
+            resource=node.resource,
+            digest=canonical_digest(
+                {
+                    "root": node.model_dump(mode="json"),
+                    "cwd": cwd,
+                    # Retain the existing continuation identity for saved sessions.
+                    "additional_directories": (
+                        *workspaces[1:],
+                        *((str(thread_files),) if thread_files else ()),
+                    ),
+                }
+            ),
+            setup=AcpSessionSetup(
+                cwd=cwd,
+                instructions=(*node.global_guidance, node.resource.instructions),
+                additional_directories=workspaces[1:],
+            ),
+            thread_files=thread_files,
+            inputs=self._acp_inputs,
+            interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
+            ask_user_enabled=not is_bot and source.document.tools.enable_ask_user_question,
+            goal=goal,
+            saved=saved,
+            persist=partial(self._save_acp_state, thread_id),
+            bot=is_bot,
+            bind_environment=lambda context: AcpRunBinding(
+                environment=context.environment,
+                files_enabled=not is_bot or source.document.webui.bot.files_enabled is True,
+                terminals_enabled=not is_bot or source.document.webui.bot.shell_enabled is True,
+            ),
+        )
+
+    async def prepare_acp_options(self, thread_id: str, change: AcpOptionChange | None) -> tuple[AcpOption, ...]:
+        thread = await self._threads.require_interactive(thread_id)
+        if thread.archived or thread.parent_thread_id is not None:
+            return ()
+        if thread.configuration.agent_source.kind not in {"acp_agent", "bot"}:
+            return ()
+        source = await self._required_configuration()
+        composition = await self._compositions.resolve(source, _selection(thread))
+        if not isinstance(composition.root, ResolvedAcpNode):
+            return ()
+        saved = await self._read_acp_state(thread_id)
+        turn = self._acp_turn(composition, source, saved)
+        if saved is None or not self.acp_sessions.matches(thread_id, turn.digest, saved.session_id):
+            # Reuse the ACP middleware for discovery only. There is no root
+            # admission, prompt, live publication, or tool-call authority.
+            turn.prewarm = True
+            state, _, _, _, positions, _ = await self._load_run_state(thread)
+            reconstructed = self._agents.reconstruct(
+                composition,
+                subagent_operator=None,
+                acp_turn=turn,
+                root_capabilities=(
+                    (self._root_capability_factory(composition),) if self._root_capability_factory else ()
+                ),
+                subscription_sources=self._subscription_sources,
+                memory_positions=positions,
+            )
+            bindings = RunBindings(
+                instance=AgentInstanceContext(
+                    identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread_id),
+                    agent_instance_id=f"agent-{uuid4().hex[:20]}",
+                    actor="a13n-harness-ui.root",
+                    host_refs={"thread_id": thread_id},
+                ),
+                configuration=reconstructed.run_configuration,
+                model_resolver=reconstructed.model_resolver,
+                unattended=self._unattended,
+            )
+            try:
+                with fail_after(20):
+                    async with reconstructed.executable.stream(bindings=bindings, previous_state=state) as stream:
+                        async for _ in stream:
+                            pass
+            except AcpError as exc:
+                raise ThreadError(str(exc), code=exc.code) from exc
+            except (RequestError, ConnectionError, TimeoutError) as exc:
+                raise ThreadError("Could not open the external ACP session.", code="acp_session_unavailable") from exc
+        if change is None:
+            return self.acp_sessions.options(thread_id)
+        options = await self.acp_sessions.set_option(thread_id, change)
+        current = await self._read_acp_state(thread_id)
+        assert current is not None
+        with CancelScope(shield=True):
+            await self._save_acp_state(
+                thread_id, current.model_copy(update={"options": {option.id: option.value for option in options}})
+            )
+        return options
 
     async def capture(
         self,
@@ -403,6 +526,9 @@ class RootRunExecutor:
             browser_binding=browser_binding,
             browser_unavailable=browser_unavailable,
             external_context=await self._store.threads.external_context(thread_id),
+            acp_state=await self._read_acp_state(thread_id)
+            if isinstance(published.value.root, ResolvedAcpNode)
+            else None,
         )
 
     async def execute(
@@ -561,49 +687,11 @@ class RootRunExecutor:
 
             node = published.value.root
             is_bot = thread_id == BOT_THREAD_ID
-            acp_turn = None
-            if isinstance(node, ResolvedAcpNode):
-                if (
-                    published.value.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID
-                    or published.value.environment_bindings
-                ):
-                    raise RunCoordinationError(
-                        "Launching a local ACP executable requires Full Control without Device bindings.",
-                        code="acp_requires_native_environment",
-                    )
-                workspaces = published.value.project_roots
-                cwd = workspaces[0] if workspaces else str(self._store.settings.data_root)
-                thread_files = (
-                    self._thread_files.directory(thread_id) if not is_bot and self._thread_files is not None else None
-                )
-                additional_directories = (*workspaces[1:], *((str(thread_files),) if thread_files else ()))
-                acp_turn = AcpTurn(
-                    sessions=self.acp_sessions,
-                    resource=node.resource,
-                    digest=canonical_digest(
-                        {
-                            "root": node.model_dump(mode="json"),
-                            "cwd": cwd,
-                            "additional_directories": additional_directories,
-                        }
-                    ),
-                    setup=AcpSessionSetup(
-                        cwd=cwd,
-                        instructions=(*node.global_guidance, node.resource.instructions),
-                        additional_directories=additional_directories,
-                    ),
-                    thread_files=thread_files,
-                    inputs=self._acp_inputs,
-                    interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
-                    ask_user_enabled=not is_bot and source.document.tools.enable_ask_user_question,
-                    goal=goal_capability,
-                    bot=is_bot,
-                    bind_environment=lambda context: AcpRunBinding(
-                        environment=context.environment,
-                        files_enabled=not is_bot or source.document.webui.bot.files_enabled is True,
-                        terminals_enabled=not is_bot or source.document.webui.bot.shell_enabled is True,
-                    ),
-                )
+            acp_turn = (
+                self._acp_turn(published.value, source, admission.acp_state, goal=goal_capability)
+                if isinstance(node, ResolvedAcpNode)
+                else None
+            )
             prediction = (
                 self._input_prediction
                 if published.value.root.source_kind == "agent"

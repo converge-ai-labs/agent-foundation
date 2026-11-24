@@ -6,30 +6,67 @@ import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { SettingsChoices, SettingsRow } from "./composer-settings";
 
+export function useAcpOptions(
+  threadId: string,
+  enabled: boolean,
+  active: boolean,
+  agentId?: string,
+  continuation?: string | null,
+) {
+  const { client } = useTransport();
+  return useQuery({
+    queryKey: [
+      "thread",
+      threadId,
+      "acp-options",
+      agentId,
+      continuation,
+    ] as const,
+    enabled: enabled && !active,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/threads/{thread_id}/acp-options", {
+          params: { path: { thread_id: threadId } },
+          signal,
+        }),
+      ),
+  });
+}
+
+export function acpOptionLabel(option?: Schema<"AcpOption">) {
+  return option
+    ? (option.choices?.find((choice) => choice.value === option.value)?.name ??
+        String(option.value))
+    : undefined;
+}
+
 export function AcpOptions({
   threadId,
   active,
+  agentId,
   continuation,
+  options,
 }: {
   threadId: string;
   active: boolean;
+  agentId?: string;
   continuation?: string | null;
+  options: ReturnType<typeof useAcpOptions>;
 }) {
   const { t } = useTranslation();
   const transport = useTransport();
   const queries = useQueryClient();
   const [expanded, setExpanded] = useState<string>();
-  const key = ["thread", threadId, "acp-options", continuation] as const;
+  const key = [
+    "thread",
+    threadId,
+    "acp-options",
+    agentId,
+    continuation,
+  ] as const;
   const params = { path: { thread_id: threadId } };
-  const options = useQuery({
-    queryKey: key,
-    queryFn: () =>
-      result(
-        transport.client.GET("/api/threads/{thread_id}/acp-options", {
-          params,
-        }),
-      ),
-  });
   const select = useMutation({
     mutationFn: (body: Schema<"AcpOptionChange">) =>
       result(
@@ -45,6 +82,9 @@ export function AcpOptions({
   });
   return (
     <>
+      {options.isFetching && !options.data && (
+        <p role="status">{t("Loading Agent options…")}</p>
+      )}
       {options.data?.map((option) => {
         const boolean = typeof option.value === "boolean";
         const choices = boolean

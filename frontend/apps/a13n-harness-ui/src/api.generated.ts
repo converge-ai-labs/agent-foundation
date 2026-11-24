@@ -2226,6 +2226,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acp-agents/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Agent Presets */
+        get: operations["acp_agent_presets_api_acp_agents_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/acp-agents/{agent_id}/auth": {
         parameters: {
             query?: never;
@@ -3514,6 +3531,8 @@ export interface components {
             /** Account Id */
             account_id: string;
         };
+        /** @enum {string} */
+        AcpAgentPreset: "antigravity" | "claude_code" | "codex" | "opencode" | "gemini_cli" | "custom";
         /** AcpAgentSource */
         AcpAgentSource: {
             /**
@@ -3555,7 +3574,13 @@ export interface components {
              * State
              * @enum {string}
              */
-            state: "executable_missing" | "available" | "login_completed" | "logout_completed";
+            state: "executable_missing" | "ready" | "auth_required" | "login_completed" | "logout_completed";
+            /** Agent Name */
+            agent_name?: string | null;
+            /** Agent Version */
+            agent_version?: string | null;
+            /** Default Model */
+            default_model?: string | null;
             /**
              * Methods
              * @default []
@@ -3591,6 +3616,23 @@ export interface components {
             value: string;
             /** Name */
             name: string;
+        };
+        /** AcpPresetView */
+        AcpPresetView: {
+            id: components["schemas"]["AcpAgentPreset"];
+            /** Name */
+            name: string;
+            /** Executable */
+            executable?: string | null;
+            /** Detected Path */
+            detected_path?: string | null;
+            /**
+             * Args
+             * @default []
+             */
+            args?: string[];
+            /** Install Url */
+            install_url?: string | null;
         };
         /** ActivitySummary */
         ActivitySummary: {
@@ -15884,6 +15926,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WebProviderCatalogView"];
+                };
+            };
+        };
+    };
+    acp_agent_presets_api_acp_agents_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpPresetView"][];
                 };
             };
         };

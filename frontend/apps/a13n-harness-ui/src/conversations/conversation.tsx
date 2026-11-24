@@ -31,6 +31,7 @@ import { result, type Schema } from "../transport/client";
 import {
   useGuestAccess,
   useSelectors,
+  useSources,
   useStatus,
   useTransport,
 } from "../transport/context";
@@ -49,7 +50,7 @@ import {
 import { ComposerStatus } from "./composer-status";
 import { currentGoal } from "./goal-status";
 import { RunActivity } from "./run-activity";
-import { AcpOptions } from "./acp-options";
+import { AcpOptions, acpOptionLabel, useAcpOptions } from "./acp-options";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
 import { McpInputs, useMcpInputRequests } from "./mcp-inputs";
@@ -736,6 +737,30 @@ function ConversationContent({
     },
   });
   const thread = detail.data?.thread;
+  const acpAgent =
+    thread?.configuration.agent_source.kind === "acp_agent"
+      ? thread.configuration.agent_source.id
+      : undefined;
+  const acpActive = thread?.root_activity.state !== "inactive";
+  const acpOptions = useAcpOptions(
+    threadId,
+    !!acpAgent && !guest && !readOnly && !thread?.archived,
+    acpActive,
+    acpAgent,
+    detail.data?.continuation_id,
+  );
+  const sources = useSources();
+  const acpSource =
+    acpAgent &&
+    sources.data?.sources.find(
+      (item) =>
+        item.resource_kind === "acp_agent" &&
+        item.resource_ids.includes(acpAgent),
+    );
+  const acpAuthPath = acpSource
+    ? `/settings/source?${new URLSearchParams({ path: acpSource.relative_path, returnThread: threadId })}`
+    : undefined;
+
   const runAgent = guest ? undefined : thread?.configuration.agent_source.id;
   const refreshRunConfiguration = useCallback(async () => {
     const [current, catalog] = await Promise.all([
@@ -838,16 +863,46 @@ function ConversationContent({
         </Link>
       </div>
     );
+  const acpAuthFailure =
+    thread?.last_execution?.error_code === "acp_auth_required" ||
+    observedOperation.data?.outcome?.continuation.failure?.code ===
+      "acp_auth_required";
+  const retryInput = acpAuthFailure
+    ? draft.localInputs.findLast(
+        (input) => input.state === "accepted" && input.action === "send",
+      )
+    : undefined;
+  const retryParts =
+    retryInput?.parts.flatMap<string | { attachment_id: string }>((part) => {
+      const raw = part.metadata?.harness_ui;
+      const attachment =
+        raw && typeof raw === "object" && "attachment" in raw
+          ? raw.attachment
+          : undefined;
+      if (
+        attachment &&
+        typeof attachment === "object" &&
+        "attachment_id" in attachment &&
+        typeof attachment.attachment_id === "string"
+      )
+        return [{ attachment_id: attachment.attachment_id }];
+      return part.text && part.text !== "[Attachment]" ? [part.text] : [];
+    }) ?? [];
   const failureNotice = (
     <RootFailureNotice
       lastExecution={thread?.last_execution}
+      acpAuthPath={acpAuthPath}
       threadId={threadId}
       receipt={receipt}
       display={display}
       continuationId={detail.data?.continuation_id}
       completedContinuationId={thread?.completion?.continuation_id}
       retry={
-        isBot || guest || readOnly || thread?.archived
+        isBot ||
+        guest ||
+        readOnly ||
+        thread?.archived ||
+        (acpAuthFailure && !retryParts.length)
           ? undefined
           : () => {
               void submitContinuation(
@@ -856,6 +911,7 @@ function ConversationContent({
                 threadId,
                 undefined,
                 () => appContexts?.capture(threadId) ?? [],
+                acpAuthFailure ? retryParts : undefined,
               ).finally(reconcile);
             }
       }
@@ -1316,10 +1372,23 @@ function ConversationContent({
                     draft.submission.kind === "pending" ||
                     draft.submission.kind === "unknown"
                   }
+                  externalModel={acpOptionLabel(
+                    acpOptions.data?.find(
+                      (item) =>
+                        item.category === "model" || item.id === "model",
+                    ),
+                  )}
+                  externalThinking={acpOptionLabel(
+                    acpOptions.data?.find(
+                      (item) => item.category === "thought_level",
+                    ),
+                  )}
                   externalOptions={
                     <AcpOptions
                       threadId={threadId}
-                      active={thread?.root_activity?.state !== "inactive"}
+                      active={acpActive}
+                      agentId={acpAgent}
+                      options={acpOptions}
                       continuation={detail.data?.continuation_id}
                     />
                   }

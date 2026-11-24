@@ -32,7 +32,7 @@ from a13n_harness.toolsets.interaction import AskUserQuestionRequest, UserQuesti
 from a13n_stream_protocol.acp import AcpRunStream
 from acp import schema
 from mcp.types import ElicitRequestFormParams
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_ai import BinaryContent, RunContext, TextContent
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ApprovalRequired, ToolFailed
@@ -52,6 +52,8 @@ from a13n_harness_ui.mcp_runtime.inputs import Inputs
 class _SessionState(BaseModel):
     digest: str
     session_id: str
+    prompted: bool = True
+    options: dict[str, str | bool] = Field(default_factory=dict)
 
 
 _NAMESPACE = "a13n.acp"
@@ -161,6 +163,9 @@ class AcpTurn(AbstractHarnessPlugin):
     goal: GoalCapability | None = None
     bot: bool = False
     runtime: AcpSessionRuntime | None = None
+    saved: _SessionState | None = None
+    persist: Callable[[_SessionState], Awaitable[None]] | None = None
+    prewarm: bool = False
     _stop_requested: bool = False
 
     @property
@@ -204,11 +209,14 @@ class AcpTurn(AbstractHarnessPlugin):
         self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]
     ) -> HarnessRunResult[str | None]:
         context = exchange.context
-        if exchange.input.value is None:
+        if exchange.input.value is None and not self.prewarm:
             raise AcpError("acp_input_required", "An external ACP turn requires a prompt.")
         previous = await exchange.export_current_state()
-        saved = await context.state.read(_NAMESPACE, _SessionState, version="1")
-        saved_id = saved.session_id if saved is not None and saved.digest == self.digest else None
+        legacy = await context.state.read(_NAMESPACE, _SessionState, version="1")
+        saved = self.saved if self.saved is not None and self.saved.digest == self.digest else None
+        if saved is None and legacy is not None and legacy.digest == self.digest:
+            saved = legacy
+        saved_id = saved.session_id if saved is not None else None
         pending: list[dict[str, Any]] = []
         transcript = AcpRunStream(context.thread_id, context.run_id, self.emit or pending.append)
 
@@ -233,7 +241,7 @@ class AcpTurn(AbstractHarnessPlugin):
             blocks: list[PromptBlock] = []
             authored = []
             prompt_capabilities = runtime.capabilities.prompt_capabilities or schema.PromptCapabilities()
-            for item in content_items(exchange.input.value):
+            for item in content_items(exchange.input.value) if exchange.input.value is not None else ():
                 value = item.value
                 if isinstance(value, str | TextContent):
                     block = schema.TextContentBlock(text=self.prompt_text(item))
@@ -256,7 +264,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 messages=[*previous.message_history, ModelRequest(parts=[UserPromptPart(content=authored)])],
             )
             capabilities = self.capabilities
-            if self.shell_review is not None:
+            if self.shell_review is not None and not self.prewarm:
                 capabilities = (*capabilities, await self.shell_review(context.thread_id))
             toolsets = self.toolsets
             binding = self.bind_environment(context)
@@ -303,9 +311,20 @@ class AcpTurn(AbstractHarnessPlugin):
 
                 toolsets = (*toolsets, bot_tools)
             async with bridge.prepare(run_context, capabilities=capabilities, toolsets=toolsets) as scope:
-                if self.shell_review is not None:
+                if self.shell_review is not None and not self.prewarm:
                     _bind_shell_review(binding, scope.context, interactions)
                 if runtime.session_id is None:
+                    recovering = saved_id
+                    agent = runtime.capabilities
+                    if (
+                        saved is not None
+                        and not saved.prompted
+                        and not (
+                            agent.load_session
+                            or (agent.session_capabilities and agent.session_capabilities.resume is not None)
+                        )
+                    ):
+                        recovering = None
                     await runtime.open_session(
                         AcpSessionSetup(
                             cwd=self.setup.cwd,
@@ -313,14 +332,33 @@ class AcpTurn(AbstractHarnessPlugin):
                             mcp_servers=self.setup.mcp_servers,
                             additional_directories=self.setup.additional_directories,
                         ),
-                        saved_session_id=saved_id,
+                        saved_session_id=recovering,
                         discovery=scope,
                     )
+                    if saved is not None:
+                        await runtime.restore_options(saved.options)
                 session_id = runtime.session_id
                 assert session_id is not None
-                await context.state.write(
-                    _NAMESPACE, _SessionState(digest=self.digest, session_id=session_id), version="1"
+                active = _SessionState(
+                    digest=self.digest,
+                    session_id=session_id,
+                    prompted=saved is not None and saved.prompted,
+                    options={option.id: option.current_value for option in runtime.config_options},
                 )
+                if self.persist is not None and active != saved:
+                    await self.persist(active)
+                if self.prewarm:
+                    return HarnessRunResult(
+                        thread_id=context.thread_id,
+                        run_id=context.run_id,
+                        status="completed",
+                        output=None,
+                        state=previous,
+                        usage=context.usage_attribution.summary(),
+                        _messages=previous.message_history,
+                        _new_message_index=len(previous.message_history),
+                    )
+                assert exchange.input.value is not None
                 binding.host_tools = scope
                 compacted = False
 
@@ -337,7 +375,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 self.runtime = runtime
 
                 async def prompt_until_settled() -> schema.PromptResponse:
-                    nonlocal compacted
+                    nonlocal active, compacted
                     prompt = blocks
                     while True:
                         compacted = False
@@ -347,6 +385,10 @@ class AcpTurn(AbstractHarnessPlugin):
                             hidden = (*hidden, guidance)
                         if self._stop_requested:
                             return schema.PromptResponse(stop_reason="cancelled")
+                        if not active.prompted:
+                            active = active.model_copy(update={"prompted": True})
+                            if self.persist is not None:
+                                await self.persist(active)
                         response = await runtime.prompt(prompt, binding=binding, context=hidden)
                         if self._stop_requested:
                             return schema.PromptResponse(stop_reason="cancelled")
@@ -375,6 +417,14 @@ class AcpTurn(AbstractHarnessPlugin):
                     raise
                 finally:
                     self.runtime = None
+                active = active.model_copy(
+                    update={
+                        "options": {option.id: option.current_value for option in runtime.config_options},
+                    }
+                )
+                if self.persist is not None:
+                    await self.persist(active)
+                await context.state.write(_NAMESPACE, active, version="1")
                 transcript.finish()
                 await publish()
                 cancelled = response.stop_reason == "cancelled"

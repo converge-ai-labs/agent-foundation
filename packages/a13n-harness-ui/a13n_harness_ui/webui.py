@@ -40,7 +40,7 @@ from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus
-from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange
+from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange, AcpPresetView, acp_presets
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.bot import BotSnapshot
 from a13n_harness_ui.bot_models import (
@@ -2029,6 +2029,10 @@ def create_webui(
     @server.get("/api/web-providers", response_model=WebProviderCatalogView)
     async def web_providers() -> WebProviderCatalogView:
         return await app().web_provider_catalog()
+
+    @server.get("/api/acp-agents/presets", response_model=tuple[AcpPresetView, ...])
+    async def acp_agent_presets() -> tuple[AcpPresetView, ...]:
+        return acp_presets()
 
     @server.post("/api/acp-agents/{agent_id}/auth", response_model=AcpAuthStatus, openapi_extra=_body(AcpAuthRequest))
     async def acp_auth(agent_id: str, request: Request) -> AcpAuthStatus:

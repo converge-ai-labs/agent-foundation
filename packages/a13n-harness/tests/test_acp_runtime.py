@@ -72,7 +72,7 @@ async def test_environment_run_callbacks(tmp_path):
             assert reviewed[1:] == ["denied"]
 
 
-@pytest.mark.parametrize("mode", ["load", "resume"])
+@pytest.mark.parametrize("mode", ["load", "resume", "standard-steer"])
 async def test_recovery_permission_steer_and_cancel(tmp_path, mode):
     requested = asyncio.Event()
     ended = asyncio.Event()
@@ -98,11 +98,21 @@ async def test_recovery_permission_steer_and_cancel(tmp_path, mode):
         )
         await requested.wait()
         assert await acp.steer("interrupt") == ("unsupported" if mode == "load" else "accepted")
+        if mode == "standard-steer":
+            assert await acp.steer("next turn") == "not_delivered"
         assert await acp.cancel()
         assert (await first).stop_reason == "cancelled"
         assert ended.is_set()
         await acp.prompt([schema.TextContentBlock(text="again")], binding=AcpRunBinding(on_update=updates.append))
         assert [u.content.text for u in updates if isinstance(u, schema.AgentMessageChunk)] == ["done:again"]
+
+
+async def test_vendor_system_prompt_and_legacy_model_selection(tmp_path):
+    async with asyncio.timeout(10), AcpSessionRuntime.open(local(tmp_path, "legacy")) as acp:
+        await acp.open_session(setup(tmp_path))
+        assert [(option.id, option.current_value) for option in acp.config_options] == [("model", "a")]
+        await acp.restore_options({"model": "b"})
+        assert [(option.id, option.current_value) for option in acp.config_options] == [("model", "b")]
 
 
 @pytest.mark.parametrize(

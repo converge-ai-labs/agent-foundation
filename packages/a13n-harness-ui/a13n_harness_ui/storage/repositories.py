@@ -215,6 +215,20 @@ class ThreadRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
+    async def acp_state(self, thread_id: str) -> str | None:
+        async with short_session(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            if record is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            return record.acp_state_json
+
+    async def save_acp_state(self, thread_id: str, value: str) -> None:
+        async with transaction(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            if record is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            record.acp_state_json = value
+
     async def external_context(self, thread_id: str) -> ExternalContext:
         """Read a detached latest value without loading or changing a checkpoint."""
         async with short_session(self._sessions) as session:
@@ -903,6 +917,7 @@ class ThreadRepository:
         activity_changed: bool = True,
         updated_at: datetime | None = None,
         clear_compaction: bool = False,
+        clear_acp_state: bool = False,
         compaction_settlement: CompactionSettlement | None = None,
         tool_completions: tuple[str, ...] = (),
     ) -> Thread:
@@ -925,6 +940,8 @@ class ThreadRepository:
             from .tool_executions import consume_completions
 
             await consume_completions(session, thread_id, tool_completions)
+            if clear_acp_state:
+                record.acp_state_json = None
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.read_model_digest = replacement.logical_digest

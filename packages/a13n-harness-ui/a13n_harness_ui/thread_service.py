@@ -525,6 +525,7 @@ class ThreadService:
                 read_model=read_model,
                 activity_changed=False,
                 clear_compaction=True,
+                clear_acp_state=True,
             )
             await self._store.publish_work(thread_id, published, state)
 

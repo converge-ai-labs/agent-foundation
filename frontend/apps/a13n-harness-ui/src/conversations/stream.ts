@@ -14,6 +14,7 @@ import { ProcessObservations } from "./process-observations";
 import {
   sourceText,
   parsed,
+  acpEdit,
   type AppliedEdit,
   type ToolView,
 } from "./tool-presentation";
@@ -46,6 +47,7 @@ export type DisplayBlock = {
   retry?: boolean;
   stopped?: boolean;
   edit?: AppliedEdit;
+  acp?: Record<string, unknown>;
   images?: Schema<"ToolImageView">[];
   apps?: Schema<"AppReference">[];
   imageUnavailable?: boolean;
@@ -780,7 +782,9 @@ export class FocusDisplay {
       block.images = content.tool_images as
         Schema<"ToolImageView">[] | undefined;
       block.apps = content.mcp_apps as Schema<"AppReference">[] | undefined;
-      block.edit = content.applied_edit as AppliedEdit | undefined;
+      block.acp = object(content.acp) ? content.acp : undefined;
+      block.edit =
+        (content.applied_edit as AppliedEdit | undefined) ?? acpEdit(block.acp);
       block.imageUnavailable = content.tool_image_unavailable === true;
       block.provider = string(content.provider) || undefined;
       if (!block.provider)
@@ -852,6 +856,16 @@ export class FocusDisplay {
     const value = object(event.value) ? event.value : {};
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
+    if (name === "a13n.acp.tool") {
+      const id = string(value.toolCallId);
+      const key = `${scope}:${id}`;
+      const block = this.blocks.get(key);
+      if (id && block?.kind === "tool") {
+        const acp = { ...block.acp, ...value };
+        setBlock(key, { ...block, acp, edit: acpEdit(acp) ?? block.edit });
+      }
+      return;
+    }
     if (name === "a13n.acp.plan" || name === "a13n.acp.usage") {
       const key = `${scope}:${name}`;
       setBlock(key, {
