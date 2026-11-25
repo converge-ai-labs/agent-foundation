@@ -55,10 +55,8 @@ export function AcpOptions({
   continuation?: string | null;
   options: ReturnType<typeof useAcpOptions>;
 }) {
-  const { t } = useTranslation();
   const transport = useTransport();
   const queries = useQueryClient();
-  const [expanded, setExpanded] = useState<string>();
   const key = [
     "thread",
     threadId,
@@ -77,15 +75,40 @@ export function AcpOptions({
       ),
     onSuccess: (updated) => {
       queries.setQueryData(key, updated);
-      setExpanded(undefined);
     },
   });
   return (
+    <AcpOptionFields
+      options={options.data}
+      loading={options.isFetching}
+      disabled={active || select.isPending}
+      error={select.error ?? options.error}
+      onChange={select.mutate}
+    />
+  );
+}
+
+export function AcpOptionFields({
+  options,
+  loading,
+  disabled: locked,
+  error,
+  onChange,
+}: {
+  options?: Schema<"AcpOption">[];
+  loading: boolean;
+  disabled: boolean;
+  error: unknown;
+  onChange: (change: Schema<"AcpOptionChange">) => void;
+}) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState<string>();
+  return (
     <>
-      {options.isFetching && !options.data && (
+      {loading && !options && (
         <p role="status">{t("Loading Agent options…")}</p>
       )}
-      {options.data?.map((option) => {
+      {options?.map((option) => {
         const boolean = typeof option.value === "boolean";
         const choices = boolean
           ? [
@@ -96,7 +119,7 @@ export function AcpOptions({
               label: name,
               value,
             }));
-        const disabled = active || select.isPending || !choices.length;
+        const disabled = locked || !choices.length;
         return (
           <div key={option.id}>
             <SettingsRow
@@ -115,12 +138,13 @@ export function AcpOptions({
                 options={choices}
                 value={String(option.value)}
                 disabled={disabled}
-                onChange={(value) =>
-                  select.mutate({
+                onChange={(value) => {
+                  onChange({
                     id: option.id,
                     value: boolean ? value === "true" : value,
-                  })
-                }
+                  });
+                  setExpanded(undefined);
+                }}
                 searchLabel={option.name}
                 searchPlaceholder={option.description ?? option.name}
                 emptyLabel={t("No matching options.")}
@@ -129,7 +153,7 @@ export function AcpOptions({
           </div>
         );
       })}
-      <ErrorNotice error={select.error ?? options.error} />
+      <ErrorNotice error={error} />
     </>
   );
 }

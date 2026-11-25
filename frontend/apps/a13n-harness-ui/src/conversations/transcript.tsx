@@ -91,15 +91,6 @@ function acpActivity(
   const name = metadata?.["a13n.acp.observation"];
   if (!value || typeof value !== "object") return undefined;
   if (
-    name === "a13n.acp.usage" &&
-    "used" in value &&
-    "size" in value &&
-    typeof value.used === "number" &&
-    typeof value.size === "number" &&
-    value.size > 0
-  )
-    return { kind: "usage" as const, used: value.used, size: value.size };
-  if (
     name === "a13n.acp.plan" &&
     "entries" in value &&
     Array.isArray(value.entries)
@@ -123,17 +114,6 @@ function acpActivity(
 
 function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
   const { t } = useTranslation();
-  if (row.acp?.kind === "usage") {
-    const percent = Math.round((100 * row.acp.used) / row.acp.size);
-    return (
-      <small
-        className={styles.acpUsage}
-        title={`${row.acp.used.toLocaleString()} / ${row.acp.size.toLocaleString()}`}
-      >
-        {t("Context window: {{percent}}% used", { percent })}
-      </small>
-    );
-  }
   if (row.acp?.kind === "plan")
     return (
       <details open className={styles.acpPlan}>
@@ -387,9 +367,7 @@ function savedRows(
           name:
             part.metadata?.["a13n.acp.observation"] === "a13n.acp.plan"
               ? "Agent plan"
-              : part.metadata?.["a13n.acp.observation"] === "a13n.acp.usage"
-                ? "Context window"
-                : part.kind,
+              : part.kind,
           acp: acpActivity(part.metadata, part.value),
           text: part.text ?? JSON.stringify(part.value, null, 2),
           omitted: part.value_omitted ?? undefined,
@@ -1700,16 +1678,23 @@ function executionSummary(
           activeStep = [toolLabel(info, t), toolSummary(info, t)]
             .filter(Boolean)
             .join(" ");
+        const activity = activityKind(tool);
         const action =
           info.kind === "file"
             ? "Read {{count}} files"
             : info.kind === "edit"
               ? "Edit {{count}} files"
-              : tool.name === "shell_exec"
-                ? "Run {{count}} commands"
-                : info.kind === "search"
+              : info.kind === "shell"
+                ? tool.name === "manage_task"
+                  ? "Manage {{count}} processes"
+                  : "Run {{count}} commands"
+                : info.kind === "search" || info.kind === "web"
                   ? "Run {{count}} searches"
-                  : "Call {{count}} tools";
+                  : activity === "work"
+                    ? "Update tasks & notes"
+                    : activity === "subagents"
+                      ? "Work with subagents"
+                      : "Call {{count}} tools";
         const id =
           (info.kind === "file" || info.kind === "edit") && info.path
             ? info.path

@@ -12,10 +12,42 @@ from pathlib import Path
 
 from a13n_harness.acp import AcpChannel, AcpError, AcpHostToolBridge, AcpSessionRuntime, LocalStdioTransport
 from acp import RequestError, schema
+from pydantic import BaseModel, Field
 
+from a13n_harness_ui.configuration import canonical_digest
 from a13n_harness_ui.configuration.models import ACP_AGENT_PRESETS, AcpAgentPreset, AcpAgentResource
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.surfaces import SurfaceModel
+
+
+class AcpCommand(SurfaceModel):
+    name: str
+    description: str
+    hint: str | None = None
+
+
+def acp_commands(runtime: AcpSessionRuntime) -> tuple[AcpCommand, ...] | None:
+    commands = runtime.client.available_commands
+    if commands is None:
+        return None
+    return tuple(
+        AcpCommand(
+            name=command.name, description=command.description, hint=command.input.root.hint if command.input else None
+        )
+        for command in commands
+    )
+
+
+class AcpSessionState(BaseModel):
+    digest: str
+    session_id: str | None = None
+    prompted: bool = True
+    context_window: tuple[int, int] | None = None
+    commands: tuple[AcpCommand, ...] = ()
+    options: dict[str, str | bool] = Field(default_factory=dict)
+    explicit_options: frozenset[str] = frozenset()
+    synced_messages: int = 0
+    synced_message_key: str | None = None
 
 
 class AcpOptionValue(SurfaceModel):
@@ -35,6 +67,27 @@ class AcpOption(SurfaceModel):
 class AcpOptionChange(SurfaceModel):
     id: str
     value: str | bool
+
+
+class AcpOptionsPreview(SurfaceModel):
+    scope: str
+    options: tuple[AcpOption, ...]
+    commands: tuple[AcpCommand, ...] = ()
+    selections: dict[str, str | bool] = Field(default_factory=dict)
+
+
+class AcpOptionSelection(SurfaceModel):
+    scope: str
+    values: dict[str, str | bool] = Field(default_factory=dict, max_length=64)
+
+
+class AcpOptionPreviewChange(SurfaceModel):
+    selection: AcpOptionSelection
+    change: AcpOptionChange | None = None
+
+
+def acp_options_scope(resource: AcpAgentResource, cwd: str) -> str:
+    return canonical_digest({"resource": resource.model_dump(mode="json"), "cwd": cwd})
 
 
 # These variables belong to the Host's stdio MCP child, not the ACP executable.
@@ -93,6 +146,26 @@ def local_transport(
 ) -> LocalStdioTransport:
     executable, *arguments = resource.argv()
     return LocalStdioTransport(executable, cwd, tuple(arguments), environment=local_environment(environ))
+
+
+def acp_options(runtime: AcpSessionRuntime) -> tuple[AcpOption, ...]:
+    return tuple(
+        AcpOption(
+            id=item.id,
+            name=item.name,
+            description=item.description,
+            category=item.category,
+            value=item.current_value,
+            choices=tuple(
+                AcpOptionValue(value=value.value, name=value.name)
+                for choice in item.options
+                for value in (choice.options if isinstance(choice, schema.SessionConfigSelectGroup) else (choice,))
+            )
+            if isinstance(item, schema.SessionConfigOptionSelect)
+            else (),
+        )
+        for item in runtime.config_options
+    )
 
 
 @dataclass(slots=True)
@@ -173,32 +246,25 @@ class AcpSessions:
                     await entry.retire()
                 raise
 
-    def matches(self, thread_id: str, digest: str, session_id: str) -> bool:
+    def matches(self, thread_id: str, digest: str, session_id: str | None) -> bool:
         entry = self._threads.get(thread_id)
         resident = entry.resident if entry is not None else None
-        return resident is not None and resident.digest == digest and resident.runtime.session_id == session_id
+        return (
+            session_id is not None
+            and resident is not None
+            and resident.digest == digest
+            and resident.runtime.session_id == session_id
+        )
 
     def options(self, thread_id: str) -> tuple[AcpOption, ...]:
         entry = self._threads.get(thread_id)
         if entry is None or entry.resident is None:
             return ()
-        return tuple(
-            AcpOption(
-                id=item.id,
-                name=item.name,
-                description=item.description,
-                category=item.category,
-                value=item.current_value,
-                choices=tuple(
-                    AcpOptionValue(value=value.value, name=value.name)
-                    for choice in item.options
-                    for value in (choice.options if isinstance(choice, schema.SessionConfigSelectGroup) else (choice,))
-                )
-                if isinstance(item, schema.SessionConfigOptionSelect)
-                else (),
-            )
-            for item in entry.resident.runtime.config_options
-        )
+        return acp_options(entry.resident.runtime)
+
+    def commands(self, thread_id: str) -> tuple[AcpCommand, ...] | None:
+        entry = self._threads.get(thread_id)
+        return acp_commands(entry.resident.runtime) if entry is not None and entry.resident is not None else None
 
     async def set_option(self, thread_id: str, change: AcpOptionChange) -> tuple[AcpOption, ...]:
         entry = self._threads.get(thread_id)

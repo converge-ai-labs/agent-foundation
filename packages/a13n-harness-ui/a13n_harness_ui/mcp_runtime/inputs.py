@@ -49,6 +49,7 @@ class McpInputRequestView(InputModel):
     questions: tuple[UserQuestion, ...] = ()
     schema_: dict[str, JsonValue] | None = Field(default=None, alias="schema")
     url: str | None = None
+    private_form: bool = False
     state: Literal["pending", "accepted", "declined", "cancelled", "expired", "unavailable"] = "pending"
     expires_at: datetime
 
@@ -161,6 +162,7 @@ class Inputs:
         tool_call_id: str | None = None,
         view_id: str | None = None,
         timeout_seconds: float | None = None,
+        private_form_url: str | None = None,
     ) -> ElicitResult[Any]:
         """Collect input for an in-flight operation without admitting another Run."""
         if self._closed:
@@ -181,6 +183,7 @@ class Inputs:
             mode, message = params.mode, params.message
             validate_schema(params.requested_schema)
             schema = params.requested_schema
+            url = private_form_url
         else:
             mode, message = params.mode, params.message
             parsed = urlsplit(params.url)
@@ -200,6 +203,7 @@ class Inputs:
             questions=questions,
             schema=schema,
             url=url,
+            private_form=private_form_url is not None,
             expires_at=datetime.now(UTC) + timedelta(seconds=timeout),
         )
         request = _Request(view, require_active, asyncio.get_running_loop().create_future())
@@ -214,6 +218,8 @@ class Inputs:
         finally:
             if request.view.state == "pending":
                 request.view = request.view.model_copy(update={"state": "unavailable"})
+            if view.private_form:
+                self._requests.pop(view.request_id, None)
             if not request.future.done():
                 request.future.cancel()
             await self._changed(thread_id)
@@ -271,7 +277,8 @@ class Inputs:
                     raise HarnessUiError(
                         "MCP input does not match the requested form.", code="mcp_input_invalid"
                     ) from exc
-        request.response = response.model_copy(deep=True)
+        if not request.view.private_form:
+            request.response = response.model_copy(deep=True)
         request.view = request.view.model_copy(
             update={"state": {"accept": "accepted", "decline": "declined", "cancel": "cancelled"}[response.action]}
         )

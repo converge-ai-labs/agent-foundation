@@ -5,9 +5,12 @@ from __future__ import annotations
 from base64 import b64encode
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from xml.sax.saxutils import escape
 
 from a13n_harness.acp import (
     AcpChannel,
@@ -19,7 +22,8 @@ from a13n_harness.acp import (
     PromptBlock,
     SteeringOutcome,
 )
-from a13n_harness.content import ContentItem, content_items
+from a13n_harness.capabilities.context import restored_history_summary
+from a13n_harness.content import ContentItem, content_items, request_input_content
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.commands import ArgvCommand, CommandRequest
 from a13n_harness.events import input_events
@@ -29,31 +33,81 @@ from a13n_harness.tools.identity import TOOL_IDENTITY_KEY, ToolIdentity
 from a13n_harness.tools.permission_gate import check_permission
 from a13n_harness.tools.permissions import ToolPermissionsCapability
 from a13n_harness.toolsets.interaction import AskUserQuestionRequest, UserQuestion
+from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
 from a13n_stream_protocol.acp import AcpRunStream
 from acp import schema
 from mcp.types import ElicitRequestFormParams
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import BinaryContent, RunContext, TextContent
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ApprovalRequired, ToolFailed
-from pydantic_ai.messages import CapabilityEvent, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.messages import (
+    CapabilityEvent,
+    ModelMessage,
+    ModelMessagesTypeAdapter,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ToolReturnPart,
+    UserPromptPart,
+)
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.acp_inputs import AcpInputs
-from a13n_harness_ui.acp_sessions import AcpSessions
+from a13n_harness_ui.acp_sessions import AcpSessions, AcpSessionState, acp_commands, acp_options_scope
 from a13n_harness_ui.configuration.models import AcpAgentResource
+from a13n_harness_ui.conversation import input_excerpt
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.goal import GoalCapability
 from a13n_harness_ui.mcp_runtime.inputs import Inputs
 
 
-class _SessionState(BaseModel):
-    digest: str
-    session_id: str
-    prompted: bool = True
-    options: dict[str, str | bool] = Field(default_factory=dict)
+def _message_key(message: ModelMessage) -> str:
+    return sha256(ModelMessagesTypeAdapter.dump_json([message])).hexdigest()
+
+
+def _prior_conversation(history: Sequence[ModelMessage], session: AcpSessionState) -> tuple[str, ...]:
+    synced = min(session.synced_messages, len(history))
+    if synced and _message_key(history[synced - 1]) != session.synced_message_key:
+        # Compaction can relocate or replace the saved prefix boundary.
+        synced = next(
+            (
+                index + 1
+                for index in range(len(history) - 1, -1, -1)
+                if _message_key(history[index]) == session.synced_message_key
+            ),
+            0,
+        )
+    lines: list[str] = []
+    remaining = 8000
+    summary = restored_history_summary(history[synced:])
+    for message in reversed(history[synced:][-64:]):
+        if isinstance(message, ModelRequest):
+            if (message.metadata or {}).get("a13n.context") in {"handoff", "compaction"}:
+                continue
+            text = input_excerpt(request_input_content(message))
+            tools = [part.tool_name for part in message.parts if isinstance(part, ToolReturnPart)]
+            line = f"User: {text}" if text else ""
+            if tools:
+                # Tool payloads can include credentials or non-display data. Keep names, not raw results.
+                line += ("\n" if line else "") + "Tools returned: " + ", ".join(dict.fromkeys(tools))
+        else:
+            text = "\n".join(part.content for part in message.parts if isinstance(part, TextPart))
+            line = f"Assistant: {text}" if text else ""
+        if line:
+            line = escape(line[: min(1800, remaining)])[:remaining]
+            lines.append(line)
+            remaining -= len(line) + 1
+            if remaining <= 0:
+                break
+    if summary:
+        lines.append("Earlier conversation: " + escape(summary[: min(1800, remaining)])[:remaining])
+    if not lines:
+        return ()
+    body = "\n".join(reversed(lines))
+    return (f"<prior-thread-conversation>\n{body}\n</prior-thread-conversation>",)
 
 
 _NAMESPACE = "a13n.acp"
@@ -163,8 +217,9 @@ class AcpTurn(AbstractHarnessPlugin):
     goal: GoalCapability | None = None
     bot: bool = False
     runtime: AcpSessionRuntime | None = None
-    saved: _SessionState | None = None
-    persist: Callable[[_SessionState], Awaitable[None]] | None = None
+    saved: AcpSessionState | None = None
+    persist: Callable[[AcpSessionState], Awaitable[None]] | None = None
+    update_title: Callable[[str], Awaitable[None]] | None = None
     prewarm: bool = False
     _stop_requested: bool = False
 
@@ -205,6 +260,43 @@ class AcpTurn(AbstractHarnessPlugin):
         await self.runtime.cancel()
         return True
 
+    async def _record_usage(
+        self, context: AgentContext, runtime: AcpSessionRuntime, response: schema.PromptResponse
+    ) -> None:
+        usage = response.usage
+        assert usage is not None
+        ledger = context.usage_attribution
+        model = next(
+            (item.current_value for item in runtime.config_options if item.category == "model" or item.id == "model"),
+            None,
+        )
+        record_id = f"model-{uuid4().hex}"
+        record = ModelUsageRecord(
+            record_id=record_id,
+            run_id=ledger.run_id,
+            response_ordinal=ledger.next_model_ordinal(),
+            call_id=record_id,
+            agent_instance_id=ledger.instance.agent_instance_id,
+            parent_agent_instance_id=ledger.instance.parent_agent_instance_id,
+            delegation_id=ledger.instance.delegation_id,
+            source="acp",
+            model_name=model if isinstance(model, str) else None,
+            provider_name=self.resource.name,
+            response_state="incomplete" if response.stop_reason == "cancelled" else "complete",
+            outcome="cancelled" if response.stop_reason == "cancelled" else "completed",
+            response_timestamp=datetime.now(UTC),
+            request_usage=BoundedRequestUsage(
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                cache_read_tokens=usage.cached_read_tokens or 0,
+                cache_write_tokens=usage.cached_write_tokens or 0,
+            ),
+        )
+        refusal = ledger.finish(record_id, record)
+        await ledger._flush(reason="model_request", trigger_record_id=record_id)
+        if refusal is not None:
+            raise refusal
+
     async def wrap_run(
         self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]
     ) -> HarnessRunResult[str | None]:
@@ -212,8 +304,13 @@ class AcpTurn(AbstractHarnessPlugin):
         if exchange.input.value is None and not self.prewarm:
             raise AcpError("acp_input_required", "An external ACP turn requires a prompt.")
         previous = await exchange.export_current_state()
-        legacy = await context.state.read(_NAMESPACE, _SessionState, version="1")
+        legacy = await context.state.read(_NAMESPACE, AcpSessionState, version="1")
         saved = self.saved if self.saved is not None and self.saved.digest == self.digest else None
+        if self.saved is not None and self.saved.session_id is None:
+            if self.saved.digest == acp_options_scope(self.resource, self.setup.cwd):
+                saved = self.saved
+            elif not self.prewarm:
+                raise AcpError("acp_option_invalid", "The ACP Agent or workspace changed. Select its options again.")
         if saved is None and legacy is not None and legacy.digest == self.digest:
             saved = legacy
         saved_id = saved.session_id if saved is not None else None
@@ -318,7 +415,12 @@ class AcpTurn(AbstractHarnessPlugin):
                     await runtime.open_session(
                         AcpSessionSetup(
                             cwd=self.setup.cwd,
-                            instructions=(*self.setup.instructions, *(await scope.instructions())),
+                            instructions=(
+                                *self.setup.instructions,
+                                *(await scope.instructions()),
+                                "When available, use harness-host ask_user_question to ask for confirmation inline "
+                                "without ending the turn, and post_to_inbox to report results or blockers.",
+                            ),
                             mcp_servers=self.setup.mcp_servers,
                             additional_directories=self.setup.additional_directories,
                         ),
@@ -326,13 +428,27 @@ class AcpTurn(AbstractHarnessPlugin):
                         discovery=scope,
                     )
                     if saved is not None:
-                        await runtime.restore_options(saved.options)
+                        await runtime.restore_options(
+                            saved.options, strict=saved.explicit_options if not self.prewarm else frozenset()
+                        )
                 session_id = runtime.session_id
                 assert session_id is not None
-                active = _SessionState(
+                commands = acp_commands(runtime)
+                active = AcpSessionState(
                     digest=self.digest,
                     session_id=session_id,
                     prompted=saved is not None and saved.prompted,
+                    commands=commands if commands is not None else (saved.commands if saved else ()),
+                    explicit_options=frozenset(
+                        option.id
+                        for option in runtime.config_options
+                        if saved
+                        and option.id in saved.explicit_options
+                        and saved.options.get(option.id) == option.current_value
+                    ),
+                    synced_messages=saved.synced_messages if saved and saved.prompted else 0,
+                    synced_message_key=saved.synced_message_key if saved and saved.prompted else None,
+                    context_window=runtime.client.context_window or (saved.context_window if saved else None),
                     options={option.id: option.current_value for option in runtime.config_options},
                 )
                 if self.persist is not None and active != saved:
@@ -353,8 +469,18 @@ class AcpTurn(AbstractHarnessPlugin):
                 compacted = False
 
                 async def observe(update: AcpUpdate) -> None:
-                    nonlocal compacted
+                    nonlocal compacted, active
                     compacted |= isinstance(update, schema.SessionUpdateCompactionUpdate)
+                    if (
+                        isinstance(update, schema.SessionInfoUpdate)
+                        and runtime.client.session_title
+                        and self.update_title
+                    ):
+                        await self.update_title(runtime.client.session_title)
+                    if isinstance(update, schema.AvailableCommandsUpdate):
+                        active = active.model_copy(update={"commands": acp_commands(runtime)})
+                        if self.persist is not None:
+                            await self.persist(active)
                     transcript.update(update)
                     await publish()
 
@@ -364,22 +490,29 @@ class AcpTurn(AbstractHarnessPlugin):
                 transcript.start()
                 self.runtime = runtime
 
+                prior_conversation = _prior_conversation(previous.message_history, active)
+                prompted_this_turn = False
+
                 async def prompt_until_settled() -> schema.PromptResponse:
-                    nonlocal active, compacted
+                    nonlocal active, compacted, prior_conversation, prompted_this_turn
                     prompt = blocks
                     while True:
                         compacted = False
                         guidance = self.goal.get_instructions() if self.goal is not None else None
-                        hidden = await scope.prompt_context()
+                        hidden = (*await scope.prompt_context(), *prior_conversation)
                         if guidance is not None:
                             hidden = (*hidden, guidance)
                         if self._stop_requested:
                             return schema.PromptResponse(stop_reason="cancelled")
                         if not active.prompted:
-                            active = active.model_copy(update={"prompted": True})
+                            active = active.model_copy(update={"prompted": True, "explicit_options": frozenset()})
                             if self.persist is not None:
                                 await self.persist(active)
                         response = await runtime.prompt(prompt, binding=binding, context=hidden)
+                        prompted_this_turn = True
+                        prior_conversation = ()
+                        if response.usage is not None:
+                            await self._record_usage(context, runtime, response)
                         if self._stop_requested:
                             return schema.PromptResponse(stop_reason="cancelled")
                         if response.stop_reason == "cancelled" or self.goal is None:
@@ -407,14 +540,14 @@ class AcpTurn(AbstractHarnessPlugin):
                     raise
                 finally:
                     self.runtime = None
+                commands = acp_commands(runtime)
                 active = active.model_copy(
                     update={
                         "options": {option.id: option.current_value for option in runtime.config_options},
+                        "commands": commands if commands is not None else active.commands,
+                        "context_window": runtime.client.context_window or active.context_window,
                     }
                 )
-                if self.persist is not None:
-                    await self.persist(active)
-                await context.state.write(_NAMESPACE, active, version="1")
                 transcript.finish()
                 await publish()
                 cancelled = response.stop_reason == "cancelled"
@@ -423,6 +556,16 @@ class AcpTurn(AbstractHarnessPlugin):
                 messages = (*history, ModelRequest(parts=[UserPromptPart(content=authored)], run_id=context.run_id))
                 if output:
                     messages = (*messages, ModelResponse(parts=[TextPart(content=output)], run_id=context.run_id))
+                if prompted_this_turn:
+                    active = active.model_copy(
+                        update={
+                            "synced_messages": len(messages),
+                            "synced_message_key": _message_key(messages[-1]),
+                        }
+                    )
+                if self.persist is not None:
+                    await self.persist(active)
+                await context.state.write(_NAMESPACE, active, version="1")
                 return HarnessRunResult(
                     thread_id=context.thread_id,
                     run_id=context.run_id,

@@ -133,10 +133,11 @@ export function McpInput({
     },
   });
   function send(response: Response) {
-    setSubmitted(response);
+    if (!request.private_form) setSubmitted(response);
     answer.mutate(response);
   }
-  const locked = answer.isPending || submitted !== undefined;
+  const locked =
+    answer.isPending || answer.isSuccess || submitted !== undefined;
   return (
     <section
       className={conversation.decision}
@@ -153,11 +154,28 @@ export function McpInput({
           </p>
         )}
         {request.message && <p className={styles.reason}>{request.message}</p>}
-        <p className={styles.hint}>
-          {t(
-            "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
-          )}
-        </p>
+        {request.private_form ? (
+          <>
+            <a
+              href={request.url ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {t("Open Google sign-in")}
+            </a>
+            <p className={styles.hint}>
+              {t(
+                "After signing in, paste the callback URL or authorization code shown in your browser.",
+              )}
+            </p>
+          </>
+        ) : (
+          <p className={styles.hint}>
+            {t(
+              "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
+            )}
+          </p>
+        )}
         {request.mode === "question" ? (
           <fieldset disabled={locked}>
             <QuestionInput
@@ -208,8 +226,11 @@ export function McpInput({
             <div className={styles.request}>
               {Object.entries(properties).map(([name, value]) => {
                 const field = record(value) ?? {};
-                const label =
-                  typeof field.title === "string" ? field.title : name;
+                const label = request.private_form
+                  ? t("Callback URL or authorization code")
+                  : typeof field.title === "string"
+                    ? field.title
+                    : name;
                 const description =
                   typeof field.description === "string"
                     ? field.description
@@ -298,9 +319,11 @@ export function McpInput({
                       disabled={locked}
                       required={required.includes(name)}
                       type={
-                        field.type === "number" || field.type === "integer"
-                          ? "number"
-                          : "text"
+                        request.private_form
+                          ? "password"
+                          : field.type === "number" || field.type === "integer"
+                            ? "number"
+                            : "text"
                       }
                       step={
                         field.type === "integer"

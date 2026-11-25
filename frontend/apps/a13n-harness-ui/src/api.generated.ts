@@ -2243,6 +2243,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acp-agents/{agent_id}/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Agent Options */
+        get: operations["acp_agent_options_api_acp_agents__agent_id__options_get"];
+        put?: never;
+        /** Preview Acp Agent Options */
+        post: operations["preview_acp_agent_options_api_acp_agents__agent_id__options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/acp-agents/{agent_id}/auth": {
         parameters: {
             query?: never;
@@ -2393,6 +2411,23 @@ export interface paths {
         put?: never;
         /** Preview Thread Skills */
         post: operations["preview_thread_skills_api_threads__thread_id__skills_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/acp-commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Commands */
+        get: operations["acp_commands_api_threads__thread_id__acp_commands_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3556,7 +3591,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "agent" | "terminal";
+            kind: "agent" | "terminal" | "browser";
             /**
              * Argv
              * @default []
@@ -3592,6 +3627,15 @@ export interface components {
              */
             logout_supported?: boolean;
         };
+        /** AcpCommand */
+        AcpCommand: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Hint */
+            hint?: string | null;
+        };
         /** AcpOption */
         AcpOption: {
             /** Id */
@@ -3616,6 +3660,22 @@ export interface components {
             value: string;
             /** Name */
             name: string;
+        };
+        /** AcpOptionsPreview */
+        AcpOptionsPreview: {
+            /** Scope */
+            scope: string;
+            /** Options */
+            options: components["schemas"]["AcpOption"][];
+            /**
+             * Commands
+             * @default []
+             */
+            commands?: components["schemas"]["AcpCommand"][];
+            /** Selections */
+            selections?: {
+                [key: string]: string | boolean;
+            };
         };
         /** AcpPresetView */
         AcpPresetView: {
@@ -6843,6 +6903,11 @@ export interface components {
              * @default null
              */
             url?: string | null;
+            /**
+             * Private Form
+             * @default false
+             */
+            private_form?: boolean;
             /**
              * State
              * @default pending
@@ -11379,6 +11444,27 @@ export interface components {
             /** Tools */
             tools: components["schemas"]["McpToolName"][] | null;
         };
+        /** AcpOptionChange */
+        AcpOptionChange: {
+            /** Id */
+            id: string;
+            /** Value */
+            value: string | boolean;
+        };
+        /** AcpOptionSelection */
+        AcpOptionSelection: {
+            /** Scope */
+            scope: string;
+            /** Values */
+            values?: {
+                [key: string]: string | boolean;
+            };
+        };
+        /** AcpOptionPreviewChange */
+        AcpOptionPreviewChange: {
+            selection: components["schemas"]["AcpOptionSelection"];
+            change?: components["schemas"]["AcpOptionChange"] | null;
+        };
         /** AcpAuthRequest */
         AcpAuthRequest: {
             /**
@@ -11431,13 +11517,6 @@ export interface components {
             environment_bindings?: components["schemas"]["EnvironmentBindingSelection"][] | null;
             /** Default Environment */
             default_environment?: string | null;
-        };
-        /** AcpOptionChange */
-        AcpOptionChange: {
-            /** Id */
-            id: string;
-            /** Value */
-            value: string | boolean;
         };
         /** ThreadConfigurationPatch */
         ThreadConfigurationPatch: {
@@ -11580,6 +11659,7 @@ export interface components {
             /** Thread Id */
             thread_id?: string | null;
             defaults?: components["schemas"]["NewThreadDefaults"] | null;
+            acp_options?: components["schemas"]["AcpOptionSelection"] | null;
             /** Title */
             title?: string | null;
         };
@@ -15950,6 +16030,76 @@ export interface operations {
             };
         };
     };
+    acp_agent_options_api_acp_agents__agent_id__options_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpOptionsPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_acp_agent_options_api_acp_agents__agent_id__options_post: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpOptionPreviewChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpOptionsPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     acp_auth_api_acp_agents__agent_id__auth_post: {
         parameters: {
             query?: never;
@@ -16305,6 +16455,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillCatalogView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_commands_api_threads__thread_id__acp_commands_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpCommand"][];
                 };
             };
             /** @description Validation Error */

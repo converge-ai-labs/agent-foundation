@@ -57,6 +57,7 @@ def test_session_cutover_preserves_thread_and_converts_saved_policies(tmp_path):
                 "unread": 0,
                 "read_state_version": 0,
                 "acp_state_json": None,
+                "manual_title": int(before["title"] is not None),
             }
             after = dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one())
             converted = json.loads(after.pop("environment_bindings_json"))

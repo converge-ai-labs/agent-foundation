@@ -19,6 +19,7 @@ import {
   currentCompletions,
   pickedCompletion,
   startCompletion,
+  type CompletionSource,
 } from "@codemirror/autocomplete";
 import {
   skillCompletion,
@@ -53,6 +54,35 @@ function typedSkillTrigger(tr: Transaction) {
   return triggered;
 }
 
+function acpCommandPrefix(text: string) {
+  return /^\/[\p{L}\p{N}_-]*$/u.test(text);
+}
+
+export function acpCommandCompletion(
+  commands: () => readonly Schema<"AcpCommand">[],
+): CompletionSource {
+  return (context) => {
+    const doc = context.state.doc;
+    const prefix = doc.toString();
+    if (!acpCommandPrefix(prefix)) return null;
+    return {
+      from: 0,
+      to: doc.length,
+      filter: false,
+      options: commands()
+        .filter(({ name }) =>
+          `/${name}`.toLowerCase().startsWith(prefix.toLowerCase()),
+        )
+        .map(({ name, description, hint }) => ({
+          label: `/${name}`,
+          detail: hint ?? undefined,
+          info: description || undefined,
+          apply: `/${name} `,
+        })),
+    };
+  };
+}
+
 export function ComposerEditor({
   draft,
   profile,
@@ -64,6 +94,7 @@ export function ComposerEditor({
   local = false,
   loadSkills,
   skillContext,
+  acpCommands,
   prediction,
   onComposition,
 }: {
@@ -77,6 +108,7 @@ export function ComposerEditor({
   local?: boolean;
   loadSkills?: LoadSkills;
   skillContext?: string;
+  acpCommands?: readonly Schema<"AcpCommand">[];
   prediction?: { text: string; dismiss: () => void };
   onComposition?: (composing: boolean) => void;
 }) {
@@ -114,6 +146,9 @@ export function ComposerEditor({
   };
   const skills = useRef(new Compartment());
   const load = useRef(loadSkills);
+  const commands = useRef(acpCommands);
+  commands.current = acpCommands;
+  const externalCommands = !!acpCommands?.length;
   load.current = loadSkills;
   const currentView = useRef<EditorView | null>(null);
   const description = local
@@ -448,14 +483,14 @@ export function ComposerEditor({
           pending = undefined;
         }));
     const loadIfNeeded = () => {
-      if (!loaded && view.state.doc.toString().includes("$"))
+      if (load.current && !loaded && view.state.doc.toString().includes("$"))
         void loadCatalog().catch(() => {
           /* Ordinary editing remains available. */
         });
     };
     view.dispatch({
       effects: skills.current.reconfigure(
-        loadSkills
+        loadSkills || externalCommands
           ? [
               composerSkills,
               EditorView.updateListener.of((update) => {
@@ -467,7 +502,13 @@ export function ComposerEditor({
                   draft.undo.stopCapturing();
                 }
                 if (update.docChanged) loadIfNeeded();
-                if (update.transactions.some(typedSkillTrigger)) {
+                if (
+                  update.transactions.some(typedSkillTrigger) ||
+                  (externalCommands &&
+                    update.docChanged &&
+                    view.hasFocus &&
+                    update.state.doc.toString() === "/")
+                ) {
                   // CodeMirror can open completion once this input update finishes.
                   queueMicrotask(() => {
                     if (!disposed) startCompletion(view);
@@ -476,7 +517,12 @@ export function ComposerEditor({
               }),
               tooltips({ parent: pickerHost.current!, position: "absolute" }),
               autocompletion({
-                override: [skillCompletion(loadCatalog)],
+                override: [
+                  ...(externalCommands
+                    ? [acpCommandCompletion(() => commands.current ?? [])]
+                    : []),
+                  ...(loadSkills ? [skillCompletion(loadCatalog)] : []),
+                ],
                 activateOnTyping: false,
                 defaultKeymap: false,
                 icons: false,
@@ -487,9 +533,8 @@ export function ComposerEditor({
                   {
                     position: 90,
                     render: (option) => {
-                      const label = skillSourceLabel(
-                        (option as SkillOption).source,
-                      );
+                      const key = (option as Partial<SkillOption>).source;
+                      const label = key ? skillSourceLabel(key) : undefined;
                       if (!label) return null;
                       const source = document.createElement("span");
                       source.className = skillStyles.source;
@@ -513,10 +558,17 @@ export function ComposerEditor({
       view.dispatch({ effects: refreshSkills.of(undefined) });
       loadIfNeeded();
     }
+    if (
+      externalCommands &&
+      view.hasFocus &&
+      acpCommandPrefix(view.state.doc.toString())
+    ) {
+      startCompletion(view);
+    }
     return () => {
       disposed = true;
     };
-  }, [draft, doc, editor, skillContext, !!loadSkills, t]);
+  }, [draft, doc, editor, skillContext, externalCommands, !!loadSkills, t]);
   useEffect(() => {
     report.current({ name: profile.display_name, color: profile.color });
   }, [profile]);
@@ -524,12 +576,12 @@ export function ComposerEditor({
     <>
       <div className={skillStyles.anchor}>
         <div className={skillStyles.pickerHeader}>
-          <span>{t("Skills")}</span>
+          <span>{t(externalCommands ? "Commands & skills" : "Skills")}</span>
           <button
             type="button"
-            aria-label={t("Dismiss skill suggestions")}
+            aria-label={t("Dismiss suggestions")}
             aria-keyshortcuts="Escape"
-            title={t("Dismiss skill suggestions (Esc)")}
+            title={t("Dismiss suggestions (Esc)")}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               const view = currentView.current;

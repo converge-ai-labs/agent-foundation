@@ -109,8 +109,12 @@ class AcpEnvironmentClient:
 
     def __init__(self) -> None:
         self.session_id: str | None = None
+        self.opening_updates: dict[tuple[str, str], AcpUpdate] | None = None
         self.binding: AcpRunBinding | None = None
         self.config_options: list[ConfigOption] = []
+        self.available_commands: tuple[schema.AvailableCommand, ...] | None = None
+        self.session_title: str | None = None
+        self.context_window: tuple[int, int] | None = None
         self._terminals: dict[str, _Terminal] = {}
         self._tool_calls: dict[str, schema.ToolCallUpdate] = {}
         self._update_error: Exception | None = None
@@ -132,9 +136,20 @@ class AcpEnvironmentClient:
 
     async def session_update(self, session_id: str, update: AcpUpdate, **_: Any) -> None:
         if session_id != self.session_id:
+            if (
+                self.opening_updates is not None
+                and isinstance(
+                    update,
+                    schema.ConfigOptionUpdate
+                    | schema.AvailableCommandsUpdate
+                    | schema.SessionInfoUpdate
+                    | schema.UsageUpdate,
+                )
+                and len(self.opening_updates) < 32
+            ):
+                self.opening_updates[session_id, update.session_update] = update
             return
-        if isinstance(update, schema.ConfigOptionUpdate):
-            self.config_options = update.config_options
+        self._remember_session_update(update)
         if self.binding is not None and isinstance(update, schema.ToolCallStart | schema.ToolCallProgress):
             if self.binding.review_permission_command is not None:
                 fields = update.model_dump(include={"tool_call_id", "title", "kind", "raw_input"}, exclude_unset=True)
@@ -149,6 +164,16 @@ class AcpEnvironmentClient:
             except Exception as exc:
                 # SDK notification tasks cannot propagate application failure to prompt().
                 self._update_error = exc
+
+    def _remember_session_update(self, update: AcpUpdate) -> None:
+        if isinstance(update, schema.ConfigOptionUpdate):
+            self.config_options = update.config_options
+        elif isinstance(update, schema.AvailableCommandsUpdate):
+            self.available_commands = tuple(update.available_commands)
+        elif isinstance(update, schema.SessionInfoUpdate) and update.title and update.title.strip():
+            self.session_title = update.title.strip()
+        elif isinstance(update, schema.UsageUpdate) and update.size > 0:
+            self.context_window = (update.used, update.size)
 
     def _tool_call(self, call: schema.ToolCallUpdate) -> schema.ToolCallUpdate:
         prior = self._tool_calls.get(call.tool_call_id)

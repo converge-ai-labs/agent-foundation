@@ -353,6 +353,7 @@ class ThreadRecord(Base):
     )
     metadata_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    manual_title: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
     search_text: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default=text("''"))
     first_input: Mapped[str] = mapped_column(String(512), nullable=False, default="", server_default=text("''"))
     latest_input: Mapped[str] = mapped_column(String(2048), nullable=False, default="", server_default=text("''"))

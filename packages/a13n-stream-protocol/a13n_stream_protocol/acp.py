@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from a13n_harness.acp import AcpUpdate
+from a13n_harness.acp import AcpUpdate, acp_host_tool_name
 from a13n_harness.tools.diagnostics import SYSTEM_FAILURE_METADATA_KEY
 from acp import schema
 
@@ -99,7 +99,14 @@ class AcpRunStream:
             {key: values[key] for key in ("title", "kind", "status", "locations", "content") if key in values}
         )
         if new:
-            self._event("TOOL_CALL_START", toolCallId=call_id, toolCallName=update.name or update.title or "Tool")
+            title = update.title or "Tool"
+            name = update.name or title.removeprefix("Run ")
+            canonical = acp_host_tool_name(name)
+            self._event(
+                "TOOL_CALL_START",
+                toolCallId=call_id,
+                toolCallName=canonical if canonical != name else update.name or title,
+            )
         if not tool.arguments_sent and update.raw_input is not None:
             tool.arguments_sent = True
             self._event("TOOL_CALL_ARGS", toolCallId=call_id, delta=json.dumps(values["rawInput"], ensure_ascii=False))

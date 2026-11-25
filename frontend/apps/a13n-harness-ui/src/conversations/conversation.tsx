@@ -749,6 +749,28 @@ function ConversationContent({
     acpAgent,
     detail.data?.continuation_id,
   );
+  const acpCommands = useQuery({
+    queryKey: [
+      "thread",
+      threadId,
+      "acp-commands",
+      acpAgent,
+      detail.data?.continuation_id,
+    ],
+    enabled: !!acpAgent && !guest && !readOnly && !thread?.archived,
+    retry: false,
+    refetchInterval: acpActive || acpOptions.isFetching ? 2000 : false,
+    queryFn: ({ signal }) =>
+      result(
+        transport.client.GET("/api/threads/{thread_id}/acp-commands", {
+          params: { path: { thread_id: threadId } },
+          signal,
+        }),
+      ),
+  });
+  useEffect(() => {
+    if (acpOptions.isSuccess) void acpCommands.refetch();
+  }, [acpOptions.dataUpdatedAt]);
   const sources = useSources();
   const acpSource =
     acpAgent &&
@@ -971,6 +993,8 @@ function ConversationContent({
                   liveRecordId={
                     showLive ? display.contextUsage?.recordId : undefined
                   }
+                  acpContext={showLive ? display.acpContext : undefined}
+                  external={!!acpAgent}
                   liveTokens={
                     showLive ? display.contextUsage?.tokens : undefined
                   }
@@ -1281,6 +1305,7 @@ function ConversationContent({
             autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
             activity={thread?.root_activity ?? { state: "inactive" }}
+            acpCommands={acpAgent ? acpCommands.data : undefined}
             externalAgent={
               thread?.configuration.agent_source.kind === "acp_agent"
             }

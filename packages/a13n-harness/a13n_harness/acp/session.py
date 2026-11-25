@@ -281,6 +281,7 @@ class AcpSessionRuntime:
             else None
         )
         self._initializing = True
+        self.client.opening_updates = updates = {}
         try:
             if self.client._bridge is not None:
                 if discovery is None:
@@ -313,6 +314,9 @@ class AcpSessionRuntime:
                 raise AcpError("acp_resume_unsupported", "This agent cannot recover its saved ACP session.")
             self._wire.session_id = self.client.session_id = session_id
             self.client.config_options = list(response.config_options or ()) if response is not None else []
+            for (notified_session, _), update in updates.items():
+                if notified_session == session_id:
+                    self.client._remember_session_update(update)
             if saved_session_id is None and not self._wire.system_prompt:
                 self._initial_instructions = self._wire.instructions
             return session_id
@@ -323,26 +327,31 @@ class AcpSessionRuntime:
         finally:
             self._initializing = False
             self._wire.instructions = ()
+            self.client.opening_updates = None
 
-    async def restore_options(self, values: dict[str, str | bool]) -> None:
-        # A model change may replace the choice lists for the remaining options.
-        offered = sorted(self.config_options, key=lambda item: item.category != "model" and item.id != "model")
-        for candidate in offered:
-            option = next((item for item in self.config_options if item.id == candidate.id), None)
-            value = values.get(candidate.id)
-            if option is None or value is None or value == option.current_value:
+    async def restore_options(self, values: dict[str, str | bool], *, strict: frozenset[str] = frozenset()) -> None:
+        # A model change may add or replace the remaining options.
+        models = [item.id for item in self.config_options if item.category == "model" or item.id == "model"]
+        for config_id in (*models, *(key for key in values if key not in models)):
+            if config_id not in values:
                 continue
+            option = next((item for item in self.config_options if item.id == config_id), None)
+            value = values[config_id]
             if isinstance(option, schema.SessionConfigOptionSelect):
-                choices = (
-                    item.value
+                offered = isinstance(value, str) and any(
+                    item.value == value
                     for choice in option.options
                     for item in (choice.options if isinstance(choice, schema.SessionConfigSelectGroup) else (choice,))
                 )
-                if not isinstance(value, str) or value not in choices:
-                    continue
-            elif not isinstance(value, bool):
-                continue
-            await self.set_config_option(option.id, value)
+            else:
+                offered = option is not None and isinstance(value, bool)
+            if option is not None and offered and value != option.current_value:
+                await self.set_config_option(config_id, value)
+        actual = {item.id: item.current_value for item in self.config_options}
+        if any(actual.get(key) != values[key] for key in strict):
+            raise AcpError(
+                "acp_option_invalid", "The ACP Agent could not confirm the selected options. Select them again."
+            )
 
     def _idle_session(self) -> str:
         if self._broken:

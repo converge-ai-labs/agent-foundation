@@ -550,8 +550,13 @@ class DisplayFold:
             and _json_size(value) > MAX_OBSERVATION_BYTES
         ):
             value = _OMITTED
-        key = item_id(self.run_id, "observation", f"{self.attempt}:{self.sequence}")
-        content: dict[str, JsonValue] = {"name": str(assembled.get("name")), "value": value}
+        name = str(assembled.get("name"))
+        scope = assembled.get("subagentRunId") or "root"
+        identity = (
+            f"{scope}:{name}" if name in {"a13n.acp.plan", "a13n.acp.usage"} else f"{self.attempt}:{self.sequence}"
+        )
+        key = item_id(self.run_id, "observation", identity)
+        content: dict[str, JsonValue] = {"name": name, "value": value}
         if "metadata" in assembled:
             content["metadata"] = cast(JsonValue, assembled["metadata"])
         if "subagentRunId" in assembled:

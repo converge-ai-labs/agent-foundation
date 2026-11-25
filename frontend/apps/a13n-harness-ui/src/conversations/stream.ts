@@ -158,6 +158,7 @@ export class FocusDisplay {
   terminalFailure?: string;
   terminalFailureCode?: string;
   contextUsage?: { tokens: number; ordinal: number; recordId?: string };
+  acpContext?: { used: number; size: number };
   readonly checkpoints = new Map<string, number>();
   private readonly savedBlocks = new Map<string, number>();
   blocksAfter(continuation: string | null | undefined) {
@@ -209,6 +210,7 @@ export class FocusDisplay {
     this.sequence = 0;
     this.gap = false;
     this.contextUsage = undefined;
+    this.acpContext = undefined;
     this.recovery = undefined;
     this.terminalFailure = undefined;
     this.terminalFailureCode = undefined;
@@ -784,7 +786,8 @@ export class FocusDisplay {
       block.apps = content.mcp_apps as Schema<"AppReference">[] | undefined;
       block.acp = object(content.acp) ? content.acp : undefined;
       block.edit =
-        (content.applied_edit as AppliedEdit | undefined) ?? acpEdit(block.acp);
+        (content.applied_edit as AppliedEdit | undefined) ??
+        acpEdit(block.acp, block.name, block.text);
       block.imageUnavailable = content.tool_image_unavailable === true;
       block.provider = string(content.provider) || undefined;
       if (!block.provider)
@@ -862,11 +865,24 @@ export class FocusDisplay {
       const block = this.blocks.get(key);
       if (id && block?.kind === "tool") {
         const acp = { ...block.acp, ...value };
-        setBlock(key, { ...block, acp, edit: acpEdit(acp) ?? block.edit });
+        setBlock(key, {
+          ...block,
+          acp,
+          edit: acpEdit(acp, block.name, block.text) ?? block.edit,
+        });
       }
       return;
     }
-    if (name === "a13n.acp.plan" || name === "a13n.acp.usage") {
+    if (name === "a13n.acp.usage") {
+      if (
+        typeof value.used === "number" &&
+        typeof value.size === "number" &&
+        value.size > 0
+      )
+        this.acpContext = { used: value.used, size: value.size };
+      return;
+    }
+    if (name === "a13n.acp.plan") {
       const key = `${scope}:${name}`;
       setBlock(key, {
         id: key,

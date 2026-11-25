@@ -12,6 +12,7 @@ from a13n_harness import __version__ as harness_version
 from anyio import CancelScope, to_thread
 from filelock import AsyncFileLock
 
+from a13n_harness_ui.acp_sessions import AcpOptionSelection, AcpSessionState, acp_options_scope
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
@@ -102,6 +103,7 @@ class ThreadService:
         thread_id: str | None = None,
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
+        acp_options: AcpOptionSelection | None = None,
     ) -> Thread:
         source = await self._required_configuration()
         configuration = resolve_thread_configuration(source, defaults)
@@ -113,8 +115,29 @@ class ThreadService:
                 raise ThreadError("The Coordinator's Project is unavailable.", code="thread_project_missing")
         if coordinator and configuration.project_id not in source.projects:
             raise ThreadError("A Coordinator requires an available Project.", code="thread_project_missing")
+        acp_state = None
+        if acp_options is not None and acp_options.values:
+            resource = (
+                source.acp_agents.get(configuration.agent_source.id)
+                if isinstance(configuration.agent_source, AcpAgentSource)
+                else None
+            )
+            if resource is None:
+                raise ThreadError("Select an ACP Agent before choosing its options.", code="acp_option_invalid")
+            cwd = self.acp_workspace(configuration)
+            if acp_options.scope != acp_options_scope(resource, cwd):
+                raise ThreadError(
+                    "The ACP Agent or workspace changed. Select its options again.", code="acp_option_invalid"
+                )
+            acp_state = AcpSessionState(
+                digest=acp_options.scope,
+                prompted=False,
+                options=acp_options.values,
+                explicit_options=frozenset(acp_options.values),
+            )
         return await self._create(
             configuration=configuration,
+            acp_state=acp_state,
             title=title,
             thread_id=thread_id,
             coordinator_thread_id=coordinator_thread_id,
@@ -400,6 +423,7 @@ class ThreadService:
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
         memory_scope: str | None = None,
+        acp_state: AcpSessionState | None = None,
     ) -> Thread:
         baseline = HarnessState.new(thread_id=thread_id)
         initial = await self._store.objects.publish_model(
@@ -411,12 +435,21 @@ class ThreadService:
             memory_scope=memory_scope,
             configuration=configuration,
             initial_state=initial.ref,
+            acp_state_json=acp_state.model_dump_json() if acp_state is not None else None,
             title=title,
             coordinator_thread_id=coordinator_thread_id,
             coordinator=coordinator,
         )
         await self._store.publish_work(thread.thread_id, initial.ref, baseline)
         return thread
+
+    def acp_workspace(self, configuration: ThreadConfiguration) -> str:
+        if configuration.environment_profile_id != FULL_CONTROL_PROFILE_ID or configuration.environment_bindings:
+            raise ThreadError(
+                "Launching a local ACP executable requires Full Control without Device bindings.",
+                code="acp_requires_native_environment",
+            )
+        return configuration.local_roots[0] if configuration.local_roots else str(self._store.settings.data_root)
 
     async def preview_creation(self, defaults: RootThreadDefaults | None = None) -> ThreadConfiguration:
         return resolve_thread_configuration(await self._required_configuration(), defaults)
@@ -622,6 +655,8 @@ def apply_configuration_mutation(
     if thread.configuration.version != mutation.expected_version:
         raise ThreadError("Thread configuration version changed; read it again.", code="thread_configuration_conflict")
     replacement = mutation.patch.apply(thread.configuration)
+    if mutation.patch.agent_source is not None and isinstance(replacement.agent_source, AcpAgentSource):
+        replacement = replacement.model_copy(update={"default_model_id": None})
     if thread.thread_id == BOT_THREAD_ID and replacement.project_id is not None:
         raise ThreadError("Bot belongs to the instance, not a Project.", code="bot_thread_reserved")
     _validate_configuration(source, replacement, root=thread.parent_thread_id is None)

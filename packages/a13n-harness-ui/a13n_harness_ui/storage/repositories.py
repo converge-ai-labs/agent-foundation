@@ -262,6 +262,7 @@ class ThreadRepository:
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
         memory_scope: str | None = None,
+        acp_state_json: str | None = None,
     ) -> Thread:
         if coordinator and (
             configuration.project_id is None or parent_thread_id is not None or coordinator_thread_id is not None
@@ -303,6 +304,8 @@ class ThreadRepository:
                 parent_thread_id=parent_thread_id,
                 metadata_version=1,
                 title=title,
+                manual_title=title is not None,
+                acp_state_json=acp_state_json,
                 search_text=f"{thread_id}\n{title or ''}".casefold(),
                 archived=False,
                 created_at=now,
@@ -748,6 +751,16 @@ class ThreadRepository:
             await session.flush()
             return _thread_value(record, replacement)
 
+    async def set_acp_title(self, thread_id: str, title: str) -> bool:
+        async with transaction(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            if record is None or record.manual_title or record.title == title:
+                return False
+            record.title = title
+            record.search_text = _search_text(record)
+            record.metadata_version += 1
+            return True
+
     async def update_metadata(
         self,
         *,
@@ -770,6 +783,8 @@ class ThreadRepository:
             if record.title == title and record.archived is archived and record.starred is selected_starred:
                 return _thread_value(record, _configuration_value(configuration))
             record.metadata_version += 1
+            if record.title != title:
+                record.manual_title = True
             record.title = title
             record.search_text = _search_text(record)
             record.archived = archived

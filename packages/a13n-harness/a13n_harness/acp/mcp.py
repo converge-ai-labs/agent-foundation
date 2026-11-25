@@ -42,6 +42,14 @@ _STDIO_URL = "A13N_ACP_MCP_URL"
 _STDIO_TOKEN = "A13N_ACP_MCP_TOKEN"
 
 
+def acp_host_tool_name(name: str) -> str:
+    """Return the canonical name for a qualified harness-host tool."""
+    for prefix in _SERVER_PREFIXES:
+        if name.startswith(prefix) and len(name) > len(prefix):
+            return name[len(prefix) :]
+    return name
+
+
 @dataclass(frozen=True)
 class AcpHostToolScope:
     """Capability instances and context owned by one Run."""

@@ -272,6 +272,14 @@ async def test_acp_thread_without_native_model_runs_and_saves_display(tmp_path: 
         assert (await app.wait_root_operation(again.receipt_id)).status is RootOperationStatus.completed
         assert (await app.get_thread(thread.thread_id)).thread.excerpt.latest_reply == "done:again"
 
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="observe")
+        observed = await app.wait_root_operation(receipt.receipt_id)
+        assert observed.status is RootOperationStatus.completed
+        assert (await app.get_thread(thread.thread_id)).thread.title == "Peer title"
+        usage = await app.context_usage(thread.thread_id)
+        assert (usage.latest_request_tokens, usage.context_window) == (24, 1000)
+        assert [command.name for command in await app.acp_commands(thread.thread_id)] == ["plan"]
+
         stopped_thread = await app.create_thread()
         async with app.live_events(root_thread_id=stopped_thread.thread_id) as live:
             receipt = await app.submit_thread(thread_id=stopped_thread.thread_id, prompt="cancel-me")
@@ -379,9 +387,20 @@ async def test_acp_prewarm_replays_options_after_host_restart(tmp_path: Path, pe
     (resources / "fixture.yaml").write_text(resource.model_dump_json(exclude_none=True))
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     async with open_harness_ui_app(settings, configuration_path=config) as app:
-        thread = await app.create_thread()
-        selection = await app.acp_options(thread.thread_id, AcpOptionChange(id="mode", value="plan"))
-        assert selection[0].value == "plan"
+        from a13n_harness_ui.acp_sessions import AcpOptionPreviewChange, AcpOptionSelection
+
+        catalog = await app.acp_agent_options("acp-fixture", None)
+        assert [command.name for command in catalog.commands] == ["plan"]
+        chosen = await app.acp_agent_options(
+            "acp-fixture",
+            None,
+            AcpOptionPreviewChange(
+                selection=AcpOptionSelection(scope=catalog.scope),
+                change=AcpOptionChange(id="mode", value="plan"),
+            ),
+        )
+        thread = await app.create_thread(acp_options=AcpOptionSelection(scope=chosen.scope, values=chosen.selections))
+        assert (await app.acp_options(thread.thread_id))[0].value == "plan"
     async with open_harness_ui_app(settings, configuration_path=config) as app:
         assert (await app.acp_options(thread.thread_id))[0].value == "plan"
         assert (await app.get_thread(thread.thread_id)).continuation_id is None
@@ -441,3 +460,66 @@ async def test_acp_shell_review_on_app_callbacks(tmp_path: Path, monkeypatch: py
         assert len({request.tool_call_id for request in reviewed}) == 3
         assert all(request.source is None for request in reviewed)
         assert reviewed[2].arguments["command"] == [sys.executable, "-c", "print('reviewed')"]
+
+
+async def test_acp_receives_only_unsynced_visible_history(tmp_path: Path) -> None:
+    from a13n_harness import HarnessState
+    from pydantic_ai.messages import ModelRequest, ModelResponse, SystemPromptPart, TextPart, UserPromptPart
+
+    sessions = AcpSessions()
+    resource = _resource().model_copy(update={"args": (str(_PEER), "ui", "resident")})
+
+    def executable():
+        turn = AcpTurn(sessions, resource, "digest", AcpSessionSetup(cwd=str(tmp_path)), lambda _: None)
+        return HarnessBuilder(configured_plugins_enabled=False).build(AgentSpec(), output_type=str, plugins=(turn,))
+
+    original = HarnessState.new(
+        message_history=(
+            ModelRequest(
+                parts=[SystemPromptPart(content="private system text"), UserPromptPart(content="native-visible")]
+            ),
+            ModelResponse(parts=[TextPart(content="native answer")]),
+        )
+    )
+    try:
+        outcome = await executable().run("handoff-check", previous_state=original)
+        assert outcome.output == "verified handoff"
+        assert outcome.state.message_history[-1].parts[0].content == "verified handoff"
+        resumed = await executable().run("handoff-next", previous_state=outcome.state)
+        assert resumed.output == "verified handoff"
+    finally:
+        await sessions.close()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Antigravity browser handoff uses POSIX browser shims")
+async def test_agy_oauth_callback_is_forwarded_and_released(tmp_path: Path) -> None:
+    from a13n_harness_ui.acp_auth import _agy_browser_login
+    from a13n_harness_ui.acp_inputs import AcpInputs
+
+    executable = tmp_path / "agy"
+    executable.write_text(
+        '#!/bin/sh\n[ "$*" = "acp --login" ] || exit 1\n'
+        'printf "%s\\n" "https://accounts.google.com/o/oauth2/auth?state=fixture"\n'
+        'IFS= read -r code\n[ "$code" = synthetic-code ]\n'
+    )
+    executable.chmod(0o700)
+    changed = asyncio.Event()
+
+    async def notify(_: str) -> None:
+        changed.set()
+
+    inputs = Inputs(notify)
+    scope = auth_input_scope("acp-fixture")
+    interaction = AcpInputs(inputs, scope, "acp-fixture", lambda: None, run_id="login", timeout_seconds=10)
+    transport = local_transport(_resource(), str(tmp_path))
+    async with asyncio.TaskGroup() as group:
+        login = group.create_task(_agy_browser_login(str(executable), transport, interaction))
+        await asyncio.wait_for(changed.wait(), 10)
+        (request,) = inputs.requests({scope})
+        assert request.private_form and request.url and request.url.startswith("https://accounts.google.com/")
+        await inputs.respond(
+            {scope}, request.request_id, McpInputResponse(action="accept", content={"callback": "synthetic-code"})
+        )
+    assert login.result()
+    assert not inputs.thread_ids()
+    await inputs.close()

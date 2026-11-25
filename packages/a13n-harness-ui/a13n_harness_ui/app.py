@@ -41,8 +41,18 @@ from pydantic_ai import BinaryContent, ToolReturn, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
-from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus, acp_auth, auth_input_scope
-from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange, AcpSessions
+from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus, acp_auth, auth_input_scope, preview_acp_options
+from a13n_harness_ui.acp_sessions import (
+    AcpCommand,
+    AcpOption,
+    AcpOptionChange,
+    AcpOptionPreviewChange,
+    AcpOptionSelection,
+    AcpOptionsPreview,
+    AcpSessions,
+    AcpSessionState,
+    acp_options_scope,
+)
 from a13n_harness_ui.background_input import background_input
 from a13n_harness_ui.browser import (
     BrowserAccess,
@@ -382,7 +392,12 @@ from a13n_harness_ui.thread_files import (
     ThreadFiles,
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
-from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService, configured_agent_source
+from a13n_harness_ui.thread_service import (
+    RootThreadDefaults,
+    ThreadService,
+    configured_agent_source,
+    resolve_thread_configuration,
+)
 from a13n_harness_ui.thread_work import ThreadWorkService
 from a13n_harness_ui.tool_executions import ToolExecutions, execution_view
 from a13n_harness_ui.voice import VoiceController
@@ -512,6 +527,7 @@ class HarnessUiApp:
         self._mcp_connections = mcp_connections or (mcp_apps.connections if mcp_apps else None)
         self._mcp_inputs = mcp_inputs
         self._acp_auth_active: set[str] = set()
+        self._acp_options_cache: dict[str, AcpOptionsPreview] = {}
         self._mcp_operations = mcp_operations
         self._mcp_app_owners = (
             mcp_operations.owners
@@ -1593,6 +1609,7 @@ class HarnessUiApp:
         thread_id: str | None = None,
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
+        acp_options: AcpOptionSelection | None = None,
     ) -> ThreadSummary:
         async with self._operation():
             selected = (
@@ -1602,6 +1619,7 @@ class HarnessUiApp:
             )
             thread = await self._threads.create(
                 defaults=selected,
+                acp_options=acp_options,
                 title=title,
                 thread_id=thread_id,
                 coordinator_thread_id=coordinator_thread_id,
@@ -1844,6 +1862,36 @@ class HarnessUiApp:
         async with self._operation():
             return await self._root_runs.acp_options(thread_id, change)
 
+    async def acp_commands(self, thread_id: str) -> tuple[AcpCommand, ...]:
+        async with self._operation():
+            await self._threads.require_interactive(thread_id)
+            commands = self._acp_sessions.commands(thread_id)
+            if commands is not None:
+                return commands
+            saved = await self._store.threads.acp_state(thread_id)
+            return AcpSessionState.model_validate_json(saved).commands if saved is not None else ()
+
+    async def acp_agent_options(
+        self, agent_id: str, project_id: str | None, request: AcpOptionPreviewChange | None = None
+    ) -> AcpOptionsPreview:
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None or (resource := source.acp_agents.get(agent_id)) is None:
+                raise HarnessUiError("The external Agent is not configured.", code="acp_agent_missing")
+            configuration = resolve_thread_configuration(
+                source, RootThreadDefaults(agent_id=agent_id, project_id=project_id)
+            )
+            cwd = self._threads.acp_workspace(configuration)
+            scope = acp_options_scope(resource, cwd)
+            if request is None and (cached := self._acp_options_cache.get(scope)) is not None:
+                return cached
+            result = await preview_acp_options(resource, cwd, request)
+            if request is None:
+                if len(self._acp_options_cache) >= 32:
+                    self._acp_options_cache.pop(next(iter(self._acp_options_cache)))
+                self._acp_options_cache[scope] = result
+            return result
+
     async def acp_auth(self, agent_id: str, request: AcpAuthRequest) -> AcpAuthStatus:
         async with self._operation():
             source = await self._configurations.current()
@@ -1859,6 +1907,8 @@ class HarnessUiApp:
                 return await acp_auth(resource, self._store.settings.data_root, request, self._mcp_inputs)
             finally:
                 self._acp_auth_active.discard(agent_id)
+                if request.action != "probe":
+                    self._acp_options_cache.clear()
 
     async def acp_auth_inputs(self, agent_id: str) -> tuple[McpInputRequestView, ...]:
         async with self._operation():

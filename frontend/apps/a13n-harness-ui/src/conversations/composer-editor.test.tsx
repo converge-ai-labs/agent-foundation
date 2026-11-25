@@ -980,3 +980,34 @@ it("offers clickable accept and dismiss controls outside the textbox", () => {
   expect(draft.doc.getText("text").toString()).toBe("Add an example.");
   expect(document.activeElement).toBe(textbox);
 });
+
+it("completes an ACP slash command without submitting the prompt", async () => {
+  const draft = new ThreadDraft();
+  const submit = vi.fn();
+  const editor = { current: null as EditorView | null };
+  render(
+    <ComposerEditor
+      draft={draft}
+      profile={{ display_name: "Alice", color: "#2563eb" }}
+      presence={() => {}}
+      submit={submit}
+      editor={editor}
+      autoFocus
+      acpCommands={[
+        { name: "compact", description: "Compact the conversation" },
+      ]}
+    />,
+  );
+  act(() =>
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "/" },
+      selection: { anchor: 1 },
+      userEvent: "input.type",
+    }),
+  );
+  const command = await screen.findByRole("option", { name: "/compact" });
+  fireEvent.mouseDown(command);
+  fireEvent.click(command);
+  await waitFor(() => expect(values(draft.doc).prompt).toBe("/compact "));
+  expect(submit).not.toHaveBeenCalled();
+});

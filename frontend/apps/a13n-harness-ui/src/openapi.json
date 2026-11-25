@@ -5760,6 +5760,124 @@
         }
       }
     },
+    "/api/acp-agents/{agent_id}/options": {
+      "get": {
+        "summary": "Acp Agent Options",
+        "operationId": "acp_agent_options_api_acp_agents__agent_id__options_get",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpOptionsPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Preview Acp Agent Options",
+        "operationId": "preview_acp_agent_options_api_acp_agents__agent_id__options_post",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcpOptionsPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcpOptionPreviewChange"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/acp-agents/{agent_id}/auth": {
       "post": {
         "summary": "Acp Auth",
@@ -6238,6 +6356,49 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/EnvironmentSelectionPatch"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/acp-commands": {
+      "get": {
+        "summary": "Acp Commands",
+        "operationId": "acp_commands_api_threads__thread_id__acp_commands_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AcpCommand"
+                  },
+                  "title": "Response Acp Commands Api Threads  Thread Id  Acp Commands Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }
@@ -10586,7 +10747,8 @@
             "type": "string",
             "enum": [
               "agent",
-              "terminal"
+              "terminal",
+              "browser"
             ],
             "title": "Kind"
           },
@@ -10681,6 +10843,36 @@
         ],
         "title": "AcpAuthStatus"
       },
+      "AcpCommand": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "AcpCommand"
+      },
       "AcpOption": {
         "properties": {
           "id": {
@@ -10760,6 +10952,50 @@
           "name"
         ],
         "title": "AcpOptionValue"
+      },
+      "AcpOptionsPreview": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/AcpOption"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "commands": {
+            "items": {
+              "$ref": "#/components/schemas/AcpCommand"
+            },
+            "type": "array",
+            "title": "Commands",
+            "default": []
+          },
+          "selections": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Selections"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "scope",
+          "options"
+        ],
+        "title": "AcpOptionsPreview"
       },
       "AcpPresetView": {
         "properties": {
@@ -19799,6 +20035,11 @@
             ],
             "default": null,
             "title": "Url"
+          },
+          "private_form": {
+            "default": false,
+            "title": "Private Form",
+            "type": "boolean"
           },
           "state": {
             "default": "pending",
@@ -32070,6 +32311,84 @@
         "title": "McpToolSelection",
         "type": "object"
       },
+      "AcpOptionChange": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "id",
+          "value"
+        ],
+        "title": "AcpOptionChange",
+        "type": "object"
+      },
+      "AcpOptionSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "maxProperties": 64,
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "title": "AcpOptionSelection",
+        "type": "object"
+      },
+      "AcpOptionPreviewChange": {
+        "additionalProperties": false,
+        "properties": {
+          "selection": {
+            "$ref": "#/components/schemas/AcpOptionSelection"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcpOptionChange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "selection"
+        ],
+        "title": "AcpOptionPreviewChange",
+        "type": "object"
+      },
       "AcpAuthRequest": {
         "properties": {
           "action": {
@@ -32312,32 +32631,6 @@
           }
         },
         "title": "EnvironmentSelectionPatch",
-        "type": "object"
-      },
-      "AcpOptionChange": {
-        "additionalProperties": false,
-        "properties": {
-          "id": {
-            "title": "Id",
-            "type": "string"
-          },
-          "value": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "boolean"
-              }
-            ],
-            "title": "Value"
-          }
-        },
-        "required": [
-          "id",
-          "value"
-        ],
-        "title": "AcpOptionChange",
         "type": "object"
       },
       "ThreadConfigurationPatch": {
@@ -32832,6 +33125,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/NewThreadDefaults"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acp_options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcpOptionSelection"
               },
               {
                 "type": "null"

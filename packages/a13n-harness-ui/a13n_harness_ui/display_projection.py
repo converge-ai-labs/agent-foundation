@@ -80,7 +80,7 @@ def _parts(item: Item) -> list[dict[str, Any]]:
         return parts
     name = content.get("name")
     value = content.get("value")
-    if name in {"a13n.acp.plan", "a13n.acp.usage"}:
+    if name == "a13n.acp.plan":
         return [{"kind": "other", "value": value, "metadata": {"a13n.acp.observation": name}}]
     event = value.get("event") if isinstance(value, dict) else None
     if not isinstance(event, dict):

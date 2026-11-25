@@ -37,18 +37,36 @@ export function record(value: unknown): value is Record<string, unknown> {
 }
 export function acpEdit(
   acp?: Record<string, unknown>,
+  name?: string,
+  input?: unknown,
 ): AppliedEdit | undefined {
-  if (!Array.isArray(acp?.content)) return;
-  const diff = acp.content.find(
-    (item) =>
-      record(item) && item.type === "diff" && typeof item.path === "string",
-  );
+  const diff = Array.isArray(acp?.content)
+    ? acp.content.find(
+        (item) =>
+          record(item) && item.type === "diff" && typeof item.path === "string",
+      )
+    : undefined;
   if (diff)
     return {
       file_path: diff.path,
       before: typeof diff.oldText === "string" ? diff.oldText : "",
       after: typeof diff.newText === "string" ? diff.newText : "",
     };
+  if (acp?.status !== "completed") return;
+  const args = parsed(input);
+  if (!record(args) || typeof args.Path !== "string") return;
+  if (
+    name === "edit_file" &&
+    typeof args.Target === "string" &&
+    typeof args.Replacement === "string"
+  )
+    return {
+      file_path: args.Path,
+      before: args.Target,
+      after: args.Replacement,
+    };
+  if (name === "write_file" && typeof args.Content === "string")
+    return { file_path: args.Path, before: "", after: args.Content };
 }
 
 export function acpPaths(acp?: Record<string, unknown>): string[] {
@@ -149,6 +167,8 @@ export function describeTool(tool: ToolView) {
         ? text(args.path)
         : "");
   const shell =
+    tool.name === "run_command" ||
+    tool.name === "manage_task" ||
     tool.acp?.kind === "execute" ||
     tool.name.startsWith("shell_") ||
     (!!tool.shellCommand &&
@@ -208,6 +228,82 @@ export function describeTool(tool: ToolView) {
     "file" | "edit" | "shell" | "search" | "web" | "thread" | "code" | "tool" =
     "tool";
   switch (tool.name) {
+    case "read_file": {
+      label = "Read";
+      kind = "file";
+      const start = args.StartLine;
+      const end = args.EndLine;
+      if (path && typeof start === "number" && start > 0)
+        summary = `${path}:${start}${typeof end === "number" && end > start ? `–${end}` : ""}`;
+      break;
+    }
+    case "edit_file":
+    case "write_file":
+      label = tool.name === "edit_file" ? "Edit" : "Write";
+      kind = "edit";
+      break;
+    case "run_command":
+      label = "Run command";
+      kind = "shell";
+      break;
+    case "manage_task": {
+      const action = text(args.Action).toLowerCase();
+      label =
+        action === "list"
+          ? "List tasks"
+          : action === "cancel"
+            ? "Cancel task"
+            : "Task status";
+      summary = text(args.TaskId);
+      kind = "shell";
+      break;
+    }
+    case "search_web":
+      label = "Search the web";
+      kind = "web";
+      summary = [text(args.query), text(args.domain)]
+        .filter(Boolean)
+        .join(" · ");
+      break;
+    case "update_steps":
+    case "update_focus": {
+      label = tool.name === "update_steps" ? "Update steps" : "Update focus";
+      const steps = args.Steps ?? args.steps;
+      const focus = args.Focus ?? args.focus;
+      summary =
+        text(focus) ||
+        text(steps) ||
+        (Array.isArray(steps)
+          ? steps
+              .map((item) =>
+                record(item)
+                  ? text(
+                      item.Step ??
+                        item.Description ??
+                        item.description ??
+                        item.content,
+                    )
+                  : text(item),
+              )
+              .filter(Boolean)
+              .join(" · ")
+          : "");
+      break;
+    }
+    case "invoke_subagent":
+    case "define_subagent":
+    case "manage_subagents":
+    case "send_message":
+      label = {
+        invoke_subagent: "Start subagent",
+        define_subagent: "Define subagent",
+        manage_subagents: "Manage subagents",
+        send_message: "Message subagent",
+      }[tool.name];
+      summary = [text(args.Role), text(args.TypeName), text(args.Recipient)]
+        .filter(Boolean)
+        .join(" · ");
+      break;
     case "computer_observe":
       label = "Observe desktop";
       summary = text(result.target_id) || text(args.alias);
@@ -450,6 +546,12 @@ export function describeTool(tool: ToolView) {
       break;
     default:
       generatedLabel = !tool.name;
+      if (tool.name.startsWith("browser_")) {
+        label = tool.name.slice("browser_".length).replaceAll("_", " ");
+        label = `Browser · ${label}`;
+        summary = text(args.url) || text(args.text) || text(args.name);
+        kind = "web";
+      }
   }
 
   if (shell && command && tool.name !== "shell_exec")
@@ -463,34 +565,41 @@ export function describeTool(tool: ToolView) {
     kind = "edit";
   }
   if (tool.acp) {
-    switch (tool.acp.kind) {
-      case "read":
-        kind = "file";
-        break;
-      case "edit":
-      case "delete":
-      case "move":
-        kind = "edit";
-        break;
-      case "search":
-        kind = "search";
-        break;
-      case "execute":
-        kind = "shell";
-        break;
-      case "fetch":
-        kind = "web";
-        break;
-      case "think":
-        kind = "code";
-        break;
-    }
+    if (kind === "tool" && !generatedLabel)
+      switch (tool.acp.kind) {
+        case "read":
+          kind = "file";
+          break;
+        case "edit":
+        case "delete":
+        case "move":
+          kind = "edit";
+          break;
+        case "search":
+          kind = "search";
+          break;
+        case "execute":
+          kind = "shell";
+          break;
+        case "fetch":
+          kind = "web";
+          break;
+        case "think":
+          kind = "code";
+          break;
+      }
     const title = text(tool.acp.title);
-    if (title) {
+    if (
+      !generatedLabel &&
+      title &&
+      !/^Run (?:mcp__harness-host__|mcp_harness-host_|harness-host[/.])/.test(
+        title,
+      )
+    ) {
       label = title;
       generatedLabel = false;
     }
-    summary = command || path || text(args.toolSummary) || summary;
+    summary = command || summary || text(args.toolSummary) || path;
     if (label === summary) summary = "";
   }
   if (
@@ -700,6 +809,8 @@ export function savedTools(entries: Schema<"TranscriptEntry">[]) {
                 }
               : acpEdit(
                   record(part.metadata?.acp) ? part.metadata.acp : view?.acp,
+                  view?.name,
+                  view?.input,
                 ),
           images: part.tool_images,
           imageUnavailable: part.tool_image_unavailable,
@@ -762,6 +873,8 @@ export function activityKind(tool: ToolView): ActivityKind | undefined {
       "note_write",
       "note_delete",
       "note_get",
+      "update_steps",
+      "update_focus",
     ].includes(tool.name)
   )
     return "work";
@@ -773,6 +886,10 @@ export function activityKind(tool: ToolView): ActivityKind | undefined {
       "steer_subagent",
       "cancel_subagent",
       "resume_subagent",
+      "invoke_subagent",
+      "define_subagent",
+      "manage_subagents",
+      "send_message",
     ].includes(tool.name)
   )
     return "subagents";
@@ -879,7 +996,10 @@ export function activitySummary(tools: ToolView[]) {
     title = `File changes - ${files ? count(files, "file") : count(tools.length, "operation")}`;
   else if (kind === "shell") {
     const commands = tools.filter(
-      (tool) => tool.name === "shell_exec" || tool.acp?.kind === "execute",
+      (tool) =>
+        tool.name === "shell_exec" ||
+        tool.name === "run_command" ||
+        (tool.acp?.kind === "execute" && tool.name !== "manage_task"),
     ).length;
     title = `${pending ? "Running" : "Ran"} ${commands ? count(commands, "command") : count(tools.length, "process operation")}`;
     if (!pending && (issues.length || shellStatus))
@@ -888,7 +1008,10 @@ export function activitySummary(tools: ToolView[]) {
     title = `${pending ? "Browsing" : "Browsed"} the web - ${count(tools.length, "action")}`;
   else {
     const reads = tools.filter(
-      (tool) => tool.name === "view" || tool.acp?.kind === "read",
+      (tool) =>
+        tool.name === "view" ||
+        tool.name === "read_file" ||
+        tool.acp?.kind === "read",
     ).length;
     const searches = tools.length - reads;
     title = `${pending ? "Exploring" : "Explored"} ${[reads && count(files || reads, "file"), searches && count(searches, "lookup")].filter(Boolean).join(" - ")}`;

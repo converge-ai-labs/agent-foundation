@@ -45,8 +45,8 @@ from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent, ModelMessage
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
-from a13n_harness_ui.acp_execution import AcpTurn, _SessionState
-from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange, AcpSessions
+from a13n_harness_ui.acp_execution import AcpTurn
+from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange, AcpSessions, AcpSessionState
 from a13n_harness_ui.bot_environments import BotEnvironmentsCapability
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser import HostBrowsers
@@ -179,7 +179,7 @@ class RootRunAdmission:
     browser_binding: str | None = None
     browser_unavailable: str = ""
     external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
-    acp_state: _SessionState | None = field(default=None, repr=False)
+    acp_state: AcpSessionState | None = field(default=None, repr=False)
     strict_inputs: StrictRootInputs | None = field(default=None, repr=False)
     run_capabilities: tuple[AbstractCapability[AgentContext], ...] = field(default=(), repr=False)
 
@@ -258,18 +258,18 @@ class RootRunExecutor:
     ) -> None:
         self._bot_display_publisher = publisher
 
-    async def _read_acp_state(self, thread_id: str) -> _SessionState | None:
+    async def _read_acp_state(self, thread_id: str) -> AcpSessionState | None:
         value = await self._store.threads.acp_state(thread_id)
-        return _SessionState.model_validate_json(value) if value is not None else None
+        return AcpSessionState.model_validate_json(value) if value is not None else None
 
-    async def _save_acp_state(self, thread_id: str, state: _SessionState) -> None:
+    async def _save_acp_state(self, thread_id: str, state: AcpSessionState) -> None:
         await self._store.threads.save_acp_state(thread_id, state.model_dump_json())
 
     def _acp_turn(
         self,
         composition: ResolvedRunComposition,
         source: LoadedHarnessUiConfiguration,
-        saved: _SessionState | None,
+        saved: AcpSessionState | None,
         *,
         goal: GoalCapability | None = None,
     ) -> AcpTurn:
@@ -313,6 +313,7 @@ class RootRunExecutor:
             goal=goal,
             saved=saved,
             persist=partial(self._save_acp_state, thread_id),
+            update_title=partial(self._set_acp_title, thread_id) if not is_bot else None,
             bot=is_bot,
             bind_environment=lambda context: AcpRunBinding(
                 environment=context.environment,
@@ -320,6 +321,10 @@ class RootRunExecutor:
                 terminals_enabled=not is_bot or source.document.webui.bot.shell_enabled is True,
             ),
         )
+
+    async def _set_acp_title(self, thread_id: str, title: str) -> None:
+        if await self._store.threads.set_acp_title(thread_id, title[:512]) and self._summary_hub is not None:
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
 
     async def _capture_browser(self, composition: ResolvedRunComposition) -> tuple[str | None, str]:
         if composition.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:
@@ -406,7 +411,18 @@ class RootRunExecutor:
         assert current is not None
         with CancelScope(shield=True):
             await self._save_acp_state(
-                thread_id, current.model_copy(update={"options": {option.id: option.value for option in options}})
+                thread_id,
+                current.model_copy(
+                    update={
+                        "options": {option.id: option.value for option in options},
+                        "explicit_options": frozenset(
+                            option.id
+                            for option in options
+                            if not current.prompted
+                            and (option.id == change.id or option.id in current.explicit_options)
+                        ),
+                    }
+                ),
             )
         return options
 

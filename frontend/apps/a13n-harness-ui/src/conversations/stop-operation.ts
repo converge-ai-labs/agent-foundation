@@ -19,12 +19,16 @@ export function useStopOperation(
   draft: ThreadDraft,
   activity: Schema<"RootActivityView">,
   reconcile: () => void,
+  observedReceipt?: string,
 ) {
   const transport = useTransport();
   // Keep the request in the private Thread draft across navigation. A late
   // response belongs to its exact receipt, never to a replacement operation.
   const request =
-    activity.state !== "inactive" && draft.stop?.receipt === activity.receipt_id
+    draft.stop &&
+    (draft.stop.receipt === observedReceipt ||
+      (activity.state !== "inactive" &&
+        draft.stop.receipt === activity.receipt_id))
       ? draft.stop
       : undefined;
   const operation = useQuery({
@@ -89,14 +93,14 @@ export function useStopOperation(
     !!activity.available_actions?.includes("cancel") &&
     (!request || retryable);
   const stop = async () => {
-    if (!canStop || !activity.receipt_id) return;
+    if (!canStop || !activity.receipt_id) return false;
     // The synchronous latch excludes stale callbacks and two clicks before
     // React commits, including an acknowledgement that resolves immediately.
     if (
       draft.stop?.receipt === activity.receipt_id &&
       (draft.stop !== request || !retryable)
     )
-      return;
+      return false;
     const next: StopRequest = {
       receipt: activity.receipt_id,
       attempt: (draft.stop?.attempt ?? 0) + 1,
@@ -117,13 +121,14 @@ export function useStopOperation(
         typeof response.accepted !== "boolean"
       )
         throw new Error("Stop acknowledgement did not match this operation.");
-      if (draft.stop !== next || next.outcome) return;
+      if (draft.stop !== next || next.outcome) return false;
       next.phase = "waiting";
       next.message = response.accepted
         ? "Stopping… Waiting for execution and cleanup to finish."
         : "This operation already ended. Checking its final status…";
+      return response.accepted;
     } catch (error) {
-      if (draft.stop !== next || next.outcome) return;
+      if (draft.stop !== next || next.outcome) return false;
       const rejected =
         error instanceof ApiError && error.status >= 400 && error.status < 500;
       next.phase = rejected ? "rejected" : "uncertain";
@@ -131,6 +136,7 @@ export function useStopOperation(
       next.message = rejected
         ? `Stop was not accepted. ${error.message}`
         : "Couldn't confirm the stop request. Checking whether the run stopped; the request hasn't been resent.";
+      return false;
     } finally {
       draft.notify();
       reconcile();

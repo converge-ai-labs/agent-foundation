@@ -4,16 +4,29 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
+import signal
+from contextlib import suppress
 from pathlib import Path
 from shutil import which
+from tempfile import TemporaryDirectory
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
-from a13n_harness.acp import AcpError, AcpRunBinding, AcpSessionRuntime, AcpSessionSetup
+from a13n_harness.acp import AcpError, AcpRunBinding, AcpSessionRuntime, AcpSessionSetup, LocalStdioTransport
 from acp import RequestError, schema
+from mcp.types import ElicitRequestFormParams
 from pydantic import BaseModel, Field, model_validator
 
 from a13n_harness_ui.acp_inputs import AcpInputs
-from a13n_harness_ui.acp_sessions import local_transport
+from a13n_harness_ui.acp_sessions import (
+    AcpOptionPreviewChange,
+    AcpOptionsPreview,
+    acp_commands,
+    acp_options,
+    acp_options_scope,
+    local_transport,
+)
 from a13n_harness_ui.configuration.models import AcpAgentResource
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_runtime.inputs import Inputs
@@ -34,7 +47,7 @@ class AcpAuthMethod(BaseModel):
     id: str
     name: str
     description: str | None = None
-    kind: Literal["agent", "terminal"]
+    kind: Literal["agent", "terminal", "browser"]
     argv: tuple[str, ...] = ()
     environment_keys: tuple[str, ...] = ()
 
@@ -50,6 +63,122 @@ class AcpAuthStatus(BaseModel):
 
 def auth_input_scope(agent_id: str) -> str:
     return f"acp-auth/{agent_id}"
+
+
+_AGY = "Antigravity ACP Server"
+_GOOGLE_URL = re.compile(
+    r"https://accounts\.google\.com/oauth/[^\s<>]+|https://accounts\.google\.com/o/oauth2/[^\s<>]+"
+)
+
+
+async def _agy_browser_login(command: str, transport: LocalStdioTransport, interaction: AcpInputs) -> bool:
+    # Splash the URL in WebUI instead of opening a browser on the Host. Both
+    # the OAuth exchange and credential storage remain owned by the CLI.
+    with TemporaryDirectory(prefix="a13n-agy-login-") as directory:
+        for name in ("xdg-open", "open"):
+            shim = Path(directory) / name
+            shim.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            shim.chmod(0o700)
+        environment = {
+            **transport.environment,
+            "PATH": directory + os.pathsep + transport.environment.get("PATH", os.defpath),
+        }
+        process = await asyncio.create_subprocess_exec(
+            command,
+            "acp",
+            "--login",
+            cwd=transport.cwd,
+            env=environment,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
+        )
+        assert process.stdout is not None and process.stdin is not None
+        try:
+            url = None
+            while line := await process.stdout.readline():
+                match = _GOOGLE_URL.search(line.decode(errors="replace"))
+                if match is not None:
+                    url = match.group()
+                    break
+            if url is None or urlsplit(url).netloc != "accounts.google.com":
+                raise HarnessUiError("Antigravity did not provide a Google sign-in link.", code="acp_auth_failed")
+            answer = await interaction.request(
+                ElicitRequestFormParams(
+                    message="",
+                    requested_schema={
+                        "type": "object",
+                        "required": ["callback"],
+                        "properties": {
+                            "callback": {"type": "string", "minLength": 1, "maxLength": 8192, "pattern": r"^[^\r\n]+$"},
+                        },
+                    },
+                ),
+                None,
+                private_form_url=url,
+            )
+            if answer.action != "accept" or not answer.content:
+                return False
+            callback = answer.content["callback"].strip()
+            if not callback or "\r" in callback or "\n" in callback:
+                raise HarnessUiError("Enter one callback URL or authorization code.", code="acp_auth_failed")
+            process.stdin.write((callback + "\n").encode())
+            await process.stdin.drain()
+            process.stdin.close()
+            while await process.stdout.read(65536):
+                pass  # Do not retain or log OAuth output; it may echo the callback.
+            if await process.wait() != 0:
+                raise HarnessUiError("Antigravity did not complete Google sign-in.", code="acp_auth_failed")
+            return True
+        finally:
+            if process.returncode is None:
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+                await process.wait()
+
+
+async def preview_acp_options(
+    resource: AcpAgentResource, cwd: str, request: AcpOptionPreviewChange | None
+) -> AcpOptionsPreview:
+    scope = acp_options_scope(resource, cwd)
+    selections = {} if request is None else dict(request.selection.values)
+    if request is not None and request.selection.scope != scope:
+        raise HarnessUiError("The ACP Agent or workspace changed. Select its options again.", code="acp_option_invalid")
+    try:
+        async with asyncio.timeout(15), AcpSessionRuntime.open(local_transport(resource, cwd)) as runtime:
+            session_id = await runtime.open_session(AcpSessionSetup(cwd=cwd))
+            try:
+                if request is not None and request.change is not None:
+                    change = request.change
+                    selections[change.id] = change.value
+                    model = next(
+                        (
+                            option
+                            for option in acp_options(runtime)
+                            if option.category == "model" or option.id == "model"
+                        ),
+                        None,
+                    )
+                    strict = frozenset({change.id}) if model and change.id == model.id else frozenset(selections)
+                else:
+                    strict = frozenset(selections)
+                await runtime.restore_options(selections, strict=strict)
+                options = acp_options(runtime)
+                return AcpOptionsPreview(
+                    scope=scope,
+                    options=options,
+                    commands=acp_commands(runtime) or (),
+                    selections={item.id: item.value for item in options if selections.get(item.id) == item.value},
+                )
+            finally:
+                capabilities = runtime.capabilities.session_capabilities
+                if capabilities is not None and capabilities.close is not None:
+                    await runtime.connection.close_session(session_id)
+    except AcpError as exc:
+        raise HarnessUiError(str(exc), code=exc.code) from exc
+    except (RequestError, ConnectionError, OSError, TimeoutError) as exc:
+        raise HarnessUiError("Could not read the external ACP options.", code="acp_session_unavailable") from exc
 
 
 async def acp_auth(
@@ -90,9 +219,11 @@ async def acp_auth(
                     for method in runtime.initialization.auth_methods or ()
                 }
                 info = runtime.initialization.agent_info
+                if info is not None and info.name == _AGY and inputs is not None and os.name == "posix":
+                    methods = {"agy-browser": AcpAuthMethod(id="agy-browser", name="Google", kind="browser"), **methods}
                 if (
                     info is not None
-                    and info.name == "Antigravity ACP Server"
+                    and info.name == _AGY
                     and not any(method.kind == "terminal" for method in methods.values())
                 ):
                     methods["agy-terminal"] = AcpAuthMethod(
@@ -147,6 +278,12 @@ async def acp_auth(
                     return status.model_copy(update={"state": "logout_completed"})
                 assert request.method_id is not None
                 method = methods.get(request.method_id)
+                if method is not None and method.kind == "browser" and inputs is not None:
+                    interaction = AcpInputs(
+                        inputs, auth_input_scope(resource.id), resource.id, lambda: None, timeout_seconds=300
+                    )
+                    completed = await _agy_browser_login(command, transport, interaction)
+                    return status.model_copy(update={"state": "login_completed"}) if completed else status
                 if method is None or method.kind != "agent":
                     raise HarnessUiError(
                         "The Agent did not advertise this protocol login method.", code="acp_auth_method_invalid"

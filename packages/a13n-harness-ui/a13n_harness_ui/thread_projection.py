@@ -42,9 +42,10 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from a13n_harness_ui.acp_sessions import AcpSessionState
 from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.composition import CompositionAcceptanceService
-from a13n_harness_ui.composition.models import ResolvedRunComposition
+from a13n_harness_ui.composition.models import ResolvedAcpNode, ResolvedRunComposition
 from a13n_harness_ui.conversation import excerpt_text, input_excerpt
 from a13n_harness_ui.display_history import DisplayHistory
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
@@ -682,6 +683,15 @@ class ThreadProjectionService:
             return ContextUsageView(thread_id=thread_id)
         if observed is not None:
             latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
+        if isinstance(composition.root, ResolvedAcpNode) and thread.configuration.agent_source.kind in {
+            "acp_agent",
+            "bot",
+        }:
+            raw = await self._store.threads.acp_state(thread_id)
+            saved = AcpSessionState.model_validate_json(raw) if raw is not None else None
+            if saved is not None and saved.context_window is not None:
+                used, size = saved.context_window
+                return ContextUsageView(thread_id=thread_id, latest_request_tokens=used, context_window=size)
         model = composition.root.model
         if model is None:
             return ContextUsageView(thread_id=thread_id)

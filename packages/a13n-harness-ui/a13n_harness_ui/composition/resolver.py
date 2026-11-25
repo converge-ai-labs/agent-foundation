@@ -374,8 +374,7 @@ class AgentCompositionResolver:
         acp_bot = source.bot_acp_agent if selection.agent_source_kind == "bot" else None
         if selection.agent_source_kind == "acp_agent" or acp_bot is not None:
             self._validate_selection(source, selection)
-            if model_overrides is not None:
-                raise CompositionError("External ACP Agents own model selection.", code="acp_model_override")
+            model_overrides = None
             resource = acp_bot if acp_bot is not None else source.acp_agents[selection.agent_source_id]
             shell_review = None
             if selections := self._shell_review_selections(source, ()):

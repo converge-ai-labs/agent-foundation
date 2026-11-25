@@ -1,7 +1,7 @@
 """Harness client foundation for Agent Client Protocol sessions."""
 
 from .client import AcpEnvironmentClient, AcpRunBinding, AcpUpdate, ConfigOption
-from .mcp import AcpHostToolBridge, AcpHostToolScope
+from .mcp import AcpHostToolBridge, AcpHostToolScope, acp_host_tool_name
 from .session import AcpSessionRuntime, AcpSessionSetup, PromptBlock, SteeringOutcome, connect_streams
 from .transport import (
     AcpChannel,
@@ -27,5 +27,6 @@ __all__ = [
     "PromptBlock",
     "SteeringOutcome",
     "StreamChannel",
+    "acp_host_tool_name",
     "connect_streams",
 ]

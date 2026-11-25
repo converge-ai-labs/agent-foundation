@@ -31,6 +31,7 @@ def test_sharing_upgrade_preserves_existing_threads(tmp_path):
                 "unread": 0,
                 "read_state_version": 0,
                 "acp_state_json": None,
+                "manual_title": int(before["title"] is not None),
             }
             assert connection.execute(text("SELECT count(*) FROM share_grant")).scalar_one() == 0
         migrator._run(lambda config: command.downgrade(config, "cb56f9a0a4df"), write=True)

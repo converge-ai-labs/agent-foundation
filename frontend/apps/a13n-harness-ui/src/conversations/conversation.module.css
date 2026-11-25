@@ -2334,33 +2334,6 @@ div:has(+ .execution) > .assistantMessage {
   gap: 8px;
 }
 
-.followUp {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  padding: 8px 12px;
-  background: var(--a13n-surface);
-  border-radius: 12px;
-}
-.followUp > div:first-child {
-  min-width: 0;
-  flex: 1 1 180px;
-}
-.followUp p {
-  margin: 2px 0 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.followUpActions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-}
-
 .acpPlan {
   color: var(--muted-foreground);
   font-size: var(--interface-size, 14px);
@@ -2385,9 +2358,4 @@ div:has(+ .execution) > .assistantMessage {
 }
 .acpPlan li[data-status="in_progress"] {
   color: var(--foreground);
-}
-.acpUsage {
-  display: block;
-  color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
 }

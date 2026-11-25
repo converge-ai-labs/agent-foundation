@@ -84,6 +84,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN unread BOOLEAN NOT NULL DEFAULT 0"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_state_version INTEGER NOT NULL DEFAULT 0"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN acp_state_json TEXT"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN manual_title BOOLEAN NOT NULL DEFAULT 0"))
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
             connection.execute(text("ALTER TABLE thread_usage ADD COLUMN indexed_through DATETIME"))
             # Keep unrelated query/push tables on both sides of this comment-only fixture.
@@ -254,6 +255,7 @@ def test_comment_retirement_preserves_threads_and_requires_backup_for_rollback(t
                 "unread": 0,
                 "read_state_version": 0,
                 "acp_state_json": None,
+                "manual_title": int(before["title"] is not None),
             }
             assert "output_comment" not in inspect(connection).get_table_names()
             assert "output_comment_tombstone" not in inspect(connection).get_table_names()
@@ -307,6 +309,7 @@ async def test_memory_migration_preserves_existing_threads_and_enforces_scope_id
                 "unread": 0,
                 "read_state_version": 0,
                 "acp_state_json": None,
+                "manual_title": int(before["title"] is not None),
             }
             assert connection.execute(text("SELECT * FROM thread_configuration")).mappings().one() == before_config
         async with open_harness_ui_app(settings, configuration_path=configuration) as app:

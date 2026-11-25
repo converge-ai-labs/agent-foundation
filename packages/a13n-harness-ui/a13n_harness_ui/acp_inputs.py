@@ -24,7 +24,11 @@ class AcpInputs:
     timeout_seconds: float | None = None
 
     async def request(
-        self, params: ElicitRequestParams | AskUserQuestionRequest, tool_call_id: str | None
+        self,
+        params: ElicitRequestParams | AskUserQuestionRequest,
+        tool_call_id: str | None,
+        *,
+        private_form_url: str | None = None,
     ) -> ElicitResult[Any]:
         return await self.inputs.request(
             params,
@@ -34,6 +38,7 @@ class AcpInputs:
             tool_call_id=tool_call_id,
             require_active=self.require_active,
             timeout_seconds=self.timeout_seconds,
+            private_form_url=private_form_url,
         )
 
     async def permission(self, call: schema.ToolCallUpdate, options: tuple[schema.PermissionOption, ...]) -> str | None:

@@ -197,7 +197,9 @@ export function AcpAuth({ agentId }: { agentId: string }) {
                   auth.mutate({ action: "login", method_id: method.id })
                 }
               >
-                {t("Log in")}
+                {method.kind === "browser"
+                  ? t("Sign in with Google")
+                  : t("Log in")}
               </Button>
             </SettingsRow>
           )}

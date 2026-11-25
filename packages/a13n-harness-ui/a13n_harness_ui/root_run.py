@@ -103,6 +103,7 @@ class _RootOperation:
     outcome: RootRunOutcomeView | None = None
     failure: FailureView | None = None
     cancel_requested: bool = False
+    settling: bool = False
     restart: RestartItem | None = None
     goal: GoalView | None = None
     observation_only: bool = False
@@ -757,7 +758,7 @@ class RootRunCoordinator:
         operation = self._operations.get(receipt_id)
         if operation is None:
             raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
-        if operation.status in _TERMINAL:
+        if operation.settling or operation.status in _TERMINAL:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if self._browser_handback is not None:
             self._browser_handback.suppress(operation.receipt.thread_id)
@@ -766,6 +767,8 @@ class RootRunCoordinator:
             await self._restart.invalidate(operation.receipt.thread_id, suppress=True)
             self._restart.active.pop(operation.receipt.thread_id, None)
             self._restart.signal()
+        if operation.settling:
+            return RootControlResult(receipt_id=receipt_id, accepted=False)
         await self._request_cancel(operation)
         return RootControlResult(receipt_id=receipt_id, accepted=True)
 
@@ -774,7 +777,7 @@ class RootRunCoordinator:
         await self._publish_change(operation)
 
     async def _request_cancel(self, operation: _RootOperation) -> None:
-        if operation.cancel_requested:
+        if operation.settling or operation.cancel_requested:
             return
         operation.cancel_requested = True
         if operation.acp_turn is not None and self._task_group is not None:
@@ -889,6 +892,7 @@ class RootRunCoordinator:
                             code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
                         )
                     )
+        operation.settling = True
         with CancelScope(shield=True):
             # Completion is navigation-worthy, unlike streamed progress. Persist it
             # before releasing waiters/publishing the terminal view, outside the lock.
@@ -897,7 +901,7 @@ class RootRunCoordinator:
                     await self._touch_thread(operation.receipt.thread_id)
                 except Exception:
                     get_logger(__name__).exception("Could not touch completed Thread: %s", operation.receipt.thread_id)
-            if cancelled or (operation.cancel_requested and failure is None):
+            if cancelled or (outcome is None and operation.cancel_requested and failure is None):
                 operation.status = RootOperationStatus.cancelled
             elif failure is not None:
                 operation.status = RootOperationStatus.failed

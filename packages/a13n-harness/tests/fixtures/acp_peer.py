@@ -175,7 +175,8 @@ for line in sys.stdin:
         ADDITIONAL = params.get("additionalDirectories", ())
         assert (method == "session/load") == (MODE == "load")
         if STEERING and MODE not in {"ui", "auth"}:
-            assert params["systemPrompt"] == {"mode": "append", "content": [{"type": "text", "text": "guide"}]}
+            assert params["systemPrompt"]["mode"] == "append"
+            assert params["systemPrompt"]["content"][0] == {"type": "text", "text": "guide"}
         if MODE == "legacy":
             assert params["_meta"]["antigravity"]["systemPrompt"]["append"] == "guide"
         if method == "session/load":
@@ -206,6 +207,8 @@ for line in sys.stdin:
                 "currentModelId": "a",
                 "availableModels": [{"modelId": "a", "name": "A"}, {"modelId": "b", "name": "B"}],
             }
+        if MODE == "ui":
+            update("available_commands_update", availableCommands=[{"name": "plan", "description": "Plan a task"}])
         send(id=ident, result=response)
     elif method == "session/set_model" and MODE == "legacy":
         assert params == {"sessionId": SESSION, "modelId": "b"}
@@ -236,6 +239,28 @@ for line in sys.stdin:
             if MODE == "ui"
             else blocks[-1]
         )
+        if MODE == "ui" and message == "observe":
+            update("session_info_update", title="Peer title")
+            update("usage_update", used=10, size=1000)
+            update("usage_update", used=24, size=1000)
+            text("peer observed")
+            send(
+                id=ident,
+                result={
+                    "stopReason": "end_turn",
+                    "usage": {"inputTokens": 8, "outputTokens": 2, "cachedReadTokens": 5},
+                },
+            )
+            continue
+        if MODE == "ui" and message in {"handoff-check", "handoff-next"}:
+            prior = [block for block in blocks if block.startswith("<prior-thread-conversation>")]
+            assert bool(prior) == (message == "handoff-check"), blocks
+            if prior:
+                assert "native-visible" in prior[0] and "native answer" in prior[0]
+                assert "private system text" not in prior[0]
+            text("verified handoff")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
         if message == "cancel-me":
             text("partial reply")
             PENDING = ident
