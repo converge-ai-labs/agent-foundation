@@ -1,4 +1,8 @@
 {
+  "List pending human input for this run's retained MCP tool executions.": "列出此运行保留的 MCP 工具执行中等待人工处理的输入请求。",
+  "List Mcp Inputs": "列出 MCP 输入请求",
+  "Send one answer to the originating MCP task, without resuming the run.": "向发出请求的 MCP 任务提交一条回复，无需恢复运行。",
+  "Respond To Mcp Input": "回复 MCP 输入请求",
   "End the local session and, when available, return the provider's browser logout URL.": "结束本地会话；如果身份提供方支持浏览器登出，则返回其登出地址。",
   "Local logout": "仅结束本地会话",
   "Revoke OIDC login sessions on receipt of a signed Logout Token from their provider.": "收到身份提供方签发的 Logout Token 后，吊销匹配的 OIDC 登录会话。",
