@@ -31,7 +31,7 @@ from mcp.types import (
 from mcp_types.version import MODERN_PROTOCOL_VERSIONS
 from pydantic import FileUrl
 
-from a13n_harness_ui.configuration.models import McpServerResource, McpTransport, ProjectResource, mcp_roots_enabled
+from a13n_harness_ui.configuration.models import McpServerResource, McpTransport, mcp_roots_enabled
 
 from .transports import ObservedTransport
 
@@ -52,22 +52,13 @@ class InputHandler(Protocol):
     ) -> ElicitResult[Any]: ...
 
 
-type ProjectForThread = Callable[[str], Awaitable[str | None]]
-
-
-def empty_roots(_: object) -> list[Root]:
-    return []
+type LocalRootsForThread = Callable[[str], Awaitable[tuple[str, ...]]]
 
 
 @dataclass(frozen=True)
-class ProjectRoots:
-    project: Callable[[], Awaitable[str | None]]
-    paths: Callable[[str], tuple[str, ...]]
+class ThreadRoots:
+    paths: Callable[[], Awaitable[tuple[str, ...]]]
     enabled: Callable[[], bool]
-
-    def list(self, project_id: str) -> list[Root]:
-        paths = map(Path, self.paths(project_id))
-        return [Root(uri=FileUrl(path.as_uri()), name=path.name or path.anchor) for path in paths]
 
 
 class HostClient(InitializationRetryClient):
@@ -124,7 +115,7 @@ class Connection:
         client_factory: type[HostClient] = HostClient,
         extensions: Sequence[ClientExtension] = (),
         input_handler: InputHandler | None = None,
-        roots: ProjectRoots | None = None,
+        roots: ThreadRoots | None = None,
         init_timeout: float = 30,
         cleanup_timeout_seconds: float = 10,
     ) -> None:
@@ -167,21 +158,24 @@ class Connection:
         return not self._closed and self.client.is_connected() and self._task is not None and not self._task.done()
 
     async def _list_roots(self, _: object) -> list[Root]:
-        if self.roots is None or self.retired or self._closed:
+        assert self.roots is not None
+        paths = await self.roots.paths()
+        if self.retired or self._closed or not self.roots.enabled():
             return []
-        project_id = await self.roots.project()
-        if project_id is None or self.retired or self._closed or not self.roots.enabled():
-            return []
-        return self.roots.list(project_id)
+        return [Root(uri=FileUrl(path.as_uri()), name=path.name or path.anchor) for path in map(Path, paths)]
 
-    async def notify_roots_changed(self, projects: set[str]) -> None:
-        if self.roots is None or not self.connected or self.client.protocol_version in MODERN_PROTOCOL_VERSIONS:
+    async def notify_roots_changed(self) -> None:
+        if (
+            self.roots is None
+            or not self.roots.enabled()
+            or not self.connected
+            or self.client.protocol_version in MODERN_PROTOCOL_VERSIONS
+        ):
             return
         try:
             # Notifications do not take the business lane, which may be waiting for human input.
             async with asyncio.timeout(1):
-                if await self.roots.project() in projects and self.connected and self.roots.enabled():
-                    await self.client.send_roots_list_changed()
+                await self.client.send_roots_list_changed()
         except Exception as exc:
             get_logger(__name__).debug("MCP roots change notification failed (%s).", type(exc).__name__)
 
@@ -323,7 +317,7 @@ class Connections:
         client_factory: type[HostClient] = HostClient,
         extensions: Sequence[ClientExtension] = (),
         input_handler: InputHandler | None = None,
-        project_for_thread: ProjectForThread | None = None,
+        local_roots_for_thread: LocalRootsForThread | None = None,
         cleanup_timeout_seconds: float = 10,
     ) -> None:
         self._cleanup_timeout = cleanup_timeout_seconds
@@ -331,8 +325,7 @@ class Connections:
         self._lock = asyncio.Lock()
         self._retired: set[Connection] = set()
         self._run_connections: set[Connection] = set()
-        self._project_for_thread = project_for_thread
-        self._project_paths: dict[str, tuple[str, ...]] = {}
+        self._local_roots_for_thread = local_roots_for_thread
         self._roots_transports: dict[str, McpTransport] = {}
         self._closed = False
         self._client_factory, self._extensions, self._input_handler = client_factory, extensions, input_handler
@@ -430,46 +423,31 @@ class Connections:
         self._run_connections.discard(connection)
         await connection.close()
 
-    def _roots_scope(self, thread_id: str, server_id: str, transport: McpTransport) -> ProjectRoots:
-        async def project() -> str | None:
-            return await self._project_for_thread(thread_id) if self._project_for_thread is not None else None
+    def _roots_scope(self, thread_id: str, server_id: str, transport: McpTransport) -> ThreadRoots:
+        async def paths() -> tuple[str, ...]:
+            return await self._local_roots_for_thread(thread_id) if self._local_roots_for_thread is not None else ()
 
         def enabled() -> bool:
             return self._roots_transports.get(server_id) == transport
 
-        return ProjectRoots(project, self._paths_for_project, enabled)
+        return ThreadRoots(paths, enabled)
 
-    def _paths_for_project(self, project_id: str) -> tuple[str, ...]:
-        return self._project_paths.get(project_id, ())
-
-    def update_roots_configuration(
-        self, projects: Mapping[str, ProjectResource], servers: Mapping[str, McpServerResource]
-    ) -> set[str]:
-        previous = self._project_paths
-        # Project.roots are Host paths; Device bindings are intentionally not read.
-        self._project_paths = {key: tuple(root.path for root in project.roots) for key, project in projects.items()}
-        # Revoke disclosure to already-open sessions when the configured transport
-        # changes or opts out, before newly accepted paths can be read.
+    def update_roots_configuration(self, servers: Mapping[str, McpServerResource]) -> None:
+        # Revoke disclosure to already-open sessions when the transport changes or opts out.
         self._roots_transports = {
             key: server.transport
             for key, server in servers.items()
             if mcp_roots_enabled(server.transport, server.expose_roots)
         }
-        return {
-            key
-            for key in previous.keys() | self._project_paths.keys()
-            if previous.get(key, ()) != self._paths_for_project(key)
-        }
 
-    async def notify_project_roots_changed(self, projects: set[str]) -> None:
-        if projects:
-            await asyncio.gather(
-                *(
-                    connection.notify_roots_changed(projects)
-                    for connection in (*self._connections.values(), *self._run_connections)
-                    if connection.roots is not None
-                )
+    async def notify_thread_roots_changed(self, thread_id: str) -> None:
+        await asyncio.gather(
+            *(
+                connection.notify_roots_changed()
+                for connection in (*self._connections.values(), *self._run_connections)
+                if connection.thread_id == thread_id and connection.roots is not None
             )
+        )
 
     def get(self, thread_id: str, server_id: str) -> Connection | None:
         return self._connections.get((thread_id, server_id))

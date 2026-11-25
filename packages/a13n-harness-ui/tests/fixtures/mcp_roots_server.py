@@ -16,7 +16,13 @@ def roots_server() -> Server:
     async def call_tool(ctx, params):
         capabilities = ctx.session.client_capabilities
         roots = capabilities.roots if capabilities is not None else None
-        result = await ctx.session.list_roots() if roots is not None else None
+        if ctx.session.protocol_version == "2026-07-28":
+            if params.input_responses is None:
+                return types.InputRequiredResult(input_requests={"roots": types.ListRootsRequest()})
+            result = params.input_responses["roots"]
+            assert isinstance(result, types.ListRootsResult)
+        else:
+            result = await ctx.session.list_roots() if roots is not None else None
         return types.CallToolResult(
             content=[],
             structuredContent={

@@ -38,7 +38,7 @@ from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
 from a13n_harness_ui.mcp_oauth.models import OAuthError
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
-from a13n_harness_ui.mcp_runtime.connections import HostClient, empty_roots
+from a13n_harness_ui.mcp_runtime.connections import HostClient
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 
 
@@ -150,7 +150,6 @@ class HarnessUiMCP(MCPServer):
             client_transport,
             mode=self._recipe.protocol,
             init_timeout=init_timeout,
-            roots=empty_roots if self._recipe.roots_enabled else None,
         )
         return MCPToolset[AgentContext](client, id=self._recipe.server_id)
 

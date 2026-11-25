@@ -3943,15 +3943,9 @@ class HarnessUiApp:
         await self._summary_hub.publish(kind="configuration")
 
     async def _refresh_mcp_configuration(self, source: LoadedHarnessUiConfiguration) -> None:
-        connections = self._mcp_connections
-        changed = (
-            connections.update_roots_configuration(source.projects, source.mcp_servers)
-            if connections is not None
-            else set()
-        )
+        if self._mcp_connections is not None:
+            self._mcp_connections.update_roots_configuration(source.mcp_servers)
         await self._retire_mcp_bindings(source)
-        if connections is not None:
-            await connections.notify_project_roots_changed(changed)
 
     async def _retire_mcp_bindings(self, source: LoadedHarnessUiConfiguration) -> None:
         if self._mcp_oauth is not None:
@@ -4417,20 +4411,18 @@ async def open_harness_ui_app(
                 Inputs(input_changed) if not unattended and (host_mode == "webui" or mcp_input_enabled) else None
             )
 
-            async def mcp_project_for_thread(thread_id: str) -> str | None:
+            async def mcp_local_roots_for_thread(thread_id: str) -> tuple[str, ...]:
                 thread = await store.threads.get(thread_id)
-                return thread.configuration.project_id if thread is not None else None
+                return thread.configuration.local_roots if thread is not None else ()
 
             connection_registry = Connections if host_mode == "webui" else HostConnections
             mcp_connections = connection_registry(
                 input_handler=mcp_inputs,
-                project_for_thread=mcp_project_for_thread,
+                local_roots_for_thread=mcp_local_roots_for_thread,
                 cleanup_timeout_seconds=settings.shutdown_timeout_seconds,
             )
             if device_configuration is not None:
-                mcp_connections.update_roots_configuration(
-                    device_configuration.projects, device_configuration.mcp_servers
-                )
+                mcp_connections.update_roots_configuration(device_configuration.mcp_servers)
             resources.push_async_callback(mcp_connections.close)
             app_connections = mcp_connections if isinstance(mcp_connections, Connections) else None
             mcp_apps = AppSnapshots(store.objects, app_connections) if app_connections is not None else None
@@ -4520,6 +4512,7 @@ async def open_harness_ui_app(
             threads = ThreadService(
                 store=store,
                 configurations=configurations,
+                local_roots_changed=mcp_connections.notify_thread_roots_changed,
                 configuration_root=configuration_path.expanduser().resolve().parent if configuration_path else None,
             )
 

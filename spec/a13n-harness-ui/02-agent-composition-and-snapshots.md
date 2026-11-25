@@ -228,9 +228,9 @@ Every Run creates fresh native MCP Toolset projections. The root `mcp` mapping o
 
 ### MCP Roots
 
-An `mcp_server` resource or named `mcpServers` entry accepts `expose_roots: true`, `false`, or `null`. Omission and `null` enable Roots for a local command and disable Roots for HTTP. When disabled, the client does not advertise the capability. The Run recipe captures whether to advertise Roots. A live handler reads the owning Thread’s current Project and the currently accepted local roots. It stops sharing paths when the server opts out, is removed, or changes transport configuration.
+An `mcp_server` resource or named `mcpServers` entry accepts `expose_roots: true`, `false`, or `null`. Omission and `null` enable Roots for a local command and disable Roots for HTTP. A client advertises Roots only when configured to expose them and connected to the Host's Thread-roots provider. A live handler reads the owning Thread’s saved `local_roots` and stops sharing paths when the server opts out, is removed, or changes transport configuration.
 
-An enabled connection returns ordered local Project directories as canonical `file://` URIs with directory names. It excludes Device bindings and returns an empty list without a Project or local roots. When the local roots change, eligible active connections using a protocol version that supports the notification receive a best-effort `notifications/roots/list_changed`. Delivery failures do not reject a configuration update. Roots advertise paths and do not grant filesystem permissions.
+An enabled connection returns the ordered local directories as `file://` URIs with directory names. It excludes Device bindings and returns an empty list if the Thread has no local roots. Project roots seed Thread selections at creation; a Project edit alone does not change the listed paths. A committed Thread local-roots change (including applying Project environments) sends a best-effort `notifications/roots/list_changed` to eligible active connections for that Thread on protocol versions that support the notification. Delivery failures do not reject a Thread update. Roots advertise paths and do not grant filesystem permissions.
 
 ### MCP OAuth
 

@@ -46,10 +46,12 @@ transport:
 | `transport`              | `{url, init_timeout_seconds, headers, oauth}`（HTTPS 或无请求头的本机回环 HTTP）或 `{command, arguments, environment}`（在宿主机启动） |
 | `tools`                  | `null`/省略（允许全部工具，含后续新增）、`[]`（禁用全部）或 `[exact_name, ...]` 精确工具名白名单                                       |
 | `object_ref_tools`       | 启用[对象引用传输](../a13n-harness/capabilities.md#object-reference-transport)的工具名称或通配模式列表                                 |
-| `expose_roots`           | 共享当前 Thread 所属 Project 的本地根目录。stdio 默认为 `true`，HTTP 默认为 `false`。                                                  |
+| `expose_roots`           | 共享 Thread 已保存的本地根目录。stdio 默认为 `true`，HTTP 默认为 `false`。                                                             |
 | `on_error`               | 启动失败策略（如 `fail` 或 `skip`）                                                                                                    |
 
-MCP Roots 通过目录名和 `file://` URI 向服务器提供当前 Thread 所属 Project 的本地根目录。设备绑定中的目录不包含在内；Thread 没有关联 Project 或 Project 没有本地根目录时，返回空列表。只有确认 HTTP 服务器可以接收本地绝对路径时，才设置 `expose_roots: true`。该字段可写在资源顶层，也可写在 `mcpServers` 的单个服务器条目中。
+MCP Roots 通过目录名和 `file://` URI 向服务器提供 Thread 已保存的本地目录。未关联 Project 的 Thread 也可以共享自己的本地目录；设备绑定中的目录不包含在内。编辑 Project 只会更新新 Thread 的默认值；如需更新已有 Thread，请显式应用 Project 环境。
+
+升级后，未设置此字段的 stdio 服务器会开始收到 Roots。若不想向某个命令服务器透露路径，请设为 `expose_roots: false`。只有信任某个 HTTP 服务器、愿意向它透露本地绝对路径时，才设为 `expose_roots: true`。该字段可写在资源顶层，也可写在 `mcpServers` 的单个服务器条目中。
 
 ### 字面量与密钥引用
 

@@ -15,6 +15,8 @@ from a13n_harness.configuration import RunConfiguration
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.configuration.mutation import ResourceMutationRequest
 from a13n_harness_ui.mcp_adapters import HarnessUiMCP
+from a13n_harness_ui.storage.contracts import ThreadConfigurationMutation, ThreadConfigurationPatch
+from a13n_harness_ui.surfaces import ProjectDefaultsApply
 from a13n_harness_ui.thread_service import RootThreadDefaults
 
 from .fixtures.mcp_roots_server import roots_server
@@ -53,11 +55,11 @@ def _configure(tmp_path: Path, transport: dict, expose_roots: bool | None, *, re
     return root, project
 
 
-async def _toolset(app, thread_id):
+async def _toolset(app, thread_id, *, with_registry=True):
     source = await app.current_configuration()
     assert source is not None
     recipe = app._mcp_app_owners.resolver._mcp_recipes(source, ("mcp-roots",))[0]
-    capability = HarnessUiMCP(recipe, connections=app._mcp_connections)
+    capability = HarnessUiMCP(recipe, connections=app._mcp_connections if with_registry else None)
     cleanup = []
     ctx = SimpleNamespace(
         deps=SimpleNamespace(
@@ -76,7 +78,7 @@ def _root(path: str) -> dict[str, str]:
 
 
 @pytest.mark.parametrize("retained", [False, True])
-async def test_stdio_roots_follow_accepted_project_and_notify_live_client(tmp_path, monkeypatch, retained):
+async def test_stdio_roots_follow_saved_thread_and_notify_live_client(tmp_path, monkeypatch, retained):
     root, project = _configure(
         tmp_path,
         {"command": sys.executable, "args": [str(Path(__file__).with_name("fixtures") / "mcp_roots_server.py")]},
@@ -105,6 +107,15 @@ async def test_stdio_roots_follow_accepted_project_and_notify_live_client(tmp_pa
                 project["roots"] = [{"path": str(tmp_path / "new root")}]
                 (tmp_path / "projects/main.yaml").write_text(json.dumps(project))
                 await app.reload_configuration()
+                assert await toolset.direct_call_tool("inspect", {}) == first
+                preview = await app.preview_project_defaults(thread_id=thread.thread_id, environments_only=True)
+                await app.apply_project_defaults(
+                    thread_id=thread.thread_id,
+                    request=ProjectDefaultsApply(
+                        expected_version=preview.expected_version, defaults_digest=preview.defaults_digest
+                    ),
+                    environments_only=True,
+                )
                 async with asyncio.timeout(5):
                     while (current := await toolset.direct_call_tool("inspect", {}))["changes"] == 0:
                         await asyncio.sleep(0.01)
@@ -115,9 +126,11 @@ async def test_stdio_roots_follow_accepted_project_and_notify_live_client(tmp_pa
                     raise RuntimeError("transport closed")
 
                 monkeypatch.setattr(toolset.connection.client, "send_roots_list_changed", broken_notification)
-                project["roots"] = []
-                await app.mutate_configuration(
-                    relative_path="projects/main.yaml", request=ResourceMutationRequest(content=json.dumps(project))
+                await app.update_thread_configuration(
+                    thread_id=thread.thread_id,
+                    mutation=ThreadConfigurationMutation(
+                        expected_version=preview.expected_version + 1, patch=ThreadConfigurationPatch(local_roots=())
+                    ),
                 )
                 assert (await toolset.direct_call_tool("inspect", {}))["roots"] == []
         finally:
@@ -125,8 +138,19 @@ async def test_stdio_roots_follow_accepted_project_and_notify_live_client(tmp_pa
                 await close()
 
 
-@pytest.mark.parametrize("expose_roots", [None, False])
-async def test_stdio_roots_without_project_or_explicit_opt_out(tmp_path, expose_roots):
+@pytest.mark.parametrize(
+    ("project_id", "explicit_path", "expose_roots", "with_registry", "advertised"),
+    [
+        (None, False, None, True, True),
+        (None, True, None, True, True),
+        ("project-main", True, None, True, True),
+        ("project-main", True, False, True, False),
+        ("project-main", True, None, False, False),
+    ],
+)
+async def test_stdio_roots_use_thread_selection(
+    tmp_path, project_id, explicit_path, expose_roots, with_registry, advertised
+):
     root, _ = _configure(
         tmp_path,
         {"command": sys.executable, "args": [str(Path(__file__).with_name("fixtures") / "mcp_roots_server.py")]},
@@ -134,18 +158,52 @@ async def test_stdio_roots_without_project_or_explicit_opt_out(tmp_path, expose_
         retained=False,
     )
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
+        path = str(tmp_path / "custom worktree")
         thread = await app.create_thread(
-            defaults=RootThreadDefaults(project_id=None if expose_roots is None else "project-main")
+            defaults=RootThreadDefaults(project_id=project_id, local_roots=(path,) if explicit_path else None)
         )
-        toolset, cleanup = await _toolset(app, thread.thread_id)
+        toolset, cleanup = await _toolset(app, thread.thread_id, with_registry=with_registry)
         try:
             async with toolset:
                 result = await toolset.direct_call_tool("inspect", {})
-                assert result["advertised"] is (expose_roots is None)
-                assert result["roots"] == []
+                assert result["advertised"] is advertised
+                assert result["roots"] == ([_root(path)] if advertised and explicit_path else [])
         finally:
             for close in cleanup:
                 await close()
+
+
+async def test_modern_stdio_refreshes_roots_without_legacy_notification(tmp_path, monkeypatch):
+    root, project = _configure(
+        tmp_path,
+        {"command": sys.executable, "args": [str(Path(__file__).with_name("fixtures") / "mcp_roots_server.py")]},
+        None,
+        retained=True,
+    )
+    root.write_text(root.read_text().replace("mcp-roots: legacy", 'mcp-roots: "2026-07-28"'))
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
+        thread = await app.create_thread()
+        toolset, _ = await _toolset(app, thread.thread_id)
+        async with toolset:
+            assert toolset.connection.client.protocol_version == "2026-07-28"
+            assert (await toolset.direct_call_tool("inspect", {}))["roots"] == [
+                _root(item["path"]) for item in project["roots"]
+            ]
+            sent = []
+
+            async def record_notification():
+                sent.append(True)
+
+            monkeypatch.setattr(toolset.connection.client, "send_roots_list_changed", record_notification)
+            path = str(tmp_path / "modern replacement")
+            await app.update_thread_configuration(
+                thread_id=thread.thread_id,
+                mutation=ThreadConfigurationMutation(
+                    expected_version=1, patch=ThreadConfigurationPatch(local_roots=(path,))
+                ),
+            )
+            assert not sent
+            assert (await toolset.direct_call_tool("inspect", {}))["roots"] == [_root(path)]
 
 
 @pytest.mark.parametrize("expose_roots", [None, True])
