@@ -48,7 +48,12 @@ function mount(fetch: typeof globalThis.fetch, initial = asset) {
   const cache = new QueryClient();
   const tree = (value: Asset) => (
     <QueryClientProvider client={cache}>
-      <FilePreview key={value.id} asset={value} />
+      <FilePreview
+        key={value.id}
+        asset={value}
+        onBack={vi.fn()}
+        onClose={vi.fn()}
+      />
     </QueryClientProvider>
   );
   const mounted = render(tree(initial));

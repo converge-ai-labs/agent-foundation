@@ -1,9 +1,5 @@
 import { Button } from "a13n-ui";
-import {
-  DownloadSimpleIcon,
-  FileIcon,
-  PaperclipIcon,
-} from "@phosphor-icons/react";
+import { DownloadSimpleIcon, PaperclipIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useContext, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -17,6 +13,7 @@ import {
   useAssetDownload,
   type FileReference,
 } from "../files/assets";
+import { FileTypeIcon } from "../files/file-type-icon";
 import { PreviewFileContext } from "../files/selection";
 import styles from "./transcript.module.css";
 
@@ -86,7 +83,7 @@ export function AssetAttachment({ assetId, publication }: FileReference) {
   return (
     <>
       <AttachmentChip
-        icon={<FileIcon size={13} aria-hidden="true" />}
+        icon={<FileTypeIcon asset={asset.data} size={13} />}
         label={name}
         onPreview={
           onPreview && can("read") && asset.data && !retired

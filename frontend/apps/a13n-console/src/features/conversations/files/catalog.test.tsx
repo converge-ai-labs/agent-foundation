@@ -8,13 +8,15 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../../service-client";
 import { item } from "../display-fixture";
 import { SessionDisplays } from "../session-displays";
 import { useConversationFiles } from "./catalog";
 import FilesPanel from "./panel";
+import type { FileReference } from "./assets";
 
 let client: Client;
 let displays: SessionDisplays;
@@ -131,4 +133,69 @@ it("shows that the file list may be incomplete when a saved observation was omit
   );
   expect(notice.getAttribute("role")).toBe("status");
   expect(screen.queryByText("No files found")).toBeNull();
+});
+
+it("replaces the file list with a preview and restores row focus on back", async () => {
+  displays = new SessionDisplays();
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(new Request(input, init).url).pathname;
+    if (path.endsWith("/lineage"))
+      return Response.json({ items: [{ id: "first" }], next_cursor: null });
+    if (path.endsWith("/items"))
+      return Response.json({
+        complete: true,
+        items: [],
+        run: {
+          input: { content: [{ type: "asset", asset_id: "ast_report" }] },
+        },
+      });
+    if (path.endsWith("/content")) return new Response("# Weekly review");
+    return Response.json({
+      id: "ast_report",
+      name: "report.md",
+      size: 15,
+      content_type: "text/markdown",
+      digest: "file",
+    });
+  });
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch,
+  });
+  function Panel() {
+    const [selected, setSelected] = useState<FileReference>();
+    return (
+      <FilesPanel
+        runId="first"
+        selected={selected}
+        onSelect={setSelected}
+        onClose={vi.fn()}
+      />
+    );
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Panel />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  const row = await screen.findByRole("button", { name: /report.md/ });
+  expect(
+    fetch.mock.calls.some(([input, init]) =>
+      new Request(input, init).url.endsWith("/content"),
+    ),
+  ).toBe(false);
+  await user.click(row);
+  expect(
+    await screen.findByRole("heading", { name: "Weekly review" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("list", { name: "Conversation files" })).toBeNull();
+  const back = screen.getByRole("button", { name: "Back to files" });
+  expect(document.activeElement).toBe(back);
+  await user.click(back);
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: /report.md/ }),
+  );
+  expect(screen.queryByRole("heading", { name: "Weekly review" })).toBeNull();
 });

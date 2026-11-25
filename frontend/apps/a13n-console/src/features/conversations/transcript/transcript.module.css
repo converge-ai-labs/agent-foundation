@@ -107,7 +107,7 @@
 .attachments {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 6px;
   margin-top: 8px;
 }
@@ -131,6 +131,10 @@
   border-radius: var(--a13n-radius-tile);
   text-align: start;
   cursor: pointer;
+}
+.attachment > svg,
+.attachmentPreview > svg {
+  flex: none;
 }
 .attachmentPreview:hover strong {
   text-decoration: underline;

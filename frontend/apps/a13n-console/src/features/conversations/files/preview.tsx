@@ -1,5 +1,5 @@
 import { ArrowUpRightIcon, DownloadSimpleIcon } from "@phosphor-icons/react";
-import { Button } from "a13n-ui";
+import { SegmentedControl } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,58 +15,89 @@ import {
   previewFormat,
   type PreviewFormat,
 } from "./preview-data";
+import {
+  BackToFiles,
+  CloseFiles,
+  FileSize,
+  FileToolbarButton,
+} from "./file-controls";
+import { FileTypeIcon } from "./file-type-icon";
 import styles from "./files.module.css";
 
-export function FilePreview({ asset }: { asset: Asset }) {
-  const { t, i18n } = useTranslation();
+export function FilePreview({
+  asset,
+  onBack,
+  onClose,
+}: {
+  asset: Asset;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
   const client = useClient();
   const { workspace } = useWorkspace();
   const download = useAssetDownload(client, workspace.id, asset.id, asset.name);
   const format = previewFormat(asset);
-  const formatSize = new Intl.NumberFormat(i18n.language, {
-    maximumFractionDigits: 1,
-  });
-  const size =
-    asset.size >= 1024
-      ? t("{{size}} KiB", { size: formatSize.format(asset.size / 1024) })
-      : t("{{size}} B", { size: formatSize.format(asset.size) });
+  const [mode, setMode] = useState("preview");
+  const previewable = !asset.retired_at && format && asset.size <= format.limit;
   return (
-    <section aria-label={asset.name} className={styles.preview}>
-      <div className={styles.fileHeader}>
-        <div className={styles.fileIdentity}>
-          <h3 title={asset.name}>{asset.name}</h3>
-          <small>
-            {asset.content_type} · {size}
-          </small>
+    <>
+      <div className={styles.toolbar}>
+        <BackToFiles onClick={onBack} />
+        <FileTypeIcon asset={asset} className={styles.typeIcon} />
+        <div className={styles.identity}>
+          <h2 className={styles.name} title={asset.name}>
+            {asset.name}
+          </h2>
+          <FileSize size={asset.size} />
         </div>
-        <Button
-          variant="secondary"
-          size="sm"
+        {previewable && format.kind === "markdown" && (
+          <SegmentedControl
+            label={t("Markdown view")}
+            value={mode}
+            onValueChange={setMode}
+            options={[
+              { value: "preview", label: t("Preview") },
+              { value: "source", label: t("Source") },
+            ]}
+          />
+        )}
+        <FileToolbarButton
+          label={t("Download")}
           disabled={!!asset.retired_at}
           loading={download.isPending}
           onClick={() => download.mutate()}
         >
-          <DownloadSimpleIcon size={14} aria-hidden="true" />
-          {t("Download")}
-        </Button>
+          <DownloadSimpleIcon size={16} aria-hidden="true" />
+        </FileToolbarButton>
+        <CloseFiles onClick={onClose} />
       </div>
-      <ErrorNotice error={download.error} retry={() => download.mutate()} />
-      {asset.retired_at ? (
-        <p className={styles.notice}>{t("File retired")}</p>
-      ) : !format ? (
-        <p className={styles.notice}>
-          {t("This file type is available to download.")}
-        </p>
-      ) : asset.size > format.limit ? (
-        <p className={styles.notice}>
-          {t(
-            "This file is too large to preview. Download it to view the full file.",
-          )}
-        </p>
-      ) : (
-        <PreviewContent asset={asset} format={format} />
-      )}
-    </section>
+      <section
+        aria-label={asset.name}
+        className={`${styles.body} ${styles.preview} a13n-scrollbar`}
+      >
+        <ErrorNotice error={download.error} retry={() => download.mutate()} />
+        {asset.retired_at ? (
+          <p className={styles.notice}>{t("File retired")}</p>
+        ) : !format ? (
+          <p className={styles.notice}>
+            {t("This file type is available to download.")}
+          </p>
+        ) : !previewable ? (
+          <p className={styles.notice}>
+            {t(
+              "This file is too large to preview. Download it to view the full file.",
+            )}
+          </p>
+        ) : (
+          <PreviewContent
+            asset={asset}
+            format={format}
+            source={mode === "source"}
+          />
+        )}
+      </section>
+    </>
   );
 }
 
@@ -78,9 +109,11 @@ type Preview =
 function PreviewContent({
   asset,
   format,
+  source,
 }: {
   asset: Asset;
   format: PreviewFormat;
+  source: boolean;
 }) {
   const { t } = useTranslation();
   const client = useClient();
@@ -136,7 +169,7 @@ function PreviewContent({
     <MediaPreview blob={preview.blob} kind={preview.media} name={asset.name} />
   ) : (
     preview.kind === "text" && (
-      <TextPreview text={preview.text} format={format} />
+      <TextPreview text={preview.text} format={format} source={source} />
     )
   );
 }
@@ -187,12 +220,13 @@ function MediaPreview({
 function TextPreview({
   text,
   format,
+  source,
 }: {
   text: string;
   format: PreviewFormat;
+  source: boolean;
 }) {
   const { t } = useTranslation();
-  const [source, setSource] = useState(false);
   const formatted = useMemo(
     () => (format.kind === "json" ? formatJson(text) : text),
     [format.kind, text],
@@ -200,30 +234,6 @@ function TextPreview({
   if (!text) return <p className={styles.notice}>{t("This file is empty.")}</p>;
   return (
     <>
-      {format.kind === "markdown" && (
-        <div
-          className={styles.mode}
-          role="group"
-          aria-label={t("Markdown view")}
-        >
-          <Button
-            size="sm"
-            variant={source ? "ghost" : "secondary"}
-            aria-pressed={!source}
-            onClick={() => setSource(false)}
-          >
-            {t("Preview")}
-          </Button>
-          <Button
-            size="sm"
-            variant={source ? "secondary" : "ghost"}
-            aria-pressed={source}
-            onClick={() => setSource(true)}
-          >
-            {t("Source")}
-          </Button>
-        </div>
-      )}
       {format.kind === "markdown" && !source ? (
         <MarkdownContent text={text} />
       ) : format.kind === "csv" ? (

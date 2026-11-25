@@ -4624,5 +4624,6 @@
   "Select a file to preview it.": "选择一个文件进行预览。",
   "No files found": "未找到文件",
   "Attachments and files published by the agent appear here.": "附件和智能体发布的文件会显示在此处。",
-  "Some run content is unavailable, so this file list may be incomplete.": "部分运行内容不可用，文件列表可能不完整。"
+  "Some run content is unavailable, so this file list may be incomplete.": "部分运行内容不可用，文件列表可能不完整。",
+  "Back to files": "返回文件列表"
 }

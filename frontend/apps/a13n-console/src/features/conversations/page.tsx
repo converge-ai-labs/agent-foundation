@@ -451,7 +451,10 @@ export function SessionLayout() {
                   : undefined
               }
             />
-            <div className={styles.sessionWorkspace}>
+            <div
+              className={styles.sessionWorkspace}
+              data-files-open={filesOpen || undefined}
+            >
               <div
                 className={`${styles.sessionContent} a13n-scrollbar`}
                 data-session-stage
@@ -520,7 +523,7 @@ export function SessionLayout() {
                 <aside
                   id="session-files"
                   aria-label={t("Files")}
-                  className={styles.resourcePane}
+                  className={`${styles.resourcePane} ${styles.filesPane}`}
                 >
                   <Suspense fallback={<Loading variant="list" rows={2} />}>
                     <FilesPanel

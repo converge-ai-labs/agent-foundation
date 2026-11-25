@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { FileTextIcon } from "@phosphor-icons/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../../service-client";
@@ -77,7 +78,12 @@ it("loads file identity but downloads authenticated content only on request", as
   expect(await screen.findByText("review.md")).toBeTruthy();
   expect(requests).toHaveLength(1);
   const user = userEvent.setup();
-  await user.click(screen.getByRole("button", { name: "Preview {{name}}" }));
+  const preview = screen.getByRole("button", { name: "Preview {{name}}" });
+  const { container } = render(<FileTextIcon size={13} aria-hidden="true" />);
+  expect(preview.querySelector("svg")?.isEqualNode(container.firstChild)).toBe(
+    true,
+  );
+  await user.click(preview);
   expect(onPreview).toHaveBeenCalledWith({
     assetId: "ast_fixture",
     publication: undefined,
@@ -141,6 +147,7 @@ it.each(["retired", "missing"])(
         : Response.json({
             id: "ast_fixture",
             name: "review.md",
+            content_type: "text/markdown",
             retired_at: "2026-11-23T00:00:00Z",
             source: { run_id: "run", tool_call_id: "call" },
           }),
