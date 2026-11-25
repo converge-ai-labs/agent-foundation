@@ -31,6 +31,9 @@ class RunSealEvent(BaseModel):
     principal_id: str
     status: Sealed
     labels: dict[str, str]
+    app_id: str | None = None
+    app_context: dict[str, str] | None = None
+    trigger_app_id: str | None = None
 
 
 async def _publish(runtime: Runtime, event: RunSealEvent) -> None:
@@ -61,6 +64,9 @@ async def publish_after_commit(session: AsyncSession, runtime: Runtime, run: Run
         run_id=run.id,
         principal_id=run.principal_id,
         status=status,
+        app_id=run.app_id,
+        app_context=run.app_context,
+        trigger_app_id=run.trigger_app_id,
         labels=dict((options or {}).get("labels") or {}),
     )
     after_commit(session, partial(_handoff, runtime, event))

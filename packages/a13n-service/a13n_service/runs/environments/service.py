@@ -31,6 +31,7 @@ from a13n_service.runs.environments.adapters import (
 )
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.egress.storage import retire_environment
+from a13n_service.runs.environments.events import publish_after_commit as publish_event
 from a13n_service.runs.environments.lifecycle import (
     PHASES,
     begin,
@@ -154,6 +155,7 @@ async def register_external(
         session.add(environment)
         await session.flush()
         audit(session, actor, environment, "register")
+        publish_event(session, runtime, environment, "ready", origin="register")
         return environment_view(environment)
 
 
@@ -324,6 +326,10 @@ async def delete_environment(
             environment.status = "deleted"
             environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
             environment.handle = environment.failure = environment.token = None
+            environment.operation_hooks_completed = environment.operation_delete_reason = None
+            environment.operation_provider_completed = environment.operation_live_delete = False
+            environment.operation_hook_active = environment.operation_hook_blocked = False
+            publish_event(session, runtime, environment, "deleted", reason="explicit")
             if environment.kind == "managed":
                 await retire_environment(session, environment.id)
             if environment.kind == "external":

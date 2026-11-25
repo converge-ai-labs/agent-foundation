@@ -150,6 +150,7 @@ class MemorySpaceUpdate(BaseModel):
 
 
 class MemorySpace(BaseModel):
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     id: str
     organization_id: str
     workspace_id: str

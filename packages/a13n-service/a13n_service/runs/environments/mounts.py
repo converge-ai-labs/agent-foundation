@@ -12,6 +12,7 @@ from a13n_harness.environment.models import EnvironmentPermissionSet
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra.audit import record
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
@@ -24,6 +25,7 @@ from a13n_service.resources.environment_instances.access import lock_environment
 from a13n_service.resources.environment_instances.access import require_usable as require_usable
 from a13n_service.runs.environments import bindings
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
+from a13n_service.runs.environments.events import publish_after_commit as publish_event
 from a13n_service.runs.environments.lifecycle import (
     LOST,
     confirmed_loss,
@@ -41,6 +43,7 @@ from a13n_service.runs.environments.schemas import (
     SessionConfiguration,
 )
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
+from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount, RunOptions
 from a13n_service.runs.tables import RunRow, SessionRow, ThreadRow
 from a13n_service.runs.threads import get_thread, refresh_version, require_open
@@ -217,7 +220,14 @@ async def reserve_primary(
 ) -> EnvironmentRow:
     """Reserve the primary under the Thread lock."""
     scope = WorkspaceScope(thread.organization_id, thread.workspace_id)
-    environment = await reserve(session, principal, scope, template_id, limit=limit)
+    environment = await reserve(
+        session,
+        principal,
+        scope,
+        template_id,
+        limit=limit,
+        provenance=AppProvenance(thread.app_id, thread.app_context) if thread.app_id else None,
+    )
     await bindings.ensure(session, thread, environment.id, "default", session_configuration)
     session.add(_mount(thread, environment.id, PRIMARY, None))
     await session.flush()
@@ -261,6 +271,7 @@ def _idle_retired_replacement(environment: EnvironmentRow) -> bool:
 
 async def _recover_primary(
     session: AsyncSession,
+    runtime: Runtime,
     principal: Principal,
     thread: ThreadRow,
     mount: ThreadEnvironmentRow,
@@ -271,6 +282,7 @@ async def _recover_primary(
     if confirmed_loss(latest) or _idle_retired_replacement(latest):
         assert latest.template_id is not None
         latest = await reserve(session, principal, scope, latest.template_id, limit=limit, replaces=latest)
+        publish_event(session, runtime, latest, "recreated")
     require_usable(latest, principal.id)
     record(
         session,
@@ -290,6 +302,7 @@ async def _recover_primary(
 
 async def freeze_mounts(
     session: AsyncSession,
+    runtime: Runtime,
     thread: ThreadRow,
     *,
     principal: Principal,
@@ -333,7 +346,7 @@ async def freeze_mounts(
             and (confirmed_loss(environment) or _idle_retired_replacement(environment))
         ):
             assert isinstance(mount, ThreadEnvironmentRow) and recreation_limit is not None
-            await _recover_primary(session, principal, thread, mount, locked[recovery_id], recreation_limit)
+            await _recover_primary(session, runtime, principal, thread, mount, locked[recovery_id], recreation_limit)
         else:
             require_usable(environment, principal.id)
 

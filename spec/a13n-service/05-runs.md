@@ -243,6 +243,10 @@ One transaction authorizes `run` and checks the idempotency key (known keys repl
 
 Installed Apps can submit `Message` in-process using a configured service-account identity, either standalone or inside the caller's Service transaction (lock order: `organization → App → Thread`; kept short because the org lock serializes App submissions until commit). Automatic follow-up acquires the Thread acceptance lock, verifies the expected last Run, idle/unpaused state, and absence of higher-priority pending input, and never restarts failed or cancelled Threads.
 
+### App attribution
+
+Session provenance is copied to every root, child and fork Thread; a Run copies its Thread's `app_id` and `app_context`. A new root submitted over HTTP into an App-owned Session fails with `409 app_managed_session`; a matching App may submit a new root through its SDK. Inbox Entry provenance identifies the submitting App independently of Thread ownership. The Run's `trigger_app_id` identifies App-origin submission, including a scheduled Entry; direct operator input and Resume leave it null. A Thread-owned default, fresh or dedicated Environment inherits Thread provenance, and automatic replacement inherits the original Environment's provenance.
+
 ### Imported model context
 
 `NewThread.message_history` optionally seeds a new thread with conversation content produced elsewhere; the default is `[]`. It is immutable, part of no view, and covered by the create request's idempotency digest. Message, fork, resume and thread-update requests do not accept it. Forks inherit their origin's checkpoint, including any imported context already in it; they do not copy the initial seed separately. Child threads start without imported history.

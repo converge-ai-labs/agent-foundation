@@ -133,6 +133,7 @@ class ScheduleUpdate(_Model):
 
 class Schedule(ScheduleConfig):
     target: ScheduleTarget
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     id: str
     session_id: str
     stream_url: str
@@ -188,6 +189,7 @@ class OccurrenceExecution(_Model):
 
 
 class OccurrenceSummary(_Model):
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     id: str
     schedule_id: str
     session_id: str

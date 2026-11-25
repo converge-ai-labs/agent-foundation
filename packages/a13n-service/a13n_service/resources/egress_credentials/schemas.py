@@ -95,7 +95,7 @@ class Credential(BaseModel):
     name: str
     description: str
     allowed_hosts: tuple[str, ...]
-    owner_app_id: str | None = None
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     state: Literal["active", "revoked"]
     credential_version: int
     version: int

@@ -7815,6 +7815,8 @@ export interface components {
     Credential: {
       /** Allowed Hosts */
       allowed_hosts: string[];
+      /** App Id */
+      readonly app_id?: string | null;
       /**
        * Created At
        * Format: date-time
@@ -7832,8 +7834,6 @@ export interface components {
       name: string;
       /** Organization Id */
       organization_id: string;
-      /** Owner App Id */
-      owner_app_id?: string | null;
       /** Revoked At */
       revoked_at: string | null;
       /**
@@ -8568,6 +8568,8 @@ export interface components {
       agent_id: string | null;
       /** Agent Revision Id */
       agent_revision_id: string | null;
+      /** App Id */
+      readonly app_id?: string | null;
       /** Assigned Run Id */
       assigned_run_id: string | null;
       /** Child Run Id */
@@ -8949,6 +8951,8 @@ export interface components {
     };
     /** EnvironmentView */
     EnvironmentView: {
+      /** App Id */
+      readonly app_id?: string | null;
       client_connection?:
         components["schemas"]["ClientConnectionObservation"] | null;
       /**
@@ -10986,6 +10990,8 @@ export interface components {
     MemorySpace: {
       /** Always Load */
       always_load: string[];
+      /** App Id */
+      readonly app_id?: string | null;
       /** Content Bytes */
       content_bytes: number;
       /**
@@ -11813,6 +11819,8 @@ export interface components {
     };
     /** Occurrence */
     Occurrence: {
+      /** App Id */
+      readonly app_id?: string | null;
       /** Completed At */
       completed_at?: string | null;
       /** Completion Run Id */
@@ -11916,6 +11924,8 @@ export interface components {
       | "cancelled";
     /** OccurrenceSummary */
     OccurrenceSummary: {
+      /** App Id */
+      readonly app_id?: string | null;
       /** Completed At */
       completed_at?: string | null;
       /** Completion Run Id */
@@ -13629,6 +13639,8 @@ export interface components {
       agent_id: string;
       /** Agent Revision Id */
       agent_revision_id: string | null;
+      /** App Id */
+      readonly app_id?: string | null;
       /** Attempts */
       attempts: number;
       browser_binding?: components["schemas"]["BrowserBinding"] | null;
@@ -13696,6 +13708,8 @@ export interface components {
       /** Thread Id */
       thread_id: string;
       trigger: components["schemas"]["Trigger"];
+      /** Trigger App Id */
+      readonly trigger_app_id?: string | null;
       /**
        * Updated At
        * Format: date-time
@@ -13725,6 +13739,8 @@ export interface components {
       | components["schemas"]["RestrictedSandbox"];
     /** Schedule */
     Schedule: {
+      /** App Id */
+      readonly app_id?: string | null;
       /** Archived At */
       archived_at: string | null;
       /**
@@ -14296,6 +14312,8 @@ export interface components {
     };
     /** SessionView */
     SessionView: {
+      /** App Id */
+      readonly app_id?: string | null;
       /** Auto Recreate Lost Environment */
       auto_recreate_lost_environment: boolean;
       /** Cost */
@@ -15385,6 +15403,8 @@ export interface components {
     };
     /** ThreadView */
     ThreadView: {
+      /** App Id */
+      readonly app_id?: string | null;
       /** Archived At */
       archived_at: string | null;
       /**

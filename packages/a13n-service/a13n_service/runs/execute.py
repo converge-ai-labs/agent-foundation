@@ -44,6 +44,7 @@ from a13n_harness.capabilities import MemoryCursors
 from a13n_harness.capabilities.steering import steering_input_ids, without_input
 from a13n_harness.compaction import CompactionResult
 from a13n_harness.environment.errors import EnvironmentProviderError, EnvironmentProviderErrorCategory
+from a13n_harness.environment.models import EnvironmentInvocationError
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
@@ -60,6 +61,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.app_plugins import AppActivation
+from a13n_service.app_sdk.hooks import EnvironmentHookAbort
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.telemetry import attempt_observation
@@ -130,6 +132,7 @@ class _Plan:
 
     session_id: str
     app_activation: AppActivation
+    app_id: str | None
     retain_tools: bool
     subagent_controls: bool
     child_messages: bool
@@ -216,14 +219,25 @@ def _own(error: Exception) -> Exception:
     current: BaseException = error
     while isinstance(current, HarnessError) and current.__cause__ is not None:
         current = current.__cause__
+    # Harness suppresses arbitrary extension exceptions. Recover only the explicitly safe App abort.
+    if (
+        isinstance(current, EnvironmentInvocationError)
+        and current.code == "environment_extension_bind_failed"
+        and isinstance(current.__context__, EnvironmentHookAbort)
+    ):
+        return current.__context__
     return (
         current
-        if isinstance(current, ServiceError | LeaseLost | EnvironmentUnavailable | EndpointPolicyError)
+        if isinstance(
+            current, ServiceError | LeaseLost | EnvironmentUnavailable | EndpointPolicyError | EnvironmentHookAbort
+        )
         else error
     )
 
 
 def _deterministic(error: Exception) -> Outcome | None:
+    if isinstance(error, EnvironmentHookAbort):
+        return Outcome.failed(error.code, error.message)
     if isinstance(error, AuthorityRevoked):
         return error.outcome
     if isinstance(error, ServiceError):
@@ -268,6 +282,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
         scope = WorkspaceScope(run.organization_id, run.workspace_id)
         authority = ExecutionAuthority.model_validate(run.authority)
         options = stored.require(RunOptions, run.options, kind="run", id=run.id)
+        app_id = run.app_id
         app_activation = stored.require(AppActivation, run.app_activation, kind="run", id=run.id)
         revision = await definitions.resolve(
             session, thread, run.agent_id, run.agent_revision_id, options.overrides, accepting=False
@@ -374,6 +389,7 @@ async def _plan(runtime: Runtime, lease: Lease) -> _Plan:
     return _Plan(
         session_id=session_id,
         app_activation=app_activation,
+        app_id=app_id,
         background_compaction=background_compaction,
         compaction_result=compaction.result if compaction is not None else None,
         retain_tools=retain_tools,
@@ -664,6 +680,8 @@ class _Attempt:
                     skill_cache=skill_cache,
                     environments=environments,
                     app_captures=self.app_captures,
+                    app_activation=self.plan.app_activation,
+                    owner_app_id=self.plan.app_id,
                 )
             )
             recovery = ClientRecovery(

@@ -1669,12 +1669,18 @@ async def test_managed_outbound_uses_existing_identity_and_executes_without_http
 ):
     from contextlib import AsyncExitStack
 
+    from a13n_harness.environment.commands import CommandRequest, ShellCommand
+    from a13n_harness.environment.retention import EnvironmentOutputPolicy
     from a13n_service.app import open_runtime
+    from a13n_service.app_definitions import AppDefinition, InstalledApp
+    from a13n_service.app_sdk.hooks import EnvironmentLifecycleHook
     from a13n_service.distribution import OSS
     from a13n_service.infra.db import short_session, transaction
     from a13n_service.runs.environments import lifecycle
     from a13n_service.runs.environments.clients.tables import ClientSettingsRow
     from a13n_service.runs.environments.tables import EnvironmentRow
+    from a13n_service.runs.tables import RunRow
+    from a13n_service.tenancy.tables import OrganizationRow
     from sqlalchemy import func, select
 
     from .conftest import listening
@@ -1705,13 +1711,53 @@ async def test_managed_outbound_uses_existing_identity_and_executes_without_http
             "client_environments",
             settings.client_environments.model_copy(update={"allow_loopback_ws": True}),
         )
-        identity, operation = await reserve_outbound(service, runs_kit, monkeypatch, origin)
+        seeded = asyncio.Event()
+
+        async def seed(context):
+            assert context.phase == "after_create" and context.owner_app_id is None
+            async with short_session(service.runtime.storage) as session:
+                row = await session.get_one(EnvironmentRow, context.environment_id)
+                assert row.status == "creating" and row.operation_hook_active
+                assert await session.scalar(select(func.count()).select_from(RunRow)) == 0
+
+            async def content():
+                yield b"seeded via Redis"
+
+            path = str(workspace / "seed")
+            await context.execution.operations.files.write_bytes_stream(path, content(), mode="create")
+            assert await context.execution.operations.files.read_bytes(path) == b"seeded via Redis"
+            result = await context.execution.operations.shell.exec(
+                CommandRequest(
+                    command=ShellCommand(profile_id="default", script="cat seed > hook-proof"),
+                    output_policy=EnvironmentOutputPolicy(
+                        max_inline_bytes=1024, max_output_bytes=1024, overflow="truncate"
+                    ),
+                )
+            )
+            assert result.status.exit_code == 0
+            seeded.set()
+
+        installed = InstalledApp(
+            AppDefinition(
+                "test.seed",
+                "Seed",
+                environment_hooks=(EnvironmentLifecycleHook("after_create", seed, timeout=10, scope="organization"),),
+            ),
+            "test",
+            "1",
+        )
+        async with transaction(service.runtime.storage) as session:
+            organization = await session.get_one(OrganizationRow, service.tenant.organization_id)
+            organization.settings = {**organization.settings, "app_plugins": {"enabled": [installed.app_id]}}
+        worker = await open_runtime(stack, OSS, settings, executes=True, apps=(installed,))
+        identity, operation = await reserve_outbound(service, runs_kit, monkeypatch, origin, runtime=worker)
+        assert operation.hooks is not None
+        assert operation.hooks.callbacks[0][0] == installed.app_id
         bootstrap = operation.target.websocket
         assert bootstrap is not None
         token_file = tmp_path / "managed-token"
         token_file.write_text(bootstrap.credential.get_secret_value())
         token_file.chmod(0o600)
-        worker = await open_runtime(stack, OSS, settings, executes=True)
         process = await asyncio.create_subprocess_exec(
             BINARY,
             env={
@@ -1732,7 +1778,18 @@ async def test_managed_outbound_uses_existing_identity_and_executes_without_http
             await asyncio.wait_for(bootstrap.wait_ready(), 10)
             before = await service.client.get(f"{service.api}/environments/{identity}")
             assert before.json()["kind"] == "managed" and before.json()["status"] == "creating"
-            await lifecycle.publish(service.runtime, operation, lifecycle.Outcome(state=managed_state(operation)))
+
+            async def completed_provider(runtime, claimed):
+                assert claimed == operation
+                return lifecycle.Outcome(state=managed_state(operation))
+
+            with monkeypatch.context() as patch:
+                patch.setattr(lifecycle, "_perform_provider", completed_provider)
+                await lifecycle.dispatch(worker, operation)
+            assert seeded.is_set(), "The App lifecycle hook did not complete"
+            assert (workspace / "hook-proof").read_bytes() == b"seeded via Redis"
+            assert not service.runtime.client_sessions.scopes
+            assert (await service.client.get(f"{service.api}/environments/{identity}")).json()["status"] == "ready"
             agent = await runs_kit.create_agent(service, scripted_model)
             accepted = await runs_kit.start_thread(
                 service,
@@ -1746,7 +1803,9 @@ async def test_managed_outbound_uses_existing_identity_and_executes_without_http
                     }
                 ],
             )
-            scripted_model.call("shell_exec", {"command": "echo managed-ws > managed-proof"}, call_id="managed_ws")
+            scripted_model.call(
+                "shell_exec", {"command": "test -f seed && echo managed-ws > managed-proof"}, call_id="managed_ws"
+            )
             scripted_model.say("Done")
             await asyncio.wait_for(await runs_kit.attempt(service, runtime=worker), 20)
             assert (await runs_kit.get_run(service, accepted["run"]["id"]))["status"] == "completed"
@@ -2124,3 +2183,100 @@ async def test_session_replacement_recovers_from_durable_head(
         with pytest.raises(EIPMethodError) as gone:
             await device.attach_session(first.session.descriptor, owner_epoch=100)
         assert gone.value.error.data.error_type.value == "not_initialized"
+
+
+@pytest.mark.parametrize("abort", [False, True])
+async def test_app_run_hooks_use_frozen_activation_on_connect_only_environment(
+    service, daemons, scripted_model, runs_kit, abort
+):
+    from contextlib import AsyncExitStack
+
+    from a13n_service.app import open_runtime
+    from a13n_service.app_definitions import AppDefinition, InstalledApp
+    from a13n_service.app_sdk import EnvironmentHookAbort, threads
+    from a13n_service.app_sdk.hooks import EnvironmentRunHook
+    from a13n_service.distribution import OSS
+    from a13n_service.infra.db import transaction
+    from a13n_service.tenancy.tables import OrganizationRow
+
+    from .test_tenancy import new_client
+
+    laptop = await daemons.start("app-run-hooks")
+    workspace = service.tenant.workspace_id
+    account = await service.client.post(
+        f"{service.workspace}/service-accounts", json={"name": "hooks-runner", "role": "builder"}
+    )
+    assert account.status_code == 201, account.text
+    key = await service.client.post(
+        f"{service.workspace}/service-accounts/{account.json()['id']}/keys", json={"name": "run"}
+    )
+    assert key.status_code == 201, key.text
+    async with new_client(service, authorization="Bearer " + key.json()["secret"]) as client:
+        registered = await client.post(
+            f"{service.api}/environments", json={"endpoint": laptop.endpoint, "token": TOKEN}
+        )
+    assert registered.status_code == 201, registered.text
+    external = registered.json()
+    assert external["app_id"] is None and external["kind"] == "external_http"
+    calls = []
+
+    async def enter(context):
+        calls.append("enter")
+        if abort:
+            raise EnvironmentHookAbort("snapshot_required", "No snapshot is available")
+        await context.environment.files.write_text("enter.txt", "entered", mode="create")
+
+    async def exit(context):
+        calls.append("exit")
+        await context.environment.files.write_text("exit.txt", "collected before close", mode="create")
+        raise EnvironmentHookAbort("archive_failed", "The archive could not be published")
+
+    async def unexpected(context):
+        pytest.fail(f"Unowned Run called another App for {context.run_id}")
+
+    owner = InstalledApp(
+        AppDefinition("test.hooks", "Hooks", environment_run_hooks=(EnvironmentRunHook(enter, exit),)), "test", "1"
+    )
+    other = InstalledApp(
+        AppDefinition("test.other", "Other", environment_run_hooks=(EnvironmentRunHook(on_enter=unexpected),)),
+        "test",
+        "1",
+    )
+    agent = await runs_kit.create_agent(service, scripted_model)
+    body = threads.NewThread.model_validate(
+        {
+            **runs_kit.message(agent, "Read the seed"),
+            "environments": [
+                {"name": "workspace", "environment_id": external["id"], "working_directory": str(laptop.workspace)}
+            ],
+        }
+    )
+    async with AsyncExitStack() as stack:
+        worker = await open_runtime(stack, OSS, service.runtime.settings, executes=True, apps=(owner, other))
+        async with transaction(worker.storage) as db:
+            org = await db.get_one(OrganizationRow, service.tenant.organization_id)
+            org.settings = {**org.settings, "app_plugins": {"enabled": [owner.app_id, other.app_id]}}
+        async with transaction(worker.storage) as db:
+            admission = await threads.prepare_admission(
+                db, worker, workspace, account.json()["id"], app_id=owner.app_id
+            )
+            _, submitted = await threads.create_thread_in_transaction(
+                db, worker, admission, workspace, body, request_key="owned-hook"
+            )
+        assert submitted.run is not None and submitted.run.app_id == owner.app_id
+        async with transaction(worker.storage) as db:
+            org = await db.get_one(OrganizationRow, service.tenant.organization_id)
+            org.settings = {**org.settings, "app_plugins": {"enabled": [other.app_id]}}
+        if not abort:
+            scripted_model.call("shell_exec", {"command": "cat enter.txt > run-proof.txt"}, call_id="check_seed")
+            scripted_model.say("Done")
+        await asyncio.wait_for(await runs_kit.attempt(service, runtime=worker), 20)
+        run = await runs_kit.sealed(service, submitted.run.id)
+        if abort:
+            assert run["status"] == "failed" and run["failure"]["code"] == "snapshot_required", run
+            assert calls == ["enter"]
+        else:
+            assert run["status"] == "completed", run
+            assert (laptop.workspace / "run-proof.txt").read_text() == "entered"
+            assert (laptop.workspace / "exit.txt").read_text() == "collected before close"
+            assert calls == ["enter", "exit"]

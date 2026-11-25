@@ -14,6 +14,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.execution_policy import matches
 from a13n_service.infra.db import transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid
@@ -148,6 +149,7 @@ async def prepare_message(
     authority: ExecutionAuthority,
     schedule_occurrence_id: str | None = None,
     initial_environments: InitialMounts = (),
+    trigger_app_id: str | None = None,
 ) -> Source:
     """Validate and append the command's message; the source it returns starts a run if the thread accepts now."""
     await require_message_source(session, thread, message.agent_id)
@@ -163,6 +165,7 @@ async def prepare_message(
         request=request,
         control=runtime.settings.control,
         schedule_occurrence_id=schedule_occurrence_id,
+        app_id=trigger_app_id,
     )
     runtime.mailbox.notify(session, entry)
     return Source.message(entry, "input", actor, revision, overrides, options=options)
@@ -179,10 +182,21 @@ async def receipt(session: AsyncSession, thread: ThreadRow, entry: InboxEntryRow
     )
 
 
-async def _replay(session: AsyncSession, entry: InboxEntryRow, request: Request) -> Submitted:
+async def _replay(
+    session: AsyncSession,
+    entry: InboxEntryRow,
+    request: Request,
+    *,
+    trigger_app_id: str | None = None,
+    provenance: AppProvenance | None = None,
+) -> Submitted:
+    if entry.app_id != trigger_app_id:
+        raise conflict("request", request.key, "idempotency_key_reused")
     check_replay(entry, request)
     thread = await session.get(ThreadRow, entry.thread_id)
     assert thread is not None
+    if provenance is not None and (thread.app_id, thread.app_context) != (provenance.app_id, provenance.app_context):
+        raise conflict("request", request.key, "idempotency_key_reused")
     return await receipt(session, thread, entry)
 
 
@@ -237,11 +251,23 @@ async def _create_message(
     thread_id: str,
     message: Message,
     request: Request,
+    *,
+    trigger_app_id: str | None = None,
 ) -> tuple[ThreadRow, Source]:
     thread = await get_thread(session, scope.workspace_id, thread_id, lock="acceptance")
     require_open(thread)
+    if trigger_app_id is not None and thread.app_id != trigger_app_id:
+        raise conflict("thread", thread.id, "app_owner_mismatch")
     source = await prepare_message(
-        session, runtime, actor, scope, thread, message, request, authority=execution_authority(actor, scope)
+        session,
+        runtime,
+        actor,
+        scope,
+        thread,
+        message,
+        request,
+        authority=execution_authority(actor, scope),
+        trigger_app_id=trigger_app_id,
     )
     return thread, source
 
@@ -268,6 +294,7 @@ class AppSubmission:
     _runtime: Runtime
     _workspace_id: str
     _actor: Principal
+    _provenance: AppProvenance | None = None
 
 
 async def prepare_app_submission(
@@ -341,9 +368,12 @@ async def submit_message_in_transaction(
     scope, request, found = await _lookup(
         session, actor, workspace_id, lambda _: Request.of(request_key, "message", thread_id, message)
     )
+    app_id = admission._provenance.app_id if admission._provenance else None
     if found is not None:
-        return await _replay(session, found, request), False
-    thread, source = await _create_message(session, runtime, actor, scope, thread_id, message, request)
+        return await _replay(session, found, request, trigger_app_id=app_id), False
+    thread, source = await _create_message(
+        session, runtime, actor, scope, thread_id, message, request, trigger_app_id=app_id
+    )
     await accept(session, runtime, thread, explicit=source)
     assert source.entry is not None
     return await receipt(session, thread, source.entry), True
@@ -360,14 +390,19 @@ async def prepare_thread(
     authority: ExecutionAuthority,
     schedule_occurrence_id: str | None = None,
     require_first_run: bool = False,
+    provenance: AppProvenance | None = None,
 ) -> tuple[ThreadRow, Source]:
     """Create a new Thread and validated first Entry in the caller's transaction, ready for ordinary acceptance."""
     await validate_caller_headers(session, scope.workspace_id, body.mcp_headers)
     if body.session_id is not None:
         owner = await find_session(session, scope.workspace_id, body.session_id)
         require_conversation(owner)
+        if (owner.app_id, owner.app_context) != (
+            (provenance.app_id, provenance.app_context) if provenance else (None, None)
+        ):
+            raise conflict("session", owner.id, "app_managed_session" if provenance is None else "app_owner_mismatch")
     else:
-        owner = new_session(scope.organization_id, scope.workspace_id, actor.id, body.session)
+        owner = new_session(scope.organization_id, scope.workspace_id, actor.id, body.session, provenance=provenance)
         session.add(owner)
     thread = new_thread(
         owner,
@@ -404,6 +439,7 @@ async def prepare_thread(
         authority=authority,
         schedule_occurrence_id=schedule_occurrence_id,
         initial_environments=body.environments if atomic else (),
+        trigger_app_id=provenance.app_id if provenance else None,
     )
     if atomic:
         source = replace(source, atomic_initial_acceptance=True)
@@ -426,7 +462,13 @@ async def create_thread_in_transaction(
         session, actor, workspace_id, lambda scope: Request.of(request_key, "thread", scope.workspace_id, body)
     )
     if found is not None:
-        return await _replay(session, found, request)
+        return await _replay(
+            session,
+            found,
+            request,
+            trigger_app_id=admission._provenance.app_id if admission._provenance else None,
+            provenance=admission._provenance,
+        )
     thread, source = await prepare_thread(
         session,
         runtime,
@@ -436,6 +478,7 @@ async def create_thread_in_transaction(
         request=request,
         authority=execution_authority(actor, scope),
         require_first_run=True,
+        provenance=admission._provenance,
     )
     run = await accept(session, runtime, thread, explicit=source)
     if run is None:

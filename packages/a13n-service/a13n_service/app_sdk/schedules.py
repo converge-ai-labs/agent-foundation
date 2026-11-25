@@ -5,8 +5,9 @@ from collections.abc import Mapping
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra import cursors
-from a13n_service.infra.errors import invalid
+from a13n_service.infra.errors import conflict, invalid
 from a13n_service.runs.memories.session_memory import configure
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schedules import queries, service
@@ -28,16 +29,20 @@ async def ensure_schedule_session(
     principal_id: str,
     existing_session_id: str | None,
     session_create: SessionCreate,
+    app_context: dict[str, str] | None = None,
 ) -> str:
     """Use an existing conversation Session or create one with Session Memory off by default."""
     scope = await app_workspace(session, runtime, workspace_id, app_id)
     actor = await run_actor(session, runtime, scope, principal_id)
+    provenance = AppProvenance(app_id, app_context)
     if existing_session_id is not None:
         row = await find_session(session, workspace_id, existing_session_id)
         require_conversation(row)
+        if (row.app_id, row.app_context) != (app_id, app_context):
+            raise conflict("session", row.id, "app_owner_mismatch")
         return row.id
     body = session_create
-    row = new_session(scope.organization_id, workspace_id, actor.id, body)
+    row = new_session(scope.organization_id, workspace_id, actor.id, body, provenance=provenance)
     session.add(row)
     await session.flush()
     await configure(session, row, body.memory or SessionMemorySettings(enabled=False))
@@ -54,8 +59,9 @@ async def create_fresh_schedule(
     actor_id: str,
     body: ScheduleCreate,
     request_key: str,
+    app_context: dict[str, str] | None = None,
 ) -> tuple[Schedule, bool]:
-    """Create a native Schedule with a fresh Thread target and an enforced App label."""
+    """Create an App-owned Schedule with a fresh Thread target."""
     scope = await app_workspace(session, runtime, workspace_id, app_id)
     actor = await app_actor(session, runtime, scope, actor_id)
     authorize(actor, scope, "write")
@@ -66,17 +72,23 @@ async def create_fresh_schedule(
         runtime,
         actor,
         scope,
-        ScheduleCreate.model_validate({**body.model_dump(), "labels": {**body.labels, "app": app_id}}),
+        body,
         request_key=request_key,
+        provenance=AppProvenance(app_id, app_context),
     )
 
 
-def _fresh(workspace_id: str, app_id: str, labels: Mapping[str, str] | None):
-    return (
+def _fresh(workspace_id: str, app_id: str, labels: Mapping[str, str] | None, app_context: dict[str, str] | None):
+    predicates = [
         ScheduleRow.workspace_id == workspace_id,
         ScheduleRow.thread_id.is_(None),
-        ScheduleRow.labels.contains({**(labels or {}), "app": app_id}),
-    )
+        ScheduleRow.app_id == app_id,
+    ]
+    if labels:
+        predicates.append(ScheduleRow.labels.contains(dict(labels)))
+    if app_context is not None:
+        predicates.append(ScheduleRow.app_context.contains(AppProvenance(app_id, app_context).app_context))
+    return predicates
 
 
 async def list_app_schedules(
@@ -85,6 +97,7 @@ async def list_app_schedules(
     *,
     app_id: str,
     labels: Mapping[str, str] | None = None,
+    app_context: dict[str, str] | None = None,
     limit: int = 50,
     cursor: str | None = None,
 ) -> SchedulePage:
@@ -93,13 +106,13 @@ async def list_app_schedules(
         raise invalid("limit", "must_be_between_1_and_200")
     rows, next_cursor = await cursors.keyset_page(
         session,
-        select(ScheduleRow).where(*_fresh(workspace_id, app_id, labels)),
+        select(ScheduleRow).where(*_fresh(workspace_id, app_id, labels, app_context)),
         (ScheduleRow.created_at, ScheduleRow.id),
         kind="app_fresh_schedules",
         owner=(
-            cursors.query_owner(workspace_id, app_id, sorted(labels.items()))
-            if labels
-            else cursors.query_owner(workspace_id, app_id)
+            cursors.query_owner(
+                workspace_id, app_id, sorted((labels or {}).items()), sorted((app_context or {}).items())
+            )
         ),
         cursor=cursor,
         limit=limit,
@@ -114,6 +127,7 @@ async def count_active_fresh_schedules(
     *,
     app_id: str,
     labels: Mapping[str, str] | None = None,
+    app_context: dict[str, str] | None = None,
 ) -> int:
     """Count enabled or paused fresh Schedules, plus any with a pending occurrence."""
     return (
@@ -121,7 +135,7 @@ async def count_active_fresh_schedules(
             select(func.count())
             .select_from(ScheduleRow)
             .where(
-                *_fresh(workspace_id, app_id, labels),
+                *_fresh(workspace_id, app_id, labels, app_context),
                 or_(ScheduleRow.state.in_(("enabled", "paused")), ScheduleRow.pending_occurrence_id.is_not(None)),
             )
         )

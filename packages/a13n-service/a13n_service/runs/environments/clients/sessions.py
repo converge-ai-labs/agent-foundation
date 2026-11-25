@@ -29,6 +29,7 @@ from a13n_envd_client.eip.v1 import (
     ProcessStartResult,
     SessionConfiguration,
     SessionDescriptor,
+    SessionLifecyclePolicy,
 )
 from a13n_envd_client.eip.v1.methods import MethodSpec
 from a13n_envd_client.errors import EIPSessionStateError
@@ -41,7 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 from a13n_service.runs.environments.clients import authority, streaming
 from a13n_service.runs.environments.clients.connections import Connection, owner_key
-from a13n_service.runs.environments.clients.routing import Request
+from a13n_service.runs.environments.clients.routing import LifecycleCaller, Request, ScopeCaller
 from a13n_service.runs.environments.clients.streams import StreamPair
 from a13n_service.runs.tool_executions.routing import Caller
 
@@ -76,12 +77,18 @@ class Open(BaseModel):
     required_methods: tuple[str, ...] = Field(default=(), max_length=128)
 
 
+def _caller_key(caller: ScopeCaller) -> tuple[str, str, str | None]:
+    if isinstance(caller, LifecycleCaller):
+        return caller.operation_id, "lifecycle", None
+    return caller.attempt_id, caller.worker_id, caller.execution_id
+
+
 @dataclass(slots=True)
 class Transfer:
     channel: TransferChannel
     direction: TransferDirection
     actions: frozenset[EnvironmentAction]
-    caller: Caller
+    caller: ScopeCaller
     attached: bool = False
     finished: bool = False
     task: asyncio.Task[None] | None = field(default=None, repr=False)
@@ -97,7 +104,7 @@ class Scope:
     binding: str = "default"
     lifetime: AsyncExitStack = field(default_factory=AsyncExitStack, repr=False)
     transfers: dict[str, Transfer] = field(default_factory=dict)
-    callers: dict[tuple[str, str, str | None], Caller] = field(default_factory=dict)
+    callers: dict[tuple[str, str, str | None], ScopeCaller] = field(default_factory=dict)
     processes: dict[str, ProcessInfo] = field(default_factory=dict)
 
     @property
@@ -110,8 +117,8 @@ class Scope:
             return False
         return True
 
-    def remember(self, caller: Caller) -> None:
-        self.callers[(caller.attempt_id, caller.worker_id, caller.execution_id)] = caller
+    def remember(self, caller: ScopeCaller) -> None:
+        self.callers[_caller_key(caller)] = caller
 
 
 class Sessions:
@@ -166,7 +173,7 @@ class Sessions:
         return connection
 
     def _acquisition(self, request: Request, binding: str) -> asyncio.Lock:
-        key = (request.thread_id, f"{request.environment_id}/{binding}")
+        key = (request.thread_id or request.scope_id, f"{request.environment_id}/{binding}")
         lock = self.acquisitions.get(key)
         if lock is None:
             lock = self.acquisitions[key] = asyncio.Lock()
@@ -213,43 +220,59 @@ class Sessions:
         lifetime = AsyncExitStack()
         try:
             assert connection.device is not None
-            recovery = await self.runtime.environment_contexts.for_control(
-                request.thread_id,
-                request.caller.run_id,
-                request.caller.worker_id,
-                request.environment_id,
-                request.mount_name,
-                execution_id=request.caller.execution_id if request.retained_cleanup else None,
-            )
-            # A new Thread owner fences the old Worker's logical scopes before
-            # attaching the same native Session on this still-connected carrier.
-            for identity, previous in tuple(self.scopes.items()):
-                if (
-                    previous.request.thread_id == request.thread_id
-                    and previous.request.environment_id == request.environment_id
-                    and previous.binding == mount.session_binding
-                    and previous.request.caller.worker_id != request.caller.worker_id
-                ):
-                    await self._retire(identity, previous)
-            await self.connection(request)
-            assert connection.device is not None
             controlled = connection.device.descriptor.boundary.egress == EgressMode.CONTROLLED
-            # Control owns the native borrower; Worker scopes remain independently authorized.
-            session = await lifetime.enter_async_context(
-                recovery.borrow(
-                    connection.device,
-                    target=request.environment_id,
-                    expected_device_id=connection.attachment.device_id,
-                    configuration=SessionConfiguration(
-                        working_directory=body.working_directory,
-                        egress=EgressPolicy(destinations=AllowlistDestinations(mode="allowlist"))
-                        if controlled
-                        else None,
-                    ),
-                    required_methods=frozenset(body.required_methods),
-                    expected_boundary=None,
-                )
+            configuration = SessionConfiguration(
+                working_directory=body.working_directory,
+                egress=EgressPolicy(destinations=AllowlistDestinations(mode="allowlist")) if controlled else None,
             )
+            if isinstance(request.caller, LifecycleCaller):
+                # Open a dedicated Session; it must not restore a Thread binding or outlive this hook.
+                configuration = configuration.model_copy(
+                    update={
+                        "lifecycle": SessionLifecyclePolicy(
+                            idle_timeout_ms=35_000,
+                            max_lifetime_ms=40_000,
+                        )
+                    }
+                )
+                session = await connection.device.open_session(
+                    configuration=configuration,
+                    required_methods=body.required_methods,
+                )
+                lifetime.push_async_callback(session.close)
+                await lifetime.enter_async_context(session.use())
+            else:
+                assert request.thread_id is not None
+                recovery = await self.runtime.environment_contexts.for_control(
+                    request.thread_id,
+                    request.caller.run_id,
+                    request.caller.worker_id,
+                    request.environment_id,
+                    request.mount_name,
+                    execution_id=request.caller.execution_id if request.retained_cleanup else None,
+                )
+                # A new Thread owner fences the old Worker's logical scopes before borrowing.
+                for identity, previous in tuple(self.scopes.items()):
+                    if (
+                        previous.request.thread_id == request.thread_id
+                        and previous.request.environment_id == request.environment_id
+                        and previous.binding == mount.session_binding
+                        and isinstance(previous.request.caller, Caller)
+                        and previous.request.caller.worker_id != request.caller.worker_id
+                    ):
+                        await self._retire(identity, previous)
+                await self.connection(request)
+                assert connection.device is not None
+                session = await lifetime.enter_async_context(
+                    recovery.borrow(
+                        connection.device,
+                        target=request.environment_id,
+                        expected_device_id=connection.attachment.device_id,
+                        configuration=configuration,
+                        required_methods=frozenset(body.required_methods),
+                        expected_boundary=None,
+                    )
+                )
             # Each view retains its own directory; Session cwd belongs to the shared binding.
             await self.connection(request)
             await self._resolve(request, connection, frozenset(), descriptor=session.descriptor)
@@ -262,7 +285,7 @@ class Sessions:
                 lifetime=lifetime,
             )
             await self.connection(request)
-            if not request.retained_cleanup:
+            if isinstance(request.caller, Caller) and not request.retained_cleanup:
                 scope.remember(request.caller.model_copy(update={"execution_id": None}))
             scope.remember(request.caller)
             self.scopes[request.scope_id] = scope
@@ -309,11 +332,11 @@ class Sessions:
         connection = await self.connection(request)
         if scope is not None and (
             scope.connection is not connection
-            or (request.environment_id, request.mount_name, request.caller.run_id, request.thread_id)
+            or (request.environment_id, request.mount_name, request.scope_owner, request.thread_id)
             != (
                 scope.request.environment_id,
                 scope.request.mount_name,
-                scope.request.caller.run_id,
+                scope.request.scope_owner,
                 scope.request.thread_id,
             )
         ):
@@ -348,7 +371,7 @@ class Sessions:
                     await self.stop_transfers(scope)
                 finally:
                     try:
-                        if request.method == "scope.close":
+                        if request.method == "scope.close" and isinstance(request.caller, Caller):
                             await scope.session.close()
                     finally:
                         await scope.lifetime.aclose()
@@ -510,7 +533,7 @@ class Sessions:
         handle: str,
         direction: TransferDirection,
         actions: frozenset[EnvironmentAction],
-        caller: Caller,
+        caller: ScopeCaller,
     ) -> None:
         channel = scope.session.requester.register_transfer(handle, direction=direction, inbound_frames=9)
         scope.transfers[handle] = Transfer(channel, direction, actions, caller)
@@ -558,8 +581,8 @@ class Sessions:
     async def _renew_batch(self, scopes: list[tuple[str, Scope]]) -> None:
         examined = {identity: dict(scope.callers) for identity, scope in scopes}
         checks: list[authority.Check] = []
-        owners: list[tuple[str, Caller, Transfer | None]] = []
-        live: dict[str, dict[tuple[str, str, str | None], Caller]] = {identity: {} for identity, _ in scopes}
+        owners: list[tuple[str, ScopeCaller, Transfer | None]] = []
+        live: dict[str, dict[tuple[str, str, str | None], ScopeCaller]] = {identity: {} for identity, _ in scopes}
         admitted: set[str] = set()
         try:
             with anyio.fail_after(self.runtime.settings.client_environments.heartbeat_seconds):
@@ -615,7 +638,7 @@ class Sessions:
                         if isinstance(result, EnvironmentError):
                             await streaming.stop(transfer)
                     elif not isinstance(result, EnvironmentError):
-                        live[identity][(caller.attempt_id, caller.worker_id, caller.execution_id)] = caller
+                        live[identity][_caller_key(caller)] = caller
                 for identity, scope in scopes:
                     if self.scopes.get(identity) is not scope:
                         continue

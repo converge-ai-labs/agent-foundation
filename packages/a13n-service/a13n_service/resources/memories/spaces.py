@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, assign, short_session, transaction
 from a13n_service.infra.errors import invalid
@@ -56,6 +57,7 @@ async def views(session: AsyncSession, rows: Sequence[MemorySpaceRow]) -> list[M
         result.append(
             MemorySpace(
                 id=row.id,
+                app_id=row.app_id,
                 organization_id=row.organization_id,
                 workspace_id=row.workspace_id,
                 name=row.name,
@@ -94,6 +96,7 @@ async def insert_space(
     body: MemorySpaceCreate,
     *,
     settings: MemorySettings,
+    provenance: AppProvenance | None = None,
 ) -> MemorySpace:
     authority = await _authority(session, actor, scope, body.organization)
     memory = await insert_memory(
@@ -109,6 +112,8 @@ async def insert_space(
     )
     row = MemorySpaceRow(
         id=new_object_id("mspace"),
+        app_id=provenance.app_id if provenance else None,
+        app_context=provenance.app_context if provenance else None,
         organization_id=scope.organization_id,
         workspace_id=scope.workspace_id,
         memory_id=memory.id,

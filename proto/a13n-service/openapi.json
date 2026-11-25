@@ -6313,6 +6313,18 @@
             "title": "Allowed Hosts",
             "type": "array"
           },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6341,17 +6353,6 @@
           "organization_id": {
             "title": "Organization Id",
             "type": "string"
-          },
-          "owner_app_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Owner App Id"
           },
           "revoked_at": {
             "anyOf": [
@@ -8562,6 +8563,18 @@
             ],
             "title": "Agent Revision Id"
           },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "assigned_run_id": {
             "anyOf": [
               {
@@ -9233,6 +9246,18 @@
       },
       "EnvironmentView": {
         "properties": {
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "client_connection": {
             "anyOf": [
               {
@@ -14753,6 +14778,18 @@
             "title": "Always Load",
             "type": "array"
           },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "content_bytes": {
             "title": "Content Bytes",
             "type": "integer"
@@ -17316,6 +17353,18 @@
       "Occurrence": {
         "additionalProperties": false,
         "properties": {
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -17677,6 +17726,18 @@
       "OccurrenceSummary": {
         "additionalProperties": false,
         "properties": {
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "completed_at": {
             "anyOf": [
               {
@@ -22559,6 +22620,18 @@
             ],
             "title": "Agent Revision Id"
           },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "attempts": {
             "title": "Attempts",
             "type": "integer"
@@ -22807,6 +22880,18 @@
           "trigger": {
             "$ref": "#/components/schemas/Trigger"
           },
+          "trigger_app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "Trigger App Id"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -22922,6 +23007,18 @@
       "Schedule": {
         "additionalProperties": false,
         "properties": {
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "archived_at": {
             "anyOf": [
               {
@@ -24811,6 +24908,18 @@
       },
       "SessionView": {
         "properties": {
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "auto_recreate_lost_environment": {
             "title": "Auto Recreate Lost Environment",
             "type": "boolean"
@@ -28199,6 +28308,18 @@
       },
       "ThreadView": {
         "properties": {
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "archived_at": {
             "anyOf": [
               {

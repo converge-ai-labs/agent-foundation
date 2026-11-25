@@ -1,18 +1,22 @@
 """Managed outbound admission and private bootstrap, separate from client enrollment."""
 
 import asyncio
+import hmac
 import secrets
+from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.crypto import SecretLocation, secret_hash
+from a13n_service.infra.db import now
 from a13n_service.infra.errors import ServiceError
 from a13n_service.providers.environment.websocket import WebSocketBootstrap
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.providers.service import ResolvedProvider, read_provider, resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
+from a13n_service.runs.environments.clients.routing import LifecycleCaller
 from a13n_service.runs.environments.schemas import Handle, OutboundBinding
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -82,11 +86,40 @@ async def admitted(
     if environment.provider_id is None:
         raise ServiceError("unauthenticated", "Managed environment has no provider")
     provider = await read_provider(session, EnvironmentProviderRow, environment.provider_id)
-    return binding_for(runtime.registry, environment, provider, executing=executing)
+    phase = "before_stop" if environment.status == "stopping" else "before_delete"
+    awaiting_hook = (
+        not executing
+        and not environment.operation_hook_blocked
+        and (
+            environment.operation_hook_active
+            or (
+                environment.failure is None
+                and environment.lease_owner is None
+                and environment.next_operation_at is None
+            )
+        )
+        and (
+            environment.status == "stopping" or (environment.status == "deleting" and environment.operation_live_delete)
+        )
+        and any(
+            hook.phase == phase and (hook.scope == "organization" or app_id == environment.app_id)
+            for app_id, hook in runtime.environment_hooks
+        )
+    )
+    return binding_for(
+        runtime.registry, environment, provider, executing=executing, at=await now(session), awaiting_hook=awaiting_hook
+    )
 
 
 def binding_for(
-    registry: Registry, environment: EnvironmentRow, provider: ResolvedProvider, *, executing: bool = False
+    registry: Registry,
+    environment: EnvironmentRow,
+    provider: ResolvedProvider,
+    *,
+    executing: bool = False,
+    lifecycle: LifecycleCaller | None = None,
+    at: datetime | None = None,
+    awaiting_hook: bool = False,
 ) -> OutboundBinding:
     """Validate already-read instance/provider facts without repeating database queries."""
     allowed = {"ready"} if executing else {"creating", "starting", "ready"}
@@ -99,7 +132,23 @@ def binding_for(
 
     if not provider.enabled or environment.provider_identity != provider_identity(registry, provider):
         raise ServiceError("unauthenticated", "Managed environment provider is unavailable or changed")
-    if environment.status not in allowed:
+    live_hook = (
+        at is not None
+        and environment.operation_hook_active
+        and environment.lease_expires_at is not None
+        and environment.lease_expires_at > at
+        and environment.status in {"creating", "starting", "stopping", "deleting"}
+    )
+    if lifecycle is not None:
+        if (
+            not live_hook
+            or environment.operation_id != lifecycle.operation_id
+            or environment.generation != lifecycle.generation
+            or environment.lease_token_hash is None
+            or not hmac.compare_digest(environment.lease_token_hash, secret_hash(lifecycle.token))
+        ):
+            raise ServiceError("unauthenticated", "Managed Environment operation is no longer authorized")
+    elif environment.status not in allowed and (executing or not (live_hook or awaiting_hook)):
         raise ServiceError("unavailable", "Managed environment is not ready for an outbound connection")
     return handle.outbound
 
