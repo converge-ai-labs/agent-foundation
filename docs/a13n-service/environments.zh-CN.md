@@ -111,6 +111,8 @@ curl -sS -X POST "$A13N_URL/api/v1/environments" \
   -d '{"template_id":"envtpl_...","name":"Shared data"}'
 ```
 
+使用 E2B 模板时，可以在**创建环境**中指定已有卷，也可以在请求里传入 `"recipe_overrides":{"volume_mounts":{"/data":"project-123"}}`。键是 sandbox 内的绝对路径，值是卷名。省略此参数会沿用模板挂载，传入空映射会清空模板挂载。自动重建会保留实例指定的卷。删除实例后，在新实例挂载同一个卷即可继续使用文件。E2B 账号需要开通 Volumes。
+
 ### 停止、重命名和删除
 
 操作时需在 `If-Match` 中携带环境当前的 ETag（需要 `write` 权限）：

@@ -183,6 +183,8 @@
   "Import from": "导入来源",
   "Variable prefix (optional)": "变量前缀（可选）",
   "Native volume mounts": "原生卷挂载",
+  "E2B volumes": "E2B 持久化卷",
+  "Mount existing volumes by name. Their files survive environment deletion.": "按名称挂载已有卷。删除环境后，卷中的文件会保留。",
   "Volume name": "卷名称",
   "Mount path": "挂载路径",
   "Subpath (optional)": "子路径（可选）",

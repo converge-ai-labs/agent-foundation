@@ -4081,6 +4081,8 @@
   "Import from": "Import from",
   "Variable prefix (optional)": "Variable prefix (optional)",
   "Native volume mounts": "Native volume mounts",
+  "E2B volumes": "E2B volumes",
+  "Mount existing volumes by name. Their files survive environment deletion.": "Mount existing volumes by name. Their files survive environment deletion.",
   "Volume name": "Volume name",
   "Mount path": "Mount path",
   "Subpath (optional)": "Subpath (optional)",

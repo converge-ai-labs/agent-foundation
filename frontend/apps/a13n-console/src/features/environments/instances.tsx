@@ -35,6 +35,7 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
+import { object } from "../../shared/forms/schema-definition";
 import { ProviderIcon } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
@@ -46,6 +47,7 @@ import {
 } from "./api";
 import instanceStyles from "./environments.module.css";
 import { creationNotice } from "./creation-progress";
+import { MapFields } from "./map-fields";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
 import { MetricsSourcePicker } from "../monitoring/environment";
@@ -337,6 +339,7 @@ function EnvironmentForm({
         environmentTemplates(client, workspace.id, signal, cursor),
       ),
   });
+  const [volumeMounts, setVolumeMounts] = useState<Record<string, string>>();
   const [metricsSource, setMetricsSource] = useState("");
   const [kind, setKind] = useState("managed"),
     [name, setName] = useState(""),
@@ -358,6 +361,8 @@ function EnvironmentForm({
         })
         .then(data),
   });
+  const isE2B = selectedProvider.data?.type === "e2b";
+  const templateMounts = selectedTemplate?.config?.recipe?.volume_mounts;
   const notice = creationNotice(
     selectedProvider.data?.type,
     selectedTemplate?.config?.recipe,
@@ -369,6 +374,10 @@ function EnvironmentForm({
         if (!templateId) throw new Error(t("Select an environment template."));
         return createManagedEnvironment(client, workspace.id, {
           template_id: templateId,
+          ...(isE2B &&
+            volumeMounts && {
+              recipe_overrides: { volume_mounts: volumeMounts },
+            }),
           metrics_data_source_id: metricsSource || null,
           ...named,
         });
@@ -457,7 +466,10 @@ function EnvironmentForm({
             placeholder={t("Select template")}
             emptyMessage={t("No matching templates")}
             value={templateId}
-            onValueChange={setTemplateId}
+            onValueChange={(next) => {
+              setTemplateId(next);
+              setVolumeMounts(undefined);
+            }}
             groups={[{ label: t("Templates"), options: templateOptions }]}
           />
         </FormField>
@@ -491,6 +503,20 @@ function EnvironmentForm({
             />
           </FormField>
         </>
+      )}
+      {kind === "managed" && isE2B && (
+        <MapFields
+          key={templateId}
+          label={t("E2B volumes")}
+          description={t(
+            "Mount existing volumes by name. Their files survive environment deletion.",
+          )}
+          keyLabel={t("Mount path")}
+          valueLabel={t("Volume name")}
+          requireValue
+          value={volumeMounts ?? (object(templateMounts) ? templateMounts : {})}
+          onChange={setVolumeMounts}
+        />
       )}
       {kind === "managed" && notice && <p role="note">{t(notice)}</p>}
       <MetricsSourcePicker

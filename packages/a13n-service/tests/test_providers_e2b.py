@@ -89,3 +89,28 @@ def test_default_identity_is_stable_and_services_are_distinct() -> None:
 def test_accounts_reject_malformed_domains_and_api_overrides(config: dict[str, str]) -> None:
     with pytest.raises(ValidationError):
         Account.model_validate(config)
+
+
+def test_volume_mounts_have_a_stable_target_identity():
+    recipe = E2B.validate_environment({"volume_mounts": {"/work": "a", "/data": "b"}})
+    reordered = E2B.validate_environment({"volume_mounts": {"/data": "b", "/work": "a"}})
+    assert recipe.fingerprint == reordered.fingerprint == E2B.execution_environment(recipe).fingerprint
+    assert recipe.fingerprint != E2B.validate_environment({"volume_mounts": {"/data": "a"}}).fingerprint
+    assert E2B.validate_environment({}).fingerprint == E2B.validate_environment({"volume_mounts": {}}).fingerprint
+
+
+@pytest.mark.parametrize(
+    "mounts",
+    [
+        {"relative": "a"},
+        {"/": "a"},
+        {"/data/../etc": "a"},
+        {"/var/lib": "a"},
+        {"/run/a13n-envd-state/child": "a"},
+        {"/data": "a", "/data/sub": "b"},
+        {"/data": "bad/name"},
+    ],
+)
+def test_invalid_volume_bindings(mounts):
+    with pytest.raises(ValidationError):
+        E2B.environment_model.model_validate({"volume_mounts": mounts})

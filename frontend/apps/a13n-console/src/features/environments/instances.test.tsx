@@ -167,6 +167,50 @@ it.each([null, "mds_local"])(
   },
 );
 
+it("submits volume mounts selected for an E2B instance", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    data:
+      path === "/api/v1/environment-providers/{provider_id}"
+        ? { type: "e2b" }
+        : {
+            items:
+              path === "/api/v1/environment-templates"
+                ? [
+                    {
+                      id: "envtpl_e2b",
+                      name: "E2B sandbox",
+                      enabled: true,
+                      provider_id: "eprov_e2b",
+                      config: {
+                        recipe: {
+                          volume_mounts: { "/data": "template-volume" },
+                        },
+                      },
+                    },
+                  ]
+                : (collections[path] ?? []),
+            next_cursor: null,
+          },
+  }));
+  const { cache, user } = await openCreate();
+  await user.click(screen.getByRole("combobox", { name: "Template" }));
+  await user.click(await screen.findByRole("option", { name: /E2B sandbox/ }));
+  const volume = await screen.findByDisplayValue("template-volume");
+  await user.clear(volume);
+  await user.type(volume, "project-a");
+  await user.click(screen.getByRole("button", { name: "Create environment" }));
+  await waitFor(() =>
+    expect(http.POST).toHaveBeenCalledWith("/api/v1/environments", {
+      body: {
+        template_id: "envtpl_e2b",
+        metrics_data_source_id: null,
+        recipe_overrides: { volume_mounts: { "/data": "project-a" } },
+      },
+    }),
+  );
+  cache.clear();
+});
+
 it("registers an external target by its endpoint and token, with no provider to pick", async () => {
   const { cache, user } = await openCreate();
   await user.click(screen.getByRole("combobox", { name: "Ownership" }));

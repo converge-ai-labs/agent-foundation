@@ -4081,6 +4081,8 @@
   "Import from": "यहाँ से इंपोर्ट करें",
   "Variable prefix (optional)": "वेरिएबल प्रीफ़िक्स (वैकल्पिक)",
   "Native volume mounts": "नेटिव वॉल्यूम माउंट",
+  "E2B volumes": "E2B वॉल्यूम",
+  "Mount existing volumes by name. Their files survive environment deletion.": "मौजूदा वॉल्यूम को नाम से माउंट करें। एनवायरनमेंट हटाने के बाद भी उनकी फ़ाइलें सुरक्षित रहती हैं।",
   "Volume name": "वॉल्यूम नाम",
   "Mount path": "माउंट पाथ",
   "Subpath (optional)": "सब-पाथ (वैकल्पिक)",
