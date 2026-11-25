@@ -4076,6 +4076,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/storage": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Workspace Storage
+     * @description Summarize this workspace's asset and staged upload bytes by creator.
+     */
+    get: operations["get_workspace_storage"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/subscriptions": {
     parameters: {
       query?: never;
@@ -5543,6 +5563,11 @@ export interface components {
        * @default []
        */
       plugins?: components["schemas"]["PluginSelection"][];
+      /**
+       * Respect Mcp Annotations
+       * @default false
+       */
+      respect_mcp_annotations?: boolean;
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */
@@ -5630,6 +5655,11 @@ export interface components {
        * @default []
        */
       plugins?: components["schemas"]["PluginSelection"][];
+      /**
+       * Respect Mcp Annotations
+       * @default false
+       */
+      respect_mcp_annotations?: boolean;
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */
@@ -6224,9 +6254,11 @@ export interface components {
     /** AssetPage */
     AssetPage: {
       /** Items */
-      items: components["schemas"]["Asset"][];
+      items: components["schemas"]["ListedAsset"][];
       /** Next Cursor */
       next_cursor: string | null;
+      /** Total Count */
+      total_count: number;
     };
     /** AssetPart */
     AssetPart: {
@@ -7600,6 +7632,21 @@ export interface components {
        * Format: date-time
        */
       started_at: string;
+    };
+    /** CreatorStorage */
+    CreatorStorage: {
+      /** Active Bytes */
+      active_bytes: number;
+      /** Created By Id */
+      created_by_id: string;
+      /** Creator Name */
+      creator_name: string;
+      /** Retired Bytes */
+      retired_bytes: number;
+      /** Staged Upload Bytes */
+      staged_upload_bytes: number;
+      /** Total Bytes */
+      total_bytes: number;
     };
     /** Credential */
     Credential: {
@@ -10003,6 +10050,47 @@ export interface components {
     };
     /** @enum {string} */
     Lineage: "root" | "continue" | "fork";
+    /** ListedAsset */
+    ListedAsset: {
+      /** Content Type */
+      content_type: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Creator Name */
+      creator_name: string;
+      /** Digest */
+      digest: string;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Retired At */
+      retired_at: string | null;
+      /** Session Id */
+      session_id: string | null;
+      /** Size */
+      size: number;
+      /** Source */
+      source: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+      /** Thread Id */
+      thread_id: string | null;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
     /** LocalResult */
     LocalResult: {
       export?: components["schemas"]["ExportHealth"] | null;
@@ -15730,6 +15818,19 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** WorkspaceStorage */
+    WorkspaceStorage: {
+      /** Active Bytes */
+      active_bytes: number;
+      /** By Creator */
+      by_creator: components["schemas"]["CreatorStorage"][];
+      /** Retired Bytes */
+      retired_bytes: number;
+      /** Staged Upload Bytes */
+      staged_upload_bytes: number;
+      /** Total Bytes */
+      total_bytes: number;
+    };
     /** WorkspaceUpdate */
     WorkspaceUpdate: {
       /** Name */
@@ -16386,6 +16487,12 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
+        /** @description Case-insensitive literal filename substring. */
+        query?: string | null;
+        created_by_id?: string | null;
+        source_kind?: ("user_upload" | "agent_run") | null;
+        status?: "all" | "active" | "retired";
+        order?: "id" | "newest";
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -24807,6 +24914,31 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Skill"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_workspace_storage: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WorkspaceStorage"];
         };
       };
       400: components["responses"]["Error"];

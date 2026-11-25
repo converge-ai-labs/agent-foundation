@@ -91,6 +91,10 @@ Motion is brief, typically 100–200ms, respects reduced motion and preserves la
 
 Load shared styles once and use `a13n-root` for base typography. Light is the default; document-level `dark` makes portals inherit the theme. Console and Harness WebUI each own their viewer-local display-language choice; their product contracts define localization coverage. Shared components receive application-owned strings.
 
+## Conversation Diagrams
+
+Console and Harness UI preview complete Mermaid fences as static images with the application's light or dark theme. Layout runs in an opaque sandboxed frame without network access. Diagram callbacks are inactive. The preview supports native Mermaid diagram types and styling, with source view available; embedded configuration directives and diagrams over the preview limits remain as source. Failed previews show the reason alongside the original source.
+
 ## Documentation Pages
 
 The documentation site is a reading surface, so its pages set type for sustained reading rather than interface density. Prose is 16px with a 1.7 line height in supporting text (`--a13n-text-supporting`), so headings, bold text, links, and code stand out in text color. Page titles are 30px, section headings 22px, and subsection headings 18px, all at weight 600, which prose also uses for bold text; a hairline above each section heading divides the page. The description beneath the title is 18px secondary text. The reading column is at most 800px wide, centered between the navigation and the table of contents. The navigation sits on the canvas without a tint: rows keep the 32px height and 8px radius but use text color, and group labels are 13px at weight 600 in text color. The copy and open page actions follow the table of contents when it is shown and otherwise sit beside the title.

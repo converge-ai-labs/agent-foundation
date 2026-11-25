@@ -63,6 +63,19 @@ security:
 
 To use TypeSafe Jev as `model-review`, save a Model with `route: typesafe:jev-latest` and `authentication: {kind: api_key, env: TYPESAFE_API_KEY}`.
 
+## Use MCP tool annotations for approvals
+
+Add the permission capability to an Agent to ask before tools the MCP server marks as destructive. Merge this setting into an existing `ToolPermissionsCapability` if the Agent already has one:
+
+```yaml
+capabilities:
+  - capability: ToolPermissionsCapability
+    configuration:
+      respect_mcp_annotations: true
+```
+
+The setting defaults to `false`. With it enabled, inherited permissions allow tools marked `readOnlyHint: true` and ask before tools marked `destructiveHint: true` unless also marked read-only. Other tools keep their source defaults. Server annotations are hints: use explicit rules to enforce your policy.
+
 ## Enable built-in subagents, MCP servers, and Skills
 
 - **Built-in subagents (`explorer`, `code-reviewer`, `executor`):** Merge `subagents: {include: [explorer, code-reviewer]}` into `a13n-harness-ui.yaml` (`[]` disables automatic inclusion; inspect with `a13n-harness-ui config subagents --format json`).
