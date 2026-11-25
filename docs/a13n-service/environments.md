@@ -141,6 +141,22 @@ For a Modal template, select existing volumes by name in **Create environment** 
 }
 ```
 
+For a boxd template, select an existing disk by ID in **Create environment** or pass the override below. Use a disk in the provider’s region that is free to attach. Each disk can attach to one machine at a time. Stopping the machine keeps the disk attached. After deleting the machine, mount the same disk on a new instance to read its files. Omit `volumes` to inherit the template mounts or pass `[]` to clear them. Templates with `from_snapshot` cannot attach disks at creation.
+
+```json
+{
+  "recipe_overrides": {
+    "volumes": [
+      {
+        "disk_id": "<boxd-disk-id>",
+        "mount_path": "/home/boxd/data",
+        "read_only": false
+      }
+    ]
+  }
+}
+```
+
 ### Stop, rename and delete
 
 Send the environment's current ETag in `If-Match` (requires `write`):

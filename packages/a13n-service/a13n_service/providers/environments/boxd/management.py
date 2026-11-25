@@ -64,6 +64,7 @@ class BoxdManagement(BoxdReference, NativeManagement[BoxdEnvironmentConfiguratio
                         vcpu=vcpu,
                         memory=memory,
                         from_snapshot=self.config.from_snapshot,
+                        volumes=[mount.sdk_mount() for mount in self.config.volumes] or None,
                         auto_suspend_timeout=self.config.auto_suspend_timeout_seconds,
                         region=self.backend.region,
                     )
@@ -74,7 +75,7 @@ class BoxdManagement(BoxdReference, NativeManagement[BoxdEnvironmentConfiguratio
                     if machine is None:
                         raise
                     self.remember(machine)
-                elif error.code == "provider_target_missing" and self.config.from_snapshot:
+                elif error.code == "provider_target_missing" and (self.config.from_snapshot or self.config.volumes):
                     raise failure(
                         self.provider_key, "provider_spec_invalid", Category.INVALID, certainty=Certainty.KNOWN
                     ) from None

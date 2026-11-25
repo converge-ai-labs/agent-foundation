@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, model_validator
 
 from a13n_harness.environment.errors import EnvironmentProviderError
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
@@ -15,9 +15,10 @@ from a13n_harness.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.providers.environment.native.configuration import CommandConfiguration, TargetState, TokenCredential
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
+from a13n_harness.providers.environment.volume_mounts import validate_mount_paths
 
 if TYPE_CHECKING:
-    from boxd import AsyncBoxd, Machine
+    from boxd import AsyncBoxd, Machine, VolumeMount
 
 PROVIDER_KEY = "boxd"
 # The public API endpoint is fixed so an ambient BOXD_BASE_URL never redirects a configured account.
@@ -36,6 +37,28 @@ class BoxdConnectionConfiguration(BaseModel):
     )
 
 
+class BoxdVolumeMount(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    disk_id: str = Field(min_length=1, title="Disk ID")
+    mount_path: str = Field(min_length=1, title="Mount path")
+    read_only: bool = Field(default=False, title="Read only")
+
+    def sdk_mount(self) -> VolumeMount:
+        from boxd import VolumeMount
+
+        return VolumeMount(disk_id=self.disk_id, mount_path=self.mount_path, read_only=self.read_only)
+
+
+def _volume_mounts(mounts: list[BoxdVolumeMount]) -> list[BoxdVolumeMount]:
+    validate_mount_paths([mount.mount_path for mount in mounts], reserved=())
+    if len({mount.disk_id for mount in mounts}) != len(mounts):
+        raise ValueError("A boxd disk can only be mounted once per machine")
+    return sorted(mounts, key=lambda mount: mount.mount_path)
+
+
+BoxdVolumes = Annotated[list[BoxdVolumeMount], AfterValidator(_volume_mounts)]
+
+
 class BoxdEnvironmentConfiguration(CommandConfiguration):
     model_config = ConfigDict(
         frozen=True,
@@ -47,10 +70,22 @@ class BoxdEnvironmentConfiguration(CommandConfiguration):
         default=None, description="vCPU x GiB memory. Omitted: the organization default, or the snapshot's size."
     )
     from_snapshot: str | None = Field(default=None, min_length=1, max_length=128)
+    volumes: BoxdVolumes = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+        title="boxd disks",
+        description="Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.",
+    )
     auto_suspend_timeout_seconds: int = Field(default=0, ge=0, le=86400, description="0 disables idle standby.")
     auto_hibernate_timeout_seconds: int = Field(
         default=0, ge=0, le=604800, description="0 disables idle hibernation; a hibernated machine needs start()."
     )
+
+    @model_validator(mode="after")
+    def validate_snapshot_mounts(self) -> Self:
+        if self.from_snapshot and self.volumes:
+            raise ValueError("boxd cannot attach disks when creating a machine from a snapshot")
+        return self
 
 
 @contextmanager

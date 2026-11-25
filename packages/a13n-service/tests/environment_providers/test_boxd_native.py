@@ -165,7 +165,7 @@ def test_boxd_roundtrip_lifecycle_and_reconstruction(tmp_path, fake):
         [created] = fake.created
         assert created["isolated"] is True
         assert (created["vcpu"], created["memory"]) == (4, "16G")
-        assert created["from_snapshot"] == "agent-base"
+        assert created["from_snapshot"] == "agent-base" and created["volumes"] is None
         # A snapshot restore takes no creation environment.
         assert created["env"] is None
         assert created["org"] == "fixture-org" and created["region"] == "nyc"
@@ -362,6 +362,27 @@ def test_boxd_command_longer_than_the_request_timeout_ends_as_timed_out(tmp_path
         assert min(fake.exec_timeouts) > config.request_timeout_seconds + 10 + 5
         await execution.close()
         await provider.close()
+
+    asyncio.run(scenario())
+
+
+def test_boxd_attaches_disks_on_creation_and_reuses_them_after_machine_deletion(fake):
+    async def scenario():
+        definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["boxd"]
+        mounts = [
+            {"disk_id": "data", "mount_path": "/data", "read_only": False},
+            {"disk_id": "models", "mount_path": "/models", "read_only": True},
+        ]
+        config = definition.validate_environment({"volumes": mounts})
+        async with await definition.open_provider(configuration=ACCOUNT, credential=CREDENTIAL) as provider:
+            for env_id in ("first", "second"):
+                state = await provider.create(config, environment_id=env_id, operation_id="create")
+                assert [mount.model_dump() for mount in fake.created[-1]["volumes"]] == mounts
+                state = await provider.stop(config, environment_id=env_id, state=state, operation_id="stop")
+                state = await provider.start(config, environment_id=env_id, state=state, operation_id="start")
+                await provider.destroy(config, environment_id=env_id, state=state, operation_id="destroy")
+                assert not fake.machines
+        assert len(fake.created) == 2
 
     asyncio.run(scenario())
 

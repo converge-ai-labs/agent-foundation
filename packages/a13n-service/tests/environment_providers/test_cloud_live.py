@@ -124,7 +124,22 @@ async def test_modal_volume_survives_sandbox_deletion():
     await check_volume_reuse(definition, backend, key, prefix, recipe)
 
 
+async def test_boxd_disk_survives_machine_deletion():
+    disk = os.getenv("A13N_TEST_BOXD_DISK_ID")
+    config = os.getenv("A13N_TEST_BOXD_BACKEND_JSON")
+    credential = os.getenv("A13N_TEST_BOXD_CREDENTIAL_JSON")
+    if not (disk and config and credential):
+        pytest.skip("Requires an available boxd test disk, its region and test credentials")
+    definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["boxd"]
+    backend = definition.configuration_model.model_validate_json(config)
+    key = definition.credential_model.model_validate_json(credential)
+    prefix = "a13n-test-" + secrets.token_hex(10)
+    recipe = definition.validate_environment({"volumes": [{"disk_id": disk, "mount_path": "/home/boxd/data"}]})
+    await check_volume_reuse(definition, backend, key, prefix, recipe)
+
+
 async def check_volume_reuse(definition, backend, key, prefix, recipe):
+    path = f"/data/{prefix}.txt"
     async with await definition.open_provider(configuration=backend, credential=key) as provider:
         for phase in ("write", "read"):
             env_id = f"env-{prefix}-{phase}"
@@ -142,10 +157,10 @@ async def check_volume_reuse(definition, backend, key, prefix, recipe):
                     files = env.operations.files
                     assert files is not None
                     if phase == "write":
-                        await files.write_text("/data/check.txt", prefix, mode="create")
+                        await files.write_text(path, prefix, mode="create")
                     else:
-                        assert (await files.read_text("/data/check.txt")).text == prefix
-                        await files.remove("/data/check.txt")
+                        assert (await files.read_text(path)).text == prefix
+                        await files.remove(path)
             except EnvironmentProviderError as error:
                 state = error.state or state
                 raise

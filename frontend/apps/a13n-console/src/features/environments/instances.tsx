@@ -368,7 +368,10 @@ function EnvironmentForm({
   const providerType = selectedProvider.data?.type;
   const hasVolumeList =
     kind === "managed" &&
-    (providerType === "daytona" || providerType === "modal");
+    (providerType === "daytona" ||
+      providerType === "modal" ||
+      (providerType === "boxd" &&
+        !selectedTemplate?.config?.recipe?.from_snapshot));
   const providerTypes = useEnvironmentTypes(hasVolumeList);
   const recipeSchema = providerTypes.data?.items.find(
     (item) => item.type === providerType,

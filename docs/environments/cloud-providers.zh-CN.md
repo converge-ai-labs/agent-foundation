@@ -10,15 +10,15 @@ description: 配置 E2B、Daytona、Modal、Vercel、Sprites、Runloop 与 boxd 
 
 Daytona 与 Modal 统一通过 Envd 执行；E2B、Vercel 与 Sprites 同时支持原生文件/Shell 路径与显式 Envd 路径；Runloop 与 boxd 仅提供原生文件与 Shell。请将 API 密钥保存在凭据存储中，确保配方（Recipe）与 `EnvironmentState` 不含敏感密钥：
 
-| 提供方         | 后端连接配置                                                                   | 凭据字段                   | 常用配方参数                                                                                                  |
-| -------------- | ------------------------------------------------------------------------------ | -------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| E2B            | `domain`、可选 `api_url`                                                       | `api_key`                  | `template`、`execution`、`preparation`、`desktop`、`user`、`root`、`allow_internet_access`、`timeout_seconds` |
-| Daytona        | `organization_id`、`target`（默认 `us`）                                       | `api_key`                  | `snapshot`（`"auto"` 或快照名）、`desktop`、`desktop_assistance`                                              |
-| Modal          | 可选 `workspace`、`app_name`（`a13n-sandboxes`）、`environment_name`（`main`） | `token_id`、`token_secret` | `image`（`"auto"` 或镜像 ID）、`desktop`、`desktop_assistance`、`cpu`、`memory`（MiB）、`timeout_seconds`     |
-| Vercel Sandbox | `team_id`、`project_id`                                                        | `api_key`（访问令牌）      | `execution`、`snapshot`（`"auto"` 或 ID）、`desktop`、`runtime`、`vcpus`、`timeout_seconds`                   |
-| Fly.io Sprites | `organization`                                                                 | `api_key`（Sprites 令牌）  | `region`、`execution`、`desktop`                                                                              |
-| Runloop        | `organization`                                                                 | `api_key`                  | `blueprint_id`、`resource_size`、`idle_timeout_seconds`                                                       |
-| boxd           | `region`（`fra` 或 `nyc`）、可选 `organization`                                | `api_key`                  | `size`（`1x4`–`8x32`）、`from_snapshot`、`auto_suspend_timeout_seconds`、`auto_hibernate_timeout_seconds`     |
+| 提供方         | 后端连接配置                                                                   | 凭据字段                   | 常用配方参数                                                                                                         |
+| -------------- | ------------------------------------------------------------------------------ | -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| E2B            | `domain`、可选 `api_url`                                                       | `api_key`                  | `template`、`execution`、`preparation`、`desktop`、`user`、`root`、`allow_internet_access`、`timeout_seconds`        |
+| Daytona        | `organization_id`、`target`（默认 `us`）                                       | `api_key`                  | `snapshot`（`"auto"` 或快照名）、`desktop`、`desktop_assistance`                                                     |
+| Modal          | 可选 `workspace`、`app_name`（`a13n-sandboxes`）、`environment_name`（`main`） | `token_id`、`token_secret` | `image`（`"auto"` 或镜像 ID）、`desktop`、`desktop_assistance`、`cpu`、`memory`（MiB）、`timeout_seconds`            |
+| Vercel Sandbox | `team_id`、`project_id`                                                        | `api_key`（访问令牌）      | `execution`、`snapshot`（`"auto"` 或 ID）、`desktop`、`runtime`、`vcpus`、`timeout_seconds`                          |
+| Fly.io Sprites | `organization`                                                                 | `api_key`（Sprites 令牌）  | `region`、`execution`、`desktop`                                                                                     |
+| Runloop        | `organization`                                                                 | `api_key`                  | `blueprint_id`、`resource_size`、`idle_timeout_seconds`                                                              |
+| boxd           | `region`（`fra` 或 `nyc`）、可选 `organization`                                | `api_key`                  | `size`（`1x4`–`8x32`）、`volumes`、`from_snapshot`、`auto_suspend_timeout_seconds`、`auto_hibernate_timeout_seconds` |
 
 ### 重连与生命周期
 
