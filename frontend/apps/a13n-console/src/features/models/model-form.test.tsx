@@ -728,6 +728,135 @@ it("edits native defaults through fields and JSON without losing other settings"
   );
 });
 
+it("edits OpenRouter routing through the same draft and saves advanced routing keys intact", async () => {
+  const modelApi = "openrouter.chat_completions";
+  state.providers = [{ ...provider, type: "openrouter" }];
+  state.types = [
+    {
+      ...definition,
+      type: "openrouter",
+      model_apis: [modelApi],
+      default_model_api: modelApi,
+      settings_schemas: {
+        [modelApi]: {
+          type: "object",
+          properties: {
+            max_tokens: { type: "integer" },
+            openrouter_provider: { $ref: "#/$defs/OpenRouterProviderConfig" },
+          },
+          $defs: {
+            OpenRouterProviderConfig: {
+              type: "object",
+              properties: {
+                sort: { enum: ["price", "throughput", "latency", "exacto"] },
+                data_collection: { enum: ["allow", "deny"] },
+              },
+            },
+          },
+        },
+      },
+    },
+  ];
+  const originalGet = state.GET.getMockImplementation()!;
+  state.GET.mockImplementation(async (path: string, args: unknown) =>
+    path.endsWith("{key}")
+      ? {
+          data: { ...model, config: { ...model.config, model_api: modelApi } },
+          response: response(),
+        }
+      : originalGet(path, args),
+  );
+  mount({ modelKey: "smart" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /^Advanced/ }));
+  const json = screen.getByLabelText<HTMLTextAreaElement>("Settings JSON");
+  const only = screen.getByLabelText<HTMLInputElement>("Only providers");
+  const ignore = screen.getByLabelText<HTMLInputElement>("Ignore providers");
+  const select = async (label: string, option: string) => {
+    await user.click(screen.getByRole("combobox", { name: label }));
+    await user.click(await screen.findByRole("option", { name: option }));
+  };
+  const fillJson = (settings: object) => {
+    fireEvent.change(json, { target: { value: JSON.stringify(settings) } });
+  };
+  const advanced = {
+    max_price: { prompt: 1 },
+    order: ["openai"],
+    quantizations: ["fp8"],
+  };
+  fillJson({
+    max_tokens: 1024,
+    openrouter_provider: {
+      ...advanced,
+      sort: "latency",
+      data_collection: "allow",
+      zdr: true,
+      allow_fallbacks: false,
+      only: ["openai", "azure"],
+      ignore: ["example"],
+    },
+  });
+  expect(screen.getByRole("combobox", { name: "Sort" }).textContent).toBe(
+    "latency",
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Data collection" }).textContent,
+  ).toBe("Allow");
+  expect(
+    screen.getByRole("combobox", { name: "Zero Data Retention (ZDR)" })
+      .textContent,
+  ).toBe("On");
+  expect(
+    screen.getByRole("combobox", { name: "Allow fallbacks" }).textContent,
+  ).toBe("Off");
+  expect(only.value).toBe("openai, azure");
+  expect(ignore.value).toBe("example");
+
+  await select("Sort", "exacto");
+  await select("Data collection", "Deny");
+  await select("Zero Data Retention (ZDR)", "Provider default");
+  await select("Allow fallbacks", "On");
+  await user.clear(only);
+  await user.type(only, "amazon-bedrock, google-vertex");
+  await user.clear(ignore);
+  const expected = {
+    max_tokens: 1024,
+    openrouter_provider: {
+      ...advanced,
+      sort: "exacto",
+      data_collection: "deny",
+      allow_fallbacks: true,
+      only: ["amazon-bedrock", "google-vertex"],
+    },
+  };
+  expect(JSON.parse(json.value)).toEqual(expected);
+
+  fillJson({ max_tokens: 1024, openrouter_provider: { only: ["azure"] } });
+  await user.clear(only);
+  expect(JSON.parse(json.value)).toEqual({ max_tokens: 1024 });
+  await select("Sort", "price");
+  await select("Sort", "Provider default");
+  expect(JSON.parse(json.value)).toEqual({ max_tokens: 1024 });
+
+  fireEvent.change(json, { target: { value: '{"openrouter_provider":' } });
+  expect(
+    screen.getByRole<HTMLButtonElement>("combobox", { name: "Sort" }).disabled,
+  ).toBe(true);
+  expect(only.disabled).toBe(true);
+  fillJson(expected);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(state.PATCH).toHaveBeenCalledWith(
+      `${modelsPath}/{key}`,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          config: expect.objectContaining({ settings: expected }),
+        }),
+      }),
+    ),
+  );
+});
+
 it.each([undefined, "websocket"])(
   "reflects and saves WebSocket transport (%s)",
   async (transport) => {
