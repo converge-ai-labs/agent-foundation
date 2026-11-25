@@ -129,6 +129,18 @@ curl -sS -X POST "$A13N_URL/api/v1/environments" \
 }
 ```
 
+使用 Modal 模板时，可以在**创建环境**中按名称挂载已有卷，也可以在创建请求中传入以下配置。Service 会在 provider 配置的 Modal environment 内查找卷名。`mount_path` 是 sandbox 内的挂载目录，可选的 `sub_path` 指定卷内子目录，`read_only: true` 表示只读。省略 `volumes` 会沿用模板挂载，传入 `[]` 会清空挂载。恢复和自动替换时都会沿用实例选择。删除实例后，在新实例挂载同一个卷和子目录即可继续读取文件。
+
+```json
+{
+  "recipe_overrides": {
+    "volumes": [
+      { "volume_name": "project-files", "mount_path": "/data", "sub_path": "/projects/a" }
+    ]
+  }
+}
+```
+
 ### 停止、重命名和删除
 
 操作时需在 `If-Match` 中携带环境当前的 ETag（需要 `write` 权限）：

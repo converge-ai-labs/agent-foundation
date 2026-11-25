@@ -7,9 +7,19 @@ import hashlib
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Self
+from pathlib import PurePosixPath
+from typing import TYPE_CHECKING, Annotated, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from a13n_harness.environment.envd_settings import EnvdSettings
 from a13n_harness.environment.errors import EnvironmentProviderError
@@ -22,6 +32,7 @@ from a13n_harness.providers.environment.modal.pool import Transport, TransportKe
 from a13n_harness.providers.environment.native.configuration import TargetState
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
+from a13n_harness.providers.environment.volume_mounts import validate_mount_paths
 
 if TYPE_CHECKING:
     import modal
@@ -51,6 +62,43 @@ class ModalCredential(BaseModel):
     token_secret: SecretStr = Field(min_length=1)
 
 
+class ModalVolumeMount(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    volume_name: str = Field(min_length=1, max_length=64, pattern=r"^[a-zA-Z0-9._-]+$", title="Volume name")
+    mount_path: str = Field(min_length=1, title="Mount path")
+    sub_path: str | None = Field(default=None, title="Volume subpath")
+    read_only: bool = Field(default=False, title="Read only")
+
+    @field_validator("sub_path")
+    @classmethod
+    def volume_directory(cls, value: str | None) -> str | None:
+        if value in (None, "/"):
+            return None
+        path = PurePosixPath(value)
+        if (
+            not path.is_absolute()
+            or value.startswith("//")
+            or str(path) != value
+            or ".." in path.parts
+            or "\x00" in value
+        ):
+            raise ValueError("Volume sub_path must be a normalized absolute directory inside the volume")
+        return value
+
+
+def _volume_mounts(mounts: list[ModalVolumeMount]) -> list[ModalVolumeMount]:
+    paths = [mount.mount_path for mount in mounts]
+    validate_mount_paths(paths, reserved=("/run/a13n-desktop-access",))
+    if "/tmp" in paths or "/root" in paths:
+        raise ValueError("Modal cannot mount volumes at /tmp or /root")
+    if len({mount.volume_name for mount in mounts}) != len(mounts):
+        raise ValueError("A Modal volume can only be mounted once per sandbox")
+    return sorted(mounts, key=lambda mount: mount.mount_path)
+
+
+ModalVolumes = Annotated[list[ModalVolumeMount], AfterValidator(_volume_mounts)]
+
+
 class ModalEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(
         frozen=True,
@@ -65,6 +113,12 @@ class ModalEnvironmentConfiguration(BaseModel):
     desktop: bool = Field(default=False, description="Require an observable, input-ready X11 desktop from the image.")
     execution: Literal["envd_http", "envd_ws"] = Field(default="envd_http", title="Execution connection")
     environment: EnvironmentVariables = Field(default_factory=dict)
+    volumes: ModalVolumes = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+        title="Modal volumes",
+        description="Mount existing Modal volumes by name. Files in mounted directories survive environment deletion.",
+    )
     request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
     timeout_seconds: int = Field(default=86400, ge=300, le=86400)
     cpu: float = Field(default=1, gt=0, le=64, allow_inf_nan=False)

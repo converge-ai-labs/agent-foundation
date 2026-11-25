@@ -65,6 +65,12 @@ class ModalCloud:
                     name="main", settings=api.EnvironmentSettings(image_builder_version="2025.06")
                 ),
             )
+        elif name == "VolumeGetOrCreate":
+            if request.deployment_name not in {"models", "outputs"}:
+                raise GRPCError(Status.NOT_FOUND)
+            assert request.environment_name == "test-volumes"
+            assert request.object_creation_type == api.OBJECT_CREATION_TYPE_UNSPECIFIED
+            response = api.VolumeGetOrCreateResponse(volume_id="vo-" + request.deployment_name)
         elif name == "SandboxGetFromName":
             sandbox_id = self.names.get(request.sandbox_name)
             if sandbox_id is None or self.sandboxes[sandbox_id]["stopped"]:
@@ -189,12 +195,18 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
                 "request_timeout_seconds": 15,
                 "desktop": desktop,
                 "desktop_assistance": desktop,
+                "volumes": [
+                    {"volume_name": "models", "mount_path": "/models", "sub_path": "/projects/a", "read_only": True},
+                    {"volume_name": "outputs", "mount_path": "/data"},
+                ]
+                if desktop
+                else [],
                 "environment": {"APP_MODE": "agent-default"},
                 "envd": {"limits": {"max_concurrent_file_transfers": 32}, "idle_timeout_ms": 90000},
             }
         )
         provider = await definition.open_provider(
-            configuration={"workspace": "fixture", "app_name": "fixture"},
+            configuration={"workspace": "fixture", "app_name": "fixture", "environment_name": "test-volumes"},
             credential={"token_id": "fixture", "token_secret": "fixture"},
         )
 
@@ -206,7 +218,7 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
         def connector(state):
             return definition.execution.execution_connector(
                 config,
-                configuration={"workspace": "fixture", "app_name": "fixture"},
+                configuration={"workspace": "fixture", "app_name": "fixture", "environment_name": "test-volumes"},
                 credential={"token_id": "fixture", "token_secret": "fixture"},
                 environment_id="env-fixture",
                 state=state,
@@ -240,6 +252,13 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
             state = await manage("start", state)
             assert (root / "data").read_text() == "saved in native snapshot"
             assert ready.await_count == 2
+            expected = (
+                [("/data", "vo-outputs", "", False), ("/models", "vo-models", "/projects/a", True)] if desktop else []
+            )
+            for sandbox_definition in cloud.definitions:
+                assert [
+                    (v.mount_path, v.volume_id, v.sub_path, v.read_only) for v in sandbox_definition.volume_mounts
+                ] == expected
             assert cloud.created == 2
             assert len(cloud.environments) == 2
             assert all(item["APP_MODE"] == "agent-default" for item in cloud.environments)
@@ -250,11 +269,23 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch, desktop):
             assert "ImageDelete" in cloud.calls
             await provider.close()
             provider = await definition.open_provider(
-                configuration={"workspace": "fixture", "app_name": "fixture"},
+                configuration={"workspace": "fixture", "app_name": "fixture", "environment_name": "test-volumes"},
                 credential={"token_id": "fixture", "token_secret": "fixture"},
             )
             await manage("destroy", state)
+            assert "VolumeDelete" not in cloud.calls
+            missing = definition.validate_environment(
+                {
+                    "image": "im-envd",
+                    "envd_management": "managed",
+                    "volumes": [{"volume_name": "missing", "mount_path": "/data"}],
+                }
+            )
             before = cloud.created
+            with pytest.raises(EnvironmentProviderError) as error:
+                await provider.create(missing, environment_id="env-missing", operation_id="op-missing")
+            assert error.value.code == "provider_volume_missing"
+            assert cloud.created == before
             for operation in ("create", "start"):
                 with pytest.raises(EnvironmentProviderError):
                     await manage(operation, state)

@@ -1,4 +1,6 @@
 {
+  "Modal volumes": "Modal volumes",
+  "Mount existing Modal volumes by name. Files in mounted directories survive environment deletion.": "Mount existing Modal volumes by name. Files in mounted directories survive environment deletion.",
   "Daytona volumes": "Daytona volumes",
   "Volume ID": "Volume ID",
   "Volume subpath": "Volume subpath",

@@ -129,6 +129,18 @@ For a Daytona template, select an existing volume in **Create environment** or s
 }
 ```
 
+For a Modal template, select existing volumes by name in **Create environment** or send the following override. The provider looks up names in its configured Modal environment. `mount_path` is the directory in the sandbox. Use `sub_path` to mount a directory inside the volume and `read_only: true` for read-only access. Omit `volumes` to inherit template mounts or send `[]` to clear them. Resume and automatic replacement reuse the instance selection. After deletion, mount the same volume and subdirectory on the next instance to read the saved files.
+
+```json
+{
+  "recipe_overrides": {
+    "volumes": [
+      { "volume_name": "project-files", "mount_path": "/data", "sub_path": "/projects/a" }
+    ]
+  }
+}
+```
+
 ### Stop, rename and delete
 
 Send the environment's current ETag in `If-Match` (requires `write`):

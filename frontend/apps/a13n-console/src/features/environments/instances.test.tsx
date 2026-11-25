@@ -201,72 +201,92 @@ it("submits volume mounts selected for an E2B instance", async () => {
   cache.clear();
 });
 
-it("replaces the Daytona template volume subpath for just this instance", async () => {
-  const mount = {
-    volume_id: "shared",
-    mount_path: "/data",
-    subpath: "work/one",
-  };
-  const schema = {
-    properties: {
-      volumes: { type: "array", items: { $ref: "#/$defs/Mount" } },
-    },
-    $defs: {
-      Mount: {
-        type: "object",
-        properties: {
-          volume_id: { type: "string" },
-          mount_path: { type: "string" },
-          subpath: { type: "string" },
+it.each([
+  {
+    type: "daytona",
+    nameKey: "volume_id",
+    subKey: "subpath",
+    original: "work/one",
+    next: "work/two",
+  },
+  {
+    type: "modal",
+    nameKey: "volume_name",
+    subKey: "sub_path",
+    original: "/work/one",
+    next: "/work/two",
+  },
+])(
+  "replaces the $type template volume subpath for just this instance",
+  async ({ type, nameKey, subKey, original, next }) => {
+    const mount = {
+      [nameKey]: "shared",
+      mount_path: "/data",
+      [subKey]: original,
+    };
+    const schema = {
+      properties: {
+        volumes: { type: "array", items: { $ref: "#/$defs/Mount" } },
+      },
+      $defs: {
+        Mount: {
+          type: "object",
+          properties: {
+            [nameKey]: { type: "string" },
+            mount_path: { type: "string" },
+            [subKey]: { type: "string" },
+          },
         },
       },
-    },
-  };
-  http.GET.mockImplementation(async (path: string) => {
-    if (path === "/api/v1/environment-providers/{provider_id}")
-      return { data: { type: "daytona" } };
-    const items =
-      path === "/api/v1/provider-types/{kind}"
-        ? [
-            {
-              type: "daytona",
-              display_name: "Daytona",
-              environment_schema: schema,
-            },
-          ]
-        : path === "/api/v1/environment-templates"
+    };
+    http.GET.mockImplementation(async (path: string) => {
+      if (path === "/api/v1/environment-providers/{provider_id}")
+        return { data: { type } };
+      const items =
+        path === "/api/v1/provider-types/{kind}"
           ? [
               {
-                id: "envtpl_d",
-                name: "Daytona sandbox",
-                provider_id: "eprov_d",
-                enabled: true,
-                config: { recipe: { volumes: [mount] } },
+                type,
+                display_name: type,
+                environment_schema: schema,
               },
             ]
-          : (collections[path] ?? []);
-    return { data: { items, next_cursor: null } };
-  });
-  const { cache, user } = await openCreate();
-  await user.click(screen.getByRole("combobox", { name: "Template" }));
-  await user.click(
-    await screen.findByRole("option", { name: /Daytona sandbox/ }),
-  );
-  const subpath = await screen.findByDisplayValue("work/one");
-  await user.clear(subpath);
-  await user.type(subpath, "work/two");
-  await user.click(screen.getByRole("button", { name: "Create environment" }));
-  await waitFor(() =>
-    expect(http.POST).toHaveBeenCalledWith("/api/v1/environments", {
-      body: {
-        template_id: "envtpl_d",
-        metrics_data_source_id: null,
-        recipe_overrides: { volumes: [{ ...mount, subpath: "work/two" }] },
-      },
-    }),
-  );
-  cache.clear();
-});
+          : path === "/api/v1/environment-templates"
+            ? [
+                {
+                  id: "envtpl_d",
+                  name: "Mounted sandbox",
+                  provider_id: "eprov_d",
+                  enabled: true,
+                  config: { recipe: { volumes: [mount] } },
+                },
+              ]
+            : (collections[path] ?? []);
+      return { data: { items, next_cursor: null } };
+    });
+    const { cache, user } = await openCreate();
+    await user.click(screen.getByRole("combobox", { name: "Template" }));
+    await user.click(
+      await screen.findByRole("option", { name: /Mounted sandbox/ }),
+    );
+    const subpath = await screen.findByDisplayValue(original);
+    await user.clear(subpath);
+    await user.type(subpath, next);
+    await user.click(
+      screen.getByRole("button", { name: "Create environment" }),
+    );
+    await waitFor(() =>
+      expect(http.POST).toHaveBeenCalledWith("/api/v1/environments", {
+        body: {
+          template_id: "envtpl_d",
+          metrics_data_source_id: null,
+          recipe_overrides: { volumes: [{ ...mount, [subKey]: next }] },
+        },
+      }),
+    );
+    cache.clear();
+  },
+);
 
 it("registers an external target by its endpoint and token, with no provider to pick", async () => {
   const { cache, user } = await openCreate();

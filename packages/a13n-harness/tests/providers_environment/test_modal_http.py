@@ -146,3 +146,33 @@ async def test_failed_attach_never_bootstraps(peer, fault):
         command.assert_not_awaited()
     closed.assert_awaited_once()
     assert not events
+
+
+def test_volume_fingerprint_preserves_unmounted_instances_and_tracks_mount_options():
+    base = ModalEnvironmentConfiguration(image="im-envd")
+
+    def config(mounts):
+        return ModalEnvironmentConfiguration.model_validate({"image": "im-envd", "volumes": mounts})
+
+    assert "volumes" not in base.model_dump()
+    assert base.fingerprint == config([]).fingerprint
+    data = {"volume_name": "data", "mount_path": "/data"}
+    models = {"volume_name": "models", "mount_path": "/models", "sub_path": "/a", "read_only": True}
+    assert config([data, models]).fingerprint == config([models, data]).fingerprint
+    for change in ({"volume_name": "other"}, {"mount_path": "/weights"}, {"sub_path": "/b"}, {"read_only": False}):
+        assert config([data, models]).fingerprint != config([data, models | change]).fingerprint
+
+
+@pytest.mark.parametrize(
+    "mounts",
+    [
+        [{"volume_name": "shared", "mount_path": "/var/lib"}],
+        [{"volume_name": "shared", "mount_path": "/tmp"}],
+        [{"volume_name": "shared", "mount_path": "/data", "sub_path": "/a/../b"}],
+        [{"volume_name": "shared", "mount_path": "/a"}, {"volume_name": "shared", "mount_path": "/b"}],
+        [{"volume_name": "one", "mount_path": "/data"}, {"volume_name": "two", "mount_path": "/data/sub"}],
+    ],
+)
+def test_invalid_volume_mounts(mounts):
+    with pytest.raises(ValueError):
+        ModalEnvironmentConfiguration.model_validate({"image": "im-envd", "volumes": mounts})

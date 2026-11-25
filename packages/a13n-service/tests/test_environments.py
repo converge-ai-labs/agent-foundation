@@ -59,7 +59,7 @@ async def env(service) -> SimpleNamespace:  # type: ignore[no-untyped-def]
     ("overrides", "message"),
     [
         ({"volume_mounts": {"/data": "project-a"}}, "Volume mounts require an E2B template"),
-        ({"volumes": []}, "Volumes require a Daytona template"),
+        ({"volumes": []}, "Volumes require a Daytona or Modal template"),
     ],
 )
 async def test_volume_overrides_require_matching_template(env, overrides, message):

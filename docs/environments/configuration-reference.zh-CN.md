@@ -473,6 +473,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `desktop`                 | false | boolean                   | default=false                                                                               |
 | `execution`               | false | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
 | `environment`             | false | EnvironmentVariables      | —; 默认值由模型工厂计算                                                                     |
+| `volumes`                 | false | ModalVolumeMount 数组     | —; 默认值由模型工厂计算                                                                     |
 | `request_timeout_seconds` | false | number                    | maximum=600; exclusiveMinimum=0; default=120                                                |
 | `timeout_seconds`         | false | integer                   | minimum=300; maximum=86400; default=86400                                                   |
 | `cpu`                     | false | number                    | maximum=64; exclusiveMinimum=0; default=1                                                   |
@@ -481,6 +482,15 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `startup_command`         | false | 字符串数组或 null         | minItems=1; default=null                                                                    |
 | `base_image`              | false | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
 | `desktop_assistance`      | false | boolean                   | default=false                                                                               |
+
+## `ModalVolumeMount`
+
+| 字段          | 必填  | 类型 / 可选值  | 约束与默认值                                             |
+| ------------- | ----- | -------------- | -------------------------------------------------------- |
+| `volume_name` | true  | string         | minLength=1; maxLength=64; `pattern="^[a-zA-Z0-9._-]+$"` |
+| `mount_path`  | true  | string         | minLength=1                                              |
+| `sub_path`    | false | string or null | default=null                                             |
+| `read_only`   | false | boolean        | default=false                                            |
 
 ## `VercelRecipe`
 
@@ -544,6 +554,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `desktop`                 | false | boolean                | default=false                                |
 | `execution`               | false | "envd_http", "envd_ws" | default="envd_http"                          |
 | `environment`             | false | EnvironmentVariables   | —; 默认值由模型工厂计算                      |
+| `volumes`                 | false | ModalVolumeMount 数组  | —; 默认值由模型工厂计算                      |
 | `request_timeout_seconds` | false | number                 | maximum=600; exclusiveMinimum=0; default=120 |
 | `timeout_seconds`         | false | integer                | minimum=300; maximum=86400; default=86400    |
 | `cpu`                     | false | number                 | maximum=64; exclusiveMinimum=0; default=1    |

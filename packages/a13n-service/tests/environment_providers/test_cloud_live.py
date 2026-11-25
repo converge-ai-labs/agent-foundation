@@ -102,6 +102,29 @@ async def test_daytona_volume_survives_sandbox_deletion():
             "volumes": [{"volume_id": volume, "mount_path": "/data", "subpath": prefix}],
         }
     )
+    await check_volume_reuse(definition, backend, key, prefix, recipe)
+
+
+async def test_modal_volume_survives_sandbox_deletion():
+    name = os.getenv("A13N_TEST_MODAL_VOLUME_NAME")
+    config = os.getenv("A13N_TEST_MODAL_RECIPE_JSON")
+    credential = os.getenv("A13N_TEST_MODAL_CREDENTIAL_JSON")
+    if not (name and config and credential):
+        pytest.skip("Requires an existing Modal test volume, runnable Envd image recipe and test credentials")
+    definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["modal"]
+    backend = definition.configuration_model.model_validate_json(os.getenv("A13N_TEST_MODAL_BACKEND_JSON", "{}"))
+    key = definition.credential_model.model_validate_json(credential)
+    prefix = "a13n-test-" + secrets.token_hex(10)
+    recipe = definition.validate_environment(
+        json.loads(config)
+        | {
+            "volumes": [{"volume_name": name, "mount_path": "/data", "sub_path": "/" + prefix}],
+        }
+    )
+    await check_volume_reuse(definition, backend, key, prefix, recipe)
+
+
+async def check_volume_reuse(definition, backend, key, prefix, recipe):
     async with await definition.open_provider(configuration=backend, credential=key) as provider:
         for phase in ("write", "read"):
             env_id = f"env-{prefix}-{phase}"
