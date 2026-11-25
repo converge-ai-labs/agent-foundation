@@ -46,8 +46,6 @@ class BoxdManagement(BoxdReference, NativeManagement[BoxdEnvironmentConfiguratio
                 await asyncio.sleep(0.5)
 
     async def create(self) -> None:
-        from boxd import VolumeMount
-
         machine = await self.lookup()
         if machine is None:
             if self.target is not None:
@@ -66,7 +64,7 @@ class BoxdManagement(BoxdReference, NativeManagement[BoxdEnvironmentConfiguratio
                         vcpu=vcpu,
                         memory=memory,
                         from_snapshot=self.config.from_snapshot,
-                        volumes=[VolumeMount(**mount.model_dump()) for mount in self.config.volumes] or None,
+                        volumes=[mount.sdk_mount() for mount in self.config.volumes] or None,
                         auto_suspend_timeout=self.config.auto_suspend_timeout_seconds,
                         region=self.backend.region,
                     )

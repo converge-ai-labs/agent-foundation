@@ -18,7 +18,7 @@ from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.volume_mounts import validate_mount_paths
 
 if TYPE_CHECKING:
-    from boxd import AsyncBoxd, Machine
+    from boxd import AsyncBoxd, Machine, VolumeMount
 
 PROVIDER_KEY = "boxd"
 # The public API endpoint is fixed so an ambient BOXD_BASE_URL never redirects a configured account.
@@ -42,6 +42,11 @@ class BoxdVolumeMount(BaseModel):
     disk_id: str = Field(min_length=1, title="Disk ID")
     mount_path: str = Field(min_length=1, title="Mount path")
     read_only: bool = Field(default=False, title="Read only")
+
+    def sdk_mount(self) -> VolumeMount:
+        from boxd import VolumeMount
+
+        return VolumeMount(disk_id=self.disk_id, mount_path=self.mount_path, read_only=self.read_only)
 
 
 def _volume_mounts(mounts: list[BoxdVolumeMount]) -> list[BoxdVolumeMount]:
