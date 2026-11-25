@@ -270,15 +270,15 @@ class WorkspaceOutlineCapability(AbstractModelContextCapability):
                     )
 
                 route.observe(("workspace_outline", profile), capture)
-            if route and route.deferred:
-                observation = (
-                    next((item for item in route.snapshot.workspace_outline if item.profile == profile), None)
-                    if route.snapshot
-                    else None
-                )
-                if observation is None:
-                    return projection
+            observation = (
+                next((item for item in route.snapshot.workspace_outline if item.profile == profile), None)
+                if route and route.deferred and route.snapshot
+                else None
+            )
+            if observation is not None:
                 content = observation.content
+            elif route and route.deferred and not configuration.required:
+                return projection
             else:
                 if not route and request.kind is not ModelContextRequestKind.INPUT:
                     return projection
@@ -593,17 +593,20 @@ class _FileContextRunCapability(FileContextCapability):
             if route.deferred:
                 if route.snapshot:
                     for observation in route.snapshot.files:
-                        if observation.path == route.path and (
-                            observation.status == "absent" or observation.limits == limits
-                        ):
+                        if observation.path != route.path:
+                            continue
+                        if observation.status == "absent":
+                            if not (config.required and explicit):
+                                return observation
+                        elif observation.limits == limits:
                             return observation
                 if not (config.required and explicit):
                     return None
+        observation: FileBootstrapObservation | str
         try:
             observation = await read(env.files)
         except EnvironmentError as exc:
-            self._files[selection] = exc.code
-            return exc.code
+            observation = exc.code
         self._files[env.select_files(path)] = observation
         return observation
 
@@ -627,9 +630,12 @@ class _FileContextRunCapability(FileContextCapability):
                     if snapshot is None or snapshot.project_guidance is None:
                         return None
                     return _render_project_guidance(snapshot.project_guidance, route.virtual_path) or empty
-            content = _render_project_guidance(await _project_guidance(context)) or empty
         except EnvironmentError as exc:
             return f"Project guidance discovery is unavailable ({exc.code})."
+        try:
+            content = _render_project_guidance(await _project_guidance(context)) or empty
+        except EnvironmentError as exc:
+            content = f"Project guidance discovery is unavailable ({exc.code})."
         self._guidance[env.select_files(".")] = content
         return content
 

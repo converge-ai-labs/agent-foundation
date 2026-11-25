@@ -1,6 +1,5 @@
 """Bounded PostgreSQL bootstrap observations, fenced by instance identity and generation."""
 
-import json
 from datetime import datetime
 
 from a13n_harness.environment import EnvironmentBootstrapSnapshot
@@ -24,20 +23,40 @@ async def save(
     observed_at: datetime,
     snapshot: EnvironmentBootstrapSnapshot,
 ) -> None:
-    value = snapshot.model_dump(mode="json")
-    if len(json.dumps(value).encode()) > MAX_BYTES:
-        return
     # One parent lock serializes different cwd writers and prevents resurrection after soft deletion.
     environment = await lock(session, EnvironmentRow, environment_id)
     if environment is None or environment.status in {"deleted", "deleting"} or environment.generation != generation:
         return
+    previous = await session.get(SnapshotRow, (environment_id, working_directory))
+    if previous is not None and previous.environment_generation == generation:
+        old = EnvironmentBootstrapSnapshot.model_validate(previous.snapshot)
+        files = {(item.path, item.limits): item for item in old.files}
+        for item in snapshot.files:
+            # Absence applies to every read profile, and fresh presence supersedes prior absence.
+            files = {
+                key: value
+                for key, value in files.items()
+                if value.path != item.path or (item.status != "absent" and value.status != "absent")
+            }
+            files[item.path, item.limits] = item
+        outlines = {item.profile: item for item in (*old.workspace_outline, *snapshot.workspace_outline)}
+        merged = EnvironmentBootstrapSnapshot(
+            files=tuple(files.values()),
+            project_guidance=snapshot.project_guidance or old.project_guidance,
+            workspace_outline=tuple(outlines.values()),
+        )
+        if len(merged.model_dump_json().encode()) <= MAX_BYTES:
+            snapshot = merged
+    if len(snapshot.model_dump_json().encode()) > MAX_BYTES:
+        # Advance the fence with an unknown observation rather than serving stale data.
+        snapshot = EnvironmentBootstrapSnapshot()
     stmt = insert(SnapshotRow).values(
         environment_id=environment_id,
         working_directory=working_directory,
         organization_id=environment.organization_id,
         workspace_id=environment.workspace_id,
         environment_generation=generation,
-        snapshot=value,
+        snapshot=snapshot.model_dump(mode="json"),
         observed_at=observed_at,
     )
     await session.execute(

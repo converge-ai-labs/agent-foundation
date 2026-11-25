@@ -574,9 +574,12 @@ class _Attempt:
                     outcome=Outcome(status="completed"),
                 )
                 return
-            config = self.plan.agent.config
-            mode = config.lazy_environment
-            if mode == "warmup" and any(config.toolsets[key].enabled for key in ("files", "shell", "computer")):
+            mode = self.plan.agent.config.lazy_environment
+            if mode == "warmup" and any(
+                node.config.toolsets[key].enabled
+                for node in self.plan.agent.agents()
+                for key in ("files", "shell", "computer")
+            ):
                 for mount in self.plan.mounts:
                     self.runtime.tasks.start(
                         prepare(self.runtime, self.lease, self.plan.principal, self.plan.authority, mount, warmup=True),

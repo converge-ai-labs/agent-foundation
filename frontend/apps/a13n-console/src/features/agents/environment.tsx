@@ -4,7 +4,13 @@ import {
   LightningIcon,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { ChoiceField } from "a13n-ui";
+import {
+  ChoiceField,
+  SettingsRow,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -15,7 +21,30 @@ import { Section } from "../../shared/page";
 import { environmentApi, environmentTemplates } from "../environments/api";
 import { useEnvironmentTypes } from "../environments/providers";
 import type { AgentConfig, EnvironmentPreparation } from "./configuration";
+import styles from "./agents.module.css";
 import { AgentSessionConfiguration } from "./session-configuration";
+
+const preparationOptions = [
+  {
+    value: "on_demand",
+    icon: CursorClickIcon,
+    title: "On demand",
+    description: "Prepare when a tool first uses the environment.",
+  },
+  {
+    value: "warmup",
+    icon: LightningIcon,
+    title: "Warm up in parallel",
+    description: "Prepare the environment while inference runs.",
+  },
+  {
+    value: "eager",
+    icon: HourglassMediumIcon,
+    title: "Wait before inference",
+    description:
+      "Wait until the environment is ready before starting inference.",
+  },
+] as const;
 
 export function AgentEnvironment({
   value,
@@ -162,33 +191,44 @@ export function AgentEnvironment({
             : []),
         ]}
       />
-      <ChoiceField
+      <SettingsRow
         label={t("Environment preparation")}
-        disabled={disabled}
-        readOnly={readOnly || preparationReadOnly}
-        value={preparation}
-        onValueChange={(value) => {
-          if (value === "on_demand" || value === "warmup" || value === "eager")
-            onPreparationChange(value);
-        }}
-        options={[
-          {
-            value: "on_demand",
-            label: t("On demand"),
-            icon: <CursorClickIcon />,
-          },
-          {
-            value: "warmup",
-            label: t("Warm up in parallel"),
-            icon: <LightningIcon />,
-          },
-          {
-            value: "eager",
-            label: t("Wait before inference"),
-            icon: <HourglassMediumIcon />,
-          },
-        ]}
-      />
+        stackOnNarrow={false}
+        className="py-0"
+      >
+        <div
+          className={styles.toolsetPermissions}
+          role="group"
+          aria-label={t("Environment preparation")}
+        >
+          {preparationOptions.map(
+            ({ value, icon: Icon, title, description }) => (
+              <Tooltip key={value}>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      disabled={disabled || readOnly || preparationReadOnly}
+                      className={styles.toolsetPermission}
+                      aria-label={t(title)}
+                      aria-pressed={preparation === value}
+                      onClick={() => onPreparationChange(value)}
+                    />
+                  }
+                >
+                  <Icon size={15} aria-hidden="true" />
+                </TooltipTrigger>
+                <TooltipPopup>
+                  <span className={styles.toolsetPermissionTip}>
+                    <strong>{t(title)}</strong>
+                    {t(description)}
+                  </span>
+                </TooltipPopup>
+              </Tooltip>
+            ),
+          )}
+        </div>
+      </SettingsRow>
       <ErrorNotice
         error={environments.error}
         retry={() => void environments.refetch()}

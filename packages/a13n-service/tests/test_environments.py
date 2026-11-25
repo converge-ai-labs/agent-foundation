@@ -2156,9 +2156,9 @@ async def test_bootstrap_projects_then_aligns_and_captures_final_files(
         assert await session.get(EnvironmentBootstrapSnapshotRow, (identity, "/a")) is None
 
 
-@pytest.mark.parametrize("call_tool", [False, True])
+@pytest.mark.parametrize(("call_tool", "inline_only"), [(False, False), (True, False), (False, True)])
 async def test_warmup_reuses_the_inflight_operation_and_outlives_text_completion(
-    env, scripted_model, runs_kit, monkeypatch, call_tool
+    env, scripted_model, runs_kit, monkeypatch, call_tool, inline_only
 ):
     from a13n_harness.environment import EnvironmentAction, EnvironmentPermissionSet
     from a13n_service.runs.environments.execution import Source
@@ -2200,9 +2200,18 @@ async def test_warmup_reuses_the_inflight_operation_and_outlives_text_completion
         return await create(self, recipe, environment_id=environment_id, operation_id=operation_id, state=state)
 
     monkeypatch.setattr(FakeProvider, "create", blocked)
-    agent = await runs_kit.create_agent(
-        env, scripted_model, lazy_environment="warmup", default_environment_template_id=env.template["id"]
-    )
+    config = {"lazy_environment": "warmup", "default_environment_template_id": env.template["id"]}
+    if inline_only:
+        agent = await runs_kit.delegating(
+            env,
+            scripted_model,
+            "inline",
+            worker={"toolsets": {"files": {"enabled": True}}},
+            toolsets={key: {"enabled": False} for key in ("files", "shell", "computer")},
+            **config,
+        )
+    else:
+        agent = await runs_kit.create_agent(env, scripted_model, **config)
     gate = asyncio.Event()
     if call_tool:
         scripted_model.call("view", {"file_path": "/workspace/AGENTS.md"}, call_id="inflight", gate=gate)
@@ -2266,7 +2275,11 @@ def test_legacy_environment_preparation_preserves_stored_digests(legacy):
 async def test_bootstrap_storage_fences_writes_and_caps_directories(env):
     from datetime import UTC, datetime
 
-    from a13n_harness.environment.bootstrap import EnvironmentBootstrapSnapshot, FileBootstrapObservation
+    from a13n_harness.environment.bootstrap import (
+        EnvironmentBootstrapSnapshot,
+        FileBootstrapObservation,
+        ProjectGuidanceObservation,
+    )
     from a13n_service.resources.environment_instances.tables import EnvironmentBootstrapSnapshotRow as SnapshotRow
     from a13n_service.runs.environments.bootstrap_snapshots import save
 
@@ -2289,11 +2302,22 @@ async def test_bootstrap_storage_fences_writes_and_caps_directories(env):
     # Concurrent cwd writers serialize on the Environment row and retain the newest eight.
     await asyncio.gather(*(record(f"/repo{i}", now + timedelta(seconds=i)) for i in range(10)))
     await record("/repo9", now, EnvironmentBootstrapSnapshot())
+    await record(
+        "/repo8",
+        now + timedelta(seconds=11),
+        EnvironmentBootstrapSnapshot(project_guidance=ProjectGuidanceObservation(agents_md=("src/AGENTS.md",))),
+    )
+    oversized = FileBootstrapObservation(path="AGENTS.md", limits=(512, 10, 80), status="present", text="x" * 262144)
+    await record("/repo9", now + timedelta(seconds=12), EnvironmentBootstrapSnapshot(files=(oversized,)))
+    await record("/repo9", now + timedelta(seconds=10))
     await record("/other", now + timedelta(seconds=20), observed_generation=generation - 1)
     async with transaction(env.runtime.storage) as session:
         rows = (await session.scalars(select(SnapshotRow).where(SnapshotRow.environment_id == identity))).all()
         assert {row.working_directory for row in rows} == {f"/repo{i}" for i in range(2, 10)}
-        assert all(row.snapshot["files"][0]["status"] == "absent" for row in rows)
+        snapshots = {row.working_directory: row.snapshot for row in rows}
+        assert snapshots["/repo8"]["project_guidance"]["agents_md"] == ["src/AGENTS.md"]
+        assert snapshots["/repo9"]["files"] == []
+        assert all(snapshots[f"/repo{i}"]["files"][0]["status"] == "absent" for i in range(2, 9))
         row = await session.get(EnvironmentRow, identity)
         assert row is not None and row.version == version
 

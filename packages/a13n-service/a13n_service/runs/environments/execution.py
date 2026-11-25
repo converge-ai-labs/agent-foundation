@@ -179,6 +179,8 @@ class Source:
             for capture in self.captures.values():
                 try:
                     observation = await capture(execution)
+                except (LeaseLost, AuthorityRevoked):
+                    return
                 except Exception as error:
                     logger.warning(
                         "Environment bootstrap observation failed",
@@ -663,10 +665,6 @@ async def _mark_used(runtime: Runtime, sources: list[Source]) -> None:
         for source in sources:
             try:
                 async with transaction(runtime.storage) as session:
-                    if source.observation is not None:
-                        await bootstrap_snapshots.save(
-                            session, source.environment_id, source.working_directory, *source.observation
-                        )
                     await session.execute(
                         update(EnvironmentRow)
                         .where(EnvironmentRow.id == source.environment_id, EnvironmentRow.status == "ready")
@@ -676,6 +674,19 @@ async def _mark_used(runtime: Runtime, sources: list[Source]) -> None:
                 logger.warning(
                     "Recording environment use failed", extra={"exception_details": exception_details(error)}
                 )
+            if source.observation is not None:
+                try:
+                    async with transaction(runtime.storage) as session:
+                        await lock_owner(session, runtime, source.lease)
+                        await bootstrap_snapshots.save(
+                            session, source.environment_id, source.working_directory, *source.observation
+                        )
+                except (LeaseLost, AuthorityRevoked):
+                    continue
+                except Exception as error:
+                    logger.warning(
+                        "Recording environment bootstrap failed", extra={"exception_details": exception_details(error)}
+                    )
 
 
 class _MountExecution(EnvironmentExecution):

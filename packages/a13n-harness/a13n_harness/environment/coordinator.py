@@ -285,12 +285,13 @@ class CompositeBoundEnvironment(BoundEnvironment):
                         raise EnvironmentInvocationError(
                             "File observation is not permitted.", code="environment_permission_denied"
                         )
-                    yield _PreparedFile(
-                        selection.resolved_path,
-                        backend,
-                        lambda value: _validate_provider_artifacts(entered, value),
-                        lambda value: mount_path_from_provider_path(mount_path, value, root),
-                    )
+                    async with entered.provider.admit(action):
+                        yield _PreparedFile(
+                            selection.resolved_path,
+                            backend,
+                            lambda value: _validate_provider_artifacts(entered, value),
+                            lambda value: mount_path_from_provider_path(mount_path, value, root),
+                        )
 
                 return await read(VirtualFileOperator(select, prepare))
 

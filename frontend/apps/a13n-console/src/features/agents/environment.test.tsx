@@ -8,6 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import { TooltipProvider } from "a13n-ui";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { initialConfig } from "./configuration";
 import { AgentEditor } from "./editor";
@@ -110,19 +111,23 @@ beforeEach(() => {
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
-        <AgentEditor
-          initial={{
-            ...initialConfig(),
-            model: "model-0123456789abcdef0123",
-            instructions: "Check the evidence.",
-            default_session_configuration: { working_directory: "/workspace" },
-          }}
-          version={7}
-          etag='"agent-v1"'
-          pending={false}
-          error={undefined}
-          submit={submit}
-        />
+        <TooltipProvider delay={0}>
+          <AgentEditor
+            initial={{
+              ...initialConfig(),
+              model: "model-0123456789abcdef0123",
+              instructions: "Check the evidence.",
+              default_session_configuration: {
+                working_directory: "/workspace",
+              },
+            }}
+            version={7}
+            etag='"agent-v1"'
+            pending={false}
+            error={undefined}
+            submit={submit}
+          />
+        </TooltipProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -287,19 +292,34 @@ it("saves credential bindings with the selected environment and preserves other 
   );
 });
 
-it("shows all preparation modes and saves a deliberate change", async () => {
+it("shows accessible icon-only modes and saves a deliberate change", async () => {
   const user = userEvent.setup();
-  const preparation = screen.getByRole("combobox", {
-    name: "Environment preparation",
+  const preparation = within(
+    screen.getByRole("group", { name: "Environment preparation" }),
+  );
+  const onDemand = preparation.getByRole("button", {
+    name: "On demand",
+    pressed: true,
   });
-  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
-  expect(preparation.textContent).toContain("On demand");
-  await user.click(preparation);
-  expect(screen.getByRole("option", { name: "On demand" })).toBeTruthy();
+  const warmup = preparation.getByRole("button", {
+    name: "Warm up in parallel",
+    pressed: false,
+  });
   expect(
-    screen.getByRole("option", { name: "Wait before inference" }),
+    preparation.getByRole("button", {
+      name: "Wait before inference",
+      pressed: false,
+    }),
   ).toBeTruthy();
-  await user.click(screen.getByRole("option", { name: "Warm up in parallel" }));
+  expect(onDemand.textContent).toBe("");
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  await user.click(warmup);
+  expect(
+    preparation.getByRole("button", {
+      name: "Warm up in parallel",
+      pressed: true,
+    }),
+  ).toBeTruthy();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(submit.mock.calls[0]?.[0]).toMatchObject({
     lazy_environment: "warmup",

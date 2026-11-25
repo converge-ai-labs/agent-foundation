@@ -1853,6 +1853,44 @@ async def test_project_guidance_marks_failed_probes_and_skips_symlink_children(t
     assert payload["incomplete"] is True
 
 
+async def test_file_context_caches_live_failures_after_activation(tmp_path: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from a13n_harness import AgentIdentityRef, AgentInstanceContext
+    from a13n_harness.capabilities.context import _FileContextRunCapability
+    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+
+    calls = []
+
+    async def read_text(self, path, **kwargs):
+        calls.append("read")
+        raise EnvironmentError("cannot read", code="environment_unavailable")
+
+    async def list_files(self, path, **kwargs):
+        calls.append("list")
+        raise EnvironmentError("cannot list", code="environment_unavailable")
+
+    monkeypatch.setattr(LocalFileOperator, "read_text", read_text)
+    monkeypatch.setattr(LocalFileOperator, "list", list_files)
+    capability = _FileContextRunCapability(FileContextConfiguration())
+    instance = AgentInstanceContext(
+        identity=AgentIdentityRef(issuer="test", subject="agent"), agent_instance_id="agent"
+    )
+    async with _local_binding(tmp_path).bind(
+        thread_id="thread", run_id="run", instance=instance, host_refs={}
+    ) as environment:
+        context = SimpleNamespace(environment=environment)
+        initial = environment.select_files("AGENTS.md")
+        for _ in range(2):
+            assert await capability._file_observation(context, "AGENTS.md", False, 512) == "environment_unavailable"
+            assert await capability._project_guidance(context) == (
+                "Project guidance discovery is unavailable (environment_unavailable)."
+            )
+        assert environment.select_files("AGENTS.md") != initial
+    assert calls == ["read", "list"]
+
+
 async def test_notes_workspace_and_file_context_are_input_only_while_runtime_and_handoff_follow_tools(
     tmp_path: Path,
 ) -> None:
