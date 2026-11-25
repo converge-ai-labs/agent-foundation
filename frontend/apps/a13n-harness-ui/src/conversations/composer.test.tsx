@@ -1043,7 +1043,11 @@ it.each(["restore", "rejected"])(
     act(() => textbox.focus());
     fireEvent.keyDown(textbox, { key: "Enter" });
     await screen.findByRole("button", { name: "Submitting" });
-    expect(screen.getByLabelText("Message stream").textContent).toBe("");
+    // The authored text echoes into the transcript at once and the editor stops
+    // showing it, so the same message is never read twice.
+    expect(screen.getByLabelText("Message stream").textContent).toBe(
+      "Follow up",
+    );
     expect(values(draft.doc).prompt).toBe("Follow up");
     // jsdom does not implement inert's native blur, so simulate it explicitly.
     act(() => textbox.blur());

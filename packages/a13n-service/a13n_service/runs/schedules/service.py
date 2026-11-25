@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime
 from typing import Literal
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +16,7 @@ from a13n_service.resources.agents import stored
 from a13n_service.resources.agents.validation import validate_config
 from a13n_service.resources.memories.schemas import SessionMemorySettings
 from a13n_service.resources.memories.service import resolve_memory
-from a13n_service.resources.rows import audit_row
+from a13n_service.resources.rows import audit_row, copy_name
 from a13n_service.runs.accept import run_revision
 from a13n_service.runs.inbox import payload_size
 from a13n_service.runs.memories.mounts import mount_memories
@@ -27,6 +28,7 @@ from a13n_service.runs.schedules.schemas import (
     Schedule,
     ScheduleConfig,
     ScheduleCreate,
+    ScheduleDuplicate,
     ScheduleInvocation,
     SchedulePreview,
     SchedulePreviewRequest,
@@ -167,6 +169,35 @@ async def create(
         return await create_in_transaction(session, runtime, actor, scope, body, request_key=request_key)
 
 
+async def duplicate(
+    runtime: Runtime, actor: Principal, workspace_id: str, schedule_id: str, body: ScheduleDuplicate
+) -> Schedule:
+    async with transaction(runtime.storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "write")
+        authorize(actor, scope, "read")
+        row = await queries.find(session, scope.workspace_id, schedule_id)
+        if row.state == "archived":
+            raise conflict(row.KIND, row.id, "archived")
+        source = queries.view(row)
+        try:
+            copy = ScheduleCreate(
+                name=body.name or copy_name(source.name, 128),
+                description=body.description if "description" in body.model_fields_set else source.description,
+                labels=source.labels if body.labels is None else body.labels,
+                schedule=source.schedule,
+                max_lateness_seconds=source.max_lateness_seconds,
+                invocation=source.invocation,
+                target=body.target or source.target,
+                state="paused",
+            )
+        except ValidationError as error:
+            raise invalid("schedule", error.errors(include_input=False)[0]["msg"]) from None
+        result, _ = await create_in_transaction(
+            session, runtime, actor, scope, copy, request_key=new_object_id("sch"), source_id=row.id
+        )
+        return result
+
+
 async def create_in_transaction(
     session: AsyncSession,
     runtime: Runtime,
@@ -175,9 +206,14 @@ async def create_in_transaction(
     body: ScheduleCreate,
     *,
     request_key: str,
+    source_id: str | None = None,
 ) -> tuple[Schedule, bool]:
     authority = execution_authority(actor, scope)
-    digest = request_digest("schedule.create", scope.workspace_id, body.model_dump(mode="json"))
+    digest = request_digest(
+        "schedule.create" if source_id is None else "schedule.duplicate",
+        source_id or scope.workspace_id,
+        body.model_dump(mode="json"),
+    )
     # Both the quota and replay arbitration belong to this workspace. No tentative Session is needed by a loser.
     await advisory_lock(session, "schedules", scope.workspace_id)
     found = await session.scalar(
@@ -207,7 +243,12 @@ async def create_in_transaction(
         )
     await validate_invocation(session, runtime, actor, scope, body.invocation, authority)
     current = await now(session)
-    future = first_fire(body.schedule, current)
+    # A paused copy of a one-time Schedule can be retimed before enabling it.
+    future = (
+        None
+        if source_id is not None and isinstance(body.schedule, OnceSchedule)
+        else first_fire(body.schedule, current)
+    )
     session_id, thread_id = await resolve_target(session, runtime, actor, scope, body.target, body.invocation)
     row = ScheduleRow(
         id=new_object_id("sch"),
@@ -232,7 +273,10 @@ async def create_in_transaction(
         next_fire_at=future if body.state == "enabled" else None,
     )
     session.add(row)
-    audit_row(session, actor, row, "create", {"session_id": session_id})
+    if source_id is None:
+        audit_row(session, actor, row, "create", {"session_id": session_id})
+    else:
+        audit_row(session, actor, row, "duplicate", {"source_id": source_id, "session_id": session_id})
     await session.flush()
     if row.state == "enabled":
         await webhooks.schedule_changed(session, runtime, row, current)

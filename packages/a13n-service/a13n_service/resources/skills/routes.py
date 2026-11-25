@@ -13,6 +13,7 @@ from a13n_service.resources.skills.requests import package_importer
 from a13n_service.resources.skills.schemas import (
     Skill,
     SkillCreate,
+    SkillDuplicate,
     SkillManifest,
     SkillPage,
     SkillRevision,
@@ -76,6 +77,21 @@ async def list_skills(
         limit=limit,
         cursor=cursor,
     )
+
+
+@router.post(
+    "/{skill_id}/duplicate", response_model=Skill, status_code=201, openapi_extra=platform_operation("skills", "write")
+)
+async def duplicate_skill(
+    response: Response,
+    workspace_id: WorkspaceId,
+    skill_id: str,
+    body: SkillDuplicate,
+    actor: Actor,
+    runtime: CurrentRuntime,
+) -> Skill:
+    result = await service.duplicate_skill(runtime.storage, actor, workspace_id, skill_id, body)
+    return tagged(response, result)
 
 
 @router.get("/{skill_id}", response_model=Skill, openapi_extra=platform_operation("skills", "read"))

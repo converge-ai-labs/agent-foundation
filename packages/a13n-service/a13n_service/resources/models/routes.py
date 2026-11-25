@@ -16,6 +16,7 @@ from a13n_service.resources.models.schemas import (
     Model,
     ModelCatalog,
     ModelCreate,
+    ModelDuplicate,
     ModelPage,
     ModelUpdate,
 )
@@ -46,6 +47,19 @@ async def get_model(
     response: Response, workspace_id: WorkspaceId, key: str, actor: Actor, runtime: CurrentRuntime
 ) -> Model:
     return key_tagged(response, await service.get_model(runtime.storage, actor, workspace_id, key))
+
+
+@router.post(
+    "/models/{key}/duplicate",
+    response_model=Model,
+    status_code=201,
+    openapi_extra=platform_operation("models", "write"),
+)
+async def duplicate_model(
+    response: Response, workspace_id: WorkspaceId, key: str, body: ModelDuplicate, actor: Actor, runtime: CurrentRuntime
+) -> Model:
+    result = await service.duplicate_model(runtime.storage, actor, workspace_id, key, body, registry=runtime.registry)
+    return key_tagged(response, result)
 
 
 @router.patch("/models/{key}", response_model=Model, openapi_extra=platform_operation("models", "write"))

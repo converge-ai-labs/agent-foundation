@@ -331,7 +331,7 @@ async def open_mounts(
                 definition = runtime.registry.get("environment", provider.type)
                 if environment.handle is None:
                     template = await read_template(session, environment.template_id)
-                    recipe, state = template.config.recipe, None
+                    recipe, state = template.config.recipe | (environment.recipe_overrides or {}), None
                 else:
                     handle = Handle.model_validate(environment.handle)
                     recipe, state = handle.recipe, handle.state

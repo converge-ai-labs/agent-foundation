@@ -403,6 +403,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `preparation`               | false | "preinstalled", "headless"       | default="preinstalled"                                    |
 | `desktop`                   | false | boolean                          | default=false                                             |
 | `environment`               | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                   |
+| `volume_mounts`             | false | object                           | —; 默认值由模型工厂计算                                   |
 | `root`                      | false | string                           | default="/home/user"                                      |
 | `user`                      | false | string                           | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
 | `python`                    | false | string                           | default="/usr/bin/python3"                                |
@@ -425,6 +426,7 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `preparation`               | false | "preinstalled", "headless"       | default="preinstalled"                                    |
 | `desktop`                   | false | boolean                          | default=false                                             |
 | `environment`               | false | EnvironmentVariables             | —; 默认值由模型工厂计算                                   |
+| `volume_mounts`             | false | object                           | —; 默认值由模型工厂计算                                   |
 | `root`                      | false | string                           | default="/home/user"                                      |
 | `user`                      | false | string                           | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
 | `python`                    | false | string                           | default="/usr/bin/python3"                                |

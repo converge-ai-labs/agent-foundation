@@ -9,6 +9,7 @@ from a13n_harness.environment.models import (
     EnvironmentPermissionSet,
     EnvironmentState,
 )
+from a13n_harness.providers.environment.e2b.configuration import VolumeMounts
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -163,11 +164,17 @@ class EnvironmentPage(BaseModel):
     next_cursor: str | None
 
 
+class RecipeOverrides(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    volume_mounts: VolumeMounts = Field(default_factory=dict)
+
+
 class ManagedEnvironmentCreate(BaseModel):
     """A workspace-managed sandbox reserved from a template, for threads to mount; maintenance creates it."""
 
     model_config = ConfigDict(extra="forbid")
     template_id: ObjectId
+    recipe_overrides: RecipeOverrides = Field(default_factory=RecipeOverrides)
     metrics_data_source_id: ObjectId | None = None
     metrics_labels: Labels = Field(default_factory=dict)
     # Defaults to the template's name.

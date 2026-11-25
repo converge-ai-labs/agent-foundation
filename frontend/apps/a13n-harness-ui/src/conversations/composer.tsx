@@ -1421,6 +1421,7 @@ export function Composer({
         <div
           className={styles.composerInput}
           data-dictating={dictating || undefined}
+          data-submitting={preparing || pending || undefined}
         >
           <input
             ref={upload}
@@ -1619,6 +1620,11 @@ export function Composer({
               />
             )}
           </div>
+          {(preparing || pending) && (
+            <p className={styles.composerSubmitting} role="status">
+              {t("Sending…")}
+            </p>
+          )}
           <Tooltip disabled={stopAction || sendDisabled}>
             <TooltipTrigger
               render={

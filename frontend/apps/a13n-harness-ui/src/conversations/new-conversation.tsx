@@ -230,6 +230,9 @@ function NewConversation({
   const unknownSubmission = composerDraft.submission.kind === "unknown";
   const choicesDisabled =
     preparing || review.isPending || draft.attempted || unknownSubmission;
+  // A completed handover navigates away on its own. Waiting briefly keeps a
+  // recovery notice from appearing for the frames in between.
+  const showRecovery = useSettled(choicesDisabled && !preparing);
   const [search, setSearch] = useSearchParams();
   const requestedProject = search.get("project");
   const requestedOwner = search.get("coordinator");
@@ -430,6 +433,12 @@ function NewConversation({
         !projects.isPending &&
         !preview.isPending),
   );
+  // A home page that is handing its first message over to the chat shows that
+  // message where the greeting and Project choice were, so the composer barely
+  // moves before the chat opens.
+  const handingOver = composerDraft.localInputs.some(
+    (input) => input.state !== "rejected" && input.state !== "unknown",
+  );
   const openConversation = () => {
     // Admission and page observation are independent. Open the retained identity
     // immediately. Confirmed local input keeps the destination readable while
@@ -446,7 +455,10 @@ function NewConversation({
       onContinue={() => setShowAvailable(true)}
     >
       <section className={styles.page} aria-label={t("New chat")}>
-        <div className={styles.inputArea}>
+        <div
+          className={styles.inputArea}
+          data-handover={handingOver || undefined}
+        >
           <h1 className={styles.welcome}>{t("What can I help with?")}</h1>
           <ConversationTranscript
             entries={[]}
@@ -492,47 +504,40 @@ function NewConversation({
               />
             </div>
           </fieldset>
-          {choicesDisabled && (
+          {showRecovery && (
             <div className={styles.projectNotice}>
               <div role="status">
                 <strong>{t("Project changes are paused")}</strong>
                 <p>
-                  {preparing
+                  {unknownSubmission
                     ? t(
-                        "Sending your first message. Wait until it finishes before changing projects.",
+                        "Open the chat to check delivery before changing projects.",
                       )
-                    : unknownSubmission
+                    : draft.created
                       ? t(
-                          "Open the chat to check delivery before changing projects.",
+                          "This draft belongs to an existing chat. Open it to continue.",
                         )
-                      : draft.created
-                        ? t(
-                            "This draft belongs to an existing chat. Open it to continue.",
-                          )
-                        : t(
-                            "Couldn't confirm the chat was created. Check its status before changing projects. Your input is saved here.",
-                          )}
+                      : t(
+                          "Couldn't confirm the chat was created. Check its status before changing projects. Your input is saved here.",
+                        )}
                 </p>
               </div>
-              {!preparing &&
-                (draft.created || unknownSubmission ? (
-                  <Link
-                    to={`/threads/${encodeURIComponent(threadId)}?compose=1`}
-                  >
-                    {t("Open saved draft")}
-                  </Link>
-                ) : (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={review.isPending}
-                    onClick={() => review.mutate()}
-                  >
-                    {review.isPending
-                      ? t("Checking chat…")
-                      : t("Check chat status")}
-                  </Button>
-                ))}
+              {draft.created || unknownSubmission ? (
+                <Link to={`/threads/${encodeURIComponent(threadId)}?compose=1`}>
+                  {t("Open saved draft")}
+                </Link>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={review.isPending}
+                  onClick={() => review.mutate()}
+                >
+                  {review.isPending
+                    ? t("Checking chat…")
+                    : t("Check chat status")}
+                </Button>
+              )}
               <ErrorNotice error={review.error} />
             </div>
           )}
@@ -705,4 +710,19 @@ function NewConversation({
       </section>
     </ConversationOpening>
   );
+}
+
+/** Reports true once `active` has held for `delay`, so a state that resolves on
+ *  its own never shows anything before it does. */
+function useSettled(active: boolean, delay = 300) {
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!active) {
+      setSettled(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setSettled(true), delay);
+    return () => window.clearTimeout(timer);
+  }, [active, delay]);
+  return active && settled;
 }

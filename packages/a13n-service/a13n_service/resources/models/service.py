@@ -31,13 +31,14 @@ from a13n_service.resources.models.schemas import (
     ModelConfig,
     ModelConfigurationChanges,
     ModelCreate,
+    ModelDuplicate,
     ModelPage,
     ModelUpdate,
 )
 from a13n_service.resources.models.tables import ModelRow
 from a13n_service.resources.providers.service import ResolvedProvider, resolve_provider
 from a13n_service.resources.providers.tables import ModelProviderRow
-from a13n_service.resources.rows import audit_row, find_row, given, record_update
+from a13n_service.resources.rows import audit_row, copy_name, find_row, given, record_update
 from a13n_service.tenancy.access import refuse_archived, workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope, authorize
 from a13n_service.tenancy.tables import WorkspaceRow
@@ -120,31 +121,66 @@ async def create_model(
 ) -> Model:
     async with transaction(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
-        provider = await find_row(session, actor, ModelProviderRow, scope, body.provider_id, "write")
-        if not provider.enabled:
-            raise disabled(provider.KIND, provider.id)
-        model_settings(body.config, provider, {}, registry=registry, field="config")
-        key = body.key or default_key(provider.type, body.config.model_name)
-        row = ModelRow(
-            id=new_object_id("mdl"),
-            organization_id=scope.organization_id,
-            workspace_id=scope.workspace_id,
-            provider_id=provider.id,
-            key=key,
-            name=body.name,
-            description=body.description,
-            config=body.config.model_dump(mode="json"),
-            pricing=_dump(body.pricing),
-            catalog_ref=_dump(body.catalog_ref),
-            enabled=body.enabled,
-            created_by_id=actor.id,
-            updated_by_id=actor.id,
+        return await _insert_model(session, actor, scope, body, registry=registry)
+
+
+async def duplicate_model(
+    storage: Storage, actor: Principal, workspace_id: str, key: str, body: ModelDuplicate, *, registry: Registry
+) -> Model:
+    async with transaction(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "write")
+        source = await _find(session, actor, scope, key, "read")
+        original = Model.model_validate(source)
+        copy = ModelCreate(
+            key=body.key,
+            name=body.name or copy_name(source.name, 128),
+            description=source.description if body.description is None else body.description,
+            provider_id=source.provider_id,
+            config=original.config,
+            pricing=original.pricing,
+            catalog_ref=original.catalog_ref,
+            enabled=source.enabled,
         )
-        session.add(row)
-        with unique_key(ModelRow.KIND, "uq_models_workspace_id_key", key):
-            await session.flush()
+        return await _insert_model(session, actor, scope, copy, registry=registry, source=source)
+
+
+async def _insert_model(
+    session: AsyncSession,
+    actor: Principal,
+    scope: WorkspaceScope,
+    body: ModelCreate,
+    *,
+    registry: Registry,
+    source: ModelRow | None = None,
+) -> Model:
+    provider = await find_row(session, actor, ModelProviderRow, scope, body.provider_id, "write")
+    if not provider.enabled:
+        raise disabled(provider.KIND, provider.id)
+    model_settings(body.config, provider, {}, registry=registry, field="config")
+    key = body.key or default_key(provider.type, body.config.model_name)
+    row = ModelRow(
+        id=new_object_id("mdl"),
+        organization_id=scope.organization_id,
+        workspace_id=scope.workspace_id,
+        provider_id=provider.id,
+        key=key,
+        name=body.name,
+        description=body.description,
+        config=body.config.model_dump(mode="json"),
+        pricing=_dump(body.pricing),
+        catalog_ref=_dump(body.catalog_ref),
+        enabled=body.enabled,
+        created_by_id=actor.id,
+        updated_by_id=actor.id,
+    )
+    session.add(row)
+    with unique_key(ModelRow.KIND, "uq_models_workspace_id_key", key):
+        await session.flush()
+    if source is None:
         audit_row(session, actor, row, "create", {"key": key})
-        return Model.model_validate(row)
+    else:
+        audit_row(session, actor, row, "duplicate", {"key": key, "source_id": source.id})
+    return Model.model_validate(row)
 
 
 async def get_model(storage: Storage, actor: Principal, workspace_id: str, key: str) -> Model:

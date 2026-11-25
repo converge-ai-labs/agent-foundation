@@ -1031,7 +1031,7 @@ class HarnessUiApp:
                 )
                 generation_changed = True
                 self._memory_organizer.configuration_changed(candidate)
-                await self._retire_mcp_bindings(candidate)
+                await self._refresh_mcp_configuration(candidate)
             self._devices.update_monitoring_sources(candidate.devices.values())
             await self._devices.synchronize_registrations(candidate.devices.values())
             candidate_error: HarnessUiError | None = None
@@ -3984,10 +3984,10 @@ class HarnessUiApp:
         self._replace_candidate_error(None)
         self._devices.update_monitoring_sources(result.configuration.devices.values())
         self._memory_organizer.configuration_changed(result.configuration)
+        await self._refresh_mcp_configuration(result.configuration)
         if self._bot is not None:
             await self._bot.reconcile_policy()
             self._bot.signal_inputs()
-        await self._retire_mcp_bindings(result.configuration)
         self._configuration_fingerprint = await configuration_tree_fingerprint(self._require_configuration_path())
         await self._summary_hub.publish(kind="configuration")
         await self._summary_hub.publish(kind="project")
@@ -4058,6 +4058,11 @@ class HarnessUiApp:
                 await self._retire_mcp_bindings(source)
         await self._summary_hub.publish(kind="configuration")
 
+    async def _refresh_mcp_configuration(self, source: LoadedHarnessUiConfiguration) -> None:
+        if self._mcp_connections is not None:
+            self._mcp_connections.update_roots_configuration(source.mcp_servers)
+        await self._retire_mcp_bindings(source)
+
     async def _retire_mcp_bindings(self, source: LoadedHarnessUiConfiguration) -> None:
         if self._mcp_oauth is not None:
             await self._mcp_oauth.reconcile(source)
@@ -4072,6 +4077,7 @@ class HarnessUiApp:
                 recipe = ResolvedMcpRecipe(
                     server_id=identity,
                     transport=server.transport,
+                    expose_roots=server.expose_roots,
                     protocol=source.document.mcp.protocol_overrides.get(identity, "auto"),
                 )
                 if self._mcp_oauth is not None:
@@ -4520,13 +4526,19 @@ async def open_harness_ui_app(
             mcp_inputs = (
                 Inputs(input_changed) if not unattended and (host_mode == "webui" or mcp_input_enabled) else None
             )
-            mcp_connections = (
-                Connections(input_handler=mcp_inputs, cleanup_timeout_seconds=settings.shutdown_timeout_seconds)
-                if host_mode == "webui"
-                else HostConnections(
-                    input_handler=mcp_inputs, cleanup_timeout_seconds=settings.shutdown_timeout_seconds
-                )
+
+            async def mcp_local_roots_for_thread(thread_id: str) -> tuple[str, ...]:
+                thread = await store.threads.get(thread_id)
+                return thread.configuration.local_roots if thread is not None else ()
+
+            connection_registry = Connections if host_mode == "webui" else HostConnections
+            mcp_connections = connection_registry(
+                input_handler=mcp_inputs,
+                local_roots_for_thread=mcp_local_roots_for_thread,
+                cleanup_timeout_seconds=settings.shutdown_timeout_seconds,
             )
+            if device_configuration is not None:
+                mcp_connections.update_roots_configuration(device_configuration.mcp_servers)
             resources.push_async_callback(mcp_connections.close)
             app_connections = mcp_connections if isinstance(mcp_connections, Connections) else None
             mcp_apps = AppSnapshots(store.objects, app_connections) if app_connections is not None else None
@@ -4616,6 +4628,7 @@ async def open_harness_ui_app(
             threads = ThreadService(
                 store=store,
                 configurations=configurations,
+                local_roots_changed=mcp_connections.notify_thread_roots_changed,
                 configuration_root=configuration_path.expanduser().resolve().parent if configuration_path else None,
             )
 

@@ -7,7 +7,13 @@ from fastapi import APIRouter, Query, Response
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.infra.platform import platform_operation
 from a13n_service.resources.environment_templates import service
-from a13n_service.resources.environment_templates.schemas import Template, TemplateCreate, TemplatePage, TemplateUpdate
+from a13n_service.resources.environment_templates.schemas import (
+    Template,
+    TemplateCreate,
+    TemplateDuplicate,
+    TemplatePage,
+    TemplateUpdate,
+)
 from a13n_service.resources.requests import CurrentRuntime
 from a13n_service.tenancy.requests import Actor, WorkspaceId
 
@@ -45,6 +51,26 @@ async def get_environment_template(
     response: Response, workspace_id: WorkspaceId, template_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Template:
     return tagged(response, await service.get_template(runtime.storage, actor, workspace_id, template_id))
+
+
+@router.post(
+    "/{template_id}/duplicate",
+    response_model=Template,
+    status_code=201,
+    openapi_extra=platform_operation("environment_templates", "write"),
+)
+async def duplicate_environment_template(
+    response: Response,
+    workspace_id: WorkspaceId,
+    template_id: str,
+    body: TemplateDuplicate,
+    actor: Actor,
+    runtime: CurrentRuntime,
+) -> Template:
+    result = await service.duplicate_template(
+        runtime.storage, actor, workspace_id, template_id, body, registry=runtime.registry
+    )
+    return tagged(response, result)
 
 
 @router.patch(

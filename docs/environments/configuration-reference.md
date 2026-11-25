@@ -403,6 +403,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `preparation`               | false    | "preinstalled", "headless"       | default="preinstalled"                                    |
 | `desktop`                   | false    | boolean                          | default=false                                             |
 | `environment`               | false    | EnvironmentVariables             | —; default from model factory                             |
+| `volume_mounts`             | false    | object                           | —; default from model factory                             |
 | `root`                      | false    | string                           | default="/home/user"                                      |
 | `user`                      | false    | string                           | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
 | `python`                    | false    | string                           | default="/usr/bin/python3"                                |
@@ -425,6 +426,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `preparation`               | false    | "preinstalled", "headless"       | default="preinstalled"                                    |
 | `desktop`                   | false    | boolean                          | default=false                                             |
 | `environment`               | false    | EnvironmentVariables             | —; default from model factory                             |
+| `volume_mounts`             | false    | object                           | —; default from model factory                             |
 | `root`                      | false    | string                           | default="/home/user"                                      |
 | `user`                      | false    | string                           | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
 | `python`                    | false    | string                           | default="/usr/bin/python3"                                |

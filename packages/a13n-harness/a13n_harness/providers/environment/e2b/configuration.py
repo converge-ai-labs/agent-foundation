@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import PurePosixPath
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, SecretStr, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 
 from a13n_harness.environment.envd_settings import EnvdSettings
 from a13n_harness.environment.models import EnvironmentTargetState
@@ -15,6 +24,29 @@ from a13n_harness.environment.variables import EnvironmentVariables
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 PROVIDER_KEY = "e2b"
+
+
+def _volume_mounts(mounts: dict[str, str]) -> dict[str, str]:
+    private = tuple(map(PurePosixPath, ("/var/lib/a13n-envd", "/run/a13n-envd-state", "/var/lib/a13n-e2b-install")))
+    paths = {PurePosixPath(path) for path in mounts}
+    for value in mounts:
+        path = PurePosixPath(value)
+        if (
+            not value.startswith("/")
+            or value.startswith("//")
+            or str(path) != value
+            or ".." in path.parts
+            or "\x00" in value
+        ):
+            raise ValueError("Volume mount paths must be normalized absolute paths")
+        if any(directory.is_relative_to(path) or path.is_relative_to(directory) for directory in private):
+            raise ValueError("Volume mounts cannot overlap platform-owned paths")
+        if any(parent in paths for parent in path.parents):
+            raise ValueError("Volume mount paths cannot overlap")
+    return dict(sorted(mounts.items()))
+
+
+VolumeMounts = Annotated[dict[str, Annotated[str, Field(pattern=r"^[a-zA-Z0-9-]+$")]], AfterValidator(_volume_mounts)]
 
 
 class E2BConnectionConfiguration(BaseModel):
@@ -101,6 +133,7 @@ class E2BEnvironmentConfiguration(BaseModel):
         return self
 
     environment: EnvironmentVariables = Field(default_factory=dict)
+    volume_mounts: VolumeMounts = Field(default_factory=dict, exclude_if=lambda value: not value)
     root: str = "/home/user"
     user: str = Field(default="user", pattern=r"^[a-z_][a-z0-9_-]{0,63}$")
     python: str = "/usr/bin/python3"
@@ -123,6 +156,8 @@ class E2BEnvironmentConfiguration(BaseModel):
     @property
     def fingerprint(self) -> str:
         fields = {"template", "root", "user", "allow_internet_access", "envd"}
+        if self.volume_mounts:
+            fields.add("volume_mounts")
         if self.environment:
             fields.add("environment")
         # Preserve the historical digest byte-for-byte for non-desktop instances.

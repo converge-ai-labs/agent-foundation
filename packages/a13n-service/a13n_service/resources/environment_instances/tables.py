@@ -148,6 +148,8 @@ class EnvironmentRow(Stamped, Base):
     provider_identity: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     # NULL only for external targets, which are connect-only.
     template_id: Mapped[str | None]
+    # Explicit instance inputs survive reservation, retries and idle retirement.
+    recipe_overrides: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     # An external target's native device identity, which every connection expects; the tombstone keeps it.
     device_id: Mapped[str | None]
     # The HTTP(S) origin an external target's daemon serves, and its token: an encrypted, write-only envelope bound

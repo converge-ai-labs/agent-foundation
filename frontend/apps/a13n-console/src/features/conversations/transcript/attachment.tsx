@@ -1,18 +1,20 @@
 import { Button } from "a13n-ui";
-import {
-  DownloadSimpleIcon,
-  FileIcon,
-  PaperclipIcon,
-} from "@phosphor-icons/react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { DownloadSimpleIcon, PaperclipIcon } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
+import { useContext, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
-import { data } from "../../../shared/api";
 import { CopyButton } from "../../../shared/identity";
-import { downloadBlob } from "../../../shared/download";
 import { ErrorNotice } from "../../../shared/feedback";
+import {
+  assetQuery,
+  matchesPublication,
+  useAssetDownload,
+  type FileReference,
+} from "../files/assets";
+import { FileTypeIcon } from "../files/file-type-icon";
+import { PreviewFileContext } from "../files/selection";
 import styles from "./transcript.module.css";
 
 /** One chip presents every attachment, in the composer and in the transcript. */
@@ -21,79 +23,74 @@ export function AttachmentChip({
   secondary,
   icon,
   actions,
+  onPreview,
+  previewLabel,
 }: {
   label: string;
   secondary?: string;
   icon?: ReactNode;
   actions?: ReactNode;
+  onPreview?: () => void;
+  previewLabel?: string;
 }) {
-  return (
-    <span className={styles.attachment}>
+  const content = (
+    <>
       {icon ?? <PaperclipIcon size={13} aria-hidden="true" />}
       <span className={styles.attachmentCopy}>
         <strong title={label}>{label}</strong>
         {secondary && <small>{secondary}</small>}
       </span>
+    </>
+  );
+  return (
+    <span className={styles.attachment}>
+      {onPreview ? (
+        <button
+          type="button"
+          className={styles.attachmentPreview}
+          aria-label={previewLabel}
+          onClick={onPreview}
+        >
+          {content}
+        </button>
+      ) : (
+        content
+      )}
       {actions}
     </span>
   );
 }
 
-export function AssetAttachment({
-  assetId,
-  publication,
-}: {
-  assetId: string;
-  publication?: { runId: string; toolCallId: string; legacy: boolean };
-}) {
+export function AssetAttachment({ assetId, publication }: FileReference) {
   const { t } = useTranslation(),
     client = useClient(),
     { workspace, can } = useWorkspace();
+  const onPreview = useContext(PreviewFileContext);
   const asset = useQuery({
-    queryKey: ["asset", workspace.id, assetId],
+    ...assetQuery(client, workspace.id, assetId),
     enabled: can("read"),
-    staleTime: 60_000,
-    retry: false,
-    queryFn: ({ signal }) =>
-      client
-        .workspace(workspace.id)
-        .GET("/api/v1/assets/{asset_id}", {
-          params: { path: { asset_id: assetId } },
-          signal,
-        })
-        .then(data),
   });
   const name = asset.data?.name || assetId;
   const retired = !!asset.data?.retired_at;
-  const source = asset.data?.source;
-  const download = useMutation({
-    mutationFn: async () => {
-      const blob = data(
-        await client
-          .workspace(workspace.id)
-          .GET("/api/v1/assets/{asset_id}/content", {
-            params: {
-              path: { asset_id: assetId },
-            },
-            parseAs: "blob",
-          }),
-      );
-      downloadBlob(blob, name);
-    },
-  });
+  const download = useAssetDownload(client, workspace.id, assetId, name);
   if (
     publication &&
     (asset.data
-      ? source?.run_id !== publication.runId ||
-        source.tool_call_id !== publication.toolCallId
+      ? !matchesPublication(asset.data, publication)
       : publication.legacy)
   )
     return null;
   return (
     <>
       <AttachmentChip
-        icon={<FileIcon size={13} aria-hidden="true" />}
+        icon={<FileTypeIcon asset={asset.data} size={13} />}
         label={name}
+        onPreview={
+          onPreview && can("read") && asset.data && !retired
+            ? () => onPreview({ assetId, publication })
+            : undefined
+        }
+        previewLabel={t("Preview {{name}}", { name })}
         secondary={
           retired
             ? t("File retired")

@@ -17,6 +17,7 @@ from a13n_service.runs.schedules.schemas import (
     OccurrenceQuery,
     Schedule,
     ScheduleCreate,
+    ScheduleDuplicate,
     SchedulePage,
     SchedulePreview,
     SchedulePreviewRequest,
@@ -28,6 +29,11 @@ from a13n_service.runs.schedules.schemas import (
 from a13n_service.runs.schemas import context_response
 
 type ToolContext = PlatformContext[Runtime]
+
+
+async def duplicate_schedule(ctx: ToolContext, *, schedule_id: str, body: ScheduleDuplicate) -> Schedule:
+    """Duplicate a Schedule as paused with the caller's execution authority."""
+    return await service.duplicate(ctx.runtime, ctx.actor, ctx.workspace_id, schedule_id, body)
 
 
 async def create_schedule(
@@ -164,6 +170,7 @@ async def get_schedule_occurrence(
 
 
 TOOLS = (
+    definition(duplicate_schedule, group="schedules", effect="write"),
     definition(create_schedule, group="schedules", effect="write"),
     definition(update_schedule, group="schedules", effect="write"),
     definition(list_schedules, group="schedules", effect="read"),

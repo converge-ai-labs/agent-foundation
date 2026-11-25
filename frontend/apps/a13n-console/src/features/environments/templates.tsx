@@ -1,5 +1,5 @@
 import { PlusIcon, StackIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField } from "a13n-ui";
 import { Link } from "react-router";
 import { useState } from "react";
@@ -8,6 +8,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import {
   allPages,
+  data,
   matchesSearch,
   matchingPage,
   type Schema,
@@ -21,6 +22,7 @@ import {
   Toolbar,
   useCursor,
 } from "../../shared/collection";
+import { DuplicateAction } from "../../shared/dialogs/duplicate-action";
 import { useResourceRows } from "../../shared/dialogs";
 import {
   ErrorNotice,
@@ -78,6 +80,7 @@ export function EnvironmentTemplates() {
     providers.data?.map((provider) => [provider.id, provider]),
   );
   const resolving = providers.isPending;
+  const cache = useQueryClient();
   const manage = can("write");
   const create = (
     <Button render={<Link to={`${basePath}/environments/new`} />}>
@@ -152,6 +155,32 @@ export function EnvironmentTemplates() {
             caption={t("Environment templates")}
             items={query.data.items}
             onRowActivate={rows.activate}
+            rowMenu={
+              manage
+                ? (item) => (
+                    <DuplicateAction
+                      sourceName={item.name}
+                      title={t("Duplicate environment template")}
+
+                      action={async (name) => {
+                        await client
+                          .workspace(workspace.id)
+                          .POST(
+                            "/api/v1/environment-templates/{template_id}/duplicate",
+                            {
+                              params: { path: { template_id: item.id } },
+                              body: { name },
+                            },
+                          )
+                          .then(data);
+                        void cache.invalidateQueries({
+                          queryKey: ["environment-templates", workspace.id],
+                        });
+                      }}
+                    />
+                  )
+                : undefined
+            }
             columns={[
               {
                 label: t("Template"),

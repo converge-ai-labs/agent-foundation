@@ -213,6 +213,10 @@
   height: 16px;
 }
 .projectIndicator .groupChevron {
+  /* The caret glyph is narrow; start it where the folder's drawn edge sits so
+     the icon column stays flush on hover. */
+  justify-self: start;
+  margin-inline-start: -3px;
   width: 12px;
   height: 12px;
   opacity: 0;
@@ -287,9 +291,9 @@
 .threadDisclosure {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex: 0 0 24px;
-  width: 24px;
+  justify-content: flex-start;
+  flex: 0 0 16px;
+  width: 16px;
   height: 30px;
   margin: 0 0 0 8px;
   padding: 0;
@@ -300,7 +304,7 @@
   cursor: pointer;
 }
 .threadRow:has(.threadDisclosure) .threadLink {
-  padding-inline-start: 0;
+  padding-inline-start: 8px;
 }
 .threadRow:has(.threadDisclosure) .threadLabel > strong {
   font-weight: 500;
@@ -312,6 +316,8 @@
 .threadDisclosure svg {
   width: 12px;
   height: 12px;
+  /* Match the caret's drawn edge to the folder and nav icons in that column. */
+  margin-inline-start: -3px;
   transition: transform 120ms ease;
 }
 .threadRow:hover,
@@ -440,40 +446,80 @@
 }
 .threadLink .coordinatorActivity {
   flex-shrink: 0;
-  max-width: 90px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 18px;
   margin: 0;
-  line-height: 20px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--a13n-selected);
+  color: var(--a13n-secondary);
+  text-align: center;
+  line-height: 18px;
   font-size: var(--harness-nav-font);
   font-variant-numeric: tabular-nums;
-  order: 1;
 }
-/* Keep the activity count at a stable trailing edge while the row menu and
-   star exchange visibility. Other status markers stay between it and the title. */
-.threadRow:has(.coordinatorActivity) .threadLink,
-.threadRow:has(.coordinatorActivity):is(
-    :hover,
-    :focus-within,
-    :has([data-popup-open])
-  )
-  .threadLink {
-  padding-inline-end: 32px;
-}
-.threadRow:has(.coordinatorActivity) .threadStar {
-  position: absolute;
-  inset-inline-end: 32px;
-}
+/* An idle Coordinator keeps only its state mark at the row end. Its worker
+   count and star appear beside the row menu while the row is hovered or
+   focused; hidden parts stay available to assistive technology. */
 @media (hover: hover) and (pointer: fine) {
-  .threadRow:has(.coordinatorActivity) .threadStar {
-    inset-inline-end: 0;
+  .threadRow:has(.threadDisclosure):not(
+      :hover,
+      :focus-within,
+      :has([data-popup-open])
+    )
+    :is(.coordinatorActivity, .threadStar),
+  .threadRow:has(.threadDisclosure):is(
+      :hover,
+      :focus-within,
+      :has([data-popup-open])
+    )
+    :is(.threadStatus, .draftMarker, .resultDot) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .threadRow:has(.threadDisclosure):is(
+      :hover,
+      :focus-within,
+      :has([data-popup-open])
+    )
+    .threadLink {
+    padding-inline-end: 32px;
+  }
+  /* A visible star takes its own slot inside that edge. */
+  .threadRow:has(.threadDisclosure):not(:has(.threadStatus, .resultDot)):is(
+      :hover,
+      :focus-within,
+      :has([data-popup-open])
+    )
+    .threadLink {
+    padding-inline-end: 56px;
+  }
+  .threadRow:has(.threadDisclosure) .threadStar {
+    position: absolute;
+    inset-inline-end: 32px;
+    margin: 0;
+  }
+  .threadRow:has(.threadDisclosure):is(
+      :hover,
+      :focus-within,
+      :has([data-popup-open])
+    )
+    .threadStar {
+    opacity: 1;
   }
 }
 .resultDot {
   display: grid;
   place-items: center;
   flex: 0 0 16px;
+}
+/* A row carries one trailing mark, in priority order: live state, then the
+   unread badge, then the star. */
+.threadRow:has(.threadStatus) :is(.resultDot, .threadStar),
+.threadRow:has(.resultDot) .threadStar {
+  display: none;
 }
 .resultDot::before {
   content: "";
@@ -1153,6 +1199,30 @@ summary:is(:hover, :focus-visible) > .logCaret {
   flex: 1;
   min-width: 0;
 }
+/* Submitting hands the message to the transcript. The editor keeps its box so
+   the composer does not resize, and shows one quiet line instead of the text
+   the reader can already see above. */
+.composerInput[data-submitting] .composerEditor {
+  opacity: 0;
+}
+.composerSubmitting {
+  grid-area: editor;
+  align-self: center;
+  margin: 0;
+  padding: 4px var(--composer-text-inset, 8px);
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-body);
+  line-height: 24px;
+  animation: revealSubmitting 0s 120ms both;
+}
+@keyframes revealSubmitting {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
 .attachButton {
   grid-area: attach;
   align-self: center;
@@ -1519,30 +1589,6 @@ dl.detailGrid > .detailLongRow dd {
   border-top: 1px solid var(--a13n-border);
 }
 
-.sectionHeading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 26px;
-  margin-block: 8px 0;
-  padding-inline: 8px 4px;
-  color: var(--harness-log-text);
-  font-size: calc(var(--a13n-text-body) * 12 / 14);
-  font-weight: 400;
-}
-.sectionHeading:first-child {
-  margin-block-start: 0;
-}
-.sectionHeading small {
-  margin-inline-start: 4px;
-  color: var(--a13n-tertiary);
-  font-size: inherit;
-}
-.sectionHeading > button {
-  margin-inline-start: auto;
-  width: 24px;
-  height: 24px;
-}
 .showMore {
   margin-block-start: 4px;
   margin-inline-start: calc(var(--thread-label-inset) - 8px);

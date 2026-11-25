@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
@@ -25,7 +26,12 @@ from mcp.types import (
     GetPromptResult,
     ReadResourceRequest,
     ReadResourceResult,
+    Root,
 )
+from mcp_types.version import MODERN_PROTOCOL_VERSIONS
+from pydantic import FileUrl
+
+from a13n_harness_ui.configuration.models import McpServerResource, McpTransport, mcp_roots_enabled
 
 from .transports import ObservedTransport
 
@@ -44,6 +50,15 @@ class InputHandler(Protocol):
     async def __call__(
         self, connection: Connection, operation: Operation, params: ElicitRequestParams
     ) -> ElicitResult[Any]: ...
+
+
+type LocalRootsForThread = Callable[[str], Awaitable[tuple[str, ...]]]
+
+
+@dataclass(frozen=True)
+class ThreadRoots:
+    paths: Callable[[], Awaitable[tuple[str, ...]]]
+    enabled: Callable[[], bool]
 
 
 class HostClient(InitializationRetryClient):
@@ -100,6 +115,7 @@ class Connection:
         client_factory: type[HostClient] = HostClient,
         extensions: Sequence[ClientExtension] = (),
         input_handler: InputHandler | None = None,
+        roots: ThreadRoots | None = None,
         init_timeout: float = 30,
         cleanup_timeout_seconds: float = 10,
     ) -> None:
@@ -114,6 +130,7 @@ class Connection:
         self._active_operation: Operation | None = None
         self._authorize: Callable[[], Awaitable[None]] | None = None
         self._input_handler = input_handler
+        self.roots = roots
         self._cleanup_timeout = cleanup_timeout_seconds
         self.retired = False
         self._closed = False
@@ -128,6 +145,7 @@ class Connection:
             timeout=360 if input_handler is not None else 60,
             extensions=extensions,
             elicitation_handler=self._elicit if input_handler is not None else None,
+            roots=self._list_roots if roots is not None else None,
         )
         self.client.connection = self
 
@@ -138,6 +156,28 @@ class Connection:
     @property
     def _usable(self) -> bool:
         return not self._closed and self.client.is_connected() and self._task is not None and not self._task.done()
+
+    async def _list_roots(self, _: object) -> list[Root]:
+        assert self.roots is not None
+        paths = await self.roots.paths()
+        if self.retired or self._closed or not self.roots.enabled():
+            return []
+        return [Root(uri=FileUrl(path.as_uri()), name=path.name or path.anchor) for path in map(Path, paths)]
+
+    async def notify_roots_changed(self) -> None:
+        if (
+            self.roots is None
+            or not self.roots.enabled()
+            or not self.connected
+            or self.client.protocol_version in MODERN_PROTOCOL_VERSIONS
+        ):
+            return
+        try:
+            # Notifications do not take the business lane, which may be waiting for human input.
+            async with asyncio.timeout(1):
+                await self.client.send_roots_list_changed()
+        except Exception as exc:
+            get_logger(__name__).debug("MCP roots change notification failed (%s).", type(exc).__name__)
 
     def require_connected(self) -> None:
         if not self._usable:
@@ -277,12 +317,16 @@ class Connections:
         client_factory: type[HostClient] = HostClient,
         extensions: Sequence[ClientExtension] = (),
         input_handler: InputHandler | None = None,
+        local_roots_for_thread: LocalRootsForThread | None = None,
         cleanup_timeout_seconds: float = 10,
     ) -> None:
         self._cleanup_timeout = cleanup_timeout_seconds
         self._connections: dict[tuple[str, str], Connection] = {}
         self._lock = asyncio.Lock()
         self._retired: set[Connection] = set()
+        self._run_connections: set[Connection] = set()
+        self._local_roots_for_thread = local_roots_for_thread
+        self._roots_transports: dict[str, McpTransport] = {}
         self._closed = False
         self._client_factory, self._extensions, self._input_handler = client_factory, extensions, input_handler
 
@@ -307,7 +351,9 @@ class Connections:
         init_timeout: float = 30,
         client_factory: type[HostClient] | None = None,
         extensions: Sequence[ClientExtension] | None = None,
+        roots_transport: McpTransport | None = None,
     ) -> Connection:
+        roots = self._roots_scope(thread_id, server_id, roots_transport) if roots_transport is not None else None
         async with self._lock:
             if self._closed:
                 raise RuntimeError("MCP connection registry is closed.")
@@ -336,12 +382,72 @@ class Connections:
                     client_factory=client_factory or self._client_factory,
                     extensions=self._extensions if extensions is None else extensions,
                     input_handler=self._input_handler,
+                    roots=roots,
                     cleanup_timeout_seconds=self._cleanup_timeout,
                 )
                 self._connections[key] = connection
         await connection.start()
         connection.require_admission()
         return connection
+
+    def run_connection(
+        self,
+        thread_id: str,
+        server_id: str,
+        recipe: str,
+        transport: ClientTransport,
+        *,
+        protocol: str,
+        init_timeout: float,
+        roots_transport: McpTransport | None,
+    ) -> Connection:
+        roots = self._roots_scope(thread_id, server_id, roots_transport) if roots_transport is not None else None
+        if self._closed:
+            raise RuntimeError("MCP connection registry is closed.")
+        connection = Connection(
+            thread_id,
+            server_id,
+            recipe,
+            transport,
+            protocol=protocol,
+            init_timeout=init_timeout,
+            input_handler=self._input_handler,
+            roots=roots,
+            cleanup_timeout_seconds=self._cleanup_timeout,
+        )
+        if roots is not None:
+            self._run_connections.add(connection)
+        return connection
+
+    async def close_run_connection(self, connection: Connection) -> None:
+        self._run_connections.discard(connection)
+        await connection.close()
+
+    def _roots_scope(self, thread_id: str, server_id: str, transport: McpTransport) -> ThreadRoots:
+        async def paths() -> tuple[str, ...]:
+            return await self._local_roots_for_thread(thread_id) if self._local_roots_for_thread is not None else ()
+
+        def enabled() -> bool:
+            return self._roots_transports.get(server_id) == transport
+
+        return ThreadRoots(paths, enabled)
+
+    def update_roots_configuration(self, servers: Mapping[str, McpServerResource]) -> None:
+        # Revoke disclosure to already-open sessions when the transport changes or opts out.
+        self._roots_transports = {
+            key: server.transport
+            for key, server in servers.items()
+            if mcp_roots_enabled(server.transport, server.expose_roots)
+        }
+
+    async def notify_thread_roots_changed(self, thread_id: str) -> None:
+        await asyncio.gather(
+            *(
+                connection.notify_roots_changed()
+                for connection in (*self._connections.values(), *self._run_connections)
+                if connection.thread_id == thread_id and connection.roots is not None
+            )
+        )
 
     def get(self, thread_id: str, server_id: str) -> Connection | None:
         return self._connections.get((thread_id, server_id))
@@ -376,7 +482,8 @@ class Connections:
     async def close(self) -> None:
         async with self._lock:
             self._closed = True
-            selected = {*self._connections.values(), *self._retired}
+            selected = {*self._connections.values(), *self._retired, *self._run_connections}
+            self._run_connections.clear()
             self._connections.clear()
             self._retired.clear()
         await asyncio.gather(*(connection.close() for connection in selected))

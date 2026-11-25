@@ -24,7 +24,7 @@ def context(service: SimpleNamespace) -> ToolContext:
 
 def test_task_contract_requires_versions_and_owns_invocation():
     contracts = {value.name: value for value in tools.TOOLS}
-    assert len(contracts) == 12
+    assert len(contracts) == 13
     creation = contracts["create_schedule"].inputs.model_json_schema()
     assert "invocation" not in creation["properties"] and "request_body" not in creation["properties"]
     assert {"instructions", "agent_id", "schedule", "idempotency_key"} <= set(creation["required"])

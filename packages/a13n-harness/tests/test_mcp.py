@@ -25,6 +25,7 @@ from mcp.server import MCPServer
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
+from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.usage import RunUsage
@@ -361,6 +362,30 @@ async def test_contextual_mcp_constructs_local_transport_after_header_resolution
     assert active.headers == {"X-Run": "run-1"}
     assert active.local is not None
     assert active.get_toolset() is not None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("kind", ["omitted", "list", "handler"])
+async def test_contextual_mcp_passes_roots_to_local_client(kind: str) -> None:
+    async def roots_handler(_):
+        return ["file:///project"]
+
+    roots = {"omitted": None, "list": ["file:///project"], "handler": roots_handler}[kind]
+    capability = ContextualMCP(
+        "https://mcp.example.com/mcp",
+        id="context-server",
+        headers_factory=lambda _: {},
+        roots=roots,
+    )
+    active = await capability.for_run(_run_context(_MCPContextDeps()))
+    assert isinstance(active, MCP)
+    assert isinstance(active.local, MCPToolset)
+    callback = active.local.client._session_kwargs["list_roots_callback"]
+    if kind == "omitted":
+        assert callback is None
+    else:
+        assert callback is not None
+        assert [str(root.uri) for root in (await callback(None)).roots] == ["file:///project"]
 
 
 @pytest.mark.anyio
