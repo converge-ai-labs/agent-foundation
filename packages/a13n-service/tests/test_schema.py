@@ -24,6 +24,8 @@ NOT_OBJECT_KEYED = {
     "model_dispatches",
     "passwords",
     "pending_answers",
+    "realtime_calls",
+    "realtime_tickets",
     "run_item_pages",
     "memory_space_organizations",
     "memory_file_organizations",
@@ -49,6 +51,8 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
         and table.c.id.type.length == 72
     }
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
+    assert list(metadata.tables["realtime_calls"].primary_key.columns.keys()) == ["run_id"]
+    assert list(metadata.tables["realtime_tickets"].primary_key.columns.keys()) == ["digest"]
     assert list(metadata.tables["client_environment_settings"].primary_key.columns.keys()) == ["environment_id"]
     assert list(metadata.tables["environment_bootstrap_snapshots"].primary_key.columns.keys()) == [
         "environment_id",

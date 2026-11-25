@@ -61,7 +61,6 @@ from a13n_harness.model_context import (
     _project_model_context,
 )
 from a13n_harness.plugins import PluginRunExchange
-from a13n_harness.providers.model.realtime import context_chunks
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.state import HarnessState
 from a13n_harness.tools._output import _render_tool_return
@@ -428,6 +427,8 @@ class HarnessLiveStream(HarnessRunStream[None]):
             await self._bridge.inject(await self._bridge.retrieve(text))
 
     async def _send_context(self, text: str) -> None:
+        from a13n_harness.providers.model.realtime import context_chunks
+
         session = self._active_session()
         for chunk in context_chunks(self._live_model, text):
             await session.send(chunk, respond=False)
