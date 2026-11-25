@@ -17,6 +17,7 @@ from a13n_harness_ui.configuration.models import (
     SubagentsConfiguration,
     SubscriptionGroupResource,
     WebProviderResource,
+    mcp_roots_enabled,
 )
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
@@ -90,6 +91,7 @@ class ResolvedPluginRecipe(CompositionModel):
 class ResolvedMcpRecipe(CompositionModel):
     server_id: str = Field(min_length=1, max_length=128)
     transport: McpTransport
+    expose_roots: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     object_ref_tools: dict[str, bool] = Field(default_factory=dict, exclude_if=lambda value: not value)
     on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
     oauth_binding: OAuthBinding | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -100,8 +102,17 @@ class ResolvedMcpRecipe(CompositionModel):
     host_owned: bool = Field(default=False, exclude_if=lambda value: not value)
     protocol: Literal["auto", "legacy", "2026-07-28"] = Field(default="auto", exclude_if=lambda value: value == "auto")
 
+    @property
+    def roots_enabled(self) -> bool:
+        return mcp_roots_enabled(self.transport, self.expose_roots)
+
     def binding_key(self, *, apps: bool | None = None) -> str:
-        base = (self.transport.model_dump_json(), self.protocol, self.apps_enabled if apps is None else apps)
+        base = (
+            self.transport.model_dump_json(),
+            self.protocol,
+            self.apps_enabled if apps is None else apps,
+            self.roots_enabled,
+        )
         return repr(base if self.oauth_binding is None else (*base, self.oauth_binding.model_dump_json()))
 
 

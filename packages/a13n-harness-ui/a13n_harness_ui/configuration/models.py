@@ -814,12 +814,17 @@ class McpRemoteTransport(StrictModel):
 type McpTransport = McpCommandTransport | McpRemoteTransport
 
 
+def mcp_roots_enabled(transport: McpTransport, expose_roots: bool | None) -> bool:
+    return isinstance(transport, McpCommandTransport) if expose_roots is None else expose_roots
+
+
 class McpServerResource(ConfigurationModel):
     schema_version: Literal["1", "2"]
     kind: Literal["mcp_server"]
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     transport: McpTransport
+    expose_roots: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     object_ref_tools: dict[McpToolName, bool] = Field(
         default_factory=dict,
         exclude_if=lambda value: not value,

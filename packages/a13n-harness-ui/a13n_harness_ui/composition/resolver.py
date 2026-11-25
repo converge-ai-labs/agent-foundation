@@ -211,6 +211,7 @@ class AgentCompositionResolver:
             ResolvedMcpRecipe(
                 server_id=item,
                 transport=source.mcp_servers[item].transport,
+                expose_roots=source.mcp_servers[item].expose_roots,
                 on_error=source.mcp_servers[item].on_error,
                 tools=source.mcp_servers[item].tools,
                 object_ref_tools=source.mcp_servers[item].object_ref_tools,
