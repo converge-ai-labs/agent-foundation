@@ -179,7 +179,6 @@ def test_outbox_defaults_and_partial_kind_overrides(tmp_path: Path, monkeypatch,
     assert loaded.policies["webhook"].parallel == 3
     assert loaded.policies["webhook"].delivered_retention_seconds == 86400
     assert loaded.policies["email"].max_attempts == 4
-    assert loaded.policies is loaded.policies
 
 
 @pytest.mark.parametrize(

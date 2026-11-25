@@ -247,9 +247,9 @@ function ConversationContent({
   const pageReady = useInitialReady(
     publication?.ready ||
       showAvailable ||
-      // A confirmed Send already has readable input. Keep it and the next
+      // A Send that is already preparing has readable input. Keep it and the next
       // prompt visible while the destination observes detail and saved history.
-      draft.localInputs.some((input) => input.state === "accepted") ||
+      draft.localInputs.length > 0 ||
       detail.isError ||
       !!detail.data?.thread.parent_thread_id ||
       (!!detail.data && (!!history.data || history.isError)),

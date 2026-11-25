@@ -108,6 +108,13 @@ class ScheduleCreate(ScheduleConfig):
     state: Literal["paused", "enabled"] = "paused"
 
 
+class ScheduleDuplicate(_Model):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=2048)
+    labels: Labels | None = None
+    target: ScheduleTarget | None = None
+
+
 class ScheduleUpdate(_Model):
     target: ScheduleTarget | None = None
     name: str | None = Field(default=None, min_length=1, max_length=128)

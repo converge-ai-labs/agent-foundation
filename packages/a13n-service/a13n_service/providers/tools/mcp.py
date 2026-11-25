@@ -14,7 +14,7 @@ from typing import Annotated, Any, Literal, Self, Unpack
 import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.http import forward_context_headers_default
-from a13n_harness.mcp import InitializationRetryClient, MCPServer, StartupErrorPolicy, ToolsetFactory
+from a13n_harness.mcp import InitializationRetryClient, MCPServer, StartupErrorPolicy, ToolsetFactory, tool_progress
 from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_TOOLS
 from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
@@ -228,7 +228,8 @@ class DispatchToolset(CheckedToolset):
         try:
             # DispatchSession performs the check immediately before each send;
             # a logical-call-only check would miss state-only SDK continuations.
-            return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+            async with tool_progress(ctx):
+                return await self.wrapped.call_tool(name, tool_args, ctx, tool)
         finally:
             _dispatch.reset(token)
 

@@ -52,7 +52,9 @@ it("distinguishes authored Pro from explicit Standard and restores the Model def
   await user.click(
     screen.getByRole("button", { name: "Agent & Model settings" }),
   );
-  await user.click(screen.getByRole("button", { name: "Reasoning mode" }));
+  const reasoning = screen.getByRole("button", { name: "Reasoning mode" });
+  expect(reasoning.textContent).toContain("Pro - Model default");
+  await user.click(reasoning);
   expect(
     screen
       .getByRole("button", { name: /^Default/ })
@@ -99,35 +101,28 @@ it("does not interpret provider default as Standard and locks changes when disab
   expect(change).not.toHaveBeenCalled();
 });
 
-it.each([
-  ["pro", "Pro - Model default"],
-  ["standard", "Standard - Model default"],
-  ["default", "Provider default"],
-] as const)(
-  "shows inherited %s directly in the control row",
-  async (state, label) => {
-    const user = userEvent.setup();
-    const change = vi.fn();
-    render(
-      <ComposerSettings>
-        <ModelControlPanel
-          model={{
-            model_id: "model",
-            name: "Model",
-            route: "openai:gpt-5.6-sol",
-            reasoning_mode: { supported: true, state },
-          }}
-          controls={{}}
-          onControlsChange={change}
-        />
-      </ComposerSettings>,
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Agent & Model settings" }),
-    );
-    expect(
-      screen.getByRole("button", { name: "Reasoning mode" }).textContent,
-    ).toBe(`Reasoning mode${label}`);
-    expect(change).not.toHaveBeenCalled();
-  },
-);
+it("shows the provider default directly in the control row", async () => {
+  const user = userEvent.setup();
+  const change = vi.fn();
+  render(
+    <ComposerSettings>
+      <ModelControlPanel
+        model={{
+          model_id: "model",
+          name: "Model",
+          route: "openai:gpt-5.6-sol",
+          reasoning_mode: { supported: true, state: "default" },
+        }}
+        controls={{}}
+        onControlsChange={change}
+      />
+    </ComposerSettings>,
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Agent & Model settings" }),
+  );
+  expect(
+    screen.getByRole("button", { name: "Reasoning mode" }).textContent,
+  ).toContain("Provider default");
+  expect(change).not.toHaveBeenCalled();
+});

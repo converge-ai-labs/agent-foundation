@@ -15,7 +15,13 @@ from a13n_harness.configuration import RunConfiguration
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import RunError
 from a13n_harness.http import outbound_tls_verify
-from a13n_harness.mcp import InitializationRetryClient, MCPServer, ToolsetFactory, raise_initialization_status
+from a13n_harness.mcp import (
+    InitializationRetryClient,
+    MCPServer,
+    ProgressMCPToolset,
+    ToolsetFactory,
+    raise_initialization_status,
+)
 from anyio import to_thread
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
@@ -146,12 +152,8 @@ class HarnessUiMCP(MCPServer):
             ctx.deps._register_run_cleanup(cache_id, partial(self._connections.close_run_connection, connection))
             await connection.start()
             return HostToolset(connection)
-        client = InitializationRetryClient(
-            client_transport,
-            mode=self._recipe.protocol,
-            init_timeout=init_timeout,
-        )
-        return MCPToolset[AgentContext](client, id=self._recipe.server_id)
+        client = InitializationRetryClient(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
+        return ProgressMCPToolset(client, id=self._recipe.server_id)
 
 
 @dataclass

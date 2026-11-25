@@ -1,5 +1,4 @@
-// @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { QueryClient, type InfiniteData } from "@tanstack/react-query";
 import { createTransport, type Schema } from "../transport/client";
 import { applyActivityUpdates, refreshActivity } from "./activity-updates";
@@ -31,6 +30,9 @@ const row = (id: string, project = "one"): Row =>
 const page = (rows: Row[]): InfiniteData<Page> => ({
   pages: [{ rows, active_rows: [], total: rows.length, observedAt: 0 }],
   pageParams: [undefined],
+});
+beforeEach(() => {
+  vi.stubGlobal("window", { location: { origin: "http://localhost:3000" } });
 });
 afterEach(() => {
   vi.useRealTimers();

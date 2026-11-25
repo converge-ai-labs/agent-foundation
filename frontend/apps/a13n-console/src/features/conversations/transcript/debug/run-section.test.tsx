@@ -270,7 +270,10 @@ it("names the failure of a failed run and leaves continuing to the dock", () => 
 it("opens the run details in a dialog, on demand, starting with usage", async () => {
   show();
   const user = userEvent.setup();
+  const toolReads = () =>
+    requests.filter((path) => path.endsWith("/tool-executions"));
   expect(requests.filter((path) => path.endsWith("/attempts"))).toEqual([]);
+  expect(toolReads()).toHaveLength(0);
   await user.click(screen.getByRole("button", { name: "Details" }));
   const dialog = await screen.findByRole("dialog", { name: /Run 2/ });
   const usage = await within(dialog).findByRole("table", {
@@ -287,6 +290,13 @@ it("opens the run details in a dialog, on demand, starting with usage", async ()
   expect(within(dialog).queryByText("Continued run")).toBeNull();
   await user.click(within(dialog).getByRole("button", { name: "Lineage" }));
   expect(await within(dialog).findByText("Continued run")).toBeTruthy();
+
+  expect(toolReads()).toHaveLength(0);
+  await user.click(
+    within(dialog).getByRole("button", { name: "Tool executions" }),
+  );
+  await within(dialog).findByText("No retained tool executions.");
+  expect(toolReads()).toEqual(["/api/v1/threads/thr_1/tool-executions"]);
 });
 
 it("pauses an unresolved call while the run waits for a person", () => {

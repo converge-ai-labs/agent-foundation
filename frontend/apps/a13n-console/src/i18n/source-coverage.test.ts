@@ -574,34 +574,18 @@ it.each([
     "fixture.tsx",
   ],
   ['(<Record<string, string>>{ ready: "Missing asserted key" })', "fixture.ts"],
-])("validates translation keys in %s", (initializer, path) => {
+])("validates indirect translation keys in %s", (initializer, path) => {
+  const missing = "Missing asserted key";
   const keys = translationKeys(
     path,
-    `const labels = ${initializer}; const label = labels[state]; t(label);`,
+    `const labels = ${initializer};
+      const label = labels[state];
+      t(label);
+      t(labels[choices[0]]);
+      choices.map((value) => ({ label: t(labels[value]) }));`,
   ).map(([key]) => key);
-  expect(keys).toEqual(["Missing asserted key"]);
-  expect(keys.filter((key) => !(key in en))).toEqual(["Missing asserted key"]);
-});
-
-it.each([
-  [
-    "features/providers/credentials-pill.tsx",
-    ["Configured", "Not configured", "Not required"],
-  ],
-  [
-    "features/mcp/oauth-client.tsx",
-    [
-      "Public client (no secret)",
-      "Client secret in Basic header",
-      "Client secret in request body",
-    ],
-  ],
-] as const)("collects asserted label maps in %s", (path, labels) => {
-  const keys = translationKeys(
-    path,
-    readFileSync(new URL(`../${path}`, import.meta.url), "utf8"),
-  ).map(([key]) => key);
-  expect(keys).toEqual(expect.arrayContaining([...labels]));
+  expect(keys).toEqual([missing, missing, missing]);
+  expect([...new Set(keys.filter((key) => !(key in en)))]).toEqual([missing]);
 });
 
 it("validates literal key fixtures, including conditional branches", () => {

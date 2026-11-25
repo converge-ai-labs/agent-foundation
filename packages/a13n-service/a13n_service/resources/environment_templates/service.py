@@ -27,13 +27,14 @@ from a13n_service.resources.environment_templates.schemas import (
     TemplateConfig,
     TemplateConfigurationChanges,
     TemplateCreate,
+    TemplateDuplicate,
     TemplatePage,
     TemplateUpdate,
 )
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.resources.providers.service import rejection_reason, resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.resources.rows import audit_row, find_row, given, record_update
+from a13n_service.resources.rows import audit_row, copy_name, find_row, given, record_update
 from a13n_service.tenancy.access import workspace_scope
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, Verb, WorkspaceScope, authorize
 
@@ -100,6 +101,30 @@ async def create_template(
         return Template.model_validate(row)
 
 
+async def duplicate_template(
+    storage: Storage,
+    actor: Principal,
+    workspace_id: str,
+    template_id: str,
+    body: TemplateDuplicate,
+    *,
+    registry: Registry,
+) -> Template:
+    async with transaction(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "write")
+        source = await find_row(session, actor, EnvironmentTemplateRow, scope, template_id, "read")
+        copy = TemplateCreate(
+            name=body.name or copy_name(source.name, 128),
+            description=body.description if "description" in body.model_fields_set else source.description,
+            labels=source.labels if body.labels is None else body.labels,
+            provider_id=source.provider_id,
+            config=TemplateConfig.model_validate(source.config),
+        )
+        config = await _validated_config(session, actor, scope, copy.provider_id, copy.config, registry, current=None)
+        row = await insert_template(session, actor, scope, copy, config=config, source=source)
+        return Template.model_validate(row)
+
+
 async def insert_template(
     session: AsyncSession,
     actor: Principal | None,
@@ -107,6 +132,7 @@ async def insert_template(
     body: TemplateCreate,
     *,
     config: dict[str, JsonValue],
+    source: EnvironmentTemplateRow | None = None,
 ) -> EnvironmentTemplateRow:
     """Insert and audit the validated configuration in the caller's authorized transaction."""
     row = EnvironmentTemplateRow(
@@ -117,14 +143,17 @@ async def insert_template(
         description=body.description,
         provider_id=body.provider_id,
         config=config,
-        enabled=True,
+        enabled=True if source is None else source.enabled,
         labels=body.labels,
         created_by_id=None if actor is None else actor.id,
         updated_by_id=None if actor is None else actor.id,
     )
     session.add(row)
     await session.flush()
-    audit_row(session, actor, row, "create")
+    if source is None:
+        audit_row(session, actor, row, "create")
+    else:
+        audit_row(session, actor, row, "duplicate", {"source_id": source.id})
     return row
 
 

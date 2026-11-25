@@ -147,6 +147,7 @@ class DisplayFold(SemanticDisplayFold):
         for key, item in self.items.items():
             if item.state == "in_progress" and key not in kept:
                 self.items[key] = item.model_copy(update={"state": "interrupted"})
+                self.clear_progress(key)
                 self.changed.add(key)
 
     def snapshot(self) -> Snapshot:

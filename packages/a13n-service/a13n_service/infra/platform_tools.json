@@ -102,6 +102,12 @@
     "summary": "Create a model with direct settings and complete typed advanced configuration."
   },
   {
+    "effect": "write",
+    "group": "models",
+    "key": "duplicate_model",
+    "summary": "Duplicate a Model under a new workspace key."
+  },
+  {
     "effect": "read",
     "group": "models",
     "key": "get_media_defaults",
@@ -234,6 +240,12 @@
     "summary": "Import a validated GitHub or uploaded Skill package and publish its initial immutable revision atomically."
   },
   {
+    "effect": "write",
+    "group": "skills",
+    "key": "duplicate_skill",
+    "summary": "Duplicate a Skill from its default or a selected immutable revision."
+  },
+  {
     "effect": "read",
     "group": "skills",
     "key": "get_skill",
@@ -292,6 +304,12 @@
     "group": "environment_templates",
     "key": "create_environment_template",
     "summary": "Create a template using the selected provider's typed recipe and explicit lifecycle policy."
+  },
+  {
+    "effect": "write",
+    "group": "environment_templates",
+    "key": "duplicate_environment_template",
+    "summary": "Duplicate an Environment template and revalidate its provider recipe."
   },
   {
     "effect": "read",
@@ -622,6 +640,12 @@
     "group": "schedules",
     "key": "dispatch_schedule",
     "summary": "Accept one manual occurrence, preserving immutable task snapshot and durable replay semantics."
+  },
+  {
+    "effect": "write",
+    "group": "schedules",
+    "key": "duplicate_schedule",
+    "summary": "Duplicate a Schedule as paused with the caller's execution authority."
   },
   {
     "effect": "write",

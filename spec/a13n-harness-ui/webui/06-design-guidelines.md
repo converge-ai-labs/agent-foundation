@@ -51,9 +51,9 @@ Reserve space for appearing actions and carets. Hover, loading and expansion nev
 
 ## Navigation
 
-**New** has one leading plus; **Search** and **Inbox** share its text start; the Inbox unread count is a neutral trailing count. Project and chat rows retain the thin gap between fills. Brand, page title and header actions share a vertical center.
+**New** has one leading plus; **Search** and **Inbox** share its text start; the Inbox unread count is a neutral trailing count. The sidebar **Projects** heading uses sentence case at the navigation size and medium weight in the secondary tone; Project groups carry no bucket captions. Project headings order their actions as menu, then plus, like the **Projects** heading. A Project's new-result count is a small tinted badge beside its name. A chat row carries at most one trailing mark, in the order live state, unread badge, star. Project and chat rows retain the thin gap between fills. Brand, page title and header actions share a vertical center.
 
-A Project's leading folder becomes a small caret only while hovered; pointer leave restores the folder even when expanded, selected or focused. Focus uses the normal ring. Coordinators retain their distinct leading worker disclosure, medium title and indented guide under [Coordinator Entry](04-workbench-interaction.md#coordinator-entry).
+A Project's leading folder becomes a small caret only while hovered; pointer leave restores the folder even when expanded, selected or focused. Focus uses the normal ring. Coordinators keep their worker disclosure in the icon column, with a medium title and worker rows aligned to it beside a light section line under [Coordinator Entry](04-workbench-interaction.md#coordinator-entry). An idle Coordinator row shows only its state mark at the far end; on hover or focus its worker count takes the row end as a quiet count, with the star and menu beside it. Project and Coordinator disclosure carets share the same horizontal center as the folder and navigation icons.
 
 Rows drag directly without a grip icon. Use a compact preview and thin insertion indicator; surrounding rows stay stationary until drop and dragging does not activate them. [Entry and Navigation](04-workbench-interaction.md#entry-and-navigation) owns ordering, transfer eligibility, keyboard alternatives and resize limits. Narrow layouts use the drawer.
 

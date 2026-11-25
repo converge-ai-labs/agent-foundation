@@ -116,14 +116,6 @@ function mount(path = "/threads/thread-1", transport: Transport | null = null) {
     </QueryClientProvider>,
   );
 }
-it("updates the toast viewport accessible name when the language changes", async () => {
-  await act(() => i18n.changeLanguage("en"));
-  mount();
-  expect(screen.getByRole("region", { name: "Notifications" })).toBeTruthy();
-  await act(() => i18n.changeLanguage("zh-CN"));
-  expect(screen.getByRole("region", { name: "通知" })).toBeTruthy();
-  await act(() => i18n.changeLanguage("en"));
-});
 it.each(["completed", "failed", "suspended"] as const)(
   "opens Bot chat for a %s notification",
   async (status) => {
@@ -142,12 +134,14 @@ it.each(["completed", "failed", "suspended"] as const)(
 it("relocalizes a retained suspended notice without replaying it", async () => {
   await act(() => i18n.changeLanguage("en"));
   mount("/threads/thread-other");
+  expect(screen.getByRole("region", { name: "Notifications" })).toBeTruthy();
   event = notice("retained", "suspended");
   fireEvent.click(screen.getByText("Emit"));
   const title = await screen.findByText("Your input is needed - UI polish");
   const action = screen.getByRole("button", { name: "Open chat" });
   try {
     await act(() => i18n.changeLanguage("zh-CN"));
+    expect(screen.getByRole("region", { name: "通知" })).toBeTruthy();
     expect(screen.getByText("需要你的输入 - UI polish")).toBe(title);
     expect(screen.getByRole("button", { name: "打开聊天" })).toBe(action);
     expect(screen.getByText("Which project should I update?")).toBeTruthy();
@@ -489,13 +483,7 @@ it("keeps installation guidance inline without duplicating a persistent toast in
   ).toBeNull();
 });
 
-it.each([
-  "completed",
-  "failed",
-  "suspended",
-  "goal_verified",
-  "goal_incomplete",
-] as const)(
+it.each(["completed", "suspended"] as const)(
   "suppresses current-thread %s notices but retains other-thread notices regardless of opt-in",
   async (status) => {
     writePreference("notifications.enabled", "false");

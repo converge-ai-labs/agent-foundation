@@ -1,3 +1,4 @@
+import { MapFields } from "./map-fields";
 import { ConfigurationGroup } from "./configuration-group";
 import { EnvdSettings } from "./envd-settings";
 import {
@@ -14,13 +15,7 @@ import { ArrowSquareOutIcon, QuestionIcon } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { FormSection, jsonObject, TextAreaField } from "../../shared/forms";
-import {
-  Containers,
-  Fields,
-  Items,
-  MapFields,
-  Storage,
-} from "./kubernetes-editors";
+import { Containers, Fields, Items, Storage } from "./kubernetes-editors";
 import {
   connectionFields,
   listField,

@@ -102,6 +102,7 @@ A Run platform credential creates the Schedule as its authenticated principal, w
 | `POST /schedules`                              | Idempotency-Key; first 201, replay 200; Schedule with ETag        |
 | `GET /schedules`                               | Configuration page                                                |
 | `GET /schedules/{id}`                          | Configuration and ETag                                            |
+| `POST /schedules/{id}/duplicate`               | `{name?, description?, labels?, target?}`; 201 and ETag           |
 | `PATCH /schedules/{id}`                        | If-Match; partial configuration update                            |
 | `POST /schedules/{id}/enable`                  | If-Match; empty object                                            |
 | `POST /schedules/{id}/pause`                   | If-Match; empty object                                            |
@@ -117,6 +118,8 @@ Internal platform tools accept task instructions, executor/revision selection, s
 Configuration responses include the resolved target and current Session/stream URL, Workspace, principal/creator/editor, state/reason, version and timestamps. They omit saved authority and request keys. PATCH can replace name, description, labels, time rule, lateness, invocation or target; nested time rule, invocation and target are replaced completely. Only description accepts explicit null. State, identity and progress cannot be patched. Labels do not propagate to Runs; invocation Run options own Run labels.
 
 Authorization precedes replay lookup, which precedes mutable configuration validation and mutation preconditions. A key with a different command digest returns `conflict: idempotency_key_reused`. Creation keys survive archival. Missing If-Match is 428, stale is 412; no-op edits keep their ETag. Archived schedules remain readable and replayable but cannot be restarted or edited.
+
+Duplication follows [the resource copy contract](04-resources.md#configuration-copies) for a non-archived source. It copies the time rule, lateness policy, and invocation; `target` defaults to the original Session and, where applicable, Thread. The same target resolution and invocation checks as creation apply to the copying actor, with fresh execution authority computed from that actor and any originating Run ceiling. The copy starts paused with no next fire time, occurrence pointers, or history. A copy of a past one-time Schedule can be retimed before enabling it.
 
 Schedule pages sort by `(created_at DESC, id DESC)` and filter state, Agent, principal, labels and name/description text. Archived schedules are excluded unless explicitly selected. Occurrence pages use the same order and filter status, trigger, half-open creation interval and current unfinished-work state. Cursors bind Workspace, Schedule and filters. Default page size is 50, bounded to 1–100. Details load input snapshots separately from compact history.
 

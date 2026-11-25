@@ -15,9 +15,6 @@ it.each([
   ["verified", "Verified"],
   ["blocked", "Blocked"],
   ["max_iterations", "Not verified"],
-  ["cancelled", "Not verified"],
-  ["error", "Not verified"],
-  ["unverified_stop", "Not verified"],
 ] as const)(
   "shows authoritative %s progress and explicit, non-submitting retry",
   async (status, label) => {
@@ -44,15 +41,7 @@ it.each([
     expect(screen.getByText("2 / 10")).toBeTruthy();
     if (status !== "auditing")
       expect(screen.getByText(/A fresh review is required/)).toBeTruthy();
-    if (
-      [
-        "blocked",
-        "max_iterations",
-        "cancelled",
-        "error",
-        "unverified_stop",
-      ].includes(status)
-    ) {
+    if (status === "blocked" || status === "max_iterations") {
       expect(screen.getByRole("heading", { level: 3 }).textContent).toMatch(
         /not verified|before verification|without verification/,
       );

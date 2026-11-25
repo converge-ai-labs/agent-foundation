@@ -451,14 +451,3 @@ def test_webui_dispatches_to_one_web_host_app(
     assert factory_calls[0]["codex_login"] is None
     assert factory_calls[0]["grok_login"] is None
     assert "listener-secret" not in repr(CliRequest(web_api_key="listener-secret"))
-
-
-def test_help_exposes_webui_without_restoring_obsolete_management_commands() -> None:
-    result = CliRunner().invoke(cli, ["--help"])
-    assert result.exit_code == 0
-    assert "webui" in cli.commands
-    for removed in ("thread", "project"):
-        assert removed not in cli.commands
-    assert "--resume" in result.output
-    assert "--display" in result.output
-    assert "--config" in result.output

@@ -107,7 +107,15 @@ async def reserve_environment(
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "run")
         limit = runtime.settings.environments.managed_count
-        environment = await reserve(session, actor, scope, body.template_id, limit=limit, name=body.name)
+        environment = await reserve(
+            session,
+            actor,
+            scope,
+            body.template_id,
+            limit=limit,
+            name=body.name,
+            recipe_overrides=body.recipe_overrides.model_dump(mode="json", exclude_unset=True) or None,
+        )
         await select_source(session, actor, environment, body.metrics_data_source_id, body.metrics_labels)
         await begin(session, environment, "creating")
         await session.flush()

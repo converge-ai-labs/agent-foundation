@@ -84,7 +84,7 @@ async def test_capture_settings_opener_uses_fixed_target(monkeypatch):
     process.kill.assert_not_called()
 
 
-async def test_removed_password_and_clipboard_endpoints(tmp_path, monkeypatch):
+async def test_macos_settings_endpoint_opens_capture_settings(tmp_path, monkeypatch):
     from a13n_harness_ui import browser as module
 
     from .test_sharing_webui import shared_server
@@ -92,9 +92,6 @@ async def test_removed_password_and_clipboard_endpoints(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "host_platform", lambda: "macos")
     opened = AsyncMock()
     monkeypatch.setattr(module, "open_capture_settings", opened)
-    async with shared_server(tmp_path, skip_auth=True, share_computer=True) as (_, app, client):
-        assert (await client.post("/api/browser/macos/password", json={"password": "unused"})).status_code in {404, 405}
-        thread = (await app.create_thread()).thread_id
-        assert (await client.post(f"/api/threads/{thread}/browser/clipboard", json={})).status_code in {404, 405}
+    async with shared_server(tmp_path, skip_auth=True, share_computer=True) as (_, _, client):
         assert (await client.post("/api/browser/macos/settings")).status_code == 204
         opened.assert_awaited_once()

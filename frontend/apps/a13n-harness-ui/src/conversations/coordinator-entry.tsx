@@ -121,7 +121,7 @@ export function CoordinatorEntry({
           {workers.hasNextPage && (
             <Button
               variant="ghost"
-              size="sm"
+              size="xs"
               loading={workers.isFetchingNextPage}
               onClick={() => void workers.fetchNextPage()}
             >

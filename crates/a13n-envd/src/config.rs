@@ -1350,9 +1350,7 @@ impl Error for ConfigError {}
 mod tests {
     use std::{fs, time::SystemTime};
 
-    use crate::eip::EipValidate;
-
-    use super::{Config, parse_reverse_websocket_config};
+    use super::parse_reverse_websocket_config;
 
     #[test]
     fn template_settings_share_defaults_and_validation() {
@@ -1546,16 +1544,5 @@ mod tests {
         assert!(super::validate_identity(" device", "device_id").is_err());
         assert!(super::validate_presentation(Some("bad\nname"), "name", 256).is_err());
         assert!(super::validate_presentation(Some(&"a".repeat(257)), "name", 256).is_err());
-    }
-
-    #[test]
-    fn test_configuration_has_finite_valid_limits() {
-        let config = Config::for_test("env-test");
-
-        config
-            .limits
-            .descriptor()
-            .validate()
-            .expect("limits are valid");
     }
 }

@@ -526,8 +526,11 @@ it("keeps the blank composer and files local, then creates, uploads, synchronize
   fireEvent.click(send);
   await waitFor(() => expect(writes).toHaveLength(1));
   expect(screen.getByLabelText("Location").textContent).toBe("/new");
-  expect(view.container.querySelector("[data-message-id]")).toBeNull();
-  expect(values(drafts.get(id)!.doc).prompt).toContain("Build this");
+  // The authored text echoes at once; its position stays local until the Thread
+  // exists and the server admits the message.
+  const echoes = [...view.container.querySelectorAll("[data-message-id]")];
+  expect(echoes).toHaveLength(1);
+  expect(echoes[0].textContent).toContain("Build this");
   expect(screen.getByRole("button", { name: "Submitting" })).toBeTruthy();
   await act(async () => resume());
   await waitFor(() =>
@@ -971,7 +974,9 @@ it.each([false, true])(
     readPaused = new Promise<void>((resolve) => {
       resume = resolve;
     });
-    fireEvent.click(screen.getByRole("button", { name: "Check chat status" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Check chat status" }),
+    );
     await waitFor(() => expect(reads).toContain(`/api/threads/${id}`));
     fireEvent.click(screen.getByRole("link", { name: "Settings" }));
     fireEvent.click(screen.getByRole("link", { name: "Return to draft" }));

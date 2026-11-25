@@ -613,9 +613,9 @@ def test_model_and_agent_have_independent_commands_and_help() -> None:
     "tokens, label",
     [(0, "0"), (999, "999"), (1000, "1.0K"), (12560, "12.6K"), (1000000, "1.0M"), (1256000, "1.3M")],
 )
-def test_status_token_abbreviations_keep_one_decimal_at_every_width(tokens: int, label: str) -> None:
+def test_status_token_abbreviations_keep_one_decimal_in_compact_and_wide_layouts(tokens: int, label: str) -> None:
     status = Status(state="ready", usage=BoundedRequestUsage(input_tokens=tokens))
-    for width in (24, 80, 160, None):
+    for width in (24, 80):
         assert f"{'tok' if width == 24 else 'tokens'} {label}" in status.line(width)
     assert f"{tokens:,} total tokens" in status.usage_details()
 

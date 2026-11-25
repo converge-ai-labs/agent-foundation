@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { RootFailureNotice, FailureNotice } from "./failure-notice";
+import { RootFailureNotice } from "./failure-notice";
 import { FocusDisplay } from "./stream";
 import { useOperation } from "./queries";
 import type { Schema } from "../transport/client";
@@ -9,15 +9,6 @@ vi.mock("./queries", () => ({ useOperation: vi.fn() }));
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
-});
-it("shows a concise failure with longer details collapsed and no retry action", () => {
-  const message = "Provider rejected the request\nDetails remain inspectable.";
-  render(<FailureNotice message={message} />);
-  expect(screen.getByRole("alert").textContent).toContain("Provider rejected");
-  expect(screen.getByText("Error details").closest("details")?.open).toBe(
-    false,
-  );
-  expect(screen.queryByRole("button")).toBeNull();
 });
 it("replaces the live failure with finalized diagnostics and does not reuse them for another receipt", () => {
   const display = new FocusDisplay();
@@ -48,7 +39,10 @@ it("replaces the live failure with finalized diagnostics and does not reuse them
   expect(screen.getByText("Saved failure")).toBeTruthy();
   expect(screen.queryByText("Stream failed")).toBeNull();
   expect(screen.getByText("Error code: checkpoint_save_failed")).toBeTruthy();
-  fireEvent.click(screen.getByText("Error details"));
+  const details = screen.getByText("Error details");
+  expect(details.closest("details")?.open).toBe(false);
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  fireEvent.click(details);
   expect(
     screen.getByText(/Diagnostic report: \/tmp\/report.json/).textContent,
   ).toContain("Run ID: run-old");

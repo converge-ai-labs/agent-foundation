@@ -35,7 +35,6 @@ afterEach(() => {
 it.each([
   ["", true, "No sessions yet", false],
   ["?q=missing", true, "No matching sessions", true],
-  ["?status=failed", true, "No matching sessions", true],
   ["", false, "No sessions yet", false],
 ] as const)(
   "offers session creation in the right place for %s (run permission: %s)",

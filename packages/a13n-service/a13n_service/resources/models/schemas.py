@@ -72,6 +72,13 @@ class ModelCreate(BaseModel):
     enabled: bool = True
 
 
+class ModelDuplicate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: Key
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    description: str | None = Field(default=None, max_length=2048)
+
+
 class ModelUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str | None = Field(default=None, min_length=1, max_length=128)

@@ -12,8 +12,16 @@ import yaml
 ROOT = Path(__file__).parents[2]
 
 
-@pytest.mark.parametrize("legacy_image", [None, "", "a13n-sandbox:ignored"])
-@pytest.mark.parametrize("pull_policy", [None, "if_missing", "never"])
+@pytest.mark.parametrize(
+    ("legacy_image", "pull_policy"),
+    [
+        (None, None),
+        ("", None),
+        ("a13n-sandbox:ignored", None),
+        ("a13n-sandbox:ignored", "if_missing"),
+        ("a13n-sandbox:ignored", "never"),
+    ],
+)
 def test_compose_renders_default_and_complete_docker_overrides(tmp_path, legacy_image, pull_policy) -> None:
     if shutil.which("docker") is None:
         pytest.skip("Docker Compose is not installed")

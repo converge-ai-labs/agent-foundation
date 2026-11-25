@@ -12,6 +12,7 @@ from typing import Any, cast
 from a13n_harness import HarnessStreamEvent
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, HarnessState, decode_messages
 from a13n_stream_protocol.display import DisplayContinuation, DisplayFold, Item, Observed, StreamPosition
+from a13n_stream_protocol.observer import TOOL_PROGRESS_EVENT
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 
@@ -143,6 +144,7 @@ class DisplayPublication:
     items: tuple[Item, ...]
     continuation: DisplayContinuation
     reset: bool = False
+    progress: tuple[Observed, ...] = ()
 
 
 class DisplayHistoryCollector:
@@ -172,6 +174,7 @@ class DisplayHistoryCollector:
         self._captured = {item.id: item.model_copy(deep=True) for item in self.saved.items}
         self.fold: DisplayFold | None = None
         self._observations: list[Observed] = []
+        self._progress: dict[str, Observed] = {}
         self._observation_bytes = 0
         self._reset = False
         self._live_keys: set[str] = set()
@@ -186,7 +189,7 @@ class DisplayHistoryCollector:
                 first=(self.saved.items[0].ordinal if self.saved.items else 1),
             )
             self.fold.changed.clear()
-        self._enqueue(self.fold.fold(self.fold.events(source), source))
+        self._enqueue(self.fold.fold(self.fold.events(source), source, sequence_progress=False))
         if (
             self._pending_response is not None
             and not self._resume_group_assigned
@@ -197,12 +200,24 @@ class DisplayHistoryCollector:
 
     def supplement(self, events: Sequence[Any]) -> None:
         if self.fold is not None:
-            self._enqueue(self.fold.fold([event.model_dump(mode="json", by_alias=True) for event in events]))
+            self._enqueue(
+                self.fold.fold(
+                    [event.model_dump(mode="json", by_alias=True) for event in events], sequence_progress=False
+                )
+            )
 
     def _enqueue(self, observations: Sequence[Observed]) -> None:
         for observation in observations:
             if self._reset:
                 return
+            if observation.event.get("name") == TOOL_PROGRESS_EVENT:
+                if observation.item is not None:
+                    key = observation.item.id
+                    self._progress.pop(key, None)
+                    if len(self._progress) >= 32:
+                        del self._progress[next(iter(self._progress))]
+                    self._progress[key] = observation
+                continue
             size = len(json.dumps(observation.event, ensure_ascii=False).encode())
             # Smaller than the default live subscriber buffer. Loss replaces the
             # entire suffix with an explicit reset, never a partial raw journal.
@@ -214,16 +229,21 @@ class DisplayHistoryCollector:
 
     def drain(self) -> DisplayPublication | None:
         fold = self.fold
-        if fold is None or (not self._observations and not self._reset):
+        if fold is None or (not self._observations and not self._progress and not self._reset):
             return None
         self._live_keys.update(fold.changed)
         keys = self._live_keys if self._reset else fold.changed
+        items = tuple(fold.live_item(key) for key in sorted(keys, key=lambda key: fold.items[key].ordinal))
         publication = DisplayPublication(
             observations=tuple(self._observations),
-            items=tuple(fold.items[key] for key in sorted(keys, key=lambda key: fold.items[key].ordinal)),
+            items=items,
             continuation=fold.export_continuation(),
             reset=self._reset,
+            progress=tuple(
+                self._progress[item.id] for item in items if item.id in self._progress and "progress" in item.content
+            ),
         )
+        self._progress.clear()
         fold.changed.clear()
         self._observations.clear()
         self._observation_bytes = 0
@@ -231,6 +251,7 @@ class DisplayHistoryCollector:
         return publication
 
     def publication_failed(self) -> None:
+        self._progress.clear()
         self._observations.clear()
         self._observation_bytes = 0
         self._reset = True

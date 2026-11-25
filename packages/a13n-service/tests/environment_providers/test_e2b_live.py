@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -59,9 +60,8 @@ class SandboxFixture:
         )
 
 
-@pytest.fixture
-async def sandbox():
-    config = E2BRecipe(timeout_seconds=300, max_observation_bytes=65536, max_active_observations=4)
+@asynccontextmanager
+async def _sandbox(config: E2BRecipe):
     environment_id = "env-test-" + secrets.token_hex(8)
     async with await E2B.open_provider(credential={"api_key": os.environ["A13N_TEST_E2B_API_KEY"]}) as provider:
         state = await provider.create(config, environment_id=environment_id, operation_id="op-create")
@@ -76,6 +76,33 @@ async def sandbox():
         finally:
             await provider.destroy(config, environment_id=environment_id, state=state, operation_id="op-destroy")
             assert (await provider.inspect(config, environment_id=environment_id, state=state)).status == "absent"
+
+
+@pytest.fixture
+async def sandbox():
+    config = E2BRecipe(timeout_seconds=300, max_observation_bytes=65536, max_active_observations=4)
+    async with _sandbox(config) as fixture:
+        yield fixture
+
+
+@pytest.mark.skipif(os.environ.get("A13N_TEST_E2B_VOLUMES") != "1", reason="Requires an E2B Volumes-enabled account")
+async def test_volume_file_survives_sandbox_deletion():
+    from e2b import AsyncVolume
+
+    key = os.environ["A13N_TEST_E2B_API_KEY"]
+    volume = await AsyncVolume.create("a13n-test-" + secrets.token_hex(8), api_key=key)
+    try:
+        config = E2BRecipe(timeout_seconds=300, volume_mounts={"/mnt/data": volume.name})
+        async with _sandbox(config) as first:
+            files = first.environment.operations.files
+            assert files is not None
+            await files.write_text("/mnt/data/check.txt", "retained", mode="create")
+        async with _sandbox(config) as second:
+            files = second.environment.operations.files
+            assert files is not None
+            assert (await files.read_text("/mnt/data/check.txt")).text == "retained"
+    finally:
+        await AsyncVolume.destroy(volume.volume_id, api_key=key)
 
 
 def request(script: str, *, maximum=65536, overflow="retain", **kwargs):

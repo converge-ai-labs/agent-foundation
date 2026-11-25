@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 import { expect, it, vi } from "vitest";
 import { AppSession } from "./app-session";
 import { AppContextSelection } from "./context-selection";

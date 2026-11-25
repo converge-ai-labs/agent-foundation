@@ -42,8 +42,9 @@ def test_every_template_retains_typed_envd_overrides_and_empty_legacy_identity(p
 
 
 def test_empty_settings_leave_launch_payload_byte_for_byte_unchanged():
-    values = {"A13N_ENVD_CONFIG_JSON": '{ "monitoring": {"sample_interval_ms":1000} }', "APP_MODE": "test"}
-    assert envd_environment(values, EnvdSettings()) is values
+    expected = {"A13N_ENVD_CONFIG_JSON": '{ "monitoring": {"sample_interval_ms":1000} }', "APP_MODE": "test"}
+    values = expected.copy()
+    assert envd_environment(values, EnvdSettings()) == values == expected
 
 
 def test_template_overrides_merge_limits_without_losing_exporter_or_platform_settings():

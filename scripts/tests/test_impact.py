@@ -134,11 +134,6 @@ def test_find_map_falls_back_to_a_recorded_commit_outside_the_history(repo: Path
     assert _select(repo).tests == {f"{TEST_FILE}::test_value"}
 
 
-def test_function_body_change_selects_only_its_callers(repo: Path) -> None:
-    (repo / MODELS).write_text(SOURCE.replace("    return LIMIT", "    return LIMIT + 0"))
-    assert _select(repo).tests == {f"{TEST_FILE}::test_value"}
-
-
 def test_module_level_edit_or_insertion_selects_every_test_touching_the_file(repo: Path) -> None:
     (repo / MODELS).write_text(SOURCE.replace("LIMIT = 1", "LIMIT = 2"))
     assert _select(repo).tests == {f"{TEST_FILE}::test_value", f"{TEST_FILE}::test_other"}

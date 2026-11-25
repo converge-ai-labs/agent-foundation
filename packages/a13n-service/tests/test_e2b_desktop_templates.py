@@ -89,8 +89,8 @@ async def setup(service, monkeypatch):
     )
     assert t.status_code == 201, t.text
 
-    async def create():
-        r = await client.post("/api/v1/environments", json={"template_id": t.json()["id"]})
+    async def create(**options):
+        r = await client.post("/api/v1/environments", json={"template_id": t.json()["id"], **options})
         assert r.status_code == 201, r.text
         op = await lifecycle.claim(service.runtime, r.json()["id"], owner="test")
         assert op is not None and op.e2b_desktop_template is not None
@@ -103,6 +103,30 @@ async def expire(runtime, key):
     async with transaction(runtime.storage) as session:
         row = await session.get(builds.E2BDesktopTemplateRow, key)
         row.lease_expires_at = await now(session) - timedelta(seconds=1)
+
+
+async def test_same_template_keeps_distinct_volume_selections(setup):
+    from a13n_service.tenancy.access import principal_for
+    from a13n_service.tenancy.authorize import WorkspaceScope
+
+    runtime = setup.service.runtime
+    for volume in ("project-a", "project-b"):
+        mounts = {"/data": volume}
+        op = await setup.create(recipe_overrides={"volume_mounts": mounts})
+        assert op.target.recipe["volume_mounts"] == mounts
+        async with transaction(runtime.storage) as session:
+            original = await session.get_one(EnvironmentRow, op.environment_id)
+            scope = WorkspaceScope(original.organization_id, original.workspace_id)
+            principal = await principal_for(session, runtime.access, original.created_by_id, confinement=scope)
+            successor = await lifecycle.reserve(
+                session, principal, scope, original.template_id, limit=20, replaces=original
+            )
+            assert successor.recipe_overrides == {"volume_mounts": mounts}
+            await lifecycle.begin(session, successor, "creating")
+            identifier = successor.id
+        replacement = await lifecycle.claim(runtime, identifier, owner="test")
+        assert replacement.target.recipe["volume_mounts"] == mounts
+    assert "volume_mounts" not in (await setup.create()).target.recipe
 
 
 async def test_first_build_and_reuse_keep_instance_recipe_pinned(setup, monkeypatch):

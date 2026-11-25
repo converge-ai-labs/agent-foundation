@@ -26,6 +26,10 @@
 .inputArea > section {
   width: 100%;
 }
+.inputArea[data-handover] > .welcome,
+.inputArea[data-handover] > .context {
+  display: none;
+}
 .context {
   display: flex;
   justify-content: center;

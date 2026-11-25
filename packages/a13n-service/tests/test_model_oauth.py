@@ -17,7 +17,6 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.providers import oauth
 from a13n_service.resources.providers.tables import ModelProviderOAuthRow
-from a13n_service.settings import Settings
 from pydantic_ai.providers.openai_chatgpt import OpenAIChatGPTCredentials, OpenAIChatGPTProvider
 from sqlalchemy import event
 
@@ -494,8 +493,6 @@ async def test_removed_hosted_and_confidential_configurations_are_rejected(servi
             service.api + "/model-providers", json={"type": "openai_chatgpt", "name": "Unsupported", "config": config}
         )
         assert response.status_code == 400
-    with pytest.raises(ValueError):
-        Settings.model_validate({"providers": {"chatgpt_redirect_uri": "https://service.test/callback"}})
 
 
 async def test_disconnect_fences_inflight_login_publication(service, monkeypatch, no_task_connection):

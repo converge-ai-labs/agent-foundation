@@ -239,11 +239,25 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-it("adds a catalog model without opening details and preserves its known capabilities", async () => {
+it("adds a catalog model without opening details and leaves PDF support off by default", async () => {
+  state.catalog = {
+    items: [
+      {
+        ...entry,
+        characteristics: {
+          ...entry.characteristics,
+          capabilities: ["image_understanding", "document_understanding"],
+        },
+      },
+    ],
+    status: "ready",
+  };
   mount({ providerId: "mprov_test" });
   const user = userEvent.setup();
   await user.click(await screen.findByRole("button", { name: /GPT-5\.5/ }));
-  expect(screen.getByText("Images")).toBeTruthy();
+  const capabilities = screen.getByLabelText("Capabilities");
+  expect(capabilities.textContent).toContain("Images");
+  expect(capabilities.textContent).not.toContain("PDF documents");
   expect(screen.queryByRole("switch", { name: "Images" })).toBeNull();
   expect(screen.queryByLabelText("Model key")).toBeNull();
   expect(screen.queryByLabelText("Settings JSON")).toBeNull();
@@ -371,44 +385,12 @@ it("keeps the catalog identity and price for an edited gateway upstream ID", asy
   );
 });
 
-it("applies a newly selected model immediately, including its catalog values", async () => {
-  mount({ providerId: "mprov_test" });
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: /GPT-5\.5/ }));
-  await user.click(
-    await screen.findByRole("button", { name: "Choose a model" }),
-  );
-  await user.click(await screen.findByRole("button", { name: /GPT-5\.6/ }));
-  await user.click(screen.getByRole("button", { name: "Advanced" }));
-  expect(
-    (screen.getByLabelText("Upstream model") as HTMLInputElement).value,
-  ).toBe("gpt-5.6");
-  expect(
-    (screen.getByLabelText("Context window") as HTMLInputElement).value,
-  ).toBe("200000");
-  await user.click(screen.getByRole("button", { name: "Add model" }));
-  await waitFor(() =>
-    expect(state.POST).toHaveBeenCalledWith(modelsPath, {
-      body: {
-        provider_id: "mprov_test",
-        key: null,
-        name: "GPT-5.6",
-        description: "",
-        enabled: true,
-        config: {
-          model_name: "gpt-5.6",
-          model_api: "openai.chat_completions",
-          characteristics: secondEntry.characteristics,
-          settings: {},
-        },
-        pricing: secondEntry.pricing,
-        catalog_ref: secondEntry.ref,
-      },
-    }),
-  );
-});
-
-it("seeds image input from each selected catalog model instead of leaking the previous draft", async () => {
+it("updates the entire catalog draft when selecting a different model", async () => {
+  const imagePolicy = {
+    support_gif: false,
+    max_images: 9,
+    max_image_bytes: 2621440,
+  };
   state.catalog = {
     items: [
       {
@@ -419,11 +401,7 @@ it("seeds image input from each selected catalog model instead of leaking the pr
         ...secondEntry,
         characteristics: {
           ...secondEntry.characteristics,
-          image_input: {
-            support_gif: false,
-            max_images: 9,
-            max_image_bytes: 2621440,
-          },
+          image_input: imagePolicy,
         },
       },
     ],
@@ -440,6 +418,14 @@ it("seeds image input from each selected catalog model instead of leaking the pr
   ).toBe("false");
   await user.click(screen.getByRole("button", { name: "Choose a model" }));
   await user.click(await screen.findByRole("button", { name: /GPT-5\.6/ }));
+  expect(screen.getByLabelText("Upstream model")).toHaveProperty(
+    "value",
+    "gpt-5.6",
+  );
+  expect(screen.getByLabelText("Context window")).toHaveProperty(
+    "value",
+    "200000",
+  );
   expect(
     screen
       .getByRole("switch", { name: "Prepare images" })
@@ -457,10 +443,28 @@ it("seeds image input from each selected catalog model instead of leaking the pr
     (screen.getByLabelText("Max image size (MiB)") as HTMLInputElement).value,
   ).toBe("2.5");
   await user.click(screen.getByRole("button", { name: "Add model" }));
-  await waitFor(() => expect(state.POST).toHaveBeenCalled());
-  expect(
-    state.POST.mock.calls[0][1].body.config.characteristics.image_input,
-  ).toEqual({ support_gif: false, max_images: 9, max_image_bytes: 2621440 });
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith(modelsPath, {
+      body: {
+        provider_id: "mprov_test",
+        key: null,
+        name: "GPT-5.6",
+        description: "",
+        enabled: true,
+        config: {
+          model_name: "gpt-5.6",
+          model_api: "openai.chat_completions",
+          characteristics: {
+            ...secondEntry.characteristics,
+            image_input: imagePolicy,
+          },
+          settings: {},
+        },
+        pricing: secondEntry.pricing,
+        catalog_ref: secondEntry.ref,
+      },
+    }),
+  );
 });
 
 it("resets image input when changing providers and omits the untouched default policy", async () => {
@@ -1281,60 +1285,44 @@ it.each(["manual_callback"])(
   },
 );
 
-it.each(["catalog", "discovery"])(
-  "prefills %s metadata with PDF off and preserves manual opt-in",
-  async (source) => {
-    const facts = {
-      capabilities: ["image_understanding", "document_understanding"],
-      context_window_tokens: 1050000,
-    };
-    if (source === "discovery") {
-      accountProvider();
-      state.discovered = [
-        {
-          slug: "gpt-6.1-sol",
-          display_name: "GPT-6.1 Sol",
-          characteristics: facts,
-        },
-      ];
-    } else {
-      state.catalog = {
-        items: [{ ...entry, name: "GPT-6.1 Sol", characteristics: facts }],
-        status: "ready",
-      };
-    }
-    mount({ providerId: provider.id });
-    const user = userEvent.setup();
-    await user.click(
-      await screen.findByRole("button", { name: /GPT-6.1 Sol/ }),
-    );
-    expect(screen.getByLabelText("Capabilities").textContent).toContain(
-      "Images",
-    );
-    expect(screen.getByLabelText("Capabilities").textContent).not.toContain(
-      "PDF documents",
-    );
-    await user.click(screen.getByRole("button", { name: "Advanced" }));
-    expect(
-      screen
-        .getByRole("switch", { name: "PDF documents" })
-        .getAttribute("aria-checked"),
-    ).toBe("false");
-    expect(
-      (screen.getByLabelText("Context window") as HTMLInputElement).value,
-    ).toBe("1050000");
-    await user.click(screen.getByRole("switch", { name: "PDF documents" }));
-    await user.click(screen.getByRole("button", { name: "Add model" }));
-    await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
-    const body = state.POST.mock.calls[0][1].body;
-    expect(body.config.characteristics).toMatchObject(facts);
-    if (source === "discovery") {
-      expect(body.pricing).toBeNull();
-      expect(body.catalog_ref).toBeNull();
-      expect(body.config.model_name).toBe("gpt-6.1-sol");
-    }
-  },
-);
+it("prefills discovered metadata with PDF off and preserves manual opt-in", async () => {
+  const facts = {
+    capabilities: ["image_understanding", "document_understanding"],
+    context_window_tokens: 1050000,
+  };
+  accountProvider();
+  state.discovered = [
+    {
+      slug: "gpt-6.1-sol",
+      display_name: "GPT-6.1 Sol",
+      characteristics: facts,
+    },
+  ];
+  mount({ providerId: provider.id });
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /GPT-6.1 Sol/ }));
+  expect(screen.getByLabelText("Capabilities").textContent).toContain("Images");
+  expect(screen.getByLabelText("Capabilities").textContent).not.toContain(
+    "PDF documents",
+  );
+  await user.click(screen.getByRole("button", { name: "Advanced" }));
+  expect(
+    screen
+      .getByRole("switch", { name: "PDF documents" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  expect(
+    (screen.getByLabelText("Context window") as HTMLInputElement).value,
+  ).toBe("1050000");
+  await user.click(screen.getByRole("switch", { name: "PDF documents" }));
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalledOnce());
+  const body = state.POST.mock.calls[0][1].body;
+  expect(body.config.characteristics).toMatchObject(facts);
+  expect(body.pricing).toBeNull();
+  expect(body.catalog_ref).toBeNull();
+  expect(body.config.model_name).toBe("gpt-6.1-sol");
+});
 
 it("preserves saved PDF opt-in when editing a model", async () => {
   const saved = {

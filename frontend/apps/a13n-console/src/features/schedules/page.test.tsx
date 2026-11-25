@@ -177,147 +177,131 @@ function live(
   );
 }
 
-it.each(["cron", "once"])(
-  "previews %s timing and retries an unchanged create with the same request key",
-  async (type) => {
-    let expectedRunAt: string | undefined;
-    const user = userEvent.setup(),
-      creates: Request[] = [],
-      bodies: unknown[] = [],
-      previews: unknown[] = [];
-    show("/workspace/ws_one/schedules", async (request) => {
-      const path = new URL(request.url).pathname;
-      if (path === "/api/v1/schedules" && request.method === "GET")
-        return Response.json({ items: [], next_cursor: null });
-      if (path === "/api/v1/agents")
-        return Response.json({
-          items: [{ id: "agt_0123456789abcdef0123", name: "Reporter" }],
-          next_cursor: null,
-        });
-      if (path.endsWith("/revisions"))
-        return Response.json({ items: [], next_cursor: null });
-      if (path.endsWith("/preview")) {
-        previews.push(await request.json());
-        return Response.json({
-          items: [{ utc: at, local: "2026-10-20T08:00:00+08:00" }],
-        });
-      }
-      if (path === "/api/v1/schedules") {
-        creates.push(request);
-        bodies.push(await request.json());
-        if (creates.length === 1)
-          return Response.json(
-            { error: { code: "unavailable", message: "Temporary outage" } },
-            { status: 503 },
-          );
-        return Response.json(schedule, { status: 201 });
-      }
-      if (path.endsWith("/status")) return Response.json(status);
-      if (path.endsWith("/occurrences"))
-        return Response.json({ items: [], next_cursor: null });
-      if (path.endsWith("/stream")) return live(request, []);
-      return Response.json(schedule);
-    });
-    await user.click(
-      await screen.findByRole("button", { name: "Create schedule" }),
-    );
-    const dialog = screen.getByRole("dialog");
-    await user.type(within(dialog).getByLabelText("Name"), "Morning report");
-    if (type === "once") {
-      await user.click(
-        within(dialog).getByRole("button", { name: "One time" }),
-      );
-      await user.click(within(dialog).getByRole("button", { name: "Run at" }));
-      const picker = within(screen.getByRole("dialog", { name: "Run at" }));
-      expect(
-        picker.getByRole("button", { name: "Apply" }).hasAttribute("disabled"),
-      ).toBe(true);
-      const futureYear = new Date().getFullYear() + 1;
-      await user.selectOptions(
-        picker.getByRole("combobox", { name: "Choose the Year" }),
-        String(futureYear),
-      );
-      await user.selectOptions(
-        picker.getByRole("combobox", { name: "Choose the Month" }),
-        "1",
-      );
-      await user.click(picker.getByRole("button", { name: /February 10/ }));
-      for (const [label, value] of [
-        ["Hour", "09"],
-        ["Minute", "30"],
-        ["Second", "15"],
-      ]) {
-        await user.click(picker.getByRole("combobox", { name: label }));
-        await user.click(await screen.findByRole("option", { name: value }));
-      }
-      await user.click(picker.getByRole("button", { name: "Apply" }));
-      await waitFor(() =>
-        expect(screen.queryByRole("dialog", { name: "Run at" })).toBeNull(),
-      );
-      expectedRunAt = new Date(futureYear, 1, 10, 9, 30, 15).toISOString();
+it("previews one-time timing, refuses expired input, and retries with the same request key", async () => {
+  const user = userEvent.setup(),
+    creates: Request[] = [],
+    bodies: unknown[] = [],
+    previews: unknown[] = [];
+  show("/workspace/ws_one/schedules", async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/api/v1/schedules" && request.method === "GET")
+      return Response.json({ items: [], next_cursor: null });
+    if (path === "/api/v1/agents")
+      return Response.json({
+        items: [{ id: "agt_0123456789abcdef0123", name: "Reporter" }],
+        next_cursor: null,
+      });
+    if (path.endsWith("/revisions"))
+      return Response.json({ items: [], next_cursor: null });
+    if (path.endsWith("/preview")) {
+      previews.push(await request.json());
+      return Response.json({
+        items: [{ utc: at, local: "2026-10-20T08:00:00+08:00" }],
+      });
     }
-    await user.click(within(dialog).getByRole("combobox", { name: "Agent" }));
-    await user.click(await screen.findByRole("option", { name: "Reporter" }));
-    await user.type(within(dialog).getByLabelText("Input"), "Report");
-    await user.click(
-      within(dialog).getByRole("button", { name: "Preview next times" }),
-    );
-    expect(await screen.findByLabelText("Next scheduled times")).toBeTruthy();
-    expect(previews[0]).toMatchObject({
-      schedule:
-        type === "once"
-          ? {
-              type: "once",
-              run_at: expectedRunAt,
-            }
-          : { expression: "0 9 * * *" },
-      count: 5,
-    });
-    if (type === "once") {
-      const clock = vi
-        .spyOn(Date, "now")
-        .mockReturnValue(new Date(expectedRunAt!).getTime());
-      await user.click(
-        within(dialog).getByRole("button", { name: "Create schedule" }),
-      );
-      expect(
-        await screen.findByText(
-          "This time has already passed. Choose a future date and time.",
-        ),
-      ).toBeTruthy();
-      expect(creates).toHaveLength(0);
-      clock.mockRestore();
+    if (path === "/api/v1/schedules") {
+      creates.push(request);
+      bodies.push(await request.json());
+      if (creates.length === 1)
+        return Response.json(
+          { error: { code: "unavailable", message: "Temporary outage" } },
+          { status: 503 },
+        );
+      return Response.json(schedule, { status: 201 });
     }
+    if (path.endsWith("/status")) return Response.json(status);
+    if (path.endsWith("/occurrences"))
+      return Response.json({ items: [], next_cursor: null });
+    if (path.endsWith("/stream")) return live(request, []);
+    return Response.json(schedule);
+  });
+  await user.click(
+    await screen.findByRole("button", { name: "Create schedule" }),
+  );
+  const dialog = screen.getByRole("dialog");
+  await user.type(within(dialog).getByLabelText("Name"), "Morning report");
+  await user.click(within(dialog).getByRole("button", { name: "One time" }));
+  await user.click(within(dialog).getByRole("button", { name: "Run at" }));
+  const picker = within(screen.getByRole("dialog", { name: "Run at" }));
+  expect(
+    picker.getByRole("button", { name: "Apply" }).hasAttribute("disabled"),
+  ).toBe(true);
+  const futureYear = new Date().getFullYear() + 1;
+  await user.selectOptions(
+    picker.getByRole("combobox", { name: "Choose the Year" }),
+    String(futureYear),
+  );
+  await user.selectOptions(
+    picker.getByRole("combobox", { name: "Choose the Month" }),
+    "1",
+  );
+  await user.click(picker.getByRole("button", { name: /February 10/ }));
+  for (const [label, value] of [
+    ["Hour", "09"],
+    ["Minute", "30"],
+    ["Second", "15"],
+  ]) {
+    await user.click(picker.getByRole("combobox", { name: label }));
+    await user.click(await screen.findByRole("option", { name: value }));
+  }
+  await user.click(picker.getByRole("button", { name: "Apply" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Run at" })).toBeNull(),
+  );
+  const expectedRunAt = new Date(futureYear, 1, 10, 9, 30, 15);
+  await user.click(within(dialog).getByRole("combobox", { name: "Agent" }));
+  await user.click(await screen.findByRole("option", { name: "Reporter" }));
+  await user.type(within(dialog).getByLabelText("Input"), "Report");
+  await user.click(
+    within(dialog).getByRole("button", { name: "Preview next times" }),
+  );
+  expect(await screen.findByLabelText("Next scheduled times")).toBeTruthy();
+  expect(previews[0]).toMatchObject({
+    schedule: { type: "once", run_at: expectedRunAt.toISOString() },
+    count: 5,
+  });
+  const clock = vi.spyOn(Date, "now").mockReturnValue(expectedRunAt.getTime());
+  try {
     await user.click(
-      within(dialog).getByRole("button", {
-        name: "Create schedule",
-      }),
+      within(dialog).getByRole("button", { name: "Create schedule" }),
     );
-    await screen.findByText("Temporary outage");
-    await user.click(
-      within(dialog).getByRole("button", {
-        name: "Create schedule",
-      }),
-    );
-    await screen.findByRole("heading", { name: "Morning report" });
-    expect(creates).toHaveLength(2);
-    expect(creates[0].headers.get("Idempotency-Key")).toBe(
-      creates[1].headers.get("Idempotency-Key"),
-    );
-    expect(bodies[0]).toEqual(bodies[1]);
-    expect((bodies[0] as Schema["ScheduleCreate"]).schedule).toEqual(
-      (previews[0] as Schema["SchedulePreviewRequest"]).schedule,
-    );
-    expect(bodies[0]).toMatchObject({
-      invocation: {
-        agent_id: "agt_0123456789abcdef0123",
-        agent_revision_id: null,
-        payload: { content: [{ type: "text", text: "Report" }] },
-      },
-    });
-  },
-  15_000,
-);
+    expect(
+      await screen.findByText(
+        "This time has already passed. Choose a future date and time.",
+      ),
+    ).toBeTruthy();
+    expect(creates).toHaveLength(0);
+  } finally {
+    clock.mockRestore();
+  }
+  await user.click(
+    within(dialog).getByRole("button", {
+      name: "Create schedule",
+    }),
+  );
+  await screen.findByText("Temporary outage");
+  await user.click(
+    within(dialog).getByRole("button", {
+      name: "Create schedule",
+    }),
+  );
+  await screen.findByRole("heading", { name: "Morning report" });
+  expect(creates).toHaveLength(2);
+  expect(creates[0].headers.get("Idempotency-Key")).toBe(
+    creates[1].headers.get("Idempotency-Key"),
+  );
+  expect(bodies[0]).toEqual(bodies[1]);
+  expect((bodies[0] as Schema["ScheduleCreate"]).schedule).toEqual(
+    (previews[0] as Schema["SchedulePreviewRequest"]).schedule,
+  );
+  expect(bodies[0]).toMatchObject({
+    invocation: {
+      agent_id: "agt_0123456789abcdef0123",
+      agent_revision_id: null,
+      payload: { content: [{ type: "text", text: "Report" }] },
+    },
+  });
+}, 15_000);
 
 it("explains an empty one-time preview and clears the message when timing changes", async () => {
   const user = userEvent.setup();
@@ -757,6 +741,9 @@ it.each([false, true])(
       creates[1].headers.get("Idempotency-Key"),
     );
     expect(bodies[0]).toEqual(bodies[1]);
+    expect((bodies[0] as Schema["ScheduleCreate"]).schedule).toEqual(
+      (previews[0] as Schema["SchedulePreviewRequest"]).schedule,
+    );
     expect(bodies[0]).toMatchObject({
       state: enableImmediately ? "enabled" : "paused",
       invocation: {

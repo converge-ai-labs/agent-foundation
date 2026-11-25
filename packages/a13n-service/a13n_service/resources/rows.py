@@ -114,6 +114,11 @@ def record_update(
     return True
 
 
+def copy_name(name: str, max_length: int) -> str:
+    suffix = " (copy)"
+    return name[: max_length - len(suffix)].rstrip() + suffix
+
+
 def audit_row(
     session: AsyncSession, actor: Principal | None, row: Row, verb: str, details: dict[str, JsonValue] | None = None
 ) -> None:

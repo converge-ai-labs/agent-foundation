@@ -504,20 +504,6 @@ it("waits for shared acknowledgement and clears only captured edits after admiss
   );
 });
 
-it("submits to the lazy root through the ordinary shared draft and clears accepted input", async () => {
-  mount();
-  await screen.findByRole("textbox", { name: "Shared prompt" });
-  typeMessage("Track this");
-  await waitFor(() =>
-    expect(
-      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled"),
-    ).toBe(false),
-  );
-  expect(screen.queryByText("Ready when you are")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await waitFor(() => expect(requests).toHaveLength(1));
-  await waitFor(() => expect(draft.doc.getText("text").toString()).toBe(""));
-});
 it("submits human input while busy or paused through Bot admission only", async () => {
   snapshot = {
     ...snapshot,
@@ -1312,14 +1298,11 @@ it("keeps Bot context and cost visible while Debug reveals only left inspection 
   expect(draft.doc.getText("text").toString()).toBe("Keep this draft");
 });
 
-it.each([false, true])(
-  "keeps ordinary Thread inspection visible with Debug=%s",
-  async (debug) => {
-    localStorage.setItem("a13n-harness-ui.debug", debug ? "on" : "off");
-    mount("/threads/thread-ordinary");
-    expect(await screen.findByLabelText("Work inspection")).toBeTruthy();
-  },
-);
+it("keeps ordinary Thread inspection visible with Debug off", async () => {
+  localStorage.setItem("a13n-harness-ui.debug", "off");
+  mount("/threads/thread-ordinary");
+  expect(await screen.findByLabelText("Work inspection")).toBeTruthy();
+});
 
 it.each([
   [false, false],

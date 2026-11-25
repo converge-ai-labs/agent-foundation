@@ -16,11 +16,12 @@ import {
 } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 import { useAuth, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { ApiError } from "../../service-client";
-import type { Schema } from "../../shared/api";
+import { data, type Schema } from "../../shared/api";
+import { DuplicateAction } from "../../shared/dialogs/duplicate-action";
 import { Confirm, ConflictNotice } from "../../shared/dialogs";
 import {
   ErrorNotice,
@@ -72,6 +73,7 @@ function ScheduleContent({
     cache = useQueryClient(),
     { t } = useTranslation();
   const [webhookOpen, setWebhookOpen] = useState(false);
+  const navigate = useNavigate();
   const keys = scheduleKeys(workspace.id);
   const auth = useAuth();
   const status = useQuery(
@@ -207,6 +209,26 @@ function ScheduleContent({
                         <PlayIcon aria-hidden="true" />
                         {t("Run once")}
                       </MenuItem>
+                    )}
+                    {open && can("write") && can("run") && (
+                      <DuplicateAction
+                        sourceName={schedule.name}
+                        title={t("Duplicate schedule")}
+                        description={t(
+                          "The copy starts paused and runs with your permissions when enabled.",
+                        )}
+                        action={async (name) => {
+                          const result = await client
+                            .workspace(workspace.id)
+                            .POST("/api/v1/schedules/{schedule_id}/duplicate", {
+                              params: { path: { schedule_id: schedule.id } },
+                              body: { name },
+                            })
+                            .then(data);
+                          refresh();
+                          navigate(`${basePath}/schedules/${result.id}`);
+                        }}
+                      />
                     )}
                     {canArchive && (
                       <Confirm

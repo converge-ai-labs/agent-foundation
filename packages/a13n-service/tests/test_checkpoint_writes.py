@@ -155,11 +155,14 @@ async def test_unchanged_checkpoint_reuses_tail_without_get_and_cleanup_keeps_it
     assert await checkpoints.load_state(service.runtime.objects, second.state) is not None
 
 
-async def test_failed_commit_retains_tail_cache_and_retry_uploads_new_tail(checkpoint_attempt, service, monkeypatch):
+async def test_failed_commit_leaves_pointers_unchanged_and_retry_uploads_new_tail(
+    checkpoint_attempt, service, monkeypatch
+):
     attempt, state = checkpoint_attempt
     snapshot = attempt._snapshot()
     await attempt._commit(state, cursors={}, snapshot=snapshot)
-    before, before_bytes = attempt.committed, attempt.last_committed_tail_bytes
+    before = attempt.committed
+    assert before is not None
     changed = replace(snapshot, tail=snapshot.tail.model_copy(update={"resume_after": "1-1"}))
     commit = checkpoints.commit
 
@@ -172,7 +175,7 @@ async def test_failed_commit_retains_tail_cache_and_retry_uploads_new_tail(check
         patch.setattr(checkpoints, "commit", fail_after_write)
         with pytest.raises(RuntimeError, match="after SQL flush"):
             await attempt._commit(state, cursors={}, snapshot=changed)
-    assert (attempt.committed, attempt.last_committed_tail_bytes) == (before, before_bytes)
+    assert attempt.committed == before
     async with transaction(service.runtime.storage) as session:
         run = await session.get_one(RunRow, attempt.lease.run_id)
         assert checkpoints.Committed.of(run) == before
@@ -186,9 +189,10 @@ async def test_failed_commit_retains_tail_cache_and_retry_uploads_new_tail(check
     with monkeypatch.context() as patch:
         patch.setattr(service.runtime.objects, "put", record_put)
         await attempt._commit(state, cursors={}, snapshot=changed)
-    assert len([key for key in writes if "/tail/" in key]) == 1
-    assert attempt.committed.tail != before.tail
-    assert attempt.last_committed_tail_bytes != before_bytes
+    assert attempt.committed is not None and attempt.committed.tail != before.tail
+    assert [key for key in writes if "/tail/" in key] == [attempt.committed.tail.key]
+    tail = await checkpoints.load_tail(service.runtime.objects, attempt.committed.tail)
+    assert tail is not None and tail.resume_after == "1-1"
 
 
 async def test_narrow_checkpoint_lock_still_refuses_an_expired_lease(checkpoint_attempt, service):
@@ -201,18 +205,24 @@ async def test_narrow_checkpoint_lock_still_refuses_an_expired_lease(checkpoint_
         )
     with pytest.raises(LeaseLost):
         await attempt._commit(state, cursors={}, snapshot=attempt._snapshot())
-    assert attempt.committed is None and attempt.last_committed_tail_bytes is None
     async with transaction(service.runtime.storage) as session:
-        assert (await session.get_one(RunRow, attempt.lease.run_id)).checkpoint is None
+        run = await session.get_one(RunRow, attempt.lease.run_id)
+        assert run.checkpoint is None and run.tail is None
 
 
-async def test_restored_attempt_starts_without_a_tail_comparison_cache(checkpoint_attempt, service):
+async def test_restored_attempt_publishes_a_new_tail_on_its_first_commit(checkpoint_attempt, service):
     attempt, state = checkpoint_attempt
-    await attempt._commit(state, cursors={}, snapshot=attempt._snapshot())
+    snapshot = attempt._snapshot()
+    await attempt._commit(state, cursors={}, snapshot=snapshot)
     previous = attempt.committed
+    assert previous is not None
     plan = await _plan(service.runtime, attempt.lease)
     restored = _Attempt(service.runtime, attempt.lease, AttemptControl(), plan)
-    assert restored.committed == previous and restored.last_committed_tail_bytes is None
-    await restored._commit(state, cursors={}, snapshot=attempt._snapshot())
-    assert restored.committed.tail.key != previous.tail.key
-    assert restored.last_committed_tail_bytes == attempt.last_committed_tail_bytes
+    assert restored.committed == previous
+    await restored._commit(state, cursors={}, snapshot=snapshot)
+    async with transaction(service.runtime.storage) as session:
+        committed = checkpoints.Committed.of(await session.get_one(RunRow, attempt.lease.run_id))
+    assert committed is not None and committed.tail.key != previous.tail.key
+    tail = await checkpoints.load_tail(service.runtime.objects, committed.tail)
+    assert tail is not None
+    assert tail == await checkpoints.load_tail(service.runtime.objects, previous.tail)

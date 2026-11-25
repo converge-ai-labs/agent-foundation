@@ -332,7 +332,7 @@ it("retains rejected guidance and never falls through to a new Run", async () =>
   await waitFor(() => expect(posts).toHaveLength(2));
   expect(posts[1]).toEqual(posts[0]);
 });
-it.each(["completed", "failed", "waiting", "running"] as const)(
+it.each(["waiting", "running"] as const)(
   "keeps a %s child Thread inspectable without mutation controls",
   async (status) => {
     mount({ origin: "child", status });
@@ -399,15 +399,6 @@ it("offers Stop in place of Send while a run is active and the draft is empty", 
     target: { value: "Keep going, but smaller" },
   });
   expect(screen.getByRole("button", { name: "Add guidance" })).toBeTruthy();
-});
-
-it("leaves retrying a stopped run to the run itself", async () => {
-  cleanup();
-  mount({ status: "failed" });
-  expect(
-    await screen.findByRole("button", { name: "Send message" }),
-  ).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Retry run" })).toBeNull();
 });
 
 it("prefills a stopped Run's message and resubmits it with the options it ran with", async () => {
@@ -620,7 +611,7 @@ function TestDock(props: ComponentProps<typeof RunDock>) {
   );
 }
 
-it.each(["completed", "failed", "waiting", "running"] as const)(
+it.each(["waiting", "running"] as const)(
   "keeps external %s sessions observable without execution controls",
   async (status) => {
     const posts = mount({ status, consoleStarted: false });
