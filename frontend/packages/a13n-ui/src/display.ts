@@ -1,3 +1,21 @@
+export type ToolProgress = {
+  progress: number | null;
+  total: number | null;
+  message: string | null;
+};
+
+export function readToolProgress(value: unknown): ToolProgress | undefined {
+  const data = object(value);
+  const finite = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const progress = finite(data.progress);
+  const total = finite(data.total);
+  const message = typeof data.message === "string" ? data.message : null;
+  return progress !== null || message
+    ? { progress, total, message }
+    : undefined;
+}
+
 /** Compact display snapshots and raw-event normalization. Hosts own coverage, persistence and rendering. */
 export interface DisplayItem {
   id: string;
@@ -275,10 +293,40 @@ export class DisplayNormalizer {
       payload.type === "model_request_started"
     )
       this.groups[scope] = `${delta.run_id}:${delta.attempt}:${delta.sequence}`;
+    if (
+      [
+        "RUN_FINISHED",
+        "RUN_ERROR",
+        "SUBAGENT_FINISHED",
+        "SUBAGENT_ERROR",
+      ].includes(type)
+    ) {
+      for (const [id, item] of items) {
+        if (
+          "progress" in item.content &&
+          (scope === "root" || item.content.subagentRunId === scope)
+        ) {
+          const content = { ...item.content };
+          delete content.progress;
+          items.set(id, { ...item, content });
+        }
+      }
+    }
     const ref = delta.item;
     if (!ref) return;
     const previous = items.get(ref.id);
+    if (name === "a13n.harness.tool_progress") {
+      if (previous?.state === "in_progress" && ref.state === "in_progress") {
+        const progress = readToolProgress(payload);
+        items.set(ref.id, {
+          ...previous,
+          content: { ...previous.content, progress },
+        });
+      }
+      return;
+    }
     let content: Record<string, unknown> = { ...previous?.content };
+    if (ref.state !== "in_progress") delete content.progress;
     for (const key of copied) if (key in event) content[key] = event[key];
     if (
       this.groups[scope] &&

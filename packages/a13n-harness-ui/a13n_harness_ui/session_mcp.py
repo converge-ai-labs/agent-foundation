@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from a13n_harness.context import AgentContext
-from a13n_harness.mcp import InitializationRetryClient, MCPServer, ToolsetFactory
+from a13n_harness.mcp import InitializationRetryClient, MCPServer, ProgressMCPToolset, ToolsetFactory
 from a13n_logging import get_logger
 from acp import RequestError
 from acp.schema import McpServerStdio
@@ -44,7 +44,7 @@ class SessionMcpServer:
                     init_timeout=30,
                     elicitation_handler=_decline_elicitation if ctx.deps.unattended else None,
                 )
-                return MCPToolset(client, id=capability_id)
+                return ProgressMCPToolset(client, id=capability_id)
 
             return start
 

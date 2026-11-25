@@ -4,12 +4,12 @@ import json
 
 import httpx2
 import pytest
-from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessEvent, HarnessExtensionEvent, RunBindings
 from a13n_service.providers.tools import ToolDispatch
 from a13n_service.providers.tools.mcp import mcp_capability, mcp_client
 from a13n_service.resources.connections.runtime import _checked
 from a13n_service.resources.connections.schemas import ConnectionSelection
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.server.middleware import Middleware
 from mcp_types import CLIENT_CAPABILITIES_META_KEY
 from pydantic_ai.exceptions import ToolFailed
@@ -189,3 +189,57 @@ async def test_attempt_shares_client_across_runs_but_isolates_caller_bindings(se
         assert not any(client.is_connected() for client in clients)
         assert server.echoed == ["first", "second", "third"]
         assert len(dispatches) == 3
+
+
+async def test_attempt_reports_real_mcp_progress_without_model_content():
+    import asyncio
+
+    server = FastMCP("Progress")
+    first = asyncio.Event()
+    trailing = asyncio.Event()
+
+    @server.tool
+    async def index(ctx: Context) -> str:
+        await ctx.report_progress(1, 100, "x" * 600)
+        await first.wait()
+        for progress in range(2, 100):
+            await ctx.report_progress(progress, message="Still indexing")
+        await trailing.wait()
+        return "indexed"
+
+    async def model(messages, info):
+        assert "Still indexing" not in str(messages)
+        assert "x" * 512 not in str(messages)
+        if not any("indexed" in str(message) for message in messages):
+            yield {0: DeltaToolCall(name="index", json_args="{}", tool_call_id="index-call")}
+        else:
+            yield "done"
+
+    async with serve(server.http_app(path="/mcp")) as url:
+        async with mcp_client(url + "/mcp", "connection-one", httpx2.AsyncClient(), timeout=5) as client:
+
+            async def acquire():
+                return client
+
+            async def prepare():
+                return acquire
+
+            async def check(dispatch):
+                assert dispatch.tool_call_id == "index-call"
+
+            capability = mcp_capability("connection-one", prepare, tools=None, check=check)
+            executable = HarnessBuilder().build(
+                AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=(capability,)
+            )
+            updates = []
+            async with asyncio.timeout(8), executable.stream("Index", bindings=RunBindings.embedded()) as stream:
+                async for item in stream:
+                    if isinstance(item, HarnessEvent) and isinstance(item.event, HarnessExtensionEvent):
+                        if item.event.kind == "tool_progress":
+                            updates.append(item.event.payload)
+                            first.set()
+                            if item.event.payload["progress"] == 99:
+                                trailing.set()
+    assert updates[0] == {"tool_call_id": "index-call", "progress": 1.0, "total": 100.0, "message": "x" * 512}
+    assert updates[-1] == {"tool_call_id": "index-call", "progress": 99.0, "total": None, "message": "Still indexing"}
+    assert len(updates) < 10

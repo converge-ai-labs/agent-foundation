@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from a13n_harness import HarnessEvent
+from a13n_harness import HarnessEvent, HarnessExtensionEvent
 from a13n_stream_protocol import AguiObservationError, HarnessAguiObserver
 from a13n_stream_protocol.display import DisplayFold
 from pydantic_ai.messages import (
@@ -377,3 +377,46 @@ def test_checkpoint_delta_is_detached_and_independent_of_live_drain():
     corrected.items[0].content["text"] = "caller mutation"
     assert next(iter(fold.items.values())).content["text"] == "a correction"
     assert fold.capture_delta().items == []
+
+
+@pytest.mark.parametrize("finish", ["completed", "failed", "interrupted"])
+def test_tool_progress_is_scoped_live_only_and_cleared_at_terminal(finish):
+    fold = DisplayFold("run")
+    fold.fold([{"type": "TOOL_CALL_START", "toolCallId": "call", "toolCallName": "index"}])
+    item_id = next(iter(fold.items))
+    committed = fold.capture_delta().items
+
+    def report(call_id, message):
+        source = HarnessEvent(
+            thread_id="thread",
+            run_id="run",
+            sequence=1,
+            occurred_at=datetime.now(UTC),
+            event=HarnessExtensionEvent(kind="tool_progress", payload={"tool_call_id": call_id, "message": message}),
+        )
+        return fold.fold(fold.events(source), source)[0]
+
+    assert report("other", "not ours").item is None
+    observation = report("call", "Indexing")
+    assert observation.event["name"] == "a13n.harness.tool_progress"
+    assert observation.item.id == item_id
+    assert fold.live_item(item_id).content["progress"]["message"] == "Indexing"
+    assert fold.export().items == committed
+    assert fold.capture_delta().items == []
+    assert "Indexing" not in fold.export().model_dump_json()
+    if finish == "interrupted":
+        fold.fold([{"type": "RUN_ERROR", "message": "Cancelled"}])
+    else:
+        fold.fold(
+            [
+                {
+                    "type": "TOOL_CALL_RESULT",
+                    "toolCallId": "call",
+                    "content": "ok",
+                    "metadata": {"a13n.system-failure": finish == "failed"},
+                }
+            ]
+        )
+        assert fold.items[item_id].state == finish
+        assert report("call", "late update").item is None
+    assert "progress" not in fold.live_item(item_id).content

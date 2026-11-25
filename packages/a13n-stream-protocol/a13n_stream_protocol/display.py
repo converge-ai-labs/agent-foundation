@@ -11,10 +11,11 @@ from datetime import UTC, datetime
 from typing import Any, Literal, cast
 
 from a13n_harness import HarnessEvent, HarnessStreamEvent
+from a13n_harness.events import ToolProgressPayload
 from a13n_harness.tools._output import tool_execution_value
 from a13n_harness.tools.diagnostics import SYSTEM_FAILURE_METADATA_KEY
 from ag_ui.core import Event, TextPart, ToolCallArgsEvent, ToolCallResultEvent
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 from pydantic_ai.messages import (
     FunctionToolResultEvent,
     ModelMessage,
@@ -28,7 +29,7 @@ from pydantic_ai.messages import (
 from a13n_stream_protocol import AUTHORED_INPUT_EVENT_NAMES, HarnessAguiStreamObserver, tool_result_content
 from a13n_stream_protocol.fragments import CustomEventAssembler, FragmentState
 from a13n_stream_protocol.memory import MemorySource, memory_sources
-from a13n_stream_protocol.observer import AguiEventProcessor, ObserverContinuation
+from a13n_stream_protocol.observer import TOOL_PROGRESS_EVENT, AguiEventProcessor, ObserverContinuation
 
 type ItemKind = Literal["text_message", "reasoning_message", "tool_call", "observation"]
 type ItemState = Literal["in_progress", "completed", "interrupted", "failed"]
@@ -298,6 +299,7 @@ class DisplayFold:
         self.run_id, self.attempt = run_id, attempt
         self.items = {item.id: item.model_copy(deep=True) for item in items}
         self.next = first + len(items)
+        self._progress: dict[str, ToolProgressPayload] = {}
         self.changed: set[str] = set(self.items)
         self._checkpoint_changed: set[str] = set(self.items)
         self.sequence = 0
@@ -324,6 +326,13 @@ class DisplayFold:
             self.memory_sources = state.memory_sources
             self.assembler = CustomEventAssembler.restore(state.fragments)
             self.observer = HarnessAguiStreamObserver.restore(state.observer, processor=process)
+
+    def live_item(self, key: str) -> Item:
+        """Apply the live overlay without changing the durable item or its cursor."""
+        item = self.items[key]
+        if item.state == "in_progress" and (progress := self._progress.get(key)) is not None:
+            return item.model_copy(update={"content": {**item.content, "progress": progress.model_dump(mode="json")}})
+        return item
 
     def export(self) -> DisplaySnapshot:
         """Detach a pure cut. Export never ends, interrupts or pages active content."""
@@ -388,12 +397,19 @@ class DisplayFold:
         """The AG-UI events of one Harness event, as the JSON the stream carries."""
         return [event.model_dump(mode="json", by_alias=True) for event in self.observer.observe(source)]
 
-    def fold(self, events: Sequence[dict[str, Any]], source: HarnessStreamEvent[Any] | None = None) -> list[Observed]:
+    def fold(
+        self,
+        events: Sequence[dict[str, Any]],
+        source: HarnessStreamEvent[Any] | None = None,
+        *,
+        sequence_progress: bool = True,
+    ) -> list[Observed]:
         """Give each event the next sequence and fold it. When `source` is a tool result the observer does not
         present, its call's item fails and the last event reports it."""
         observed: list[Observed] = []
         for payload in events:
-            self.sequence += 1
+            if sequence_progress or payload.get("name") != TOOL_PROGRESS_EVENT:
+                self.sequence += 1
             ref = self._fold(payload)
             if ref is not None and payload["type"] == "TEXT_MESSAGE_END":
                 sources = self.items[ref.id].content.get("memory_sources")
@@ -416,6 +432,12 @@ class DisplayFold:
         event_type = payload["type"]
         if event_type == "CUSTOM":
             return self._observation(payload)
+        if event_type in {"RUN_FINISHED", "RUN_ERROR", "SUBAGENT_FINISHED", "SUBAGENT_ERROR"}:
+            scope = payload.get("subagentRunId")
+            for key in tuple(self._progress):
+                item = self.items.get(key)
+                if item is None or scope is None or item.content.get("subagentRunId") == scope:
+                    self.clear_progress(key)
         if event_type in {
             "RUN_STARTED",
             "RUN_FINISHED",
@@ -480,6 +502,8 @@ class DisplayFold:
         return self._put(key, kind, state, content, at=_occurred(payload))
 
     def _observation(self, payload: dict[str, Any]) -> ItemRef | None:
+        if payload.get("name") == TOOL_PROGRESS_EVENT:
+            return self._observe_progress(payload)
         if (streamed := fragment(payload)) is not None:
             return None if self.full_content else self._arguments(payload, *streamed)
         assembled = self.assembler.accept(payload)
@@ -562,6 +586,25 @@ class DisplayFold:
         if "subagentRunId" in assembled:
             content["subagentRunId"] = cast(JsonValue, assembled["subagentRunId"])
         return self._put(key, "observation", "completed", content, at=_occurred(payload))
+
+    def clear_progress(self, key: str) -> None:
+        if self._progress.pop(key, None) is not None and key in self.items:
+            self.changed.add(key)
+
+    def _observe_progress(self, event: dict[str, Any]) -> ItemRef | None:
+        try:
+            progress = ToolProgressPayload.model_validate(event["value"]["event"]["payload"], strict=True)
+        except (KeyError, TypeError, ValidationError):
+            return None
+        scope = event.get("subagentRunId")
+        call_id = progress.tool_call_id
+        key = item_id(self.run_id, "tool_call", f"{scope}:{call_id}" if scope else call_id)
+        item = self.items.get(key)
+        if item is None or item.state != "in_progress":
+            return None
+        self._progress[key] = progress
+        self.changed.add(key)
+        return ItemRef(id=key, kind="tool_call", state=item.state, ordinal=item.ordinal)
 
     def _tool_observation(self, event: Mapping[str, object], value: dict[str, Any]) -> ItemRef | None:
         name, part = event.get("name"), value.get("part")
@@ -668,6 +711,8 @@ class DisplayFold:
         *,
         at: datetime,
     ) -> ItemRef:
+        if state != "in_progress":
+            self._progress.pop(key, None)
         position = str(self.position)
         previous = self.items.get(key)
         if previous is None:

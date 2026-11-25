@@ -2,7 +2,13 @@ import { useBackground } from "./background-context";
 import { BackgroundLink, useBackgroundHandoff } from "./background-links";
 import conversation from "./conversation.module.css";
 import { createContext, memo, useContext, useMemo, useState } from "react";
-import { AguiContent, Button, ScrollArea, DisclosureSection } from "a13n-ui";
+import {
+  AguiContent,
+  Button,
+  ScrollArea,
+  DisclosureSection,
+  ToolProgressLine,
+} from "a13n-ui";
 import { Link } from "react-router";
 import { useTranslation } from "../i18n";
 import { useGuestAccess } from "../transport/context";
@@ -830,6 +836,9 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
       >
         <ToolDetails tool={tool} />
       </DisclosureSection>
+      {info.running && tool.progress && (
+        <ToolProgressLine value={tool.progress} label={toolLabel(info, t)} />
+      )}
       <ToolActions tool={tool} />
     </section>
   );
@@ -945,7 +954,9 @@ export const ToolActivity = memo(function ToolActivity({
   tools: ToolView[];
 }) {
   const { t } = useTranslation();
-  const kind = activityKind(tools[0]);
+  const kind = tools.some((tool) => tool.progress)
+    ? undefined
+    : activityKind(tools[0]);
   const handoff = useBackgroundHandoff(
     kind && tools.length === 1 ? tools[0] : undefined,
   );

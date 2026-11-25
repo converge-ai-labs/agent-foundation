@@ -1,12 +1,13 @@
 import type { ContentPart } from "@ag-ui/core";
 import { readContentParts } from "a13n-ui";
-import { toolExecutionReceipt } from "a13n-ui/display";
+import { toolExecutionReceipt, type ToolProgress } from "a13n-ui/display";
 import type { Schema } from "../transport/client";
 import { ProcessObservations } from "./process-observations";
 
 export type AppliedEdit = { file_path: string; before: string; after: string };
 export type ToolView = {
   live?: boolean;
+  progress?: ToolProgress;
   durationMs?: number;
   id: string;
   toolCallId?: string;

@@ -4,6 +4,7 @@ import { readContentParts } from "a13n-ui";
 import {
   DisplayNormalizer,
   isDisplayItem,
+  readToolProgress,
   type DisplayContinuation,
   type DisplayItem,
 } from "a13n-ui/display";
@@ -43,6 +44,7 @@ export type DisplayBlock = {
   subagentRunId?: string;
   done?: boolean;
   outcome?: ToolView["outcome"];
+  progress?: ToolView["progress"];
   failure?: string;
   retry?: boolean;
   stopped?: boolean;
@@ -306,7 +308,24 @@ export class FocusDisplay {
   private foldRoot(event: Schema<"LiveEvent">) {
     const position = event.display_position;
     if (!position) {
-      this.fold(event.event_type, event.payload, event.payload_omitted);
+      if (
+        object(event.payload) &&
+        event.payload.name === "a13n.harness.tool_progress" &&
+        event.item
+      ) {
+        const block = this.blocks.get(event.item.id);
+        if (block?.stopped) return;
+        this.normalizer.apply(this.items, {
+          run_id: event.run_id,
+          ...(this.displayPosition ?? { attempt: 0, sequence: 0 }),
+          event: event.payload,
+          item: event.item,
+        });
+        const item = this.items.get(event.item.id);
+        if (item) this.displayItem(item);
+      } else {
+        this.fold(event.event_type, event.payload, event.payload_omitted);
+      }
       return;
     }
     if (event.payload_omitted || !event.payload)
@@ -705,7 +724,7 @@ export class FocusDisplay {
       if (block.subagentRunId)
         this.processes.end(`${this.runId}:${block.subagentRunId}`);
       if (block.kind === "tool")
-        this.blocks.set(key, { ...block, stopped: true });
+        this.blocks.set(key, { ...block, stopped: true, progress: undefined });
     }
   }
   private displayItem(item: DisplayItem) {
@@ -782,6 +801,7 @@ export class FocusDisplay {
       done: item.state !== "in_progress",
     };
     if (item.kind === "tool_call") {
+      if (!block.done) block.progress = readToolProgress(content.progress);
       block.name = string(content.toolCallName);
       block.toolCallId = string(content.toolCallId);
       block.result =

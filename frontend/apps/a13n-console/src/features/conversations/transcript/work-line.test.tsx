@@ -279,3 +279,54 @@ it("carries the same edits and delegations Debug reports", () => {
     'href="/workspace/design/sessions/ses_1/threads/thr_child/runs/run_child?view=debug"',
   );
 });
+
+it("renders progress as plain text, with a bar only for a known total", () => {
+  const content = (state: string) =>
+    blocks(
+      [
+        tool(
+          "one",
+          "index_documents",
+          {},
+          {
+            state,
+            progress: { progress: 7, total: 10, message: "Indexing documents" },
+          },
+        ),
+        tool(
+          "two",
+          "inspect_files",
+          {},
+          {
+            state,
+            progress: { progress: null, total: null, message: "<img src=x>" },
+          },
+        ),
+        tool(
+          "three",
+          "read_records",
+          {},
+          { state, progress: { progress: 0, total: null, message: null } },
+        ),
+      ],
+      "running",
+    );
+  const view = render(
+    <AgentTurn
+      runId="run"
+      agentName="Indexer"
+      blocks={content("in_progress")}
+    />,
+  );
+  expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
+    "70",
+  );
+  expect(screen.getByText("<img src=x>")).toBeTruthy();
+  expect(screen.getByText("0")).toBeTruthy();
+  expect(view.container.querySelector("img[src=x]")).toBeNull();
+  view.rerender(
+    <AgentTurn runId="run" agentName="Indexer" blocks={content("completed")} />,
+  );
+  expect(screen.queryByRole("progressbar")).toBeNull();
+  expect(screen.queryByText("<img src=x>")).toBeNull();
+});

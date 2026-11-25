@@ -88,6 +88,9 @@ _MUTABLE_FIELDS_BY_EVENT_TYPE: dict[object, frozenset[str]] = {
 type AguiEventProcessor = Callable[[HarnessStreamEvent[Any], Event], Event | None]
 
 
+TOOL_PROGRESS_EVENT = "a13n.harness.tool_progress"
+
+
 class AguiObservationError(ValueError):
     """A public Harness item could not be observed without changing its meaning."""
 
@@ -218,7 +221,9 @@ class HarnessAguiObserver:
         self._run_id = self._run_id or item.run_id
         self._state = staged_state
         if self._retain_events:
-            self._events.extend(stored)
+            self._events.extend(
+                event for event in stored if not (isinstance(event, CustomEvent) and event.name == TOOL_PROGRESS_EVENT)
+            )
             return _copy_events(stored)
         return stored
 

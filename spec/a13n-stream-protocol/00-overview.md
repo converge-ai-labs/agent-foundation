@@ -125,6 +125,12 @@ The fold supports detached changed-item capture with parser continuation for Hos
 
 A compact baseline and its parser continuation plus an intact raw-event suffix reconstruct the same items as the fold. It is not execution history, a terminal authority, or a promise that uncommitted output survives transport loss. The memory target is retained display content plus active conversion state and bounded delivery buffers, not constant total conversation memory.
 
+### Live tool progress
+
+`a13n.harness.tool_progress` carries a Harness extension payload with `tool_call_id: str`, nullable `progress` and `total` numbers, and a nullable plain-text `message` of at most 512 characters. Locally executed MCP tool calls correlate notifications using the original call identity and inline scope. The producer coalesces rapid updates per call in roughly 250 ms windows, keeping the latest value while the call is active. This channel carries request progress notifications; MCP Task status polling is separate.
+
+The display fold attaches the latest update to the matching `in_progress` tool call. It clears the overlay when the call or its execution ends. Observer history, exported items, checkpoint deltas, parser continuation and model messages exclude progress. A live transport may deliver progress on a lossy lane separate from its contiguous display suffix; a checkpoint does not restore the overlay.
+
 ### Reply memory sources
 
 At `TEXT_MESSAGE_END`, assistant text items receive `content.memory_sources` from automatic memory delivery observations seen in their own inline scope during this Run. The corresponding live item reference carries the same `memory_sources` array once, rather than repeating it on each text delta. Sources are historical delivery evidence, not model citations, a promise that all supplied content remains in the current model context, or an inventory of inherited history and explicit memory tool reads.
