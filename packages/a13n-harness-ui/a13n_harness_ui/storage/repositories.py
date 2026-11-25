@@ -430,6 +430,8 @@ class ThreadRepository:
             session.add(CoordinatorRecord(thread_id=thread_id))
 
     async def coordinators(self, thread_ids: tuple[str, ...] | None = None) -> dict[str, Coordinator]:
+        if thread_ids is not None and not thread_ids:
+            return {}
         async with short_session(self._sessions) as session:
             statement = select(CoordinatorRecord)
             if thread_ids is not None:
@@ -439,6 +441,23 @@ class ThreadRepository:
                 record.thread_id: Coordinator(thread_id=record.thread_id, auto_followup=record.auto_followup)
                 for record in records
             }
+
+    async def roles(self, thread_ids: tuple[str, ...]) -> tuple[dict[str, str], dict[str, Coordinator]]:
+        if not thread_ids:
+            return {}, {}
+        async with short_session(self._sessions) as session:
+            owner_rows = await session.scalars(
+                select(CoordinatorWorkerRecord).where(CoordinatorWorkerRecord.worker_thread_id.in_(thread_ids))
+            )
+            owners = {row.worker_thread_id: row.coordinator_thread_id for row in owner_rows}
+            coordinator_rows = await session.scalars(
+                select(CoordinatorRecord).where(CoordinatorRecord.thread_id.in_(thread_ids))
+            )
+            coordinators = {
+                record.thread_id: Coordinator(thread_id=record.thread_id, auto_followup=record.auto_followup)
+                for record in coordinator_rows
+            }
+            return owners, coordinators
 
     async def set_auto_followup(self, thread_id: str, auto_followup: bool) -> None:
         async with transaction(self._sessions) as session:
@@ -527,13 +546,66 @@ class ThreadRepository:
 
     async def get(self, thread_id: str) -> Thread | None:
         async with short_session(self._sessions) as session:
-            record = await session.get(ThreadRecord, thread_id)
-            if record is None:
+            row = (
+                await session.execute(
+                    select(ThreadRecord, ThreadConfigurationRecord)
+                    .outerjoin(
+                        ThreadConfigurationRecord,
+                        ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id,
+                    )
+                    .where(ThreadRecord.thread_id == thread_id)
+                )
+            ).one_or_none()
+            if row is None:
                 return None
-            configuration = await session.get(ThreadConfigurationRecord, thread_id)
+            record, configuration = row
             if configuration is None:
                 raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
             return _thread_value(record, _configuration_value(configuration))
+
+    async def get_with_roles(self, thread_id: str) -> tuple[Thread, dict[str, str], dict[str, Coordinator]] | None:
+        async with short_session(self._sessions) as session:
+            row = (
+                await session.execute(
+                    select(
+                        ThreadRecord,
+                        ThreadConfigurationRecord,
+                        CoordinatorWorkerRecord.coordinator_thread_id,
+                        CoordinatorRecord,
+                    )
+                    .outerjoin(
+                        ThreadConfigurationRecord,
+                        ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id,
+                    )
+                    .outerjoin(
+                        CoordinatorWorkerRecord,
+                        CoordinatorWorkerRecord.worker_thread_id == ThreadRecord.thread_id,
+                    )
+                    .outerjoin(
+                        CoordinatorRecord,
+                        CoordinatorRecord.thread_id == ThreadRecord.thread_id,
+                    )
+                    .where(ThreadRecord.thread_id == thread_id)
+                )
+            ).one_or_none()
+            if row is None:
+                return None
+            record, configuration, owner_id, coordinator_record = row
+            if configuration is None:
+                raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
+            thread = _thread_value(record, _configuration_value(configuration))
+            owners = {thread_id: owner_id} if owner_id is not None else {}
+            coordinators = (
+                {
+                    thread_id: Coordinator(
+                        thread_id=coordinator_record.thread_id,
+                        auto_followup=coordinator_record.auto_followup,
+                    )
+                }
+                if coordinator_record is not None
+                else {}
+            )
+            return thread, owners, coordinators
 
     async def delete(
         self,

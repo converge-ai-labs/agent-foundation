@@ -8,15 +8,20 @@ from pathlib import Path
 from anyio import CancelScope, current_time, sleep, to_thread
 from filelock import FileLock, Timeout
 
+_PREPARED_DIRS: set[Path] = set()
+
 
 @asynccontextmanager
 async def checkpoint_lock(root: Path, thread_id: str) -> AsyncGenerator[None]:
     """Protect file use, not Run ownership; never hold across model or tool work."""
     directory = root / "checkpoint-locks"
-    await to_thread.run_sync(lambda: directory.mkdir(mode=0o700, parents=True, exist_ok=True))
+    if directory not in _PREPARED_DIRS or not directory.is_dir():
+        await to_thread.run_sync(lambda: directory.mkdir(mode=0o700, parents=True, exist_ok=True))
+        _PREPARED_DIRS.add(directory)
     identity = sha256(thread_id.encode()).hexdigest()
     lock = FileLock(directory / f"{identity}.lock", timeout=0, thread_local=False, mode=0o600)
     acquired = False
+    delay = 0.005
     try:
         # Polling already provides cancellation checkpoints. A long-lived timeout
         # timer would capture the caller's RunContext even after being cancelled.
@@ -29,7 +34,8 @@ async def checkpoint_lock(root: Path, thread_id: str) -> AsyncGenerator[None]:
                 await to_thread.run_sync(lock.acquire)
                 acquired = True
             except Timeout:
-                await sleep(min(0.05, remaining))
+                await sleep(min(delay, remaining))
+                delay = min(delay * 2, 0.025)
         yield
     finally:
         if acquired:

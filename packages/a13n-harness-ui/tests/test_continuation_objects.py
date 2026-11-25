@@ -163,5 +163,50 @@ async def test_continuation_publication_skips_message_history_decoding_and_round
         monkeypatch.setattr(state_module, "decode_messages", counted_decode)
         ref = await publish_continuation(store.objects, prepared)
         assert decode_calls == 0
+        assert await store.objects.count() == len(await store.objects.references())
         restored = await read_continuation(store.objects, ref, include_display=True)
         assert restored == prepared
+
+
+async def test_child_checkpoint_publication_skips_message_history_decoding_and_roundtrips(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+
+    from a13n_harness import DeferredToolRequests
+    from a13n_harness import state as state_module
+    from a13n_harness_ui.storage.contracts import CompactChildDisplay, StoredChildCheckpoint
+
+    value = checkpoint()
+    child = StoredChildCheckpoint(
+        harness_release="test",
+        execution_id="exec-1",
+        child_thread_id=value.harness_state.thread_id,
+        child_run_id="run-1",
+        segment_index=0,
+        run_composition=value.run_composition,
+        deferred_requests=DeferredToolRequests(),
+        harness_state=value.harness_state,
+        memory_cursors={"project": "cursor-1"},
+        display=CompactChildDisplay(),
+        terminal=False,
+        created_at=datetime.now(UTC),
+    )
+    python_dump = child.model_dump()
+    assert isinstance(python_dump["created_at"], datetime)
+    json_dump = child.model_dump(mode="json")
+    assert set(json_dump) == set(StoredChildCheckpoint.model_fields)
+    json_keys = list(json_dump.keys())
+    assert json_keys.index("memory_cursors") < json_keys.index("display")
+    async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
+        decode_calls = 0
+        original_decode = state_module.decode_messages
+
+        def counted_decode(raw):
+            nonlocal decode_calls
+            decode_calls += 1
+            return original_decode(raw)
+
+        monkeypatch.setattr(state_module, "decode_messages", counted_decode)
+        published = await store.objects.publish_model(object_kind=ObjectKind.child_checkpoint, value=child)
+        assert decode_calls == 0
+        restored = await store.objects.read_model(published.ref, StoredChildCheckpoint)
+        assert restored == child

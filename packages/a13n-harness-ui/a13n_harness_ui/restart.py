@@ -2,20 +2,20 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessState
 from a13n_harness.context import AgentContext
 from a13n_harness.model_context import ModelContextCoordinatorCapability
 from a13n_logging import get_logger
-from anyio import Event, Lock, create_task_group, move_on_after
+from anyio import CancelScope, Event, Lock, create_task_group, move_on_after
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness_ui.errors import RunCoordinationError
-from a13n_harness_ui.restart_models import RestartBatch, RestartItem
+from a13n_harness_ui.restart_models import RestartBatch, RestartItem, RestartResult
 from a13n_harness_ui.shutdown import Shutdown
 from a13n_harness_ui.storage.restarts import RestartRepository
 
@@ -27,6 +27,20 @@ class PausingRun:
     boundary: RestartItem | None = None
     state: HarnessState | None = None
     release: Event = field(default_factory=Event)
+
+
+@dataclass
+class _CandidateOp:
+    kind: Literal["boundary", "invalidate"]
+    thread_id: str
+    item: RestartItem | None = None
+    cancelled: bool = False
+
+
+@dataclass
+class _CandidateBatch:
+    ops: list[_CandidateOp] = field(default_factory=list)
+    completed: bool = False
 
 
 class GracefulRestart:
@@ -49,7 +63,9 @@ class GracefulRestart:
         self._candidates: dict[str, RestartItem] = {}
         self._suppressed: set[str] = set()
         self._candidate_lock = Lock()
+        self._next_batch: _CandidateBatch | None = None
         self._watch_id = f"restart-{uuid4().hex}"
+        self._cached_results: tuple[RestartResult, ...] | None = None
 
     def signal(self) -> None:
         self.changed.set()
@@ -64,36 +80,96 @@ class GracefulRestart:
     async def _publish_candidates(self) -> None:
         # The WebUI automation ownership lock fences this writer across Apps;
         # the local lock serializes concurrent root checkpoint/response hooks.
-        previous = await self.repository.get()
+        if self._cached_results is None:
+            previous = await self.repository.get()
+            self._cached_results = previous.results if previous is not None else ()
         await self.repository.publish(
             RestartBatch(
                 batch_id=self._watch_id,
                 state="watching",
                 items=tuple(self._candidates.values()),
-                results=previous.results if previous is not None else (),
+                results=self._cached_results,
             )
         )
+
+    def _compute_batch_state(
+        self,
+        ops: list[_CandidateOp],
+        base_candidates: dict[str, RestartItem],
+        base_boundaries: dict[str, RestartItem | None],
+    ) -> tuple[dict[str, RestartItem], dict[str, RestartItem | None]]:
+        candidates = dict(base_candidates)
+        boundaries = dict(base_boundaries)
+        for pending in ops:
+            if pending.cancelled:
+                continue
+            if pending.kind == "boundary" and pending.item is not None:
+                if pending.thread_id in self.active:
+                    boundaries[pending.thread_id] = pending.item
+                    if not self.restoring and pending.thread_id not in self._suppressed:
+                        candidates[pending.thread_id] = pending.item
+            elif pending.kind == "invalidate":
+                candidates.pop(pending.thread_id, None)
+        return candidates, boundaries
+
+    def _restore_state(
+        self,
+        candidates: dict[str, RestartItem],
+        boundaries: dict[str, RestartItem | None],
+    ) -> None:
+        self._candidates = dict(candidates)
+        for tid, entry in self.active.items():
+            if tid in boundaries:
+                entry.boundary = boundaries[tid]
+
+    async def _commit_candidate_op(self, op: _CandidateOp) -> None:
+        batch = self._next_batch
+        if batch is None:
+            batch = _CandidateBatch()
+            self._next_batch = batch
+        batch.ops.append(op)
+        leader_committed = False
+        try:
+            async with self._candidate_lock:
+                if batch.completed:
+                    return
+                if self._next_batch is batch:
+                    self._next_batch = None
+                base_candidates = dict(self._candidates)
+                base_boundaries = {tid: entry.boundary for tid, entry in self.active.items()}
+                applied_ops = [pending for pending in batch.ops if not pending.cancelled]
+                next_candidates, next_boundaries = self._compute_batch_state(
+                    applied_ops, base_candidates, base_boundaries
+                )
+                self._restore_state(next_candidates, next_boundaries)
+                if next_candidates != base_candidates:
+                    try:
+                        await self._publish_candidates()
+                    except BaseException:
+                        self._restore_state(base_candidates, base_boundaries)
+                        raise
+                batch.completed = True
+                leader_committed = True
+                if any(pending.cancelled for pending in applied_ops):
+                    reconciled_candidates, reconciled_boundaries = self._compute_batch_state(
+                        applied_ops, base_candidates, base_boundaries
+                    )
+                    self._restore_state(reconciled_candidates, reconciled_boundaries)
+                    if reconciled_candidates != next_candidates:
+                        with CancelScope(shield=True):
+                            await self._publish_candidates()
+        except BaseException:
+            if not leader_committed:
+                op.cancelled = True
+                if not batch.completed and self._next_batch is batch and all(item.cancelled for item in batch.ops):
+                    self._next_batch = None
+            raise
 
     async def boundary(self, item: RestartItem) -> None:
         """Arm a saved root request; child executions retain separate ownership."""
         if not self.enabled:
             return
-        async with self._candidate_lock:
-            entry = self.active.get(item.thread_id)
-            if entry is None:
-                return
-            entry.boundary = item
-            if not self.restoring and item.thread_id not in self._suppressed:
-                previous = self._candidates.get(item.thread_id)
-                self._candidates[item.thread_id] = item
-                try:
-                    await self._publish_candidates()
-                except BaseException:
-                    if previous is None:
-                        self._candidates.pop(item.thread_id, None)
-                    else:
-                        self._candidates[item.thread_id] = previous
-                    raise
+        await self._commit_candidate_op(_CandidateOp(kind="boundary", thread_id=item.thread_id, item=item))
 
     async def invalidate(self, thread_id: str, *, suppress: bool = False) -> None:
         """Withdraw before response processing, explicit Stop, or terminal retirement."""
@@ -103,17 +179,11 @@ class GracefulRestart:
         # waiting to withdraw the durable process-loss candidate.
         if suppress:
             self._suppressed.add(thread_id)
-        async with self._candidate_lock:
-            previous = self._candidates.pop(thread_id, None)
-            if previous is not None:
-                try:
-                    await self._publish_candidates()
-                except BaseException:
-                    self._candidates[thread_id] = previous
-                    raise
+        await self._commit_candidate_op(_CandidateOp(kind="invalidate", thread_id=thread_id))
 
     async def arm_restored(self, *, blocked_roots: set[str]) -> None:
         async with self._candidate_lock:
+            self._cached_results = None
             for thread_id, entry in self.active.items():
                 if (
                     thread_id not in blocked_roots

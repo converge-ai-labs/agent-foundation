@@ -170,8 +170,8 @@ def _create_engine(path: Path, settings: StorageSettings) -> AsyncEngine:
         try:
             cursor.execute("PRAGMA foreign_keys=ON")
             cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
-            cursor.execute("PRAGMA synchronous=FULL")
             cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
         finally:
             cursor.close()
 

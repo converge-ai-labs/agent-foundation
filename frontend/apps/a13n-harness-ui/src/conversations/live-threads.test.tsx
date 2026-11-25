@@ -150,53 +150,85 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("receives background output and warms history without reconnecting when switching pages", async () => {
+it("subscribes only to the focused chat and re-handshakes cleanly without losing output across switches", async () => {
   const view = mount();
-  await waitFor(() => expect(watches.size).toBe(2));
-  await waitFor(() => expect(reads).toContain("/api/threads/two/transcript"));
+  await waitFor(() => expect(watches.size).toBe(1));
+  expect(watches.has("one")).toBe(true);
+  expect(watches.has("two")).toBe(false);
+  expect(reads).not.toContain("/api/threads/two/transcript");
+
   const first = watches.get("one")!;
-  const second = watches.get("two")!;
-  act(() => output("two", "Already received in the background"));
+  act(() => {
+    first.args[2].cursor = "focus:one:epoch:12";
+    output("one", "Initial output on one");
+  });
+
   fireEvent.click(screen.getByRole("link", { name: "two" }));
-  expect(screen.getByLabelText("Live").textContent).toBe(
-    "Already received in the background",
-  );
-  expect(screen.getByLabelText("History").textContent).toBe("C0-two");
-  fireEvent.click(screen.getByRole("link", { name: "Settings" }));
-  act(() => output("one", "Continues in Settings"));
-  fireEvent.click(screen.getByRole("link", { name: "one" }));
-  expect(screen.getByLabelText("Live").textContent).toBe(
-    "Continues in Settings",
-  );
-  expect(watchThread).toHaveBeenCalledTimes(2);
-  expect(first.close).not.toHaveBeenCalled();
-  expect(second.close).not.toHaveBeenCalled();
-  view.unmount();
+  await waitFor(() => expect(watches.has("two")).toBe(true));
   expect(first.close).toHaveBeenCalledOnce();
+  expect(watches.size).toBe(1);
+  // Cursor is cleared on unsubscribe so returning performs a fresh snapshot handshake.
+  expect(first.args[2].cursor).toBeUndefined();
+
+  act(() => output("two", "Live output on two"));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Live").textContent).toBe(
+      "Live output on two",
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("History").textContent).toBe("C0-two"),
+  );
+
+  // Leaving for Settings closes the focus stream while retaining the warm display.
+  const second = watches.get("two")!;
+  fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+  await waitFor(() => expect(watches.size).toBe(0));
   expect(second.close).toHaveBeenCalledOnce();
+
+  // Returning to chat one re-establishes its focus stream and preserves retained output until snapshot replacement.
+  fireEvent.click(screen.getByRole("link", { name: "one" }));
+  await waitFor(() => expect(watches.has("one")).toBe(true));
+  expect(screen.getByLabelText("Live").textContent).toBe(
+    "Initial output on one",
+  );
+  expect(watches.size).toBe(1);
+  view.unmount();
+  expect(watches.size).toBe(0);
 });
 
-it("settles a background completion into saved history after closing its stream", async () => {
-  mount();
-  await waitFor(() => expect(watches.size).toBe(2));
-  const second = watches.get("two")!;
-  act(() => output("two", "Finished output"));
-  active = ["one"];
-  continuations.set("two", "C1-two");
+it("skips intermediate background transcript fetches while running and warms final history once settled", async () => {
+  mount("one", ["one", "two"]);
+  await waitFor(() => expect(watches.has("one")).toBe(true));
+  await waitFor(() => expect(reads).toContain("/api/threads/one/transcript"));
+
+  // Switch away while "one" is still running in the background.
+  fireEvent.click(screen.getByRole("link", { name: "two" }));
+  await waitFor(() => expect(watches.has("two")).toBe(true));
+  expect(watches.has("one")).toBe(false);
+
+  // Intermediate checkpoint C1-one arrives while "one" is still running: do not fetch C1 transcript yet.
+  continuations.set("one", "C1-one");
+  reads.length = 0;
   await act(async () => {
-    await queries.invalidateQueries({ queryKey: ["threads"] });
-    await queries.invalidateQueries({ queryKey: ["thread", "two", "detail"] });
+    await queries.invalidateQueries({ queryKey: ["thread", "one", "detail"] });
   });
-  await waitFor(() => expect(second.close).toHaveBeenCalledOnce());
+  await waitFor(() => expect(reads).toContain("/api/threads/one"));
+  expect(reads).not.toContain("/api/threads/one/transcript");
+
+  // Once "one" finishes (inactive) at C2-one, the warm observer settles C2-one into saved history.
+  active = ["two"];
+  continuations.set("one", "C2-one");
+  await act(async () => {
+    await queries.invalidateQueries({ queryKey: ["thread", "one", "detail"] });
+  });
   await waitFor(() =>
     expect(
-      queries.getQueryData(["thread", "two", "history", "C1-two"]),
+      queries.getQueryData(["thread", "one", "history", "C2-one"]),
     ).toBeTruthy(),
   );
-  fireEvent.click(screen.getByRole("link", { name: "two" }));
-  expect(screen.getByLabelText("History").textContent).toBe("C1-two");
-  expect(screen.getByLabelText("Live").textContent).toBe("Finished output");
-  // No result-follow/acknowledgement or shared composer request was made.
+  fireEvent.click(screen.getByRole("link", { name: "one" }));
+  expect(screen.getByLabelText("History").textContent).toBe("C2-one");
   expect(
     vi
       .mocked(fetch)
@@ -204,28 +236,32 @@ it("settles a background completion into saved history after closing its stream"
   ).toBe(true);
 });
 
-it("pins every running root while bounding history warming, even with an idle selection", async () => {
+it("does not open background focus streams or warm unvisited active roots under parallel load", async () => {
   active = Array.from({ length: 20 }, (_, index) => `active-${index}`);
   mount("idle", ["idle", ...active]);
-  await waitFor(() => expect(watches.size).toBe(21));
+  await waitFor(() => expect(watches.size).toBe(1));
+  expect(watches.has("idle")).toBe(true);
   await waitFor(() =>
     expect(reads.filter((path) => path.endsWith("/transcript"))).toHaveLength(
-      8,
+      1,
     ),
   );
-  for (const id of active) expect(watches.has(id)).toBe(true);
-  const background = watches.get("active-19")!;
-  act(() => output("active-19", "Observed before opening history"));
+  for (const id of active) expect(watches.has(id)).toBe(false);
+
   fireEvent.click(screen.getByRole("link", { name: "active-19" }));
-  expect(screen.getByLabelText("Live").textContent).toBe(
-    "Observed before opening history",
+  await waitFor(() => expect(watches.has("active-19")).toBe(true));
+  expect(watches.has("idle")).toBe(false);
+  act(() => output("active-19", "Handshake output on demand"));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Live").textContent).toBe(
+      "Handshake output on demand",
+    ),
   );
   await waitFor(() =>
     expect(screen.getByLabelText("History").textContent).toBe("C0-active-19"),
   );
-  expect(background.close).not.toHaveBeenCalled();
-  expect(watches.size).toBe(20);
-  expect(maxConnections).toBe(21);
+  expect(watches.size).toBe(1);
+  expect(maxConnections).toBe(1);
 });
 
 it("bounds retained observations and releases evicted query observers", async () => {

@@ -286,20 +286,44 @@ class ContentPluginStore:
 
     def _catalog_fingerprint(self) -> tuple[tuple[str, tuple[int, int, int, int]], ...]:
         values: list[tuple[str, tuple[int, int, int, int]]] = []
-        if _store_directory_exists(self.root):
-            values.append((".", _fingerprint(self.root.lstat())))
+        if not _store_directory_exists(self.root):
+            return ()
+        values.append((".", _fingerprint(self.root.lstat())))
+
+        def walk_dir(directory_path: str, rel_prefix: str) -> None:
+            try:
+                with os.scandir(directory_path) as it:
+                    entries = sorted(it, key=lambda item: item.name)
+            except FileNotFoundError:
+                return
+            dirs_to_visit: list[tuple[str, str]] = []
+            for entry in entries:
+                if entry.is_symlink():
+                    continue
+                rel = f"{rel_prefix}/{entry.name}"
+                try:
+                    stat_result = entry.stat(follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if stat.S_ISDIR(stat_result.st_mode):
+                    dirs_to_visit.append((entry.path, rel))
+                else:
+                    values.append((rel, _fingerprint(stat_result)))
+            for sub_path, sub_rel in dirs_to_visit:
+                try:
+                    values.append((sub_rel, _fingerprint(os.lstat(sub_path))))
+                except FileNotFoundError:
+                    continue
+                walk_dir(sub_path, sub_rel)
+
         for root in self._directories():
-            if root.is_symlink():
-                values.append((root.name, _fingerprint(root.lstat())))
+            try:
+                root_stat = root.lstat()
+            except FileNotFoundError:
                 continue
-            for directory, dirs, files in os.walk(root, followlinks=False):
-                current = Path(directory)
-                dirs[:] = sorted(name for name in dirs if not (current / name).is_symlink())
-                for path in (current, *(current / name for name in sorted(files))):
-                    try:
-                        values.append((path.relative_to(self.root).as_posix(), _fingerprint(path.lstat())))
-                    except FileNotFoundError:
-                        continue
+            values.append((root.name, _fingerprint(root_stat)))
+            if not stat.S_ISLNK(root_stat.st_mode) and stat.S_ISDIR(root_stat.st_mode):
+                walk_dir(os.fspath(root), root.name)
         return tuple(values)
 
 

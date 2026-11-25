@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 from functools import partial
@@ -167,8 +167,8 @@ class ThreadProjectionService:
         self._root_activities = batch_lookup
 
     async def get_thread(self, thread_id: str) -> ThreadSummary:
-        thread = await self._required_thread(thread_id)
-        return await self._summary(thread)
+        thread, owners, coordinators = await self._required_thread_with_roles(thread_id)
+        return await self._summary(thread, owners=owners, coordinators=coordinators)
 
     async def list_threads(
         self,
@@ -251,11 +251,11 @@ class ThreadProjectionService:
             limit=limit + 1,
         )
         visible = stored[:limit]
+        visible_ids = tuple(item.thread_id for item in visible)
         activities: Mapping[str, RootActivityView] = {}
         if visible and self._root_activities is not None:
-            activities = await self._root_activities(tuple(item.thread_id for item in visible))
-        owners = await self._store.threads.worker_owners(tuple(item.thread_id for item in visible))
-        coordinators = await self._store.threads.coordinators(tuple(item.thread_id for item in visible))
+            activities = await self._root_activities(visible_ids)
+        owners, coordinators = await self._store.threads.roles(visible_ids)
         summaries = tuple(
             [
                 await self._summary(
@@ -302,8 +302,7 @@ class ThreadProjectionService:
             memory=memory, thread_ids=tuple(set(thread_ids)), include_archived=True, limit=100
         )
         activities = {} if self._root_activities is None else await self._root_activities(thread_ids)
-        owners = await self._store.threads.worker_owners(thread_ids)
-        coordinators = await self._store.threads.coordinators(thread_ids)
+        owners, coordinators = await self._store.threads.roles(thread_ids)
         return ThreadPage(
             threads=tuple(
                 [
@@ -319,8 +318,8 @@ class ThreadProjectionService:
     async def detail(self, thread_id: str) -> ThreadDetail:
         from a13n_harness_ui.bot_models import BOT_THREAD_ID
 
-        thread = await self._required_thread(thread_id)
-        summary = await self._summary(thread)
+        thread, owners, coordinators = await self._required_thread_with_roles(thread_id)
+        summary = await self._summary(thread, owners=owners, coordinators=coordinators)
         continuation_id = None
         requests: tuple[DeferredRequestView, ...] = ()
         if thread.parent_thread_id is not None:
@@ -586,6 +585,14 @@ class ThreadProjectionService:
         if thread is None:
             raise ThreadError("Thread does not exist.", code="thread_missing")
         return thread
+
+    async def _required_thread_with_roles(
+        self, thread_id: str
+    ) -> tuple[Thread, dict[str, str], dict[str, Coordinator]]:
+        result = await self._store.threads.get_with_roles(thread_id)
+        if result is None:
+            raise ThreadError("Thread does not exist.", code="thread_missing")
+        return result
 
     async def _summary(
         self,
@@ -869,13 +876,14 @@ def build_thread_inspection(
     child_succeeded: bool = False,
     indexed_child_prefix: str | None = None,
     windows: list[DisplayHistory] | None = None,
+    messages: Sequence[ModelMessage] | None = None,
 ) -> InspectionData:
     """Project once off-loop, then read bounded indexed rows across process restarts."""
     state = stored.harness_state
     if state.thread_id != thread.thread_id:
         raise ThreadError("Thread state belongs to another Thread.", code="thread_continuation_incompatible")
     display = stored.display_history if isinstance(stored, Continuation) else None
-    model_history = state.message_history
+    model_history = tuple(messages) if messages is not None else state.message_history
     from a13n_harness_ui.display_history import import_display_history
 
     archive = stored.display if isinstance(stored, Continuation) else None

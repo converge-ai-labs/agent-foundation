@@ -146,7 +146,8 @@ class ToolExecutionRepository:
 
     async def _save(self, execution: StoredToolExecution) -> bool:
         record = execution.record
-        async with transaction(self.sessions) as session:
+        terminal_fast_path = False
+        async with short_session(self.sessions) as session:
             if await session.get(DeletedThreadRecord, record.thread_id) is not None:
                 raise ValueError("Execution belongs to a deleted Thread")
             row = await session.get(ToolExecutionHeadRecord, record.execution_id)
@@ -157,10 +158,20 @@ class ToolExecutionRepository:
             if row is not None and row.thread_id != record.thread_id:
                 raise ValueError("Execution belongs to another Thread")
             if row is not None and row.terminal:
-                row.foreground_released |= record.foreground_released
-                row.delivery_acknowledged |= record.delivery_acknowledged
-                notify(row)
-                return True
+                terminal_fast_path = True
+        if terminal_fast_path:
+            async with transaction(self.sessions) as session:
+                if await session.get(DeletedThreadRecord, record.thread_id) is not None:
+                    raise ValueError("Execution belongs to a deleted Thread")
+                row = await session.get(ToolExecutionHeadRecord, record.execution_id)
+                if row is not None:
+                    if row.thread_id != record.thread_id:
+                        raise ValueError("Execution belongs to another Thread")
+                    if row.terminal:
+                        row.foreground_released |= record.foreground_released
+                        row.delivery_acknowledged |= record.delivery_acknowledged
+                        notify(row)
+                        return True
         payload = ExecutionPayload(
             execution_id=record.execution_id,
             thread_id=record.thread_id,
@@ -247,7 +258,7 @@ class ToolExecutionRepository:
                 delete(ToolExecutionHeadRecord).where(ToolExecutionHeadRecord.execution_id.in_(expired))
             )
         references = sorted(
-            (ref for ref in await self.objects.references() if ref.object_kind == ObjectKind.tool_execution),
+            await self.objects.references(ObjectKind.tool_execution),
             key=lambda ref: ref.logical_digest,
         )
         remaining = [ref for ref in references if self._prune_cursor is None or ref.logical_digest > self._prune_cursor]

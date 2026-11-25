@@ -169,19 +169,7 @@ class ImmutableObjectStore:
                 object_kind=object_kind,
                 object_schema_version=object_schema_version,
                 payload=payload,
-                payload_codec_version=(
-                    payload_codec_version
-                    if payload_codec_version is not None
-                    else "2"
-                    if object_kind
-                    in {
-                        ObjectKind.thread_initial_state,
-                        ObjectKind.continuation,
-                        ObjectKind.continuation_state,
-                        ObjectKind.child_checkpoint,
-                    }
-                    else "1"
-                ),
+                payload_codec_version=self._resolve_codec(object_kind, payload_codec_version),
                 created_at=created_at,
             )
         )
@@ -201,13 +189,46 @@ class ImmutableObjectStore:
     ) -> ObjectEnvelope:
         """Validate and publish one typed immutable payload."""
 
-        payload = await to_thread.run_sync(partial(value.model_dump, mode="json"))
-        return await self.publish(
+        return await to_thread.run_sync(
+            partial(
+                self._publish_model,
+                object_kind=object_kind,
+                value=value,
+                object_schema_version=object_schema_version,
+                payload_codec_version=payload_codec_version,
+            )
+        )
+
+    def _publish_model(
+        self,
+        *,
+        object_kind: ObjectKind,
+        value: BaseModel,
+        object_schema_version: str,
+        payload_codec_version: str | None,
+    ) -> ObjectEnvelope:
+        payload = value.model_dump(mode="json")
+        return self._publish(
             object_kind=object_kind,
             object_schema_version=object_schema_version,
             payload=payload,
-            payload_codec_version=payload_codec_version,
+            payload_codec_version=self._resolve_codec(object_kind, payload_codec_version),
+            created_at=None,
+            trusted_payload=True,
         )
+
+    @staticmethod
+    def _resolve_codec(object_kind: ObjectKind, payload_codec_version: str | None) -> str:
+        if payload_codec_version is not None:
+            return payload_codec_version
+        if object_kind in {
+            ObjectKind.thread_initial_state,
+            ObjectKind.continuation,
+            ObjectKind.continuation_state,
+            ObjectKind.child_checkpoint,
+        }:
+            return "2"
+        return "1"
 
     async def read_model(
         self,
@@ -288,6 +309,46 @@ class ImmutableObjectStore:
                 references.append(reference)
         return tuple(references)
 
+    async def count(self) -> int:
+        """Count valid object files without instantiating Pydantic models per file."""
+
+        return await to_thread.run_sync(self._count)
+
+    def _count(self) -> int:
+        root = self._layout.objects
+        if not root.is_dir():
+            return 0
+        valid_kinds = {item.value for item in ObjectKind}
+        total = 0
+        try:
+            with os.scandir(root) as kinds:
+                for kind_entry in kinds:
+                    if kind_entry.name not in valid_kinds or not kind_entry.is_dir(follow_symlinks=False):
+                        continue
+                    with os.scandir(kind_entry.path) as versions:
+                        for ver_entry in versions:
+                            if ver_entry.name != _SUPPORTED_OBJECT_SCHEMA_VERSION or not ver_entry.is_dir(
+                                follow_symlinks=False
+                            ):
+                                continue
+                            with os.scandir(ver_entry.path) as prefixes:
+                                for prefix_entry in prefixes:
+                                    prefix = prefix_entry.name
+                                    if len(prefix) != 2 or not prefix_entry.is_dir(follow_symlinks=False):
+                                        continue
+                                    with os.scandir(prefix_entry.path) as files:
+                                        for file_entry in files:
+                                            name = file_entry.name
+                                            if (
+                                                len(name) == 73
+                                                and name.endswith(".json.zst")
+                                                and name.startswith(prefix)
+                                            ):
+                                                total += 1
+        except FileNotFoundError:
+            return total
+        return total
+
     def _publish(
         self,
         *,
@@ -296,6 +357,7 @@ class ImmutableObjectStore:
         payload: JsonValue,
         payload_codec_version: str,
         created_at: datetime | None,
+        trusted_payload: bool = False,
     ) -> ObjectEnvelope:
         try:
             envelope = ObjectEnvelope(
@@ -305,8 +367,10 @@ class ImmutableObjectStore:
                 created_at=created_at or datetime.now(UTC),
                 producer_release=self._producer_release,
                 payload_codec_version=payload_codec_version,
-                payload=payload,
+                payload=None if trusted_payload else payload,
             )
+            if trusted_payload:
+                object.__setattr__(envelope, "payload", payload)
         except ValidationError as exc:
             raise StoreIntegrityError(
                 "Immutable object envelope input is invalid.",
@@ -345,7 +409,7 @@ class ImmutableObjectStore:
                     "Staged immutable object did not verify to its source envelope.",
                     code="object_staging_mismatch",
                 )
-            return self._publish_stage(stage, envelope, uncompressed)
+            return self._publish_stage(stage, envelope)
         finally:
             stage.unlink(missing_ok=True)
 
@@ -358,7 +422,7 @@ class ImmutableObjectStore:
             path.unlink(missing_ok=True)
             raise
 
-    def _publish_stage(self, stage: Path, envelope: ObjectEnvelope, uncompressed: bytes) -> ObjectEnvelope:
+    def _publish_stage(self, stage: Path, envelope: ObjectEnvelope) -> ObjectEnvelope:
         reference = envelope.ref
         target = self._path_for(reference)
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -375,12 +439,6 @@ class ImmutableObjectStore:
             return published
         if os.name != "nt":
             target.chmod(0o600)
-        if self._decompress_path(target) != uncompressed:
-            raise ObjectIntegrityError(
-                "Published immutable object does not match its expected reference.",
-                code="object_publication_mismatch",
-                details={"logical_digest": reference.logical_digest},
-            )
         return envelope
 
     def _read_ref(self, reference: ObjectRef) -> ObjectEnvelope:

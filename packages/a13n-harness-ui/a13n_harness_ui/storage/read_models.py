@@ -1,16 +1,31 @@
 """Small, rebuildable continuation projections; never execution authority."""
 
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ThinkingPart, ToolCallPart, ToolReturnPart
+from collections.abc import Sequence
+
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    ThinkingPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 
 from a13n_harness_ui.goal import saved_goal
 
 from .contracts import Continuation, RetainedActivity, StoredContinuation, ThreadReadModel
 
 
-def project_continuation(value: Continuation | StoredContinuation) -> ThreadReadModel:
+def project_continuation(
+    value: Continuation | StoredContinuation,
+    *,
+    messages: Sequence[ModelMessage] | None = None,
+) -> ThreadReadModel:
     goal = saved_goal(value.harness_state)
     activity = None
-    for message in reversed(value.harness_state.message_history):
+    history = messages if messages is not None else value.harness_state.message_history
+    for message in reversed(history):
         for part in reversed(message.parts):
             if isinstance(message, ModelResponse):
                 if isinstance(part, (TextPart, ThinkingPart)) and part.content.strip():

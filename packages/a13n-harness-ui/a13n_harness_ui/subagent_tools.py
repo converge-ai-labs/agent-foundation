@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from importlib.resources import files
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 
 
+@lru_cache(maxsize=4)
 def guidance(name: str) -> str:
     return files("a13n_harness_ui.subagents").joinpath(f"{name}-guidance.md").read_text(encoding="utf-8").strip()
 

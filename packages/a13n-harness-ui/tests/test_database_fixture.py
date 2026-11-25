@@ -28,7 +28,7 @@ async def test_template_files_are_independent_and_reopening_preserves_changes(tm
     async with database.open_database(first, settings) as opened:
         async with opened.engine.connect() as connection:
             assert (await connection.execute(text("SELECT value FROM fixture_marker"))).scalar_one() == "first"
-            assert (await connection.execute(text("PRAGMA synchronous"))).scalar_one() == 2
+            assert (await connection.execute(text("PRAGMA synchronous"))).scalar_one() == 1
             assert (await connection.execute(text("PRAGMA foreign_keys"))).scalar_one() == 1
 
 

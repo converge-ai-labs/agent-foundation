@@ -17,12 +17,11 @@ import {
   useHistory,
   useMemoryThread,
   useThread,
-  useThreads,
 } from "./queries";
 import { refreshThread } from "./refresh";
 
-// Running roots stay observed independently of the bounded history/idle cache.
-// All focus channels share one transport; observation never mounts an editor.
+// Focus channels subscribe only to the active view and explicit resource pins;
+// visited conversations keep a bounded warm history cache without background token fan-out.
 const RETAINED_LIMIT = 8;
 
 class LiveThread {
@@ -130,18 +129,40 @@ function ObserveThread({
   const transport = useTransport();
   const queries = useQueryClient();
   const detail = useThread(id);
-  useHistory(id, detail.data?.continuation_id, warm && !!detail.data);
+  const activityState = detail.data?.thread.root_activity?.state ?? "";
+  const warmHistory =
+    warm &&
+    !!detail.data &&
+    (live || !["preparing", "running"].includes(activityState));
+  useHistory(id, detail.data?.continuation_id, warmHistory);
   useEffect(() => {
     if (!live) return;
-    return watchThread(
+    const stop = watchThread(
       transport,
       id,
       entry.display,
       entry.changed,
       entry.connection,
       (reason) => refreshThread(queries, id, reason),
-      (snapshot) => seedThreadSnapshot(queries, id, snapshot),
+      (snapshot) => {
+        const cached = queries.getQueryData<{
+          continuation_id?: string | null;
+        }>(["thread", id, "detail"]);
+        seedThreadSnapshot(queries, id, snapshot);
+        if (
+          cached &&
+          cached.continuation_id !== snapshot.thread.continuation_id
+        ) {
+          refreshThread(queries, id, "reconcile");
+        }
+      },
     );
+    return () => {
+      stop();
+      // Force an authoritative snapshot handshake on next visit so events emitted
+      // while unsubscribed (including cross-tab runs or completions) are never missed.
+      entry.display.cursor = undefined;
+    };
   }, [transport, queries, id, entry, live]);
   return null;
 }
@@ -167,24 +188,14 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
       ? memory.data?.threads[0]?.thread_id
       : undefined;
   const [recent, setRecent] = useState<string[]>([]);
-  // Global discovery is independent of sidebar pagination, filters and collapse.
-  const activity = useThreads("", undefined, false, {
-    includeActive: true,
-    enabled: !transport.shareId,
-    limit: 1,
-  });
-  const active = (activity.data?.pages[0]?.active_rows ?? []).map(
-    (row) => row.thread.thread_id,
-  );
   const pinned = useSyncExternalStore(store.subscribePins, store.pinnedSnapshot)
     .split("\0")
     .filter(Boolean);
-  const live = [
-    ...new Set([...(current ? [current] : []), ...active, ...pinned]),
-  ];
-  const warm = [
-    ...new Set([...(current ? [current] : []), ...recent, ...active]),
-  ].slice(0, RETAINED_LIMIT);
+  const live = [...new Set([...(current ? [current] : []), ...pinned])];
+  const warm = [...new Set([...(current ? [current] : []), ...recent])].slice(
+    0,
+    RETAINED_LIMIT,
+  );
   const retained = [...new Set([...live, ...warm])];
   useEffect(() => {
     if (current)

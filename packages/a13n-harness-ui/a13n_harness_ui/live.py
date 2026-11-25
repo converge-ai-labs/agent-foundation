@@ -14,7 +14,12 @@ from a13n_harness.usage import ModelUsageRecord
 from a13n_stream_protocol.display import DisplayContinuation, Item, ItemRef, StreamPosition
 from a13n_stream_protocol.fragments import fragment_custom_event
 from a13n_stream_protocol.observer import TOOL_PROGRESS_EVENT
-from ag_ui.core import CustomEvent
+from ag_ui.core import (
+    CustomEvent,
+    ReasoningMessageContentEvent,
+    TextMessageContentEvent,
+    ToolCallArgsEvent,
+)
 from ag_ui.core import Event as AguiEvent
 from anyio import (
     BrokenResourceError,
@@ -37,8 +42,8 @@ from a13n_harness_ui.notification_origin import BrowserId
 
 _LIVE_PAYLOAD_ADAPTER = TypeAdapter(dict[str, JsonValue])
 _AGUI_ADAPTER = TypeAdapter(AguiEvent)
-_DEFAULT_RING_SIZE = 256
-_DEFAULT_SUBSCRIBER_BUFFER_SIZE = 64
+_DEFAULT_RING_SIZE = 1024
+_DEFAULT_SUBSCRIBER_BUFFER_SIZE = 512
 _MAX_EVENT_BYTES = 64 * 1024
 
 
@@ -855,7 +860,7 @@ class HarnessUiSummaryHub:
             if subscriber.gap:
                 continue
             try:
-                subscriber.send.send_nowait(event.model_copy(deep=True))
+                subscriber.send.send_nowait(event)
             except WouldBlock:
                 subscriber.gap = True
             except (BrokenResourceError, ClosedResourceError):
@@ -874,7 +879,7 @@ class HarnessUiSummaryHub:
             send, receive = create_memory_object_stream[SummaryInvalidation](capacity)
             subscriber = _SummarySubscriber(send, receive)
             for event in replay:
-                send.send_nowait(event.model_copy(deep=True))
+                send.send_nowait(event)
             self._subscribers.add(subscriber)
             subscription = SummarySubscription(
                 subscriber,
@@ -919,9 +924,17 @@ class HarnessUiSummaryHub:
 
 
 def _bounded_payload(event: AguiEvent) -> tuple[dict[str, JsonValue] | None, bool]:
+    if (
+        isinstance(event, (TextMessageContentEvent, ReasoningMessageContentEvent, ToolCallArgsEvent))
+        and event.raw_event is None
+        and getattr(event, "metadata", None) is None
+        and not event.model_extra
+        and len(event.delta) < 12000
+    ):
+        return event.model_dump(mode="json", by_alias=True), False
     try:
         payload = _LIVE_PAYLOAD_ADAPTER.validate_python(event.model_dump(mode="json", by_alias=True))
-        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode("utf-8")
     except (TypeError, ValueError, ValidationError):
         return None, True
     if len(encoded) > _MAX_EVENT_BYTES:
