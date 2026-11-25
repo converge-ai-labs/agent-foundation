@@ -557,16 +557,30 @@ export class FocusDisplay {
       type === "TOOL_CALL_END"
     ) {
       const block = this.blocks.get(key);
-      if (block)
+      if (block) {
+        const startedAt =
+          typeof block.timestamp === "number"
+            ? block.timestamp
+            : typeof block.timestamp === "string"
+              ? Date.parse(block.timestamp)
+              : NaN;
+        const durationMs =
+          type === "REASONING_MESSAGE_END" &&
+          Number.isFinite(startedAt) &&
+          typeof payload.timestamp === "number"
+            ? Math.max(0, payload.timestamp - startedAt)
+            : block.durationMs;
         this.blocks.set(key, {
           ...block,
           done: true,
+          durationMs,
           shellCommand: this.processes.command(
             scope ?? "",
             block.name ?? "",
             block.text,
           ),
         });
+      }
     } else if (type === "TOOL_CALL_START") {
       this.blocks.set(key, {
         id: key,

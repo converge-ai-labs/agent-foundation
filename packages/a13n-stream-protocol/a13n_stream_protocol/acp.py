@@ -1,6 +1,7 @@
 """Project one ACP turn into the shared AG-UI display stream."""
 
 import json
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -33,7 +34,7 @@ class AcpRunStream:
         self._started = self._finished = False
 
     def _event(self, event_type: str, **fields: Any) -> None:
-        self.emit({"type": event_type, **fields})
+        self.emit({"type": event_type, "timestamp": round(time.time() * 1000), **fields})
 
     def start(self) -> None:
         if not self._started:
@@ -59,8 +60,8 @@ class AcpRunStream:
             self._sequence += 1
             message_id = f"{self.run_id}:message:{self._sequence}"
             self._message = kind, message_id
-            fields = {"role": "assistant"} if kind == "TEXT_MESSAGE" else {}
-            self._event(f"{kind}_START", messageId=message_id, **fields)
+            role = "assistant" if kind == "TEXT_MESSAGE" else "reasoning"
+            self._event(f"{kind}_START", messageId=message_id, role=role)
         self._event(f"{kind}_CONTENT", messageId=self._message[1], delta=text)
 
     def update(self, update: AcpUpdate) -> None:

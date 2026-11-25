@@ -40,3 +40,22 @@ def test_acp_projection_owns_tool_cards_and_ignores_hidden_echoes():
     }
     assert [item.content["text"] for item in items if item.kind == "text_message"] == ["answer"]
     assert stream.final_text == "answer"
+
+
+def test_acp_thought_is_closed_and_timed_at_tool_start_or_turn_settlement(monkeypatch):
+    clock = iter((10.0, 10.1, 10.2, 12.1, 12.2, 12.3, 12.4, 12.5, 13.0, 13.1, 13.2, 13.3))
+    monkeypatch.setattr("a13n_stream_protocol.acp.time", type("Clock", (), {"time": staticmethod(lambda: next(clock))}))
+    events = []
+    stream = AcpRunStream("thread-test", "run-test", events.append)
+    stream.update(schema.AgentThoughtChunk(content=schema.TextContentBlock(text="before a tool")))
+    stream.update(schema.ToolCallStart(tool_call_id="call-1", title="Read"))
+    stream.update(schema.AgentThoughtChunk(content=schema.TextContentBlock(text="before cancellation")))
+    stream.finish()
+    reasoning = [event for event in events if event["type"].startswith("REASONING_")]
+    assert [event["delta"] for event in reasoning if event["type"].endswith("CONTENT")] == [
+        "before a tool",
+        "before cancellation",
+    ]
+    assert reasoning[2]["timestamp"] - reasoning[0]["timestamp"] == 2000
+    assert reasoning[5]["timestamp"] > reasoning[3]["timestamp"]
+    assert events.index(reasoning[2]) < next(i for i, event in enumerate(events) if event["type"] == "TOOL_CALL_START")

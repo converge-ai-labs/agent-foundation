@@ -227,7 +227,11 @@ class ThreadRepository:
             record = await session.get(ThreadRecord, thread_id)
             if record is None:
                 raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
-            record.acp_state_json = value
+            state = json.loads(value)
+            previous = json.loads(record.acp_state_json) if record.acp_state_json else {}
+            # Title ownership belongs to the metadata transaction, not a Run snapshot.
+            state["peer_title"] = previous.get("peer_title")
+            record.acp_state_json = json.dumps(state)
 
     async def external_context(self, thread_id: str) -> ExternalContext:
         """Read a detached latest value without loading or changing a checkpoint."""
@@ -304,7 +308,6 @@ class ThreadRepository:
                 parent_thread_id=parent_thread_id,
                 metadata_version=1,
                 title=title,
-                manual_title=title is not None,
                 acp_state_json=acp_state_json,
                 search_text=f"{thread_id}\n{title or ''}".casefold(),
                 archived=False,
@@ -754,8 +757,13 @@ class ThreadRepository:
     async def set_acp_title(self, thread_id: str, title: str) -> bool:
         async with transaction(self._sessions) as session:
             record = await session.get(ThreadRecord, thread_id)
-            if record is None or record.manual_title or record.title == title:
+            if record is None or record.acp_state_json is None or record.title == title:
                 return False
+            state = json.loads(record.acp_state_json)
+            if record.title is not None and record.title != state.get("peer_title"):
+                return False
+            state["peer_title"] = title
+            record.acp_state_json = json.dumps(state)
             record.title = title
             record.search_text = _search_text(record)
             record.metadata_version += 1
@@ -783,8 +791,6 @@ class ThreadRepository:
             if record.title == title and record.archived is archived and record.starred is selected_starred:
                 return _thread_value(record, _configuration_value(configuration))
             record.metadata_version += 1
-            if record.title != title:
-                record.manual_title = True
             record.title = title
             record.search_text = _search_text(record)
             record.archived = archived

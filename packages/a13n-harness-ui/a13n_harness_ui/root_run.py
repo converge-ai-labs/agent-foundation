@@ -901,7 +901,7 @@ class RootRunCoordinator:
                     await self._touch_thread(operation.receipt.thread_id)
                 except Exception:
                     get_logger(__name__).exception("Could not touch completed Thread: %s", operation.receipt.thread_id)
-            if cancelled or (outcome is None and operation.cancel_requested and failure is None):
+            if cancelled or (operation.cancel_requested and failure is None):
                 operation.status = RootOperationStatus.cancelled
             elif failure is not None:
                 operation.status = RootOperationStatus.failed

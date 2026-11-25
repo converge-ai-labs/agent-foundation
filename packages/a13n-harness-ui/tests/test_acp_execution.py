@@ -299,6 +299,43 @@ async def test_acp_thread_without_native_model_runs_and_saves_display(tmp_path: 
         assert (await app.get_thread(stopped_thread.thread_id)).thread.excerpt.latest_reply == "done:again"
 
 
+@pytest.mark.parametrize("input_tokens,output_tokens", [(8, 2), (13, 5)])
+async def test_acp_usage_includes_cache_and_thinking_without_double_counting(input_tokens, output_tokens):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    from acp import schema
+
+    ledger = SimpleNamespace(
+        run_id="run-test",
+        instance=SimpleNamespace(agent_instance_id="agent-test", parent_agent_instance_id=None, delegation_id=None),
+        next_model_ordinal=lambda: 1,
+        finish=Mock(return_value=None),
+        _flush=AsyncMock(),
+    )
+    turn = AcpTurn(
+        resource=_resource(), sessions=AcpSessions(), setup=AcpSessionSetup(cwd="/workspace"), digest="fixture"
+    )
+    await turn._record_usage(
+        SimpleNamespace(usage_attribution=ledger),
+        SimpleNamespace(config_options=()),
+        schema.PromptResponse(
+            stop_reason="end_turn",
+            usage=schema.Usage(
+                total_tokens=18,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_read_tokens=5,
+                thought_tokens=3,
+            ),
+        ),
+    )
+    usage = ledger.finish.call_args.args[1].request_usage
+    assert (usage.input_tokens, usage.output_tokens, usage.cache_read_tokens) == (13, 5, 5)
+    assert usage.details == {"thoughts_tokens": 3}
+    ledger._flush.assert_awaited_once()
+
+
 @pytest.mark.parametrize("flow", ["files", "inbox"])
 async def test_acp_host_inputs_and_inbox_links(tmp_path: Path, flow: str, monkeypatch: pytest.MonkeyPatch) -> None:
     from a13n_harness_ui.app import open_harness_ui_app

@@ -29,7 +29,6 @@ def test_tool_execution_migration_preserves_threads_and_roundtrips_empty_schema(
                 "unread": 0,
                 "read_state_version": 0,
                 "acp_state_json": None,
-                "manual_title": int(before["title"] is not None),
             }
             assert connection.execute(text("SELECT count(*) FROM tool_execution")).scalar_one() == 0
             assert "tool_completion_suppression" not in inspect(connection).get_table_names()
@@ -49,7 +48,6 @@ def test_tool_execution_migration_preserves_threads_and_roundtrips_empty_schema(
                 "unread": 0,
                 "read_state_version": 0,
                 "acp_state_json": None,
-                "manual_title": int(before["title"] is not None),
             }
     finally:
         engine.dispose()

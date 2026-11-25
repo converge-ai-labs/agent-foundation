@@ -649,7 +649,9 @@ function NewConversation({
                 )}
                 externalThinking={acpOptionLabel(
                   acp.data?.options.find(
-                    (option) => option.category === "thought_level",
+                    (option) =>
+                      option.category === "thought_level" ||
+                      option.id === "thought_level",
                   ),
                 )}
                 externalOptions={

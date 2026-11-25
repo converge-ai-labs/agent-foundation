@@ -270,6 +270,11 @@ class AcpTurn(AbstractHarnessPlugin):
             (item.current_value for item in runtime.config_options if item.category == "model" or item.id == "model"),
             None,
         )
+        thought = usage.thought_tokens or 0
+        output_tokens = usage.output_tokens
+        if usage.input_tokens + output_tokens + thought <= usage.total_tokens:
+            output_tokens += thought
+        input_tokens = max(usage.input_tokens, usage.total_tokens - output_tokens)
         record_id = f"model-{uuid4().hex}"
         record = ModelUsageRecord(
             record_id=record_id,
@@ -286,8 +291,9 @@ class AcpTurn(AbstractHarnessPlugin):
             outcome="cancelled" if response.stop_reason == "cancelled" else "completed",
             response_timestamp=datetime.now(UTC),
             request_usage=BoundedRequestUsage(
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                details={"thoughts_tokens": thought} if thought else {},
                 cache_read_tokens=usage.cached_read_tokens or 0,
                 cache_write_tokens=usage.cached_write_tokens or 0,
             ),

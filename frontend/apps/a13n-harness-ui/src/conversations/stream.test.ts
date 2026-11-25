@@ -95,6 +95,40 @@ function event(sequence: number, delta = "live", run_kind = "root") {
     },
   });
 }
+it("closes and times an ACP thought while the turn is still running", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(3));
+  const events = [
+    { type: "REASONING_MESSAGE_START", role: "reasoning", timestamp: 1_000 },
+    {
+      type: "REASONING_MESSAGE_CONTENT",
+      timestamp: 1_500,
+      delta: "Check the file first.",
+    },
+    { type: "REASONING_MESSAGE_END", timestamp: 3_250 },
+  ];
+  display.accept(
+    focusFrame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: events.map((payload, index) => ({
+        index,
+        event_type: payload.type,
+        payload: { ...payload, messageId: "thought" },
+        payload_omitted: false,
+      })),
+    }),
+  );
+  expect([...display.blocks.values()]).toContainEqual(
+    expect.objectContaining({
+      kind: "thinking",
+      text: "Check the file first.",
+      durationMs: 2250,
+      done: true,
+    }),
+  );
+});
+
 it("does not turn diagnostics into chat output and only saves cursor after ready", () => {
   const display = new FocusDisplay();
   display.accept(snapshot(2));

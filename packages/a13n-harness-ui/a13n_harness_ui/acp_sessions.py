@@ -43,6 +43,7 @@ class AcpSessionState(BaseModel):
     session_id: str | None = None
     prompted: bool = True
     context_window: tuple[int, int] | None = None
+    peer_title: str | None = None
     commands: tuple[AcpCommand, ...] = ()
     options: dict[str, str | bool] = Field(default_factory=dict)
     explicit_options: frozenset[str] = frozenset()

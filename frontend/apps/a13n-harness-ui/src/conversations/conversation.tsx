@@ -1405,7 +1405,9 @@ function ConversationContent({
                   )}
                   externalThinking={acpOptionLabel(
                     acpOptions.data?.find(
-                      (item) => item.category === "thought_level",
+                      (item) =>
+                        item.category === "thought_level" ||
+                        item.id === "thought_level",
                     ),
                   )}
                   externalOptions={

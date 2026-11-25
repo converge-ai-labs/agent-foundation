@@ -239,8 +239,8 @@ for line in sys.stdin:
             if MODE == "ui"
             else blocks[-1]
         )
-        if MODE == "ui" and message == "observe":
-            update("session_info_update", title="Peer title")
+        if MODE == "ui" and message.startswith("observe"):
+            update("session_info_update", title=message.partition(":")[2] or "Peer title")
             update("usage_update", used=10, size=1000)
             update("usage_update", used=24, size=1000)
             text("peer observed")
@@ -248,7 +248,13 @@ for line in sys.stdin:
                 id=ident,
                 result={
                     "stopReason": "end_turn",
-                    "usage": {"inputTokens": 8, "outputTokens": 2, "cachedReadTokens": 5},
+                    "usage": {
+                        "inputTokens": 8,
+                        "outputTokens": 2,
+                        "cachedReadTokens": 5,
+                        "thoughtTokens": 3,
+                        "totalTokens": 18,
+                    },
                 },
             )
             continue
