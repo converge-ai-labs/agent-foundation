@@ -52,7 +52,7 @@ from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.root_inputs import InputDelivery, StrictRootInputs
 from a13n_harness_ui.shutdown import Shutdown
 from a13n_harness_ui.storage import ObjectRef, ThreadConfigurationMutation
-from a13n_harness_ui.storage.contracts import ThreadExecution
+from a13n_harness_ui.storage.contracts import ThreadExecution, ThreadRunOutput
 from a13n_harness_ui.surfaces import (
     ContinuationSelectionView,
     EnvironmentOutcomeView,
@@ -90,6 +90,7 @@ class _RootOperation:
     receipt: RootRunReceipt
     status: RootOperationStatus
     done: Event
+    run_recorded: Event | None = None
     scope: CancelScope | None = None
     stream: HarnessRunStream[Any] | None = None
     acp_turn: AcpTurn | None = None
@@ -143,7 +144,7 @@ class RootRunCoordinator:
         terminal_retention: int = 256,
         observation: UiObservation | None = None,
         touch_thread: Callable[[str], Awaitable[None]] | None = None,
-        save_execution: Callable[[str, ThreadExecution], Awaitable[bool]] | None = None,
+        save_execution: Callable[[str, ThreadExecution, bool, ThreadRunOutput | None], Awaitable[bool]] | None = None,
         interaction_timeouts: bool = False,
         notify: Callable[[str, RootOperationNotice], None] | None = None,
         on_settled: Callable[[str | None, RootOperationView], Awaitable[None]] | None = None,
@@ -384,6 +385,7 @@ class RootRunCoordinator:
         strict_inputs: StrictRootInputs | None = None,
         run_capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
         on_admitted: Callable[[RootRunReceipt], None] | None = None,
+        retain_run: bool = False,
     ) -> RootRunReceipt:
         if thread_id == BOT_THREAD_ID and not (human_input or bot_input):
             raise RunCoordinationError("Bot accepts only user, heartbeat or Connector input.", code="bot_wake_rejected")
@@ -403,6 +405,7 @@ class RootRunCoordinator:
             strict_inputs=strict_inputs,
             run_capabilities=run_capabilities,
             on_admitted=on_admitted,
+            retain_run=retain_run,
         )
 
     async def submit_organization(self, thread_id: str, organization: MemoryOrganizationRun) -> RootRunReceipt:
@@ -466,6 +469,7 @@ class RootRunCoordinator:
         strict_inputs: StrictRootInputs | None = None,
         run_capabilities: tuple[AbstractCapability[AgentContext], ...] = (),
         on_admitted: Callable[[RootRunReceipt], None] | None = None,
+        retain_run: bool = False,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -477,6 +481,7 @@ class RootRunCoordinator:
             receipt=receipt,
             status=RootOperationStatus.preparing,
             done=Event(),
+            run_recorded=Event() if retain_run else None,
             restart=restart,
             goal=goal,
             observation_only=organization is not None,
@@ -584,6 +589,16 @@ class RootRunCoordinator:
         if operation is None:
             raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
         return _view(operation)
+
+    async def recorded_run_id(self, receipt_id: str, *, timeout_seconds: float) -> str | None:
+        """Wait for the exact receipt to acquire a durable Run identity, not for its result."""
+        operation = self._operations.get(receipt_id)
+        if operation is None or operation.run_recorded is None:
+            return None
+        with move_on_after(timeout_seconds):
+            await operation.run_recorded.wait()
+            return operation.run_id
+        return None
 
     async def active(self, thread_id: str) -> RootOperationView | None:
         receipt_id = self._active_by_thread.get(thread_id)
@@ -1000,6 +1015,8 @@ class RootRunCoordinator:
                 operation.strict_inputs.close(uncertain=outcome is None or outcome.continuation.status != "selected")
                 operation.strict_inputs = None
             operation.done.set()
+            if operation.run_recorded is not None:
+                operation.run_recorded.set()
             if self._tool_executions is not None:
                 self._tool_executions.run_settled(thread_id)
             if self._browser_handback is not None:
@@ -1145,7 +1162,12 @@ class RootRunCoordinator:
             failure = operation.outcome.execution.failure or operation.outcome.continuation.failure
         if failure is None and operation.status is RootOperationStatus.failed:
             failure = FailureView(code="root_operation_failed", message="The root operation did not complete.")
-        await self._save_execution(
+        retained = operation.run_recorded is not None
+        output = None
+        if retained and operation.status is RootOperationStatus.completed and operation.outcome is not None:
+            execution = operation.outcome.execution
+            output = ThreadRunOutput(output=execution.output, output_omitted=execution.output_omitted)
+        saved = await self._save_execution(
             operation.receipt.thread_id,
             ThreadExecution(
                 main_account=operation.main_account,
@@ -1158,7 +1180,11 @@ class RootRunCoordinator:
                 error_code=failure.code if failure is not None else None,
                 error_message=failure.message[:4096] if failure is not None else None,
             ),
+            retained,
+            output,
         )
+        if saved and operation.run_id is not None and operation.run_recorded is not None:
+            operation.run_recorded.set()
 
     async def _publish_change(self, operation: _RootOperation, *, notice: RootOperationNotice | None = None) -> None:
         if notice is not None and self._notify is not None:

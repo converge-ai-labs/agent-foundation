@@ -1,7 +1,7 @@
 """allow ACP agent thread sources.
 
 Revision ID: d53144e6ab12
-Revises: ae074f1f1a00
+Revises: 6f361d8745f8
 Create Date: 2026-11-24 11:27:54.349582+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "d53144e6ab12"
-down_revision: str | Sequence[str] | None = "ae074f1f1a00"
+down_revision: str | Sequence[str] | None = "6f361d8745f8"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

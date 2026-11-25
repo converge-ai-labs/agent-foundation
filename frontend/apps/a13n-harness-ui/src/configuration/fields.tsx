@@ -1,4 +1,5 @@
 import { useTranslation } from "../i18n";
+import { modifierLabel } from "../platform";
 import { HelpTip } from "../shell/help-tip";
 import { ModelIcon } from "../shell/model-identity";
 import { SettingsTextField as TextField } from "../shell/settings";
@@ -510,6 +511,27 @@ export function ResourceFields({
           <>
             {(!group || group === "chats") && (
               <>
+                <SettingsSection variant="grouped" title={t("Chat input")}>
+                  <ChoiceField
+                    label={t("Send messages with")}
+                    description={t(
+                      "Applies to all browsers using this instance.",
+                    )}
+                    value={text(["webui", "send_shortcut"]) || "enter"}
+                    onValueChange={(value) =>
+                      set(["webui", "send_shortcut"], value)
+                    }
+                    options={[
+                      { value: "enter", label: t("Enter (default)") },
+                      {
+                        value: "mod-enter",
+                        label: t("{{modifier}} + Enter", {
+                          modifier: modifierLabel(),
+                        }),
+                      },
+                    ]}
+                  />
+                </SettingsSection>
                 <SettingsSection variant="grouped" title={t("New chats")}>
                   {scalar(
                     t("Default agent"),

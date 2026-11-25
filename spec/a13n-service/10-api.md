@@ -14,7 +14,7 @@ Resource routes are served by the `all` and `control` roles; the `worker` role s
 
 `/api/v1/mcp/` serves Streamable HTTP MCP on API-serving roles. It is an alternate transport for workspace resource management and read-only execution queries, not an execution engine or an arbitrary HTTP proxy. The original HTTP operations retain ownership of authentication, authorization, validation, audit, preconditions, pagination and trace redaction.
 
-The assembled application's OpenAPI admits operations individually through `x-a13n-mcp: true`. Admission covers JSON workspace resource operations, including resources that reference existing upload IDs, environment management, read-only Session, Thread, inbox, Run, Attempt, display-content and trace lookup, the scoped usage summary and Run breakdown (`GET /usage` and `GET /usage/runs`), and per-record model request metrics (`GET /usage/records/{record_id}/metrics`). Schedule configuration, enable/pause/archive, time preview, trigger history and manual dispatch are admitted under the [Schedule delegation contract](13-schedules.md#management-api). Direct Agent execution/submission/resume/cancellation/waiting, live output/SSE, file transfers and binary content, organization/member/permission administration, and browser login/OAuth authorization flows and MCP App bridge operations remain outside this surface. Findings list/detail and Analysis history are admitted read-only JSON queries. Finding submission is admitted as the `execution` group's only write; internal business invocation records its authenticated Run as the finding's source. Finding review and analysis start/preset preparation remain direct HTTP operations. Distribution routes follow the same explicit admission and JSON constraints. Unmarked operations stay absent; invalid admitted operations and tool-name collisions fail assembly. Each operation ID is its route name, such as `list_agent_revisions`, and duplicate route names fail assembly. Tool names are deterministic for their operation IDs, independent of route traversal order. Arguments cannot redirect dispatch to a different operation.
+The assembled application's OpenAPI admits operations individually through `x-a13n-mcp: true`. Admission covers JSON workspace resource operations, including resources that reference existing upload IDs, environment management, read-only Session, Thread, inbox, Run, Attempt, display-content and trace lookup, the scoped usage summary and Run breakdown (`GET /usage` and `GET /usage/runs`), per-record model request metrics (`GET /usage/records/{record_id}/metrics`), and workspace file inventory and storage totals (`GET /assets` and `GET /storage`). Schedule configuration, enable/pause/archive, time preview, trigger history and manual dispatch are admitted under the [Schedule delegation contract](13-schedules.md#management-api). Direct Agent execution/submission/resume/cancellation/waiting, live output/SSE, file transfers and binary content, organization/member/permission administration, and browser login/OAuth authorization flows and MCP App bridge operations remain outside this surface. Findings list/detail and Analysis history are admitted read-only JSON queries. Finding submission is admitted as the `execution` group's only write; internal business invocation records its authenticated Run as the finding's source. Finding review and analysis start/preset preparation remain direct HTTP operations. Distribution routes follow the same explicit admission and JSON constraints. Unmarked operations stay absent; invalid admitted operations and tool-name collisions fail assembly. Each operation ID is its route name, such as `list_agent_revisions`, and duplicate route names fail assembly. Tool names are deterministic for their operation IDs, independent of route traversal order. Arguments cannot redirect dispatch to a different operation.
 
 Discovery and invocation require an external workspace Bearer credential supplied by the selected Distribution authenticator. Run credentials are refused on this external endpoint. Internal Agents use the separate [platform-tool surface](#internal-platform-tools). Browser cookies are not used. An explicit `X-Workspace-ID` must agree with confinement. Credentials and workspace selection are connection context, not tool arguments. Each generated call forwards the caller's credential to the original HTTP application, which authorizes again; neither identities nor cookies are shared across invocations. The transport supplies no additional approval authority.
 
@@ -190,29 +190,30 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Authentication and account
 
-| Path                                 | Methods     | Owner                                           |
-| ------------------------------------ | ----------- | ----------------------------------------------- |
-| `/auth/configuration`                | GET         | [03](03-tenancy.md#identity-mail) (public)      |
-| `/auth/oidc/{provider_id}/start`     | GET         | [03](03-tenancy.md#openid-connect-sign-in)      |
-| `/auth/oidc/{provider_id}/callback`  | GET         | [03](03-tenancy.md#openid-connect-sign-in)      |
-| `/auth/login`                        | POST        | [03](03-tenancy.md#authentication) (public)     |
-| `/auth/bootstrap`                    | POST        | [03](03-tenancy.md#bootstrap) (public)          |
-| `/auth/logout`                       | POST        | [03](03-tenancy.md#authentication)              |
-| `/auth/session`                      | GET         | [03](03-tenancy.md#authentication)              |
-| `/auth/password-reset`               | POST        | [03](03-tenancy.md#account-management) (public) |
-| `/auth/password-reset/confirm`       | POST        | [03](03-tenancy.md#account-management) (public) |
-| `/auth/email-change/confirm`         | POST        | [03](03-tenancy.md#account-management) (public) |
-| `/invitations/{invitation}/accept`   | POST        | [03](03-tenancy.md#invitations) (public)        |
-| `/users/me`                          | GET, PATCH  | [03](03-tenancy.md#account-management)          |
-| `/users/me/password`                 | POST        | [03](03-tenancy.md#account-management)          |
-| `/users/me/disable`                  | POST        | [03](03-tenancy.md#disabling)                   |
-| `/users/me/login-sessions`           | GET         | [03](03-tenancy.md#account-management)          |
-| `/users/me/login-sessions/{session}` | DELETE      | [03](03-tenancy.md#account-management)          |
-| `/users/me/keys`                     | GET, POST   | [03](03-tenancy.md#api-keys)                    |
-| `/users/me/keys/{key}`               | DELETE      | [03](03-tenancy.md#api-keys)                    |
-| `/users/me/audit-events`             | GET         | [03](03-tenancy.md#audit)                       |
-| `/users/me/avatar`                   | PUT, DELETE | [03](03-tenancy.md#images)                      |
-| `/users/{user}/avatar`               | GET         | [03](03-tenancy.md#images)                      |
+| Path                                          | Methods     | Owner                                              |
+| --------------------------------------------- | ----------- | -------------------------------------------------- |
+| `/auth/configuration`                         | GET         | [03](03-tenancy.md#identity-mail) (public)         |
+| `/auth/oidc/{provider_id}/start`              | GET         | [03](03-tenancy.md#openid-connect-sign-in)         |
+| `/auth/oidc/{provider_id}/callback`           | GET         | [03](03-tenancy.md#openid-connect-sign-in)         |
+| `/auth/oidc/{provider_id}/backchannel-logout` | POST        | [03](03-tenancy.md#openid-connect-logout) (public) |
+| `/auth/login`                                 | POST        | [03](03-tenancy.md#authentication) (public)        |
+| `/auth/bootstrap`                             | POST        | [03](03-tenancy.md#bootstrap) (public)             |
+| `/auth/logout`                                | POST        | [03](03-tenancy.md#openid-connect-logout)          |
+| `/auth/session`                               | GET         | [03](03-tenancy.md#authentication)                 |
+| `/auth/password-reset`                        | POST        | [03](03-tenancy.md#account-management) (public)    |
+| `/auth/password-reset/confirm`                | POST        | [03](03-tenancy.md#account-management) (public)    |
+| `/auth/email-change/confirm`                  | POST        | [03](03-tenancy.md#account-management) (public)    |
+| `/invitations/{invitation}/accept`            | POST        | [03](03-tenancy.md#invitations) (public)           |
+| `/users/me`                                   | GET, PATCH  | [03](03-tenancy.md#account-management)             |
+| `/users/me/password`                          | POST        | [03](03-tenancy.md#account-management)             |
+| `/users/me/disable`                           | POST        | [03](03-tenancy.md#disabling)                      |
+| `/users/me/login-sessions`                    | GET         | [03](03-tenancy.md#account-management)             |
+| `/users/me/login-sessions/{session}`          | DELETE      | [03](03-tenancy.md#account-management)             |
+| `/users/me/keys`                              | GET, POST   | [03](03-tenancy.md#api-keys)                       |
+| `/users/me/keys/{key}`                        | DELETE      | [03](03-tenancy.md#api-keys)                       |
+| `/users/me/audit-events`                      | GET         | [03](03-tenancy.md#audit)                          |
+| `/users/me/avatar`                            | PUT, DELETE | [03](03-tenancy.md#images)                         |
+| `/users/{user}/avatar`                        | GET         | [03](03-tenancy.md#images)                         |
 
 ### Organizations, workspaces and members
 
@@ -220,6 +221,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | ------------------------------------------------------ | ------------------ | ---------------------------------------------------------- |
 | `/organizations`                                       | GET                | [03](03-tenancy.md#organizations-and-workspaces)           |
 | `/organizations/{org}`                                 | GET, PATCH         | [03](03-tenancy.md#organizations-and-workspaces)           |
+| `/organizations/{org}/update-notices`                  | GET                | [09](09-runtime.md#update-notices)                         |
 | `/organizations/{org}/app-plugins`                     | GET                | [15](15-app-plugins.md#organization-policy-and-management) |
 | `/organizations/{org}/app-plugins/{app_id}`            | PUT                | [15](15-app-plugins.md#organization-policy-and-management) |
 | `/apps/{app_id}/...`                                   | App-declared       | [15](15-app-plugins.md#dispatch-boundary)                  |
@@ -337,6 +339,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/assets`                 | GET, POST   | [04](04-resources.md#uploads-and-assets) |
 | `/assets/{asset}`         | GET, DELETE | [04](04-resources.md#uploads-and-assets) |
 | `/assets/{asset}/content` | GET         | [04](04-resources.md#uploads-and-assets) |
+| `/storage`                | GET         | [04](04-resources.md#uploads-and-assets) |
 
 ### Subscriptions
 

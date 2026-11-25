@@ -816,6 +816,27 @@
         }
       }
     },
+    "/api/inbox/mark-done": {
+      "post": {
+        "summary": "Inbox Mark Done",
+        "operationId": "inbox_mark_done_api_inbox_mark_done_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxMarkDoneRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
     "/api/inbox/{item_id}": {
       "patch": {
         "summary": "Inbox Update",
@@ -12092,6 +12113,15 @@
             "type": "boolean",
             "title": "Input Prediction Enabled",
             "default": false
+          },
+          "send_shortcut": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "mod-enter"
+            ],
+            "title": "Send Shortcut",
+            "default": "enter"
           }
         },
         "additionalProperties": false,
@@ -24518,6 +24548,15 @@
             "title": "Input Prediction Enabled",
             "default": false
           },
+          "send_shortcut": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "mod-enter"
+            ],
+            "title": "Send Shortcut",
+            "default": "enter"
+          },
           "grant": {
             "$ref": "#/components/schemas/ShareGrant"
           },
@@ -31095,6 +31134,24 @@
           "group"
         ],
         "title": "InboxMarkReadRequest"
+      },
+      "InboxMarkDoneRequest": {
+        "properties": {
+          "group": {
+            "type": "string",
+            "enum": [
+              "needs_you",
+              "updates"
+            ],
+            "title": "Group"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "group"
+        ],
+        "title": "InboxMarkDoneRequest"
       },
       "InboxItemMutation": {
         "additionalProperties": false,

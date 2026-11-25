@@ -296,6 +296,11 @@
             "title": "Plugins",
             "type": "array"
           },
+          "respect_mcp_annotations": {
+            "default": false,
+            "title": "Respect Mcp Annotations",
+            "type": "boolean"
+          },
           "retries": {
             "anyOf": [
               {
@@ -525,6 +530,11 @@
             "maxItems": 128,
             "title": "Plugins",
             "type": "array"
+          },
+          "respect_mcp_annotations": {
+            "default": false,
+            "title": "Respect Mcp Annotations",
+            "type": "boolean"
           },
           "retries": {
             "anyOf": [
@@ -2393,7 +2403,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/Asset"
+              "$ref": "#/components/schemas/ListedAsset"
             },
             "title": "Items",
             "type": "array"
@@ -2408,11 +2418,16 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total_count": {
+            "title": "Total Count",
+            "type": "integer"
           }
         },
         "required": [
           "items",
-          "next_cursor"
+          "next_cursor",
+          "total_count"
         ],
         "title": "AssetPage",
         "type": "object"
@@ -6223,6 +6238,44 @@
           "observed_at"
         ],
         "title": "CreationProgress",
+        "type": "object"
+      },
+      "CreatorStorage": {
+        "properties": {
+          "active_bytes": {
+            "title": "Active Bytes",
+            "type": "integer"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "creator_name": {
+            "title": "Creator Name",
+            "type": "string"
+          },
+          "retired_bytes": {
+            "title": "Retired Bytes",
+            "type": "integer"
+          },
+          "staged_upload_bytes": {
+            "title": "Staged Upload Bytes",
+            "type": "integer"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active_bytes",
+          "retired_bytes",
+          "staged_upload_bytes",
+          "total_bytes",
+          "created_by_id",
+          "creator_name"
+        ],
+        "title": "CreatorStorage",
         "type": "object"
       },
       "Credential": {
@@ -12262,6 +12315,123 @@
         ],
         "type": "string"
       },
+      "ListedAsset": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "creator_name": {
+            "title": "Creator Name",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "content_type",
+          "size",
+          "digest",
+          "source",
+          "retired_at",
+          "version",
+          "created_by_id",
+          "created_at",
+          "updated_at",
+          "creator_name",
+          "thread_id",
+          "session_id"
+        ],
+        "title": "ListedAsset",
+        "type": "object"
+      },
       "LocalResult": {
         "properties": {
           "export": {
@@ -12392,6 +12562,19 @@
           "next_cursor"
         ],
         "title": "LoginSessionPage",
+        "type": "object"
+      },
+      "LogoutRedirect": {
+        "properties": {
+          "logout_url": {
+            "title": "Logout Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "logout_url"
+        ],
+        "title": "LogoutRedirect",
         "type": "object"
       },
       "Logs": {
@@ -23121,6 +23304,50 @@
         "title": "SecretReference",
         "type": "object"
       },
+      "SecurityAdvisory": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "high",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "summary",
+          "severity",
+          "url",
+          "updated_at"
+        ],
+        "title": "SecurityAdvisory",
+        "type": "object"
+      },
       "SelectedTrace": {
         "additionalProperties": false,
         "properties": {
@@ -25649,6 +25876,29 @@
           "error"
         ],
         "title": "SpanSummary",
+        "type": "object"
+      },
+      "StableRelease": {
+        "properties": {
+          "is_newer": {
+            "title": "Is Newer",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "url",
+          "is_newer"
+        ],
+        "title": "StableRelease",
         "type": "object"
       },
       "StartupErrorPolicy": {
@@ -28448,6 +28698,38 @@
         "title": "UnlimitedMemoryLimit",
         "type": "object"
       },
+      "UpdateNotices": {
+        "properties": {
+          "advisories": {
+            "items": {
+              "$ref": "#/components/schemas/SecurityAdvisory"
+            },
+            "title": "Advisories",
+            "type": "array"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "string"
+          },
+          "latest_stable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StableRelease"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "current_version",
+          "latest_stable",
+          "advisories"
+        ],
+        "title": "UpdateNotices",
+        "type": "object"
+      },
       "Upload": {
         "properties": {
           "content_type": {
@@ -29317,6 +29599,42 @@
           "next_cursor"
         ],
         "title": "WorkspacePage",
+        "type": "object"
+      },
+      "WorkspaceStorage": {
+        "properties": {
+          "active_bytes": {
+            "title": "Active Bytes",
+            "type": "integer"
+          },
+          "by_creator": {
+            "items": {
+              "$ref": "#/components/schemas/CreatorStorage"
+            },
+            "title": "By Creator",
+            "type": "array"
+          },
+          "retired_bytes": {
+            "title": "Retired Bytes",
+            "type": "integer"
+          },
+          "staged_upload_bytes": {
+            "title": "Staged Upload Bytes",
+            "type": "integer"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active_bytes",
+          "retired_bytes",
+          "staged_upload_bytes",
+          "total_bytes",
+          "by_creator"
+        ],
+        "title": "WorkspaceStorage",
         "type": "object"
       },
       "WorkspaceUpdate": {
@@ -31395,6 +31713,92 @@
             }
           },
           {
+            "description": "Case-insensitive literal filename substring.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive literal filename substring.",
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_by_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "user_upload",
+                    "agent_run"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "active",
+                "retired"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "id",
+              "enum": [
+                "id",
+                "newest"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",
@@ -31876,10 +32280,21 @@
     },
     "/api/v1/auth/logout": {
       "post": {
+        "description": "End the local session and, when available, return the provider's browser logout URL.",
         "operationId": "logout",
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutRedirect"
+                }
+              }
+            },
             "description": "Successful Response"
+          },
+          "204": {
+            "description": "Local logout"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -31895,6 +32310,59 @@
           }
         ],
         "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/oidc/{provider_id}/backchannel-logout": {
+      "post": {
+        "description": "Revoke OIDC login sessions on receipt of a signed Logout Token from their provider.",
+        "operationId": "oidc_backchannel_logout",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "logout_token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "logout_token"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Oidc Backchannel Logout",
         "tags": [
           "auth"
         ]
@@ -49628,6 +50096,54 @@
         ]
       }
     },
+    "/api/v1/organizations/{organization_id}/update-notices": {
+      "get": {
+        "description": "Read the Control process's cached release and security notices as an organization administrator.",
+        "operationId": "get_update_notices",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateNotices"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Update Notices",
+        "tags": [
+          "tenancy"
+        ],
+        "x-a13n-mcp": false
+      }
+    },
     "/api/v1/organizations/{organization_id}/workspaces": {
       "get": {
         "operationId": "list_organization_workspaces",
@@ -55471,6 +55987,65 @@
           "effect": "write",
           "group": "skills"
         }
+      }
+    },
+    "/api/v1/storage": {
+      "get": {
+        "description": "Summarize this workspace's asset and staged upload bytes by creator.",
+        "operationId": "get_workspace_storage",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceStorage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Workspace Storage",
+        "tags": [
+          "assets"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/subscriptions": {

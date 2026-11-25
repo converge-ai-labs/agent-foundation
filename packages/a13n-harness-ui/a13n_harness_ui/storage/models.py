@@ -394,6 +394,19 @@ Index(
 )
 
 
+class ThreadRunRecord(Base):
+    """Retained execution and output for an opted-in root Run."""
+
+    __tablename__ = "thread_run"
+
+    run_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    execution_json: Mapped[str] = mapped_column(Text, nullable=False)
+    output_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class LiveTranscriptHeadRecord(Base):
     """Voice transcript authority, independent of ordinary execution checkpoints."""
 

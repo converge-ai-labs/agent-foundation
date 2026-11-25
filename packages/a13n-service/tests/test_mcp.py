@@ -33,7 +33,14 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
     async with client(service, credential) as http:
         discovery = await rpc(http, "tools/list")
         assert discovery.status_code == 200, discovery.text
-        assert discovery.json()["result"]["tools"]
+        tools = {tool["name"] for tool in discovery.json()["result"]["tools"]}
+        assert {"get_workspace_storage", "list_assets"} <= tools
+        usage = await call(http, service, "GET", "/storage")
+        assert usage["status"] == 200 and usage["body"]["total_bytes"] == 0
+        files = await call(
+            http, service, "GET", "/assets", source_kind="agent_run", status="active", query="report", order="newest"
+        )
+        assert files["status"] == 200 and files["body"]["total_count"] == 0
         created = await call(
             http,
             service,
@@ -270,6 +277,9 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
     assert ("/api/v1/sessions/{session_id}/threads", "get") in selected
     assert ("/api/v1/usage/runs", "get") in selected
     assert ("/api/v1/usage", "get") in selected
+    assert ("/api/v1/assets", "get") in selected
+    assert ("/api/v1/storage", "get") in selected
+    assert ("/api/v1/assets/{asset_id}/content", "get") not in selected
     assert ("/api/v1/usage/records/{record_id}/metrics", "get") in selected
     assert ("/api/v1/usage/context", "get") in selected
     overview_parameters = {
@@ -312,6 +322,8 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
         "/api/v1/runs/{run_id}/items/{item_id}/content",
         "/api/v1/traces/{trace_id}/spans/{span_id}/content",
     }
+    update_notices = "/api/v1/organizations/{organization_id}/update-notices"
+    assert schema["paths"][update_notices]["get"].get("x-a13n-mcp") is False
     assert not any(path.endswith("/authorize") for path, _ in selected)
     monitoring = {
         (path, method)

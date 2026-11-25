@@ -103,6 +103,7 @@ from a13n_harness_ui.configuration.mcp_tools import (
 )
 from a13n_harness_ui.configuration.models import (
     BrowserConfiguration,
+    ComposerSendShortcut,
     DeviceResource,
     McpRemoteTransport,
     PairedDeviceAuthentication,
@@ -441,6 +442,7 @@ class AppStatus(BaseModel):
     capability_warnings: tuple[str, ...] = ()
     memory_organization: MemoryOrganizationStatus | None = None
     input_prediction_enabled: bool = False
+    send_shortcut: ComposerSendShortcut = "enter"
 
 
 @dataclass(frozen=True, slots=True)
@@ -973,6 +975,7 @@ class HarnessUiApp:
                 capability_warnings=self._configurations.capability_warnings,
                 memory_organization=self._memory_organizer.status(configuration),
                 input_prediction_enabled=configuration is not None and configuration.document.input_prediction.enabled,
+                send_shortcut=configuration.document.webui.send_shortcut if configuration is not None else "enter",
                 state=self._state,
                 object_count=await self._store.object_count(),
                 accepted_generation_digest=current_digest,

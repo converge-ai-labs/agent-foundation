@@ -225,6 +225,33 @@ async def test_abandoned_attempt_is_unknown_and_late_terminal_cannot_replace_new
         assert (await app._store.threads.get(thread.thread_id)).last_execution == new
 
 
+async def test_retained_run_settles_even_after_another_admission_advances_the_thread(tmp_path):
+    from datetime import UTC, datetime
+
+    from a13n_harness_ui.storage.contracts import ThreadExecution, ThreadRunOutput
+
+    configuration = _write_configuration(tmp_path)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=configuration) as app:
+        thread = await app.create_thread()
+        store = app._store.threads
+        now = datetime.now(UTC)
+        old = ThreadExecution(execution_id="receipt-old", status="preparing", submitted_at=now)
+        assert await store.save_execution(thread.thread_id, old, retained=True)
+        running = old.model_copy(update={"status": "running", "run_id": "run-old", "started_at": now})
+        assert await store.save_execution(thread.thread_id, running, retained=True)
+        new = old.model_copy(update={"execution_id": "receipt-new"})
+        assert await store.save_execution(thread.thread_id, new)
+        completed = running.model_copy(update={"status": "completed", "completed_at": now})
+        output = ThreadRunOutput(output="first result")
+        assert await store.save_execution(thread.thread_id, completed, retained=True, output=output)
+        retained = await store.retained_run("run-old")
+        assert retained is not None
+        assert retained.execution == completed
+        assert retained.output == output
+        assert (await store.get(thread.thread_id)).last_execution == new
+
+
 @pytest.mark.parametrize("typed", [True, False])
 async def test_root_preparation_preserves_safe_harness_errors_only(tmp_path, monkeypatch, typed):
     from a13n_harness.errors import RunError

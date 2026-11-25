@@ -193,7 +193,7 @@ def tool_permissions(config: AgentConfig, connection_types: Mapping[str, str]) -
                 for name in selection.tools
             )
     rules.update((source_tool_id(CLIENT_TOOLSET_ID, tool.name), tool.permission) for tool in config.client_tools)
-    return ToolPermissions(rules=rules)
+    return ToolPermissions(rules=rules, respect_mcp_annotations=config.respect_mcp_annotations)
 
 
 def tool_search(

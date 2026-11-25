@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    setupFiles: ["./tests/setup.ts"],
     // Threads share one process; forks re-load every dependency per worker.
     pool: "threads",
     // Bound concurrent jsdom initialization so focus/readiness checks retain

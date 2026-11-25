@@ -6,9 +6,11 @@ import type { useCursor } from "./use-cursor";
 export function Pagination({
   page,
   next,
+  pending = false,
 }: {
   page: ReturnType<typeof useCursor>;
   next?: string | null;
+  pending?: boolean;
 }) {
   const { t } = useTranslation();
   if (!page.previous && !next) return null;
@@ -17,7 +19,7 @@ export function Pagination({
       <Button
         size="sm"
         variant="outline"
-        disabled={!page.previous}
+        disabled={pending || !page.previous}
         onClick={page.previous}
         type="button"
       >
@@ -27,7 +29,7 @@ export function Pagination({
       <Button
         size="sm"
         variant="outline"
-        disabled={!next}
+        disabled={pending || !next}
         onClick={() => next && page.next(next)}
         type="button"
       >

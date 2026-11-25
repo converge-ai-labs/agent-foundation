@@ -11,10 +11,12 @@ import { ProvidersPage } from "../providers/page";
 import { MediaUnderstandingDefaults } from "../models/media-understanding";
 import { ServiceAccountDetail, ServiceAccounts } from "./accounts";
 import { Audit } from "./audit";
+import { WorkspaceFiles } from "./files/page";
 import { ApiKeys } from "./keys";
 import { SettingsLayout } from "./layout";
 import { MemberSettings } from "./members";
 import { Profile } from "./profile";
+import { UpdateNotices } from "./update-notices";
 import { DeleteWorkspace, Workspaces } from "./workspaces";
 import { Webhooks } from "./webhooks/list";
 import { WebhookDetail } from "./webhooks/detail";
@@ -44,7 +46,9 @@ export function WorkspaceSettings() {
       section={
         subscriptionId ? "webhooks" : accountId ? "service-accounts" : undefined
       }
-      heading={!accountId && !subscriptionId}
+      heading={
+        !accountId && !subscriptionId && !(section === "files" && can("read"))
+      }
       content={{
         ...Object.fromEntries(
           appSections.map((section) => [
@@ -77,6 +81,7 @@ export function WorkspaceSettings() {
         "media-understanding": (
           <MediaUnderstandingDefaults key={workspace.id} />
         ),
+        files: <WorkspaceFiles key={workspace.id} />,
         members: <MemberSettings scope={scope} />,
         "member-keys": <ApiKeys memberKeys />,
         "service-accounts": accountId ? (
@@ -129,7 +134,12 @@ export function OrganizationSettings() {
           ]),
         ),
         "app-plugins": <AppManagement />,
-        general: <Profile target={scope} />,
+        general: (
+          <div className="flex flex-col gap-5">
+            <UpdateNotices organizationId={organization.id} />
+            <Profile target={scope} />
+          </div>
+        ),
         members: <MemberSettings scope={scope} />,
         workspaces: <Workspaces />,
         audit: <Audit scope={scope} />,

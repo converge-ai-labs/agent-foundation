@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "./i18n";
+import { SendShortcutContext } from "./conversations/send-shortcut";
 import {
   BrowserRouter,
   Navigate,
@@ -167,7 +168,9 @@ function GuestSession({ shareId }: { shareId: string }) {
     <GuestAccessContext value={access.data}>
       <BrowserRouter basename={`/share/${shareId}`}>
         <LiveThreadsProvider>
-          <GuestShell access={access.data} refreshAccess={refresh} />
+          <SendShortcutContext value={access.data.send_shortcut}>
+            <GuestShell access={access.data} refreshAccess={refresh} />
+          </SendShortcutContext>
         </LiveThreadsProvider>
       </BrowserRouter>
     </GuestAccessContext>

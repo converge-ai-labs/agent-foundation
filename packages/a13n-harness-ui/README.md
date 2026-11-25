@@ -104,6 +104,12 @@ WebUI serves shared conversations, live output, approvals, setup, configuration,
 
 Use **Fork conversation** in an ordinary Thread's action menu to continue from a separate copy with the same title, saved history, configuration, tasks, notes and Thread files. Coordinators and their workers cannot be forked. Fork copies saved state, including pending decisions, without starting a Run; it does not clone project directories, sandboxes or async child Threads.
 
+### Management MCP Tasks
+
+Owner clients can use the WebUI management MCP endpoint at `/api/automation/mcp` with the instance access key. MCP `2026-07-28` clients that declare `io.modelcontextprotocol/tasks` on each request can receive a Task from `create_thread` or `send_thread_message` when the call starts a new Run. Poll `tasks/get` for status and the inline result, including `thread_id` and the saved Run output, and use `tasks/cancel` to request cancellation. A Task ID is the Run ID. The inline output uses the same bounded JSON projection as the WebUI; when `output_omitted` is true, inspect the saved Thread history. The saved result survives restarts and later turns until the Thread is deleted. A restart can interrupt an active Run; the Task does not follow a replacement Run.
+
+Calls without the extension, calls that only steer an active Run, and calls that cannot obtain a Run ID promptly return the ordinary admission response. A Run suspended for a decision completes its Task with `status: suspended` in the result and directs the caller to the WebUI. Decisions in the WebUI start a new Run; the management endpoint does not take them through `tasks/update`.
+
 ### Distribution
 
 Harness UI ships as a Python wheel and sdist with the bundled WebUI, not an official container image. Operators who need a containerized server can install a pinned Python distribution in their own image and configure listeners, authentication and persistent mounts explicitly. `a13n-sandbox` supplies Agent execution, not a WebUI server. See the [distribution specification](../../spec/a13n-harness-ui/webui/03-distribution.md).

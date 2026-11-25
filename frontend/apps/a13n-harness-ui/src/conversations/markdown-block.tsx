@@ -7,6 +7,8 @@ import {
 } from "react";
 import type { ExtraProps } from "react-markdown";
 import { Button } from "a13n-ui";
+import { HtmlCodePreview } from "a13n-ui/html-code-preview";
+import { markdownCodeText } from "a13n-ui/markdown-extensions";
 import { ArrowsOut, Copy, Code } from "@phosphor-icons/react";
 import { ImagePreview } from "../shell/image-preview";
 import { renderDiagram } from "a13n-ui/mermaid-render";
@@ -14,12 +16,6 @@ import { SyntaxCode } from "./syntax-code";
 import styles from "./markdown.module.css";
 import { copyText } from "../platform";
 
-type Node = { type: string; value?: string; children?: Node[] };
-function nodeText(node?: Node): string {
-  return node?.type === "text"
-    ? (node.value ?? "")
-    : (node?.children?.map(nodeText).join("") ?? "");
-}
 function Diagram({
   source,
   header,
@@ -35,8 +31,7 @@ function Diagram({
   );
   const [result, setResult] = useState<{
     source: string;
-    src?: string;
-    error?: boolean;
+    preview: Awaited<ReturnType<typeof renderDiagram>>;
   }>();
   const [original, setOriginal] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -52,24 +47,15 @@ function Diagram({
   }, []);
   useEffect(() => {
     let active = true;
-    void renderDiagram(source, dark).then(
-      (src) => {
-        if (active) setResult({ source, src });
-      },
-      () => {
-        if (active)
-          setResult({
-            source,
-            error: true,
-          });
-      },
-    );
+    void renderDiagram(source, dark).then((preview) => {
+      if (active) setResult({ source, preview });
+    });
     return () => {
       active = false;
     };
   }, [source, dark]);
   // Retain the previous theme's image during recoloring, but never a different diagram.
-  const current = result?.source === source ? result : undefined;
+  const current = result?.source === source ? result.preview : undefined;
   return (
     <>
       {header(
@@ -106,11 +92,9 @@ function Diagram({
           {t("Rendering diagram…")}
         </p>
       )}
-      {current?.error && (
+      {current?.reason && (
         <p className={styles.diagramStatus} role="status">
-          {t(
-            "Diagram preview unavailable. The original source is shown below.",
-          )}
+          {t(current.reason)}
         </p>
       )}
       {(original || !current?.src) && (
@@ -144,7 +128,7 @@ export function MarkdownPre({
         classes.find((item) => String(item).startsWith("language-")) ?? "",
       ).replace("language-", "")
     : "";
-  const source = nodeText(code);
+  const source = markdownCodeText(code);
   const diagram = language.toLowerCase() === "mermaid";
   const complete =
     code?.type === "element" && code.properties.dataClosedDiagram === true;
@@ -193,9 +177,37 @@ export function MarkdownPre({
       )}
     </>
   );
+  const codeSource = (
+    <pre
+      tabIndex={0}
+      role="region"
+      aria-label={
+        language ? t("{{language}} code", { language }) : t("Code block")
+      }
+    >
+      <SyntaxCode source={source} language={language} />
+    </pre>
+  );
   return (
     <div className={styles.codeBlock}>
-      {diagram && complete ? (
+      {language.toLowerCase() === "html" ? (
+        <HtmlCodePreview
+          source={source}
+          labels={{
+            preview: t("Preview"),
+            title: t("HTML preview"),
+            tooLarge: t("HTML is too large to preview (200 KB limit)."),
+          }}
+        >
+          {({ actions, preview, hideSource }) => (
+            <>
+              {header(actions)}
+              {preview}
+              {!hideSource && codeSource}
+            </>
+          )}
+        </HtmlCodePreview>
+      ) : diagram && complete ? (
         <Diagram source={source} header={header}>
           {children}
         </Diagram>
@@ -207,15 +219,7 @@ export function MarkdownPre({
               {t("Waiting for the complete diagram…")}
             </p>
           )}
-          <pre
-            tabIndex={0}
-            role="region"
-            aria-label={
-              language ? t("{{language}} code", { language }) : t("Code block")
-            }
-          >
-            <SyntaxCode source={source} language={language} />
-          </pre>
+          {codeSource}
         </>
       )}
     </div>

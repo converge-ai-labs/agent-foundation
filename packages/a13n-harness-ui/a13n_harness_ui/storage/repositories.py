@@ -35,6 +35,7 @@ from .contracts import (
     ThreadExecution,
     ThreadReadModel,
     ThreadReadReceipt,
+    ThreadRunOutput,
 )
 from .database import DatabaseSessions, short_session, transaction
 from .models import (
@@ -53,9 +54,17 @@ from .models import (
     ShareGrantRecord,
     ThreadConfigurationRecord,
     ThreadRecord,
+    ThreadRunRecord,
     ToolExecutionHeadRecord,
 )
 from .objects import ObjectKind, ObjectRef
+
+
+@dataclass(frozen=True, slots=True)
+class RetainedThreadRun:
+    thread_id: str
+    execution: ThreadExecution
+    output: ThreadRunOutput | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -485,7 +494,9 @@ class ThreadRepository:
             if touched is None:
                 raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
 
-    async def save_execution(self, thread_id: str, value: ThreadExecution) -> bool:
+    async def save_execution(
+        self, thread_id: str, value: ThreadExecution, retained: bool = False, output: ThreadRunOutput | None = None
+    ) -> bool:
         """Replace on admission; later transitions can only update that same attempt."""
         async with transaction(self._sessions) as session:
             record = await session.get(ThreadRecord, thread_id)
@@ -496,11 +507,43 @@ class ThreadRepository:
                 if record.last_execution_json is not None
                 else None
             )
-            if value.status != "preparing" and (previous is None or previous.execution_id != value.execution_id):
-                return False
-            record.last_execution_json = value.model_dump_json()
-            await session.flush()
+            current = value.status == "preparing" or (
+                previous is not None and previous.execution_id == value.execution_id
+            )
+            snapshot = value.model_dump_json()
+            if current:
+                record.last_execution_json = snapshot
+            if not retained or value.run_id is None:
+                return current
+            row = await session.get(ThreadRunRecord, value.run_id)
+            if row is None:
+                if not current:
+                    return False
+                row = ThreadRunRecord(run_id=value.run_id, thread_id=thread_id, execution_json=snapshot)
+                session.add(row)
+            elif (
+                row.thread_id != thread_id
+                or ThreadExecution.model_validate_json(row.execution_json).execution_id != value.execution_id
+            ):
+                raise StoreIntegrityError(
+                    "Run identity does not match the saved execution.", code="thread_run_identity_conflict"
+                )
+            # Another App may have advanced the Thread's head. Its admission cannot
+            # erase the outcome of a Run whose task identity was already published.
+            row.execution_json = snapshot
+            row.output_json = output.model_dump_json() if output is not None else None
             return True
+
+    async def retained_run(self, run_id: str) -> RetainedThreadRun | None:
+        async with short_session(self._sessions) as session:
+            row = await session.get(ThreadRunRecord, run_id)
+            if row is None:
+                return None
+            return RetainedThreadRun(
+                thread_id=row.thread_id,
+                execution=ThreadExecution.model_validate_json(row.execution_json),
+                output=ThreadRunOutput.model_validate_json(row.output_json) if row.output_json is not None else None,
+            )
 
     async def get(self, thread_id: str) -> Thread | None:
         async with short_session(self._sessions) as session:

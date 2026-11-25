@@ -36,6 +36,7 @@ import {
   CaretUpDown,
   Bug,
 } from "@phosphor-icons/react";
+import { SendShortcutContext } from "../conversations/send-shortcut";
 import { useSetup, useSources, useStatus } from "../transport/context";
 import type { Schema } from "../transport/client";
 import { AccountsPage } from "../setup/accounts";
@@ -791,7 +792,9 @@ function WorkbenchContent({
   );
   return (
     <ConnectionNoticeContext.Provider value={disconnected}>
-      {content}
+      <SendShortcutContext value={status.app.send_shortcut}>
+        {content}
+      </SendShortcutContext>
     </ConnectionNoticeContext.Provider>
   );
 }

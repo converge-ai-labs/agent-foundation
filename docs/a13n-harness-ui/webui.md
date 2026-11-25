@@ -59,13 +59,15 @@ Use the sidebar menu to switch between **Projects** (grouped by directory) and *
 
 | Action                        | How to do it                                                                                  |
 | ----------------------------- | --------------------------------------------------------------------------------------------- |
-| Send / line break             | `Enter` or `Ctrl/Cmd+Enter` to send; `Shift+Enter` for a newline                              |
+| Send / line break             | `Enter` sends by default; `Shift+Enter` inserts a new line                                    |
 | Attach files                  | Attach, paste, or drop files into the composer                                                |
 | Search chats                  | Click **Search** or press `Cmd/Ctrl+F`                                                        |
 | Rename, star, archive, delete | Open a conversation's **…** menu (**Delete chat** is permanent; stop active work first)       |
 | Fork or branch                | Choose **… → Fork conversation**, or hover a reply and select **Branch in new chat**          |
 | Navigate history              | Use the left input rail to jump to earlier turns; expand **Execution details** for tool calls |
 | Inspect usage & cost          | Open conversation usage to see token totals and estimated USD cost by model                   |
+
+To require `Ctrl+Enter` (`⌘+Enter` on Apple devices), go to **Settings → Chats → Chat input**, change **Send messages with**, and save changes. The setting is stored as `webui.send_shortcut` in the instance configuration and applies across browsers. In that mode, `Enter` and `Shift+Enter` both insert a new line. On touch-first devices, the on-screen Enter key inserts a new line in either mode.
 
 Messages and Markdown previews render LaTeX math (`$inline$` and `$$display$$`). Shared drafts persist across reloads and show a pencil indicator on the sidebar row until sent or cleared.
 
@@ -120,7 +122,7 @@ Agents post final results, milestones, and items needing your decision to **Inbo
 
 1. Open **Inbox** below conversation search. **Needs you** items appear first, followed by **Updates**.
 2. Click a row to read it in place, **Open in chat** to jump to the originating turn, or **Mark as done** to clear it.
-3. Select **Mark all as read** in **Needs you** or **Updates** to clear unread marks in that section, including items you have not loaded. Items remain in **Open** until you mark them as done.
+3. Use the two icons beside **Needs you** or **Updates**: **Mark all as read** clears unread marks and leaves items in **Open**; **Mark all as done** moves the entire section to **Done**. Both include items you have not loaded.
 4. To disable Inbox posting for new runs, turn off **Settings → Chats → Inbox → Let agents post to Inbox** (`inbox.enabled: false`).
 
 ## Share a Thread or Project

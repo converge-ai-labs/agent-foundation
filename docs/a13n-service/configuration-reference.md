@@ -116,6 +116,7 @@ The tables are generated from `Settings`. Contributors updating those definition
 
 | Setting                               | Environment variable                        | Type / choices | Constraints and default                         |
 | ------------------------------------- | ------------------------------------------- | -------------- | ----------------------------------------------- |
+| `control.update_notices_enabled`      | `A13N_CONTROL__UPDATE_NOTICES_ENABLED`      | boolean        | default=true                                    |
 | `control.scan_seconds`                | `A13N_CONTROL__SCAN_SECONDS`                | number         | maximum=60; exclusiveMinimum=0; default=1       |
 | `control.sweep_batch`                 | `A13N_CONTROL__SWEEP_BATCH`                 | integer        | minimum=1; maximum=10000; default=100           |
 | `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | integer        | minimum=1; maximum=10000; default=128           |

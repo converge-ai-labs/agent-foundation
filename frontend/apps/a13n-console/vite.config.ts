@@ -1,5 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
-import { cossLicense } from "a13n-ui/vite";
+import { cossLicense, mermaidFrame } from "a13n-ui/vite";
 import { defineConfig } from "vite";
 import { resolve } from "node:path";
 
@@ -11,6 +11,7 @@ export default defineConfig(({ command }) => ({
   plugins: [
     tailwindcss(),
     cossLicense(),
+    mermaidFrame(),
     {
       name: "app-plugin-bridge",
       transformIndexHtml: {

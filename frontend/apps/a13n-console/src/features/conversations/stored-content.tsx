@@ -53,6 +53,8 @@ function Value({ field, value }: { field: string; value: unknown }) {
   return parts ? <AguiContent parts={parts} /> : <JsonView value={value} />;
 }
 
+type StoredValueRenderer = (value: unknown, partial: boolean) => ReactNode;
+
 /** The saved value replaces its preview in this field only; changing the reference starts a fresh read. */
 export function StoredContent({
   itemId,
@@ -63,13 +65,14 @@ export function StoredContent({
   itemId: string;
   field: string;
   value?: unknown;
-  renderValue?: (value: unknown) => ReactNode;
+  renderValue?: StoredValueRenderer;
 }) {
   const context = useContext(Context);
-  const reference = context?.items.get(itemId)?.content_refs?.[field];
+  const item = context?.items.get(itemId);
+  const reference = item?.content_refs?.[field];
   if (!context || !reference)
     return renderValue ? (
-      renderValue(value)
+      renderValue(value, item?.content.truncated === true)
     ) : (
       <Value field={field} value={value} />
     );
@@ -93,7 +96,7 @@ function LoadContent({
   runId: string;
   field: string;
   reference: ContentRef;
-  renderValue?: (value: unknown) => ReactNode;
+  renderValue?: StoredValueRenderer;
 }) {
   const client = useClient(),
     { workspace } = useWorkspace(),
@@ -138,13 +141,13 @@ function LoadContent({
       )}
       {loaded ? (
         renderValue ? (
-          renderValue(loaded.value)
+          renderValue(loaded.value, reference.truncated === true)
         ) : (
           <Value field={field} value={loaded.value} />
         )
       ) : reference.media_type === "text/plain" ? (
         renderValue ? (
-          renderValue(reference.preview)
+          renderValue(reference.preview, true)
         ) : (
           <Value field={field} value={reference.preview} />
         )

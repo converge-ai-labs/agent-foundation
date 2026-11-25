@@ -544,6 +544,11 @@
     "Control": {
       "additionalProperties": false,
       "properties": {
+        "update_notices_enabled": {
+          "default": true,
+          "title": "Update Notices Enabled",
+          "type": "boolean"
+        },
         "scan_seconds": {
           "default": 1,
           "exclusiveMinimum": 0,

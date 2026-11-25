@@ -361,8 +361,31 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Logout */
+    /**
+     * Logout
+     * @description End the local session and, when available, return the provider's browser logout URL.
+     */
     post: operations["logout"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/oidc/{provider_id}/backchannel-logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Oidc Backchannel Logout
+     * @description Revoke OIDC login sessions on receipt of a signed Logout Token from their provider.
+     */
+    post: operations["oidc_backchannel_logout"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3232,6 +3255,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/organizations/{organization_id}/update-notices": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Update Notices
+     * @description Read the Control process's cached release and security notices as an organization administrator.
+     */
+    get: operations["get_update_notices"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/organizations/{organization_id}/workspaces": {
     parameters: {
       query?: never;
@@ -4070,6 +4113,26 @@ export interface paths {
     put?: never;
     /** Unarchive Skill */
     post: operations["unarchive_skill"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/storage": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get Workspace Storage
+     * @description Summarize this workspace's asset and staged upload bytes by creator.
+     */
+    get: operations["get_workspace_storage"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -5543,6 +5606,11 @@ export interface components {
        * @default []
        */
       plugins?: components["schemas"]["PluginSelection"][];
+      /**
+       * Respect Mcp Annotations
+       * @default false
+       */
+      respect_mcp_annotations?: boolean;
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */
@@ -5630,6 +5698,11 @@ export interface components {
        * @default []
        */
       plugins?: components["schemas"]["PluginSelection"][];
+      /**
+       * Respect Mcp Annotations
+       * @default false
+       */
+      respect_mcp_annotations?: boolean;
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */
@@ -6224,9 +6297,11 @@ export interface components {
     /** AssetPage */
     AssetPage: {
       /** Items */
-      items: components["schemas"]["Asset"][];
+      items: components["schemas"]["ListedAsset"][];
       /** Next Cursor */
       next_cursor: string | null;
+      /** Total Count */
+      total_count: number;
     };
     /** AssetPart */
     AssetPart: {
@@ -7600,6 +7675,21 @@ export interface components {
        * Format: date-time
        */
       started_at: string;
+    };
+    /** CreatorStorage */
+    CreatorStorage: {
+      /** Active Bytes */
+      active_bytes: number;
+      /** Created By Id */
+      created_by_id: string;
+      /** Creator Name */
+      creator_name: string;
+      /** Retired Bytes */
+      retired_bytes: number;
+      /** Staged Upload Bytes */
+      staged_upload_bytes: number;
+      /** Total Bytes */
+      total_bytes: number;
     };
     /** Credential */
     Credential: {
@@ -10003,6 +10093,47 @@ export interface components {
     };
     /** @enum {string} */
     Lineage: "root" | "continue" | "fork";
+    /** ListedAsset */
+    ListedAsset: {
+      /** Content Type */
+      content_type: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Created By Id */
+      created_by_id: string;
+      /** Creator Name */
+      creator_name: string;
+      /** Digest */
+      digest: string;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Retired At */
+      retired_at: string | null;
+      /** Session Id */
+      session_id: string | null;
+      /** Size */
+      size: number;
+      /** Source */
+      source: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+      /** Thread Id */
+      thread_id: string | null;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
     /** LocalResult */
     LocalResult: {
       export?: components["schemas"]["ExportHealth"] | null;
@@ -10058,6 +10189,11 @@ export interface components {
       items: components["schemas"]["LoginSession"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** LogoutRedirect */
+    LogoutRedirect: {
+      /** Logout Url */
+      logout_url: string;
     };
     /** Logs */
     Logs: {
@@ -13594,6 +13730,22 @@ export interface components {
       env: string;
       inject_hosts: components["schemas"]["Hosts"];
     };
+    /** SecurityAdvisory */
+    SecurityAdvisory: {
+      /** Id */
+      id: string;
+      /**
+       * Severity
+       * @enum {string}
+       */
+      severity: "high" | "critical";
+      /** Summary */
+      summary: string;
+      /** Updated At */
+      updated_at: string | null;
+      /** Url */
+      url: string;
+    };
     /** SelectedTrace */
     SelectedTrace: {
       /** Run Id */
@@ -14426,6 +14578,15 @@ export interface components {
        * @constant
        */
       view?: "compact";
+    };
+    /** StableRelease */
+    StableRelease: {
+      /** Is Newer */
+      is_newer: boolean;
+      /** Url */
+      url: string;
+      /** Version */
+      version: string;
     };
     /** @enum {string} */
     StartupErrorPolicy: "skip" | "raise";
@@ -15399,6 +15560,14 @@ export interface components {
        */
       kind: "unlimited";
     };
+    /** UpdateNotices */
+    UpdateNotices: {
+      /** Advisories */
+      advisories: components["schemas"]["SecurityAdvisory"][];
+      /** Current Version */
+      current_version: string;
+      latest_stable: components["schemas"]["StableRelease"] | null;
+    };
     /** Upload */
     Upload: {
       /** Content Type */
@@ -15729,6 +15898,19 @@ export interface components {
       items: components["schemas"]["Workspace"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** WorkspaceStorage */
+    WorkspaceStorage: {
+      /** Active Bytes */
+      active_bytes: number;
+      /** By Creator */
+      by_creator: components["schemas"]["CreatorStorage"][];
+      /** Retired Bytes */
+      retired_bytes: number;
+      /** Staged Upload Bytes */
+      staged_upload_bytes: number;
+      /** Total Bytes */
+      total_bytes: number;
     };
     /** WorkspaceUpdate */
     WorkspaceUpdate: {
@@ -16386,6 +16568,12 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
+        /** @description Case-insensitive literal filename substring. */
+        query?: string | null;
+        created_by_id?: string | null;
+        source_kind?: ("user_upload" | "agent_run") | null;
+        status?: "all" | "active" | "retired";
+        order?: "id" | "newest";
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -16637,7 +16825,51 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LogoutRedirect"];
+        };
+      };
+      /** @description Local logout */
       204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      default: components["responses"]["Error"];
+    };
+  };
+  oidc_backchannel_logout: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/x-www-form-urlencoded": {
+          logout_token: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      /** @description Rate limit exceeded */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -23048,6 +23280,30 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  get_update_notices: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["UpdateNotices"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_organization_workspaces: {
     parameters: {
       query?: {
@@ -24807,6 +25063,31 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Skill"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  get_workspace_storage: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WorkspaceStorage"];
         };
       };
       400: components["responses"]["Error"];

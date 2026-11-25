@@ -3,13 +3,14 @@
 from collections.abc import Callable
 from typing import Annotated, Any
 
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.server.http import StarletteWithLifespan
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.inbox_models import InboxKind, InboxMessage, InboxTitle
+from a13n_harness_ui.management_mcp_tasks import ManagementRunTasks, requests_run_task
 from a13n_harness_ui.thread_capability import (
     RemoteProjectRoot,
     ThreadToolController,
@@ -26,10 +27,13 @@ def build_management_mcp(controller: Callable[[], ThreadToolController]) -> Star
         "Harness UI",
         instructions="Manage Projects and Threads and post to Inbox in this WebUI instance. "
         "Run receipts mean admission, not completion. "
-        "Use get_thread to inspect saved results. Reconcile an uncertain write before retrying.",
+        "Poll MCP Tasks with tasks/get; for receipts, inspect saved results with get_thread. "
+        "Reconcile an uncertain write before retrying.",
         tasks=False,
         mask_error_details=True,
     )
+
+    server.add_extension(ManagementRunTasks(controller))
 
     @server.tool(annotations=_ReadOnly)
     async def list_projects(
@@ -122,6 +126,7 @@ def build_management_mcp(controller: Callable[[], ThreadToolController]) -> Star
     @server.tool
     async def create_thread(
         prompt: str,
+        ctx: Context,
         title: str | None = None,
         agent_id: str | None = None,
         project_id: str | None = None,
@@ -141,12 +146,13 @@ def build_management_mcp(controller: Callable[[], ThreadToolController]) -> Star
                 agent_id=agent_id,
                 project_id=project_id,
                 model_id=model_id,
+                retain_run=requests_run_task(ctx),
             )
         except (HarnessUiError, ValueError) as exc:
             return thread_tool_failure(exc, "thread_create_failed")
 
     @server.tool
-    async def send_thread_message(thread_id: str, message: str) -> dict[str, Any]:
+    async def send_thread_message(thread_id: str, message: str, ctx: Context) -> dict[str, Any]:
         """Steer the current Run if active or start a new turn if idle. Returns acceptance, not completion.
 
         A rejected steer does not fall back to a new Run. Inspect rejected or uncertain sends before retrying.
@@ -154,7 +160,9 @@ def build_management_mcp(controller: Callable[[], ThreadToolController]) -> Star
         try:
             if not message.strip():
                 raise ThreadError("A non-empty message is required.", code="thread_message_empty")
-            return await controller().send_thread_message(source_thread_id=None, thread_id=thread_id, message=message)
+            return await controller().send_thread_message(
+                source_thread_id=None, thread_id=thread_id, message=message, retain_run=requests_run_task(ctx)
+            )
         except HarnessUiError as exc:
             return thread_tool_failure(exc, "thread_message_failed")
 

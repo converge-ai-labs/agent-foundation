@@ -109,6 +109,26 @@ function renderFields(initial: string) {
   );
 }
 
+it("edits the instance send shortcut without changing other WebUI settings", async () => {
+  renderFields('schema_version: "1"\nwebui: {bot: {enabled: true}}\n');
+  const user = userEvent.setup();
+  const choice = screen.getByRole("combobox", { name: "Send messages with" });
+  expect(choice.textContent).toContain("Enter (default)");
+  await user.click(choice);
+  await user.click(await screen.findByRole("option", { name: "Ctrl + Enter" }));
+  expect(parse(screen.getByTestId("source").textContent!).webui).toEqual({
+    bot: { enabled: true },
+    send_shortcut: "mod-enter",
+  });
+  await user.click(choice);
+  await user.click(
+    await screen.findByRole("option", { name: "Enter (default)" }),
+  );
+  expect(
+    parse(screen.getByTestId("source").textContent!).webui.send_shortcut,
+  ).toBe("enter");
+});
+
 it("configures Bot's Agent and Model defaults, custom instructions and hourly heartbeat", async () => {
   const initial = 'schema_version: "1"\n';
   renderFields(initial);

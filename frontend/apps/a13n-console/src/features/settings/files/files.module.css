@@ -1,0 +1,122 @@
+.title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.title span {
+  color: var(--a13n-tertiary);
+  font-size: var(--a13n-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.usage {
+  margin-bottom: 20px;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  padding: 12px 16px 0;
+  container-type: inline-size;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0 0 12px;
+}
+.metrics dt {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.metrics dd {
+  margin: 2px 0 0;
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.breakdown {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.breakdown summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--a13n-secondary);
+  cursor: pointer;
+}
+.breakdown[open] summary svg {
+  transform: rotate(90deg);
+}
+.breakdown ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.breakdown li {
+  display: grid;
+  grid-template-columns: minmax(100px, 24%) minmax(0, 1fr);
+  gap: 8px 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.breakdownName,
+.confirmName {
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+.toolbar {
+  margin-bottom: 12px;
+}
+.toolbar input[type="search"] {
+  height: 32px;
+}
+.table th[data-column="file"] {
+  width: 35%;
+}
+.table td[data-column="file"] {
+  max-width: 0;
+}
+.table td[data-column="download"] {
+  text-align: right;
+}
+.author {
+  display: grid;
+  min-width: 0;
+  line-height: 18px;
+}
+.author > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.author small,
+.author a {
+  font-size: var(--a13n-text-xs);
+}
+.author a {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: fit-content;
+  color: var(--a13n-signal);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.author small,
+.noResults {
+  color: var(--a13n-secondary);
+}
+.noResults {
+  padding: 12px 0;
+}
+@container (width < 430px) {
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .breakdown li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.table td[data-column="download"]::before {
+  display: none;
+}

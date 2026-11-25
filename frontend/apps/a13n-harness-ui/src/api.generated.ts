@@ -307,6 +307,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/inbox/mark-done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Inbox Mark Done */
+        post: operations["inbox_mark_done_api_inbox_mark_done_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/inbox/{item_id}": {
         parameters: {
             query?: never;
@@ -4068,6 +4085,12 @@ export interface components {
              * @default false
              */
             input_prediction_enabled?: boolean;
+            /**
+             * Send Shortcut
+             * @default enter
+             * @enum {string}
+             */
+            send_shortcut?: "enter" | "mod-enter";
         };
         /** AppView */
         AppView: {
@@ -8509,6 +8532,12 @@ export interface components {
              * @default false
              */
             input_prediction_enabled?: boolean;
+            /**
+             * Send Shortcut
+             * @default enter
+             * @enum {string}
+             */
+            send_shortcut?: "enter" | "mod-enter";
             grant: components["schemas"]["ShareGrant"];
             /** Title */
             title: string;
@@ -11016,6 +11045,14 @@ export interface components {
              */
             group: "needs_you" | "updates";
         };
+        /** InboxMarkDoneRequest */
+        InboxMarkDoneRequest: {
+            /**
+             * Group
+             * @enum {string}
+             */
+            group: "needs_you" | "updates";
+        };
         /** InboxItemMutation */
         InboxItemMutation: {
             /** Read */
@@ -12342,6 +12379,28 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["InboxMarkReadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    inbox_mark_done_api_inbox_mark_done_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InboxMarkDoneRequest"];
             };
         };
         responses: {

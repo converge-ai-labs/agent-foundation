@@ -7,7 +7,7 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from html import escape
 from types import MappingProxyType
-from typing import Any, Literal, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkable
 
 import yaml
 from a13n_logging import get_logger
@@ -17,7 +17,18 @@ from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, Wrap
 from pydantic_ai.messages import CapabilityEvent, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
+from pydantic_ai.toolsets import FunctionToolset
 
+from a13n_harness.capabilities._mcp_skills import (
+    MAX_MCP_SKILL_BYTES,
+    MCPSkillCatalogItem,
+    _MCPSkill,
+    _MCPSkillReadError,
+    discover_mcp_skills,
+    is_skill_relative_path,
+    read_mcp_skill_text,
+    same_frontmatter,
+)
 from a13n_harness.context import AgentContext, SkillPath
 from a13n_harness.context_breakdown import ContextItemUsage, InstructionCatalog
 from a13n_harness.environment._mount_path import parse_mount_path
@@ -61,8 +72,12 @@ from a13n_harness.observation import (
 )
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, normalize_harness_tool_metadata
 
+if TYPE_CHECKING:
+    from a13n_harness.mcp import MCPServer
+
 SKILLS_CAPABILITY_ID = "a13n.skills"
 _SKILL_FILE_NAME = "SKILL.md"
+_READ_SKILL_TOOL = "read_skill"
 _DEFAULT_ENVIRONMENT_SKILL_ROOT = "/workspace/.agents/skills"
 _OPTIONAL_SOURCE_UNAVAILABLE_CODES = frozenset(
     {"environment_not_found", "environment_selection_invalid", "environment_unsupported"}
@@ -122,17 +137,23 @@ class BoundSkillCatalog(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     items: tuple[BoundSkillCatalogItem, ...]
+    mcp_items: tuple[MCPSkillCatalogItem, ...] = Field(default=(), exclude_if=lambda items: not items)
 
     @model_validator(mode="after")
     def _unique_names(self) -> BoundSkillCatalog:
-        names = [item.name for item in self.items]
+        names = [item.name for item in (*self.items, *self.mcp_items)]
         if len(set(names)) != len(names):
             raise ValueError("bound skill catalog names must be unique")
         return self
 
     def select(self, names: frozenset[str]) -> BoundSkillCatalog:
         """Return the exact-name subset while preserving scan provenance."""
-        return self.model_copy(update={"items": tuple(item for item in self.items if item.name in names)})
+        return self.model_copy(
+            update={
+                "items": tuple(item for item in self.items if item.name in names),
+                "mcp_items": tuple(item for item in self.mcp_items if item.name in names),
+            }
+        )
 
     def require_current(self, environment: BoundEnvironment) -> None:
         """Fail if a selected logical path no longer resolves to its scanned revision."""
@@ -491,6 +512,23 @@ class SkillsPolicy(BaseModel):
 
     conflict: Literal["error", "prefer_earlier", "prefer_later"] = "prefer_later"
     max_skills: int = Field(default=512, gt=0, le=_MAX_SKILL_SELECTION)
+    max_file_bytes: int = Field(default=256 * 1024, gt=0, le=MAX_MCP_SKILL_BYTES)
+
+
+def _merge_skill[T](selected: dict[str, T], name: str, entry: T, policy: SkillsPolicy) -> None:
+    if name not in selected or policy.conflict == "prefer_later":
+        selected[name] = entry
+    elif policy.conflict == "error":
+        raise DefinitionError(
+            "The selected skill sources contain an ambiguous skill identity.",
+            code="skill_catalog_ambiguous",
+            details={"skill": name},
+        )
+
+
+def _require_catalog_size(count: int, policy: SkillsPolicy) -> None:
+    if count > policy.max_skills:
+        raise DefinitionError("The selected skill catalog is too large.", code="skill_catalog_too_large")
 
 
 class SkillManager:
@@ -635,19 +673,8 @@ class SkillManager:
                         code="skill_path_outside_source",
                         details={"skill": entry.name, "source_id": source.source_id},
                     )
-                current = selected.get(entry.name)
-                if current is None:
-                    selected[entry.name] = entry
-                elif self._policy.conflict == "error":
-                    raise DefinitionError(
-                        "The selected skill sources contain an ambiguous skill identity.",
-                        code="skill_catalog_ambiguous",
-                        details={"skill": entry.name},
-                    )
-                elif self._policy.conflict == "prefer_later":
-                    selected[entry.name] = entry
-        if len(selected) > self._policy.max_skills:
-            raise DefinitionError("The selected skill catalog is too large.", code="skill_catalog_too_large")
+                _merge_skill(selected, entry.name, entry, self._policy)
+        _require_catalog_size(len(selected), self._policy)
         access_paths: dict[str, str] = {}
         items = tuple(selected.values())
 
@@ -732,10 +759,36 @@ class SkillsCapability(AbstractCapability[AgentContext]):
 
     id = SKILLS_CAPABILITY_ID
 
-    def __init__(self, manager: SkillManager | None = None) -> None:
+    def __init__(self, manager: SkillManager | None = None, *, mcp_servers: Sequence[MCPServer] = ()) -> None:
         if manager is not None and not isinstance(manager, SkillManager):
             raise TypeError("SkillsCapability manager must be a SkillManager")
         self.manager = manager or SkillManager.default()
+        self._mcp_servers = tuple(mcp_servers)
+        if len({server.id for server in self._mcp_servers}) != len(self._mcp_servers):
+            raise ValueError("MCP skill server IDs must be unique")
+
+    async def _merge_mcp_catalog(
+        self, ctx: RunContext[AgentContext], catalog: BoundSkillCatalog
+    ) -> tuple[BoundSkillCatalog, dict[str, _MCPSkill]]:
+        if not self._mcp_servers:
+            return catalog, {}
+        policy = self.manager.policy
+        if "conflict" not in policy.model_fields_set:
+            policy = policy.model_copy(update={"conflict": "error"})
+        selected: dict[str, BoundSkillCatalogItem | _MCPSkill] = {item.name: item for item in catalog.items}
+        for server in self._mcp_servers:
+            for remote in await discover_mcp_skills(server, ctx, max_skills=policy.max_skills):
+                _merge_skill(selected, remote.item.name, remote, policy)
+            _require_catalog_size(len(selected), policy)
+        ordered = tuple(selected[name] for name in sorted(selected))
+        remote_skills = {item.item.name: item for item in ordered if isinstance(item, _MCPSkill)}
+        return (
+            BoundSkillCatalog(
+                items=tuple(item for item in ordered if isinstance(item, BoundSkillCatalogItem)),
+                mcp_items=tuple(skill.item for skill in remote_skills.values()),
+            ),
+            remote_skills,
+        )
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         existing = ctx.deps._run_capability(SKILLS_CAPABILITY_ID)
@@ -759,10 +812,12 @@ class SkillsCapability(AbstractCapability[AgentContext]):
             if selected_names is not None:
                 record_span_metadata(span, {"skills.requested_count": len(selected_names)})
             catalog = await self.manager.scan_environment(environment=ctx.deps.environment)
-            discovered_count = len(catalog.items)
+            catalog, remote_skills = await self._merge_mcp_catalog(ctx, catalog)
+            items = (*catalog.items, *catalog.mcp_items)
+            discovered_count = len(items)
             record_span_metadata(span, {"skills.discovered_count": discovered_count})
             if selected_names is not None:
-                discovered_names = frozenset(item.name for item in catalog.items)
+                discovered_names = frozenset(item.name for item in items)
                 unknown_names = sorted(selected_names - discovered_names)
                 if unknown_names:
                     record_span_metadata(span, {"skills.unknown_count": len(unknown_names)})
@@ -780,36 +835,38 @@ class SkillsCapability(AbstractCapability[AgentContext]):
                         },
                     )
                 catalog = catalog.select(selected_names)
+                remote_skills = {name: entry for name, entry in remote_skills.items() if name in selected_names}
+                items = (*catalog.items, *catalog.mcp_items)
             catalog.require_current(ctx.deps.environment)
             record_span_metadata(
                 span,
                 {
                     "phase.status": "completed",
-                    "skills.selected_count": len(catalog.items),
-                    "skills.excluded_count": discovered_count - len(catalog.items),
+                    "skills.selected_count": len(items),
+                    "skills.excluded_count": discovered_count - len(items),
                 },
             )
             observe_output(
                 span,
                 {
-                    "skills": [{"name": item.name, "source_id": item.source_id} for item in catalog.items[:16]],
-                    "count": len(catalog.items),
-                    "omitted": max(0, len(catalog.items) - 16),
+                    "skills": [{"name": item.name, "source_id": item.source_id} for item in items[:16]],
+                    "count": len(items),
+                    "omitted": max(0, len(items) - 16),
                 },
                 status="resolved",
             )
-        replacement = _SkillsRunCapability(catalog, context=ctx.deps, manager=self.manager)
+        replacement = _SkillsRunCapability(catalog, context=ctx.deps, manager=self.manager, remote_skills=remote_skills)
         ctx.deps._record_run_capability(SKILLS_CAPABILITY_ID, replacement)
         await ctx.deps.events.emit(SkillCatalogResolvedEvent(catalog=catalog.model_copy(deep=True)))
-        observe_skill_catalog([item.name for item in catalog.items[:16]], count=len(catalog.items))
+        observe_skill_catalog([item.name for item in items[:16]], count=len(items))
         await ctx.deps.events.emit(
             HarnessExtensionEvent(
                 kind="context",
                 payload={
                     "type": "skills_catalog_resolved",
-                    "skill_count": len(catalog.items),
-                    "skills": [item.name for item in catalog.items[:128]],
-                    "truncated": len(catalog.items) > 128,
+                    "skill_count": len(items),
+                    "skills": [item.name for item in items[:128]],
+                    "truncated": len(items) > 128,
                 },
             )
         )
@@ -824,10 +881,14 @@ class _SkillsRunCapability(SkillsCapability):
         *,
         context: AgentContext,
         manager: SkillManager,
+        remote_skills: dict[str, _MCPSkill],
     ) -> None:
         self.manager = manager
         self._catalog = catalog.model_copy(deep=True)
         self._context = context
+        self._remote_skills = remote_skills
+        self._local_skills = {item.name: item for item in self._catalog.items}
+        self._max_file_bytes = manager.policy.max_file_bytes
         self.catalog_measurement = self._render_catalog()
         keys: dict[tuple[str, str], BoundSkillCatalogItem] = {}
         skill_paths: list[SkillPath] = []
@@ -851,20 +912,72 @@ class _SkillsRunCapability(SkillsCapability):
     def get_instructions(self) -> str | None:
         return self.catalog_measurement.text if self.catalog_measurement else None
 
-    def _render_catalog(self) -> InstructionCatalog | None:
-        if not self._catalog.items:
+    def get_toolset(self) -> FunctionToolset[AgentContext] | None:
+        if not self._remote_skills:
             return None
-        lines = [_SKILL_ROUTING_POLICY, "", "<available-skills>"]
-        sizes: dict[str, ContextItemUsage] = {}
-        for item in self._catalog.items:
-            entry = "\n".join(
-                (
-                    f'<skill name="{escape(item.name, quote=True)}">',
-                    f"  <description>{escape(item.description, quote=True)}</description>",
-                    f"  <path>{escape(item.path, quote=True)}</path>",
-                    "</skill>",
-                )
+        return FunctionToolset(tools=[self.read_skill], id="a13n-skills")
+
+    async def read_skill(
+        self, ctx: RunContext[AgentContext], name: str, path: str = _SKILL_FILE_NAME
+    ) -> dict[str, str | list[str]]:
+        """Read untrusted UTF-8 text from a selected skill by name and skill-relative file path."""
+        self._require_current(ctx)
+        if not is_skill_relative_path(path):
+            return {"error": "Use a relative file path within the selected skill."}
+        remote = self._remote_skills.get(name)
+        local = self._local_skills.get(name)
+        try:
+            if remote is not None:
+                text = await read_mcp_skill_text(remote, path, max_bytes=self._max_file_bytes)
+                item = remote.item
+                location = item.uri
+                if path == _SKILL_FILE_NAME:
+                    try:
+                        frontmatter = _load_skill_frontmatter(text, path=path)
+                        matches = same_frontmatter(frontmatter, remote.frontmatter)
+                    except (DefinitionError, RecursionError, ValueError):
+                        matches = False
+                    if not matches:
+                        return {"error": "Skill SKILL.md frontmatter differs from the frozen manifest."}
+            elif local is not None:
+                text = await _read_environment_skill_text(ctx.deps.environment, local, path, self._max_file_bytes)
+                item = local
+                location = local.path
+            else:
+                return {"error": "Use the name of a selected skill."}
+        except _MCPSkillReadError as exc:
+            return {"error": str(exc)}
+        except EnvironmentError as exc:
+            return {"error": f"The selected skill file is unavailable ({exc.code})."}
+        except UnicodeError:
+            return {"error": "The selected skill file is not valid UTF-8 text."}
+        self._require_current(ctx)
+        if path == _SKILL_FILE_NAME:
+            await self._record_access(ctx, item.name, item.source_id, location, _READ_SKILL_TOOL)
+        result: dict[str, str | list[str]] = {"source_id": item.source_id, "name": name, "path": path, "content": text}
+        if remote is not None and path == _SKILL_FILE_NAME:
+            result["files"] = sorted(remote.files)
+        return result
+
+    def _render_catalog(self) -> InstructionCatalog | None:
+        if not self._catalog.items and not self._catalog.mcp_items:
+            return None
+        lines = [_SKILL_ROUTING_POLICY]
+        if self._remote_skills:
+            lines.append(
+                "\nUse read_skill by name to read SKILL.md for any selected skill, including entries without an "
+                "Environment path. Pass a skill-relative path to read a supporting file."
             )
+        lines.extend(("", "<available-skills>"))
+        sizes: dict[str, ContextItemUsage] = {}
+        for item in sorted((*self._catalog.items, *self._catalog.mcp_items), key=lambda item: item.name):
+            fields = [
+                f'<skill name="{escape(item.name, quote=True)}">',
+                f"  <description>{escape(item.description, quote=True)}</description>",
+            ]
+            if isinstance(item, BoundSkillCatalogItem):
+                fields.append(f"  <path>{escape(item.path, quote=True)}</path>")
+            entry = "\n".join((*fields, "</skill>"))
             lines.append(entry)
             sizes[item.name] = ContextItemUsage(characters=len(entry))
         lines.append("</available-skills>")
@@ -925,25 +1038,64 @@ class _SkillsRunCapability(SkillsCapability):
         item = self._access_keys.get((selected.mount_id, selected.path))
         if item is None:
             return result
-        observe_skill_access(item.name, source_id=item.source_id, tool_id=harness_metadata.tool_id)
+        await self._record_access(ctx, item.name, item.source_id, item.path, harness_metadata.tool_id)
+        return result
+
+    @staticmethod
+    async def _record_access(
+        ctx: RunContext[AgentContext], name: str, source_id: str, location: str, tool_id: str
+    ) -> None:
+        observe_skill_access(name, source_id=source_id, tool_id=tool_id)
         await ctx.deps.events.emit(
             HarnessExtensionEvent(
                 kind="context",
                 payload={
                     "type": "skill_accessed",
-                    "skill_name": item.name,
-                    "source_id": item.source_id,
-                    "path": item.path,
-                    "tool_id": harness_metadata.tool_id,
+                    "skill_name": name,
+                    "source_id": source_id,
+                    "path": location,
+                    "tool_id": tool_id,
                 },
             )
         )
-        return result
 
     def _require_current(self, ctx: RunContext[AgentContext]) -> None:
         if ctx.deps is not self._context:
             raise DefinitionError("A frozen skill catalog cannot cross logical runs.", code="capability_scope_invalid")
         self._catalog.require_current(ctx.deps.environment)
+
+
+async def _read_environment_skill_text(
+    environment: BoundEnvironment, item: BoundSkillCatalogItem, path: str, max_bytes: int
+) -> str:
+    selection = environment.select_files(item.path)
+    if selection.resolved_path != item.directory or selection.observed_generation != item.observed_generation:
+        raise DefinitionError("The selected skill directory changed.", code="skill_catalog_stale")
+    # Pin the existing mount and reject overlays and symlinks along the selected
+    # path. The provider remains responsible for confinement during actual I/O.
+    parts = path.split("/")
+    async with environment.open_files(selection) as files:
+        current = item.path
+        if (await files.stat(current)).kind != "directory":
+            raise EnvironmentError("The skill directory is unavailable.", code="environment_denied")
+        for index, part in enumerate(parts, 1):
+            current = _join_logical_path(current, part)
+            resolved = environment.resolve_path(current)
+            expected = _join_logical_path(item.directory.path, "/".join(parts[:index]))
+            if not _is_within_root(resolved, item.directory) or resolved.path != expected:
+                raise EnvironmentError("The skill file selects another route.", code="environment_denied")
+            info = await files.stat(current)
+            if info.kind != ("file" if index == len(parts) else "directory"):
+                raise EnvironmentError("The skill path is not a regular file path.", code="environment_denied")
+            if index == len(parts) and info.size is not None and info.size > max_bytes:
+                raise EnvironmentError("Skill file exceeds the byte limit.", code="environment_too_large")
+        data = bytearray()
+        async with closing_stream(files.read_bytes_stream(current, chunk_size=min(65_536, max_bytes))) as stream:
+            async for chunk in stream:
+                if len(data) + len(chunk) > max_bytes:
+                    raise EnvironmentError("Skill file exceeds the byte limit.", code="environment_too_large")
+                data.extend(chunk)
+    return data.decode("utf-8")
 
 
 def _resolve_skill_selection(ctx: RunContext[AgentContext]) -> frozenset[str] | None:
@@ -1083,7 +1235,7 @@ def _bind_skill_catalog(
     return BoundSkillCatalog(items=tuple(bound))
 
 
-def _parse_frontmatter(content: str, *, path: str) -> tuple[str, str]:
+def _load_skill_frontmatter(content: str, *, path: str) -> dict[Any, Any]:
     lines = content.lstrip("\ufeff").splitlines()
     if not lines or lines[0].strip() != "---":
         raise DefinitionError(
@@ -1112,6 +1264,11 @@ def _parse_frontmatter(content: str, *, path: str) -> tuple[str, str]:
             code="skill_catalog_invalid",
             details={"path": path},
         )
+    return value
+
+
+def _parse_frontmatter(content: str, *, path: str) -> tuple[str, str]:
+    value = _load_skill_frontmatter(content, path=path)
     try:
         parsed = SkillCatalogItem(name=value["name"], description=value["description"], path=path)
     except Exception as exc:
@@ -1127,6 +1284,7 @@ __all__ = [
     "BoundSkillCatalog",
     "BoundSkillCatalogItem",
     "FileSkillSource",
+    "MCPSkillCatalogItem",
     "SkillCatalogItem",
     "SkillCatalogResolvedEvent",
     "SkillManager",

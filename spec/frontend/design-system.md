@@ -56,6 +56,12 @@ Icons match neighboring type. Brand marks and names remain adjacent, using the s
 
 Neutral surfaces carry the interface. Primary buttons are near-black in light mode and near-white in dark mode. Indigo signals focus, selection, prose links and charts, not decorative fills. Semantic colors are success (emerald), warning (amber), danger (red), info (blue) and neutral (gray); labels identify states without color alone. Product guides own link and status treatment. Internal navigation stays in the product; external destinations use the appropriate affordance.
 
+## HTML Code Preview
+
+Assistant Markdown shows fenced `html` as copyable source. Once the reply stops streaming, the code toolbar offers **Preview** next to **Copy**. Preview replaces the source with an internally scrollable frame. Turning it off releases the frame; reloading starts in source. A truncated reply stays in source until its complete content is available. Source over 200 KB (UTF-8) stays visible with a size notice.
+
+The shared UI admits static HTML and SVG, inline CSS, and native interactions such as `details`. It strips scripts, external navigation and resource hints before loading a scriptless, opaque-origin iframe whose policy blocks external resources. Snippets get theme-aware document defaults; complete documents keep their own presentation.
+
 ## Identity Color
 
 Identity is separate from status. A child conversation uses a deterministic generated glyph: a rounded polygon with a pair of eyes. A stable hash of its Thread ID seeds every variable feature: palette entry, side count, rotation, vertex and corner variation, eye style, gaze and tilt. State never changes the glyph or its hue. Bodies keep similar visual weight, eyes stay legible at 16px and glyphs retain their proportions at tab/header sizes. State uses text, a badge or reduced-motion-aware animation. Tool icons remain neutral.
@@ -84,6 +90,10 @@ Regions identify themselves through headings. Touch does not depend on hover; co
 Motion is brief, typically 100–200ms, respects reduced motion and preserves layout geometry. Product guides distinguish press and disclosure treatments; incidental width, padding and weight animation are not permitted.
 
 Load shared styles once and use `a13n-root` for base typography. Light is the default; document-level `dark` makes portals inherit the theme. Console and Harness WebUI each own their viewer-local display-language choice; their product contracts define localization coverage. Shared components receive application-owned strings.
+
+## Conversation Diagrams
+
+Console and Harness UI preview complete Mermaid fences as static images with the application's light or dark theme. Layout runs in an opaque sandboxed frame without network access. Diagram callbacks are inactive. The preview supports native Mermaid diagram types and styling, with source view available; embedded configuration directives and diagrams over the preview limits remain as source. Failed previews show the reason alongside the original source.
 
 ## Documentation Pages
 
