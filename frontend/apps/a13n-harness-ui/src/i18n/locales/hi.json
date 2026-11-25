@@ -1303,6 +1303,8 @@
   "The Mermaid preview renderer could not start.": "Mermaid प्रीव्यू रेंडरर शुरू नहीं हो सका।",
   "Waiting for the complete diagram…": "पूरे डायग्राम की प्रतीक्षा हो रही है…",
   "Copy diagram source": "डायग्राम सोर्स कॉपी करें",
+  "HTML preview": "HTML प्रीव्यू",
+  "HTML is too large to preview (200 KB limit).": "HTML प्रीव्यू के लिए बहुत बड़ा है (200 KB की सीमा)।",
   "Copy code block": "कोड कॉपी करें",
   "Could not copy. Select the source to copy it manually.": "कॉपी नहीं किया जा सका। मैन्युअल रूप से कॉपी करने के लिए सोर्स चुनें।",
   "{{language}} code": "{{language}} कोड",

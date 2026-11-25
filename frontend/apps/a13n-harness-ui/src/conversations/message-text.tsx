@@ -8,6 +8,7 @@ import remarkMath from "remark-math";
 import { remarkClosedDiagram, remarkLatex } from "a13n-ui/markdown-extensions";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
+import { HtmlPreviewEnabled } from "a13n-ui/html-code-preview";
 import { MarkdownPre, MarkdownTable } from "./markdown-block";
 import styles from "./markdown.module.css";
 import { linkedHostFile } from "../shell/page-links";
@@ -102,33 +103,37 @@ const components: Components = {
 
 export const MessageText = memo(function MessageText({
   text,
+  previewHtml = false,
 }: {
   text: string;
+  previewHtml?: boolean;
 }) {
   const guest = useGuestAccess();
   return (
     <div className={styles.markdown}>
-      <Markdown
-        remarkPlugins={[
-          remarkGfm,
-          remarkCjkFriendly,
-          remarkMath,
-          remarkLatex,
-          remarkClosedDiagram,
-        ]}
-        rehypePlugins={
-          guest
-            ? [rehypeKatex]
-            : [
-                rehypeKatex,
-                [linkedMediaPreviews, { currentHref: window.location.href }],
-              ]
-        }
-        skipHtml
-        components={components}
-      >
-        {text}
-      </Markdown>
+      <HtmlPreviewEnabled value={previewHtml}>
+        <Markdown
+          remarkPlugins={[
+            remarkGfm,
+            remarkCjkFriendly,
+            remarkMath,
+            remarkLatex,
+            remarkClosedDiagram,
+          ]}
+          rehypePlugins={
+            guest
+              ? [rehypeKatex]
+              : [
+                  rehypeKatex,
+                  [linkedMediaPreviews, { currentHref: window.location.href }],
+                ]
+          }
+          skipHtml
+          components={components}
+        >
+          {text}
+        </Markdown>
+      </HtmlPreviewEnabled>
     </div>
   );
 });

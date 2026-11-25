@@ -1760,6 +1760,8 @@
   "Mermaid diagram": "Mermaid diagram",
   "Diagram source": "Source",
   "Copy diagram source": "Copy diagram source",
+  "HTML preview": "HTML preview",
+  "HTML is too large to preview (200 KB limit).": "HTML is too large to preview (200 KB limit).",
   "Math formula": "Math formula",
   "Rendering diagram…": "Rendering diagram…",
   "Diagram source exceeds 50,000 characters.": "Diagram source exceeds 50,000 characters.",

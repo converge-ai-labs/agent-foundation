@@ -2012,6 +2012,8 @@
   "Mermaid diagram": "Mermaid 图表",
   "Diagram source": "源码",
   "Copy diagram source": "复制图表源码",
+  "HTML preview": "HTML 预览",
+  "HTML is too large to preview (200 KB limit).": "HTML 超过 200 KB，无法预览。",
   "Math formula": "数学公式",
   "Rendering diagram…": "正在渲染图表…",
   "Diagram source exceeds 50,000 characters.": "图表源码超过 50,000 个字符。",

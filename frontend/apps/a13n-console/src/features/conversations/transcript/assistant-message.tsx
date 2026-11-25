@@ -106,9 +106,9 @@ export function AgentTurn({
   );
 }
 
-function renderReply(value: unknown) {
+function renderReply(value: unknown, previewHtml: boolean) {
   return typeof value === "string" ? (
-    <MarkdownContent text={value} agentReply />
+    <MarkdownContent text={value} agentReply previewHtml={previewHtml} />
   ) : (
     <JsonView value={value} />
   );
@@ -129,7 +129,9 @@ function AgentMessage({ entry }: { entry: ContentEntry }) {
           itemId={entry.id}
           field="text"
           value={entry.text}
-          renderValue={renderReply}
+          renderValue={(value, partial) =>
+            renderReply(value, !streaming && !partial)
+          }
         />
       ) : (
         <p className={styles.thinking}>

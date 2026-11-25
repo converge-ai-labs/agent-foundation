@@ -1303,6 +1303,8 @@
   "The Mermaid preview renderer could not start.": "The Mermaid preview renderer could not start.",
   "Waiting for the complete diagram…": "Waiting for the complete diagram…",
   "Copy diagram source": "Copy diagram source",
+  "HTML preview": "HTML preview",
+  "HTML is too large to preview (200 KB limit).": "HTML is too large to preview (200 KB limit).",
   "Copy code block": "Copy code",
   "Could not copy. Select the source to copy it manually.": "Could not copy. Select the source to copy it manually.",
   "{{language}} code": "{{language}} code",
