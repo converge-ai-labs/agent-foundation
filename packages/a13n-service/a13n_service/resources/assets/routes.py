@@ -1,18 +1,12 @@
 """Asset creation from uploads, reads and retirement."""
 
-from typing import Annotated
+from fastapi import APIRouter, Response
 
-from fastapi import APIRouter, Query, Response
-
-from a13n_service.infra.http import IfMatch, PageLimit, download_headers, tagged
-from a13n_service.infra.ids import ObjectId
+from a13n_service.infra.http import IfMatch, download_headers, tagged
 from a13n_service.resources.assets import service, usage
 from a13n_service.resources.assets.schemas import (
     Asset,
     AssetCreate,
-    AssetPage,
-    AssetStatus,
-    SourceKind,
     WorkspaceStorage,
 )
 from a13n_service.resources.requests import CurrentRuntime
@@ -41,33 +35,6 @@ async def create_asset(
     result, created = await service.create_asset(runtime.storage, actor, workspace_id, body)
     response.status_code = 201 if created else 200
     return tagged(response, result)
-
-
-@router.get("", response_model=AssetPage, openapi_extra={"x-a13n-mcp": True})
-async def list_assets(
-    workspace_id: WorkspaceId,
-    actor: Actor,
-    runtime: CurrentRuntime,
-    limit: PageLimit = 50,
-    cursor: str | None = None,
-    query: Annotated[
-        str | None, Query(max_length=255, description="Case-insensitive literal filename substring.")
-    ] = None,
-    created_by_id: ObjectId | None = None,
-    source_kind: SourceKind | None = None,
-    status: AssetStatus = "all",
-) -> AssetPage:
-    return await service.list_assets(
-        runtime.storage,
-        actor,
-        workspace_id,
-        limit=limit,
-        cursor=cursor,
-        query=query,
-        created_by_id=created_by_id,
-        source_kind=source_kind,
-        status=status,
-    )
 
 
 @router.get("/{asset_id}", response_model=Asset, openapi_extra={"x-a13n-mcp": True})

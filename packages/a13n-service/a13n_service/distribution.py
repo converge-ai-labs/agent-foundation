@@ -81,6 +81,7 @@ from a13n_service.resources.uploads.routes import router as uploads_router
 from a13n_service.resources.uploads.tables import UploadRow
 from a13n_service.runs.accept import ThreadAdvancer
 from a13n_service.runs.admission import AdmissionPolicy
+from a13n_service.runs.asset_listing import router as asset_listing_router
 from a13n_service.runs.backlog import REPORT_SECONDS, BacklogReporter
 from a13n_service.runs.browsers.delivery import handbacks
 from a13n_service.runs.browsers.maintenance import control_sweep as browser_control_sweep
@@ -495,6 +496,7 @@ OSS = Distribution(
         agents_router,
         uploads_router,
         assets_router,
+        asset_listing_router,
         storage_router,
         skills_router,
         subscriptions_router,
