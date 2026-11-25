@@ -17,6 +17,7 @@ import {
 } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
@@ -26,6 +27,7 @@ import {
   representation,
   type Schema,
 } from "../../../shared/api";
+import { DuplicateAction } from "../../../shared/dialogs/duplicate-action";
 import { Confirm } from "../../../shared/dialogs";
 import { ErrorNotice, ErrorToast } from "../../../shared/feedback";
 import { FormActions } from "../../../shared/forms";
@@ -49,7 +51,8 @@ export function SkillMenu({
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation(),
-    { can } = useWorkspace();
+    { basePath, can } = useWorkspace(),
+    navigate = useNavigate();
   const skill = resource.value;
   const [renaming, setRenaming] = useState(false);
   const download = useArchiveDownload();
@@ -82,6 +85,27 @@ export function SkillMenu({
             <DownloadSimpleIcon />
             {t("Download ZIP")}
           </MenuItem>
+          {can("write") && !skill.archived_at && revision && (
+            <DuplicateAction
+              sourceName={skill.name}
+              title={t("Duplicate skill")}
+              description={t("Create an independent skill from this version.")}
+              nameLimit={256}
+              action={async (name) => {
+                const result = await client
+                  .workspace(skill.workspace_id)
+                  .POST("/api/v1/skills/{skill_id}/duplicate", {
+                    params: { path: { skill_id: skill.id } },
+                    body: { name, revision_id: revision.id },
+                  })
+                  .then(data);
+                void cache.invalidateQueries({
+                  queryKey: ["skills", skill.workspace_id],
+                });
+                navigate(`${basePath}/skills/${result.id}`);
+              }}
+            />
+          )}
           {can("write") && (
             <>
               <MenuSeparator />

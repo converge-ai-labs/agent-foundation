@@ -1668,6 +1668,23 @@ export interface paths {
     patch: operations["update_environment_template"];
     trace?: never;
   };
+  "/api/v1/environment-templates/{template_id}/duplicate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Duplicate Environment Template */
+    post: operations["duplicate_environment_template"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments": {
     parameters: {
       query?: never;
@@ -2999,6 +3016,23 @@ export interface paths {
     patch: operations["update_model"];
     trace?: never;
   };
+  "/api/v1/models/{key}/duplicate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Duplicate Model */
+    post: operations["duplicate_model"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/organizations": {
     parameters: {
       query?: never;
@@ -3694,6 +3728,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/schedules/{schedule_id}/duplicate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Duplicate Schedule */
+    post: operations["duplicate_schedule"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/schedules/{schedule_id}/enable": {
     parameters: {
       query?: never;
@@ -3958,6 +4009,23 @@ export interface paths {
      * @description Archived skills keep their revisions readable and pinned; they refuse new revisions and new pins.
      */
     post: operations["archive_skill"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/skills/{skill_id}/duplicate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Duplicate Skill */
+    post: operations["duplicate_skill"];
     delete?: never;
     options?: never;
     head?: never;
@@ -11009,6 +11077,15 @@ export interface components {
       /** Provider Id */
       provider_id: string;
     };
+    /** ModelDuplicate */
+    ModelDuplicate: {
+      /** Description */
+      description?: string | null;
+      /** Key */
+      key: string;
+      /** Name */
+      name?: string | null;
+    };
     /** ModelMetrics */
     ModelMetrics: {
       /** Cache Hit Rate */
@@ -13444,6 +13521,18 @@ export interface components {
       state?: "paused" | "enabled";
       target?: components["schemas"]["ScheduleTarget"];
     };
+    /** ScheduleDuplicate */
+    ScheduleDuplicate: {
+      /** Description */
+      description?: string | null;
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      } | null;
+      /** Name */
+      name?: string | null;
+      target?: components["schemas"]["ScheduleTarget"] | null;
+    };
     /** ScheduleInvocation */
     "ScheduleInvocation-Input": {
       /** Agent Id */
@@ -14039,6 +14128,19 @@ export interface components {
       source:
         | components["schemas"]["UploadSource"]
         | components["schemas"]["GitHubSource"];
+    };
+    /** SkillDuplicate */
+    SkillDuplicate: {
+      /** Description */
+      description?: string | null;
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      } | null;
+      /** Name */
+      name?: string | null;
+      /** Revision Id */
+      revision_id?: string | null;
     };
     /** SkillFile */
     SkillFile: {
@@ -14743,6 +14845,17 @@ export interface components {
       name: string;
       /** Provider Id */
       provider_id: string;
+    };
+    /** TemplateDuplicate */
+    TemplateDuplicate: {
+      /** Description */
+      description?: string | null;
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      } | null;
+      /** Name */
+      name?: string | null;
     };
     /** TemplatePage */
     TemplatePage: {
@@ -19311,6 +19424,37 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  duplicate_environment_template: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        template_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TemplateDuplicate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Template"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_environments: {
     parameters: {
       query?: {
@@ -22528,6 +22672,37 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  duplicate_model: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        key: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModelDuplicate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Model"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   list_organizations: {
     parameters: {
       query?: {
@@ -24050,6 +24225,37 @@ export interface operations {
       default: components["responses"]["Error"];
     };
   };
+  duplicate_schedule: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        schedule_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ScheduleDuplicate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Schedule"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
   enable_schedule: {
     parameters: {
       query?: never;
@@ -24595,6 +24801,37 @@ export interface operations {
     responses: {
       /** @description Successful Response */
       200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Skill"];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  duplicate_skill: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        skill_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SkillDuplicate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
         headers: {
           [name: string]: unknown;
         };

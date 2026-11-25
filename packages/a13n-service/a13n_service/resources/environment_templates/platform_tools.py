@@ -14,6 +14,7 @@ from a13n_service.resources.environment_templates.schemas import (
     TemplateConfig,
     TemplateConfigurationChanges,
     TemplateCreate,
+    TemplateDuplicate,
     TemplatePage,
     TemplateUpdate,
 )
@@ -21,6 +22,13 @@ from a13n_service.resources.environment_templates.tool_inputs import TemplateCre
 from a13n_service.resources.runtime import Runtime
 
 type ToolContext = PlatformContext[Runtime]
+
+
+async def duplicate_environment_template(ctx: ToolContext, *, template_id: str, body: TemplateDuplicate) -> Template:
+    """Duplicate an Environment template and revalidate its provider recipe."""
+    return await service.duplicate_template(
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, template_id, body, registry=ctx.runtime.registry
+    )
 
 
 async def create_environment_template(ctx: ToolContext, *, body: TemplateCreation) -> Template:
@@ -94,6 +102,7 @@ async def update_environment_template(
 
 
 TOOLS = (
+    definition(duplicate_environment_template, group="environment_templates", effect="write"),
     definition(create_environment_template, group="environment_templates", effect="write"),
     definition(list_environment_templates, group="environment_templates", effect="read"),
     definition(get_environment_template, group="environment_templates", effect="read"),

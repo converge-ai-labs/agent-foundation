@@ -43,6 +43,13 @@ class TemplateCreate(BaseModel):
     labels: Labels = Field(default_factory=dict)
 
 
+class TemplateDuplicate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: TemplateName | None = None
+    description: Description | None = None
+    labels: Labels | None = None
+
+
 class TemplateUpdate(BaseModel):
     """Fields left out stay unchanged; `description: null` clears it.
 

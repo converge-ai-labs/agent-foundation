@@ -15,17 +15,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
+from a13n_service.infra.errors import conflict, not_found
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.labels import label_filter
 from a13n_service.infra.objects.interface import ObjectStore
 from a13n_service.resources import revisions
-from a13n_service.resources.rows import audit_row, given
+from a13n_service.resources.rows import audit_row, copy_name, given
 from a13n_service.resources.skills import package
 from a13n_service.resources.skills.github import GitHub
 from a13n_service.resources.skills.schemas import (
     GitHubSource,
     Skill,
     SkillCreate,
+    SkillDuplicate,
     SkillFile,
     SkillManifest,
     SkillPage,
@@ -40,7 +42,7 @@ from a13n_service.resources.skills.schemas import (
 from a13n_service.resources.skills.tables import SkillRevisionRow, SkillRow
 from a13n_service.resources.uploads import service as uploads
 from a13n_service.tenancy.access import workspace_scope
-from a13n_service.tenancy.authorize import Principal, WorkspaceScope
+from a13n_service.tenancy.authorize import Principal, WorkspaceScope, authorize
 
 
 async def resolve_skill(session: AsyncSession, workspace_id: str, skill_id: str, *, lock: bool = False) -> SkillRow:
@@ -166,6 +168,45 @@ async def create_skill(
             session, head, SkillRevisionRow, manifest, actor=actor, note=None, package_ref=package_ref
         )
         audit_row(session, actor, head, "create")
+        await session.flush()
+        return await _view(session, head)
+
+
+async def duplicate_skill(
+    storage: Storage, actor: Principal, workspace_id: str, skill_id: str, body: SkillDuplicate
+) -> Skill:
+    async with transaction(storage) as session:
+        scope = await workspace_scope(session, actor, workspace_id, "write")
+        authorize(actor, scope, "read")
+        source = await resolve_skill(session, scope.workspace_id, skill_id)
+        if source.archived_at is not None:
+            raise conflict(source.KIND, source.id, "archived")
+        revision_id = body.revision_id or source.default_revision_id
+        if revision_id is None:
+            raise not_found(SkillRevisionRow.KIND, source.id)
+        revision = await resolve_revision(session, source, revision_id)
+        head = SkillRow(
+            id=new_object_id("sk"),
+            organization_id=scope.organization_id,
+            workspace_id=scope.workspace_id,
+            name=body.name or copy_name(source.name, 256),
+            description=(body.description or "") if "description" in body.model_fields_set else source.description,
+            labels=source.labels if body.labels is None else body.labels,
+            created_by_id=actor.id,
+            updated_by_id=actor.id,
+        )
+        session.add(head)
+        await session.flush()
+        await revisions.publish(
+            session,
+            head,
+            SkillRevisionRow,
+            SkillManifest.model_validate(revision.config),
+            actor=actor,
+            note=None,
+            package_ref=revision.package_ref,
+        )
+        audit_row(session, actor, head, "duplicate", {"source_id": source.id, "source_revision_id": revision.id})
         await session.flush()
         return await _view(session, head)
 

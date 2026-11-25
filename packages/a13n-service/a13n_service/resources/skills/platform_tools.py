@@ -17,6 +17,7 @@ from a13n_service.resources.skills.schemas import (
     Description,
     Skill,
     SkillCreate,
+    SkillDuplicate,
     SkillManifest,
     SkillName,
     SkillPage,
@@ -38,6 +39,11 @@ class SkillMetadata(BaseModel):
     name: SkillName | MISSING = MISSING
     description: Description | MISSING = MISSING
     labels: Labels | MISSING = MISSING
+
+
+async def duplicate_skill(ctx: ToolContext, *, skill_id: str, body: SkillDuplicate) -> Skill:
+    """Duplicate a Skill from its default or a selected immutable revision."""
+    return await service.duplicate_skill(ctx.runtime.storage, ctx.actor, ctx.workspace_id, skill_id, body)
 
 
 async def create_skill(ctx: ToolContext, *, body: SkillCreate) -> Skill:
@@ -159,6 +165,7 @@ async def set_default_skill_revision(
 
 
 TOOLS = (
+    definition(duplicate_skill, group="skills", effect="write"),
     definition(create_skill, group="skills", effect="write"),
     definition(validate_skill_source, group="skills", effect="read"),
     definition(list_skills, group="skills", effect="read"),
