@@ -220,6 +220,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | ------------------------------------------------------ | ------------------ | ---------------------------------------------------------- |
 | `/organizations`                                       | GET                | [03](03-tenancy.md#organizations-and-workspaces)           |
 | `/organizations/{org}`                                 | GET, PATCH         | [03](03-tenancy.md#organizations-and-workspaces)           |
+| `/organizations/{org}/update-notices`                  | GET                | [09](09-runtime.md#update-notices)                         |
 | `/organizations/{org}/app-plugins`                     | GET                | [15](15-app-plugins.md#organization-policy-and-management) |
 | `/organizations/{org}/app-plugins/{app_id}`            | PUT                | [15](15-app-plugins.md#organization-policy-and-management) |
 | `/apps/{app_id}/...`                                   | App-declared       | [15](15-app-plugins.md#dispatch-boundary)                  |

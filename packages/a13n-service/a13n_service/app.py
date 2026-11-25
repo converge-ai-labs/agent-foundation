@@ -69,6 +69,7 @@ from a13n_service.settings import Database, Encryption, Objects, ProcessRole, Se
 from a13n_service.tenancy.app_plugins import router as app_policy_router
 from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, HTTP_COOKIE_NAME, SAFE_METHODS
 from a13n_service.tenancy.requests import current_credential
+from a13n_service.update_notices import UpdateChecker
 
 # The Console's production build, placed here for packaging; absent in a source checkout, where the Console
 # development server serves it instead.
@@ -369,6 +370,7 @@ def build_app(
     databases = app_databases(apps)
     app_heads = {database.app_id: app_migrations.heads(database) for database in databases}
     serves_api, executes = role != "worker", role != "control"
+    service_version = version("a13n-service")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
@@ -408,6 +410,10 @@ def build_app(
                 if SessionCredentialRow in distribution.tables:
                     runtime.tasks.start(CredentialSynchronizer(runtime).run(), name="session-credentials", service=True)
                 if serves_api:
+                    checker = UpdateChecker(service_version)
+                    app.state.update_checker = checker
+                    if config.control.update_notices_enabled:
+                        runtime.tasks.start(checker.run(runtime.endpoint_policy), name="update-notices", service=True)
                     if ClientSettingsRow in distribution.tables:
                         runtime.tasks.start(
                             runtime.client_sessions.serve(), name="client-environment-sessions", service=True
@@ -445,7 +451,7 @@ def build_app(
 
     app = FastAPI(
         title="a13n Service",
-        version=version("a13n-service"),
+        version=service_version,
         lifespan=lifespan,
         openapi_url="/api/v1/openapi.json" if serves_api else None,
         docs_url="/api/v1/docs" if serves_api else None,

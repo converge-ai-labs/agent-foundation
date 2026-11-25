@@ -1,4 +1,11 @@
 {
+  "Service version": "Service का वर्शन",
+  "Installed version": "इंस्टॉल किया गया वर्शन",
+  "v{{version}} available": "v{{version}} उपलब्ध है",
+  "Critical security advisory": "गंभीर सुरक्षा परामर्श",
+  "High-severity security advisory": "उच्च गंभीरता वाला सुरक्षा परामर्श",
+  "View advisory on GitHub": "GitHub पर परामर्श देखें",
+  "Hide on this browser": "इस ब्राउज़र में छिपाएँ",
   "Password reset link ready": "पासवर्ड रीसेट लिंक तैयार है",
   "Password reset email queued": "पासवर्ड रीसेट ईमेल भेजने की कतार में है",
   "Agent default environment": "एजेंट का डिफ़ॉल्ट एनवायरनमेंट",
