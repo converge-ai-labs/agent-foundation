@@ -463,8 +463,9 @@ async def test_dynamic_child_blocks_rebinding_until_quiescent_then_inherits_new_
         value="synthetic",
     )
     desired = threads.SessionConfiguration.model_validate(selection(credential.id))
+    context = {"instance": "parent"}
     async with transaction(runtime.storage) as db:
-        admission = await threads.prepare_admission(db, runtime, ws, runner, app_id="claw")
+        admission = await threads.prepare_admission(db, runtime, ws, runner, app_id="claw", app_context=context)
         root, _ = await threads.create_thread_in_transaction(
             db,
             runtime,
@@ -484,6 +485,11 @@ async def test_dynamic_child_blocks_rebinding_until_quiescent_then_inherits_new_
     )
     (child_lease,) = await claim(runtime, worker_id="child", worker_build="test", limit=1)
     assert child_lease.run_id == spawned.execution_id
+    async with short_session(runtime.storage) as db:
+        child_run = await db.get_one(RunRow, child_lease.run_id)
+        child_thread = await db.get_one(ThreadRow, child_lease.thread_id)
+        assert child_run.app_id == child_thread.app_id == "claw"
+        assert child_run.app_context == child_thread.app_context == context
     await seal_attempt(runtime, parent_lease, Outcome.cancelled())
     root_id, child_id = parent["thread"]["id"], child_lease.thread_id
 
@@ -1042,6 +1048,21 @@ async def test_public_threads_cannot_stamp_or_create_app_roots(service, app_runt
             )
     assert denied.value.code == "conflict" and denied.value.details["reason"] == "app_owner_mismatch"
 
+    from .environments_support import interrupt
+
+    await interrupt(service, receipt.run.id)
+    fork = await service.client.post(
+        f"{service.api}/runs/{receipt.run.id}/fork", json=message, headers=runs_kit.fresh_key()
+    )
+    assert fork.status_code == 201, fork.text
+    forked = fork.json()
+    assert forked["run"]["app_id"] == forked["thread"]["app_id"] == "claw"
+    assert forked["run"]["trigger_app_id"] is None
+    async with short_session(app_runtime.storage) as db:
+        fork_thread = await db.get_one(ThreadRow, forked["thread"]["id"])
+        fork_run = await db.get_one(RunRow, forked["run"]["id"])
+        assert fork_thread.app_context == fork_run.app_context == context
+
 
 async def test_app_schedule_stamps_occurrence_and_rejects_public_retarget(
     service, app_runtime, scripted_model, runs_kit
@@ -1103,3 +1124,31 @@ async def test_app_schedule_stamps_occurrence_and_rejects_public_retarget(
         for row in (await db.get_one(ScheduleRow, schedule.id), occurrence, thread, session, run):
             assert row.app_id == "claw" and row.app_context == context
         assert entry.app_id == run.trigger_app_id == "claw"
+
+
+async def test_app_memory_space_provenance_is_read_only(service, app_runtime):
+    from a13n_service.resources.memories.tables import MemorySpaceRow
+    from psycopg.errors import RaiseException
+    from sqlalchemy import update
+    from sqlalchemy.exc import DBAPIError
+
+    tenant = service.tenant
+    context = {"instance": "library"}
+    async with transaction(app_runtime.storage) as db:
+        space_id = await projects.create_memory_space(
+            db,
+            app_runtime,
+            tenant.workspace_id,
+            app_id="claw",
+            app_context=context,
+            actor_id=tenant.principal_id,
+            name="App library",
+        )
+        row = await db.get_one(MemorySpaceRow, space_id)
+        assert row.app_id == "claw" and row.app_context == context
+    view = await service.client.get(f"{service.api}/memory-spaces/{space_id}")
+    assert view.status_code == 200 and view.json()["app_id"] == "claw", view.text
+    with pytest.raises(DBAPIError) as rejected:
+        async with transaction(app_runtime.storage) as db:
+            await db.execute(update(MemorySpaceRow).where(MemorySpaceRow.id == space_id).values(app_context=None))
+    assert isinstance(rejected.value.orig, RaiseException)
