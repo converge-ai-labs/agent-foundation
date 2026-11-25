@@ -138,6 +138,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "thread",
             "thread_configuration",
             "thread_inspection",
+            "thread_run",
             "thread_work",
             "tool_execution",
             "transcript_entry",
