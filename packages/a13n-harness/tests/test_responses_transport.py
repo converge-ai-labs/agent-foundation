@@ -9,7 +9,7 @@ from a13n_harness import HarnessBuilder
 from a13n_harness.models.responses import ResponsesModel
 from openai import AsyncOpenAI
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.messages import InstructionPart, ModelRequest, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.providers.openai import OpenAIProvider
 from websockets.asyncio.server import serve
@@ -441,3 +441,109 @@ async def test_codex_websocket_auth_and_turn_state(monkeypatch, refresh, transit
         if refresh:
             assert handshakes[-1]["authorization"] == "Bearer codex-access-refreshed-0"
             assert len(source.saved) == (2 if transition == "token_rotation" else 1)
+
+
+@pytest.mark.parametrize("model_name", ["gpt-6.2-sol", "gpt-6.2-astra"])
+@pytest.mark.parametrize("path", ["full", "http-auto", "websocket-auto", "websocket-default"])
+async def test_gpt62_static_instruction_prefix_and_tool_continuation(model_name, path):
+    requests = []
+    websocket = path.startswith("websocket")
+
+    def reply(request):
+        requests.append(request)
+        frames = events(f"resp-{len(requests)}")
+        if len(requests) == 1:
+            item = {
+                "type": "function_call",
+                "id": "fc-test",
+                "call_id": "call-test",
+                "name": "lookup",
+                "arguments": "{}",
+                "status": "completed",
+            }
+            frames = [
+                frames[0],
+                {
+                    "type": "response.output_item.added",
+                    "output_index": 0,
+                    "sequence_number": 1,
+                    "item": item,
+                },
+                {
+                    "type": "response.output_item.done",
+                    "output_index": 0,
+                    "sequence_number": 2,
+                    "item": item,
+                },
+                frames[-1],
+            ]
+            frames[-1]["response"]["output"] = [item]
+        return frames
+
+    async def reply_ws(socket):
+        async for message in socket:
+            for event in reply(json.loads(message)):
+                await socket.send(json.dumps(event))
+
+    async def reply_http(request):
+        assert not websocket, "WebSocket silently fell back to HTTP"
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content="".join(f"data: {json.dumps(event)}\n\n" for event in reply(json.loads(request.content))),
+        )
+
+    async with (
+        serve(reply_ws, "127.0.0.1", 0) as server,
+        httpx2.AsyncClient(transport=httpx2.MockTransport(reply_http)) as http,
+    ):
+        port = server.sockets[0].getsockname()[1]
+        client = AsyncOpenAI(api_key="test-key", http_client=http, websocket_base_url=f"ws://127.0.0.1:{port}/v1")
+        settings = {"openai_transport": "websocket" if websocket else "http", "openai_store": not websocket}
+        if path.endswith("-auto"):
+            settings["openai_previous_response_id"] = "auto"
+        model = ResponsesModel(model_name, provider=OpenAIProvider(openai_client=client), settings=settings)
+
+        async def send(messages, instruction):
+            parameters = ModelRequestParameters(
+                instruction_parts=[
+                    InstructionPart(instruction),
+                    InstructionPart(
+                        "Stable append block", dynamic=True, on_change="append", name="append", id="run:append"
+                    ),
+                ]
+            )
+            async with model.request_stream(messages, None, parameters) as response:
+                async for _ in response:
+                    pass
+                return response.get()
+
+        async with model:
+            messages = [ModelRequest(parts=[UserPromptPart("Look up the result")])]
+            first = await send(messages, "Agent A instructions")
+            (call,) = first.parts
+            assert isinstance(call, ToolCallPart)
+            messages += [
+                first,
+                ModelRequest(parts=[ToolReturnPart("lookup", "result", tool_call_id=call.tool_call_id)]),
+            ]
+            second = await send(messages, "Agent A instructions")
+            messages += [second, ModelRequest(parts=[UserPromptPart("Continue under new instructions")])]
+            await send(messages, "Agent B instructions")
+
+    initial, follow_up, switched = requests
+    assert initial["input"][0]["content"] == "Agent A instructions"
+    assert "Stable append block" in initial["input"][1]["content"]
+    assert "instructions" not in initial
+    assert "instructions" not in follow_up
+    if path == "full":
+        assert "previous_response_id" not in follow_up
+        assert [item.get("content") for item in follow_up["input"]].count("Agent A instructions") == 1
+    else:
+        assert follow_up["previous_response_id"] == "resp-1"
+        assert [item["type"] for item in follow_up["input"]] == ["function_call_output"]
+    assert "previous_response_id" not in switched
+    assert "instructions" not in switched
+    assert switched["input"][0]["content"] == "Agent B instructions"
+    assert switched["input"][1] == initial["input"][1]
+    assert all(item.get("content") != "Agent A instructions" for item in switched["input"])

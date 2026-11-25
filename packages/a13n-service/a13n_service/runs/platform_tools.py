@@ -117,7 +117,7 @@ async def platform_capability(
                 return create_toolset
 
             def project(toolset: MCPToolset[AgentContext]) -> MCP[AgentContext]:
-                return MCP(id=PLATFORM_SOURCE, local=PlatformToolset(toolset, tools))
+                return MCP(id=PLATFORM_SOURCE, local=PlatformToolset(toolset, tools))  # pyright: ignore[reportArgumentType]
 
             yield MCPServer(id=PLATFORM_SOURCE, prepare=prepare, project=project)
     finally:

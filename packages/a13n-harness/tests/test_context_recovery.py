@@ -418,7 +418,9 @@ async def test_completed_tools_are_not_replayed_and_detachment_survives_next_run
         prepared_settings, _ = native.prepare_request(settings, parameters)
         assert prepared_settings["openai_conversation_id"] is None
         assert prepared_settings["openai_previous_response_id"] is None
-        previous_id, conversation_id, sent = native._resolve_server_side_state(prepared_settings, messages)
+        previous_id, conversation_id, sent = await native._resolve_server_side_state(
+            prepared_settings, messages, chained_instructions=()
+        )
         assert previous_id is None and conversation_id is None and sent == messages
 
 

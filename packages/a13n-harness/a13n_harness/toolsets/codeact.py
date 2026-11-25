@@ -471,15 +471,24 @@ class CodeActToolset(WrapperToolset[AgentContext]):
         async def admit(_name: str) -> int:
             return await budget.admit()
 
-        async def dispatch(sandbox_name: str, kwargs: dict[str, Any], ordinal: int) -> Any:
+        async def prepare_args(kwargs: dict[str, Any], ordinal: int) -> int:
             try:
-                return await dispatch_tool(sandbox_name, kwargs, ordinal)
+                size = bounded_json_size(kwargs, self.config.max_output_bytes)
+                await budget.add_bytes(size, label="nested arguments")
+            except Exception as exc:
+                budget.note_error(ordinal, "arguments", exc, "Nested call rejected before dispatch")
+                raise
+            return size
+
+        async def dispatch(sandbox_name: str, kwargs: dict[str, Any], ordinal: int, argument_bytes: int) -> Any:
+            try:
+                return await dispatch_tool(sandbox_name, kwargs, ordinal, argument_bytes)
             except Exception as exc:
                 if not any(item["ordinal"] == ordinal for item in budget.nested_errors):
                     budget.note_error(ordinal, "arguments", exc, "Nested call rejected before dispatch")
                 raise
 
-        async def dispatch_tool(sandbox_name: str, kwargs: dict[str, Any], ordinal: int) -> Any:
+        async def dispatch_tool(sandbox_name: str, kwargs: dict[str, Any], ordinal: int, argument_bytes: int) -> Any:
             canonical_name = catalog.sandbox_to_canonical.get(sandbox_name, sandbox_name)
             prepared = catalog.prepared_tools[canonical_name]
             if proxy_control(prepared.tool_def) == "call":
@@ -496,8 +505,6 @@ class CodeActToolset(WrapperToolset[AgentContext]):
             current = manager.tools.get(canonical_name) if manager.tools is not None else None
             if current is not prepared:
                 raise RuntimeError(f"CodeAct tool {canonical_name!r} is no longer the prepared catalog entry")
-            argument_bytes = bounded_json_size(kwargs, self.config.max_output_bytes)
-            await budget.add_bytes(argument_bytes, label="nested arguments")
             call_id = f"{execution_id}:{ordinal}"
             call = ToolCallPart(tool_name=canonical_name, args=kwargs, tool_call_id=call_id)
             record = _CallRecord(
@@ -633,6 +640,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         code,
                         dispatch=dispatch,
                         admit=admit,
+                        prepare_args=prepare_args,
                         release=budget.release,
                         valid_names=set(catalog.definitions),
                         sequential_names=sequential_names,
@@ -647,6 +655,7 @@ class CodeActToolset(WrapperToolset[AgentContext]):
                         inputs=inputs or {},
                         dispatch=dispatch,
                         admit=admit,
+                        prepare_args=prepare_args,
                         release=budget.release,
                         valid_names=set(catalog.definitions),
                         sequential_names=sequential_names,

@@ -99,7 +99,7 @@ class HarnessUiMCP(MCPServer):
         return capability(
             id=self._recipe.server_id,
             native=False,
-            local=local,
+            local=local,  # pyright: ignore[reportArgumentType]
             allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
         )
 
