@@ -6,7 +6,7 @@ from datetime import timedelta
 from a13n_logging import get_logger
 from pydantic import BaseModel
 from pydantic_ai.realtime import WebRTCSession
-from sqlalchemy import delete, select
+from sqlalchemy import JSON, delete, func, or_, select
 
 from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import now, short_session, transaction
@@ -78,38 +78,55 @@ async def reconcile(runtime: Runtime) -> None:
                 .limit(limit)
             )
         ).all()
-        ended = (
-            await session.execute(
-                select(RealtimeCallRow, RunRow)
-                .join(RunRow, RunRow.id == RealtimeCallRow.run_id)
-                .where(RunRow.sealed_at.is_not(None))
-                .limit(limit)
-                .with_for_update(of=RealtimeCallRow, skip_locked=True)
-            )
-        ).all()
-        orphaned = [(run.id, location(run), call.provider_session) for call, run in ended if call.provider_session]
-        for call, _ in ended:
-            await session.delete(call)
+        sealed = select(RealtimeCallRow.run_id).join(RunRow).where(RunRow.sealed_at.is_not(None))
+        finished = (
+            sealed.where(or_(RealtimeCallRow.provider_session.is_(None), RealtimeCallRow.provider_session == JSON.NULL))
+            .limit(limit)
+            .with_for_update(of=RealtimeCallRow, skip_locked=True)
+        )
+        await session.execute(delete(RealtimeCallRow).where(RealtimeCallRow.run_id.in_(finished)))
     for workspace_id, run_id in stale:
         await _stop_abandoned(runtime, workspace_id, run_id)
-    for run_id, aad, envelope in orphaned:
+    for _ in range(limit):
+        async with transaction(runtime.storage) as session:
+            current = await now(session)
+            due = func.coalesce(RealtimeCallRow.hangup_retry_at, RunRow.sealed_at)
+            row = (
+                await session.execute(
+                    select(RealtimeCallRow, RunRow)
+                    .join(RunRow)
+                    .where(RunRow.sealed_at.is_not(None), RealtimeCallRow.provider_session != JSON.NULL, due <= current)
+                    .order_by(due, RunRow.id)
+                    .limit(1)
+                    .with_for_update(of=RealtimeCallRow, skip_locked=True)
+                )
+            ).one_or_none()
+            if row is None:
+                return
+            call, run = row
+            # Other Controls can retry after a crashed or timed-out sweep.
+            call.hangup_retry_at = current + timedelta(seconds=max(30, runtime.settings.worker.lease_seconds))
+            run_id, aad, envelope = run.id, location(run), call.provider_session
+
         try:
-            value = ProviderCall.model_validate_json(runtime.keys.reveal(Envelope.model_validate(envelope), aad))
-            async with short_session(runtime.storage) as session:
-                provider = await read_provider(session, ModelProviderRow, value.provider_id)
-            model = ResolvedModel(value.model_id, value.model_key, 0, value.config, None, provider)
-            async with (
-                asyncio.timeout(5),
-                open_realtime_model(
+            async with asyncio.timeout(5):
+                value = ProviderCall.model_validate_json(runtime.keys.reveal(Envelope.model_validate(envelope), aad))
+                async with short_session(runtime.storage) as session:
+                    provider = await read_provider(session, ModelProviderRow, value.provider_id)
+                model = ResolvedModel(value.model_id, value.model_key, 0, value.config, None, provider)
+                async with open_realtime_model(
                     model,
                     registry=runtime.registry,
                     keys=runtime.keys,
                     policy=runtime.endpoint_policy,
                     settings=runtime.settings.providers,
-                ) as adapter,
-            ):
-                await adapter.hang_up(WebRTCSession(provider_name=adapter.system, session_id=value.call_id))
+                ) as adapter:
+                    await adapter.hang_up(WebRTCSession(provider_name=adapter.system, session_id=value.call_id))
         except Exception as error:
             logger.warning(
                 "Could not close orphaned provider call", extra={"run_id": run_id, "error_type": type(error).__name__}
             )
+        else:
+            # A repeated hangup of an already ended provider call is idempotent.
+            async with transaction(runtime.storage) as session:
+                await session.execute(delete(RealtimeCallRow).where(RealtimeCallRow.run_id == run_id))

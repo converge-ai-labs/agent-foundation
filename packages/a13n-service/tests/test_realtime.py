@@ -24,9 +24,9 @@ from a13n_service.resources.models.realtime import open_realtime_model
 from a13n_service.resources.models.schemas import ModelConfig
 from a13n_service.resources.models.service import ResolvedModel
 from a13n_service.resources.providers.service import ResolvedProvider
-from a13n_service.runs import agent, checkpoints
+from a13n_service.runs import agent, checkpoints, realtime_cleanup
 from a13n_service.runs.seal import LeaseExpirer
-from a13n_service.runs.tables import AttemptRow, RunRow
+from a13n_service.runs.tables import AttemptRow, RealtimeCallRow, RunRow
 from a13n_service.settings import Providers
 from pydantic import SecretStr
 from pydantic_ai import Tool
@@ -49,7 +49,7 @@ from pydantic_ai.realtime.lifecycle import InferredLifecycle, LifecycleEvent, Re
 from pydantic_ai.realtime.openai import OpenAIRealtimeModel
 from pydantic_ai.realtime.openai_live import OpenAILiveModel
 from pydantic_ai.realtime.xai import XaiRealtimeModel
-from sqlalchemy import func, select, update
+from sqlalchemy import JSON, func, select, update
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosedError, InvalidStatus
 
@@ -548,6 +548,7 @@ async def test_webrtc_rejects_data_channels_and_hangs_up_when_sideband_fails(set
     monkeypatch.setattr(OpenAIRealtimeModel, "connect_webrtc", provider.attach)
     monkeypatch.setattr(OpenAIRealtimeModel, "hang_up", provider.hang_up)
     async with serve(role="all", settings=settings) as service:
+        await runs_kit.pause_sweeps(service)
         agent_view = await create_voice_agent(service, runs_kit)
         bearer = await runs_kit.bearer(service)
         async with serve_http(service.app, lifespan="off") as url, asyncio.timeout(15):
@@ -575,6 +576,89 @@ async def test_webrtc_rejects_data_channels_and_hangs_up_when_sideband_fails(set
                     assert json.loads(await socket.recv())["type"] == "error"
                     assert (await runs_kit.get_run(service, first["run_id"]))["status"] == "failed"
                     assert provider.hangups == 1
+                    run_id = first["run_id"]
+                    async with transaction(service.runtime.storage) as db:
+                        assert (
+                            await db.scalar(
+                                select(RealtimeCallRow.run_id).where(
+                                    RealtimeCallRow.run_id == run_id, RealtimeCallRow.provider_session.is_(None)
+                                )
+                            )
+                            == run_id
+                        )
+                        # Previously a successful hangup could persist JSON null instead of SQL NULL.
+                        await db.execute(
+                            update(RealtimeCallRow)
+                            .where(RealtimeCallRow.run_id == run_id)
+                            .values(provider_session=JSON.NULL)
+                        )
+                    await realtime_cleanup.reconcile(service.runtime)
+                    async with short_session(service.runtime.storage) as db:
+                        assert await db.get(RealtimeCallRow, run_id) is None
+                    assert provider.hangups == 1
+
+
+async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs_kit, monkeypatch):
+    service = executing
+    await runs_kit.pause_sweeps(service)
+    provider = ScriptedWebRTCProvider()
+    provider.attach_error = ServiceError("conflict", "Sideband unavailable")
+    monkeypatch.setattr(OpenAIRealtimeModel, "answer_webrtc_offer", provider.answer)
+    monkeypatch.setattr(OpenAIRealtimeModel, "connect_webrtc", provider.attach)
+    hangup = AsyncMock(side_effect=OSError("Provider unreachable"))
+    monkeypatch.setattr(OpenAIRealtimeModel, "hang_up", hangup)
+    voice = await create_voice_agent(service, runs_kit)
+    response = await service.client.post(
+        f"{service.api}/realtime/sessions", json={"agent_id": voice["id"], "transport": "webrtc"}
+    )
+    assert response.status_code == 201, response.text
+    ticket = response.json()
+    async with serve_http(service.app, lifespan="off") as url, asyncio.timeout(15):
+        async with connect(
+            url.replace("http://", "ws://") + ticket["websocket_path"],
+            subprotocols=[ticket["subprotocol"], ticket["ticket"]],
+        ) as socket:
+            await socket.send(json.dumps({"type": "offer", "sdp": OPENAI_AUDIO_OFFER}))
+            assert json.loads(await socket.recv())["type"] == "accepted"
+            assert json.loads(await socket.recv())["type"] == "answer"
+            assert json.loads(await socket.recv())["type"] == "error"
+    run_id = ticket["run_id"]
+    assert (await runs_kit.sealed(service, run_id))["status"] == "failed"
+    hangup.reset_mock()
+    entered = asyncio.Event()
+
+    async def interrupted(session):
+        assert session.session_id == provider.session.session_id
+        entered.set()
+        await asyncio.Event().wait()
+
+    hangup.side_effect = interrupted
+    async with asyncio.timeout(10):
+        sweep = asyncio.create_task(realtime_cleanup.reconcile(service.runtime))
+        try:
+            await entered.wait()
+            await realtime_cleanup.reconcile(service.runtime)
+            assert hangup.await_count == 1
+        finally:
+            sweep.cancel()
+            await asyncio.gather(sweep, return_exceptions=True)
+
+    async def retry_now():
+        async with transaction(service.runtime.storage) as db:
+            call = await db.get_one(RealtimeCallRow, run_id)
+            assert call.provider_session and call.hangup_retry_at
+            call.hangup_retry_at = None
+
+    await retry_now()
+    hangup.side_effect = OSError("Provider temporarily unavailable")
+    await realtime_cleanup.reconcile(service.runtime)
+    await retry_now()
+    hangup.side_effect = None
+    await realtime_cleanup.reconcile(service.runtime)
+    assert hangup.await_count == 3
+    assert all(args.args[0].session_id == provider.session.session_id for args in hangup.await_args_list)
+    async with short_session(service.runtime.storage) as db:
+        assert await db.get(RealtimeCallRow, run_id) is None
 
 
 async def test_app_realtime_rejects_expired_tickets_and_closes_revoked_connections(

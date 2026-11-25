@@ -535,7 +535,8 @@ class RealtimeCallRow(Base):
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
     transport: Mapped[str] = mapped_column(String(16))
     credential: Mapped[dict] = mapped_column(JSONB)
-    provider_session: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    provider_session: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    hangup_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class RunRow(AppOwned, Stamped, Base):
