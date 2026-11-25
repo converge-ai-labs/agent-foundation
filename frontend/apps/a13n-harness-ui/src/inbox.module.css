@@ -32,7 +32,7 @@
 }
 .groupHeader {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) fit-content(60%);
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
 }
@@ -60,29 +60,28 @@
   font-size: var(--a13n-text-xs);
   font-variant-numeric: tabular-nums;
 }
-.groupHeader > button {
-  min-width: 0;
-  height: auto;
-  min-height: 32px;
-  padding-block: 4px;
-  color: var(--a13n-secondary);
-  font-size: var(--a13n-text-sm);
-  text-align: start;
-  white-space: normal;
-  overflow-wrap: anywhere;
+.groupActions {
+  display: flex;
+  gap: 4px;
 }
-.groupHeader > button[aria-disabled="true"] {
+.groupActions > button {
+  inline-size: 32px;
+  block-size: 32px;
+  color: var(--a13n-secondary);
+}
+.groupActions > button[aria-disabled="true"] {
   background: transparent;
   color: var(--a13n-tertiary);
   cursor: default;
   transform: none;
 }
-.groupHeader > button:is(:focus-visible, [aria-busy="true"]) {
+.groupActions > button:is(:focus-visible, [aria-busy="true"]) {
   color: var(--a13n-secondary);
 }
 @media (pointer: coarse) {
-  .groupHeader > button {
-    min-height: 44px;
+  .groupActions > button {
+    inline-size: 44px;
+    block-size: 44px;
   }
 }
 /* Rows bleed into the gutter so their text lines up with the page header. */

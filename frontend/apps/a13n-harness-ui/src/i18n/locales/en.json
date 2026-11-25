@@ -3634,6 +3634,8 @@
   "Mark as unread": "Mark as unread",
   "Updates": "Updates",
   "Mark all as read": "Mark all as read",
+  "Mark all as done": "Mark all as done",
+  "Could not mark this section as done.": "Could not mark this section as done.",
   "All read": "All read",
   "{{count, number}} unread": "{{count, number}} unread",
   "Could not mark this section as read.": "Could not mark this section as read.",

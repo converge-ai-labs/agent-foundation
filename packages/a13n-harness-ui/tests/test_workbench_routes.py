@@ -32,6 +32,7 @@ async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: 
             "/settings/runtime",
             "/settings/connections",
             "/archived",
+            "/inbox",
             "/new",
             "/projects",
             "/projects/project-demo",
