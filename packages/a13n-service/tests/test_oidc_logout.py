@@ -97,7 +97,7 @@ def upstream(monkeypatch, *, endpoint=None, jwk=None, status=200, discovery_chec
 @pytest.mark.parametrize("valid", ["sid", "sub", "both"])
 async def test_verify_logout_token(monkeypatch, signing, valid):
     upstream(monkeypatch, jwk=signing[2])
-    claims = {"aud": ["other", PROVIDER.client_id]}
+    claims = {"aud": ["other", PROVIDER.client_id], "iat": int(time()) - 120}
     if valid != "sub":
         claims["sid"] = "idp-session"
     if valid != "sid":
@@ -111,9 +111,9 @@ async def test_verify_logout_token(monkeypatch, signing, valid):
     [
         ({"iss": "https://other.example.test"}, ()),
         ({"aud": ["other"]}, ()),
-        ({"iat": 0}, ()),
         ({"iat": 2**32}, ()),
         ({"iat": True}, ()),
+        ({"iat": "123"}, ()),
         ({"exp": 0}, ()),
         ({"exp": None}, ()),
         ({"events": {}}, ()),
@@ -247,9 +247,15 @@ async def test_backchannel_revokes_only_matching_sessions(sso_service, monkeypat
     other_sid = await sign_in(service, sid="other-device")
     legacy = await sign_in(service)
     other_provider = await sign_in(service, name="other", sid="target")
-    other_subject = await sign_in(service, subject="another-user", sid="another-session")
+    other_subject = await sign_in(service, subject="another-user", sid="target")
+    delayed_iat = int(time()) - 120
     expired = await sign_in(service, sid="target")
     async with transaction(service.runtime.storage) as session:
+        await session.execute(
+            update(TokenRow)
+            .where(TokenRow.secret_hash.in_([secret_hash(other_sid.secret), secret_hash(legacy.secret)]))
+            .values(created_at=datetime.fromtimestamp(delayed_iat - 1, UTC))
+        )
         expired_id = await session.scalar(
             update(TokenRow)
             .where(TokenRow.secret_hash == secret_hash(expired.secret))
@@ -272,8 +278,12 @@ async def test_backchannel_revokes_only_matching_sessions(sso_service, monkeypat
                 await authenticate(service, login)
         for login in (other_sid, legacy, other_provider, other_subject):
             assert await authenticate(service, login)
-        reply = await idp.post(BACKCHANNEL, data={"logout_token": logout_token(signing, sub="subject")})
+        recent = await sign_in(service, sid="new-sign-in")
+        reply = await idp.post(
+            BACKCHANNEL, data={"logout_token": logout_token(signing, sub="subject", iat=delayed_iat)}
+        )
         assert reply.status_code == 200
+        assert await authenticate(service, recent)
     for login in (other_sid, legacy):
         with pytest.raises(ServiceError, match="Authentication is required"):
             await authenticate(service, login)

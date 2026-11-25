@@ -8,6 +8,7 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from time import time
 from urllib.parse import quote_plus
@@ -481,6 +482,7 @@ async def logout_redirect(provider: OIDCProvider, *, post_logout_redirect_uri: s
 
 @dataclass(frozen=True, slots=True)
 class LogoutTarget:
+    issued_at: datetime
     subject: str | None
     sid: str | None
 
@@ -490,9 +492,13 @@ def _logout_target(claims: dict[str, object]) -> LogoutTarget:
     if (
         not isinstance(issued, (int, float))
         or isinstance(issued, bool)
-        or not current - _TOKEN_CLOCK_SKEW_SECONDS <= issued <= current + _TOKEN_CLOCK_SKEW_SECONDS
+        or not issued <= current + _TOKEN_CLOCK_SKEW_SECONDS
     ):
-        raise jwt.InvalidTokenError("logout token outside the issued-at window")
+        raise jwt.InvalidTokenError("invalid or future logout token issued-at")
+    try:
+        issued_at = datetime.fromtimestamp(issued, UTC)
+    except (OverflowError, OSError, ValueError):
+        raise jwt.InvalidTokenError("invalid logout token issued-at") from None
     if "exp" in claims and (
         not isinstance(expires, (int, float)) or isinstance(expires, bool) or not expires > current
     ):
@@ -508,7 +514,7 @@ def _logout_target(claims: dict[str, object]) -> LogoutTarget:
         or not claims["jti"]
     ):
         raise jwt.InvalidTokenError("invalid logout token identifiers")
-    return LogoutTarget(subject, sid)
+    return LogoutTarget(issued_at, subject, sid)
 
 
 async def verify_logout_token(provider: OIDCProvider, token: str) -> LogoutTarget:
@@ -527,14 +533,17 @@ async def revoke_logout_sessions(storage: Storage, name: str, provider: OIDCProv
     binding = oidc_session_data(name, provider)
     if target.sid is not None:
         binding["sid"] = target.sid
-        match = TokenRow.data.contains(binding)
-    else:
+    match = TokenRow.data.contains(binding)
+    if target.subject is not None:
         principal_id = (
             select(PrincipalRow.id)
             .where(PrincipalRow.oidc_issuer == provider.issuer, PrincipalRow.oidc_subject == target.subject)
             .scalar_subquery()
         )
-        match = TokenRow.data.contains(binding) & (TokenRow.principal_id == principal_id)
+        match &= TokenRow.principal_id == principal_id
+    if target.sid is None:
+        # A retried subject-only notification must not revoke a later sign-in.
+        match &= TokenRow.created_at <= target.issued_at + timedelta(seconds=_TOKEN_CLOCK_SKEW_SECONDS)
     async with transaction(storage) as session:
         revoked = await session.scalars(
             update(TokenRow)
