@@ -33,7 +33,7 @@ def expand_usage(query, *, organizations, workspaces, start, end):
 
 
 def prometheus_test_files(directory):
-    """The same pinned promtool inputs in ordinary CI and the live stack test."""
+    """Build promtool fixtures from the shipped dashboard queries and alert rules."""
     import yaml
 
     records = []

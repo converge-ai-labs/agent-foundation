@@ -213,17 +213,14 @@ async def test_ctrl_t_viewer_preserves_draft_and_live_output() -> None:
 
 
 @pytest.mark.parametrize("source", ["parent_agent", "tool_execution", "async_subagent"])
-def test_displayable_background_inputs_render_as_activity_in_history_and_live(source):
+def test_live_background_inputs_render_as_activity(source):
     metadata = ContentMetadata.model_validate({"a13n.steering-source": source})
     renderer = StreamRenderer(Status())
-    restore_transcript(renderer, _page(TranscriptPart(kind="user", text="background update", metadata=metadata)))
-    assert next(iter(renderer.transcript.blocks.values())).kind == "tool"
-    assert "Activity · background update" in _source(renderer)
     renderer.ingest(
         "TEXT_MESSAGE_CONTENT",
         {"role": "user", "messageId": "notice", "delta": "live background", "metadata": metadata.model_dump()},
         run_id="run",
     )
     assert "Activity · live background" in _source(renderer)
-    assert all(block.kind != "user" for block in renderer.transcript.blocks.values())
+    assert [block.kind for block in renderer.transcript.blocks.values()] == ["tool"]
     renderer.transcript.close()

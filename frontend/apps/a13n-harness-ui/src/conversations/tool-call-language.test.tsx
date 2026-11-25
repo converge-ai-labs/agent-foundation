@@ -107,25 +107,37 @@ it("keeps an unknown tool name and an unknown process phase verbatim", async () 
   expect(screen.getByText("查看进程")).toBeTruthy();
 });
 
-it("translates grouped exploration titles and the operations they contain", async () => {
+it("translates exploration and execution counts without closing disclosures", async () => {
   show(
-    <ToolActivity
-      tools={[
-        completed("one", "view", { file_path: "src/app.tsx" }, { content: "" }),
-        completed(
-          "two",
-          "view",
-          { file_path: "src/main.tsx" },
-          { content: "" },
-        ),
-        completed("three", "grep", { pattern: "render" }, { ok: true }),
-      ]}
-    />,
+    <>
+      <ToolActivity
+        tools={[
+          completed(
+            "one",
+            "view",
+            { file_path: "src/app.tsx" },
+            { content: "" },
+          ),
+          completed(
+            "two",
+            "view",
+            { file_path: "src/main.tsx" },
+            { content: "" },
+          ),
+          completed("three", "grep", { pattern: "render" }, { ok: true }),
+        ]}
+      />
+      <ToolActivity
+        tools={[completed("listed", "tool_execution_info", {}, [{}, {}, {}])]}
+      />
+    </>,
   );
   const group = screen.getByRole("button", {
     name: "Explored 2 files - 1 lookup",
   });
   fireEvent.click(group);
+  expect(screen.getByText("Tool calls - 1 operation")).toBeTruthy();
+  expect(screen.getByText("3 executions listed")).toBeTruthy();
   await language("简体中文");
   expect(
     screen.getByRole("button", { name: "已查看 2 个文件 - 1 次查找" }),
@@ -135,17 +147,6 @@ it("translates grouped exploration titles and the operations they contain", asyn
   expect(screen.getByText("搜索")).toBeTruthy();
   expect(screen.getByText("src/main.tsx")).toBeTruthy();
   expect(screen.getByText("render")).toBeTruthy();
-});
-
-it("translates execution counts in the group title and its observed phase", async () => {
-  show(
-    <ToolActivity
-      tools={[completed("listed", "tool_execution_info", {}, [{}, {}, {}])]}
-    />,
-  );
-  expect(screen.getByText("Tool calls - 1 operation")).toBeTruthy();
-  expect(screen.getByText("3 executions listed")).toBeTruthy();
-  await language("简体中文");
   expect(screen.getByText("工具调用 - 1 次操作")).toBeTruthy();
   expect(screen.getByText("列出 3 次执行")).toBeTruthy();
 });
@@ -220,24 +221,4 @@ it("preserves a raw tool name that collides with a translated label and localize
   await language("简体中文");
   expect(screen.getByText("Search")).toBeTruthy();
   expect(screen.getByText("工具")).toBeTruthy();
-});
-
-it("presents dynamic creation with a translated action and the child's authored name", async () => {
-  show(
-    <ToolCall
-      tool={completed(
-        "spawn",
-        "spawn_subagent",
-        { name: "Checkout reviewer", prompt: "Check retries" },
-        { execution_id: "exec-child" },
-      )}
-    />,
-  );
-  expect(
-    screen.getByRole("button", { name: "Start subagent Checkout reviewer" }),
-  ).toBeTruthy();
-  await language("简体中文");
-  expect(
-    screen.getByRole("button", { name: "启动子智能体 Checkout reviewer" }),
-  ).toBeTruthy();
 });

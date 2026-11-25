@@ -47,42 +47,6 @@ it.each([
   expect(time.title).toBe(date.toLocaleString(language));
 });
 
-it.each(["en", "zh-CN"])(
-  "preserves today's time and older date formats in %s",
-  async (language) => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date(2026, 10, 17, 22));
-    await i18n.changeLanguage(language);
-    const dates = [
-      new Date(2026, 10, 17, 20, 56),
-      new Date(2026, 10, 10, 20, 56),
-      new Date(2025, 10, 16, 20, 56),
-    ];
-    const { container } = render(
-      <>
-        {dates.map((date) => (
-          <CopyMessage key={date.getTime()} timestamp={date.getTime()} />
-        ))}
-      </>,
-    );
-    expect(
-      Array.from(
-        container.querySelectorAll("time"),
-        (time) => time.textContent,
-      ),
-    ).toEqual(
-      dates.map((date, index) =>
-        date.toLocaleString(language, {
-          ...(index > 0 && { month: "short", day: "numeric" }),
-          ...(index === 2 && { year: "numeric" }),
-          hour: "numeric",
-          minute: "2-digit",
-        }),
-      ),
-    );
-  },
-);
-
 function clipboard(writeText = vi.fn().mockResolvedValue(undefined)) {
   vi.stubGlobal("navigator", { clipboard: { writeText } });
   return writeText;

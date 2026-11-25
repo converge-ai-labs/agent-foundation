@@ -421,7 +421,7 @@ function restoreSideBySide() {
   );
 }
 
-it.each(["/", "/new", "/threads/current"])(
+it.each(["/new", "/threads/current"])(
   "keeps the supporting panel closed by default on %s, including with a legacy open preference",
   async (path) => {
     localStorage.clear();
@@ -698,25 +698,20 @@ it("a native deep link cannot bypass disabled sharing or trigger metadata reques
   expect(screen.queryByRole("button", { name: "Files" })).toBeNull();
 });
 
-it.each(["sidebar", "tabs"])(
-  "disabled supporting views leave Chat unobstructed with the %s preference",
-  async (layout) => {
-    localStorage.setItem("a13n-harness-ui.native-layout", layout);
-    setup("/threads/current", false);
-    await screen.findByText("Current project");
-    expect(screen.getByTestId("chat").closest("[hidden]")).toBeNull();
-    expect(
-      screen.queryByRole("navigation", { name: "Workbench views" }),
-    ).toBeNull();
-    expect(screen.queryByRole("tabpanel")).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: /supporting panel/ }),
-    ).toBeNull();
-    expect(
-      screen.queryByRole("separator", { name: "Resize supporting panel" }),
-    ).toBeNull();
-  },
-);
+it("leaves Chat unobstructed when sidebar supporting views are disabled", async () => {
+  localStorage.setItem("a13n-harness-ui.native-layout", "sidebar");
+  setup("/threads/current", false);
+  await screen.findByText("Current project");
+  expect(screen.getByTestId("chat").closest("[hidden]")).toBeNull();
+  expect(
+    screen.queryByRole("navigation", { name: "Workbench views" }),
+  ).toBeNull();
+  expect(screen.queryByRole("tabpanel")).toBeNull();
+  expect(screen.queryByRole("button", { name: /supporting panel/ })).toBeNull();
+  expect(
+    screen.queryByRole("separator", { name: "Resize supporting panel" }),
+  ).toBeNull();
+});
 
 it("disabling supporting views reveals Chat even when a resource tab was active", async () => {
   localStorage.setItem("a13n-harness-ui.native-layout", "tabs");

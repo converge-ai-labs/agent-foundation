@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from a13n_envd_client.eip.v1 import AllowlistDestinations, PublicDestinations
 from a13n_service.app_plugins import AppCatalog, AppManifest
-from a13n_service.app_sdk import agents, egress, projects, schedules, threads, usage
+from a13n_service.app_sdk import agents, egress, projects, schedules, threads
 from a13n_service.infra.audit import AuditEventRow
 from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
@@ -290,14 +290,6 @@ async def test_native_project_revision_and_schedule_facades(service, app_runtime
         assert (await schedules.list_app_schedules(session, ws, app_id="claw")).items == [result]
         assert await schedules.count_active_fresh_schedules(session, ws, app_id="other") == 0
         assert await schedules.count_active_fresh_schedules(session, ws, app_id="claw") == 1
-
-
-def test_usage_exports_native_contract():
-    from a13n_service.usage.schemas import AppModelUsageQuery
-    from a13n_service.usage.service import app_models
-
-    assert usage.AppModelUsageQuery is AppModelUsageQuery
-    assert usage.app_models is app_models
 
 
 async def test_rebind_shared_primary_retains_desired_policy_and_freezes_it_on_next_run(

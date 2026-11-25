@@ -479,6 +479,9 @@ importers:
       hast-util-to-html:
         specifier: ^9.0.5
         version: 9.0.5
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1
       parse5:
         specifier: ^8.0.1
         version: 8.0.1

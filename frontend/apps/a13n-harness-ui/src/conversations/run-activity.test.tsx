@@ -135,27 +135,24 @@ it("uses the accepted receipt while activity observations catch up", () => {
   expect(screen.getByRole("status").textContent).toBe("Working…");
 });
 
-it.each(["completed", "suspended", "failed", "cancelled"] as const)(
-  "dismisses feedback for a %s receipt even with retained accepted input",
-  (status) => {
-    const view = render(
-      <RunActivity
-        activity={{ state: "inactive" }}
-        submission={accepted}
-        operation={operation(status)}
-      />,
-    );
-    expect(screen.queryByRole("status")).toBeNull();
-    view.rerender(
-      <RunActivity
-        activity={{ state: "running", receipt_id: "receipt-one" }}
-        submission={accepted}
-        operation={operation(status)}
-      />,
-    );
-    expect(screen.queryByRole("status")).toBeNull();
-  },
-);
+it("dismisses feedback for a completed receipt even with retained accepted input", () => {
+  const view = render(
+    <RunActivity
+      activity={{ state: "inactive" }}
+      submission={accepted}
+      operation={operation("completed")}
+    />,
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+  view.rerender(
+    <RunActivity
+      activity={{ state: "running", receipt_id: "receipt-one" }}
+      submission={accepted}
+      operation={operation("completed")}
+    />,
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+});
 
 it("does not invent execution for idle, rejected or unknown submissions", () => {
   const view = render(

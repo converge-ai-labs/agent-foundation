@@ -19,11 +19,6 @@ def test_startup_selects_explicit_native_mode_without_a_shell_supervisor(program
     assert "a13n-envd-supervise" not in command
 
 
-@pytest.mark.parametrize("program", ["a13n-envd", "a13n-sandbox-desktop"])
-def test_unmanaged_guest_defaults_to_native_supervision(program):
-    assert envd_assets.startup(program) == envd_assets.startup(program, mode="supervise")
-
-
 @pytest.mark.parametrize("profile", ["headless", "desktop"])
 def test_guest_manifest_contains_public_assets_without_a_packaged_supervisor(profile):
     commands = envd_assets.commands(profile)

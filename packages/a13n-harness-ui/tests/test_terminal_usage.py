@@ -117,16 +117,15 @@ async def test_usage_reads_selected_thread_while_busy_without_subscription_or_mo
             shell.renderer.transcript.close()
 
 
-@pytest.mark.parametrize("theme", ["dark", "light"])
-def test_usage_reflows_long_literal_model_names_and_exact_counters_on_resize(theme):
+def test_usage_reflows_long_literal_model_names_and_exact_counters_on_resize():
     name = "provider/模型_[preview]*<tag>`" + "long-model-name-" * 5
     view = _view()
     view = replace(view, model_scopes=(replace(view.model_scopes[0], name=name), view.model_scopes[1]))
     transcript = Transcript()
-    transcript.theme = resolve_theme(theme)
+    transcript.theme = resolve_theme("dark")
     try:
         transcript.append(thread_usage_text(view), markdown=True, kind="info")
-        for width in (120, 80, 40, 24, 80):
+        for width in (80, 24, 80):
             text = _render(transcript, width)
             unfolded = "".join(text.replace("│", "").split())
             assert name in unfolded

@@ -397,45 +397,38 @@ it("resets and stops only the current conversation and clears its control author
   await waitFor(() => expect(screen.queryByTestId("stream")).toBeNull());
 });
 
-it.each([true, false])(
-  "asks to start a conversation before checking permissions (%s)",
-  (fullControl) => {
-    const { client } = show({ threadId: "", fullControl });
-    expect(screen.getByText("Start a conversation first")).toBeTruthy();
-    expect(screen.queryByText("Browser unavailable")).toBeNull();
-    expect(client.GET).not.toHaveBeenCalled();
-    expect(client.POST).not.toHaveBeenCalled();
-  },
-);
+it("asks to start a conversation before checking permissions", () => {
+  const { client } = show({ threadId: "", fullControl: false });
+  expect(screen.getByText("Start a conversation first")).toBeTruthy();
+  expect(screen.queryByText("Browser unavailable")).toBeNull();
+  expect(client.GET).not.toHaveBeenCalled();
+  expect(client.POST).not.toHaveBeenCalled();
+});
 it("keeps the permission explanation for an existing non-Full-Control conversation", () => {
   const { client } = show({ fullControl: false });
   expect(screen.getByText("Use a Full Control conversation.")).toBeTruthy();
   expect(client.GET).not.toHaveBeenCalled();
 });
-it.each(["Missing VNC", "Unsupported platform", "Profile is in use"])(
-  "routes startup failure to environment settings without setup probes: %s",
-  async (message) => {
-    const { client } = show({ status: "enabled" });
-    client.POST.mockRejectedValueOnce(new Error(message));
-    await openBrowser();
-    expect((await screen.findByRole("alert")).textContent).toBe(message);
-    expect(
-      screen
-        .getByRole("link", { name: "Browser settings" })
-        .getAttribute("href"),
-    ).toBe("/settings/environments?tab=browser");
-    expect(
-      screen.queryByRole("list", { name: "Browser requirements" }),
-    ).toBeNull();
-    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
-    expect(
-      client.GET.mock.calls.every(
-        ([url]) => url === "/api/threads/{thread_id}/browser",
-      ),
-    ).toBe(true);
-    expect(client.POST).toHaveBeenCalledTimes(1);
-  },
-);
+it("routes startup failure to environment settings without setup probes", async () => {
+  const message = "Profile is in use";
+  const { client } = show({ status: "enabled" });
+  client.POST.mockRejectedValueOnce(new Error(message));
+  await openBrowser();
+  expect((await screen.findByRole("alert")).textContent).toBe(message);
+  expect(
+    screen.getByRole("link", { name: "Browser settings" }).getAttribute("href"),
+  ).toBe("/settings/environments?tab=browser");
+  expect(
+    screen.queryByRole("list", { name: "Browser requirements" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  expect(
+    client.GET.mock.calls.every(
+      ([url]) => url === "/api/threads/{thread_id}/browser",
+    ),
+  ).toBe(true);
+  expect(client.POST).toHaveBeenCalledTimes(1);
+});
 
 it("pauses Mac automation for local operation and resumes it without remote takeover", async () => {
   const { client } = show({ platform: "macos", resizeAvailable: false });

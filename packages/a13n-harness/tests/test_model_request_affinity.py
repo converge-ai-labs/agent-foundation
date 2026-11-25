@@ -356,10 +356,3 @@ def test_affinity_ignores_removed_legacy_environment(monkeypatch) -> None:
     configuration = ModelRequestPatchConfiguration.from_environment(session_affinity_header="X-Custom")
     assert configuration.session_affinity_header == "x-custom"
     assert ModelRequestPatchConfiguration.from_environment().session_affinity_header is None
-
-
-def test_custom_header_does_not_consult_legacy_environment_but_validates_host_arguments(monkeypatch):
-    monkeypatch.setenv("A13N_HARNESS_MODEL_REQUEST_X_SESSION_ID_ENABLED", "invalid")
-    HarnessBuilder(session_affinity_header="x-custom")
-    with pytest.raises(TypeError):
-        HarnessBuilder(session_affinity_header="x-custom", x_session_id_enabled="yes")

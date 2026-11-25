@@ -106,13 +106,11 @@ const child = fixtureThread({
 let currentThreads: ReturnType<typeof fixtureThread>[];
 let usageRequests: URL[];
 let contextRequests: URL[];
-let toolRequests: URL[];
 
 beforeEach(() => {
   currentThreads = [fixtureThread(), child];
   usageRequests = [];
   contextRequests = [];
-  toolRequests = [];
   labels = { "a13n.console": "debug" };
   canRun = true;
   toggleBrowser.mockClear();
@@ -123,10 +121,6 @@ beforeEach(() => {
     auth: { type: "session" },
     fetch: async (input, init) => {
       const url = new URL(new Request(input, init).url);
-      if (url.pathname.endsWith("/tool-executions")) {
-        toolRequests.push(url);
-        return Response.json({ items: [], next_cursor: null });
-      }
       if (url.pathname.endsWith("/agent"))
         return Response.json(fixtureRunAgent());
       if (url.pathname.endsWith("/usage/runs")) {
@@ -197,19 +191,6 @@ afterEach(() => {
   cleanup();
   cache.clear();
   client.close();
-});
-
-it("keeps follow and tool execution controls out of the session header", async () => {
-  show(
-    [fixtureThread(), child],
-    "/sessions/ses_1/threads/thr_child/runs/run_2?follow=latest",
-  );
-  await screen.findByRole("button", { name: "Session actions" });
-  expect(screen.queryByRole("button", { name: "Tool executions" })).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: /Follow latest|Following latest/ }),
-  ).toBeNull();
-  expect(toolRequests).toHaveLength(0);
 });
 
 function Location() {

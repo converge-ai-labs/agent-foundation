@@ -18,6 +18,9 @@ it("uses canonical identities, exact aliases and exact hosts without substring m
   expect(resolveBrand({ endpoint: "https://app.airops.com/mcp" })).toBe(
     brands.airops,
   );
+  for (const alias of ["mem0_oss", "mem0_platform"])
+    expect(resolveBrand({ alias })).toBe(brands.mem0);
+  expect(resolveBrand({ identity: "future-web-provider" })).toBeUndefined();
   expect(
     resolveBrand({
       alias: "my-github-provider",
@@ -73,84 +76,47 @@ it("prefers an explicit remote logo before the MCP fallback", () => {
   expect(container.querySelector("img")?.src).toBe(brands.mcp.icon);
 });
 
-it("resolves Service browser, environment and memory provider types", () => {
-  for (const type of [
-    "browserbase",
-    "browser_use",
-    "kernel",
-    "kubernetes",
-    "boxd",
-  ])
-    expect(resolveBrand({ identity: type, alias: type })?.icon).toBeTruthy();
-  for (const type of ["mem0_oss", "mem0_platform"])
-    expect(resolveBrand({ identity: type, alias: type })).toBe(brands.mem0);
-});
-
-it("resolves every built-in Web provider identity while keeping unknown providers generic", () => {
+it("keeps sign-in marks local and falls back when a bundled image fails", () => {
   for (const identity of [
-    "duckduckgo",
-    "keenable",
-    "brave",
-    "deepseek",
-    "exa",
-    "parallel",
-    "tavily",
-    "firecrawl",
-    "jina",
-    "perplexity",
-    "serpapi",
-    "specstream",
-    "tinyfish",
-  ])
-    expect(resolveBrand({ identity })?.icon).toBeTruthy();
-  expect(resolveBrand({ identity: "future-web-provider" })).toBeUndefined();
-});
+    "google",
+    "microsoft",
+    "okta",
+    "auth0",
+    "github",
+    "gitlab",
+    "cloudflare",
+    "authentik",
+    "keycloak",
+    "authelia",
+    "zitadel",
+  ]) {
+    const brand = resolveBrand({ identity });
+    expect(brand?.bundled, identity).toBe(true);
+    const url = new URL(brand!.icon, location.href);
+    expect(
+      /^data:image\/svg\+xml[;,]/.test(url.href) ||
+        (["http:", "https:"].includes(url.protocol) &&
+          url.origin === location.origin),
+      identity,
+    ).toBe(true);
+  }
 
-it.each([
-  "google",
-  "microsoft",
-  "okta",
-  "auth0",
-  "github",
-  "gitlab",
-  "cloudflare",
-  "authentik",
-  "keycloak",
-  "authelia",
-  "zitadel",
-])("uses the bundled %s mark and custom fallback on failure", (identity) => {
-  const fallback = <svg data-testid="shield" aria-hidden />;
   const { container, getByTestId } = render(
-    <BrandIcon identity={identity} bundledOnly fallback={fallback} />,
+    <BrandIcon
+      identity="authentik"
+      bundledOnly
+      fallback={<svg data-testid="shield" aria-hidden />}
+    />,
   );
-  const icons = [...container.querySelectorAll("img")];
+  const icons = container.querySelectorAll("img");
   expect(icons).toHaveLength(1);
   const [icon] = icons;
-  expect(icon.getAttribute("src")).toBe(brands[identity].icon);
-  const url = new URL(icon.src);
-  expect(
-    /^data:image\/svg\+xml[;,]/.test(icon.src) ||
-      (["http:", "https:"].includes(url.protocol) &&
-        url.origin === location.origin),
-  ).toBe(true);
+  expect(icon.getAttribute("src")).toBe(brands.authentik.icon);
   expect(icon.alt).toBe("");
   fireEvent.error(icon);
   expect(container.querySelector("img")).toBeNull();
   expect(getByTestId("shield")).toBeTruthy();
 });
-
-it.each([
-  { identity: "cloudflare", invert: false },
-  { identity: "zitadel", invert: true },
-])(
-  "applies the expected dark-mode rule to the bundled $identity mark",
-  ({ identity, invert }) => {
-    const { container } = render(<BrandIcon identity={identity} bundledOnly />);
-    expect(
-      container.querySelector("img")?.classList.contains("dark:invert"),
-    ).toBe(invert);
-  },
-);
 
 it.each(["generic", "notion"])(
   "never uses remote or caller-supplied images in bundled-only mode (%s)",

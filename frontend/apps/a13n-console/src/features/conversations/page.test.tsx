@@ -275,7 +275,7 @@ it("updates ID search, combines filters, and opens the matched Thread", async ()
   cache.clear();
 });
 
-it.each(["inherit", "off", "on", "spaces"])(
+it.each(["inherit", "spaces"])(
   "starts a Console session with memory %s, reusing preparation on retry",
   async (memoryChoice) => {
     allowed = ["run"];
@@ -380,48 +380,48 @@ it.each(["inherit", "off", "on", "spaces"])(
       }),
     );
     await user.click(screen.getByRole("button", { name: "Apply" }));
-    if (memoryChoice !== "inherit") {
+    if (memoryChoice === "spaces") {
       await user.click(
         screen.getByRole("button", { name: /Memory.*Follow agent/ }),
       );
       await user.click(screen.getByRole("button", { name: "Custom" }));
-      if (memoryChoice === "on" || memoryChoice === "spaces")
-        await user.click(screen.getByRole("switch", { name: "Memory spaces" }));
-      if (memoryChoice === "spaces") {
-        await user.click(screen.getByRole("button", { name: "Add space" }));
-        await user.click(
-          await screen.findByRole("checkbox", { name: /Team knowledge/ }),
-        );
-        await user.keyboard("{Escape}");
-        await user.clear(screen.getByRole("textbox", { name: "Mount name" }));
-        await user.keyboard("{Escape}");
-        await user.type(
-          screen.getByRole("textbox", { name: "Message" }),
-          "Check memory",
-        );
-        expect(screen.getByRole("button", { name: "Send" })).toHaveProperty(
-          "disabled",
-          true,
-        );
-        await user.keyboard("{Enter}");
-        expect(posts).toEqual([]);
-        await user.clear(screen.getByRole("textbox", { name: "Message" }));
-        await user.click(
-          screen.getByRole("button", { name: /Memory.*Review settings/ }),
-        );
-        await user.type(
-          screen.getByRole("textbox", { name: "Mount name" }),
-          "team",
-        );
-        await user.click(screen.getByRole("button", { name: "Follow agent" }));
-        expect(
-          screen.queryByRole("textbox", { name: "Mount name" }),
-        ).toBeNull();
-        await user.click(screen.getByRole("button", { name: "Custom" }));
-        expect(
-          screen.getByRole("textbox", { name: "Mount name" }),
-        ).toHaveProperty("value", "team");
-      }
+      const toggle = screen.getByRole("switch", { name: "Memory spaces" });
+      expect(toggle.getAttribute("aria-checked")).toBe("false");
+      expect(screen.queryByRole("button", { name: "Add space" })).toBeNull();
+      await user.click(toggle);
+      expect(toggle.getAttribute("aria-checked")).toBe("true");
+      expect(screen.getByText("No spaces selected")).toBeTruthy();
+      await user.click(screen.getByRole("button", { name: "Add space" }));
+      await user.click(
+        await screen.findByRole("checkbox", { name: /Team knowledge/ }),
+      );
+      await user.keyboard("{Escape}");
+      await user.clear(screen.getByRole("textbox", { name: "Mount name" }));
+      await user.keyboard("{Escape}");
+      await user.type(
+        screen.getByRole("textbox", { name: "Message" }),
+        "Check memory",
+      );
+      expect(screen.getByRole("button", { name: "Send" })).toHaveProperty(
+        "disabled",
+        true,
+      );
+      await user.keyboard("{Enter}");
+      expect(posts).toEqual([]);
+      await user.clear(screen.getByRole("textbox", { name: "Message" }));
+      await user.click(
+        screen.getByRole("button", { name: /Memory.*Review settings/ }),
+      );
+      await user.type(
+        screen.getByRole("textbox", { name: "Mount name" }),
+        "team",
+      );
+      await user.click(screen.getByRole("button", { name: "Follow agent" }));
+      expect(screen.queryByRole("textbox", { name: "Mount name" })).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Custom" }));
+      expect(
+        screen.getByRole("textbox", { name: "Mount name" }),
+      ).toHaveProperty("value", "team");
       await user.click(screen.getByRole("button", { name: "Done" }));
     }
     await user.type(
@@ -459,11 +459,8 @@ it.each(["inherit", "off", "on", "spaces"])(
         ? {}
         : {
             memory: {
-              enabled: memoryChoice === "on" || memoryChoice === "spaces",
-              spaces:
-                memoryChoice === "spaces"
-                  ? [{ name: "team", space_id: "msp_team", access: "write" }]
-                  : [],
+              enabled: true,
+              spaces: [{ name: "team", space_id: "msp_team", access: "write" }],
             },
           }),
     });

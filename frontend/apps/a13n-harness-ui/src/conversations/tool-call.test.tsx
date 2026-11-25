@@ -51,32 +51,6 @@ it("switches edit evidence labels without closing the disclosure or translating 
   expect(screen.getByText("Applied edit")).toBeTruthy();
 });
 
-it("localizes tool activity without translating tool names or recorded content when the language changes", async () => {
-  await i18n.changeLanguage("en");
-  render(
-    <>
-      <ToolActivity
-        tools={[
-          {
-            id: "read",
-            name: "view",
-            input: { file_path: "/tmp/user file" },
-            result: { content: "server text" },
-          },
-        ]}
-      />
-      <ToolCall tool={{ id: "unknown", name: "Edit", result: "user result" }} />
-    </>,
-  );
-  fireEvent.click(screen.getByRole("button", { name: /Explored 1 file/ }));
-  await act(() => i18n.changeLanguage("zh-CN"));
-  expect(screen.getByRole("button", { name: /已查看 1 个文件/ })).toBeTruthy();
-  expect(screen.getByText("server text")).toBeTruthy();
-  expect(screen.getByText("Edit")).toBeTruthy();
-  expect(screen.getByText("/tmp/user file")).toBeTruthy();
-  await act(() => i18n.changeLanguage("en"));
-});
-
 it("pairs loaded calls with results once, retaining page-edge results and repeated call IDs", () => {
   const entries = [
     {

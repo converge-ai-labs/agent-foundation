@@ -1015,11 +1015,10 @@ async def test_app_model_usage_uses_the_resource_principal_without_granting_nati
 ):
     from types import SimpleNamespace
 
+    from a13n_service.app_sdk.usage import AppModelUsageQuery, app_models
     from a13n_service.infra.db import short_session
     from a13n_service.infra.errors import ServiceError
     from a13n_service.tenancy.access import principal_for
-    from a13n_service.usage.schemas import AppModelUsageQuery
-    from a13n_service.usage.service import app_models
     from pydantic import ValidationError
 
     async def account(name, role):

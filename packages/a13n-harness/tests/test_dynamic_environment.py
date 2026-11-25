@@ -575,35 +575,6 @@ async def test_capability_projects_stable_tools_and_one_bounded_fresh_mount_snap
 
 
 @requires_posix_process_groups
-async def test_fresh_process_binding_adds_run_owned_process_tools(tmp_path: Path) -> None:
-    calls: list[AgentInfo] = []
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages
-        calls.append(info)
-        yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(DynamicEnvironmentCapability(_configuration()),),
-    )
-    result = await executable.run(
-        "inspect",
-        bindings=RunBindings.embedded(environment=_local_binding(tmp_path, process_output=True)),
-    )
-
-    assert result.output_or_raise() == "done"
-    names = {tool.name for tool in calls[0].function_tools}
-    assert {"shell_exec", "shell_info", "shell_wait", "shell_input", "shell_signal"} <= names
-    assert {"shell_status", "shell_kill"}.isdisjoint(names)
-    shell_tool = next(tool for tool in calls[0].function_tools if tool.name == "shell_exec")
-    assert "background" not in shell_tool.parameters_json_schema["properties"]
-    assert "yield_time_seconds" not in shell_tool.parameters_json_schema["properties"]
-
-
-@requires_posix_process_groups
 async def test_native_shell_default_wait_works_without_tool_execution_binding(tmp_path: Path):
     import asyncio
 

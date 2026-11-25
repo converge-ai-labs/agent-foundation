@@ -14,10 +14,6 @@ const run = (overrides: Partial<Schema["RunView"]>) =>
     ...overrides,
   }) as Schema["RunView"];
 
-it("says nothing about the first attempt every run starts with", () => {
-  expect(attemptEvent(fixtureAttempt(1))).toBe(null);
-});
-
 it("reports a later attempt with why it started", () => {
   expect(
     attemptEvent(

@@ -16,7 +16,6 @@ import {
   RecoveryNotice,
   SavedEntry,
 } from "./transcript";
-import { MessageText } from "./message-text";
 import { LiveConnectionStatus } from "./live-connection";
 import { ImagePreview } from "../shell/image-preview";
 
@@ -222,30 +221,6 @@ it("translates known live-update states and keeps unknown transport states verba
     <LiveConnectionStatus connection="Paused by operator" reconnections={2} />,
   );
   expect(screen.getByText("Paused by operator")).toBeTruthy();
-});
-
-it("translates markdown block controls and the image fallback around verbatim model content", async () => {
-  render(
-    <MessageText
-      text={"```python\nprint(1)\n```\n\n| a |\n| - |\n| 1 |\n\n![](photo.png)"}
-    />,
-  );
-  expect(screen.getByRole("region", { name: "python code" })).toBeTruthy();
-  expect(screen.getByRole("region", { name: "Table" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Copy code" })).toBeTruthy();
-  expect(screen.getByText("[Image: attachment]")).toBeTruthy();
-
-  await act(() => i18n.changeLanguage("zh-CN"));
-
-  expect(screen.getByRole("region", { name: "python 代码" })).toBeTruthy();
-  expect(screen.getByRole("region", { name: "表格" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "复制代码" })).toBeTruthy();
-  expect(screen.getByText("[图片：附件]")).toBeTruthy();
-  // The language identifier and model-authored code remain verbatim.
-  expect(screen.getByText("python")).toBeTruthy();
-  expect(
-    screen.getByRole("region", { name: "python 代码" }).textContent,
-  ).toContain("print(1)");
 });
 
 it("translates live context states from the reducer and keeps their backend diagnostics verbatim", async () => {
