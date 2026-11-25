@@ -35,6 +35,7 @@ READS = {
 }
 WRITES = {
     "create_schedule",
+    "duplicate_schedule",
     "update_schedule",
     "enable_schedule",
     "pause_schedule",

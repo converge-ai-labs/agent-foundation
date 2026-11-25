@@ -264,7 +264,7 @@ New generic messages cannot launch the builtin Finding Agent or continue a manag
 
 ## Configuration copies
 
-Environment template, Model, [Schedule](13-schedules.md#management-api) and Skill copies are created in the source workspace. The caller needs `write` in that workspace and the resource-specific creation permissions. An omitted name defaults to `<name> (copy)` (shortened to fit the name limit); omitted description and labels, where supported, are inherited. Success creates a new resource with `201` and its ETag, and records `<kind>.duplicate` against the copy with `source_id` and, for Skills, `source_revision_id`.
+Environment template, Model, [Schedule](13-schedules.md#management-api) and Skill copies are created in the source workspace. The caller needs `read` on the source, `write` in that workspace and the resource-specific creation permissions. An omitted name defaults to `<name> (copy)` (shortened to fit the name limit); omitted description and labels, where supported, are inherited. A duplicate request creates a new resource each time. Success returns the copy with `201` and its ETag, and records `<kind>.duplicate` against the copy with `source_id` and, for Skills, `source_revision_id`.
 
 ## Skills
 
