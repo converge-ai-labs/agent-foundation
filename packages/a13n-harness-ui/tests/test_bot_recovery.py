@@ -201,11 +201,11 @@ async def test_terminal_summary_save_failure_pauses_bot(tmp_path, monkeypatch, r
         if run_status == "preparation_failed":
             monkeypatch.setattr(app._root_runs._executor._environments, "prepare", fail_preparation)
 
-        async def fail_terminal_summary(thread_id, execution):
+        async def fail_terminal_summary(thread_id, execution, retained, output):
             if execution.completed_at is not None:
                 assert execution.status == ("failed" if run_status == "preparation_failed" else run_status)
                 raise OSError("Execution summary unavailable")
-            return await save(thread_id, execution)
+            return await save(thread_id, execution, retained, output)
 
         monkeypatch.setattr(app._root_runs, "_save_execution", fail_terminal_summary)
         command = BotSubmit(input_id="unknown-summary", text="Do this once")
