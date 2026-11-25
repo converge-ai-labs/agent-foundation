@@ -15251,6 +15251,45 @@
         "title": "MetricsSample",
         "type": "object"
       },
+      "ModalVolumeMount": {
+        "additionalProperties": false,
+        "properties": {
+          "mount_path": {
+            "minLength": 1,
+            "title": "Mount path",
+            "type": "string"
+          },
+          "read_only": {
+            "default": false,
+            "title": "Read only",
+            "type": "boolean"
+          },
+          "sub_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume subpath"
+          },
+          "volume_name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9._-]+$",
+            "title": "Volume name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "volume_name",
+          "mount_path"
+        ],
+        "title": "ModalVolumeMount",
+        "type": "object"
+      },
       "Model": {
         "properties": {
           "catalog_ref": {
@@ -20467,11 +20506,21 @@
             "type": "object"
           },
           "volumes": {
-            "items": {
-              "$ref": "#/components/schemas/DaytonaVolumeMount"
-            },
-            "title": "Volumes",
-            "type": "array"
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DaytonaVolumeMount"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ModalVolumeMount"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Volumes"
           }
         },
         "title": "RecipeOverrides",

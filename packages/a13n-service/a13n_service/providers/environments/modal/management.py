@@ -61,6 +61,19 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
                 )
             except modal.exception.NotFoundError:
                 raise failure(self.provider_key, "provider_target_missing", Category.MISSING) from None
+            volumes = {}
+            for mount in self.config.volumes:
+                volume = modal.Volume.from_name(
+                    mount.volume_name, environment_name=self.backend.environment_name, client=client
+                )
+                try:
+                    # Resolve the name before dispatching a sandbox mutation.
+                    await volume.hydrate.aio()
+                except modal.exception.NotFoundError:
+                    raise failure(self.provider_key, "provider_volume_missing", Category.MISSING) from None
+                volumes[mount.mount_path] = volume.with_mount_options(
+                    sub_path=mount.sub_path, read_only=mount.read_only
+                )
         with sdk_errors(mutation=True):
             image = (
                 modal.Image.from_id(snapshot.image_id if snapshot else self.config.image, client=client)
@@ -84,6 +97,7 @@ class ModalManagement(ModalReference, NativeManagement[ModalEnvironmentConfigura
             sandbox = await modal.Sandbox.create.aio(
                 *startup,
                 app=app,
+                volumes=volumes,
                 name=self.name,
                 image=image,
                 client=client,

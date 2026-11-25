@@ -1,4 +1,6 @@
 {
+  "Modal volumes": "Modal वॉल्यूम",
+  "Mount existing Modal volumes by name. Files in mounted directories survive environment deletion.": "मौजूदा Modal वॉल्यूम को नाम से माउंट करें। एनवायरनमेंट हटाने पर भी माउंट की गई डायरेक्टरी की फ़ाइलें बनी रहती हैं।",
   "Daytona volumes": "Daytona वॉल्यूम",
   "Volume ID": "वॉल्यूम आईडी",
   "Volume subpath": "वॉल्यूम का उपपथ",

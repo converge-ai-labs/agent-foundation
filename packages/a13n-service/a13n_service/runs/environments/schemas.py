@@ -11,6 +11,7 @@ from a13n_harness.environment.models import (
 )
 from a13n_harness.providers.environment.daytona.shared import DaytonaVolumes
 from a13n_harness.providers.environment.e2b.configuration import VolumeMounts
+from a13n_harness.providers.environment.modal.shared import ModalVolumes
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -168,7 +169,7 @@ class EnvironmentPage(BaseModel):
 class RecipeOverrides(BaseModel):
     model_config = ConfigDict(extra="forbid")
     volume_mounts: VolumeMounts = Field(default_factory=dict)
-    volumes: DaytonaVolumes = Field(default_factory=list)
+    volumes: DaytonaVolumes | ModalVolumes = Field(default_factory=list)
 
 
 class ManagedEnvironmentCreate(BaseModel):

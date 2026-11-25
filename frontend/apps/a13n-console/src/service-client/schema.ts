@@ -11080,6 +11080,20 @@ export interface components {
       sequence: number;
       system: components["schemas"]["SystemMetrics"];
     };
+    /** ModalVolumeMount */
+    ModalVolumeMount: {
+      /** Mount path */
+      mount_path: string;
+      /**
+       * Read only
+       * @default false
+       */
+      read_only?: boolean;
+      /** Volume subpath */
+      sub_path?: string | null;
+      /** Volume name */
+      volume_name: string;
+    };
     /** Model */
     Model: {
       catalog_ref: components["schemas"]["CatalogRef"] | null;
@@ -12811,7 +12825,9 @@ export interface components {
         [key: string]: string;
       };
       /** Volumes */
-      volumes?: components["schemas"]["DaytonaVolumeMount"][];
+      volumes?:
+        | components["schemas"]["DaytonaVolumeMount"][]
+        | components["schemas"]["ModalVolumeMount"][];
     };
     /**
      * Reclamation
