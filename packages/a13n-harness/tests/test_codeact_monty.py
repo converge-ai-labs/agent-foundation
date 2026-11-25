@@ -1,6 +1,5 @@
 """Exercise explicit JSON conversion across Harness runner and persistence boundaries."""
 
-import asyncio
 import json
 from pathlib import Path
 from textwrap import dedent
@@ -314,14 +313,9 @@ async def test_queued_argument_bytes_are_charged_once_before_dispatch() -> None:
     from a13n_harness.codeact.values import bounded_json_size
 
     dispatched: list[str] = []
-    first_entered = asyncio.Event()
-    release_first = asyncio.Event()
 
     async def work(text: str) -> str:
         dispatched.append(text)
-        if len(dispatched) == 1:
-            first_entered.set()
-            await release_first.wait()
         return "ok"
 
     payload = "x" * 60
@@ -341,32 +335,22 @@ async def test_queued_argument_bytes_are_charged_once_before_dispatch() -> None:
         await asyncio.gather(t1, t2, t3)
     """)
 
-    run_task = asyncio.create_task(
-        _run(
-            [_code(source), _code("await work(text='small')")],
-            config=CodeActConfig(max_concurrency=1, max_output_bytes=budget_bytes),
-            capabilities=(_codeact_tools(work, allowed=("work",)),),
-        )
+    _, seen, _ = await _run(
+        [_code(source), _code("await work(text='small')")],
+        config=CodeActConfig(max_concurrency=1, max_output_bytes=budget_bytes),
+        capabilities=(_codeact_tools(work, allowed=("work",)),),
     )
-    try:
-        await asyncio.wait_for(first_entered.wait(), 5)
-        release_first.set()
-        _, seen, _ = await asyncio.wait_for(run_task, 5)
-    finally:
-        release_first.set()
-        run_task.cancel()
-        await asyncio.gather(run_task, return_exceptions=True)
 
     assert seen[0].outcome == "failed"
     error = json.loads(seen[0].content)["error"]
     assert any(item["boundary"] == "arguments" and item["ordinal"] == 3 for item in error["nested_errors"])
     # The 3rd queued call was rejected on argument bytes before dispatch; calls 1 and 2 fit.
-    assert len(dispatched) <= 2
-    # Ordinal release and session recovery allow the subsequent feed to run cleanly.
+    assert dispatched.count(payload) <= 2
+    # The recovery feed is a separate invocation and must dispatch successfully.
+    assert dispatched[-1] == "small"
     assert seen[1].content == "ok"
 
-    # Verify each call's argument payload is charged once (not twice): two calls fit
-    # when budget is 2 * (arg_bytes + result_bytes), leaving room for both to finish.
+    # The same budget fits two calls and their results, but not a double charge.
     dispatched.clear()
     two_calls = dedent(f"""\
         import asyncio
@@ -377,7 +361,7 @@ async def test_queued_argument_bytes_are_charged_once_before_dispatch() -> None:
     """)
     _, ok_seen, _ = await _run(
         [_code(two_calls)],
-        config=CodeActConfig(max_concurrency=1, max_output_bytes=arg_bytes * 2 + 24),
+        config=CodeActConfig(max_concurrency=1, max_output_bytes=budget_bytes),
         capabilities=(_codeact_tools(work, allowed=("work",)),),
     )
     assert ok_seen[0].content == ["ok", "ok"]
