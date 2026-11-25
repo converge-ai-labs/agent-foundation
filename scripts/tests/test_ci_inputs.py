@@ -23,16 +23,17 @@ WORKFLOWS = ROOT / ".github/workflows"
         ("packages/a13n-harness/a13n_harness/providers/environment/remote_envd/attachment.py", {"protocol"}),
         ("packages/a13n-harness/tests/providers_environment/test_remote_envd_e2e.py", {"protocol"}),
         ("examples/environment-provider/tests/test_stdio.py", {"protocol"}),
-        ("crates/a13n-envd/src/transfer.rs", {"daemon", "protocol"}),
-        ("crates/a13n-envd/Cargo.toml", {"daemon", "protocol"}),
-        ("crates/a13n-envd/build.rs", {"daemon", "protocol"}),
-        ("crates/a13n-envd/build_support/mod.rs", {"daemon", "protocol"}),
-        ("crates/a13n-envd/protocol/eip/v1/descriptor.pb", {"daemon", "protocol"}),
-        ("crates/a13n-envd/protocol/eip/v1/testdata/schema.golden.json", {"daemon", "protocol"}),
+        ("crates/a13n-envd/src/transfer.rs", {"daemon", "protocol", "size"}),
+        ("crates/a13n-envd/Cargo.toml", {"daemon", "protocol", "size"}),
+        ("crates/a13n-envd/build.rs", {"daemon", "protocol", "size"}),
+        ("crates/a13n-envd/build_support/mod.rs", {"daemon", "protocol", "size"}),
+        ("crates/a13n-envd/protocol/eip/v1/descriptor.pb", {"daemon", "protocol", "size"}),
+        ("crates/a13n-envd/protocol/eip/v1/testdata/schema.golden.json", {"daemon", "protocol", "size"}),
+        ("crates/a13n-envd/tests/monitoring_linux.py", {"daemon", "protocol"}),
         ("crates/a13n-envd/README.md", {"daemon"}),
         ("crates/a13n-envd/LICENSE", {"daemon"}),
         ("crates/a13n-envd/macos/EnvdApp.swift", {"daemon"}),
-        ("scripts/envd_size.py", {"daemon"}),
+        ("scripts/envd_size.py", {"size"}),
         ("deploy/docker/images/sandbox/Dockerfile", set()),
         ("pyproject.toml", {"client", "daemon", "protocol"}),
         ("uv.lock", {"client", "daemon", "protocol"}),
@@ -51,6 +52,16 @@ def test_envd_runtime_inputs_select_native_protocol(path: str, selected: set[str
     } == selected
     for event in ("pull_request", "push"):
         assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"]) == bool(selected)
+    assert workflow["jobs"]["changes"]["outputs"]["size"] == "${{ steps.filter.outputs.size }}"
+    assert (
+        workflow["jobs"]["size"]["if"]
+        == "github.event_name == 'workflow_dispatch' || needs.changes.outputs.size == 'true'"
+    )
+    validation_env = workflow["jobs"]["validation"]["steps"][0]["env"]
+    assert (
+        validation_env["SIZE_SELECTED"]
+        == "${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.size == 'true' }}"
+    )
 
 
 @pytest.mark.parametrize(
