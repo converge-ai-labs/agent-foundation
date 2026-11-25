@@ -203,26 +203,33 @@ it("submits volume mounts selected for an E2B instance", async () => {
 
 it.each([
   {
+    type: "boxd",
+    nameKey: "disk_id",
+    editKey: "disk_id",
+    original: "disk-one",
+    next: "disk-two",
+  },
+  {
     type: "daytona",
     nameKey: "volume_id",
-    subKey: "subpath",
+    editKey: "subpath",
     original: "work/one",
     next: "work/two",
   },
   {
     type: "modal",
     nameKey: "volume_name",
-    subKey: "sub_path",
+    editKey: "sub_path",
     original: "/work/one",
     next: "/work/two",
   },
 ])(
-  "replaces the $type template volume subpath for just this instance",
-  async ({ type, nameKey, subKey, original, next }) => {
+  "replaces the $type template volume mount for just this instance",
+  async ({ type, nameKey, editKey, original, next }) => {
     const mount = {
       [nameKey]: "shared",
       mount_path: "/data",
-      [subKey]: original,
+      [editKey]: original,
     };
     const schema = {
       properties: {
@@ -234,7 +241,7 @@ it.each([
           properties: {
             [nameKey]: { type: "string" },
             mount_path: { type: "string" },
-            [subKey]: { type: "string" },
+            [editKey]: { type: "string" },
           },
         },
       },
@@ -269,9 +276,9 @@ it.each([
     await user.click(
       await screen.findByRole("option", { name: /Mounted sandbox/ }),
     );
-    const subpath = await screen.findByDisplayValue(original);
-    await user.clear(subpath);
-    await user.type(subpath, next);
+    const input = await screen.findByDisplayValue(original);
+    await user.clear(input);
+    await user.type(input, next);
     await user.click(
       screen.getByRole("button", { name: "Create environment" }),
     );
@@ -280,7 +287,7 @@ it.each([
         body: {
           template_id: "envtpl_d",
           metrics_data_source_id: null,
-          recipe_overrides: { volumes: [{ ...mount, [subKey]: next }] },
+          recipe_overrides: { volumes: [{ ...mount, [editKey]: next }] },
         },
       }),
     );

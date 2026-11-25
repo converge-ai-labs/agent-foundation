@@ -630,8 +630,17 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `max_output_bytes`               | false    | integer                              | maximum=16777216; exclusiveMinimum=0; default=1048576  |
 | `size`                           | false    | "1x4", "2x8", "4x16", "8x32" or null | default=null                                           |
 | `from_snapshot`                  | false    | string or null                       | minLength=1; maxLength=128; default=null               |
+| `volumes`                        | false    | array of BoxdVolumeMount             | —; default from model factory                          |
 | `auto_suspend_timeout_seconds`   | false    | integer                              | minimum=0; maximum=86400; default=0                    |
 | `auto_hibernate_timeout_seconds` | false    | integer                              | minimum=0; maximum=604800; default=0                   |
+
+## `BoxdVolumeMount`
+
+| Field        | Required | Type / choices | Constraints and default |
+| ------------ | -------- | -------------- | ----------------------- |
+| `disk_id`    | true     | string         | minLength=1             |
+| `mount_path` | true     | string         | minLength=1             |
+| `read_only`  | false    | boolean        | default=false           |
 
 ## `RemoteEnvdEnvironmentConfiguration`
 

@@ -1,4 +1,7 @@
 {
+  "Disk ID": "Disk ID",
+  "boxd disks": "boxd disks",
+  "Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.": "Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.",
   "Modal volumes": "Modal volumes",
   "Mount existing Modal volumes by name. Files in mounted directories survive environment deletion.": "Mount existing Modal volumes by name. Files in mounted directories survive environment deletion.",
   "Daytona volumes": "Daytona volumes",

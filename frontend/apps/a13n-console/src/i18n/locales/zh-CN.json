@@ -1,4 +1,7 @@
 {
+  "Disk ID": "磁盘 ID",
+  "boxd disks": "boxd 持久化磁盘",
+  "Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.": "按 ID 挂载已有的 boxd 磁盘。删除机器后，挂载目录中的文件会保留。",
   "Modal volumes": "Modal 持久化卷",
   "Mount existing Modal volumes by name. Files in mounted directories survive environment deletion.": "按名称挂载已有的 Modal 卷。删除环境后，挂载目录中的文件会保留。",
   "Daytona volumes": "Daytona 持久化卷",

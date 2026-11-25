@@ -59,7 +59,7 @@ async def env(service) -> SimpleNamespace:  # type: ignore[no-untyped-def]
     ("overrides", "message"),
     [
         ({"volume_mounts": {"/data": "project-a"}}, "Volume mounts require an E2B template"),
-        ({"volumes": []}, "Volumes require a Daytona or Modal template"),
+        ({"volumes": []}, "Volumes require a boxd, Daytona, or Modal template"),
     ],
 )
 async def test_volume_overrides_require_matching_template(env, overrides, message):
@@ -72,6 +72,49 @@ async def test_volume_overrides_require_matching_template(env, overrides, messag
     )
     assert response.status_code == 400, response.text
     assert message in response.text
+
+
+async def test_boxd_disk_selection_is_frozen_per_instance(service, runs_kit):
+    await runs_kit.pause_sweeps(service)
+    client, runtime = service.client, service.runtime
+    provider = await client.post(
+        "/api/v1/environment-providers",
+        json={"type": "boxd", "name": "boxd", "config": {"region": "fra"}, "credential": {"api_key": "test"}},
+    )
+    assert provider.status_code == 201, provider.text
+    default = {"disk_id": "default", "mount_path": "/home/boxd/data", "read_only": True}
+    selected = default | {"disk_id": "instance", "read_only": False}
+
+    async def make_template(name, recipe):
+        template = await client.post(
+            "/api/v1/environment-templates",
+            json={"name": name, "provider_id": provider.json()["id"], "config": {"recipe": recipe}},
+        )
+        assert template.status_code == 201, template.text
+        return {"template_id": template.json()["id"]}
+
+    snapshot = await make_template("Snapshot", {"from_snapshot": "base"})
+    rejected = await client.post("/api/v1/environments", json=snapshot | {"recipe_overrides": {"volumes": [selected]}})
+    assert rejected.status_code == 400 and "snapshot" in rejected.text
+
+    base = await make_template("Mounted", {"volumes": [default]})
+    for overrides, expected in [({}, [default]), ({"volumes": []}, []), ({"volumes": [selected]}, [selected])]:
+        instance = await client.post("/api/v1/environments", json=base | {"recipe_overrides": overrides})
+        assert instance.status_code == 201, instance.text
+        op = await claim(runtime, instance.json()["id"], owner="test")
+        assert op.target.recipe.get("volumes", []) == expected
+
+    async with transaction(runtime.storage) as session:
+        original = await session.get_one(EnvironmentRow, op.environment_id)
+        scope = WorkspaceScope(original.organization_id, original.workspace_id)
+        principal = await principal_for(session, runtime.access, original.created_by_id, confinement=scope)
+        replacement = await lifecycle.reserve(
+            session, principal, scope, original.template_id, limit=20, replaces=original
+        )
+        await lifecycle.begin(session, replacement, "creating")
+        identifier = replacement.id
+    successor = await claim(runtime, identifier, owner="test")
+    assert successor.target.recipe["volumes"] == [selected]
 
 
 async def test_settled_candidate_query_matches_locked_rule(env):

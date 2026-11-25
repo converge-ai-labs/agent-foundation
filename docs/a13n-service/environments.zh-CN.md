@@ -141,6 +141,22 @@ curl -sS -X POST "$A13N_URL/api/v1/environments" \
 }
 ```
 
+使用 boxd 模板时，可以在**创建环境**中填写已有磁盘的 ID，也可以在请求中传入以下配置。磁盘必须位于 provider 所在区域，每块磁盘同时只能挂载到一台机器。暂停机器会保留挂载，删除机器后可以在新实例挂载同一块盘，继续读取文件。省略 `volumes` 会沿用模板挂载，传入 `[]` 会清空挂载。使用 `from_snapshot` 的模板无法在创建时挂载磁盘。
+
+```json
+{
+  "recipe_overrides": {
+    "volumes": [
+      {
+        "disk_id": "<boxd-disk-id>",
+        "mount_path": "/home/boxd/data",
+        "read_only": false
+      }
+    ]
+  }
+}
+```
+
 ### 停止、重命名和删除
 
 操作时需在 `If-Match` 中携带环境当前的 ETag（需要 `write` 权限）：

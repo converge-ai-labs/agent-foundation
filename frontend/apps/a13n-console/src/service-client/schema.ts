@@ -6655,6 +6655,18 @@ export interface components {
        */
       password: string;
     };
+    /** BoxdVolumeMount */
+    BoxdVolumeMount: {
+      /** Disk ID */
+      disk_id: string;
+      /** Mount path */
+      mount_path: string;
+      /**
+       * Read only
+       * @default false
+       */
+      read_only?: boolean;
+    };
     /** Browser */
     Browser: {
       control: components["schemas"]["ControlStatus"];
@@ -12827,7 +12839,8 @@ export interface components {
       /** Volumes */
       volumes?:
         | components["schemas"]["DaytonaVolumeMount"][]
-        | components["schemas"]["ModalVolumeMount"][];
+        | components["schemas"]["ModalVolumeMount"][]
+        | components["schemas"]["BoxdVolumeMount"][];
     };
     /**
      * Reclamation

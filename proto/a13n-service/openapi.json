@@ -3180,6 +3180,32 @@
         "title": "BootstrapInput",
         "type": "object"
       },
+      "BoxdVolumeMount": {
+        "additionalProperties": false,
+        "properties": {
+          "disk_id": {
+            "minLength": 1,
+            "title": "Disk ID",
+            "type": "string"
+          },
+          "mount_path": {
+            "minLength": 1,
+            "title": "Mount path",
+            "type": "string"
+          },
+          "read_only": {
+            "default": false,
+            "title": "Read only",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "disk_id",
+          "mount_path"
+        ],
+        "title": "BoxdVolumeMount",
+        "type": "object"
+      },
       "Browser": {
         "properties": {
           "control": {
@@ -20516,6 +20542,12 @@
               {
                 "items": {
                   "$ref": "#/components/schemas/ModalVolumeMount"
+                },
+                "type": "array"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/BoxdVolumeMount"
                 },
                 "type": "array"
               }

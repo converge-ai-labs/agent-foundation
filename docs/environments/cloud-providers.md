@@ -10,15 +10,15 @@ Choose a cloud backend in the [Environment overview](index.md#choose-a-backend),
 
 Daytona and Modal run through Envd; E2B, Vercel, and Sprites support both Native Files & Shell and Envd; Runloop and boxd provide Native Files & Shell only. Store API keys in your credential store and keep recipes and saved `EnvironmentState` free of secrets:
 
-| Provider       | Backend settings                                                                 | Credential fields          | Common recipe settings                                                                                        |
-| -------------- | -------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| E2B            | `domain`, optional `api_url`                                                     | `api_key`                  | `template`, `execution`, `preparation`, `desktop`, `user`, `root`, `allow_internet_access`, `timeout_seconds` |
-| Daytona        | `organization_id`, `target` (default `us`)                                       | `api_key`                  | `snapshot` (`"auto"` or snapshot name), `desktop`, `desktop_assistance`                                       |
-| Modal          | optional `workspace`, `app_name` (`a13n-sandboxes`), `environment_name` (`main`) | `token_id`, `token_secret` | `image` (`"auto"` or image ID), `desktop`, `desktop_assistance`, `cpu`, `memory` (MiB), `timeout_seconds`     |
-| Vercel Sandbox | `team_id`, `project_id`                                                          | `api_key` (access token)   | `execution`, `snapshot` (`"auto"` or ID), `desktop`, `runtime`, `vcpus`, `timeout_seconds`                    |
-| Fly.io Sprites | `organization`                                                                   | `api_key` (Sprites token)  | `region`, `execution`, `desktop`                                                                              |
-| Runloop        | `organization`                                                                   | `api_key`                  | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                       |
-| boxd           | `region` (`fra` or `nyc`), optional `organization`                               | `api_key`                  | `size` (`1x4`–`8x32`), `from_snapshot`, `auto_suspend_timeout_seconds`, `auto_hibernate_timeout_seconds`      |
+| Provider       | Backend settings                                                                 | Credential fields          | Common recipe settings                                                                                              |
+| -------------- | -------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| E2B            | `domain`, optional `api_url`                                                     | `api_key`                  | `template`, `execution`, `preparation`, `desktop`, `user`, `root`, `allow_internet_access`, `timeout_seconds`       |
+| Daytona        | `organization_id`, `target` (default `us`)                                       | `api_key`                  | `snapshot` (`"auto"` or snapshot name), `desktop`, `desktop_assistance`                                             |
+| Modal          | optional `workspace`, `app_name` (`a13n-sandboxes`), `environment_name` (`main`) | `token_id`, `token_secret` | `image` (`"auto"` or image ID), `desktop`, `desktop_assistance`, `cpu`, `memory` (MiB), `timeout_seconds`           |
+| Vercel Sandbox | `team_id`, `project_id`                                                          | `api_key` (access token)   | `execution`, `snapshot` (`"auto"` or ID), `desktop`, `runtime`, `vcpus`, `timeout_seconds`                          |
+| Fly.io Sprites | `organization`                                                                   | `api_key` (Sprites token)  | `region`, `execution`, `desktop`                                                                                    |
+| Runloop        | `organization`                                                                   | `api_key`                  | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                                                             |
+| boxd           | `region` (`fra` or `nyc`), optional `organization`                               | `api_key`                  | `size` (`1x4`–`8x32`), `volumes`, `from_snapshot`, `auto_suspend_timeout_seconds`, `auto_hibernate_timeout_seconds` |
 
 ### Reconnection and lifecycle
 

@@ -276,11 +276,15 @@ async def reserve(
         if recipe_overrides and replaces.provider_id != template.provider_id:
             raise conflict("environment", replaces.id, "environment_template_moved")
     if recipe_overrides and "volumes" in recipe_overrides:
-        volume_key = {"daytona": "volume_id", "modal": "volume_name"}.get(provider.type)
+        volume_key = {"boxd": "disk_id", "daytona": "volume_id", "modal": "volume_name"}.get(provider.type)
         if volume_key is None:
-            raise invalid("recipe_overrides.volumes", "Volumes require a Daytona or Modal template")
+            raise invalid("recipe_overrides.volumes", "Volumes require a boxd, Daytona, or Modal template")
         if any(volume_key not in mount for mount in recipe_overrides["volumes"]):
             raise invalid("recipe_overrides.volumes", f"Volumes for {provider.type} require {volume_key}")
+        if provider.type == "boxd" and template.config.recipe.get("from_snapshot") and recipe_overrides["volumes"]:
+            raise invalid(
+                "recipe_overrides.volumes", "boxd cannot attach disks when creating a machine from a snapshot"
+            )
     if recipe_overrides and "volume_mounts" in recipe_overrides and provider.type != "e2b":
         raise invalid("recipe_overrides.volume_mounts", "Volume mounts require an E2B template")
     await lock_reservations(session, scope.workspace_id)
