@@ -117,7 +117,7 @@ When enabled, the WebUI Host runs one background attempt via the [Harness post-r
 
 ## Saved Output
 
-Saved output is read-only. Markdown renders GFM tables, code blocks with copy, static Mermaid previews (plain flowcharts, sequence, v2 state diagrams; complex/invalid stay source), and local KaTeX math (`$…$`, `\(…\)`, `$$…$$`, `\[…\]`, `math` fences; escape literal `$` as `\$`). Up to 8 same-instance native file links/images per message resolve near the viewport using authenticated [media preview](02-host-computer-sharing.md#content-and-mutations); external URLs stay plain links.
+Saved output is read-only. Markdown renders GFM tables, code blocks with copy, static Mermaid previews (plain flowcharts, sequence, v2 state diagrams; complex/invalid stay source), and local KaTeX math (`$…$`, `\(…\)`, `$$…$$`, `\[…\]`, `math` fences; escape literal `$` as `\$`). Settled assistant replies offer the shared [HTML code preview](../../frontend/design-system.md#html-code-preview). Up to 8 same-instance native file links/images per message resolve near the viewport using authenticated [media preview](02-host-computer-sharing.md#content-and-mutations); external URLs stay plain links.
 
 ## Project and Resource Configuration
 

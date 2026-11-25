@@ -110,3 +110,21 @@ it("renders nested completed fences only in replies and leaves failed diagrams a
   ).toBeTruthy();
   expect(screen.queryByRole("img")).toBeNull();
 });
+
+it("offers HTML preview only for settled agent replies and copies the original highlighted source", async () => {
+  const user = userEvent.setup();
+  const html = '<p class="card">Hello</p>';
+  const text = `\`\`\`html\n${html}\n\`\`\``;
+  const view = render(<MarkdownContent text={text} />);
+  expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+  view.rerender(<MarkdownContent text={text} agentReply streaming />);
+  expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+  view.rerender(<MarkdownContent text={text} agentReply />);
+  expect(view.container.querySelector("pre")?.hidden).toBe(false);
+  await user.click(screen.getByRole("button", { name: "Preview" }));
+  expect(
+    (await screen.findByTitle("HTML preview")).getAttribute("srcdoc"),
+  ).toContain(html);
+  await user.click(screen.getByRole("button", { name: "Copy code" }));
+  expect(await navigator.clipboard.readText()).toBe(html + "\n");
+});

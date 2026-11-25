@@ -15,7 +15,12 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
 import remarkCjkFriendly from "remark-cjk-friendly/parseOnly";
 import remarkMath from "remark-math";
-import { remarkClosedDiagram, remarkLatex } from "a13n-ui/markdown-extensions";
+import {
+  markdownCodeText,
+  remarkClosedDiagram,
+  remarkLatex,
+} from "a13n-ui/markdown-extensions";
+import { HtmlCodePreview, HtmlPreviewEnabled } from "a13n-ui/html-code-preview";
 import "katex/dist/katex.min.css";
 import styles from "./markdown.module.css";
 import { CodeBlock } from "./forms";
@@ -129,21 +134,43 @@ function MathRegion(props: ComponentPropsWithoutRef<"span">) {
   );
 }
 
+const ReplyPre: NonNullable<Components["pre"]> = ({ node, children }) => {
+  const { t } = useTranslation();
+  const code = node?.children.find(
+    (child) => child.type === "element" && child.tagName === "code",
+  );
+  if (code?.type === "element") {
+    const classes = code.properties.className;
+    if (
+      Array.isArray(classes) &&
+      classes.some((name) => String(name).toLowerCase() === "language-html")
+    ) {
+      return (
+        <HtmlCodePreview
+          source={markdownCodeText(code)}
+          labels={{
+            preview: t("Preview"),
+            title: t("HTML preview"),
+            tooLarge: t("HTML is too large to preview (200 KB limit)."),
+          }}
+        >
+          {(view) => <CodeBlock {...view}>{children}</CodeBlock>}
+        </HtmlCodePreview>
+      );
+    }
+    const source = code.children[0];
+    if (code.properties.dataClosedDiagram === true && source?.type === "text") {
+      return (
+        <MarkdownDiagram source={source.value}>{children}</MarkdownDiagram>
+      );
+    }
+  }
+  return <CodeBlock>{children}</CodeBlock>;
+};
+
 const replyComponents: Components = {
   ...components,
-  pre: ({ node, children }) => {
-    const code = node?.children.find(
-      (child) => child.type === "element" && child.tagName === "code",
-    );
-    const source = code?.type === "element" ? code.children[0] : undefined;
-    return code?.type === "element" &&
-      code.properties.dataClosedDiagram === true &&
-      source?.type === "text" ? (
-      <MarkdownDiagram source={source.value}>{children}</MarkdownDiagram>
-    ) : (
-      <CodeBlock>{children}</CodeBlock>
-    );
-  },
+  pre: ReplyPre,
   span: ({ node: _node, ...props }) =>
     props.className === "katex-display" ? (
       <MathRegion {...props} />
@@ -159,49 +186,53 @@ export const MarkdownContent = memo(function MarkdownContent({
   highlight = true,
   compactLinks = false,
   agentReply = false,
+  streaming = false,
 }: {
   text: string;
   literalHtml?: boolean;
   highlight?: boolean;
   compactLinks?: boolean;
   agentReply?: boolean;
+  streaming?: boolean;
 }) {
   return (
     <div className={styles.markdown}>
-      <Markdown
-        skipHtml={!literalHtml}
-        remarkPlugins={
-          agentReply
-            ? [
-                remarkGfm,
-                remarkCjkFriendly,
-                remarkMath,
-                remarkLatex,
-                remarkClosedDiagram,
-              ]
-            : [remarkGfm]
-        }
-        rehypePlugins={[
-          ...(agentReply ? [rehypeKatex] : []),
-          ...(highlight && text.length <= 100_000
-            ? [
-                [rehypeHighlight, { detect: false }] as [
-                  typeof rehypeHighlight,
-                  { detect: boolean },
-                ],
-              ]
-            : []),
-        ]}
-        components={
-          agentReply
-            ? replyComponents
-            : compactLinks
-              ? compactComponents
-              : components
-        }
-      >
-        {text}
-      </Markdown>
+      <HtmlPreviewEnabled value={agentReply && !streaming}>
+        <Markdown
+          skipHtml={!literalHtml}
+          remarkPlugins={
+            agentReply
+              ? [
+                  remarkGfm,
+                  remarkCjkFriendly,
+                  remarkMath,
+                  remarkLatex,
+                  remarkClosedDiagram,
+                ]
+              : [remarkGfm]
+          }
+          rehypePlugins={[
+            ...(agentReply ? [rehypeKatex] : []),
+            ...(highlight && text.length <= 100_000
+              ? [
+                  [rehypeHighlight, { detect: false }] as [
+                    typeof rehypeHighlight,
+                    { detect: boolean },
+                  ],
+                ]
+              : []),
+          ]}
+          components={
+            agentReply
+              ? replyComponents
+              : compactLinks
+                ? compactComponents
+                : components
+          }
+        >
+          {text}
+        </Markdown>
+      </HtmlPreviewEnabled>
     </div>
   );
 });

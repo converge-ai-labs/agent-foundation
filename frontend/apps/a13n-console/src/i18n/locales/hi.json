@@ -1746,6 +1746,8 @@
   "Mermaid diagram": "Mermaid आरेख",
   "Diagram source": "स्रोत",
   "Copy diagram source": "आरेख का स्रोत कॉपी करें",
+  "HTML preview": "HTML प्रीव्यू",
+  "HTML is too large to preview (200 KB limit).": "HTML प्रीव्यू के लिए बहुत बड़ा है (200 KB की सीमा)।",
   "Math formula": "गणितीय सूत्र",
   "Rendering diagram…": "आरेख रेंडर हो रहा है…",
   "Diagram preview unavailable. The original source is shown below.": "आरेख का पूर्वावलोकन उपलब्ध नहीं है। मूल स्रोत नीचे दिखाया गया है।",

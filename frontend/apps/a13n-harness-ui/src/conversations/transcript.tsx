@@ -155,6 +155,7 @@ type Row = {
       text: string;
       truncated?: boolean;
       live?: boolean;
+      streaming?: boolean;
     }
   | {
       kind: "context";
@@ -435,6 +436,7 @@ function liveRows(
         displayId: block.id,
         text: block.text,
         live: true,
+        streaming: running && !block.done,
       });
     else
       rows.push({
@@ -710,7 +712,7 @@ function Rows({
             }
             slot={row.replySlot}
           >
-            <MessageText text={row.text} />
+            <MessageText text={row.text} previewHtml={!row.streaming} />
           </AnnotatedReply>
           {row.truncated && (
             <small>{t("Saved preview truncated by the server.")}</small>

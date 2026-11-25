@@ -106,9 +106,9 @@ export function AgentTurn({
   );
 }
 
-function renderReply(value: unknown) {
+function renderReply(value: unknown, streaming: boolean) {
   return typeof value === "string" ? (
-    <MarkdownContent text={value} agentReply />
+    <MarkdownContent text={value} agentReply streaming={streaming} />
   ) : (
     <JsonView value={value} />
   );
@@ -129,7 +129,7 @@ function AgentMessage({ entry }: { entry: ContentEntry }) {
           itemId={entry.id}
           field="text"
           value={entry.text}
-          renderValue={renderReply}
+          renderValue={(value) => renderReply(value, streaming)}
         />
       ) : (
         <p className={styles.thinking}>

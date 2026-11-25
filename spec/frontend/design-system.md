@@ -56,6 +56,12 @@ Icons match neighboring type. Brand marks and names remain adjacent, using the s
 
 Neutral surfaces carry the interface. Primary buttons are near-black in light mode and near-white in dark mode. Indigo signals focus, selection, prose links and charts, not decorative fills. Semantic colors are success (emerald), warning (amber), danger (red), info (blue) and neutral (gray); labels identify states without color alone. Product guides own link and status treatment. Internal navigation stays in the product; external destinations use the appropriate affordance.
 
+## HTML Code Preview
+
+Assistant Markdown shows fenced `html` as copyable source. Once the reply stops streaming, the code toolbar offers **Preview** next to **Copy**. Preview replaces the source with an internally scrollable frame. Turning it off releases the frame; reloading starts in source. Source over 200 KB (UTF-8) stays visible with a size notice.
+
+The shared UI admits static HTML and SVG, inline CSS, and native interactions such as `details`. It strips scripts, external navigation and resource hints before loading a scriptless, opaque-origin iframe whose policy blocks external resources. Snippets get theme-aware document defaults; complete documents keep their own presentation.
+
 ## Identity Color
 
 Identity is separate from status. A child conversation uses a deterministic generated glyph: a rounded polygon with a pair of eyes. A stable hash of its Thread ID seeds every variable feature: palette entry, side count, rotation, vertex and corner variation, eye style, gaze and tilt. State never changes the glyph or its hue. Bodies keep similar visual weight, eyes stay legible at 16px and glyphs retain their proportions at tab/header sizes. State uses text, a badge or reduced-motion-aware animation. Tool icons remain neutral.

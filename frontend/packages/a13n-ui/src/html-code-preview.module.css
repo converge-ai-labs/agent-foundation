@@ -1,0 +1,18 @@
+.frame {
+  display: block;
+  width: 100%;
+  height: clamp(16rem, 45vh, 22rem);
+  max-height: 560px;
+  border: 0;
+  background: var(--a13n-surface);
+}
+
+.toggle[aria-pressed="true"] {
+  color: var(--a13n-signal);
+}
+
+.status {
+  padding: 0.5rem 0.75rem;
+  color: var(--a13n-text-supporting);
+  font-size: 0.875em;
+}

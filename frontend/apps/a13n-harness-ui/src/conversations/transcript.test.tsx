@@ -322,3 +322,24 @@ it("hides Bot silent-finish calls live and after reload without hiding ordinary 
   view.rerender(<SavedEntry entry={entry} threadId="ordinary-thread" />);
   expect(screen.getByText("finish_silently")).toBeTruthy();
 });
+
+it("exposes HTML preview once the live reply ends, before saved history arrives", () => {
+  const block = {
+    id: "reply",
+    kind: "assistant" as const,
+    text: "```html\n<p>Hello</p>\n```",
+  };
+  const view = render(<LiveOutput blocks={[block]} gap={false} running />);
+  expect(
+    screen.getByRole("region", { name: "html code" }).textContent,
+  ).toContain("<p>Hello</p>");
+  expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+  view.rerender(
+    <LiveOutput blocks={[{ ...block, done: true }]} gap={false} running />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Preview" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+});
