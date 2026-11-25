@@ -181,6 +181,11 @@ class ThreadExecution(StoredContract):
     main_account: MainAccountSelection | None = None
 
 
+class ThreadRunOutput(StoredContract):
+    output: JsonValue = None
+    output_omitted: bool = False
+
+
 class RetainedActivity(StoredContract):
     kind: Literal["assistant", "reasoning", "tool"]
     text: str = Field(max_length=2048)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from html import escape
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Any, Literal, Protocol, cast
@@ -43,7 +43,7 @@ from a13n_harness_ui.inbox_models import InboxItem, InboxKind, InboxMessage, Inb
 from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.root_execution import RootRunAdmission
 from a13n_harness_ui.root_run import RootRunCoordinator
-from a13n_harness_ui.storage.repositories import ThreadRepository
+from a13n_harness_ui.storage.repositories import RetainedThreadRun, ThreadRepository
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationView, RunModelOverrides, ThreadSummary
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.voice import VoiceController
@@ -270,6 +270,7 @@ class ThreadToolController:
         thinking: ThinkingSelection | None = None,
         worker: bool = False,
         source_composition: ResolvedRunComposition | None = None,
+        retain_run: bool = False,
     ) -> dict[str, Any]:
         if source_thread_id is None:
             model_overrides = (
@@ -278,7 +279,7 @@ class ThreadToolController:
             created = await self._create_thread(
                 defaults=NewThreadDefaults(project_id=project_id, agent_id=agent_id), title=title
             )
-            return await self._admit_created_thread(created.thread_id, prompt, model_overrides)
+            return await self._admit_created_thread(created.thread_id, prompt, model_overrides, retain_run=retain_run)
         source = await self._projections.detail(source_thread_id)
         configuration = source.thread.configuration
         is_coordinator = await self._threads.is_coordinator(source_thread_id)
@@ -352,7 +353,12 @@ class ThreadToolController:
         )
 
     async def _admit_created_thread(
-        self, thread_id: str, prompt: RunInputValue, model_overrides: RunModelOverrides | None
+        self,
+        thread_id: str,
+        prompt: RunInputValue,
+        model_overrides: RunModelOverrides | None,
+        *,
+        retain_run: bool = False,
     ) -> dict[str, Any]:
         try:
             receipt = await self._root_runs.submit_prompt(
@@ -360,6 +366,7 @@ class ThreadToolController:
                 prompt=prompt,
                 model_overrides=model_overrides,
                 touch=True,
+                retain_run=retain_run,
             )
         except HarnessUiError as exc:
             # Creation and run admission are separate durable effects. Never hide the created identity.
@@ -423,12 +430,18 @@ class ThreadToolController:
             raise ThreadError("This Thread is not accessible from your conversation.", code="thread_access_denied")
 
     async def send_thread_message(
-        self, *, source_thread_id: str | None, thread_id: str, message: str, kind: Literal["task", "report"] = "task"
+        self,
+        *,
+        source_thread_id: str | None,
+        thread_id: str,
+        message: str,
+        kind: Literal["task", "report"] = "task",
+        retain_run: bool = False,
     ) -> dict[str, Any]:
         if source_thread_id is None:
             if thread_id == BOT_THREAD_ID:
                 raise ThreadError("Send Bot messages through Bot chat.", code="bot_chat_required")
-            return await self._run_or_steer(thread_id=thread_id, prompt=message)
+            return await self._run_or_steer(thread_id=thread_id, prompt=message, retain_run=retain_run)
         if thread_id in {"bot", BOT_THREAD_ID}:
             if not message.strip() or len(message) > 16384:
                 raise ThreadError(
@@ -475,7 +488,7 @@ class ThreadToolController:
         source = await self._projections.detail(source_thread_id)
         return await self._run_or_steer(thread_id=thread_id, prompt=_thread_input(source.thread, message))
 
-    async def _run_or_steer(self, *, thread_id: str, prompt: RunInputValue) -> dict[str, Any]:
+    async def _run_or_steer(self, *, thread_id: str, prompt: RunInputValue, retain_run: bool = False) -> dict[str, Any]:
         detail = await self._projections.detail(thread_id)
         if detail.thread.memory_scope is not None:
             raise ThreadError("Memory Threads are observation-only.", code="memory_thread_read_only")
@@ -493,8 +506,37 @@ class ThreadToolController:
                 "Resolve this Thread's pending decisions before sending a message.", code="thread_deferred_pending"
             )
         # Check again at admission in case an active Run suspended after the projection was read.
-        receipt = await self._root_runs.submit_prompt(thread_id=thread_id, prompt=prompt, reject_deferred=True)
+        receipt = await self._root_runs.submit_prompt(
+            thread_id=thread_id, prompt=prompt, reject_deferred=True, retain_run=retain_run
+        )
         return {"ok": True, "mode": "run", "receipt": receipt.model_dump(mode="json")}
+
+    async def admitted_run(self, receipt_id: str) -> RetainedThreadRun | None:
+        # Preparation can wait on environment or provider startup. Fall back to the original
+        # admission receipt if a Run identity cannot be published within the tool call.
+        run_id = await self._root_runs.recorded_run_id(receipt_id, timeout_seconds=5)
+        return await self.get_retained_run(run_id) if run_id is not None else None
+
+    async def get_retained_run(self, run_id: str) -> RetainedThreadRun | None:
+        run = await self._threads.retained_run(run_id)
+        if run is None or run.execution.status != "running":
+            return run
+        active = await self._root_runs.active(run.thread_id)
+        if active is not None and active.receipt.receipt_id == run.execution.execution_id:
+            return run
+        # The Run may have finished between the read and the activity check. A still-running
+        # record without its exact live operation is an interrupted attempt, not a successor.
+        run = await self._threads.retained_run(run_id)
+        if run is not None and run.execution.status == "running":
+            return replace(run, execution=run.execution.model_copy(update={"status": "unknown"}))
+        return run
+
+    async def cancel_retained_run(self, run: RetainedThreadRun) -> None:
+        if run.execution.status != "running":
+            return
+        active = await self._root_runs.active(run.thread_id)
+        if active is not None and active.receipt.receipt_id == run.execution.execution_id:
+            await self._root_runs.cancel(active.receipt.receipt_id)
 
 
 @dataclass(kw_only=True, slots=True)
