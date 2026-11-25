@@ -13,13 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
-import {
-  backgroundGroups,
-  backgroundItems,
-  GLYPH_COLORS,
-  GLYPH_EYES,
-  glyphIdentity,
-} from "./background-work";
+import { backgroundGroups, backgroundItems } from "./background-work";
 import { ChildControlsProvider } from "./child-controls";
 import { BackgroundPanel } from "./background-panel";
 import { BackgroundScope } from "./background-context";
@@ -64,15 +58,15 @@ it("groups child conversations separately from tools and puts running first", ()
   const items = backgroundItems("root", children, [], [], t);
   expect(items).toHaveLength(25);
   expect(items[0].child?.execution_id).toBe("exec-running-0");
+  expect(items[0].target).toMatchObject({
+    kind: "child",
+    id: "running",
+    threadId: "root",
+  });
   expect(backgroundGroups(items)[0].items).toHaveLength(25);
   expect(backgroundGroups(items)[1].items).toHaveLength(0);
 });
-it("uses stable child identity and deduplicates Shell execution observations", () => {
-  expect(glyphIdentity("child-one")).toEqual(glyphIdentity("child-one"));
-  const glyph = glyphIdentity("child-one");
-  expect(glyph.color).toBeLessThan(GLYPH_COLORS);
-  expect(glyph.eyes).toBeLessThan(GLYPH_EYES);
-  expect(glyph.path).toMatch(/^M.*Z$/);
+it("deduplicates background Shell observations and leaves foreground executions out", () => {
   const tool = {
     execution_id: "exec-shell",
     tool_name: "shell_exec",

@@ -64,12 +64,14 @@ it("updates visible text immediately when the language control changes", async (
   ).toBeTruthy();
 
   await selectLanguage("简体中文");
+  expect(localStorage.getItem(preferenceKey)).toBe("zh-CN");
   expect(
     await screen.findByRole("combobox", { name: "显示语言" }),
   ).toBeTruthy();
   expect(screen.getByText("偏好设置会自动保存在此浏览器中。")).toBeTruthy();
 
   await selectLanguage("English");
+  expect(localStorage.getItem(preferenceKey)).toBe("en");
   expect(
     await screen.findByRole("combobox", { name: "Display language" }),
   ).toBeTruthy();
@@ -78,18 +80,16 @@ it("updates visible text immediately when the language control changes", async (
   ).toBeTruthy();
 });
 
-it.each([
-  ["English", "en", "Display language"],
-  ["简体中文", "zh-CN", "显示语言"],
-  ["हिन्दी", "hi", "डिस्प्ले भाषा"],
-])("restores the explicit %s choice on remount", async (name, value, label) => {
+it("restores the explicit Hindi choice on remount", async () => {
   const view = await mountSettings();
-  await view.selectLanguage(name);
-  expect(localStorage.getItem(preferenceKey)).toBe(value);
+  await view.selectLanguage("हिन्दी");
+  expect(localStorage.getItem(preferenceKey)).toBe("hi");
   view.unmount();
 
   await mountSettings();
-  expect(screen.getByRole("combobox", { name: label }).textContent).toBe(name);
+  expect(
+    screen.getByRole("combobox", { name: "डिस्प्ले भाषा" }).textContent,
+  ).toBe("हिन्दी");
 });
 
 it("returns to browser language without saving the resolved language as a manual choice", async () => {

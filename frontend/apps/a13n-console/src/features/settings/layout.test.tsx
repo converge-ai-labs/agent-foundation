@@ -54,55 +54,43 @@ function mount(entry: string) {
   );
 }
 
-it("lists every scope the reader can reach without a disclosure", () => {
-  mount("/workspace/ws_design/settings/members");
-  const navigation = screen.getByRole("navigation", {
-    name: "Settings navigation",
-  });
-  expect(navigation.querySelectorAll("button")).toHaveLength(0);
-  for (const name of ["Workspace", "Personal", "Organization"])
-    expect(within(navigation).getByRole("heading", { name })).toBeTruthy();
-  const scopes = navigation.querySelectorAll("section");
-  expect(Array.from(scopes, (item) => item.getAttribute("data-scope"))).toEqual(
-    ["personal", "workspace", "organization"],
-  );
-  expect(
-    within(scopes[1] as HTMLElement)
-      .getByRole("link", { name: "Members" })
-      .getAttribute("aria-current"),
-  ).toBe("page");
-  expect(
-    screen.getByRole("link", { name: "Preferences" }).getAttribute("href"),
-  ).toBe("/settings/preferences");
-  expect(
-    within(scopes[1] as HTMLElement)
-      .getByRole("link", { name: "Webhooks" })
-      .getAttribute("href"),
-  ).toBe("/workspace/ws_design/settings/webhooks");
-});
-
-it("keeps scope positions fixed when navigating between settings", async () => {
+it("keeps the accessible scope order and active section when navigating between settings", async () => {
   mount("/workspace/ws_design/settings/members");
   const user = userEvent.setup();
-  const navigation = screen.getByRole("navigation", {
-    name: "Settings navigation",
-  });
-  const order = () =>
-    Array.from(navigation.querySelectorAll("section"), (item) =>
-      item.getAttribute("data-scope"),
-    );
-  const initial = order();
-  await user.click(screen.getByRole("link", { name: "Preferences" }));
-  expect(order()).toEqual(initial);
-  await user.click(
-    within(
-      navigation.querySelector('[data-scope="organization"]') as HTMLElement,
-    ).getByRole("link", { name: "Members" }),
+  const navigation = within(
+    screen.getByRole("navigation", { name: "Settings navigation" }),
   );
-  expect(order()).toEqual(initial);
+  const order = () =>
+    navigation.getAllByRole("heading").map((heading) => heading.textContent);
+  const scopeOrder = ["Personal", "Workspace", "Organization"];
+  expect(order()).toEqual(scopeOrder);
+  const workspaceMembers = navigation.getByRole("link", {
+    name: "Members",
+    current: "page",
+  });
+  expect(workspaceMembers.getAttribute("href")).toBe(
+    "/workspace/ws_design/settings/members",
+  );
+
+  await user.click(navigation.getByRole("link", { name: "Preferences" }));
+  expect(await screen.findByText("Preferences content")).toBeTruthy();
   expect(
-    within(navigation).queryByRole("link", { name: "Invitations" }),
-  ).toBeNull();
+    navigation.getByRole("link", { name: "Preferences", current: "page" }),
+  ).toBeTruthy();
+  expect(order()).toEqual(scopeOrder);
+
+  const organizationMembers = navigation
+    .getAllByRole("link", { name: "Members" })
+    .find(
+      (link) => link.getAttribute("href") === "/organization/settings/members",
+    );
+  expect(organizationMembers).toBeDefined();
+  await user.click(organizationMembers!);
+  expect(
+    navigation.getByRole("link", { name: "Members", current: "page" }),
+  ).toBe(organizationMembers);
+  expect(order()).toEqual(scopeOrder);
+  expect(navigation.queryByRole("link", { name: "Invitations" })).toBeNull();
 });
 
 it("keeps General as the organization settings landing page", () => {

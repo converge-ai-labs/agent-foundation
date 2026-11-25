@@ -20,9 +20,10 @@ def test_module_entrypoint_exposes_cli_help() -> None:
         timeout=_ENTRYPOINT_TIMEOUT_SECONDS,
     )
 
-    assert result.returncode == 0
-    assert "runtime" not in result.stdout
-    assert "--config" in result.stdout
+    assert result.returncode == 0, result.stderr
+    assert "  webui " in result.stdout
+    for option in ("--resume", "--display", "--config"):
+        assert option in result.stdout
 
 
 @pytest.mark.parametrize("arguments", [["update"], ["update", "--help"]])

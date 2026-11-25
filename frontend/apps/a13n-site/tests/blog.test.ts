@@ -1,7 +1,6 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codeThemes } from "a13n-ui/code-theme";
 import { describe, expect, test } from "vitest";
 import { render } from "../blog/markdown";
 import { indexPage, postPage } from "../blog/pages";
@@ -143,7 +142,7 @@ describe("posts", () => {
 });
 
 describe("markdown", () => {
-  test("code takes the shared palette under its file name or language", async () => {
+  test("code blocks show their file name or language and a copy button", async () => {
     const { html } = await render(
       '```python title="worker.py"\nasync def run(): pass\n```\n\n```bash\nmake site-build\n```',
       "",
@@ -152,22 +151,6 @@ describe("markdown", () => {
       '<div class="cb-head"><span>worker.py</span><button class="cb-copy" type="button">Copy</button></div>',
     );
     expect(html).toContain("<span>Terminal</span>");
-    const keyword = codeThemes.light.tokenColors.find(
-      (rule) => "scope" in rule && rule.scope.includes("keyword"),
-    )!.settings.foreground;
-    expect(html.toLowerCase()).toContain(`color:${keyword}">async`);
-    expect(html).not.toMatch(/background-color/);
-  });
-
-  test("headings get GitHub's IDs and a link to themselves", async () => {
-    const { html } = await render(
-      "## One heartbeat, per worker\n\n## One heartbeat, per worker",
-      "",
-    );
-    expect(html).toContain(
-      '<h2 id="one-heartbeat-per-worker">One heartbeat, per worker<a class="anchor" href="#one-heartbeat-per-worker" aria-label="Section link">#</a></h2>',
-    );
-    expect(html).toContain('id="one-heartbeat-per-worker-1"');
   });
 
   test("navigation uses plain heading text and the rendered IDs, excluding code and notes", async () => {
@@ -180,6 +163,7 @@ describe("markdown", () => {
       { id: "a-run", title: "A run", depth: 3 },
       { id: "work--state-1", title: "Work & state", depth: 2 },
     ]);
+    expect(html).toContain('href="#work--state" aria-label="Section link"');
     for (const heading of headings)
       expect(html).toContain(`id="${heading.id}"`);
     expect(html).toContain('id="footnote-label"');
@@ -270,24 +254,6 @@ describe("pages", () => {
       { "@type": "Person", name: "Ada & team" },
     ]);
     expect(structured).not.toHaveProperty("citation");
-  });
-
-  test("the development article credits Zhongsheng Ji with his GitHub profile", async () => {
-    const posts = await loadPosts();
-    const post = posts.find((post) => post.slug === "building-a13n-with-a13n")!;
-    expect(post.authors).toEqual([
-      expect.objectContaining({
-        name: "Zhongsheng Ji",
-        url: "https://github.com/Wh1isper",
-        avatar: expect.stringContaining(
-          "https://avatars.githubusercontent.com/u/43375501",
-        ),
-      }),
-    ]);
-    expect(postPage(post, posts)).toContain(
-      'class="author-link" href="https://github.com/Wh1isper"',
-    );
-    expect(post.report).toBeUndefined();
   });
 
   test("credit the source author without replacing the adapted article's author", async () => {

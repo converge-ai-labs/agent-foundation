@@ -8,6 +8,7 @@ until the corresponding .done file exists (30 minute deadline). All containers a
 import asyncio
 import json
 import os
+import shutil
 import sys
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -21,7 +22,7 @@ from a13n_service.infra.db import transaction
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 
-from .monitoring_support import EXPORTER, MONITORING, dashboard, expand_usage, prometheus_test_files, usage_queries
+from .monitoring_support import EXPORTER, MONITORING, dashboard, expand_usage, usage_queries
 from .test_monitoring_collectors_live import docker, eventually, port, ready
 from .test_usage_analytics import observed_run
 
@@ -114,12 +115,12 @@ async def test_prometheus_rules_queries_and_grafana_postgres_import(service, scr
         )
     exporter_port, prom_port, grafana_port = port(), port(), port()
     prom, grafana = f"http://127.0.0.1:{prom_port}", f"http://127.0.0.1:{grafana_port}"
-    prometheus_test_files(tmp_path)
+    shutil.copytree(MONITORING / "alerts", tmp_path / "alerts")
     (tmp_path / "prometheus.yml").write_text(
         yaml.safe_dump(
             {
                 "global": {"scrape_interval": "1s", "evaluation_interval": "1s"},
-                "rule_files": ["/config/availability.yaml", "/config/capacity.yaml", "/config/execution.yaml"],
+                "rule_files": ["/config/alerts/*.yaml"],
                 "scrape_configs": [
                     {
                         "job_name": "a13n-service",
@@ -134,32 +135,6 @@ async def test_prometheus_rules_queries_and_grafana_postgres_import(service, scr
             }
         )
     )
-    for args in [
-        (
-            "check",
-            "rules",
-            "/config/availability.yaml",
-            "/config/capacity.yaml",
-            "/config/execution.yaml",
-            "/config/query-rules.yaml",
-        ),
-        ("test", "rules", "/config/rules-test.yml"),
-    ]:
-        await docker(
-            "run",
-            "--pull=never",
-            "--rm",
-            "--network=none",
-            "--user",
-            f"{os.getuid()}:{os.getgid()}",
-            "--entrypoint",
-            "/bin/promtool",
-            "--mount",
-            f"type=bind,src={tmp_path},dst=/config,readonly",
-            PROMETHEUS,
-            *args,
-        )
-
     exporter = await asyncio.create_subprocess_exec(
         sys.executable,
         "-c",

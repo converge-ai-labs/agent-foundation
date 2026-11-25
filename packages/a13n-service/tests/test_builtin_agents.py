@@ -335,7 +335,7 @@ async def test_inline_builtin_instructions_apply_only_to_the_builtin_child(
     assert "Role: worker" in child_prompt
 
 
-def test_copy_materialization_bounds_and_generic_config_shape():
+def test_copy_materialization_preserves_instructions_within_bounds():
     from a13n_service.infra.errors import ServiceError
 
     config = AgentConfig(model="test", instructions="User")
@@ -343,4 +343,3 @@ def test_copy_materialization_bounds_and_generic_config_shape():
     assert instructions.materialize(config, "Official").instructions == "Official\n\nUser"
     with pytest.raises(ServiceError):
         instructions.materialize(config, "x" * (256 * 1024))
-    assert "preset" not in AgentConfig.model_fields

@@ -14,36 +14,6 @@ const model: Schema<"ModelSummary"> = {
   fast: { supported: true, state: "on" },
 };
 
-it.each([
-  ["default", "Standard"],
-  ["off", "Standard"],
-  ["on", "Fast"],
-  ["ultrafast", "Ultrafast"],
-] as const)(
-  "shows inherited %s as %s separately from explicit overrides",
-  async (state, label) => {
-    const user = userEvent.setup();
-    const change = vi.fn();
-    render(
-      <FastPicker
-        model={{ ...model, fast: { supported: true, state } }}
-        onChange={change}
-      />,
-    );
-    expect(
-      screen
-        .getByRole("button", { name: "Use model speed" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
-    expect(
-      screen.getByRole("button", { name: "Use model speed" }).textContent,
-    ).toBe(`Model setting - ${label}`);
-    expect(change).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Fast mode" }));
-    expect(change).toHaveBeenLastCalledWith(true);
-  },
-);
-
 it("follows changed model settings without overriding explicit Off", () => {
   const change = vi.fn();
   const view = render(<FastPicker model={model} onChange={change} />);

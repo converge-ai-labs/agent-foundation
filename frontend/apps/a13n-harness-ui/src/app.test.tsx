@@ -191,27 +191,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("shows Bot once in the upper chat shortcuts without a second profile-menu entry", async () => {
-  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
-  window.history.replaceState(null, "", "/new");
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (request: Request) => {
-      if (new URL(request.url).pathname === "/api/status") return json(status);
-      return fixture(request);
-    }),
-  );
-  render(<BrowserApp />);
-  const sidebar = within(
-    await screen.findByRole("complementary", { name: "Workbench navigation" }),
-  );
-  const shortcuts = sidebar.getByRole("navigation", { name: "Chat shortcuts" });
-  expect(sidebar.getAllByRole("link", { name: "Bot" })).toHaveLength(1);
-  expect(
-    within(shortcuts).getByRole("link", { name: "Bot" }).getAttribute("href"),
-  ).toBe("/bot");
-});
-
 it("observes Memory with the shared Thread viewer and scoped files without mounting an editor", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
   window.history.replaceState(null, "", "/memory");
@@ -247,6 +226,14 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
             availability: "disabled",
           },
         },
+      });
+    if (url.pathname === "/api/bot")
+      return json({
+        state: {},
+        available: false,
+        enabled: true,
+        heartbeat_enabled: false,
+        interval_seconds: 3600,
       });
     if (url.pathname === "/api/projects")
       return json([{ project_id: "project-main", name: "Main" }]);
@@ -287,7 +274,6 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
   });
   render(<BrowserApp />);
   await screen.findByText("Global-only memory");
-  expect(screen.getAllByRole("link", { name: "Bot" })).toHaveLength(1);
   expect(
     screen.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"),
   ).toBe("true");
@@ -329,6 +315,12 @@ it("observes Memory with the shared Thread viewer and scoped files without mount
   expect(reads.some((path) => path.includes("project_id=project-main"))).toBe(
     true,
   );
+  fireEvent.click(screen.getByRole("link", { name: "Back to chats" }));
+  const shortcuts = await screen.findByRole("navigation", {
+    name: "Chat shortcuts",
+  });
+  fireEvent.click(within(shortcuts).getByRole("link", { name: "Bot" }));
+  await waitFor(() => expect(window.location.pathname).toBe("/bot"));
 });
 
 it("avoids a redundant startup screen or login flash while checking a retained key", async () => {
@@ -1215,42 +1207,33 @@ it.each(["read-only", "missing"])(
   },
 );
 
-it.each([false, true])(
-  "keeps capability discovery independent from agent availability (load failure: %s)",
-  async (failed) => {
-    window.history.replaceState(null, "", "/settings/capabilities");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (request: Request) => {
-        const path = new URL(request.url).pathname;
-        if (path === "/api/selectors" && failed)
-          return json(
-            {
-              error: { code: "unavailable", message: "Agent list unavailable" },
-            },
-            503,
-          );
-        if (path === "/api/catalog")
-          return json([
-            { kind: "capability", key: "available", configurable: true },
-          ]);
-        return fixture(request);
-      }),
-    );
-    render(<BrowserApp />);
-    fireEvent.click(await screen.findByText("Installed capabilities"));
-    expect(await screen.findByText("Available to agents")).toBeTruthy();
-    if (failed) {
-      await screen.findByText("Agent list unavailable");
-      expect(screen.getByRole("button", { name: "Add agent" })).toBeTruthy();
-    } else {
-      expect(
-        await screen.findByRole("button", { name: "Add agent" }),
-      ).toBeTruthy();
-    }
-    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
-  },
-);
+it("keeps capabilities available when the agent list fails", async () => {
+  window.history.replaceState(null, "", "/settings/capabilities");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/selectors")
+        return json(
+          {
+            error: { code: "unavailable", message: "Agent list unavailable" },
+          },
+          503,
+        );
+      if (path === "/api/catalog")
+        return json([
+          { kind: "capability", key: "available", configurable: true },
+        ]);
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  fireEvent.click(await screen.findByText("Installed capabilities"));
+  expect(await screen.findByText("Available to agents")).toBeTruthy();
+  await screen.findByText("Agent list unavailable");
+  expect(screen.getByRole("button", { name: "Add agent" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+});
 
 it("reopens a one-click agent draft from its own settings list without writing or fetching a nonexistent file", async () => {
   window.history.replaceState(null, "", "/settings/agents");

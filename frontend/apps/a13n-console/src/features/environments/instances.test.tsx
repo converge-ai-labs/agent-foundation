@@ -91,46 +91,36 @@ async function openCreate() {
   await screen.findByText("No environments yet");
   expect(
     screen.getByRole("link", { name: "Manage providers" }).getAttribute("href"),
-  ).toContain("environments");
+  ).toBe("/workspace/ws_test/settings/providers?category=environments");
   await user.click(screen.getByRole("button", { name: "Create environment" }));
   return { cache, user };
 }
 
-it.each([
-  ["templates", "Create template", "No environment templates"],
-  ["instances", "Create environment", "No environments yet"],
-] as const)(
-  "keeps provider navigation beside an empty %s collection",
-  async (section, action, empty) => {
-    http.GET.mockResolvedValue({ data: { items: [], next_cursor: null } });
-    const cache = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    render(
-      <QueryClientProvider client={cache}>
-        <MemoryRouter>
-          <EnvironmentsPage section={section} />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-    await screen.findByText(empty);
-    const create = screen.getByRole(
-      section === "templates" ? "link" : "button",
-      { name: action },
-    );
-    if (section === "templates")
-      expect(create.getAttribute("href")).toBe(
-        "/workspace/ws_test/environments/new",
-      );
-    expect(create.closest("header")).toBeNull();
-    const manage = screen.getByRole("link", { name: "Manage providers" });
-    expect(manage.closest("header")).not.toBeNull();
-    expect(manage.getAttribute("href")).toBe(
-      "/workspace/ws_test/settings/providers?category=environments",
-    );
-    cache.clear();
-  },
-);
+it("keeps provider navigation beside an empty template collection", async () => {
+  http.GET.mockResolvedValue({ data: { items: [], next_cursor: null } });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <EnvironmentsPage section="templates" />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("No environment templates");
+  const create = screen.getByRole("link", { name: "Create template" });
+  expect(create.getAttribute("href")).toBe(
+    "/workspace/ws_test/environments/new",
+  );
+  expect(create.closest("header")).toBeNull();
+  const manage = screen.getByRole("link", { name: "Manage providers" });
+  expect(manage.closest("header")).not.toBeNull();
+  expect(manage.getAttribute("href")).toBe(
+    "/workspace/ws_test/settings/providers?category=environments",
+  );
+  cache.clear();
+});
 
 it.each([null, "mds_local"])(
   "allocates a managed environment with monitoring selection %s",

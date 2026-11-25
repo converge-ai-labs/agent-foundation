@@ -43,26 +43,23 @@ async function open() {
   return within(await screen.findByRole("dialog", { name: "Create browser" }));
 }
 
-it.each([
-  { providers: [] },
-  { providers: [{ id: "bp_off", name: "Disabled", enabled: false }] },
-])(
-  "offers provider management instead of a create form when none are enabled ($providers)",
-  async ({ providers }) => {
-    api.GET.mockResolvedValue({
-      data: { items: providers, next_cursor: null },
-    });
-    const dialog = await open();
-    expect(
-      (
-        await dialog.findByRole("link", { name: "Manage providers" })
-      ).getAttribute("href"),
-    ).toContain("category=browsers");
-    expect(dialog.queryByRole("combobox")).toBeNull();
-    expect(dialog.queryByRole("textbox", { name: "Name" })).toBeNull();
-    expect(dialog.queryByRole("button", { name: "Create browser" })).toBeNull();
-  },
-);
+it("offers provider management instead of a create form when the provider is disabled", async () => {
+  api.GET.mockResolvedValue({
+    data: {
+      items: [{ id: "bp_off", name: "Disabled", enabled: false }],
+      next_cursor: null,
+    },
+  });
+  const dialog = await open();
+  expect(
+    (
+      await dialog.findByRole("link", { name: "Manage providers" })
+    ).getAttribute("href"),
+  ).toContain("category=browsers");
+  expect(dialog.queryByRole("combobox")).toBeNull();
+  expect(dialog.queryByRole("textbox", { name: "Name" })).toBeNull();
+  expect(dialog.queryByRole("button", { name: "Create browser" })).toBeNull();
+});
 
 it("distinguishes a failed provider lookup from an empty catalog", async () => {
   api.GET.mockRejectedValueOnce(new Error("Request failed"));

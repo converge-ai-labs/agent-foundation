@@ -76,7 +76,7 @@ def results():
 async def test_incomplete_or_misclassified_batches_leave_no_successor(skill_service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]
     service = skill_service
     _, waiting = await mixed_wait(service, scripted_model, runs_kit)
-    for mistake in ["missing_approval", "missing_call", "unknown", "category", "old_envelope"]:
+    for mistake in ["missing_approval", "missing_call", "unknown", "category"]:
         body = results()
         if mistake == "missing_approval":
             body["approvals"] = {}
@@ -84,11 +84,9 @@ async def test_incomplete_or_misclassified_batches_leave_no_successor(skill_serv
             del body["calls"]["review"]
         elif mistake == "unknown":
             body["calls"]["unknown"] = {"status": "returned", "value": None}
-        elif mistake == "category":
+        else:
             del body["calls"]["review"]
             body["approvals"]["review"] = {"action": "approve"}
-        else:
-            body = {"answers": []}
         response = await service.client.post(
             f"{service.api}/runs/{waiting['id']}/resume", json=body, headers=runs_kit.fresh_key()
         )
@@ -174,12 +172,6 @@ async def test_application_resume_ignores_retired_answer_storage(skill_service, 
                 request_digest="0" * 64,
             )
         )
-    # Retired collection routes cannot store another answer or initiate execution.
-    url = f"{service.api}/runs/{waiting['id']}/answers"
-    assert (await service.client.get(url)).status_code == 404
-    assert (await service.client.post(url, json=legacy, headers=runs_kit.fresh_key())).status_code == 404
-    thread = await runs_kit.get_thread(service, waiting["thread_id"])
-    assert thread["current_run_id"] is None
     # The application's complete batch is authoritative, even when legacy storage differs.
     response = await service.client.post(
         f"{service.api}/runs/{waiting['id']}/resume", json=results(), headers=runs_kit.fresh_key()

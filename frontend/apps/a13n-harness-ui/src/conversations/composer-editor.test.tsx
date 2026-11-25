@@ -130,34 +130,31 @@ it.each(["enter", "mod-enter"] as const)(
   },
 );
 
-it.each(["enter", "mod-enter"] as const)(
-  "inserts a new line on a coarse pointer in %s mode",
-  (preference) => {
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: query === "(pointer: coarse)",
-      addEventListener() {},
-      removeEventListener() {},
-    }));
-    const draft = new ThreadDraft();
-    const submit = vi.fn();
-    render(
-      <SendShortcutContext value={preference}>
-        <ComposerEditor
-          draft={draft}
-          profile={{ display_name: "Alice", color: "#2563eb" }}
-          presence={() => {}}
-          submit={submit}
-        />
-      </SendShortcutContext>,
-    );
-    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
-    expect(textbox.getAttribute("enterkeyhint")).toBe("enter");
-    expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Control+Enter");
-    fireEvent.keyDown(textbox, { key: "Enter" });
-    expect(draft.doc.getText("text").toString()).toBe("\n");
-    expect(submit).not.toHaveBeenCalled();
-  },
-);
+it("inserts a new line on a coarse pointer even when Enter normally sends", () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === "(pointer: coarse)",
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  const draft = new ThreadDraft();
+  const submit = vi.fn();
+  render(
+    <SendShortcutContext value="enter">
+      <ComposerEditor
+        draft={draft}
+        profile={{ display_name: "Alice", color: "#2563eb" }}
+        presence={() => {}}
+        submit={submit}
+      />
+    </SendShortcutContext>,
+  );
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  expect(textbox.getAttribute("enterkeyhint")).toBe("enter");
+  expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Control+Enter");
+  fireEvent.keyDown(textbox, { key: "Enter" });
+  expect(draft.doc.getText("text").toString()).toBe("\n");
+  expect(submit).not.toHaveBeenCalled();
+});
 
 it("uses the command key and Meta accessibility metadata on Apple platforms", () => {
   vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");

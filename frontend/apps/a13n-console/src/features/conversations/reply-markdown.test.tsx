@@ -22,10 +22,16 @@ it("renders both math syntaxes alongside Chinese Markdown without consuming code
     String.raw`\[\sum_{i=1}^n i\]`,
     "`$literal$` · ![remote image](https://example.com/tracker.png)",
     "<script>window.example = true</script>",
+    String.raw`It costs $5 to $10; write \$5 to \$10 for literal prices.`,
   ].join("\n\n");
   const view = render(<MarkdownContent agentReply text={text} />);
   expect(screen.getByText("结果：").tagName).toBe("STRONG");
-  expect(view.container.querySelectorAll(".katex")).toHaveLength(4);
+  const formulas = view.container.querySelectorAll(".katex");
+  expect(formulas).toHaveLength(5);
+  expect(formulas[4]?.querySelector("annotation")?.textContent).toBe("5 to ");
+  expect(view.container.textContent).toContain(
+    "write $5 to $10 for literal prices.",
+  );
   expect(screen.getAllByRole("region", { name: "Math formula" })).toHaveLength(
     2,
   );
@@ -34,21 +40,6 @@ it("renders both math syntaxes alongside Chinese Markdown without consuming code
   expect(view.container.querySelector("img, script")).toBeNull();
   view.rerender(<MarkdownContent text={text} />);
   expect(view.container.querySelector(".katex")).toBeNull();
-});
-
-it("treats paired dollars as math and honors escaped currency signs", () => {
-  const { container } = render(
-    <MarkdownContent
-      agentReply
-      text={String.raw`It costs $5 to $10; write \$5 to \$10 for literal prices.`}
-    />,
-  );
-  expect(container.querySelector(".katex annotation")?.textContent).toBe(
-    "5 to ",
-  );
-  expect(container.textContent).toContain(
-    "write $5 to $10 for literal prices.",
-  );
 });
 
 it("translates mounted diagram controls and math regions without re-rendering the diagram", async () => {

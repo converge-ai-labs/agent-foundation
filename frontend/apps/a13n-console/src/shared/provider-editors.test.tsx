@@ -45,7 +45,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const surfaces = ["connector", "environment", "memory"] as const;
+const sharedEditorKinds = ["environment", "memory"] as const;
 
 function setup(surface: string, overrides: Record<string, unknown> = {}) {
   const connector = surface === "connector";
@@ -114,28 +114,28 @@ function setup(surface: string, overrides: Record<string, unknown> = {}) {
   return { connector, type, listPath, detailPath, provider };
 }
 
-it.each(surfaces)(
+it.each(sharedEditorKinds)(
   "creates a workspace %s provider after loading the first list page",
   async (surface) => {
     const user = userEvent.setup();
-    const { connector, type, listPath, detailPath } = setup(surface);
+    const { type, listPath, detailPath } = setup(surface);
     await screen.findByText("Existing provider");
     await user.click(screen.getByRole("button", { name: "Add provider" }));
     // Every category starts creation from the provider catalog.
     expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
     await user.click(
       await screen.findByRole("button", {
-        name: new RegExp(connector ? "Composio" : type),
+        name: new RegExp(type),
       }),
     );
     const nameField = screen.getByRole("textbox", {
       name: "Name",
     }) as HTMLInputElement;
-    expect(nameField.value).toBe(connector ? "Composio" : type);
+    expect(nameField.value).toBe(type);
     await user.clear(nameField);
     await user.type(nameField, "New provider");
     const credentials = {
-      api_key: connector ? "test-project" : "test-environment",
+      api_key: "test-key",
     };
     const field = screen.getByLabelText("API key") as HTMLInputElement;
     expect(field.type).toBe("password");
@@ -169,16 +169,16 @@ it.each(surfaces)(
     // The catalog comes back, so the previous draft cannot leak forward.
     expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
     await screen.findByRole("button", {
-      name: new RegExp(connector ? "Composio" : type),
+      name: new RegExp(type),
     });
   },
 );
 
-it.each(surfaces)(
+it.each(sharedEditorKinds)(
   "edits the exact workspace %s provider after loading the list",
   async (surface) => {
     const user = userEvent.setup();
-    const { connector, detailPath, provider } = setup(surface);
+    const { detailPath, provider } = setup(surface);
     await screen.findByText("Existing provider");
     // Every provider surface carries the shared row overflow menu.
     expect(screen.getByRole("columnheader", { name: "Actions" })).toBeTruthy();
@@ -192,9 +192,7 @@ it.each(surfaces)(
       screen.queryByRole("combobox", { name: "Provider type" }),
     ).toBeNull();
     expect(screen.queryByRole("group", { name: "Provider type" })).toBeNull();
-    expect(screen.getByRole("dialog").textContent).toContain(
-      connector ? "Composio" : provider.type,
-    );
+    expect(screen.getByRole("dialog").textContent).toContain(provider.type);
     // The saved secret is stated in one row rather than offered as an input.
     expect(screen.queryByLabelText("API key")).toBeNull();
     expect(screen.getByText("Saved")).toBeTruthy();
@@ -262,8 +260,17 @@ it("saves connector name, credentials and enabled state in one atomic update", a
     data: { ...provider, name: "Renamed", version: 4 },
     response,
   });
-  await user.click(await screen.findByText("Existing provider"));
+  await screen.findByText("Existing provider");
+  screen.getByRole("row", { name: /Existing provider/ }).focus();
+  await user.keyboard("{Enter}");
   const name = await screen.findByRole("textbox", { name: "Name" });
+  expect(name).toHaveProperty("value", provider.name);
+  expect(http.GET).toHaveBeenCalledWith(
+    detailPath,
+    expect.objectContaining({ params: { path: { provider_id: provider.id } } }),
+  );
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  expect(screen.getByText("Saved")).toBeTruthy();
   await user.clear(name);
   await user.type(name, "Renamed");
   await user.click(screen.getByRole("button", { name: "Replace" }));
@@ -275,6 +282,8 @@ it("saves connector name, credentials and enabled state in one atomic update", a
   expect(http.PATCH).toHaveBeenCalledWith(
     detailPath,
     expect.objectContaining({
+      params: { path: { provider_id: provider.id } },
+      headers: { "If-Match": `"${provider.id}:3"` },
       body: {
         name: "Renamed",
         enabled: false,
@@ -290,7 +299,7 @@ it("saves connector name, credentials and enabled state in one atomic update", a
 
 it("preserves structured Connector credentials and setup help", async () => {
   const user = userEvent.setup();
-  const { listPath } = setup("connector", {
+  const { type, listPath, detailPath } = setup("connector", {
     setup_url: "https://example.com/keys",
     setup_label: "Create Connector credentials",
     credential_schema: {
@@ -310,12 +319,18 @@ it("preserves structured Connector credentials and setup help", async () => {
   await screen.findByText("Existing provider");
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await user.click(await screen.findByRole("button", { name: /Composio/ }));
+  const name = screen.getByRole("textbox", { name: "Name" });
+  expect(name).toHaveProperty("value", "Composio");
+  await user.clear(name);
+  await user.type(name, "New connector provider");
   expect(
     screen
       .getByRole("link", { name: "Create Connector credentials" })
       .getAttribute("href"),
   ).toBe("https://example.com/keys");
-  await user.type(screen.getByLabelText("Token"), "nested-secret");
+  const token = screen.getByLabelText("Token");
+  expect(token).toHaveProperty("type", "password");
+  await user.type(token, "nested-secret");
   await user.type(screen.getByLabelText("Revision"), "7");
   await user.click(screen.getByRole("combobox", { name: "Tier" }));
   await user.click(await screen.findByRole("option", { name: "Sandbox" }));
@@ -324,16 +339,29 @@ it("preserves structured Connector credentials and setup help", async () => {
     expect(http.POST).toHaveBeenCalledWith(
       listPath,
       expect.objectContaining({
-        body: expect.objectContaining({
+        body: {
+          name: "New connector provider",
+          type,
+          config: {},
           credential: {
             authorization: { token: "nested-secret" },
             revision: 7,
             tier: "sandbox",
           },
-        }),
+        },
       }),
     ),
   );
+  expect(http.PATCH).not.toHaveBeenCalled();
+  expect(http.GET.mock.calls.some(([path]) => path === detailPath)).toBe(false);
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(await screen.findByRole("button", { name: /Composio/ }));
+  expect(screen.getByRole("textbox", { name: "Name" })).toHaveProperty(
+    "value",
+    "Composio",
+  );
+  expect(screen.getByLabelText("Token")).toHaveProperty("value", "");
 });
 
 it("allows explicit removal of required Connector credentials", async () => {

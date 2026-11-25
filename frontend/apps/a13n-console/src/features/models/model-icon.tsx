@@ -8,8 +8,6 @@ import { InlineLoading } from "../../shared/feedback";
 import { ProviderIcon } from "../../shared/identity";
 import { workspaceModelsQuery, workspaceProvidersQuery } from "./api";
 
-export { modelBrand } from "a13n-ui";
-
 type ProviderIdentity = Pick<Schema["Provider"], "type" | "config">;
 
 /**

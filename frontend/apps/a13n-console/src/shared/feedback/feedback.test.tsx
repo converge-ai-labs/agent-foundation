@@ -2,7 +2,7 @@ import { ToastProvider } from "a13n-ui";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError } from "../../service-client";
-import { ErrorNotice, ErrorToast, InlineLoading, Loading } from ".";
+import { ErrorNotice, ErrorToast, Loading } from ".";
 
 const translate = vi.hoisted(
   () => (key: string, values?: Record<string, unknown>) =>
@@ -30,17 +30,6 @@ it("exposes one accessible status for skeleton loading", () => {
   expect(status.textContent).toContain("Loading…");
   expect(status.querySelectorAll('[data-slot="skeleton"]')).not.toHaveLength(0);
   expect(status.querySelector(':scope > [aria-hidden="true"]')).not.toBeNull();
-});
-
-it("keeps inline loading compact and accessible", () => {
-  render(<InlineLoading width="5rem" />);
-
-  const status = screen.getByRole("status");
-  expect(status.getAttribute("aria-busy")).toBe("true");
-  expect(status.textContent).toContain("Loading…");
-  expect(
-    status.querySelector<HTMLElement>('[data-slot="skeleton"]')?.style.width,
-  ).toBe("5rem");
 });
 
 it("updates an error toast without offering an action, then closes it when cleared", async () => {

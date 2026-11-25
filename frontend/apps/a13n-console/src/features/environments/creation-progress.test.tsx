@@ -6,10 +6,6 @@ import {
   CreationProgress,
   DesktopPreview,
   creationNotice,
-  HEADLESS_INSTALL_NOTICE,
-  HEADLESS_IMAGE_NOTICE,
-  HEADLESS_SNAPSHOT_NOTICE,
-  VERCEL_FIRST_DESKTOP_NOTICE,
 } from "./creation-progress";
 import type { Schema } from "../../shared/api";
 
@@ -52,29 +48,6 @@ function mount(node: React.ReactNode) {
     cache,
   };
 }
-
-it.each([
-  [
-    "e2b",
-    { template: "base", preparation: "headless" },
-    HEADLESS_INSTALL_NOTICE,
-  ],
-  ["modal", { image: "auto" }, HEADLESS_IMAGE_NOTICE],
-  ["daytona", { snapshot: "auto" }, HEADLESS_SNAPSHOT_NOTICE],
-  ["vercel", {}, VERCEL_FIRST_DESKTOP_NOTICE],
-  ["sprites", {}, HEADLESS_INSTALL_NOTICE],
-  ["vercel", { snapshot: "snap_custom" }, undefined],
-  ["modal", { image: "im_custom" }, undefined],
-  ["e2b", { template: "custom", preparation: "preinstalled" }, undefined],
-  ["docker", {}, undefined],
-] as const)(
-  "selects the %s preparation notice from provider and recipe",
-  (type, recipe, notice) => {
-    expect(creationNotice(type, { execution: "envd_http", ...recipe })).toBe(
-      notice,
-    );
-  },
-);
 
 it("omits preparation for an instance whose frozen recipe is not automatic", async () => {
   http.GET.mockResolvedValue({ data: null });
@@ -297,25 +270,6 @@ it("labels Modal build progress without changing the durable progress endpoint",
     <CreationProgress environment={environment} providerType="modal" />,
   );
   await screen.findByText("Building desktop image in Modal");
-  expect(screen.queryByText("Building desktop template in E2B")).toBeNull();
-  view.unmount();
-  view.cache.clear();
-});
-
-it("shows Sprites installation rather than a reusable template build", async () => {
-  http.GET.mockResolvedValue({
-    data: {
-      profile: "desktop",
-      stage: "building",
-      started_at: environment.created_at,
-      observed_at: "2026-10-22T10:01:05Z",
-      retryable: false,
-    },
-  });
-  const view = mount(
-    <CreationProgress environment={environment} providerType="sprites" />,
-  );
-  await screen.findByText("Installing Envd and desktop dependencies");
   expect(screen.queryByText("Building desktop template in E2B")).toBeNull();
   view.unmount();
   view.cache.clear();

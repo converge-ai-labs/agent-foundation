@@ -1,9 +1,11 @@
-// @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { summaryFrame } from "./events";
 import { ApiError, createTransport, result } from "./client";
 import { mockWebSocket, FakeWebSocket } from "../../tests/fake-websocket";
 
+beforeEach(() => {
+  vi.stubGlobal("window", { location: { origin: "http://localhost:3000" } });
+});
 afterEach(() => vi.unstubAllGlobals());
 it("rejects malformed summary envelopes instead of inventing cursors", () => {
   expect(() =>
