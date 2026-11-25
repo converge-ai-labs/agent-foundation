@@ -303,7 +303,9 @@ def mcp_capability(
 
         references = ObjectRefToolset(listed, object_ref_tools=object_ref_tools or {})
         return AppMCP(
-            id=connection_id, local=DispatchToolset(references, connection_id, None, check), defer_loading=False
+            id=connection_id,
+            local=DispatchToolset(references, connection_id, None, check),  # pyright: ignore[reportArgumentType]
+            defer_loading=False,
         )
 
     return MCPServer(id=connection_id, prepare=prepare, project=project, on_error=on_error, tools=tools)

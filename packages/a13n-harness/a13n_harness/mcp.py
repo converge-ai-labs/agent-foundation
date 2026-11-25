@@ -576,7 +576,7 @@ class UnavailableMCPToolset(FunctionToolset[AgentContext]):
 
 class _UnavailableMCP(NativeMCP[AgentContext]):
     def __init__(self, server_id: str, selected_tools: tuple[str, ...] | None) -> None:
-        super().__init__(id=server_id, native=False, local=UnavailableMCPToolset(server_id, selected_tools))
+        super().__init__(id=server_id, native=False, local=UnavailableMCPToolset(server_id, selected_tools))  # pyright: ignore[reportArgumentType]
 
     def get_instructions(self) -> str:
         # Capability instructions survive ToolSearch deferral of Toolset guidance.
@@ -633,7 +633,8 @@ class MCPServer(NativeMCP[AgentContext]):
     ) -> None:
         if not id or on_error not in {"skip", "raise"}:
             raise DefinitionError("Invalid MCP startup policy.", code="mcp_definition_invalid")
-        super().__init__(id=id, native=False, local=FunctionToolset(id=id))
+        # Pydantic AI accepts AbstractToolset at runtime; its MCP annotation omits it.
+        super().__init__(id=id, native=False, local=FunctionToolset(id=id))  # pyright: ignore[reportArgumentType]
         self._prepare = prepare
         self._on_error = on_error
         self._selected_tools = tools
@@ -682,7 +683,7 @@ class MCPServer(NativeMCP[AgentContext]):
                 else NativeMCP[AgentContext](
                     id=self.id,
                     native=False,
-                    local=_ProgressToolset(toolset),
+                    local=_ProgressToolset(toolset),  # pyright: ignore[reportArgumentType]
                     allowed_tools=list(self._selected_tools) if self._selected_tools is not None else None,
                 )
             )

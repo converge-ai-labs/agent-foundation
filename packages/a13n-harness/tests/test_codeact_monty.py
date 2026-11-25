@@ -260,3 +260,109 @@ async def test_inplace_list_and_deque_operations_preserve_aliases_across_feeds()
         ]
     )
     assert seen[1].content == [[1, 1, 3], [2, 2, 4], True, True]
+
+
+async def test_statistics_module_and_namedtuple_cross_json_boundaries() -> None:
+    from a13n_harness.codeact.values import bounded_json_size
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
+    from pydantic_monty import MontyNamedTuple
+
+    received = []
+
+    def inspect_value(value: Any) -> Any:
+        received.append(value)
+        return value
+
+    source = dedent("""\
+        import statistics
+        import time
+        mean = statistics.mean([2, 4, 6])
+        stamp = time.gmtime(0)
+        await store(key="stamp", value=list(stamp))
+        await inspect_value(value=list(stamp))
+        [mean, stamp]
+    """)
+    result, seen, _ = await _run(
+        [_code(source)], capabilities=(_codeact_tools(inspect_value, allowed=("inspect_value",)),)
+    )
+    stamp = [1970, 1, 1, 0, 0, 0, 3, 1, 0, 0, "UTC"]
+    assert _values(result.state) == {"stamp": stamp}
+    assert received == [stamp]
+    mean, raw = seen[0].content
+    assert mean == 4
+    from pydantic_ai.messages import ModelRequest
+
+    [wire] = ModelMessagesTypeAdapter.dump_python([ModelRequest(parts=[seen[0]])], mode="json")
+    assert wire["parts"][0]["content"] == [4, stamp]
+    assert isinstance(raw, MontyNamedTuple)
+    assert isinstance(raw, tuple)
+    assert bounded_json_size(raw, 100) == len(json.dumps(stamp, separators=(",", ":")))
+
+
+async def test_deep_ast_is_rejected_and_next_feed_can_run() -> None:
+    _, seen, _ = await _run([_code("1+" * 3000 + "1"), _code("42")])
+    assert seen[0].outcome == "failed"
+    error = json.loads(seen[0].content)["error"]
+    assert error["exception_type"] == "SyntaxError"
+    assert error["inline_state"] == "reset"
+    assert seen[1].content == 42
+
+
+async def test_queued_argument_bytes_are_charged_once_before_dispatch() -> None:
+    from a13n_harness.codeact.config import CodeActConfig
+    from a13n_harness.codeact.values import bounded_json_size
+
+    dispatched: list[str] = []
+
+    async def work(text: str) -> str:
+        dispatched.append(text)
+        return "ok"
+
+    payload = "x" * 60
+    arg_bytes = bounded_json_size({"text": payload}, 1024)
+    # Fits 2 calls' arguments + results, but rejects a 3rd queued call's arguments
+    # before dispatch (and would fail on call 2 if arguments were charged twice).
+    budget_bytes = arg_bytes * 2 + 40
+
+    source = dedent(f"""\
+        import asyncio
+        p = {payload!r}
+        async def call_one():
+            return await work(text=p)
+        t1 = asyncio.create_task(call_one())
+        t2 = asyncio.create_task(call_one())
+        t3 = asyncio.create_task(call_one())
+        await asyncio.gather(t1, t2, t3)
+    """)
+
+    _, seen, _ = await _run(
+        [_code(source), _code("await work(text='small')")],
+        config=CodeActConfig(max_concurrency=1, max_output_bytes=budget_bytes),
+        capabilities=(_codeact_tools(work, allowed=("work",)),),
+    )
+
+    assert seen[0].outcome == "failed"
+    error = json.loads(seen[0].content)["error"]
+    assert any(item["boundary"] == "arguments" and item["ordinal"] == 3 for item in error["nested_errors"])
+    # The 3rd queued call was rejected on argument bytes before dispatch; calls 1 and 2 fit.
+    assert dispatched.count(payload) <= 2
+    # The recovery feed is a separate invocation and must dispatch successfully.
+    assert dispatched[-1] == "small"
+    assert seen[1].content == "ok"
+
+    # The same budget fits two calls and their results, but not a double charge.
+    dispatched.clear()
+    two_calls = dedent(f"""\
+        import asyncio
+        p = {payload!r}
+        async def call_one():
+            return await work(text=p)
+        await asyncio.gather(call_one(), call_one())
+    """)
+    _, ok_seen, _ = await _run(
+        [_code(two_calls)],
+        config=CodeActConfig(max_concurrency=1, max_output_bytes=budget_bytes),
+        capabilities=(_codeact_tools(work, allowed=("work",)),),
+    )
+    assert ok_seen[0].content == ["ok", "ok"]
+    assert len(dispatched) == 2

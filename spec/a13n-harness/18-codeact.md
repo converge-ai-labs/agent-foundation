@@ -120,8 +120,8 @@ Ordinary model requests carry the catalog as a named dynamic instruction with na
 Each sandbox callback:
 
 1. resolves its sandbox name in the immutable execution catalog;
-2. admits the call under the per-execution count and concurrency limits before host argument materialization;
-3. validates the converted argument value against the CodeAct value boundary;
+2. admits the call under the per-execution count limit before host argument materialization;
+3. validates and charges the argument value against the cumulative byte budget before queueing the callback;
 4. creates a fresh nested tool-call identity;
 5. invokes `ToolManager.handle_call(..., wrap_validation_errors=False)`, retaining native validation and execution as one dispatch operation;
 6. observes native validation/execution hooks to distinguish rejected arguments from a started invocation; and
@@ -131,7 +131,7 @@ This path preserves the current prepared tool, custom validators, Capability val
 
 `CodeActConfig.max_tool_calls` limits admitted nested attempts in one runner execution. Pydantic `UsageLimits.tool_calls_limit` remains independently authoritative for the parent run. Each successful nested call is counted by `ToolManager`; the Harness does not directly mutate successful usage. The runner must reject work before dispatch when the current public Pydantic usage contract proves that the projected outer plus nested call cannot fit. A callback may already have contributed successful usage while its after-execution hooks are still pending. If the conservative projection cannot fit while callbacks are pending, admission waits for them to settle and recomputes the projection before rejecting or dispatching. Waiting is cancellation- and deadline-bound; the Harness never adjusts Pydantic usage counters itself.
 
-`max_concurrency` covers conversion, validation hooks, and execution for admitted callbacks. A nested tool marked sequential is a barrier with respect to other nested calls in that execution, and a parent run-wide sequential execution policy remains authoritative.
+The runner converts and charges one argument payload at a time. `max_concurrency` limits admitted callbacks that are running validation hooks or executing a tool. Waiting for a slot or ordering barrier does not block the sandbox scheduler. A nested tool marked sequential is a barrier with respect to other nested calls in that execution, and a parent run-wide sequential execution policy remains authoritative. Completed host calls and sandbox timers settle incrementally as they finish; host timers (`asyncio.sleep`, `asyncio.wait` timeouts) are bounded by Monty's memory and feed-duration limits rather than `max_tool_calls`.
 
 ### ToolSearch Composition
 
@@ -255,7 +255,7 @@ Except for explicitly stored values in the portable Capability namespace, the de
 
 The Harness integrates only with public Pydantic AI `RunContext.tool_manager`, `ToolManager`, Toolset, Capability, usage, message, and deferred APIs and public Monty asynchronous session/snapshot APIs. The selected dependency versions must preserve nested validation/execution hooks, successful-call accounting, runner sequential behavior, cancellation, and configured resource limits in conformance tests.
 
-CodeAct source is written for Monty's supported Python subset, not CPython. Harness pins `pydantic-monty==1.6.0`; changes in supported syntax or pure modules require an explicit dependency update and runner conformance validation. `*.codeact.py` distinguishes this contract from ordinary Python files, but source remains application data rather than a Harness state codec.
+CodeAct source is written for Monty's supported Python subset, not CPython. Harness pins `pydantic-monty==1.7.0`; changes in supported syntax or pure modules require an explicit dependency update and runner conformance validation. `*.codeact.py` distinguishes this contract from ordinary Python files, but source remains application data rather than a Harness state codec.
 
 ## Invariants
 
