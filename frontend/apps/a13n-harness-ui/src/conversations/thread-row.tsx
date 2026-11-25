@@ -298,7 +298,7 @@ export function ThreadRow({
               title={workerActivity}
               aria-label={workerActivity}
             >
-              {t("{{count, number}} active", { count: activeWorkerCount })}
+              {t("{{count, number}}", { count: activeWorkerCount })}
             </small>
           )}
           {unsent && (

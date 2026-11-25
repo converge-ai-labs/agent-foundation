@@ -1272,16 +1272,15 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
     within(group).getByRole("button", { name: /^One/, expanded: false }),
   );
   await screen.findByText("Recent 5");
-  expect(
+  // Active, then unread, then read history, with no bucket captions.
+  expect(within(group).queryAllByRole("heading")).toEqual([]);
+  const rowIndex = (name: RegExp) =>
     within(group)
-      .getAllByRole("heading")
-      .map(
-        (heading) => heading.getAttribute("aria-label") ?? heading.textContent,
-      ),
-  ).toEqual(["Active", "New results - 1", "History"]);
-  expect(
-    within(group).getByRole("link", { name: /Running result/ }),
-  ).toBeTruthy();
+      .getAllByRole("link")
+      .findIndex((link) => name.test(link.textContent ?? ""));
+  expect(rowIndex(/^Running result/)).toBe(0);
+  expect(rowIndex(/^Off-page result/)).toBe(1);
+  expect(rowIndex(/^Recent 5/)).toBeGreaterThan(1);
   expect(
     within(group).getAllByRole("img", { name: "New result" }),
   ).toHaveLength(2);
@@ -1298,8 +1297,14 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
   await act(async () => {
     results.observe({ ...otherProject, unread: true, read_state_version: 1 });
   });
-  fireEvent.click(
-    within(group).getByRole("button", { name: "Mark all results read in One" }),
+  const user = userEvent.setup();
+  await user.click(
+    within(group).getByRole("button", { name: "Actions for One" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", {
+      name: "Mark all results read in One",
+    }),
   );
   await waitFor(() => expect(results.isUnread(unread.thread_id)).toBe(false));
   expect(results.isUnread(running.thread_id)).toBe(false);
@@ -1309,20 +1314,13 @@ it("pins off-page unread results, counts collapsed groups, and keeps running dot
     within(group).queryByRole("link", { name: /Off-page result/ }),
   ).toBeNull();
   expect(within(group).queryByLabelText(/chats with new results/)).toBeNull();
-  expect(within(group).queryByText(/New results/)).toBeNull();
-  expect(
-    within(group).getByRole("link", { name: /Running result/ }),
-  ).toBeTruthy();
-  expect(
-    within(group)
-      .getAllByRole("heading")
-      .map((heading) => heading.textContent),
-  ).toEqual(["Active", "History"]);
+  expect(rowIndex(/^Running result/)).toBe(0);
+  expect(within(group).queryAllByRole("img", { name: "New result" })).toEqual(
+    [],
+  );
   activeThreads = [];
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
-  await waitFor(() =>
-    expect(within(group).queryAllByRole("heading")).toEqual([]),
-  );
+  await waitFor(() => expect(rowIndex(/^Running result/)).not.toBe(0));
   expect(writes).toEqual([]);
   vi.restoreAllMocks();
 });
@@ -1756,7 +1754,7 @@ it("counts an unread Coordinator once and retains its anchor after fresh paginat
     within(group).getByRole("link", { name: /owner.*Coordinator/ }),
   ).toBeTruthy();
   expect(
-    within(group).getByRole("heading", { name: "New results - 1" }),
+    within(group).getByRole("link", { name: /owner.*New result/ }),
   ).toBeTruthy();
   fireEvent.click(
     await screen.findByRole("button", {
@@ -1950,7 +1948,7 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
     screen.getByRole("button", { name: "Expand workers for owner" }),
   );
   await screen.findByRole("link", { name: /worker-one/ });
-  expect(summary.textContent).toBe("2 active");
+  expect(summary.textContent).toBe("2");
 
   let release!: () => void;
   pauseActivity = new Promise<void>((resolve) => {
@@ -1967,7 +1965,7 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
       .getByRole("button", { name: "Collapse workers for owner" })
       .getAttribute("aria-expanded"),
   ).toBe("true");
-  expect(summary.textContent).toBe("2 active");
+  expect(summary.textContent).toBe("2");
   expect(within(owner).getByTitle("Running").querySelector("svg")).toBe(
     spinner,
   );
@@ -1980,13 +1978,13 @@ it("retains Coordinator summaries during delayed refresh and failed worker disco
     release();
     await refresh;
   });
-  await waitFor(() => expect(summary.textContent).toBe("1 active"));
+  await waitFor(() => expect(summary.textContent).toBe("1"));
   expect(summary.querySelector("svg")).toBeNull();
   expect(owner.contains(summary)).toBe(true);
   fireEvent.click(
     screen.getByRole("button", { name: "Collapse workers for owner" }),
   );
-  expect(summary.textContent).toBe("1 active");
+  expect(summary.textContent).toBe("1");
   expect(screen.getByRole("link", { name: /owner.*1 worker active/ })).toBe(
     owner,
   );
@@ -2098,8 +2096,9 @@ it("keeps older history reachable when every loaded recent row becomes unread", 
       results.observe({ ...item, unread: true, read_state_version: 1 });
     }
   });
-  expect(screen.getByRole("heading", { name: "New results - 5" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: /Recent 5/ })).toBeTruthy();
+  expect(
+    screen.getAllByRole("link", { name: /Recent \d.*New result/ }),
+  ).toHaveLength(5);
   fireEvent.click(
     screen.getByRole("button", { name: "Show more chats in One" }),
   );
@@ -2133,7 +2132,10 @@ it("keeps the owner of an unread worker above read history", async () => {
   expect(screen.getByRole("link", { name: /worker-owner.*Coordinator/ })).toBe(
     owner,
   );
-  expect(screen.getByRole("heading", { name: "New results - 1" })).toBeTruthy();
+  const links = screen.getAllByRole("link");
+  expect(links.indexOf(owner)).toBeLessThan(
+    links.findIndex((link) => /^Recent/.test(link.textContent ?? "")),
+  );
   fireEvent.click(
     screen.getByRole("button", { name: "Expand workers for worker-owner" }),
   );

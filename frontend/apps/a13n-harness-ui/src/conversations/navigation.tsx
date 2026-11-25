@@ -601,16 +601,6 @@ function ProjectGroup({
               {t("Updating…")}
             </span>
           )}
-          {group.scope !== "unavailable" && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t("New chat in {{name}}", { name: group.name })}
-              onClick={create}
-            >
-              <Plus />
-            </Button>
-          )}
           {(group.scope !== "unavailable" || unreadCount > 0) && (
             <Menu>
               <MenuTrigger
@@ -695,6 +685,16 @@ function ProjectGroup({
               </MenuPopup>
             </Menu>
           )}
+          {group.scope !== "unavailable" && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t("New chat in {{name}}", { name: group.name })}
+              onClick={create}
+            >
+              <Plus />
+            </Button>
+          )}
         </div>
       </div>
       {group.projectId && (
@@ -709,42 +709,6 @@ function ProjectGroup({
         <div>
           {rows.map((row, index) => (
             <Fragment key={row.thread.thread_id}>
-              {((index === 0 && activeRows.length > 0) ||
-                (index === recentStart && recentStart > 0)) && (
-                <div className={styles.sectionHeading}>
-                  <span role="heading" aria-level={3}>
-                    {index === 0 ? t("Active") : t("History")}
-                  </span>
-                </div>
-              )}
-              {unreadRows.length > 0 && index === activeRows.length && (
-                <div className={styles.sectionHeading}>
-                  <span
-                    role="heading"
-                    aria-level={3}
-                    aria-label={t("New results - {{count, number}}", {
-                      count: unreadRows.length,
-                    })}
-                  >
-                    {t("New results")}{" "}
-                    <small>
-                      {t("{{count, number}}", { count: unreadRows.length })}
-                    </small>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    loading={markingRead}
-                    aria-label={t("Mark all results read in {{name}}", {
-                      name: group.name,
-                    })}
-                    title={t("Mark all current results in this group as read")}
-                    onClick={() => void markAllRead()}
-                  >
-                    <Check />
-                  </Button>
-                </div>
-              )}
               <div
                 hidden={!isVisible(row, index)}
                 data-nav-bucket={
