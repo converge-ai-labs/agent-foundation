@@ -37,8 +37,8 @@ from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
 from a13n_harness_ui.mcp_oauth.models import OAuthError
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
-from a13n_harness_ui.mcp_runtime.connections import Connection, HostClient
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
+from a13n_harness_ui.mcp_runtime.connections import HostClient, empty_roots
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 
 
@@ -126,25 +126,32 @@ class HarnessUiMCP(MCPServer):
                 init_timeout=init_timeout,
                 client_factory=None if self._apps is not None else HostClient,
                 extensions=None if self._apps is not None else (),
+                roots_transport=self._recipe.transport if self._recipe.roots_enabled else None,
             )
             return AppToolset(connection, self._apps.captures) if self._apps is not None else HostToolset(connection)
-        elif self._connections is not None and self._connections.input_handler is not None:
-            connection = Connection(
+        if self._connections is not None and (
+            self._recipe.roots_enabled or self._connections.input_handler is not None
+        ):
+            connection = self._connections.run_connection(
                 ctx.deps.thread_id,
                 self._recipe.server_id,
                 effective_recipe,
                 client_transport,
                 protocol=self._recipe.protocol,
-                input_handler=self._connections.input_handler,
                 init_timeout=init_timeout,
-                cleanup_timeout_seconds=self._connections.cleanup_timeout_seconds,
+                roots_transport=self._recipe.transport if self._recipe.roots_enabled else None,
             )
             # Logical-Run cleanup spans internal Agent attempts, but never retains
             # a default Run-local client beyond the enclosing Harness Run.
-            ctx.deps._register_run_cleanup(cache_id, connection.close)
+            ctx.deps._register_run_cleanup(cache_id, partial(self._connections.close_run_connection, connection))
             await connection.start()
             return HostToolset(connection)
-        client = InitializationRetryClient(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
+        client = InitializationRetryClient(
+            client_transport,
+            mode=self._recipe.protocol,
+            init_timeout=init_timeout,
+            roots=empty_roots if self._recipe.roots_enabled else None,
+        )
         return MCPToolset[AgentContext](client, id=self._recipe.server_id)
 
 
@@ -213,6 +220,7 @@ async def prepare_mcp_transport(
                 configuration.model_dump(mode="json"),
                 recipe.protocol,
                 recipe.apps_enabled,
+                recipe.roots_enabled,
             )
         ),
         init_timeout,

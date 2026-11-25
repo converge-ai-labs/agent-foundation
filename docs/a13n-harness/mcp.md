@@ -124,6 +124,8 @@ Supported declarative selectors: `identity.issuer`, `identity.subject`, `identit
 
 For custom logic (such as async tenant or short-lived token lookups), pass a sync or async callable `(context: AgentContext) -> Mapping[str, str]` to `headers_factory=`.
 
+To advertise directories from the Harness process, pass `roots=` a list of `file://` URIs or a FastMCP Roots handler. The default (`None`) leaves Roots disabled. This option applies to the local MCP client; provider-native MCP does not receive these paths.
+
 ## Startup isolation and large tool catalogs
 
 - **Optional servers & init retries:** Wrap initialization in `MCPServer(id=..., prepare=..., on_error="skip")` with `InitializationRetryClient` (retries transient init errors up to 3 times with 1s/2s backoff; `skip` omits a failed server for that Run while keeping other tools active).

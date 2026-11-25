@@ -18,7 +18,7 @@ from pydantic_ai.mcp import MCPAppToolResult
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.toolsets import ToolsetTool
 
-from a13n_harness_ui.mcp_runtime.connections import Connection, InputHandler
+from a13n_harness_ui.mcp_runtime.connections import Connection, InputHandler, ProjectForThread
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 
@@ -138,10 +138,17 @@ class Captures:
 class Connections(HostConnections):
     """Configure Apps observation on the same generic ownership implementation."""
 
-    def __init__(self, *, input_handler: InputHandler | None = None, cleanup_timeout_seconds: float = 10) -> None:
+    def __init__(
+        self,
+        *,
+        input_handler: InputHandler | None = None,
+        project_for_thread: ProjectForThread | None = None,
+        cleanup_timeout_seconds: float = 10,
+    ) -> None:
         super().__init__(
             extensions=[advertise("io.modelcontextprotocol/ui", {"mimeTypes": [MIME_TYPE]})],
             input_handler=input_handler,
+            project_for_thread=project_for_thread,
             cleanup_timeout_seconds=cleanup_timeout_seconds,
         )
         self.captures = Captures()

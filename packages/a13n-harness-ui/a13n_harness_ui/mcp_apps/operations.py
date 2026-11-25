@@ -134,6 +134,7 @@ class AppOperations:
             activate=True,
             protocol=recipe.protocol,
             init_timeout=init_timeout,
+            roots_transport=recipe.transport if recipe.roots_enabled else None,
         )
         value = AppView(
             view_id=f"view_{uuid4().hex}",

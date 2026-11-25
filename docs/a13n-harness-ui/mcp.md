@@ -46,7 +46,10 @@ Enable the server by adding `mcp_servers: [mcp-docs]` on an Agent (`agents/*.yam
 | `transport`              | Either `{url, init_timeout_seconds, headers, oauth}` (HTTPS, or loopback HTTP without headers) or `{command, arguments, environment}` (launched on Host) |
 | `tools`                  | `null`/omitted (all tools), `[]` (no tools), or `[exact_name, ...]` allowlist                                                                            |
 | `object_ref_tools`       | Optional list/patterns of tools opted into [Object Reference Transport](../a13n-harness/capabilities.md#object-reference-transport)                      |
+| `expose_roots`           | Share the Thread Project’s local roots. Defaults to `true` for stdio and `false` for HTTP.                                                               |
 | `on_error`               | Startup failure handling (`fail` or `skip` where supported)                                                                                              |
+
+MCP Roots let a server discover the Thread Project’s local directories by name and `file://` URI. Device bindings are excluded; a Thread without a Project or local roots returns an empty list. Set `expose_roots: true` only for HTTP servers you trust with local absolute paths. This field belongs at the resource level or inside a named `mcpServers` entry.
 
 ### Literal values and secret references
 

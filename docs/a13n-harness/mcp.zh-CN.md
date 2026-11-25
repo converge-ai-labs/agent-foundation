@@ -124,6 +124,8 @@ mcp = ContextualMCP(
 
 如需异步查询租户路由或短期令牌，可向 `headers_factory=` 传入同步或异步函数 `(context: AgentContext) -> Mapping[str, str]`。
 
+如需共享 Harness 进程可见的目录，可通过 `roots=` 传入 `file://` URI 列表或 FastMCP Roots 回调。默认值 `None` 不启用 Roots。该选项仅适用于本地 MCP 客户端，模型提供商的原生 MCP 不会收到这些路径。
+
 ## 启动故障隔离与大型工具目录
 
 - **可选服务器与初始化重试：** 使用 `MCPServer(id=..., prepare=..., on_error="skip")` 搭配 `InitializationRetryClient`（瞬态初始化错误最多重试 3 次，带 1s/2s 退避；`skip` 仅在当次 Run 中略过失败服务器而不中断运行）。
