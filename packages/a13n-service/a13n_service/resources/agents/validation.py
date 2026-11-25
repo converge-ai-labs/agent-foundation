@@ -99,13 +99,12 @@ async def validate_config(
     policy = config.subagents.dynamic
     if policy.default_model is not None and policy.default_model not in {config.model, *policy.allowed_models}:
         raise invalid("subagents.dynamic.default_model", "Must be the parent model or an allowed model")
-    if policy.enabled and policy.default_model in {None, config.model} and model.config.model_api in PROTOCOLS:
-        raise invalid("subagents.dynamic.default_model", "Choose a non-realtime default model for subagents")
+    if policy.enabled and policy.default_model in {None, config.model}:
+        require_request_model(model, field="subagents.dynamic.default_model")
     for key in policy.allowed_models:
         with at_field("subagents.dynamic.allowed_models"):
             allowed = await resolve_model(session, actor, scope, key, verb=verb, authority=authority)
-            if allowed.config.model_api in PROTOCOLS:
-                raise invalid("subagents.dynamic.allowed_models", "Subagents require a non-realtime model")
+            require_request_model(allowed, field="subagents.dynamic.allowed_models")
     if policy.default_thinking is not None:
         target = (
             model

@@ -115,7 +115,6 @@ from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.history import HISTORY, MessageHistory, initial
 from a13n_service.runs.host import Host, HostPlan, open_host, resolve_host
 from a13n_service.runs.inputs import Offered
-from a13n_service.runs.mailbox import REALTIME_NOTICE_KINDS
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.notices import KINDS as NOTICE_KINDS
 from a13n_service.runs.notices import StaleNotice, require_notices
@@ -1038,7 +1037,7 @@ class _Attempt:
                 max_count=self.runtime.settings.worker.delivery_count,
                 max_bytes=self.runtime.settings.worker.delivery_bytes,
                 scan=self.runtime.settings.control.inbox_count,
-                kinds=REALTIME_NOTICE_KINDS,
+                kinds=inbox.BACKGROUND_NOTICES,
             )
             entries = [Offered.of(row) for row in rows]
         texts = []

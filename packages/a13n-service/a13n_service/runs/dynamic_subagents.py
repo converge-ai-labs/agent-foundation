@@ -18,10 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.platform import PLATFORM_GROUPS
-from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.resources.agents.schemas import AgentConfig, Instructions, ToolSearch
 from a13n_service.resources.agents.validation import validate_config
-from a13n_service.resources.models.service import model_settings, resolve_model
+from a13n_service.resources.models.service import model_settings, require_request_model, resolve_model
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.authorize import ExecutionAuthority, Principal, WorkspaceScope
 
@@ -75,8 +74,7 @@ async def derive(
     if model not in {parent.model, *policy.allowed_models}:
         raise invalid("model", "The model is not allowed by the parent's dynamic policy")
     target = await resolve_model(session, principal, scope, model, authority=authority)
-    if target.config.model_api in PROTOCOLS:
-        raise invalid("model", "Subagents require a non-realtime model")
+    require_request_model(target, field="model")
     same_model = model == parent.model
     settings = dict(parent.model_settings) if same_model else {}
     thinking = request.thinking if request.thinking is not None else policy.default_thinking

@@ -14,13 +14,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.db import Storage, after_commit, short_session
+from a13n_service.runs.inbox import BACKGROUND_NOTICES
 from a13n_service.runs.tables import InboxEntryRow
 
 logger = get_logger(__name__)
 
 
 _STEER_KINDS = ("message", "child_message")
-REALTIME_NOTICE_KINDS = frozenset({"child_result", "child_message", "tool_result"})
 
 
 class Mailbox:
@@ -37,7 +37,7 @@ class Mailbox:
             return
         if entry.kind in _STEER_KINDS:
             after_commit(session, partial(self._wake, entry.thread_id))
-        if entry.kind in REALTIME_NOTICE_KINDS:
+        if entry.kind in BACKGROUND_NOTICES:
             after_commit(session, partial(self._wake, entry.thread_id, realtime=True))
 
     async def _wake(self, thread_id: str, *, realtime: bool = False) -> None:
@@ -81,7 +81,7 @@ class Mailbox:
             await asyncio.sleep(self.interval)
 
     async def _pending(self, thread_ids: tuple[str, ...], *, realtime: bool = False) -> set[str]:
-        kinds = REALTIME_NOTICE_KINDS if realtime else _STEER_KINDS
+        kinds = BACKGROUND_NOTICES if realtime else _STEER_KINDS
         async with short_session(self.storage) as session:
             return set(
                 await session.scalars(

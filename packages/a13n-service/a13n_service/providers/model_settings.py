@@ -183,15 +183,10 @@ def settings_schema(model_api: str) -> dict[str, JsonValue]:
             "openai_live_turn_silence_ms",
             "xai_voice",
         }
-        fields = {}
-        for name, annotation in native.__annotations__.items():
-            if name in allowed:
-                # Resolve only exposed fields; some SDK-only fields have type-checking-only references.
-                def member(): ...
-
-                member.__annotations__ = {"return": annotation}
-                fields[name] = (get_type_hints(member)["return"], None)
-        return create_model(native.__name__, __config__=ConfigDict(extra="forbid"), **fields).model_json_schema()
+        fields = {name: (hint, None) for name, hint in native.__annotations__.items() if name in allowed}
+        return create_model(
+            native.__name__, __module__=native.__module__, __config__=ConfigDict(extra="forbid"), **fields
+        ).model_json_schema()
     native = MODEL_APIS[model_api].settings_type
     fields: dict[str, Any] = {
         name: (hint, None)

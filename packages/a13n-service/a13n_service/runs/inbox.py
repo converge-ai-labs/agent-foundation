@@ -351,7 +351,7 @@ async def reorder(session: AsyncSession, thread: ThreadRow, entry_ids: Sequence[
     await session.flush()
 
 
-BACKGROUND_NOTICES = ("tool_result", "child_result", "child_message")
+BACKGROUND_NOTICES = frozenset({"tool_result", "child_result", "child_message"})
 
 
 def auto_startable():
