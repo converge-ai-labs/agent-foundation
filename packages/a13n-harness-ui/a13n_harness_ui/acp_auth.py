@@ -111,7 +111,7 @@ async def _agy_browser_login(command: str, transport: LocalStdioTransport, inter
                         "type": "object",
                         "required": ["callback"],
                         "properties": {
-                            "callback": {"type": "string", "minLength": 1, "maxLength": 8192, "pattern": r"^[^\r\n]+$"},
+                            "callback": {"type": "string", "minLength": 1, "maxLength": 8192},
                         },
                     },
                 ),

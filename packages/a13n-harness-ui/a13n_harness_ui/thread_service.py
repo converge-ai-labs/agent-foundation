@@ -10,6 +10,7 @@ from pathlib import Path
 
 from a13n_harness import HarnessState
 from a13n_harness import __version__ as harness_version
+from a13n_harness.state import AgentContextStateSnapshot
 from anyio import CancelScope, to_thread
 from filelock import AsyncFileLock
 
@@ -218,12 +219,26 @@ class ThreadService:
             thread_id == BOT_THREAD_ID
             or source.parent_thread_id is not None
             or source.memory_scope is not None
-            or source.configuration.agent_source.kind != "agent"
+            or source.configuration.agent_source.kind not in {"agent", "acp_agent"}
             or await self._store.threads.is_coordinator(thread_id)
             or await self._store.threads.worker_owners((thread_id,))
         ):
             raise ThreadError("Only independent ordinary Threads can be forked.", code="thread_fork_unsupported")
         return source
+
+    @staticmethod
+    def _strip_acp_state(state: HarnessState) -> HarnessState:
+        if state.agent_context_state.get("a13n.acp") is None:
+            return state
+        return state.model_copy(
+            update={
+                "agent_context_state": AgentContextStateSnapshot(
+                    entries={
+                        key: value for key, value in state.agent_context_state.entries.items() if key != "a13n.acp"
+                    }
+                )
+            }
+        )
 
     @staticmethod
     def _source_id(ref: ObjectRef) -> str:
@@ -367,12 +382,28 @@ class ThreadService:
                     raise ThreadError(
                         "The selected state belongs to another Thread.", code="thread_continuation_incompatible"
                     )
-                state = await to_thread.run_sync(stored.harness_state.fork)
+                state = self._strip_acp_state(await to_thread.run_sync(stored.harness_state.fork))
                 initial_state = (
-                    await to_thread.run_sync(lambda: baseline.harness_state.fork(thread_id=state.thread_id))
+                    self._strip_acp_state(
+                        await to_thread.run_sync(lambda: baseline.harness_state.fork(thread_id=state.thread_id))
+                    )
                     if source.continuation is not None
                     else state
                 )
+            acp_state = None
+            if isinstance(source.configuration.agent_source, AcpAgentSource):
+                saved_acp = await self._store.threads.acp_state(thread_id)
+                current = await self._configurations.current()
+                resource = current.acp_agents.get(source.configuration.agent_source.id) if current is not None else None
+                if saved_acp is not None and resource is not None:
+                    prior_acp = AcpSessionState.model_validate_json(saved_acp)
+                    acp_state = AcpSessionState(
+                        digest=acp_options_scope(resource, self.acp_workspace(source.configuration)),
+                        thread_id=state.thread_id,
+                        prompted=False,
+                        commands=prior_acp.commands,
+                        options=prior_acp.options,
+                    )
         now = datetime.now(UTC)
         copied: Thread | None = None
         with CancelScope(shield=True):
@@ -395,6 +426,7 @@ class ThreadService:
                     initial_state=initial.ref,
                     continuation=continuation,
                     read_model=read_model,
+                    acp_state_json=acp_state.model_dump_json() if acp_state is not None else None,
                 )
             await self._store.publish_work(copied.thread_id, continuation or initial.ref, state)
         assert copied is not None

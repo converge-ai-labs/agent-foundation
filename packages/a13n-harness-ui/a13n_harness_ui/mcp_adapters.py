@@ -22,14 +22,17 @@ from a13n_harness.mcp import (
     ToolsetFactory,
     raise_initialization_status,
 )
-from anyio import to_thread
+from a13n_harness.mcp_tasks import has_tasks, supervise_mcp_task, task_server_id, task_value
+from a13n_harness.tool_execution import StoredToolExecution
+from anyio import CancelScope, to_thread
 from fastmcp.client.transports import ClientTransport, StdioTransport, StreamableHttpTransport
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP
+from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.toolsets import ToolsetTool, WrapperToolset
 
-from a13n_harness_ui.composition.models import ResolvedMcpRecipe
+from a13n_harness_ui.composition.models import ResolvedMcpRecipe, ResolvedRunComposition
 from a13n_harness_ui.configuration.loader import read_mcp_file_values
 from a13n_harness_ui.configuration.models import (
     EnvironmentVariableSource,
@@ -44,7 +47,7 @@ from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
 from a13n_harness_ui.mcp_oauth.models import OAuthError
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
-from a13n_harness_ui.mcp_runtime.connections import HostClient
+from a13n_harness_ui.mcp_runtime.connections import HostClient, Operation
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 
 
@@ -105,7 +108,7 @@ class HarnessUiMCP(MCPServer):
         return capability(
             id=self._recipe.server_id,
             native=False,
-            local=local,
+            local=local,  # pyright: ignore[reportArgumentType]
             allowed_tools=list(self._recipe.tools) if self._recipe.tools is not None else None,
         )
 
@@ -143,6 +146,7 @@ class HarnessUiMCP(MCPServer):
                 self._recipe.server_id,
                 effective_recipe,
                 client_transport,
+                binding=self._recipe.binding_key(apps=False),
                 protocol=self._recipe.protocol,
                 init_timeout=init_timeout,
                 roots_transport=self._recipe.transport if self._recipe.roots_enabled else None,
@@ -154,6 +158,58 @@ class HarnessUiMCP(MCPServer):
             return HostToolset(connection)
         client = InitializationRetryClient(client_transport, mode=self._recipe.protocol, init_timeout=init_timeout)
         return ProgressMCPToolset(client, id=self._recipe.server_id)
+
+
+async def recover_mcp_task(
+    connections: HostConnections,
+    configuration_root: Path | None,
+    oauth: McpOAuth,
+    composition: ResolvedRunComposition,
+    execution: StoredToolExecution,
+) -> Any:
+    state = execution.mcp_task
+    assert state is not None
+    recipe = next(
+        (
+            item
+            for item in composition.root.mcp_servers
+            if item.server_id == state.connection_id
+            and state.server_id
+            in {task_server_id(item.binding_key(apps=False)), task_server_id(item.binding_key(apps=True))}
+        ),
+        None,
+    )
+    if recipe is None:
+        raise ToolFailed("The originating MCP task binding is unavailable.")
+    transport, effective, timeout = await prepare_mcp_transport(
+        recipe,
+        configuration_root,
+        configuration=composition.run_configuration,
+        oauth=oauth,
+    )
+    connection = connections.run_connection(
+        execution.record.thread_id,
+        recipe.server_id,
+        effective,
+        transport,
+        binding=recipe.binding_key(),
+        protocol=recipe.protocol,
+        init_timeout=timeout,
+        roots_transport=recipe.transport if recipe.roots_enabled else None,
+    )
+    try:
+        await connection.start()
+        if not has_tasks(connection.client.server_capabilities):
+            raise ToolFailed("The originating MCP server no longer supports Tasks.")
+        async with connection.operation(
+            operation=Operation(run_id=execution.record.run_id, tool_call_id=execution.record.tool_call_id)
+        ):
+            return task_value(
+                await supervise_mcp_task(connection.client.session, state, input_handler=connection.task_inputs)
+            )
+    finally:
+        with CancelScope(shield=True):
+            await connections.close_run_connection(connection)
 
 
 @dataclass

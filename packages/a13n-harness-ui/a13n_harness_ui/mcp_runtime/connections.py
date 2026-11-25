@@ -13,10 +13,13 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from a13n_harness.mcp import InitializationRetryClient
+from a13n_harness.mcp_inputs import McpInputResponse, McpTaskInputRequest
+from a13n_harness.mcp_task_state import McpTaskExecutionState
+from a13n_harness.mcp_tasks import DurableTasks, task_server_id
 from a13n_logging import get_logger
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.progress import ProgressHandler
-from fastmcp.client.transports import ClientTransport
+from fastmcp.client.transports import ClientTransport, StreamableHttpTransport
 from mcp.client.extension import ClientExtension
 from mcp.types import (
     CallToolRequest,
@@ -50,6 +53,10 @@ class InputHandler(Protocol):
     async def __call__(
         self, connection: Connection, operation: Operation, params: ElicitRequestParams
     ) -> ElicitResult[Any]: ...
+
+    async def collect(
+        self, connection: Connection, operation: Operation, prompt: McpTaskInputRequest
+    ) -> McpInputResponse: ...
 
 
 type LocalRootsForThread = Callable[[str], Awaitable[tuple[str, ...]]]
@@ -135,6 +142,13 @@ class Connection:
         self.retired = False
         self._closed = False
         self._borrows = 0
+        self.durable_tasks = binding is not None and isinstance(transport, StreamableHttpTransport)
+        if self.durable_tasks:
+            assert binding is not None
+            extensions = (
+                *extensions,
+                DurableTasks(server_id, server_id=task_server_id(binding), input_handler=self.task_inputs),
+            )
         self.client = client_factory(
             ObservedTransport(transport, self._disconnected, self._before_request),
             mode=protocol,
@@ -224,6 +238,20 @@ class Connection:
         if self._authorize is not None:
             await self._authorize()
             self.require_admission()
+
+    async def task_inputs(self, state: McpTaskExecutionState) -> dict[str, McpInputResponse]:
+        operation, handler = self._active_operation, self._input_handler
+        pending = state.input_required or {}
+        if operation is None or handler is None:
+            return {key: McpInputResponse(action="decline") for key in pending}
+        self.require_admission()
+        # A partial answer lets the Task continue immediately; the next pass owns the remaining requests.
+        key, prompt = next(iter(pending.items()))
+        response = await handler.collect(self, operation, prompt)
+        self.require_admission()
+        if self._authorize is not None:
+            await self._authorize()
+        return {key: response}
 
     async def _elicit(
         self, message: str, response_type: Any, params: ElicitRequestParams, context: Any
@@ -397,6 +425,7 @@ class Connections:
         recipe: str,
         transport: ClientTransport,
         *,
+        binding: str | None = None,
         protocol: str,
         init_timeout: float,
         roots_transport: McpTransport | None,
@@ -409,6 +438,7 @@ class Connections:
             server_id,
             recipe,
             transport,
+            binding,
             protocol=protocol,
             init_timeout=init_timeout,
             input_handler=self._input_handler,

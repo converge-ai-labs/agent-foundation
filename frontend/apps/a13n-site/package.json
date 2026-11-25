@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && node --test tests/built-styles.mjs",
     "build:sitemap": "node scripts/sitemap.mjs",
     "check": "pnpm run typecheck",
     "check:sitemap": "node scripts/sitemap.mjs --check",
@@ -27,6 +27,7 @@
     "@types/hast": "^3.0.4",
     "github-slugger": "^2.0.0",
     "hast-util-to-html": "^9.0.5",
+    "jsdom": "^29.1.1",
     "parse5": "^8.0.1",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",

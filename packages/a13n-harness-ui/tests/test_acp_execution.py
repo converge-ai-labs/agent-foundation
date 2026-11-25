@@ -560,3 +560,158 @@ async def test_agy_oauth_callback_is_forwarded_and_released(tmp_path: Path) -> N
     assert login.result()
     assert not inputs.thread_ids()
     await inputs.close()
+
+
+async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
+    from a13n_harness_ui.storage.contracts import AcpAgentSource, AgentResourceSource
+    from a13n_harness_ui.surfaces import BranchRequest, RootOperationStatus
+    from a13n_harness_ui.thread_files import AttachmentUpload
+    from pydantic_ai.messages import ModelMessagesTypeAdapter
+    from pydantic_ai.models.function import FunctionModel
+
+    from .test_app import _write_configuration
+
+    native_seen: list[str] = []
+
+    async def resolve_native(_self: HarnessUiModelResolver, _context: object, _model_id: str) -> FunctionModel:
+        async def stream(messages: list[object], _info: object):
+            native_seen.append(ModelMessagesTypeAdapter.dump_json(messages).decode())
+            yield "native reply on fork"
+
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve_native)
+
+    root = _write_configuration(tmp_path)
+    root.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: acp-fixture\n')
+    acp_dir = tmp_path / "acp_agents"
+    acp_dir.mkdir()
+    (acp_dir / "fixture.yaml").write_text(
+        json.dumps(
+            _resource()
+            .model_copy(update={"args": (str(_PEER), "ui", "unique-session")})
+            .model_dump(mode="json", exclude_none=True)
+        )
+    )
+
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=root, instrumentation=None) as app:
+        source = await app.create_thread(title="ACP chat")
+        changed = await app.acp_options(source.thread_id, AcpOptionChange(id="mode", value="plan"))
+        assert changed[0].value == "plan"
+
+        uploaded = await app.stage_thread_attachment(
+            thread_id=source.thread_id,
+            upload=AttachmentUpload("context.txt", b"turn-one-attachment", "text/plain"),
+        )
+        first = await app.submit_thread(
+            thread_id=source.thread_id,
+            prompt="echo-prior:turn-one",
+            attachment_ids=(uploaded.attachment_id,),
+        )
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        source_reply_one = (await app.get_thread(source.thread_id)).thread.excerpt.latest_reply
+        assert source_reply_one is not None and ";mode=plan;prior=none" in source_reply_one
+        source_session = source_reply_one.split(";", 1)[0].removeprefix("session=")
+
+        second = await app.submit_thread(thread_id=source.thread_id, prompt="echo-prior:turn-two")
+        assert (await app.wait_root_operation(second.receipt_id)).status is RootOperationStatus.completed
+
+        # 1. Full fork retains ACP options/commands, opens a distinct ACP session, and injects prior turns once.
+        forked = await app.fork_thread(source.thread_id)
+        assert forked.title == "ACP chat (2)"
+        assert [cmd.name for cmd in await app.acp_commands(forked.thread_id)] == ["plan"]
+        assert (await app.acp_options(forked.thread_id))[0].value == "plan"
+
+        fork_run = await app.submit_thread(thread_id=forked.thread_id, prompt="echo-prior:fork-turn")
+        assert (await app.wait_root_operation(fork_run.receipt_id)).status is RootOperationStatus.completed
+        fork_reply = (await app.get_thread(forked.thread_id)).thread.excerpt.latest_reply
+        assert fork_reply is not None
+        fork_session = fork_reply.split(";", 1)[0].removeprefix("session=")
+        assert fork_session != source_session
+        assert ";mode=plan;" in fork_reply
+        assert "echo-prior:turn-one" in fork_reply and "echo-prior:turn-two" in fork_reply
+
+        fork_next = await app.submit_thread(thread_id=forked.thread_id, prompt="echo-prior:fork-next")
+        assert (await app.wait_root_operation(fork_next.receipt_id)).status is RootOperationStatus.completed
+        assert (
+            f"session={fork_session};mode=plan;prior=none"
+            == (await app.get_thread(forked.thread_id)).thread.excerpt.latest_reply
+        )
+
+        # Source Thread continues on its own original session without interference from the fork.
+        source_next = await app.submit_thread(thread_id=source.thread_id, prompt="echo-prior:source-next")
+        assert (await app.wait_root_operation(source_next.receipt_id)).status is RootOperationStatus.completed
+        assert (
+            f"session={source_session};mode=plan;prior=none"
+            == (await app.get_thread(source.thread_id)).thread.excerpt.latest_reply
+        )
+
+        # 2. Message branching ("after" turn 1, and "before"/edit turn 2) truncates cleanly and retains attachments.
+        transcript = await app.get_thread_transcript(thread_id=source.thread_id)
+        points = await app.branch_points(source.thread_id)
+        turn_one_id = transcript.turns[0].turn_id
+        turn_two_id = transcript.turns[1].turn_id
+        assert points.points[turn_one_id].branch and not points.points[turn_one_id].edit
+        assert points.points[turn_two_id].branch and points.points[turn_two_id].edit
+
+        branched = await app.branch_thread(
+            source.thread_id,
+            BranchRequest(turn_key=turn_one_id, expected_continuation_id=points.source, side="after"),
+        )
+        assert (await app._thread_files.read(branched.thread_id, uploaded.attachment_id))[1] == b"turn-one-attachment"
+        branch_run = await app.submit_thread(thread_id=branched.thread_id, prompt="echo-prior:after-turn-one")
+        assert (await app.wait_root_operation(branch_run.receipt_id)).status is RootOperationStatus.completed
+        branch_reply = (await app.get_thread(branched.thread_id)).thread.excerpt.latest_reply
+        assert branch_reply is not None
+        assert ";mode=plan;" in branch_reply
+        assert "echo-prior:turn-one" in branch_reply and "echo-prior:turn-two" not in branch_reply
+
+        edited = await app.branch_thread(
+            source.thread_id,
+            BranchRequest(turn_key=turn_two_id, expected_continuation_id=points.source, side="before"),
+        )
+        edit_run = await app.submit_thread(thread_id=edited.thread_id, prompt="echo-prior:edited-turn-two")
+        assert (await app.wait_root_operation(edit_run.receipt_id)).status is RootOperationStatus.completed
+        edit_reply = (await app.get_thread(edited.thread_id)).thread.excerpt.latest_reply
+        assert edit_reply is not None
+        assert "echo-prior:turn-one" in edit_reply and "echo-prior:turn-two" not in edit_reply
+
+        # 3. Bidirectional Agent switching across forks (ACP -> fork -> Native -> fork -> ACP).
+        acp_to_native = await app.fork_thread(forked.thread_id)
+        switched_native = await app.update_thread_configuration(
+            thread_id=acp_to_native.thread_id,
+            mutation=ThreadConfigurationMutation(
+                expected_version=acp_to_native.configuration.version,
+                patch=ThreadConfigurationPatch(
+                    agent_source=AgentResourceSource(id="agent-assistant"),
+                    default_model_id="model-primary",
+                ),
+            ),
+        )
+        assert switched_native.configuration.agent_source.kind == "agent"
+        native_run = await app.submit_thread(thread_id=acp_to_native.thread_id, prompt="continue natively")
+        assert (await app.wait_root_operation(native_run.receipt_id)).status is RootOperationStatus.completed
+        assert "echo-prior:fork-turn" in native_seen[-1]
+
+        native_to_acp = await app.fork_thread(acp_to_native.thread_id)
+        switched_acp = await app.update_thread_configuration(
+            thread_id=native_to_acp.thread_id,
+            mutation=ThreadConfigurationMutation(
+                expected_version=native_to_acp.configuration.version,
+                patch=ThreadConfigurationPatch(agent_source=AcpAgentSource(id="acp-fixture")),
+            ),
+        )
+        assert switched_acp.configuration.agent_source.kind == "acp_agent"
+        back_to_acp = await app.submit_thread(thread_id=native_to_acp.thread_id, prompt="echo-prior:back-on-acp")
+        assert (await app.wait_root_operation(back_to_acp.receipt_id)).status is RootOperationStatus.completed
+        back_reply = (await app.get_thread(native_to_acp.thread_id)).thread.excerpt.latest_reply
+        assert back_reply is not None and "native reply on fork" in back_reply

@@ -73,7 +73,7 @@ For Docker, configure `desktop_viewer_url`, such as `wss://desktop.example/{cont
 1. Select the **Desktop** icon beside **Browser** in an interactive conversation. The right-side panel automatically opens a read-only view of the selected environment mount.
 2. Choose **Take control** to reserve Computer input. Service blocks subsequent Computer calls and connects input once authorized. Already admitted calls may finish, including sending input.
 3. Use the desktop while files, Shell, processes, scripts, other desktops and the agent's model work continue.
-4. Choose **Renew control** when more time is needed. The default lease is five minutes; operators configure the default and request bounds through `control.desktop_control_seconds`, `control.desktop_control_min_seconds` and `control.desktop_control_max_seconds`.
+4. If you use the desktop during a lease, Console renews it near expiry. When idle, Console warns you before control expires. Use the desktop or choose **Renew control** to continue. The default lease is five minutes; operators configure the default and request bounds through `control.desktop_control_seconds`, `control.desktop_control_min_seconds` and `control.desktop_control_max_seconds`.
 5. Choose **Return control** when finished. Service revokes input and confirms held-key/button cleanup before reopening the Computer channel.
 
 Closing the viewer or page disconnects that viewer and leaves control unchanged until explicit handback or lease expiry. Short connection grants refresh separately from the human lease. One principal controls a native desktop at a time, including when multiple environment aliases or threads share it. Read-only viewers remain independent. Browser control has its own lifecycle.

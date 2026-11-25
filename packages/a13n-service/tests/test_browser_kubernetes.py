@@ -24,14 +24,6 @@ def allocation(provider, *, replicas=0, generation=1, observed=1, uid="first"):
     return obj
 
 
-async def test_unknown_create_only_reads_and_persists_inert_identity(provider):
-    provider.call.return_value = allocation(provider)
-    result = await provider.reconcile_create("browser_test", None)
-    assert isinstance(result, BrowserCheckpoint)
-    assert result.state["uid"] == "first"
-    provider.call.assert_awaited_once_with("sets", "GET", provider.name("browser_test"))
-
-
 async def test_unknown_create_retries_only_an_inert_set_when_absent(provider):
     provider.call.side_effect = [None, BrowserProviderError("kubernetes_sets_409"), allocation(provider)]
     with pytest.raises(BrowserProviderError) as collision:
@@ -43,6 +35,7 @@ async def test_unknown_create_retries_only_an_inert_set_when_absent(provider):
     result = await provider.reconcile_create("browser_test", None)
     assert isinstance(result, BrowserCheckpoint)
     assert result.state["uid"] == "first"
+    provider.call.assert_awaited_with("sets", "GET", provider.name("browser_test"))
     assert [call.args[:2] for call in provider.call.await_args_list] == [
         ("sets", "GET"),
         ("sets", "POST"),

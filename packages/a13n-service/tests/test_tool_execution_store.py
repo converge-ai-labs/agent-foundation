@@ -299,10 +299,10 @@ async def test_publication_retry_commits_result_and_notification_once(service, s
     )
     save, attempts = store._save, 0
 
-    async def uncertain(value):
+    async def uncertain(value, **kwargs):
         nonlocal attempts
         attempts += 1
-        await save(value)
+        await save(value, **kwargs)
         if attempts == 1:
             raise ConnectionError("Commit response lost")
 
@@ -972,3 +972,308 @@ async def test_original_ordering_intent_uses_durable_column_including_legacy_jso
     restored = await store.get(lease.thread_id, record.execution_id)
     assert restored.record.sequential is sequential
     assert (await store.list(lease.thread_id, offset=0, limit=20))[0].sequential is sequential
+
+
+async def test_mcp_task_sweep_parks_input_and_notifies_once(service, scripted_model, runs_kit, monkeypatch):
+    from a13n_harness.mcp_task_state import McpTaskExecutionState, McpTaskInputRequest
+    from a13n_service.runs.tool_executions import mcp
+
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    runtime, record = service.runtime, _record(lease)
+    state = McpTaskExecutionState(
+        connection_id="connection",
+        server_id="binding",
+        mcp_task_id="task-42",
+        tool_name="slow_tool",
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        next_poll_at=datetime.now(UTC),
+    )
+    store = Store(runtime)
+    await _save(store, lease, StoredToolExecution(record))
+    await _save(store, lease, StoredToolExecution(record.model_copy(update={"status": "running"}), mcp_task=state))
+    await relinquish_shell(runtime, lease, record.execution_id)
+    polls = []
+
+    async def poll(host, owner, execution):
+        polls.append(execution.mcp_task.status)
+        async with transaction(host.storage) as session:
+            # The claim must already have committed, with no lock held around remote I/O.
+            row = await session.scalar(
+                select(ToolExecutionRow).where(ToolExecutionRow.id == record.execution_id).with_for_update(nowait=True)
+            )
+            assert row.worker_id == owner.worker_id
+        if len(polls) == 1:
+            parked = state.model_copy(
+                update={
+                    "status": "input_required",
+                    "next_poll_at": None,
+                    "input_required": {"question": McpTaskInputRequest(mode="form", message="Choose")},
+                }
+            )
+            return replace(execution, mcp_task=parked)
+        terminal = execution.record.model_copy(
+            update={"status": "succeeded", "completed_at": datetime.now(UTC), "result_available": True}
+        )
+        return StoredToolExecution(terminal, "remote output", mcp_task=state)
+
+    monkeypatch.setattr(mcp, "_poll", poll)
+    assert await mcp.poll_mcp_tasks(runtime, limit=2) == 1
+    saved = await store.get(record.thread_id, record.execution_id)
+    assert saved.mcp_task.input_required["question"].message == "Choose"
+    assert await mcp.poll_mcp_tasks(runtime, limit=2) == 0
+    async with transaction(runtime.storage) as session:
+        # Emulate the post-tasks/update state that a subsequent change will publish.
+        await session.execute(
+            update(ToolExecutionRow)
+            .where(ToolExecutionRow.id == record.execution_id)
+            .values(
+                mcp_task=state.model_dump(mode="json"),
+                mcp_poll_at=func.clock_timestamp(),
+            )
+        )
+    assert await mcp.poll_mcp_tasks(runtime, limit=2) == 1
+    assert (await store.get(record.thread_id, record.execution_id)).result == "remote output"
+    assert len(await _deliver(runtime)) == 1
+    assert await mcp.poll_mcp_tasks(runtime, limit=2) == 0
+
+
+@pytest.mark.parametrize("scenario", ["answer", "scheduled", "rejected", "unconfirmed", "interrupted"])
+async def test_durable_mcp_task_hands_off_to_control_over_http(
+    service, scripted_model, runs_kit, scenario, monkeypatch
+):
+    from typing import Any
+
+    from a13n_harness.mcp_task_state import McpTaskExecutionState
+    from a13n_harness.mcp_tasks import TASKS_EXTENSION_ID
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.tool_executions import mcp as mcp_runtime
+    from a13n_service.runs.tool_executions.mcp import poll_mcp_tasks
+    from fastmcp import FastMCP
+    from fastmcp.server.extensions import MethodBinding, ServerExtension
+    from mcp.shared.exceptions import MCPError
+    from mcp.types import INVALID_PARAMS, REQUEST_TIMEOUT, RequestParams
+    from pydantic import BaseModel, Field
+
+    from .test_connections import create, serve
+
+    calls = 0
+    allow_finish = False
+    waiting = False
+    prompt_message = "Choose"
+    updates = []
+    execution_id = None
+    created_at = datetime.now(UTC).isoformat()
+
+    class Params(RequestParams):
+        task_id: str = Field(alias="taskId")
+
+    class UpdateParams(Params):
+        input_responses: dict[str, Any] = Field(alias="inputResponses")
+
+    class Result(BaseModel):
+        resultType: str
+        taskId: str = "task-original"
+        status: str
+        createdAt: str = created_at
+        ttlMs: int = 60000
+        pollIntervalMs: int = 250
+        result: dict[str, Any] | None = None
+        inputRequests: dict[str, Any] | None = None
+
+    async def get_task(context, params):
+        assert params.task_id == "task-original"
+        assert context.request.headers["mcp-name"] == params.task_id
+        assert context.request.headers["x-origin-test"] == "frozen"
+        if allow_finish:
+            return Result(
+                resultType="complete",
+                status="completed",
+                result={
+                    "content": [{"type": "text", "text": "remote outcome"}],
+                },
+            )
+        if waiting:
+            return Result(
+                resultType="complete",
+                status="input_required",
+                inputRequests={
+                    "name": {
+                        "method": "elicitation/create",
+                        "params": {
+                            "mode": "form",
+                            "message": prompt_message,
+                            "requestedSchema": {
+                                "type": "object",
+                                "properties": {"name": {"type": "string"}},
+                                "required": ["name"],
+                            },
+                        },
+                    }
+                },
+            )
+        return Result(resultType="complete", status="working")
+
+    async def update_task(context, params):
+        nonlocal allow_finish
+        assert context.request.headers["mcp-name"] == params.task_id
+        assert context.request.headers["x-origin-test"] == "frozen"
+        async with transaction(service.runtime.storage) as session:
+            claimed = await session.scalar(
+                select(ToolExecutionRow).where(ToolExecutionRow.id == execution_id).with_for_update(nowait=True)
+            )
+            assert claimed.worker_id.startswith("control:mcp-")
+        updates.append(params.input_responses)
+        if len(updates) == 1 and scenario == "rejected":
+            raise MCPError(code=INVALID_PARAMS, message="Input rejected")
+        if len(updates) == 1 and scenario == "unconfirmed":
+            raise MCPError(code=REQUEST_TIMEOUT, message="Update not confirmed")
+        allow_finish = True
+        return {}
+
+    class Tasks(ServerExtension):
+        identifier = TASKS_EXTENSION_ID
+
+        def methods(self):
+            return (
+                MethodBinding("tasks/get", Params, get_task, frozenset({"2026-07-28"})),
+                MethodBinding("tasks/update", UpdateParams, update_task, frozenset({"2026-07-28"})),
+            )
+
+        async def intercept_tool_call(self, params, context, call_next):
+            nonlocal calls
+            calls += 1
+            return Result(resultType="task", status="working")
+
+    await runs_kit.pause_sweeps(service)
+    server = FastMCP("Durable task")
+    server.add_extension(Tasks())
+
+    @server.tool
+    async def slow():
+        pytest.fail("The ordinary tool path must not run")
+
+    async with serve(server.http_app(path="/mcp")) as url:
+        connection = await create(
+            service,
+            {
+                "config": {"url": url + "/mcp", "durable_tasks": True, "headers": ["x-origin-test"]},
+                "auth": "headers",
+                "credential": {"headers": {"x-origin-test": "frozen"}},
+            },
+        )
+        agent = await runs_kit.create_agent(
+            service, scripted_model, connection_tools=[{"connection_id": connection["id"], "permission": "allow"}]
+        )
+        started = await runs_kit.start_thread(
+            service,
+            agent,
+            "Start slow work",
+            options={
+                "execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 0.10}},
+            },
+        )
+        scripted_model.call("slow", {}, call_id="call-task")
+        scripted_model.say("The task will continue")
+        runtime = service.runtime
+        (lease,) = await claim(runtime, worker_id="worker-mcp", worker_build="test", limit=1)
+        await asyncio.wait_for(execute(runtime, lease, AttemptControl()), 10)
+        await asyncio.wait_for(runtime.executions.join(), 10)
+        assert (await runs_kit.get_run(service, started["run"]["id"]))["status"] == "completed"
+        (record,) = await runtime.executions.summarize(lease.thread_id)
+        saved = await Store(runtime).get(lease.thread_id, record.execution_id)
+        assert saved.record.foreground_released and saved.mcp_task.mcp_task_id == "task-original"
+        assert calls == 1
+        waiting = True
+        execution_id = record.execution_id
+        async with transaction(runtime.storage) as session:
+            await session.execute(
+                update(ToolExecutionRow)
+                .where(ToolExecutionRow.id == record.execution_id)
+                .values(mcp_poll_at=func.clock_timestamp())
+            )
+        if scenario == "scheduled":
+            original_binding = mcp_runtime._binding
+
+            async def unattended(*args):
+                connection, headers, _ = await original_binding(*args)
+                return connection, headers, True
+
+            monkeypatch.setattr(mcp_runtime, "_binding", unattended)
+        assert await poll_mcp_tasks(replace(runtime), limit=1) == 1
+        run_id = started["run"]["id"]
+        if scenario != "scheduled":
+            listing = f"{service.api}/runs/{run_id}/mcp-inputs"
+            inputs = await service.client.get(listing)
+            assert inputs.status_code == 200, inputs.text
+            (request,) = inputs.json()
+            assert request["tool_call_id"] == "call-task" and request["server_id"] == connection["id"]
+            assert request["schema"]["required"] == ["name"]
+            endpoint = f"{service.api}/runs/{run_id}/mcp-inputs/{request['request_id']}/response"
+            invalid_response = await service.client.post(endpoint, json={"action": "accept", "content": {}})
+            assert invalid_response.status_code == 422 or invalid_response.status_code == 400
+            answer = {"action": "accept", "content": {"name": "Ada"}}
+            if scenario in {"rejected", "unconfirmed"}:
+                rejected = await service.client.post(endpoint, json=answer)
+                assert rejected.status_code == 503, rejected.text
+                assert (await service.client.get(listing)).json() == []
+                stored = await Store(runtime).get(lease.thread_id, record.execution_id)
+                assert stored.mcp_task is not None and not stored.mcp_task.answered_inputs
+                assert (stored.mcp_task.unconfirmed_input is not None) == (scenario == "unconfirmed")
+                if scenario == "unconfirmed":
+                    assert await poll_mcp_tasks(replace(runtime), limit=1) == 1
+                    assert (await service.client.get(listing)).json() == []
+                    retry = await service.client.post(endpoint, json=answer)
+                    assert retry.status_code == 409, retry.text
+                    assert len(updates) == 1
+                    async with transaction(runtime.storage) as session:
+                        row = await session.get_one(ToolExecutionRow, record.execution_id)
+                        state = McpTaskExecutionState.model_validate(row.mcp_task)
+                        assert state.unconfirmed_input is not None
+                        past = datetime.now(UTC) - timedelta(seconds=1)
+                        delivery = state.unconfirmed_input.model_copy(update={"reconcile_until": past})
+                        row.mcp_task = state.model_copy(update={"unconfirmed_input": delivery}).model_dump(mode="json")
+                        row.mcp_poll_at = past
+                else:
+                    prompt_message = "Choose again"
+                assert await poll_mcp_tasks(replace(runtime), limit=1) == 1
+                (fresh,) = (await service.client.get(listing)).json()
+                if scenario == "rejected":
+                    assert fresh["message"] == prompt_message and fresh["request_id"] != request["request_id"]
+                    stale = await service.client.post(endpoint, json=answer)
+                    assert stale.status_code == 409, stale.text
+                    endpoint = f"{listing}/{fresh['request_id']}/response"
+                assert len(updates) == 1
+            if scenario == "interrupted":
+
+                async def lose_publication(*args, **kwargs):
+                    raise ServiceError("unavailable", "Input owner lost before publication")
+
+                async def lose_relinquish(*args):
+                    pass
+
+                # Remote ACK arrived, but the input owner never publishes or relinquishes.
+                with monkeypatch.context() as crash:
+                    crash.setattr(Store, "save", lose_publication)
+                    crash.setattr(mcp_runtime, "relinquish_shell", lose_relinquish)
+                    interrupted = await service.client.post(endpoint, json=answer)
+                assert interrupted.status_code == 503, interrupted.text
+                async with transaction(runtime.storage) as session:
+                    row = await session.get_one(ToolExecutionRow, record.execution_id)
+                    state = McpTaskExecutionState.model_validate(row.mcp_task)
+                    assert state.unconfirmed_input is not None and not state.answered_inputs
+                    row.lease_expires_at = row.created_at
+                assert updates == [{"name": answer}]
+            else:
+                replies = await asyncio.gather(*(service.client.post(endpoint, json=answer) for _ in range(2)))
+                assert sorted(reply.status_code for reply in replies) == [204, 409], [reply.text for reply in replies]
+                assert updates == [{"name": answer}] * (1 if scenario == "answer" else 2)
+        else:
+            assert updates == [{"name": {"action": "decline"}}]
+        assert (await service.client.get(f"{service.api}/runs/{run_id}/mcp-inputs")).json() == []
+        assert await poll_mcp_tasks(replace(runtime), limit=1) == 1
+        completed = await Store(runtime).get(lease.thread_id, record.execution_id)
+        assert completed.record.status == "succeeded", completed.record.error
+        assert completed.result == "remote outcome" and calls == 1
+        if scenario == "interrupted":
+            assert updates == [{"name": answer}]
+        assert len(await _deliver(runtime)) == 1

@@ -12,6 +12,7 @@ from pathlib import Path
 from a13n_harness import HarnessState
 from a13n_harness.content import request_input_content
 from a13n_harness.environment.process_recovery import ShellExecutionState
+from a13n_harness.mcp_task_state import McpTaskExecutionState
 from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionRecord
 from a13n_harness.tool_execution_payload import ToolExecutionPayload
 from a13n_logging import get_logger
@@ -49,6 +50,7 @@ class ExecutionPayload(BaseModel):
     thread_id: str
     result: ToolExecutionPayload
     shell: ShellExecutionState | None = None
+    mcp_task: McpTaskExecutionState | None = None
 
 
 def observation(row: ToolExecutionHeadRecord) -> ToolExecutionRecord:
@@ -164,6 +166,7 @@ class ToolExecutionRepository:
             thread_id=record.thread_id,
             result=ToolExecutionPayload.from_execution(execution),
             shell=execution.shell,
+            mcp_task=execution.mcp_task,
         )
         reference = (await self.objects.publish_model(object_kind=ObjectKind.tool_execution, value=payload)).ref
         async with transaction(self.sessions) as session:
@@ -218,7 +221,7 @@ class ToolExecutionRepository:
                     return StoredToolExecution(record)
                 reference = payload_ref(row)
             payload = await self.objects.read_model(reference, ExecutionPayload)
-            return replace(payload.result.execution(record), shell=payload.shell)
+            return replace(payload.result.execution(record), shell=payload.shell, mcp_task=payload.mcp_task)
 
     async def output_expired(self, thread_id: str, execution_id: str) -> bool:
         """Report the existing retention boundary without consuming or extending it."""

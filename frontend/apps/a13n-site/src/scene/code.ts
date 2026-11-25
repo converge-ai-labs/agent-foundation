@@ -11,7 +11,7 @@ const SYNTAX: [Tone, RegExp][] = [
 ];
 
 /** The tone of each character of a line of code. */
-export function highlight(line: string): Tone[] {
+function highlight(line: string): Tone[] {
   const tones: Tone[] = [];
   for (let i = 0; i < line.length;) {
     for (const [tone, re] of SYNTAX) {

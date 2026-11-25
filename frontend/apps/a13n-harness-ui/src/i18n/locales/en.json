@@ -3739,5 +3739,10 @@
   "Receive notifications from": "Receive notifications from",
   "My runs are those started from this browser.": "My runs are those started from this browser.",
   "Entire workspace": "Entire workspace",
-  "My runs only": "My runs only"
+  "My runs only": "My runs only",
+  "Accept": "Accept",
+  "External destination": "External destination",
+  "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.",
+  "This field is required.": "This field is required.",
+  "Enter a valid value for this field.": "Enter a valid value for this field."
 }

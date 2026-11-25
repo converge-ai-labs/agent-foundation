@@ -109,6 +109,7 @@ class RunToolExecutions:
             runtime.wait(
                 thread_id,
                 execution_id,
+                foreground=True,
                 timeout_seconds=(
                     self.config.foreground_wait_seconds if automatic or self.config.mode == "auto" else None
                 ),

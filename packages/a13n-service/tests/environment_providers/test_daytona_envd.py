@@ -41,6 +41,10 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
     recipe = DAYTONA.validate_environment(
         {
             "snapshot": "envd-snapshot",
+            "volumes": [
+                {"volume_id": "assets", "mount_path": "/assets"},
+                {"volume_id": "workspaces", "mount_path": "/data", "subpath": "projects/a"},
+            ],
             "environment": {"APP_MODE": "agent-default"},
             "envd": {"limits": {"max_concurrent_file_transfers": 32}},
             "desktop": True,
@@ -78,6 +82,10 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
         assert cloud.target["env"]["A13N_DESKTOP"] == "true"
         assert cloud.target["env"]["A13N_DESKTOP_ACCESS"] == "false"
         assert not any("computeruse" in path or "/process/execute" in path for _, path in cloud.calls)
+        assert cloud.target["volumes"] == [
+            {"volumeId": "assets", "mountPath": "/assets"},
+            {"volumeId": "workspaces", "mountPath": "/data", "subpath": "projects/a"},
+        ]
         assert references[0].state == state
         execution.check_ready.assert_awaited_with(frozenset({"computer"}))
         cloud.target["autoDeleteInterval"] = 0
@@ -100,3 +108,34 @@ async def test_boot_readiness_lifecycle_and_retained_identity(monkeypatch, fault
         else:
             await manage("destroy", state)
             assert cloud.target is None
+
+
+def test_volume_identity_preserves_unmounted_targets_and_canonicalizes_mount_order():
+    default = DAYTONA.validate_environment({"snapshot": "fixture"})
+    assert "volumes" not in default.model_dump()
+    assert default.fingerprint == DAYTONA.validate_environment({"snapshot": "fixture", "volumes": []}).fingerprint
+    mounts = [{"volume_id": "v", "mount_path": "/a"}, {"volume_id": "v", "mount_path": "/b", "subpath": "work/one"}]
+
+    def fingerprint(volumes):
+        return DAYTONA.validate_environment({"snapshot": "fixture", "volumes": volumes}).fingerprint
+
+    assert fingerprint(mounts) == fingerprint(mounts[::-1])
+    assert fingerprint(mounts) != fingerprint([mounts[0], mounts[1] | {"subpath": "work/two"}])
+
+
+@pytest.mark.parametrize(
+    "mounts",
+    [
+        [{"mount_path": "../dir"}],
+        [{"mount_path": "/var/lib"}],
+        [{"mount_path": "/etc"}],
+        [{"mount_path": "/data", "subpath": "../other"}],
+        [{"mount_path": "/data", "subpath": "/absolute"}],
+        [{"mount_path": "/data"}, {"mount_path": "/data"}],
+        [{"mount_path": "/data"}, {"mount_path": "/data/child"}],
+    ],
+)
+def test_invalid_daytona_volumes(mounts):
+    with pytest.raises(EnvironmentProviderError) as error:
+        DAYTONA.validate_environment({"volumes": [{"volume_id": "v", **m} for m in mounts]})
+    assert error.value.code == "provider_spec_invalid"

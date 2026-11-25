@@ -350,6 +350,7 @@ class ThreadRepository:
         historical: bool = False,
         continuation: ObjectRef | None,
         read_model: ThreadReadModel | None,
+        acp_state_json: str | None = None,
     ) -> Thread:
         """Publish a complete copy only while the captured source remains eligible."""
         _require_kind(initial_state, ObjectKind.thread_initial_state)
@@ -366,7 +367,7 @@ class ThreadRepository:
             if (
                 current.parent_thread_id is not None
                 or current.memory_scope is not None
-                or source.configuration.agent_source.kind != "agent"
+                or source.configuration.agent_source.kind not in {"agent", "acp_agent"}
                 or await session.get(CoordinatorRecord, source.thread_id) is not None
                 or await session.get(CoordinatorWorkerRecord, source.thread_id) is not None
             ):
@@ -422,6 +423,7 @@ class ThreadRepository:
                 read_model_schema_version=continuation.object_schema_version if continuation else None,
                 read_model_digest=continuation.logical_digest if continuation else None,
                 read_model_json=read_model.model_dump_json() if read_model else None,
+                acp_state_json=acp_state_json,
             )
             record.search_text = _search_text(record)
             session.add(record)

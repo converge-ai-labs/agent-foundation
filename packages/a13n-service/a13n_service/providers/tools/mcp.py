@@ -5,8 +5,8 @@ connection's authentication; this module only speaks MCP over it.
 """
 
 import re
-from collections.abc import AsyncGenerator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import replace
 from typing import Annotated, Any, Literal, Self, Unpack
@@ -15,6 +15,15 @@ import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.http import forward_context_headers_default
 from a13n_harness.mcp import InitializationRetryClient, MCPServer, StartupErrorPolicy, ToolsetFactory, tool_progress
+from a13n_harness.mcp_tasks import (
+    CancelTask,
+    DurableTasks,
+    GetTask,
+    UpdateTask,
+    enable_task_ownership,
+    has_tasks,
+    task_server_id,
+)
 from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_TOOLS
 from fastmcp import Client
 from fastmcp.client.transports import ClientTransport
@@ -114,6 +123,7 @@ class McpConfig(BaseModel):
     on_error: StartupErrorPolicy = "raise"
 
     url: str = Field(min_length=1, max_length=2048)
+    durable_tasks: bool = False
     # None exposes every tool the server lists, so a run refuses a server listing more than `MAX_TOOLS`.
     tools: Annotated[tuple[ToolName, ...], Field(min_length=1, max_length=MAX_TOOLS), AfterValidator(unique)] | None = (
         None
@@ -183,7 +193,7 @@ class DispatchTransport(ClientTransport):
 
         class DispatchSession(options.session_class):
             async def send_request(self, request: Any, *args: Any, **kwargs: Any) -> Any:
-                if isinstance(request, CallToolRequest):
+                if isinstance(request, (CallToolRequest, GetTask, UpdateTask, CancelTask)):
                     current = _dispatch.get()
                     if current is None or current[0].connection_id != connection_id:
                         raise ToolFailed("The MCP request has no dispatch identity and was not sent.")
@@ -204,15 +214,24 @@ class DispatchTransport(ClientTransport):
 
 
 def mcp_client(
-    url: str, connection_id: str, http: httpx2.AsyncClient, *, timeout: float, apps: bool = False
+    url: str,
+    connection_id: str,
+    http: httpx2.AsyncClient,
+    *,
+    timeout: float,
+    apps: bool = False,
+    durable_tasks: bool = False,
 ) -> Client[ClientTransport]:
     """Use the upstream adapter; its transport enters the attempt's configured HTTP client."""
     client = _toolset(url, connection_id, http, timeout=timeout).client
+    extensions = [advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})] if apps else []
+    if durable_tasks:
+        extensions.append(DurableTasks(connection_id, server_id=task_server_id(url)))
     client = (AppClient if apps else InitializationRetryClient)(
         client.transport,
         timeout=timeout,
         init_timeout=timeout,
-        extensions=[advertise(EXTENSION_ID, {"mimeTypes": [APP_MIME_TYPE]})] if apps else (),
+        extensions=extensions,
     )
     client.transport = DispatchTransport(client.transport, connection_id)
     return client
@@ -234,6 +253,15 @@ class DispatchToolset(CheckedToolset):
             _dispatch.reset(token)
 
 
+@contextmanager
+def task_dispatch(dispatch: ToolDispatch, check: DispatchCheck) -> Iterator[None]:
+    token = _dispatch.set((dispatch, check))
+    try:
+        yield
+    finally:
+        _dispatch.reset(token)
+
+
 async def call_app_tool(
     toolset: MCPToolset[AgentContext], dispatch: ToolDispatch, check: DispatchCheck, arguments: dict[str, Any]
 ) -> dict[str, Any]:
@@ -246,6 +274,14 @@ async def call_app_tool(
 
 
 class AttemptToolset(AppToolset):
+    durable_tasks: bool = False
+
+    async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+        tools = await super().get_tools(ctx)
+        if self.durable_tasks and has_tasks(self.client.server_capabilities):
+            return enable_task_ownership(tools)
+        return tools
+
     async def __aenter__(self) -> Self:
         if not self.client.is_connected():
             raise RuntimeError("The attempt-owned MCP client disconnected; the business call will not be replayed.")
@@ -265,6 +301,7 @@ def mcp_capability(
     capture: Capture | None = None,
     object_ref_tools: dict[str, bool] | None = None,
     on_error: StartupErrorPolicy = "raise",
+    durable_tasks: bool = False,
 ) -> MCPServer:
     """Fresh native projections borrow one entered client from the worker attempt.
 
@@ -290,6 +327,7 @@ def mcp_capability(
                 include_instructions=False,
             )
             native.capture = capture
+            native.durable_tasks = durable_tasks
             return native
 
         return create_toolset
@@ -303,7 +341,9 @@ def mcp_capability(
 
         references = ObjectRefToolset(listed, object_ref_tools=object_ref_tools or {})
         return AppMCP(
-            id=connection_id, local=DispatchToolset(references, connection_id, None, check), defer_loading=False
+            id=connection_id,
+            local=DispatchToolset(references, connection_id, None, check),  # pyright: ignore[reportArgumentType]
+            defer_loading=False,
         )
 
     return MCPServer(id=connection_id, prepare=prepare, project=project, on_error=on_error, tools=tools)

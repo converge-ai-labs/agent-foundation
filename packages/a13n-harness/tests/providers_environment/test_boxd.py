@@ -79,6 +79,41 @@ def test_definition_defaults_and_account_require_an_explicit_region():
     assert "boxd" not in BoxdConnectionConfiguration(region="nyc").model_dump_json()
 
 
+def test_disk_mounts_preserve_unmounted_fingerprints_and_ignore_mount_order():
+    empty = BoxdEnvironmentConfiguration()
+    assert "volumes" not in empty.model_dump()
+    assert BoxdEnvironmentConfiguration(volumes=[]).fingerprint == empty.fingerprint
+    disks = [{"disk_id": "one", "mount_path": "/a"}, {"disk_id": "two", "mount_path": "/b"}]
+    config = BoxdEnvironmentConfiguration.model_validate({"volumes": disks})
+    assert config.fingerprint == BoxdEnvironmentConfiguration.model_validate({"volumes": disks[::-1]}).fingerprint
+    assert config.fingerprint != empty.fingerprint
+    for change in ({"disk_id": "three"}, {"mount_path": "/c"}, {"read_only": True}):
+        changed = BoxdEnvironmentConfiguration.model_validate({"volumes": [disks[0] | change, disks[1]]})
+        assert config.fingerprint != changed.fingerprint
+
+
+@pytest.mark.parametrize(
+    "other",
+    [
+        {"disk_id": "one", "mount_path": "/b"},
+        {"disk_id": "two", "mount_path": "/a"},
+        {"disk_id": "two", "mount_path": "/a/nested"},
+        {"disk_id": "two", "mount_path": "relative"},
+        {"disk_id": "two", "mount_path": "/var/lib/a13n-envd"},
+    ],
+)
+def test_invalid_disk_mounts(other):
+    with pytest.raises(ValidationError):
+        BoxdEnvironmentConfiguration.model_validate({"volumes": [{"disk_id": "one", "mount_path": "/a"}, other]})
+
+
+def test_snapshot_restore_rejects_disks():
+    with pytest.raises(ValidationError, match="snapshot"):
+        BoxdEnvironmentConfiguration.model_validate(
+            {"from_snapshot": "base", "volumes": [{"disk_id": "one", "mount_path": "/a"}]}
+        )
+
+
 def test_client_uses_fixed_endpoint_explicit_region_and_no_retries(monkeypatch):
     seen = {}
     monkeypatch.setattr(boxd, "AsyncBoxd", lambda **options: seen.update(options) or SimpleNamespace())

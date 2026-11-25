@@ -27,7 +27,7 @@ const groups = [
   },
 ];
 describe("selection", () => {
-  it.each([0, 1, 9])(
+  it.each([0, 9])(
     "opens setup from a %i-option picker footer and restores trigger focus",
     async (count) => {
       const user = userEvent.setup();

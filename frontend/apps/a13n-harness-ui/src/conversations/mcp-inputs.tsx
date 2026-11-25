@@ -1,7 +1,7 @@
 import { useTranslation } from "../i18n";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input, ChoiceField } from "a13n-ui";
+import { Button, FormField, Input, McpElicitationForm } from "a13n-ui";
 import { useTransport } from "../transport/context";
 import {
   ApiError,
@@ -17,23 +17,6 @@ import { QuestionInput } from "./question-input";
 
 type Request = Schema<"McpInputRequestView">;
 type Response = Schema<"McpInputResponse">;
-
-function enumOptions(field: Record<string, unknown>) {
-  if (Array.isArray(field.enum))
-    return field.enum.map((value, index) => ({
-      value,
-      label: Array.isArray(field.enumNames)
-        ? String(field.enumNames[index] ?? value)
-        : String(value),
-    }));
-  const titled = field.oneOf ?? field.anyOf;
-  if (Array.isArray(titled))
-    return titled.map((item) => ({
-      value: record(item)?.const,
-      label: String(record(item)?.title ?? record(item)?.const),
-    }));
-  return undefined;
-}
 
 export function useMcpInputRequests(threadId: string, enabled = true) {
   const { client } = useTransport();
@@ -92,14 +75,9 @@ export function McpInput({
   const schema = record(request.schema);
   const properties = record(schema?.properties) ?? {};
   const required = Array.isArray(schema?.required) ? schema.required : [];
-  const [content, setContent] = useState<NonNullable<Response["content"]>>(() =>
-    Object.fromEntries(
-      Object.entries(properties).flatMap(([name, value]) => {
-        const field = record(value);
-        return field?.default === undefined ? [] : [[name, field.default]];
-      }),
-    ),
-  );
+  const [privateValues, setPrivateValues] = useState<
+    NonNullable<Response["content"]>
+  >({});
   const [submitted, setSubmitted] = useState<Response>();
   const [questionAnswer, setQuestionAnswer] = useState<Response>();
   const answer = useMutation({
@@ -138,6 +116,58 @@ export function McpInput({
   }
   const locked =
     answer.isPending || answer.isSuccess || submitted !== undefined;
+  const context = request.thread_id !== threadId && (
+    <p className={styles.hint}>
+      {t("From child Thread {{id}}", { id: request.thread_id })}
+    </p>
+  );
+  const feedback = (
+    <>
+      {answer.isPending && (
+        <p role="status" className={styles.hint}>
+          {t("Sending response…")}
+        </p>
+      )}
+      {answer.error && <ErrorNotice error={answer.error} />}
+      {answer.error &&
+        (!(answer.error instanceof ApiError) ||
+          isConnectionError(answer.error)) && (
+          <>
+            <p className={styles.hint}>
+              {t(
+                "Couldn't confirm delivery. Check the request before retrying. The tool itself won't run again.",
+              )}
+            </p>
+            <div className={styles.actions}>
+              <Button variant="ghost" onClick={reconcile}>
+                {t("Check request")}
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={answer.isPending || !submitted}
+                onClick={() => submitted && answer.mutate(submitted)}
+              >
+                {t("Retry response")}
+              </Button>
+            </div>
+          </>
+        )}
+    </>
+  );
+  if (!request.private_form && request.mode !== "question") {
+    return (
+      <section className={conversation.decision}>
+        <McpElicitationForm
+          request={{ ...request, mode: request.mode }}
+          send={send}
+          locked={locked}
+          t={t}
+          context={context}
+          feedback={feedback}
+        />
+      </section>
+    );
+  }
   return (
     <section
       className={conversation.decision}
@@ -146,13 +176,11 @@ export function McpInput({
       <div className={styles.request}>
         <div className={styles.heading}>
           <h3>{t("Input requested")}</h3>
-          <span className={styles.tool}>{request.server_id}</span>
+          <span className={styles.tool}>
+            {request.server_name ?? request.server_id}
+          </span>
         </div>
-        {request.thread_id !== threadId && (
-          <p className={styles.hint}>
-            {t("From child Thread {{id}}", { id: request.thread_id })}
-          </p>
-        )}
+        {context}
         {request.message && <p className={styles.reason}>{request.message}</p>}
         {request.private_form ? (
           <>
@@ -168,194 +196,83 @@ export function McpInput({
                 "After signing in, paste the callback URL or authorization code shown in your browser.",
               )}
             </p>
-          </>
-        ) : (
-          <p className={styles.hint}>
-            {t(
-              "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
-            )}
-          </p>
-        )}
-        {request.mode === "question" ? (
-          <fieldset disabled={locked}>
-            <QuestionInput
-              request={{
-                request_id: request.request_id,
-                questions: (request.questions ?? []).map(
-                  ({ multiSelect, ...question }) => ({
-                    ...question,
-                    multi_select: multiSelect,
-                  }),
-                ),
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!locked) send({ action: "accept", content: privateValues });
               }}
-              onChange={(response) =>
-                setQuestionAnswer(
-                  response && {
-                    action: "accept",
-                    content: {
-                      answers: response.answers,
-                      response: response.response,
-                    },
-                  },
-                )
-              }
-            />
-          </fieldset>
-        ) : request.mode === "url" ? (
-          <>
-            <a
-              href={request.url ?? undefined}
-              target="_blank"
-              rel="noopener noreferrer"
             >
-              {t("Open external page")}
-            </a>
-            <p className={styles.hint}>
-              {t(
-                "Finish the action in your browser, then choose Done. Server credentials aren't sent to that page.",
-              )}
-            </p>
-          </>
-        ) : (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!locked) send({ action: "accept", content });
-            }}
-          >
-            <div className={styles.request}>
-              {Object.entries(properties).map(([name, value]) => {
-                const field = record(value) ?? {};
-                const label = request.private_form
-                  ? t("Callback URL or authorization code")
-                  : typeof field.title === "string"
-                    ? field.title
-                    : name;
-                const description =
-                  typeof field.description === "string"
-                    ? field.description
-                    : undefined;
-                const set = (value: unknown) =>
-                  setContent((old) => {
-                    const next = { ...old };
-                    if (value === undefined) delete next[name];
-                    else next[name] = value;
-                    return next;
-                  });
-                const enums = enumOptions(field);
-                const items = record(field.items);
-                const selections = items ? enumOptions(items) : undefined;
-                if (field.type === "array" && selections)
+              <div className={styles.request}>
+                {Object.keys(properties).map((name) => {
+                  const label = t("Callback URL or authorization code");
                   return (
-                    <fieldset key={name} disabled={locked}>
-                      <legend>{label}</legend>
-                      {selections.map(({ value: option, label: title }) => (
-                        <label key={String(option)} className={styles.heading}>
-                          <input
-                            type="checkbox"
-                            checked={
-                              Array.isArray(content[name]) &&
-                              content[name].includes(option)
-                            }
-                            onChange={(event) => {
-                              const selected = Array.isArray(content[name])
-                                ? content[name]
-                                : [];
-                              set(
-                                event.target.checked
-                                  ? [...selected, option]
-                                  : selected.filter((item) => item !== option),
-                              );
-                            }}
-                          />
-                          {title}
-                        </label>
-                      ))}
-                    </fieldset>
-                  );
-                if (field.type === "boolean" || enums)
-                  return (
-                    <FormField
-                      key={name}
-                      label={label}
-                      description={description}
-                    >
-                      <ChoiceField
-                        label={label}
+                    <FormField key={name} label={label}>
+                      <Input
+                        aria-label={label}
                         disabled={locked}
+                        required={required.includes(name)}
+                        type="password"
                         value={
-                          content[name] === undefined
+                          privateValues[name] === undefined
                             ? ""
-                            : String(content[name])
+                            : String(privateValues[name])
                         }
-                        options={(
-                          enums ?? [
-                            { value: true, label: t("Yes") },
-                            { value: false, label: t("No") },
-                          ]
-                        ).map((option) => ({
-                          value: String(option.value),
-                          label: option.label,
-                        }))}
-                        onValueChange={(selected) =>
-                          set(
-                            (
-                              enums ?? [
-                                { value: true, label: t("Yes") },
-                                { value: false, label: t("No") },
-                              ]
-                            ).find(
-                              (option) => String(option.value) === selected,
-                            )?.value,
-                          )
+                        onChange={(event) =>
+                          setPrivateValues((old) => {
+                            const next = { ...old };
+                            if (
+                              event.target.value === "" &&
+                              !required.includes(name)
+                            )
+                              delete next[name];
+                            else next[name] = event.target.value;
+                            return next;
+                          })
                         }
                       />
                     </FormField>
                   );
-                return (
-                  <FormField key={name} label={label} description={description}>
-                    <Input
-                      aria-label={label}
-                      disabled={locked}
-                      required={required.includes(name)}
-                      type={
-                        request.private_form
-                          ? "password"
-                          : field.type === "number" || field.type === "integer"
-                            ? "number"
-                            : "text"
-                      }
-                      step={
-                        field.type === "integer"
-                          ? 1
-                          : field.type === "number"
-                            ? "any"
-                            : undefined
-                      }
-                      value={
-                        content[name] === undefined ? "" : String(content[name])
-                      }
-                      onChange={(event) =>
-                        set(
-                          event.target.value === "" && !required.includes(name)
-                            ? undefined
-                            : field.type === "number" ||
-                                field.type === "integer"
-                              ? event.target.valueAsNumber
-                              : event.target.value,
-                        )
-                      }
-                    />
-                  </FormField>
-                );
-              })}
-              <div className={styles.actions}>
-                <Button type="submit" disabled={locked}>
-                  {t("Send response")}
-                </Button>
+                })}
+                <div className={styles.actions}>
+                  <Button type="submit" disabled={locked}>
+                    {t("Send response")}
+                  </Button>
+                </div>
               </div>
-            </div>
-          </form>
+            </form>
+          </>
+        ) : (
+          <>
+            <p className={styles.hint}>
+              {t(
+                "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
+              )}
+            </p>
+            <fieldset disabled={locked}>
+              <QuestionInput
+                request={{
+                  request_id: request.request_id,
+                  questions: (request.questions ?? []).map(
+                    ({ multiSelect, ...question }) => ({
+                      ...question,
+                      multi_select: multiSelect,
+                    }),
+                  ),
+                }}
+                onChange={(response) =>
+                  setQuestionAnswer(
+                    response && {
+                      action: "accept",
+                      content: {
+                        answers: response.answers,
+                        response: response.response,
+                      },
+                    },
+                  )
+                }
+              />
+            </fieldset>
+          </>
         )}
         <div className={styles.actions}>
           {request.mode === "question" && (
@@ -364,14 +281,6 @@ export function McpInput({
               onClick={() => questionAnswer && send(questionAnswer)}
             >
               {t("Send response")}
-            </Button>
-          )}
-          {request.mode === "url" && (
-            <Button
-              disabled={locked}
-              onClick={() => send({ action: "accept" })}
-            >
-              {t("Done")}
             </Button>
           )}
           <Button
@@ -389,35 +298,7 @@ export function McpInput({
             {t("Cancel request")}
           </Button>
         </div>
-        {answer.isPending && (
-          <p role="status" className={styles.hint}>
-            {t("Sending response…")}
-          </p>
-        )}
-        {answer.error && <ErrorNotice error={answer.error} />}
-        {answer.error &&
-          (!(answer.error instanceof ApiError) ||
-            isConnectionError(answer.error)) && (
-            <>
-              <p className={styles.hint}>
-                {t(
-                  "Couldn't confirm delivery. Check the request before retrying. The tool itself won't run again.",
-                )}
-              </p>
-              <div className={styles.actions}>
-                <Button variant="ghost" onClick={reconcile}>
-                  {t("Check request")}
-                </Button>
-                <Button
-                  variant="ghost"
-                  disabled={answer.isPending || !submitted}
-                  onClick={() => submitted && answer.mutate(submitted)}
-                >
-                  {t("Retry response")}
-                </Button>
-              </div>
-            </>
-          )}
+        {feedback}
       </div>
     </section>
   );

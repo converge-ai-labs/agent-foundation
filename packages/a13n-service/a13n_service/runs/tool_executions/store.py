@@ -6,10 +6,11 @@ import asyncio
 import contextvars
 import hashlib
 import hmac
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta
 
 from a13n_harness.environment.process_recovery import ShellExecutionState
+from a13n_harness.mcp_task_state import McpTaskExecutionState
 from a13n_harness.tool_execution import StoredToolExecution, ToolExecutionAdmissionRejected, ToolExecutionRecord
 from a13n_harness.tool_execution_payload import ToolExecutionPayload as Payload
 from sqlalchemy import case, func, or_, select
@@ -105,15 +106,15 @@ class Store:
     def __init__(self, runtime: Runtime) -> None:
         self.runtime = runtime
 
-    async def save(self, execution: StoredToolExecution) -> None:
+    async def save(self, execution: StoredToolExecution, *, poll_cancelled: bool | None = None) -> None:
         # Retry publication, never the operation. An uncertain commit is reconciled by stable identity.
         # Admission failures are returned immediately, before any effects can start.
         if not execution.record.terminal:
-            await self._save(execution)
+            await self._save(execution, poll_cancelled=poll_cancelled)
             return
         for attempt in range(3):
             try:
-                await self._save(execution)
+                await self._save(execution, poll_cancelled=poll_cancelled)
                 return
             except LeaseLost:
                 raise
@@ -122,7 +123,7 @@ class Store:
                     raise
                 await asyncio.sleep(0.1 * (2**attempt))
 
-    async def _save(self, execution: StoredToolExecution) -> None:
+    async def _save(self, execution: StoredToolExecution, *, poll_cancelled: bool | None = None) -> None:
         record, lease = execution.record, ORIGIN.get()
         if record.thread_id != lease.thread_id:
             raise LeaseLost()
@@ -145,7 +146,7 @@ class Store:
                         f"tool-executions/{lease.workspace_id}/{record.execution_id}/{hashlib.sha256(data).hexdigest()}"
                     )
                     ref = await self.runtime.objects.put(key, data, content_type="application/json")
-            await self._commit(record, lease, ref, execution.shell)
+            await self._commit(record, lease, ref, execution.shell, execution.mcp_task, poll_cancelled)
         finally:
             if key is not None:
                 # Reconcile uncertain publication before removing bytes. A live owner may retry this key;
@@ -153,7 +154,8 @@ class Store:
                 async with short_session(self.runtime.storage) as session:
                     row = await session.get(ToolExecutionRow, record.execution_id)
                     discard = row is None or (
-                        row.completed_at is not None and (row.result_ref is None or row.result_ref["key"] != key)
+                        (row.completed_at is not None and (row.result_ref is None or row.result_ref["key"] != key))
+                        or (poll_cancelled is False and row.cancel_requested_at is not None and row.result_ref is None)
                     )
                 if discard:
                     await self.runtime.objects.delete(key)
@@ -164,6 +166,8 @@ class Store:
         lease: Lease,
         ref: ObjectRef | None,
         shell: ShellExecutionState | None,
+        mcp_task: McpTaskExecutionState | None,
+        poll_cancelled: bool | None,
     ) -> None:
         async with transaction(self.runtime.storage) as session:
             row = await lock(session, ToolExecutionRow, record.execution_id)
@@ -213,11 +217,16 @@ class Store:
                 return
             if row.lease_expires_at <= current:
                 raise LeaseLost()
+            if poll_cancelled is False and row.cancel_requested_at is not None:
+                raise LeaseLost()
             if observation(row).foreground_released:
                 record = record.model_copy(update={"foreground_released": True})
             row.status, row.record = record.status, record.model_dump(mode="json")
             if shell is not None:
                 row.shell = shell.model_dump(mode="json")
+            if mcp_task is not None:
+                row.mcp_task = mcp_task.model_dump(mode="json", by_alias=True)
+                row.mcp_poll_at = None if record.terminal else mcp_task.due_at
             if record.terminal:
                 assert record.completed_at is not None
                 row.completed_at = record.completed_at
@@ -240,10 +249,11 @@ class Store:
                 return None
             record, ref = observation(row), ObjectRef(**row.result_ref) if row.result_ref is not None else None
             shell = ShellExecutionState.model_validate(row.shell) if row.shell is not None else None
+            mcp_task = McpTaskExecutionState.model_validate(row.mcp_task) if row.mcp_task is not None else None
         if ref is None:
-            return StoredToolExecution(record, shell=shell)
+            return StoredToolExecution(record, shell=shell, mcp_task=mcp_task)
         data = await read(self.runtime.objects, ref)
-        return Payload.model_validate_json(data).execution(record)
+        return replace(Payload.model_validate_json(data).execution(record), shell=shell, mcp_task=mcp_task)
 
     async def list(self, thread_id: str, *, offset: int, limit: int) -> tuple[ToolExecutionRecord, ...]:
         priority = case(

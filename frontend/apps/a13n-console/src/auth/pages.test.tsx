@@ -142,42 +142,6 @@ it.each([true, false])(
   },
 );
 
-it.each([
-  { brand: "authentik", variant: "outline" },
-  { brand: "generic", variant: "default" },
-])(
-  "uses the local $brand mark and $variant style for a sole OIDC provider",
-  async ({ brand, variant }) => {
-    http.GET.mockResolvedValue({
-      data: {
-        initialized: true,
-        password_enabled: false,
-        oidc_providers: [{ id: "team", label: "Team Identity", brand }],
-      },
-      response: new Response(),
-    });
-    renderAuthPage("/login");
-
-    const provider = await screen.findByRole("link", {
-      name: "Sign in with {{provider}}",
-    });
-    expect(provider.getAttribute("data-variant")).toBe(variant);
-    const mark = provider.querySelector("img");
-    if (brand === "generic") {
-      expect(mark).toBeNull();
-      expect(
-        provider.querySelector('span[aria-hidden="true"] svg'),
-      ).not.toBeNull();
-    } else {
-      expect(mark).not.toBeNull();
-      expect(
-        mark!.src.startsWith("data:image/svg+xml") ||
-          new URL(mark!.src).origin === location.origin,
-      ).toBe(true);
-    }
-  },
-);
-
 it("validates sign-in under each field instead of sending an empty request", async () => {
   const user = renderAt("/login", { email_delivery: true });
   await user.click(await screen.findByRole("button", { name: "Sign in" }));

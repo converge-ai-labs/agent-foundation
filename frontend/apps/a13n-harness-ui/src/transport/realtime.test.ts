@@ -1,8 +1,10 @@
-// @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createTransport } from "./client";
 import { FakeWebSocket, mockWebSocket } from "../../tests/fake-websocket";
 
+beforeEach(() => {
+  vi.stubGlobal("window", { location: { origin: "http://localhost:3000" } });
+});
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();

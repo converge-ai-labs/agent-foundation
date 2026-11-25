@@ -1201,6 +1201,7 @@ async def test_inline_session_lease_covers_result_validation_and_busy_restart():
     options = dict(
         dispatch=AsyncMock(),
         admit=AsyncMock(),
+        prepare_args=AsyncMock(return_value=0),
         release=AsyncMock(),
         valid_names=set(),
         sequential_names=set(),

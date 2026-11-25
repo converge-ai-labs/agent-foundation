@@ -73,6 +73,7 @@ async def report_backlog(
             current,
             ToolExecutionRow.completed_at.is_(None),
             ToolExecutionRow.shell.is_(None),
+            ToolExecutionRow.mcp_task.is_(None),
         )
         limits: dict[str, int] = {}
         for kind in get_args(OutboxKind.__value__):

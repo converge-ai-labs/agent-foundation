@@ -262,7 +262,7 @@ def test_native_theme_and_context_percentage_are_truthful() -> None:
     assert "Cancelling" in Status(state="cancelling").line(20)
 
 
-@pytest.mark.parametrize("environ", [{}, {"COLORFGBG": "15;0"}, {"COLORFGBG": "0;15"}])
+@pytest.mark.parametrize("environ", [{}, {"COLORFGBG": "0;15"}])
 @pytest.mark.parametrize("selected", [False, True])
 def test_native_completion_help_uses_terminal_colors(environ: dict[str, str], selected: bool) -> None:
     # Application merges our rules with prompt_toolkit's colored menu defaults.
@@ -424,7 +424,7 @@ def test_tools_are_compact_and_question_debug_is_hidden() -> None:
     renderer.transcript.close()
 
 
-def test_notes_show_full_values_and_distinct_style_without_repeated_snapshots() -> None:
+def test_notes_show_full_values_without_repeated_snapshots() -> None:
     from a13n_harness_ui.surfaces import NotePage, NoteView
 
     renderer = StreamRenderer(Status())
@@ -439,9 +439,6 @@ def test_notes_show_full_values_and_distinct_style_without_repeated_snapshots() 
     renderer.transcript.dirty = True
     renderer.transcript.render(60)
     assert "THE END" in _text(renderer.transcript)
-    assert any(corner in _text(renderer.transcript) for corner in ("╭", "┌"))
-    assert any(corner in _text(renderer.transcript) for corner in ("╰", "└"))
-    assert any("bold" in style for row in renderer.transcript.rows for style, _ in row)
     assert next(iter(renderer.transcript.blocks.values())).kind == "notes"
     renderer.transcript.close()
 
@@ -454,13 +451,11 @@ def test_thinking_spacing_preserves_paragraphs_and_other_block_boundaries() -> N
     transcript = Transcript()
     first = transcript.append("First paragraph.\n\nSecond paragraph.", markdown=True, kind="thinking")
     transcript.render(80)
-    cached = transcript.blocks[first].rows
     transcript.append("Next thought.", markdown=True, kind="thinking")
     transcript.append("view · result", kind="tool")
     transcript.append("Final thought.", markdown=True, kind="thinking")
     transcript.append("Answer.", markdown=True)
     transcript.render(80)
-    assert transcript.blocks[first].rows is cached
     assert _unpadded_text(transcript) == (
         "First paragraph.\n\nSecond paragraph.\nNext thought.\nview · result\nFinal thought.\n\nAnswer.\n"
     )

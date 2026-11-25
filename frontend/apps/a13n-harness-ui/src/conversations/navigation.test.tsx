@@ -2254,6 +2254,49 @@ it("keeps Fork unavailable in Coordinator and worker action menus", async () => 
   expect(screen.queryByRole("menuitem", { name: "Fork chat" })).toBeNull();
 });
 
+it("offers Fork chat on independent external ACP chats", async () => {
+  const acpThread = {
+    ...thread("ACP 1"),
+    starred: true,
+    configuration: {
+      ...thread("ACP 1").configuration,
+      agent_source: { kind: "acp_agent" as const, id: "agy" },
+      default_model_id: null,
+    },
+  };
+  starredThreads = [acpThread];
+  const fetchOriginal = vi.mocked(fetch).getMockImplementation()!;
+  const forkRequests: Request[] = [];
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (new URL(request.url).pathname.endsWith("/fork")) {
+      forkRequests.push(request);
+      return json({
+        ...acpThread,
+        thread_id: "acp-forked",
+        title: "ACP 1 (2)",
+      });
+    }
+    return fetchOriginal(input, init);
+  });
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for ACP 1" }),
+  );
+  await user.click(await screen.findByRole("menuitem", { name: "Fork chat" }));
+  await waitFor(() => expect(forkRequests).toHaveLength(1));
+  expect(new URL(forkRequests[0]!.url).pathname).toBe(
+    "/api/threads/ACP%201/fork",
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current route").textContent).toBe(
+      "/threads/acp-forked",
+    ),
+  );
+});
+
 it("orders chats locally without navigating or writing server metadata, and restores touch order on reset", async () => {
   const mounted = mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));

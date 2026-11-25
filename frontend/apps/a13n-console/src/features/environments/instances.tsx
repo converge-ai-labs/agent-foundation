@@ -34,7 +34,7 @@ import {
   Loading,
   Timestamp,
 } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
+import { FormActions, SchemaFields } from "../../shared/forms";
 import { object } from "../../shared/forms/schema-definition";
 import { ProviderIcon } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
@@ -47,6 +47,7 @@ import {
 } from "./api";
 import instanceStyles from "./environments.module.css";
 import { creationNotice } from "./creation-progress";
+import { useEnvironmentTypes } from "./providers";
 import { MapFields } from "./map-fields";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
@@ -340,6 +341,8 @@ function EnvironmentForm({
       ),
   });
   const [volumeMounts, setVolumeMounts] = useState<Record<string, string>>();
+  const [volumes, setVolumes] =
+    useState<Schema["RecipeOverrides"]["volumes"]>();
   const [metricsSource, setMetricsSource] = useState("");
   const [kind, setKind] = useState("managed"),
     [name, setName] = useState(""),
@@ -362,6 +365,19 @@ function EnvironmentForm({
         .then(data),
   });
   const isE2B = selectedProvider.data?.type === "e2b";
+  const providerType = selectedProvider.data?.type;
+  const hasVolumeList =
+    kind === "managed" &&
+    (providerType === "daytona" ||
+      providerType === "modal" ||
+      (providerType === "boxd" &&
+        !selectedTemplate?.config?.recipe?.from_snapshot));
+  const providerTypes = useEnvironmentTypes(hasVolumeList);
+  const recipeSchema = providerTypes.data?.items.find(
+    (item) => item.type === providerType,
+  )?.environment_schema;
+  const volumesField =
+    object(recipeSchema?.properties) && recipeSchema.properties.volumes;
   const templateMounts = selectedTemplate?.config?.recipe?.volume_mounts;
   const notice = creationNotice(
     selectedProvider.data?.type,
@@ -377,6 +393,10 @@ function EnvironmentForm({
           ...(isE2B &&
             volumeMounts && {
               recipe_overrides: { volume_mounts: volumeMounts },
+            }),
+          ...(hasVolumeList &&
+            volumes && {
+              recipe_overrides: { volumes },
             }),
           metrics_data_source_id: metricsSource || null,
           ...named,
@@ -469,6 +489,7 @@ function EnvironmentForm({
             onValueChange={(next) => {
               setTemplateId(next);
               setVolumeMounts(undefined);
+              setVolumes(undefined);
             }}
             groups={[{ label: t("Templates"), options: templateOptions }]}
           />
@@ -516,6 +537,22 @@ function EnvironmentForm({
           requireValue
           value={volumeMounts ?? (object(templateMounts) ? templateMounts : {})}
           onChange={setVolumeMounts}
+        />
+      )}
+      {hasVolumeList && <ErrorNotice error={providerTypes.error} />}
+      {hasVolumeList && object(volumesField) && (
+        <SchemaFields
+          key={templateId}
+          schema={{
+            properties: { volumes: volumesField },
+            $defs: recipeSchema?.$defs,
+          }}
+          value={{
+            volumes: volumes ?? selectedTemplate?.config?.recipe?.volumes,
+          }}
+          onChange={(next) =>
+            setVolumes(next.volumes as Schema["RecipeOverrides"]["volumes"])
+          }
         />
       )}
       {kind === "managed" && notice && <p role="note">{t(notice)}</p>}

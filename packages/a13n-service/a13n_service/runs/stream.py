@@ -31,6 +31,7 @@ from typing import Any, Literal
 
 from a13n_logging import exception_details, get_logger
 from a13n_stream_protocol.display import MAX_FIELD_CHARS, DisplayContinuation, Item, ItemRef
+from a13n_stream_protocol.interactions import McpElicitation, PendingInteractions
 from pydantic import BaseModel
 from pydantic.json_schema import JsonSchemaMode, models_json_schema
 from redis.asyncio import Redis
@@ -53,6 +54,7 @@ from a13n_service.runs.session_state import states as thread_states
 from a13n_service.runs.session_state import versions as thread_versions
 from a13n_service.runs.sessions import find_session
 from a13n_service.runs.tables import AttemptRow, RunItemPageRow, RunRow
+from a13n_service.runs.tool_executions import mcp as mcp_inputs
 from a13n_service.settings import Settings
 from a13n_service.tenancy.access import Authenticated, workspace_scope
 
@@ -131,7 +133,7 @@ class AppReady(BaseModel):
     apps: list[AppReference]
 
 
-type FrameName = Literal["thread", "items", "delta", "app_ready", "gap", "schedule", "occurrence"]
+type FrameName = Literal["thread", "items", "delta", "app_ready", "gap", "schedule", "occurrence", "interactions"]
 # The SSE `event` name of each frame and the model of its `data`.
 FRAMES: dict[FrameName, type[BaseModel]] = {
     "thread": ThreadState,
@@ -141,6 +143,7 @@ FRAMES: dict[FrameName, type[BaseModel]] = {
     "gap": Gap,
     "schedule": observation.ScheduleEvent,
     "occurrence": observation.OccurrenceEvent,
+    "interactions": PendingInteractions,
 }
 
 
@@ -277,6 +280,7 @@ class Update:
 @dataclass(frozen=True, slots=True)
 class StateFrame:
     frame: str
+    human_only: bool = False
 
 
 class Close:
@@ -326,6 +330,7 @@ def _size(signal: Signal) -> int:
 @dataclass(eq=False)
 class Watched:
     frames: dict[str, str] = field(default_factory=dict)
+    interactions: dict[str, str] = field(default_factory=dict)
     readers: set[Reader] = field(default_factory=set)
     threads: dict[str, Watch] = field(default_factory=dict)
 
@@ -379,7 +384,7 @@ class SessionHub:
             return (
                 dict(watched.threads),
                 {thread_id: self.cursors[stream_key(thread_id)] for thread_id in watched.threads},
-                list(watched.frames.values()),
+                list(watched.frames.values()) + (list(watched.interactions.values()) if _human(reader) else []),
             )
 
     def leave(self, reader: Reader) -> None:
@@ -411,8 +416,9 @@ class SessionHub:
             snapshot = (await observation.snapshots(session, [scope])).get(scope)
             versions = await thread_versions(session, [(scope.workspace_id, scope.session_id)])
             states = await thread_states(session, [version.thread_id for version in versions])
+            inputs = await mcp_inputs.pending(session, thread_ids=list(states))
         cursors = await asyncio.gather(*(self._cursor(version.thread_id) for version in versions))
-        watched = self.sessions[scope] = Watched(frames=_metadata(snapshot))
+        watched = self.sessions[scope] = Watched(frames=_metadata(snapshot), interactions=_interactions(inputs))
         for version, cursor in zip(versions, cursors, strict=True):
             watched.threads[version.thread_id] = version.watch(_frame("thread", states[version.thread_id]))
             self._add(version.thread_id, scope, cursor)
@@ -495,6 +501,7 @@ class SessionHub:
                     if (watch := sessions[scope].threads.get(version.thread_id)) is None or watch.key != version.key
                 }
                 states = await thread_states(session, list(changed)) if changed else {}
+                inputs = _interactions(await mcp_inputs.pending(session, thread_ids=[v.thread_id for v in versions]))
                 readable: dict[tuple[str, str], bool] = {}
                 for reader in readers:
                     key = (reader.credential.credential_id, reader.workspace_id)
@@ -517,6 +524,14 @@ class SessionHub:
                 metadata = _metadata(snapshots.get(scope))
                 updates.extend(StateFrame(frame) for key, frame in metadata.items() if watched.frames.get(key) != frame)
                 watched.frames = metadata
+                current = {v.thread_id: inputs[v.thread_id] for v in scoped[scope] if v.thread_id in inputs}
+                for thread_id in watched.interactions.keys() | current.keys():
+                    if watched.interactions.get(thread_id) != current.get(thread_id):
+                        frame = current.get(thread_id) or _frame(
+                            "interactions", PendingInteractions(thread_id=thread_id, requests=())
+                        )
+                        updates.append(StateFrame(frame, human_only=True))
+                watched.interactions = current
                 for version in scoped[scope]:
                     frame = _frame("thread", states[version.thread_id]) if version.thread_id in states else None
                     cursor = new.get(version.thread_id)
@@ -645,6 +660,20 @@ async def open_stream(
     return Reader(credential, scope.workspace_id, found.id)
 
 
+def _human(reader: Reader) -> bool:
+    return reader.credential.platform is None and reader.credential.principal.kind == "user"
+
+
+def _interactions(inputs: list[McpElicitation]) -> dict[str, str]:
+    threads: dict[str, list[McpElicitation]] = {}
+    for item in inputs:
+        threads.setdefault(item.thread_id, []).append(item)
+    return {
+        thread_id: _frame("interactions", PendingInteractions(thread_id=thread_id, requests=tuple(items)))
+        for thread_id, items in threads.items()
+    }
+
+
 def _metadata(snapshot: observation.Snapshot | None) -> dict[str, str]:
     if snapshot is None:
         return {}
@@ -655,7 +684,7 @@ def _metadata(snapshot: observation.Snapshot | None) -> dict[str, str]:
 
 
 def _frame(event: FrameName, data: BaseModel) -> str:
-    return f"event: {event}\ndata: {data.model_dump_json()}\n\n"
+    return f"event: {event}\ndata: {data.model_dump_json(by_alias=True)}\n\n"
 
 
 def _items_frames(base: _Base) -> list[str]:
@@ -712,7 +741,7 @@ class _Connection:
 
     async def handle(self, signal: StreamEntry | Update | StateFrame) -> list[str]:
         if isinstance(signal, StateFrame):
-            return [signal.frame]
+            return [signal.frame] if not signal.human_only or _human(self.reader) else []
         if isinstance(signal, StreamEntry):
             frames = self.entry(signal)
             run_id = signal.fields["run_id"]

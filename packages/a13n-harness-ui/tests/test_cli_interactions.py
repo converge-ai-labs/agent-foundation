@@ -690,15 +690,10 @@ def test_approval_panel_handles_omitted_arguments_without_losing_reason_or_choic
     assert "1. Deny" in text and "Approval is unavailable" in text
 
 
-@pytest.mark.parametrize("theme_name", ["dark", "light"])
-def test_approval_panel_uses_styled_sections_and_code_not_a_metadata_dump(theme_name) -> None:
-    import json
-
+def test_approval_panel_shows_risk_and_command_without_exposing_metadata() -> None:
     from a13n_harness_ui.interactive.approvals import approval_panel
     from a13n_harness_ui.interactive.theme import resolve_theme
-    from rich.console import Group
-    from rich.syntax import Syntax
-    from rich.text import Text
+    from rich.console import Console
 
     metadata = {
         "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
@@ -709,14 +704,13 @@ def test_approval_panel_uses_styled_sections_and_code_not_a_metadata_dump(theme_
     source = interaction.display_prompt()
     assert "details-only" not in source and "invocation-policy" not in source
     assert json.loads(source)["reason"] == "Deletes a report"
-    panel = approval_panel(source, resolve_theme(theme_name))
-    assert isinstance(panel.renderable, Group)
-    sections = list(panel.renderable.renderables)
-    code = [part for part in sections if isinstance(part, Syntax)]
-    assert len(code) == 1 and code[0].code == "rm report.txt"
-    risk = next(part for part in sections if isinstance(part, Text) and part.plain.startswith("Risk "))
-    assert "HIGH" in risk.plain and any("bold" in str(span.style) for span in risk.spans)
-    assert not any(isinstance(part, Text) and "Approve once" in part.plain for part in sections)
+    console = Console(width=100, color_system=None)
+    with console.capture() as capture:
+        console.print(approval_panel(source, resolve_theme("dark")))
+    text = " ".join(capture.get().split())
+    assert "Risk HIGH" in text and "Reason Deletes a report" in text
+    assert "Command" in text and "rm report.txt" in text
+    assert "Approve once" not in text
     assert interaction.request.metadata == metadata
 
 

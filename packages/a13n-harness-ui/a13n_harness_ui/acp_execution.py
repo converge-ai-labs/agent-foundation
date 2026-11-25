@@ -23,7 +23,7 @@ from a13n_harness.acp import (
     SteeringOutcome,
 )
 from a13n_harness.capabilities.context import restored_history_summary
-from a13n_harness.content import ContentItem, content_items, request_input_content
+from a13n_harness.content import ContentItem, content_items, input_request, request_input_content
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.commands import ArgvCommand, CommandRequest
 from a13n_harness.events import input_events
@@ -49,7 +49,6 @@ from pydantic_ai.messages import (
     ModelResponse,
     TextPart,
     ToolReturnPart,
-    UserPromptPart,
 )
 from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
@@ -102,7 +101,7 @@ def _prior_conversation(history: Sequence[ModelMessage], session: AcpSessionStat
             remaining -= len(line) + 1
             if remaining <= 0:
                 break
-    if summary:
+    if summary and remaining > 0:
         lines.append("Earlier conversation: " + escape(summary[: min(1800, remaining)])[:remaining])
     if not lines:
         return ()
@@ -315,9 +314,14 @@ class AcpTurn(AbstractHarnessPlugin):
         if self.saved is not None and self.saved.session_id is None:
             if self.saved.digest == acp_options_scope(self.resource, self.setup.cwd):
                 saved = self.saved
-            elif not self.prewarm:
+            elif saved is None and not self.prewarm:
                 raise AcpError("acp_option_invalid", "The ACP Agent or workspace changed. Select its options again.")
-        if saved is None and legacy is not None and legacy.digest == self.digest:
+        if (
+            saved is None
+            and legacy is not None
+            and legacy.digest == self.digest
+            and legacy.thread_id in {None, context.thread_id}
+        ):
             saved = legacy
         saved_id = saved.session_id if saved is not None else None
         pending: list[dict[str, Any]] = []
@@ -342,7 +346,7 @@ class AcpTurn(AbstractHarnessPlugin):
             interactive=self.inputs is not None and not context.unattended,
         ) as (runtime, bridge):
             blocks: list[PromptBlock] = []
-            authored = []
+            authored: list[ContentItem] = []
             prompt_capabilities = runtime.capabilities.prompt_capabilities or schema.PromptCapabilities()
             for item in content_items(exchange.input.value) if exchange.input.value is not None else ():
                 value = item.value
@@ -356,7 +360,8 @@ class AcpTurn(AbstractHarnessPlugin):
                     raise AcpError("acp_input_unsupported", "The external Agent cannot accept this attachment.")
                 blocks.append(block)
                 if item.metadata.display:
-                    authored.append(value)
+                    authored.append(item)
+            user_message = replace(input_request(authored), run_id=context.run_id)
             # The external agent runs its own model loop. This RunContext only
             # binds Host capabilities and never invokes a native model.
             run_context = RunContext(
@@ -364,7 +369,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 model=None,  # pyright: ignore[reportArgumentType]
                 usage=RunUsage(),
                 run_id=context.run_id,
-                messages=[*previous.message_history, ModelRequest(parts=[UserPromptPart(content=authored)])],
+                messages=[*previous.message_history, user_message],
             )
             capabilities = self.capabilities
             if self.shell_review is not None and not self.prewarm:
@@ -442,6 +447,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 commands = acp_commands(runtime)
                 active = AcpSessionState(
                     digest=self.digest,
+                    thread_id=context.thread_id,
                     session_id=session_id,
                     prompted=saved is not None and saved.prompted,
                     commands=commands if commands is not None else (saved.commands if saved else ()),
@@ -559,7 +565,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 cancelled = response.stop_reason == "cancelled"
                 output = transcript.last_text or None
                 history = previous.message_history
-                messages = (*history, ModelRequest(parts=[UserPromptPart(content=authored)], run_id=context.run_id))
+                messages = (*history, user_message)
                 if output:
                     messages = (*messages, ModelResponse(parts=[TextPart(content=output)], run_id=context.run_id))
                 if prompted_this_turn:

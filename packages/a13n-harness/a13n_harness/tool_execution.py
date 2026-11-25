@@ -23,6 +23,7 @@ from pydantic_ai.exceptions import ModelRetry, ToolFailed
 from a13n_harness._retained_scope import RetainedScope as RetainedScope
 from a13n_harness.environment.process_recovery import ShellExecutionState
 from a13n_harness.execution_identity import format_execution_header
+from a13n_harness.mcp_task_state import McpTaskExecutionState as McpTaskExecutionState
 from a13n_harness.tools.diagnostics import system_error, system_failure, tool_error_text
 
 _OWNED_TOOL_EXECUTION: contextvars.ContextVar[bool] = contextvars.ContextVar("a13n_owned_tool_execution", default=False)
@@ -102,6 +103,7 @@ class StoredToolExecution:
     artifacts: tuple[ToolExecutionArtifact, ...] = ()
     retry_prompt: str | None = None
     shell: ShellExecutionState | None = None
+    mcp_task: McpTaskExecutionState | None = None
 
 
 class ToolExecutionLost(ToolFailed):
@@ -245,6 +247,16 @@ def current_execution() -> ToolExecutionRecord | None:
     return _CURRENT_TOOL_EXECUTION.get()
 
 
+_CURRENT_RUNTIME: contextvars.ContextVar[ToolExecutionRuntime | None] = contextvars.ContextVar(
+    "a13n_current_tool_execution_runtime", default=None
+)
+
+
+def current_execution_runtime() -> ToolExecutionRuntime | None:
+    """Resolve the execution's Host owner for protocol checkpoint callbacks."""
+    return _CURRENT_RUNTIME.get()
+
+
 _EXECUTION_CLEANUP: contextvars.ContextVar[bool] = contextvars.ContextVar("a13n_execution_cleanup", default=False)
 
 
@@ -280,8 +292,11 @@ class _LiveExecution:
     resource: object | None = None
     resource_context: contextvars.Context | None = None
     shell: ShellExecutionState | None = None
+    mcp_task: McpTaskExecutionState | None = None
+    mcp_handoff_requested: bool = False
     yield_requested: bool = False
     published: StoredToolExecution | None = None
+    mcp_input_ready: asyncio.Event = field(default_factory=asyncio.Event)
     admitted: asyncio.Event = field(default_factory=asyncio.Event)
     store_context: contextvars.Context = field(default_factory=contextvars.copy_context)
 
@@ -303,6 +318,7 @@ class ToolExecutionRuntime:
         max_active: int = 64,
         on_completed: Callable[[ToolExecutionRecord], None] | None = None,
         reports_background_completions: bool = False,
+        handoff_mcp_tasks: bool = False,
     ) -> None:
         if max_active < 1:
             raise ValueError("max_active must be positive")
@@ -310,6 +326,7 @@ class ToolExecutionRuntime:
         self._max_active = max_active
         self._on_completed = on_completed
         self.reports_background_completions = reports_background_completions
+        self._handoff_mcp_tasks = handoff_mcp_tasks
         self._live: dict[str, _LiveExecution] = {}
         self._rejected = MemoryToolExecutionStore()
         self._closing = False
@@ -391,6 +408,7 @@ class ToolExecutionRuntime:
         release_ownership: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         artifacts: list[ToolExecutionArtifact] = []
+        runtime_token = _CURRENT_RUNTIME.set(self)
         owned_token = _OWNED_TOOL_EXECUTION.set(True)
         record_token = _CURRENT_TOOL_EXECUTION.set(live.record)
         artifacts_token = _TOOL_EXECUTION_ARTIFACTS.set(artifacts)
@@ -405,6 +423,7 @@ class ToolExecutionRuntime:
             _TOOL_EXECUTION_ARTIFACTS.reset(artifacts_token)
             _CURRENT_TOOL_EXECUTION.reset(record_token)
             _OWNED_TOOL_EXECUTION.reset(owned_token)
+            _CURRENT_RUNTIME.reset(runtime_token)
         # Host callbacks may start another Run. They must not inherit this
         # invocation's ownership, resource attachment or artifact collection.
         if self._on_completed is not None and live.record.terminal:
@@ -430,17 +449,17 @@ class ToolExecutionRuntime:
         yielded = False
         try:
             try:
-                await self.store.save(StoredToolExecution(live.record, shell=live.shell))
+                await self.store.save(StoredToolExecution(live.record, shell=live.shell, mcp_task=live.mcp_task))
                 live.admitted.set()
             except ToolExecutionAdmissionRejected:
                 rejected = True
                 raise
-            if live.record.cancel_requested and live.shell is None:
+            if live.record.cancel_requested and live.shell is None and live.mcp_task is None:
                 raise asyncio.CancelledError
             await slot.wait()
             await self.before_dispatch(live.record, sequential=slot.sequential)
             live.record = live.record.model_copy(update={"status": "running"})
-            await self.store.save(StoredToolExecution(live.record, shell=live.shell))
+            await self.store.save(StoredToolExecution(live.record, shell=live.shell, mcp_task=live.mcp_task))
             result = await operation()
             status = "succeeded"
         except asyncio.CancelledError:
@@ -522,6 +541,7 @@ class ToolExecutionRuntime:
             tuple(artifacts) if status == "succeeded" else (),
             retry_prompt=retry_prompt,
             shell=live.shell,
+            mcp_task=live.mcp_task,
         )
         try:
             store = self._rejected if rejected else self.store
@@ -562,6 +582,29 @@ class ToolExecutionRuntime:
             raise
         live.shell = state
 
+    async def checkpoint_mcp_task(self, state: McpTaskExecutionState) -> None:
+        """Store the remote handle before waiting or relinquishing ownership."""
+        record = current_execution()
+        if record is None or (live := self._live.get(record.execution_id)) is None:
+            raise RuntimeError("No active execution owns this checkpoint")
+        await self.store.save(StoredToolExecution(live.record, mcp_task=state))
+        live.mcp_task = state
+        live.recovering = False
+        if self._handoff_mcp_tasks and state.status == "input_required":
+            live.mcp_input_ready.set()
+        if live.mcp_handoff_requested:
+            self._park_mcp_task(live)
+
+    def _park_mcp_task(self, live: _LiveExecution) -> None:
+        """Return a released remote call to Host recovery without cancelling it."""
+        if live.mcp_task is None or live.releasing or live.record.cancel_requested:
+            return
+        live.yield_requested = True
+        if current_execution() is not None and asyncio.current_task() is live.task:
+            raise ToolExecutionSuspended
+        if live.task is not None:
+            live.task.cancel()
+
     async def _spill_tool_result(self, data: bytes, *, suffix: str) -> str:
         """Retain recovered output without requiring a live Run's file area."""
         artifacts = _TOOL_EXECUTION_ARTIFACTS.get()
@@ -586,7 +629,9 @@ class ToolExecutionRuntime:
                 "result_available": True,
             }
         )
-        saved = StoredToolExecution(terminal, result, tuple(_TOOL_EXECUTION_ARTIFACTS.get() or ()), shell=live.shell)
+        saved = StoredToolExecution(
+            terminal, result, tuple(_TOOL_EXECUTION_ARTIFACTS.get() or ()), shell=live.shell, mcp_task=live.mcp_task
+        )
         try:
             await self.store.save(saved)
             if live.record.foreground_released and not terminal.foreground_released:
@@ -630,7 +675,13 @@ class ToolExecutionRuntime:
     def yield_recoverable(self) -> None:
         """Relinquish native supervision; explicit cancellation always takes precedence."""
         for execution_id in tuple(self._live):
-            self.yield_shell(execution_id)
+            if self.yield_shell(execution_id):
+                continue
+            live = self._live[execution_id]
+            if live.mcp_task is not None and not live.releasing and not live.record.cancel_requested:
+                live.yield_requested = True
+                if live.task is not None:
+                    live.task.cancel()
 
     async def relinquish(self) -> None:
         """Yield native supervisors and cancel their readers before joining cleanup."""
@@ -645,12 +696,34 @@ class ToolExecutionRuntime:
         release_ownership: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         """Resume without a foreground waiter; release ownership after publication."""
+        if execution.shell is None:
+            raise ValueError("Missing native Shell recovery state")
+        self._resume(execution, operation, release_ownership)
+
+    def resume_mcp_task(
+        self,
+        execution: StoredToolExecution,
+        operation: Callable[[], Awaitable[Any]],
+        *,
+        release_ownership: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        """Regain supervision of a remote handle without repeating tools/call."""
+        if execution.mcp_task is None:
+            raise ValueError("Missing MCP task recovery state")
+        self._resume(execution, operation, release_ownership)
+
+    def _resume(
+        self,
+        execution: StoredToolExecution,
+        operation: Callable[[], Awaitable[Any]],
+        release_ownership: Callable[[], Awaitable[None]] | None,
+    ) -> None:
         record = execution.record.model_copy(update={"foreground_released": True})
-        if record.terminal or execution.shell is None:
-            raise ValueError("Only unfinished native Shell executions can resume")
+        if record.terminal:
+            raise ValueError("Only unfinished executions can resume")
         if self._closing or record.execution_id in self._live or len(self._live) >= self._max_active:
             raise ToolFailed("Tool execution runtime cannot accept recovered supervision.")
-        live = _LiveExecution(record=record, shell=execution.shell, recovering=True)
+        live = _LiveExecution(record=record, shell=execution.shell, mcp_task=execution.mcp_task, recovering=True)
         self._live[record.execution_id] = live
         # This operation already started before any newly queued invocation.
         # Track its completion for future calls without waiting on later barriers.
@@ -724,6 +797,9 @@ class ToolExecutionRuntime:
             store.release_foreground(thread_id, execution_id),
             context=live.store_context.copy() if live is not None else None,
         )
+        if live is not None and self._handoff_mcp_tasks:
+            live.mcp_handoff_requested = True
+            self._park_mcp_task(live)
         if live is None and self._on_completed is not None:
             saved = await store.get(thread_id, execution_id)
             if saved is not None and saved.record.terminal:
@@ -737,18 +813,32 @@ class ToolExecutionRuntime:
 
     async def result(self, thread_id: str, execution_id: str) -> StoredToolExecution | None:
         if (live := self._live.get(execution_id)) is not None:
-            return StoredToolExecution(live.record, shell=live.shell) if live.record.thread_id == thread_id else None
+            return (
+                StoredToolExecution(live.record, shell=live.shell, mcp_task=live.mcp_task)
+                if live.record.thread_id == thread_id
+                else None
+            )
         return await self._rejected.get(thread_id, execution_id) or await self.store.get(thread_id, execution_id)
 
     async def wait(
-        self, thread_id: str, execution_id: str, *, timeout_seconds: float | None = None
+        self, thread_id: str, execution_id: str, *, timeout_seconds: float | None = None, foreground: bool = False
     ) -> StoredToolExecution | None:
         live = self._live.get(execution_id)
         if live is not None and live.record.thread_id == thread_id and live.task is not None:
             # asyncio.wait does not cancel the owned task on expiry or caller cancellation.
-            await asyncio.wait({live.task}, timeout=timeout_seconds)
+            if foreground and self._handoff_mcp_tasks:
+                input_ready = asyncio.create_task(live.mcp_input_ready.wait())
+                try:
+                    await asyncio.wait(
+                        {live.task, input_ready}, timeout=timeout_seconds, return_when=asyncio.FIRST_COMPLETED
+                    )
+                finally:
+                    input_ready.cancel()
+                    await asyncio.gather(input_ready, return_exceptions=True)
+            else:
+                await asyncio.wait({live.task}, timeout=timeout_seconds)
             if not live.task.done():
-                return StoredToolExecution(live.record, shell=live.shell)
+                return StoredToolExecution(live.record, shell=live.shell, mcp_task=live.mcp_task)
             live.task.result()
         return await self.result(thread_id, execution_id)
 

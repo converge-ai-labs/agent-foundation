@@ -14,6 +14,7 @@ import {
 } from "../../../shared/api";
 import { ErrorNotice, Loading, Timestamp } from "../../../shared/feedback";
 import { conversationQueries } from "../api";
+import { useDesktopLeaseActivity } from "./use-desktop-lease-activity";
 import styles from "./environment-desktop.module.css";
 
 /** The panel belongs to the Thread, independently of Run status. */
@@ -441,6 +442,28 @@ export function EnvironmentDesktop({
     control?.control === "human" &&
     !!control.expires_at &&
     Date.parse(control.expires_at) > Date.now();
+  const expiring = useDesktopLeaseActivity({
+    screen,
+    expiresAt:
+      human && connected && mode === "control" ? control.expires_at : null,
+    generation,
+    episode,
+    renew: () => {
+      const current = authority.current;
+      const grant = currentViewer.current;
+      if (
+        busy ||
+        !current ||
+        !grant ||
+        grant.mode !== "control" ||
+        !rfb.current ||
+        rfb.current.viewOnly ||
+        !permitsViewer(current, grant, actorId)
+      )
+        return;
+      void command("renew");
+    },
+  });
   return (
     <div className={styles.panel}>
       <ErrorNotice
@@ -480,6 +503,13 @@ export function EnvironmentDesktop({
                 control.control === "automation"
                   ? "Could not take control. You can try again."
                   : "Desktop control failed. Returning control automatically.",
+              )}
+            </p>
+          )}
+          {expiring && (
+            <p role="status" className={styles.hint}>
+              {t(
+                "Desktop control expires soon. Use the desktop or renew control to continue.",
               )}
             </p>
           )}

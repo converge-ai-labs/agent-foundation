@@ -97,6 +97,7 @@ jobs:
       client: ${{ steps.filter.outputs.client }}
       daemon: ${{ steps.filter.outputs.daemon }}
       protocol: ${{ steps.filter.outputs.protocol }}
+      size: ${{ steps.filter.outputs.size }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -122,10 +123,22 @@ jobs:
               - 'spec/a13n-envd/07-execution-isolation.md'
               - 'proto/a13n-envd/eip/**'
               - 'Cargo.toml'
-              - 'scripts/envd_size.py'
               - 'Cargo.lock'
               - 'pyproject.toml'
               - 'uv.lock'
+            size:
+              - '.github/workflows/ci-a13n-envd.yml'
+              - '.github/workflows/release-a13n-envd.yml'
+              - 'scripts/envd_size.py'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              # Release binary build inputs only; tests, docs, Python locks, and the Swift launcher do not affect binary size.
+              - 'crates/a13n-envd/Cargo.toml'
+              - 'crates/a13n-envd/build.rs'
+              - 'crates/a13n-envd/build_support/**'
+              - 'crates/a13n-envd/src/**'
+              - 'crates/a13n-envd/protocol/**'
+              - 'proto/a13n-envd/eip/**'
             client:
               - '.github/workflows/ci-a13n-envd.yml'
               - 'Makefile'
@@ -558,7 +571,7 @@ jobs:
   size:
     name: Envd release size (${{ matrix.target }}, ${{ matrix.envd-variant }})
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true'
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.size == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     env:
@@ -680,7 +693,7 @@ jobs:
           SIZE_RESULT: ${{ needs.size.result }}
           PROTOCOL_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.protocol == 'true' }}
           CLIENT_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true' }}
-          SIZE_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true' }}
+          SIZE_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.size == 'true' }}
           DAEMON_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true' }}
         run: |
           test "$CHANGES_RESULT" = success

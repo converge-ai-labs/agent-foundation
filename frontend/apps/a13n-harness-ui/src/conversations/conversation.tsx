@@ -1130,7 +1130,9 @@ function ConversationContent({
                       thread.role === "ordinary" &&
                       !thread.parent_thread_id &&
                       !thread.memory_scope &&
-                      thread.configuration.agent_source.kind === "agent" &&
+                      (thread.configuration.agent_source.kind === "agent" ||
+                        thread.configuration.agent_source.kind ===
+                          "acp_agent") &&
                       !thread.archived
                     }
                     active={

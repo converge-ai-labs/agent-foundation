@@ -216,7 +216,7 @@ async def test_concurrent_cold_programs_initialize_one_pool_without_serializing_
     monkeypatch.setattr(codeact_runtime, "AsyncMonty", pool)
     state = CodeActRunState(CodeActConfig())
 
-    async def dispatch(name, kwargs, ordinal):
+    async def dispatch(name, kwargs, ordinal, argument_bytes):
         entered[kwargs["label"]].set()
         await finish.wait()
         return kwargs["label"]
@@ -228,6 +228,7 @@ async def test_concurrent_cold_programs_initialize_one_pool_without_serializing_
             inputs={"inputs": {"label": label}},
             dispatch=dispatch,
             admit=AsyncMock(return_value=1),
+            prepare_args=AsyncMock(return_value=0),
             release=AsyncMock(),
             valid_names={"hold"},
             sequential_names=set(),
@@ -324,3 +325,139 @@ async def test_cross_step_busy_inline_restart_preserves_the_active_feed():
     finally:
         finish.set()
         await runtime.close()
+
+
+@pytest.mark.parametrize("mode", ["parallel", "limited", "global", "barrier"])
+async def test_monty_tasks_wait_for_first_host_result_with_ordering_limits(mode):
+    state = CodeActRunState(CodeActConfig(max_concurrency=1 if mode == "limited" else 2))
+    first_result = asyncio.Event()
+    first_started = asyncio.Event()
+    second_started = asyncio.Event()
+    signal_admitted = asyncio.Event()
+    signal_started = asyncio.Event()
+    marker = asyncio.Event()
+    order = []
+    ordinals = iter((1, 2, 3))
+    released: list[int] = []
+
+    async def admit(name):
+        if name == "signal":
+            signal_admitted.set()
+        return next(ordinals)
+
+    async def release(ordinal):
+        released.append(ordinal)
+
+    async def dispatch(name, kwargs, ordinal, argument_bytes):
+        order.append(name)
+        if name == "first":
+            first_started.set()
+            await first_result.wait()
+        elif name == "second":
+            second_started.set()
+            await marker.wait()
+        else:
+            signal_started.set()
+            marker.set()
+        return name
+
+    code = """
+import asyncio
+async def one():
+    return await first()
+async def two():
+    return await second()
+a = asyncio.create_task(one())
+b = asyncio.create_task(two())
+done, pending = await asyncio.wait([a, b], return_when=asyncio.FIRST_COMPLETED, timeout=5)
+print("first wait settled")
+count = len(done)
+await signal()
+await asyncio.wait(pending)
+[count, a.result(), b.result()]
+"""
+    task = asyncio.create_task(
+        state.execute_program(
+            code,
+            script_name="wait.codeact.py",
+            inputs={},
+            dispatch=dispatch,
+            admit=admit,
+            prepare_args=AsyncMock(return_value=0),
+            release=release,
+            valid_names={"first", "second", "signal"},
+            sequential_names={"second"} if mode == "barrier" else set(),
+            global_sequential=mode == "global",
+        )
+    )
+    try:
+        await asyncio.wait_for(first_started.wait(), 5)
+        if mode == "parallel":
+            await asyncio.wait_for(second_started.wait(), 5)
+            first_result.set()
+        else:
+            assert not second_started.is_set()
+            first_result.set()
+            await asyncio.wait_for(second_started.wait(), 5)
+            await asyncio.wait_for(signal_admitted.wait(), 5)
+            # In limited, global, and barrier modes, signal must wait for second to finish.
+            assert not signal_started.is_set()
+            assert 1 in released
+            marker.set()
+        result = await asyncio.wait_for(task, 5)
+        assert result.completed.output == [1, "first", "second"]
+        assert result.printed == "first wait settled\n"
+        assert order == ["first", "second", "signal"]
+        assert sorted(released) == [1, 2, 3]
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await state.close()
+
+
+@pytest.mark.parametrize("mode", ["parallel", "limited", "global", "barrier"])
+async def test_monty_wait_timeout_does_not_join_pending_host_calls(mode):
+    state = CodeActRunState(CodeActConfig(max_concurrency=1 if mode == "limited" else 2))
+    started: list[str] = []
+    cancelled: list[str] = []
+
+    async def dispatch(name, kwargs, ordinal, argument_bytes):
+        started.append(name)
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.append(name)
+
+    release = AsyncMock()
+    try:
+        result = await asyncio.wait_for(
+            state.execute_program(
+                """
+import asyncio
+async def first():
+    return await hold()
+async def second():
+    return await other()
+a = asyncio.create_task(first())
+b = asyncio.create_task(second())
+done, pending = await asyncio.wait([a, b], timeout=0.1)
+[len(done), len(pending)]
+""",
+                script_name="timeout.codeact.py",
+                inputs={},
+                dispatch=dispatch,
+                admit=AsyncMock(side_effect=[1, 2]),
+                prepare_args=AsyncMock(return_value=0),
+                release=release,
+                valid_names={"hold", "other"},
+                sequential_names={"other"} if mode == "barrier" else set(),
+                global_sequential=mode == "global",
+            ),
+            5,
+        )
+        assert result.completed.output == [0, 2]
+        assert started == (["hold", "other"] if mode == "parallel" else ["hold"])
+        assert sorted(cancelled) == sorted(started)
+        assert sorted(call.args[0] for call in release.await_args_list) == [1, 2]
+    finally:
+        await state.close()

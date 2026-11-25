@@ -9,7 +9,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("exposes the reader's scrollbar width to its fades", () => {
+it("keeps both fade edges and accounts for an attached reader's scrollbar", () => {
   let notify = () => {};
   const disconnect = vi.fn();
   vi.stubGlobal(
@@ -19,6 +19,14 @@ it("exposes the reader's scrollbar width to its fades", () => {
       return { observe: vi.fn(), disconnect };
     }),
   );
+  const fixed = render(<ReaderFades />);
+  const fixedFades =
+    fixed.container.querySelectorAll<HTMLElement>("[data-edge]");
+  expect(Array.from(fixedFades, (fade) => fade.dataset.edge)).toEqual([
+    "top",
+    "bottom",
+  ]);
+
   const reader = createRef<HTMLDivElement>();
   const view = render(
     <>
@@ -28,6 +36,10 @@ it("exposes the reader's scrollbar width to its fades", () => {
   );
   const element = reader.current!;
   const fades = view.container.querySelectorAll<HTMLElement>("[data-edge]");
+  expect(Array.from(fades, (fade) => fade.dataset.edge)).toEqual([
+    "top",
+    "bottom",
+  ]);
   Object.defineProperty(element, "offsetWidth", { value: 366 });
   const width = (client: number) => {
     Object.defineProperty(element, "clientWidth", {
@@ -46,12 +58,4 @@ it("exposes the reader's scrollbar width to its fades", () => {
     expect(fade.style.getPropertyValue("--reader-scrollbar")).toBe("0px");
   view.unmount();
   expect(disconnect).toHaveBeenCalledTimes(1);
-});
-
-it("leaves the fades on their default insets without a reader", () => {
-  const view = render(<ReaderFades />);
-  for (const fade of view.container.querySelectorAll<HTMLElement>(
-    "[data-edge]",
-  ))
-    expect(fade.style.getPropertyValue("--reader-scrollbar")).toBe("");
 });

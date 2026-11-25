@@ -60,6 +60,8 @@ it.each(["send", "steer"] as const)(
     // The authored text is readable as soon as Send starts preparing it, and it
     // must keep one node through admission so nothing remounts on the way in.
     const message = screen.getByText("Hello");
+    const title = action === "send" ? "Hello" : "Untitled chat";
+    expect(conversationTitle(undefined, [input])).toBe(title);
     expect(screen.queryByRole("status")).toBeNull();
     input.state = "pending";
     view.rerender(
@@ -71,6 +73,7 @@ it.each(["send", "steer"] as const)(
       />,
     );
     expect(screen.getByText("Hello")).toBe(message);
+    expect(conversationTitle(undefined, [input])).toBe(title);
     expect(screen.queryByRole("status")).toBeNull();
     const block = {
       id: "run:input:0",
@@ -128,15 +131,17 @@ it.each(["send", "steer"] as const)(
 );
 
 it("does not merge identical submissions with distinct source identities", () => {
+  const inputs = [local("first"), local("second")];
   render(
     <ConversationTranscript
       entries={[]}
       blocks={[]}
-      localInputs={[local("first"), local("second")]}
+      localInputs={inputs}
       threadId="one"
     />,
   );
   expect(screen.getAllByText("Hello")).toHaveLength(2);
+  expect(conversationTitle(undefined, inputs)).toBe("Hello");
 });
 
 it("keeps rejected and uncertain local input out of the transcript", () => {
@@ -158,28 +163,10 @@ it("keeps rejected and uncertain local input out of the transcript", () => {
   );
   expect(screen.queryByText("Try again")).toBeNull();
   expect(screen.queryByText("Inspect first")).toBeNull();
+  expect(conversationTitle(undefined, [rejected])).toBe("Untitled chat");
+  expect(conversationTitle(undefined, [unknown])).toBe("Untitled chat");
   expect(screen.queryByRole("status")).toBeNull();
 });
-
-it.each(["preparing", "pending", "accepted", "rejected", "unknown"] as const)(
-  "echoes local input in every state whose delivery is not the open question (%s)",
-  (state) => {
-    const input = { ...local(), state };
-    render(
-      <ConversationTranscript
-        entries={[]}
-        blocks={[]}
-        localInputs={[input]}
-        threadId="one"
-      />,
-    );
-    const echoed = state !== "rejected" && state !== "unknown";
-    expect(!!screen.queryByText("Hello")).toBe(echoed);
-    expect(conversationTitle(undefined, [input])).toBe(
-      echoed ? "Hello" : "Untitled chat",
-    );
-  },
-);
 
 it("preserves unchanged saved nodes across continuations but replaces changed history at the same position", () => {
   const entry = saved([{ kind: "thinking", text: "First plan" }]);

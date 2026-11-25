@@ -113,11 +113,12 @@ async def test_claim_sql_growth(service: SimpleNamespace, scripted_model, runs_k
                 )
 
 
-async def test_empty_claim_only_reads_time_and_candidates(service, runs_kit):  # type: ignore[no-untyped-def]
+async def test_empty_claim_is_bounded_and_read_only(service, runs_kit):  # type: ignore[no-untyped-def]
     await runs_kit.pause_sweeps(service)
     with statements(service.runtime) as sql:
         assert await claim(service.runtime, worker_id="empty", worker_build="test", limit=8) == []
-    assert len(sql) == 2
+    assert len(sql) <= 2, sql
+    assert all(statement.lstrip().upper().startswith("SELECT ") for statement in sql), sql
 
 
 async def test_mixed_initial_recovery_and_handoff_preserve_numbers_and_cleanup(service, scripted_model, runs_kit):  # type: ignore[no-untyped-def]

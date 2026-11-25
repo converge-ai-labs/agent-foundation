@@ -18,6 +18,7 @@ import { DebugPendingRun } from "./debug/run-section";
 import { useViewLevel } from "./debug/view";
 import { HistoryTranscript } from "./history";
 import { RunEntry } from "./run-entry";
+import { McpInputs } from "./mcp-inputs";
 import { RunDock, ThreadDock, type PendingMessage } from "./run-dock";
 import { useInteractiveThread } from "./run-actions";
 import { useTranscriptScroll } from "./use-transcript-scroll";
@@ -343,6 +344,8 @@ function RunBody({
       </div>
       <ThreadDock thread={thread} hidden={replacing}>
         <div inert={switching} className={styles.dockRun}>
+          {interactive && can("run") && <McpInputs threadId={thread.id} />}
+
           <RunDock
             key={runIds[0]}
             run={run}

@@ -80,7 +80,7 @@ async def setup(service, monkeypatch, runs_kit):
     )
     assert t.status_code == 201, t.text
 
-    async def create(base_image=None):
+    async def create(base_image=None, *, recipe_overrides=None):
         template = t
         if base_image is not None:
             template = await client.post(
@@ -92,13 +92,61 @@ async def setup(service, monkeypatch, runs_kit):
                 },
             )
             assert template.status_code == 201, template.text
-        r = await client.post("/api/v1/environments", json={"template_id": template.json()["id"]})
+        r = await client.post(
+            "/api/v1/environments",
+            json={"template_id": template.json()["id"], "recipe_overrides": recipe_overrides or {}},
+        )
         assert r.status_code == 201, r.text
         op = await lifecycle.claim(service.runtime, r.json()["id"], owner="test")
         assert op is not None and op.daytona_desktop_snapshot is not None
         return op
 
-    return SimpleNamespace(service=service, cloud=cloud, create=create)
+    return SimpleNamespace(service=service, cloud=cloud, create=create, provider_id=p.json()["id"])
+
+
+async def test_distinct_volumes_on_one_template_survive_replacement(setup):
+    from a13n_service.tenancy.access import principal_for
+    from a13n_service.tenancy.authorize import WorkspaceScope
+
+    runtime = setup.service.runtime
+    first, second = [
+        await setup.create(
+            recipe_overrides={"volumes": [{"volume_id": volume, "mount_path": "/data", "subpath": "jobs"}]}
+        )
+        for volume in ("first", "second")
+    ]
+    assert first.daytona_desktop_snapshot == second.daytona_desktop_snapshot
+    assert first.target.recipe["volumes"][0]["volume_id"] == "first"
+    mounts = [{"volume_id": "second", "mount_path": "/data", "subpath": "jobs"}]
+    assert second.target.recipe["volumes"] == mounts
+    async with transaction(runtime.storage) as session:
+        original = await session.get_one(EnvironmentRow, second.environment_id)
+        scope = WorkspaceScope(original.organization_id, original.workspace_id)
+        principal = await principal_for(session, runtime.access, original.created_by_id, confinement=scope)
+        replacement = await lifecycle.reserve(
+            session, principal, scope, original.template_id, limit=20, replaces=original
+        )
+        await lifecycle.begin(session, replacement, "creating")
+        identifier = replacement.id
+    op = await lifecycle.claim(runtime, identifier, owner="test")
+    assert op.target.recipe["volumes"] == mounts
+
+
+async def test_inherit_and_clear_template_volumes(setup):
+    client = setup.service.client
+    mounts = [{"volume_id": "shared", "mount_path": "/data", "subpath": "workspace"}]
+    template = await client.post(
+        "/api/v1/environment-templates",
+        json={"name": "Mounted", "provider_id": setup.provider_id, "config": {"recipe": {"volumes": mounts}}},
+    )
+    assert template.status_code == 201, template.text
+    for overrides, expected in [({}, mounts), ({"volumes": []}, [])]:
+        result = await client.post(
+            "/api/v1/environments", json={"template_id": template.json()["id"], "recipe_overrides": overrides}
+        )
+        assert result.status_code == 201, result.text
+        op = await lifecycle.claim(setup.service.runtime, result.json()["id"], owner="test")
+        assert op.target.recipe.get("volumes", []) == expected
 
 
 async def test_submit_poll_pin_and_reuse_before_allocation(setup, monkeypatch):

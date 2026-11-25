@@ -201,6 +201,7 @@ from a13n_harness_ui.live import (
     SummaryCursor,
     SummarySubscription,
 )
+from a13n_harness_ui.mcp_adapters import recover_mcp_task
 from a13n_harness_ui.mcp_apps.connections import Connections
 from a13n_harness_ui.mcp_apps.context import AppContext, AppContextReference, AppContextUpdate
 from a13n_harness_ui.mcp_apps.messages import AppMessageReceipt, AppMessageRequest
@@ -4607,7 +4608,16 @@ async def open_harness_ui_app(
                 resources.push_async_callback(mcp_operations.close)
 
             restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui" and automation_owned)
-            tool_executions = ToolExecutions(store.tool_executions, environments=environment_service)
+            tool_executions = ToolExecutions(
+                store.tool_executions,
+                environments=environment_service,
+                recover_mcp=partial(
+                    recover_mcp_task,
+                    mcp_connections,
+                    configuration_path.expanduser().resolve().parent if configuration_path else None,
+                    mcp_oauth,
+                ),
+            )
             operator = HarnessUiSubagentOperator(
                 unattended=unattended,
                 tool_executions=tool_executions,

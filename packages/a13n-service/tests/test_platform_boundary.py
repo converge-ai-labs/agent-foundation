@@ -39,24 +39,14 @@ async def test_run_credentials_admit_only_internal_platform_transport(service, s
         assert (await rpc(http, "tools/call", name="list_agents", arguments={})).status_code == 401
 
 
-async def test_old_names_and_payloads_fail_before_business_effects(service, scripted_model, runs_kit):
+async def test_invalid_tool_calls_fail_before_business_effects(service, scripted_model, runs_kit):
     lease, agent, _ = await lease_for(service, scripted_model, runs_kit)
     token = await issue(service.runtime, lease, frozenset(PLATFORM_GROUPS))
     async with client(service, {"secret": token}) as http:
         before = await call(http, "list_agents")
-        for name in (
-            "create_agent_revision",
-            "update_agent",
-            "index_toolsets",
-            "get_run_agent",
-            "read_span_content",
-            "get_run_content",
-            "read_run_item_content",
-        ):
-            rejected = await rpc(http, "tools/call", name=name, arguments={})
-            assert rejected.json()["result"]["isError"], name
         for name, arguments in (
-            ("create_agent", {"request_body": {"name": "Old payload"}}),
+            ("nonexistent_tool", {}),
+            ("create_agent", {"request_body": {"name": "Wrapped request"}}),
             ("update_agent_metadata", {"agent_id": agent["id"], "description": "Unversioned write"}),
         ):
             rejected = await rpc(http, "tools/call", name=name, arguments=arguments)

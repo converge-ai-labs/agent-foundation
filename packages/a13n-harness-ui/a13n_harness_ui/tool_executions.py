@@ -47,10 +47,15 @@ class ToolExecutions:
     """Hold Harness owners; schedule UI hints on the existing root task group."""
 
     def __init__(
-        self, store: ToolExecutionRepository | None = None, *, environments: EnvironmentRunService | None = None
+        self,
+        store: ToolExecutionRepository | None = None,
+        *,
+        environments: EnvironmentRunService | None = None,
+        recover_mcp: Callable[[ResolvedRunComposition, StoredToolExecution], Awaitable[object]] | None = None,
     ) -> None:
         self.store = store
         self._environments = environments
+        self._recover_mcp = recover_mcp
         self._recovery_lock = Lock()
         self.runtime = ToolExecutionRuntime(store=store, on_completed=self._completed)
         self._states: dict[str, CodeActStateOwner] = {}
@@ -142,6 +147,15 @@ class ToolExecutions:
                         if execution is None or execution.record.terminal:
                             continue
                         reference = await self.store.composition(record.thread_id, after)
+                        if execution.mcp_task is not None and reference is not None and self._recover_mcp is not None:
+                            composition = await self.store.objects.read_model(reference, ResolvedRunComposition)
+                            self.runtime.resume_mcp_task(
+                                execution,
+                                partial(self._recover_mcp, composition, execution),
+                                release_ownership=partial(self.store.owners.release, after),
+                            )
+                            retained = True
+                            continue
                         if execution.shell is None or reference is None:
                             terminal = execution.record.model_copy(
                                 update={
@@ -187,7 +201,7 @@ class ToolExecutions:
                         )
                         retained = True
                     except Exception:
-                        get_logger(__name__).warning("Shell recovery deferred: %s", after, exc_info=True)
+                        get_logger(__name__).warning("Tool recovery deferred: %s", after, exc_info=True)
                     finally:
                         if not retained:
                             await self.store.owners.release(after)
@@ -198,7 +212,7 @@ class ToolExecutions:
                 await self.recover()
                 await self._restore_pending()
             except Exception:
-                get_logger(__name__).warning("Shell recovery scan failed", exc_info=True)
+                get_logger(__name__).warning("Tool recovery scan failed", exc_info=True)
             await sleep(1)
 
     async def _supervise(self, execution: StoredToolExecution, environment: EnvironmentRuntime) -> object:

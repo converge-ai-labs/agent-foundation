@@ -443,17 +443,26 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DaytonaRecipe`
 
-| Field                     | Required | Type / choices            | Constraints and default                                                                     |
-| ------------------------- | -------- | ------------------------- | ------------------------------------------------------------------------------------------- |
-| `envd_management`         | false    | "managed", "preinstalled" | default="preinstalled"                                                                      |
-| `snapshot`                | false    | string                    | minLength=1; maxLength=256; default="auto"                                                  |
-| `desktop`                 | false    | boolean                   | default=false                                                                               |
-| `execution`               | false    | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
-| `environment`             | false    | EnvironmentVariables      | —; default from model factory                                                               |
-| `request_timeout_seconds` | false    | number                    | maximum=600; exclusiveMinimum=0; default=120                                                |
-| `envd`                    | false    | EnvdSettings              | —; default from model factory                                                               |
-| `base_image`              | false    | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
-| `desktop_assistance`      | false    | boolean                   | default=false                                                                               |
+| Field                     | Required | Type / choices              | Constraints and default                                                                     |
+| ------------------------- | -------- | --------------------------- | ------------------------------------------------------------------------------------------- |
+| `envd_management`         | false    | "managed", "preinstalled"   | default="preinstalled"                                                                      |
+| `snapshot`                | false    | string                      | minLength=1; maxLength=256; default="auto"                                                  |
+| `desktop`                 | false    | boolean                     | default=false                                                                               |
+| `execution`               | false    | "envd_http", "envd_ws"      | default="envd_http"                                                                         |
+| `environment`             | false    | EnvironmentVariables        | —; default from model factory                                                               |
+| `volumes`                 | false    | array of DaytonaVolumeMount | —; default from model factory                                                               |
+| `request_timeout_seconds` | false    | number                      | maximum=600; exclusiveMinimum=0; default=120                                                |
+| `envd`                    | false    | EnvdSettings                | —; default from model factory                                                               |
+| `base_image`              | false    | string or null              | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
+| `desktop_assistance`      | false    | boolean                     | default=false                                                                               |
+
+## `DaytonaVolumeMount`
+
+| Field        | Required | Type / choices | Constraints and default   |
+| ------------ | -------- | -------------- | ------------------------- |
+| `volume_id`  | true     | string         | minLength=1               |
+| `mount_path` | true     | string         | minLength=1               |
+| `subpath`    | false    | string or null | minLength=1; default=null |
 
 ## `ModalRecipe`
 
@@ -464,6 +473,7 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `desktop`                 | false    | boolean                   | default=false                                                                               |
 | `execution`               | false    | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
 | `environment`             | false    | EnvironmentVariables      | —; default from model factory                                                               |
+| `volumes`                 | false    | array of ModalVolumeMount | —; default from model factory                                                               |
 | `request_timeout_seconds` | false    | number                    | maximum=600; exclusiveMinimum=0; default=120                                                |
 | `timeout_seconds`         | false    | integer                   | minimum=300; maximum=86400; default=86400                                                   |
 | `cpu`                     | false    | number                    | maximum=64; exclusiveMinimum=0; default=1                                                   |
@@ -472,6 +482,15 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `startup_command`         | false    | array of string or null   | minItems=1; default=null                                                                    |
 | `base_image`              | false    | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
 | `desktop_assistance`      | false    | boolean                   | default=false                                                                               |
+
+## `ModalVolumeMount`
+
+| Field         | Required | Type / choices | Constraints and default                                  |
+| ------------- | -------- | -------------- | -------------------------------------------------------- |
+| `volume_name` | true     | string         | minLength=1; maxLength=64; `pattern="^[a-zA-Z0-9._-]+$"` |
+| `mount_path`  | true     | string         | minLength=1                                              |
+| `sub_path`    | false    | string or null | default=null                                             |
+| `read_only`   | false    | boolean        | default=false                                            |
 
 ## `VercelRecipe`
 
@@ -517,28 +536,30 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DaytonaEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices         | Constraints and default                      |
-| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
-| `snapshot`                | true     | string                 | minLength=1; maxLength=256                   |
-| `desktop`                 | false    | boolean                | default=false                                |
-| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
-| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
-| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
-| `envd`                    | false    | EnvdSettings           | —; default from model factory                |
+| Field                     | Required | Type / choices              | Constraints and default                      |
+| ------------------------- | -------- | --------------------------- | -------------------------------------------- |
+| `snapshot`                | true     | string                      | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean                     | default=false                                |
+| `execution`               | false    | "envd_http", "envd_ws"      | default="envd_http"                          |
+| `environment`             | false    | EnvironmentVariables        | —; default from model factory                |
+| `volumes`                 | false    | array of DaytonaVolumeMount | —; default from model factory                |
+| `request_timeout_seconds` | false    | number                      | maximum=600; exclusiveMinimum=0; default=120 |
+| `envd`                    | false    | EnvdSettings                | —; default from model factory                |
 
 ## `ModalEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices         | Constraints and default                      |
-| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
-| `image`                   | true     | string                 | minLength=1; maxLength=256                   |
-| `desktop`                 | false    | boolean                | default=false                                |
-| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
-| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
-| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
-| `timeout_seconds`         | false    | integer                | minimum=300; maximum=86400; default=86400    |
-| `cpu`                     | false    | number                 | maximum=64; exclusiveMinimum=0; default=1    |
-| `memory`                  | false    | integer                | minimum=128; maximum=262144; default=1024    |
-| `envd`                    | false    | EnvdSettings           | —; default from model factory                |
+| Field                     | Required | Type / choices            | Constraints and default                      |
+| ------------------------- | -------- | ------------------------- | -------------------------------------------- |
+| `image`                   | true     | string                    | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean                   | default=false                                |
+| `execution`               | false    | "envd_http", "envd_ws"    | default="envd_http"                          |
+| `environment`             | false    | EnvironmentVariables      | —; default from model factory                |
+| `volumes`                 | false    | array of ModalVolumeMount | —; default from model factory                |
+| `request_timeout_seconds` | false    | number                    | maximum=600; exclusiveMinimum=0; default=120 |
+| `timeout_seconds`         | false    | integer                   | minimum=300; maximum=86400; default=86400    |
+| `cpu`                     | false    | number                    | maximum=64; exclusiveMinimum=0; default=1    |
+| `memory`                  | false    | integer                   | minimum=128; maximum=262144; default=1024    |
+| `envd`                    | false    | EnvdSettings              | —; default from model factory                |
 
 ## `VercelEnvironmentConfiguration`
 
@@ -609,8 +630,17 @@ Optional outer-daemon sampling; independent of Session execution policy.
 | `max_output_bytes`               | false    | integer                              | maximum=16777216; exclusiveMinimum=0; default=1048576  |
 | `size`                           | false    | "1x4", "2x8", "4x16", "8x32" or null | default=null                                           |
 | `from_snapshot`                  | false    | string or null                       | minLength=1; maxLength=128; default=null               |
+| `volumes`                        | false    | array of BoxdVolumeMount             | —; default from model factory                          |
 | `auto_suspend_timeout_seconds`   | false    | integer                              | minimum=0; maximum=86400; default=0                    |
 | `auto_hibernate_timeout_seconds` | false    | integer                              | minimum=0; maximum=604800; default=0                   |
+
+## `BoxdVolumeMount`
+
+| Field        | Required | Type / choices | Constraints and default |
+| ------------ | -------- | -------------- | ----------------------- |
+| `disk_id`    | true     | string         | minLength=1             |
+| `mount_path` | true     | string         | minLength=1             |
+| `read_only`  | false    | boolean        | default=false           |
 
 ## `RemoteEnvdEnvironmentConfiguration`
 

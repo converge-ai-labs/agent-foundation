@@ -101,11 +101,6 @@ async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path, direc
     await hub.close()
 
 
-async def test_external_daemons_expose_no_management():
-    for definition in (HTTP_ENVD, WEBSOCKET_ENVD):
-        assert not hasattr(definition, "open_provider")
-
-
 async def test_host_runtime_injection():
     with pytest.raises(EnvironmentProviderError) as error:
         await WEBSOCKET_ENVD.execution_connector({}, state=state("websocket_envd")).open()

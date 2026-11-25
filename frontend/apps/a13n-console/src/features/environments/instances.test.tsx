@@ -91,46 +91,36 @@ async function openCreate() {
   await screen.findByText("No environments yet");
   expect(
     screen.getByRole("link", { name: "Manage providers" }).getAttribute("href"),
-  ).toContain("environments");
+  ).toBe("/workspace/ws_test/settings/providers?category=environments");
   await user.click(screen.getByRole("button", { name: "Create environment" }));
   return { cache, user };
 }
 
-it.each([
-  ["templates", "Create template", "No environment templates"],
-  ["instances", "Create environment", "No environments yet"],
-] as const)(
-  "keeps provider navigation beside an empty %s collection",
-  async (section, action, empty) => {
-    http.GET.mockResolvedValue({ data: { items: [], next_cursor: null } });
-    const cache = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    render(
-      <QueryClientProvider client={cache}>
-        <MemoryRouter>
-          <EnvironmentsPage section={section} />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
-    await screen.findByText(empty);
-    const create = screen.getByRole(
-      section === "templates" ? "link" : "button",
-      { name: action },
-    );
-    if (section === "templates")
-      expect(create.getAttribute("href")).toBe(
-        "/workspace/ws_test/environments/new",
-      );
-    expect(create.closest("header")).toBeNull();
-    const manage = screen.getByRole("link", { name: "Manage providers" });
-    expect(manage.closest("header")).not.toBeNull();
-    expect(manage.getAttribute("href")).toBe(
-      "/workspace/ws_test/settings/providers?category=environments",
-    );
-    cache.clear();
-  },
-);
+it("keeps provider navigation beside an empty template collection", async () => {
+  http.GET.mockResolvedValue({ data: { items: [], next_cursor: null } });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <EnvironmentsPage section="templates" />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await screen.findByText("No environment templates");
+  const create = screen.getByRole("link", { name: "Create template" });
+  expect(create.getAttribute("href")).toBe(
+    "/workspace/ws_test/environments/new",
+  );
+  expect(create.closest("header")).toBeNull();
+  const manage = screen.getByRole("link", { name: "Manage providers" });
+  expect(manage.closest("header")).not.toBeNull();
+  expect(manage.getAttribute("href")).toBe(
+    "/workspace/ws_test/settings/providers?category=environments",
+  );
+  cache.clear();
+});
 
 it.each([null, "mds_local"])(
   "allocates a managed environment with monitoring selection %s",
@@ -210,6 +200,100 @@ it("submits volume mounts selected for an E2B instance", async () => {
   );
   cache.clear();
 });
+
+it.each([
+  {
+    type: "boxd",
+    nameKey: "disk_id",
+    editKey: "disk_id",
+    original: "disk-one",
+    next: "disk-two",
+  },
+  {
+    type: "daytona",
+    nameKey: "volume_id",
+    editKey: "subpath",
+    original: "work/one",
+    next: "work/two",
+  },
+  {
+    type: "modal",
+    nameKey: "volume_name",
+    editKey: "sub_path",
+    original: "/work/one",
+    next: "/work/two",
+  },
+])(
+  "replaces the $type template volume mount for just this instance",
+  async ({ type, nameKey, editKey, original, next }) => {
+    const mount = {
+      [nameKey]: "shared",
+      mount_path: "/data",
+      [editKey]: original,
+    };
+    const schema = {
+      properties: {
+        volumes: { type: "array", items: { $ref: "#/$defs/Mount" } },
+      },
+      $defs: {
+        Mount: {
+          type: "object",
+          properties: {
+            [nameKey]: { type: "string" },
+            mount_path: { type: "string" },
+            [editKey]: { type: "string" },
+          },
+        },
+      },
+    };
+    http.GET.mockImplementation(async (path: string) => {
+      if (path === "/api/v1/environment-providers/{provider_id}")
+        return { data: { type } };
+      const items =
+        path === "/api/v1/provider-types/{kind}"
+          ? [
+              {
+                type,
+                display_name: type,
+                environment_schema: schema,
+              },
+            ]
+          : path === "/api/v1/environment-templates"
+            ? [
+                {
+                  id: "envtpl_d",
+                  name: "Mounted sandbox",
+                  provider_id: "eprov_d",
+                  enabled: true,
+                  config: { recipe: { volumes: [mount] } },
+                },
+              ]
+            : (collections[path] ?? []);
+      return { data: { items, next_cursor: null } };
+    });
+    const { cache, user } = await openCreate();
+    await user.click(screen.getByRole("combobox", { name: "Template" }));
+    await user.click(
+      await screen.findByRole("option", { name: /Mounted sandbox/ }),
+    );
+    const input = await screen.findByDisplayValue(original);
+    await user.clear(input);
+    await user.type(input, next);
+    await user.click(
+      screen.getByRole("button", { name: "Create environment" }),
+    );
+    await waitFor(() =>
+      expect(http.POST).toHaveBeenCalledWith("/api/v1/environments", {
+        body: {
+          template_id: "envtpl_d",
+          metrics_data_source_id: null,
+          recipe_overrides: { volumes: [{ ...mount, [editKey]: next }] },
+        },
+      }),
+    );
+    cache.clear();
+  },
+);
 
 it("registers an external target by its endpoint and token, with no provider to pick", async () => {
   const { cache, user } = await openCreate();

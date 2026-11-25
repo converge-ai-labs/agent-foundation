@@ -2320,6 +2320,130 @@
       ],
       "type": "string"
     },
+    "McpElicitation": {
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "title": "Expires At",
+          "type": "string"
+        },
+        "kind": {
+          "const": "mcp_elicitation",
+          "default": "mcp_elicitation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "form",
+            "url"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "run_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Id"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema"
+        },
+        "server_id": {
+          "title": "Server Id",
+          "type": "string"
+        },
+        "server_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Server Name"
+        },
+        "thread_id": {
+          "title": "Thread Id",
+          "type": "string"
+        },
+        "tool_call_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Call Id"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "url_host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url Host"
+        }
+      },
+      "required": [
+        "request_id",
+        "thread_id",
+        "server_id",
+        "mode",
+        "message",
+        "expires_at"
+      ],
+      "title": "McpElicitation",
+      "type": "object"
+    },
     "MediaUnderstandingSelection": {
       "additionalProperties": false,
       "description": "The model, by key, describing each media kind a model cannot read; a kind without one is unavailable.",
@@ -3181,6 +3305,28 @@
         "arguments"
       ],
       "title": "PendingCall",
+      "type": "object"
+    },
+    "PendingInteractions": {
+      "description": "Replace the pending interactions for this thread, including with an empty list.",
+      "properties": {
+        "requests": {
+          "items": {
+            "$ref": "#/$defs/McpElicitation"
+          },
+          "title": "Requests",
+          "type": "array"
+        },
+        "thread_id": {
+          "title": "Thread Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "thread_id",
+        "requests"
+      ],
+      "title": "PendingInteractions",
       "type": "object"
     },
     "PlatformGroup": {
@@ -5515,6 +5661,9 @@
     },
     "gap": {
       "$ref": "#/$defs/Gap"
+    },
+    "interactions": {
+      "$ref": "#/$defs/PendingInteractions"
     },
     "items": {
       "$ref": "#/$defs/RunSnapshot"

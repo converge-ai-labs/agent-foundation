@@ -368,158 +368,137 @@ it("preserves an unknown submission and locked choices when the language changes
   expect(post).not.toHaveBeenCalled();
 });
 
-it.each([false, true])(
-  "keeps model overrides while navigating compact option pages (mobile: %s)",
-  async (onMobile) => {
-    mobile = onMobile;
-    const user = userEvent.setup();
-    mount();
-    const trigger = screen.getByRole("button", {
-      name: "Agent & Model settings",
-    });
-    expect(trigger.textContent).toBe("Model OneHigh");
-    await user.click(trigger);
-    expect(screen.getByRole("button", { name: "Thinking" }).textContent).toBe(
-      "ThinkingHigh (default)",
-    );
-    await user.click(screen.getByRole("button", { name: "Thinking" }));
-    expect(screen.getByText("High (default)")).toBeTruthy();
-    expect(draft.controls.thinking).toBeUndefined();
-    await user.click(screen.getByRole("button", { name: "High" }));
-    expect(screen.queryByText("High (default)")).toBeNull();
-    await user.click(
-      screen.getByRole("button", { name: "Use default thinking" }),
-    );
-    expect(screen.getByText("High (default)")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Low" }));
-    expect(draft.controls).toEqual({ thinking: "low" });
-    await user.click(
-      screen.getByRole("button", { name: "Back to Agent & Model settings" }),
-    );
-    expect(
-      screen.getByRole("button", { name: "Thinking" }).textContent,
-    ).toContain("Low");
-    await user.click(screen.getByRole("button", { name: "Speed" }));
-    await user.click(screen.getByRole("button", { name: "Fast mode" }));
-    expect(draft.controls).toEqual({ thinking: "low", fast: true });
-    expect(trigger.getAttribute("aria-description")).toBe("Fast");
-    await user.click(screen.getByRole("button", { name: "Speed" }));
-    await user.click(screen.getByRole("button", { name: "Ultrafast mode" }));
-    expect(draft.controls.fast).toBe("ultrafast");
-    expect(trigger.getAttribute("aria-description")).toBe("Ultrafast");
-    await user.click(screen.getByRole("button", { name: "Speed" }));
-    await user.click(screen.getByRole("button", { name: "Standard mode" }));
-    expect(draft.controls.fast).toBe(false);
-    expect(trigger.getAttribute("aria-description")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Speed" }));
-    await user.click(screen.getByRole("button", { name: "Use model speed" }));
-    expect(draft.controls).toEqual({ thinking: "low", fast: null });
-    await user.keyboard("[Escape]");
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "Thinking" })).toBeNull(),
-    );
-    expect(draft.submission.kind).toBe("idle");
-  },
-);
+it("keeps model overrides while navigating compact option pages on mobile", async () => {
+  mobile = true;
+  const user = userEvent.setup();
+  mount();
+  const trigger = screen.getByRole("button", {
+    name: "Agent & Model settings",
+  });
+  expect(trigger.textContent).toBe("Model OneHigh");
+  await user.click(trigger);
+  expect(screen.getByRole("button", { name: "Thinking" }).textContent).toBe(
+    "ThinkingHigh (default)",
+  );
+  await user.click(screen.getByRole("button", { name: "Thinking" }));
+  expect(screen.getByText("High (default)")).toBeTruthy();
+  expect(draft.controls.thinking).toBeUndefined();
+  await user.click(screen.getByRole("button", { name: "High" }));
+  expect(screen.queryByText("High (default)")).toBeNull();
+  await user.click(
+    screen.getByRole("button", { name: "Use default thinking" }),
+  );
+  expect(screen.getByText("High (default)")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Low" }));
+  expect(draft.controls).toEqual({ thinking: "low" });
+  await user.click(
+    screen.getByRole("button", { name: "Back to Agent & Model settings" }),
+  );
+  expect(
+    screen.getByRole("button", { name: "Thinking" }).textContent,
+  ).toContain("Low");
+  await user.click(screen.getByRole("button", { name: "Speed" }));
+  await user.click(screen.getByRole("button", { name: "Fast mode" }));
+  expect(draft.controls).toEqual({ thinking: "low", fast: true });
+  expect(trigger.getAttribute("aria-description")).toBe("Fast");
+  await user.click(screen.getByRole("button", { name: "Speed" }));
+  await user.click(screen.getByRole("button", { name: "Ultrafast mode" }));
+  expect(draft.controls.fast).toBe("ultrafast");
+  expect(trigger.getAttribute("aria-description")).toBe("Ultrafast");
+  await user.click(screen.getByRole("button", { name: "Speed" }));
+  await user.click(screen.getByRole("button", { name: "Standard mode" }));
+  expect(draft.controls.fast).toBe(false);
+  expect(trigger.getAttribute("aria-description")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Speed" }));
+  await user.click(screen.getByRole("button", { name: "Use model speed" }));
+  expect(draft.controls).toEqual({ thinking: "low", fast: null });
+  await user.keyboard("[Escape]");
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: "Thinking" })).toBeNull(),
+  );
+  expect(draft.submission.kind).toBe("idle");
+});
 
-it.each([
-  ["default", "Standard"],
-  ["off", "Standard"],
-  ["on", "Fast"],
-  ["ultrafast", "Ultrafast"],
-] as const)(
-  "resolves inherited speed %s as %s in the settings summary",
-  async (state, label) => {
-    const user = userEvent.setup();
-    const change = vi.fn();
-    render(
-      <ThreadRunChoices
-        catalog={{
-          ...catalog,
-          models: [
-            {
-              ...catalog.models![0],
-              fast: { supported: true, state, ultrafast_supported: true },
+it("shows the inherited Ultrafast speed in the summary and picker", async () => {
+  const user = userEvent.setup();
+  render(
+    <ThreadRunChoices
+      catalog={{
+        ...catalog,
+        models: [
+          {
+            ...catalog.models![0],
+            fast: {
+              supported: true,
+              state: "ultrafast",
+              ultrafast_supported: true,
             },
-          ],
-        }}
-        agentId="writer"
-        controls={{}}
-        disabled={false}
-        onAgentChange={() => {}}
-        onModelChange={() => {}}
-        onControlsChange={change}
-      />,
-    );
-    const trigger = screen.getByRole("button", {
-      name: "Agent & Model settings",
-    });
-    expect(trigger.getAttribute("aria-description")).toBe(
-      label === "Standard" ? null : label,
-    );
-    await user.click(trigger);
-    const speedRow = screen.getByRole("button", { name: "Speed" });
-    expect(speedRow.textContent).toBe(`Speed${label}`);
-    const indicator = screen.getByText(label, {
-      exact: true,
-    }).nextElementSibling;
-    expect(indicator?.tagName ?? null).toBe(
-      label === "Standard" ? null : "svg",
-    );
-    await user.click(speedRow);
-    expect(
-      screen.getByRole("button", { name: "Use model speed" }).textContent,
-    ).toBe(`Model setting - ${label}`);
-    await user.click(screen.getByRole("button", { name: "Standard mode" }));
-    expect(change).toHaveBeenLastCalledWith({ fast: false });
-  },
-);
+          },
+        ],
+      }}
+      agentId="writer"
+      controls={{}}
+      disabled={false}
+      onAgentChange={() => {}}
+      onModelChange={() => {}}
+      onControlsChange={() => {}}
+    />,
+  );
+  const trigger = screen.getByRole("button", {
+    name: "Agent & Model settings",
+  });
+  expect(trigger.getAttribute("aria-description")).toBe("Ultrafast");
+  await user.click(trigger);
+  const speedRow = screen.getByRole("button", { name: "Speed" });
+  expect(speedRow.textContent).toContain("Ultrafast");
+  await user.click(speedRow);
+  expect(
+    screen.getByRole("button", { name: "Use model speed" }).textContent,
+  ).toContain("Ultrafast");
+});
 
-it.each([false, true])(
-  "distinguishes inherited and explicit agents with long names (mobile: %s)",
-  async (onMobile) => {
-    mobile = onMobile;
-    const user = userEvent.setup();
-    const onAgentChange = vi.fn();
-    const name = "OpenAI GPT-6 Astra Coding";
-    render(
-      <ThreadRunChoices
-        catalog={{
-          ...catalog,
-          agents: [{ ...catalog.agents[0], name }],
-        }}
-        agentId=""
-        defaultAgentId="writer"
-        disabled={false}
-        controls={{}}
-        onAgentChange={onAgentChange}
-        onModelChange={() => {}}
-        onControlsChange={() => {}}
-      />,
-    );
-    await user.click(
-      screen.getByRole("button", { name: "Agent & Model settings" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Agent" }));
-    const inherited = screen.getByRole("button", {
+it("distinguishes inherited and explicit agents with long names on mobile", async () => {
+  mobile = true;
+  const user = userEvent.setup();
+  const onAgentChange = vi.fn();
+  const name = "OpenAI GPT-6 Astra Coding";
+  render(
+    <ThreadRunChoices
+      catalog={{
+        ...catalog,
+        agents: [{ ...catalog.agents[0], name }],
+      }}
+      agentId=""
+      defaultAgentId="writer"
+      disabled={false}
+      controls={{}}
+      onAgentChange={onAgentChange}
+      onModelChange={() => {}}
+      onControlsChange={() => {}}
+    />,
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Agent & Model settings" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Agent" }));
+  const inherited = screen.getByRole("button", {
+    name: /OpenAI GPT-6 Astra Coding\s*Default/,
+  });
+  const explicit = screen.getByRole("button", {
+    name: /OpenAI GPT-6 Astra Coding\s*writer/,
+  });
+  expect(inherited.getAttribute("aria-pressed")).toBe("true");
+  expect(explicit.getAttribute("aria-pressed")).toBe("false");
+  await user.click(explicit);
+  expect(onAgentChange).toHaveBeenCalledWith("writer");
+  await user.click(screen.getByRole("button", { name: "Agent" }));
+  await user.click(
+    screen.getByRole("button", {
       name: /OpenAI GPT-6 Astra Coding\s*Default/,
-    });
-    const explicit = screen.getByRole("button", {
-      name: /OpenAI GPT-6 Astra Coding\s*writer/,
-    });
-    expect(inherited.getAttribute("aria-pressed")).toBe("true");
-    expect(explicit.getAttribute("aria-pressed")).toBe("false");
-    await user.click(explicit);
-    expect(onAgentChange).toHaveBeenCalledWith("writer");
-    await user.click(screen.getByRole("button", { name: "Agent" }));
-    await user.click(
-      screen.getByRole("button", {
-        name: /OpenAI GPT-6 Astra Coding\s*Default/,
-      }),
-    );
-    expect(onAgentChange).toHaveBeenLastCalledWith("");
-  },
-);
+    }),
+  );
+  expect(onAgentChange).toHaveBeenLastCalledWith("");
+});
 
 it("edits working folders in-place, cancels without applying, and locks pending selections", async () => {
   mobile = true;

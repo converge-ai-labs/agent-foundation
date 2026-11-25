@@ -60,3 +60,8 @@ export { modelBrand } from "./brand/model-brand";
 export { FileTypeIcon } from "./components/file-type-icon";
 
 export { ToolProgressLine } from "./patterns/tool-progress";
+export {
+  McpElicitationForm,
+  type McpElicitationPrompt,
+  type McpElicitationResponse,
+} from "./patterns/mcp-elicitation";

@@ -221,6 +221,10 @@ The observer's in-memory accumulation and history reconstruction are convenience
 
 A Host derives a compact display with one stream observer per independently executed root or asynchronous child Run, preserving inline-child attribution within that stream. Its replay-stable processor may drop encrypted reasoning and unrelated custom events, redact or truncate declared Tool content fields, and clear `RUN_FINISHED.result` when closed text already represents the final answer. The Host owns retention limits, durable selection, paging and checkpoint acknowledgement; the shared normalizer owns block content and parsing continuation.
 
+### Pending interactions
+
+Hosts project pending MCP elicitation as `McpElicitation`: the request identity, originating Thread, Run and tool call, MCP server attribution, expiry, message, and either a bounded Form schema or an HTTP(S) URL with a display host. `PendingInteractions` replaces the pending set for a Thread; an empty set clears it. The Host owns response authorization and external dispatch.
+
 ## Normalized Display Checkpoints
 
 A normalized snapshot contains completed blocks, active blocks with accumulated text or arguments, and the continuation required to interpret the next event. Stable block IDs, ordinals, source positions, timestamps and lifecycle state survive export and restore. Completed blocks replace their accumulated fragments; token boundaries are not retained. Export is detached and pure: it does not synthesize END, interrupt a block, finish a tool, or imply execution completion.

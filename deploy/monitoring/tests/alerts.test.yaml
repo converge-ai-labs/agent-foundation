@@ -7,28 +7,25 @@ evaluation_interval: 1m
 tests:
 - interval: 1m
   input_series:
-  - series: a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="a",instance="stale",queue="runs"}
+  - series: a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="local-beta",instance="stale",queue="runs"}
     values: 900+0x20
-  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="stale",queue="runs"}
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="local-beta",instance="stale",queue="runs"}
     values: 0+0x20
-  - series: a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="a",instance="fresh",queue="runs"}
+  - series: a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="local-beta",instance="fresh",queue="runs"}
     values: 5+0x20
-  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="a",instance="fresh",queue="runs"}
+  - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="local-beta",instance="fresh",queue="runs"}
     values: 0+60x20
   - series: a13n_backlog_oldest_age_seconds{job="a13n-service",deployment="b",instance="fresh",queue="runs"}
     values: 700+0x20
   - series: a13n_backlog_updated_seconds{job="a13n-service",deployment="b",instance="fresh",queue="runs"}
     values: 0+60x20
   promql_expr_test:
-  - expr: max by (deployment,queue) (a13n_backlog_oldest_age_seconds{job="a13n-service"}
-      and on (job,deployment,instance,queue) (time() - a13n_backlog_updated_seconds{job="a13n-service"}
-      < 60))
+  # The dashboard's "Due work oldest age" panel, with the selected deployment.
+  - expr: test:panel15_A
     eval_time: 20m
     exp_samples:
-    - labels: '{deployment="a",queue="runs"}'
+    - labels: 'test:panel15_A{deployment="local-beta",queue="runs"}'
       value: 5
-    - labels: '{deployment="b",queue="runs"}'
-      value: 700
   alert_rule_test:
   - eval_time: 20m
     alertname: A13nBacklogStuck

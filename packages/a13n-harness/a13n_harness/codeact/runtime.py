@@ -12,7 +12,7 @@ from typing import Any
 from pydantic_monty import AsyncMonty, AsyncMontySession, CollectString, MontyComplete, ResourceLimits
 
 from a13n_harness.codeact.config import CodeActConfig
-from a13n_harness.codeact.executor import AdmitFn, DispatchFn, MontyExecutor, ReleaseFn
+from a13n_harness.codeact.executor import AdmitFn, DispatchFn, MontyExecutor, PrepareArgsFn, ReleaseFn
 
 
 class InlineSessionBusyError(RuntimeError):
@@ -57,6 +57,7 @@ class CodeActRunState:
                     AsyncMonty(
                         min_processes=1,
                         max_processes=4,
+                        pre_warm=1,
                         request_timeout=self.config.timeout_seconds,
                     )
                 )
@@ -81,6 +82,7 @@ class CodeActRunState:
         *,
         dispatch: DispatchFn,
         admit: AdmitFn,
+        prepare_args: PrepareArgsFn,
         release: ReleaseFn,
         valid_names: set[str],
         sequential_names: set[str],
@@ -100,6 +102,7 @@ class CodeActRunState:
                     code,
                     dispatch=dispatch,
                     admit=admit,
+                    prepare_args=prepare_args,
                     release=release,
                     valid_names=valid_names,
                     sequential_names=sequential_names,
@@ -118,6 +121,7 @@ class CodeActRunState:
         inputs: dict[str, Any],
         dispatch: DispatchFn,
         admit: AdmitFn,
+        prepare_args: PrepareArgsFn,
         release: ReleaseFn,
         valid_names: set[str],
         sequential_names: set[str],
@@ -131,6 +135,7 @@ class CodeActRunState:
                 inputs=inputs,
                 dispatch=dispatch,
                 admit=admit,
+                prepare_args=prepare_args,
                 release=release,
                 valid_names=valid_names,
                 sequential_names=sequential_names,
@@ -144,6 +149,7 @@ class CodeActRunState:
         *,
         dispatch: DispatchFn,
         admit: AdmitFn,
+        prepare_args: PrepareArgsFn,
         release: ReleaseFn,
         valid_names: set[str],
         sequential_names: set[str],
@@ -155,6 +161,7 @@ class CodeActRunState:
         completed = await MontyExecutor(
             dispatch=dispatch,
             admit=admit,
+            prepare_args=prepare_args,
             release=release,
             valid_names=valid_names,
             sequential_names=sequential_names,

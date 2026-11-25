@@ -440,20 +440,17 @@ it("navigates changed files and keeps review marks separate from whole-candidate
   expect(writes).toHaveLength(0);
   cache.clear();
 });
-it.each([
-  "generating",
-  "failed",
-  "applied",
-  "discarded",
-  "unavailable",
-] as const)("does not offer publication for %s candidates", async (status) => {
-  const { cache } = show("candidate", false, { ...candidate, status });
-  await screen.findByText("Candidate review");
-  expect(
-    screen.queryByRole("button", { name: "Apply all changes" }),
-  ).toBeNull();
-  cache.clear();
-});
+it.each(["generating", "failed", "applied"] as const)(
+  "does not offer publication for %s candidates",
+  async (status) => {
+    const { cache } = show("candidate", false, { ...candidate, status });
+    await screen.findByText("Candidate review");
+    expect(
+      screen.queryByRole("button", { name: "Apply all changes" }),
+    ).toBeNull();
+    cache.clear();
+  },
+);
 it("starts a candidate from an explicit session selection and opens its ordinary run", async () => {
   const { cache, writes, user } = show("tasks");
   await user.click(

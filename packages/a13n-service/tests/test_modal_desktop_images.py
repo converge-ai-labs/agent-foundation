@@ -85,7 +85,51 @@ async def setup(service, monkeypatch, runs_kit):
         assert op is not None and op.modal_desktop_image is not None
         return op
 
-    return SimpleNamespace(service=service, cloud=cloud, create=create)
+    return SimpleNamespace(service=service, cloud=cloud, create=create, provider_id=p.json()["id"])
+
+
+async def test_modal_volume_overrides_are_scoped_to_the_instance_and_reused_on_replacement(setup):
+    from a13n_service.tenancy.access import principal_for
+    from a13n_service.tenancy.authorize import WorkspaceScope
+
+    client, runtime = setup.service.client, setup.service.runtime
+    default = {"volume_name": "shared", "mount_path": "/data", "sub_path": "/one", "read_only": True}
+    template = await client.post(
+        "/api/v1/environment-templates",
+        json={
+            "name": "Mounted",
+            "provider_id": setup.provider_id,
+            "config": {"recipe": {"volumes": [default]}},
+        },
+    )
+    assert template.status_code == 201, template.text
+    base = {"template_id": template.json()["id"]}
+    wrong = await client.post(
+        "/api/v1/environments",
+        json=base
+        | {
+            "recipe_overrides": {"volumes": [{"volume_id": "daytona-volume", "mount_path": "/data"}]},
+        },
+    )
+    assert wrong.status_code == 400, wrong.text
+    selected = default | {"volume_name": "outputs", "sub_path": "/two", "read_only": False}
+    for overrides, expected in [({}, [default]), ({"volumes": []}, []), ({"volumes": [selected]}, [selected])]:
+        result = await client.post("/api/v1/environments", json=base | {"recipe_overrides": overrides})
+        assert result.status_code == 201, result.text
+        op = await lifecycle.claim(runtime, result.json()["id"], owner="test")
+        assert op.target.recipe.get("volumes", []) == expected
+    async with transaction(runtime.storage) as session:
+        original = await session.get_one(EnvironmentRow, op.environment_id)
+        scope = WorkspaceScope(original.organization_id, original.workspace_id)
+        principal = await principal_for(session, runtime.access, original.created_by_id, confinement=scope)
+        replacement = await lifecycle.reserve(
+            session, principal, scope, original.template_id, limit=20, replaces=original
+        )
+        await lifecycle.begin(session, replacement, "creating")
+        identifier = replacement.id
+    successor = await lifecycle.claim(runtime, identifier, owner="test")
+    assert successor.target.recipe["volumes"] == [selected]
+    assert successor.modal_desktop_image == op.modal_desktop_image
 
 
 async def test_first_build_then_reuse_pins_exact_image_before_allocation(setup, monkeypatch):

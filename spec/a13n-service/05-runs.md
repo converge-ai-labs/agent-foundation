@@ -408,6 +408,8 @@ Service inherits the default Harness context recovery policy as trusted runtime 
 
 ## Retained tool executions
 
+MCP connections can opt in to SEP-2663 with `config.durable_tasks`. After foreground release or worker loss, a control sweep claims the Tool Execution lease, checks the originating connection authority, and polls the saved task handle outside the database transaction. Input-required handles wait for input, cancellation, or expiry. Terminal results use the retained Tool Execution outbox.
+
 Harness owns the actual invocation, coroutine and native process handle. Each worker holds one Harness tool execution runtime across its attempts; Service supplies durable storage, independent owner leases, Thread-wide ordering and completion delivery. Releasing the foreground wait returns an execution receipt while the original invocation continues. Completing or handing off a Run does not finish its retained tools. Later Runs share the Thread's live execution-context owner while Environment work remains active; otherwise another worker may claim the context.
 
 A retained CodeAct execution is the whole original evaluation, including nested awaits. Its runtime bindings and clients remain on the admitting worker until cleanup finishes. Explicit CodeAct `store`/`load`/`forget` values have one PostgreSQL owner per Thread; writes survive Run checkpoint changes and later evaluation failure. Temporary interpreter bindings remain local. A later Run never replaces shared values with a stale checkpoint snapshot.
@@ -475,6 +477,14 @@ thread_codeact
 ```
 
 Thread-scoped list, detail and result queries require `read`; cancellation requires `run`. Lists use newest-first `(created_at, id)` pagination with optional originating Service `run_id` and `active` filters. Views retain Harness execution identity and expose Service Run, Attempt and worker correlation, never lease secrets. Result reads use bounded versioned text fragments. Cancellation returns 202 with the current observation, not proof of termination. The Console inspects these records within existing Thread and Run views. Completion-triggered Runs render as system tool notifications with tool name, status and execution ID, without user attribution or raw envelope JSON.
+
+### Durable MCP input
+
+A retained MCP task can checkpoint `input_required` and release its foreground call. Interactive Runs expose pending requests through the originating Run's `/mcp-inputs` resource and through replaceable `interactions` frames in the Session stream. Each request identifies its exact execution, MCP connection and tool call. Scheduled Runs and service-account Runs automatically decline requests; unsupported prompts are also declined.
+
+Human workspace members with `read` can see the pending prompts, including URL destinations. Human members with `run` can respond with `accept`, `decline`, or `cancel`. Only a Form acceptance carries validated content. A response is valid for the prompt the user saw; a changed prompt requires a fresh decision.
+
+Service claims the retained execution in a short transaction, then sends `tasks/update` outside it under the originating Run's authority. Acknowledgement wakes Sweep; a terminal response publishes through the retained-result path. After an explicit rejection, a fresh `tasks/get` can restore a still-pending prompt. When delivery is uncertain, Sweep allows time for the server's state to converge before restoring a still-pending prompt for a fresh decision. Sweep does not replay the submitted content. Responding to an MCP task does not create a successor Run.
 
 ## Seal and successor scheduling
 

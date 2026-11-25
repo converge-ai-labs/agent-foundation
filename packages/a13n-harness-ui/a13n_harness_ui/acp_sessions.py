@@ -40,6 +40,7 @@ def acp_commands(runtime: AcpSessionRuntime) -> tuple[AcpCommand, ...] | None:
 
 class AcpSessionState(BaseModel):
     digest: str
+    thread_id: str | None = None
     session_id: str | None = None
     prompted: bool = True
     context_window: tuple[int, int] | None = None

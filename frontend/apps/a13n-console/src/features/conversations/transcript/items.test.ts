@@ -107,19 +107,6 @@ it("treats explicitly sourced steering as guidance even when it leads the run", 
   expect(blocks.map((block) => block.kind)).toEqual(["guidance"]);
 });
 
-it("carries the timeline entry itself so both levels read the same step", () => {
-  const entries = work(
-    blocksOf([
-      tool("read", "read_file", { path: "src/stream.ts" }),
-      item("thought", "reasoning_message", { text: "Checking the fold" }),
-    ])[0]!,
-  );
-  expect(entries.map((work) => [work.entry.kind, work.entry.id])).toEqual([
-    ["tool", "read"],
-    ["reasoning", "thought"],
-  ]);
-});
-
 it("names three steps and counts the rest, reasoning included", () => {
   const summary = workSummary(
     work(

@@ -199,6 +199,8 @@ for line in sys.stdin:
             if MODE != "ui":
                 assert set(catalog) == set(CATALOG)
             assert mcp("tools/call", {"name": "identify"}, expect_error=True)["data"]["code"] == "acp_run_inactive"
+        if method == "session/new" and "unique-session" in sys.argv[2:]:
+            SESSION = f"fixture-session-{os.getpid()}-{next(IDS)}"
         response = {"sessionId": SESSION} if method == "session/new" else {}
         if MODE == "ui":
             response["configOptions"] = CONFIG_OPTIONS
@@ -257,6 +259,11 @@ for line in sys.stdin:
                     },
                 },
             )
+            continue
+        if MODE == "ui" and any(block.startswith("echo-prior:") for block in blocks):
+            prior = [block for block in blocks if block.startswith("<prior-thread-conversation>")]
+            text(f"session={SESSION};mode={CONFIG_OPTIONS[0]['currentValue']};prior={prior[0] if prior else 'none'}")
+            send(id=ident, result={"stopReason": "end_turn"})
             continue
         if MODE == "ui" and message in {"handoff-check", "handoff-next"}:
             prior = [block for block in blocks if block.startswith("<prior-thread-conversation>")]

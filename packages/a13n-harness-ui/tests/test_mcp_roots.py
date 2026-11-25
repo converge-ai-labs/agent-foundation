@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
-import socket
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-import uvicorn
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.configuration.mutation import ResourceMutationRequest
@@ -19,7 +17,6 @@ from a13n_harness_ui.storage.contracts import ThreadConfigurationMutation, Threa
 from a13n_harness_ui.surfaces import ProjectDefaultsApply
 from a13n_harness_ui.thread_service import RootThreadDefaults
 
-from .fixtures.mcp_roots_server import roots_server
 from .test_app import _settings, _write_configuration
 from .test_device_configuration import binding, device
 
@@ -208,43 +205,24 @@ async def test_modern_stdio_refreshes_roots_without_legacy_notification(tmp_path
 
 @pytest.mark.parametrize("expose_roots", [None, True])
 async def test_http_roots_require_explicit_opt_in(tmp_path, expose_roots):
-    with socket.socket() as listener:
-        listener.bind(("127.0.0.1", 0))
-        port = listener.getsockname()[1]
-        endpoint = f"http://127.0.0.1:{port}/mcp"
-        server = roots_server()
-        runner = uvicorn.Server(uvicorn.Config(server.streamable_http_app(), lifespan="on", log_config=None))
-        task = asyncio.create_task(runner.serve(sockets=[listener]))
-        try:
-            async with asyncio.timeout(5):
-                while not runner.started:
-                    await asyncio.sleep(0.01)
-            root, project = _configure(tmp_path, {"url": endpoint}, expose_roots, retained=False)
-            async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
-                thread = await app.create_thread()
-                toolset, cleanup = await _toolset(app, thread.thread_id)
-                try:
-                    async with toolset:
-                        result = await toolset.direct_call_tool("inspect", {})
-                        assert result["advertised"] is (expose_roots is True)
-                        assert result["roots"] == (
-                            [_root(entry["path"]) for entry in project["roots"]] if expose_roots else []
-                        )
-                        if expose_roots:
-                            # A Run-local session stays alive, but the new configuration
-                            # can revoke its access before any newly accepted path is read.
-                            (tmp_path / "mcp/roots.json").write_text(
-                                json.dumps({"mcpServers": {"roots": {"url": endpoint, "expose_roots": False}}})
-                            )
-                            project["roots"] = [{"path": str(tmp_path / "private replacement")}]
-                            (tmp_path / "projects/main.yaml").write_text(json.dumps(project))
-                            await app.reload_configuration()
-                            result = await toolset.direct_call_tool("inspect", {})
-                            assert result["roots"] == []
-                            assert result["changes"] == 0
-                finally:
-                    for close in cleanup:
-                        await close()
-        finally:
-            runner.should_exit = True
-            await task
+    endpoint = "http://127.0.0.1:1/mcp"
+    root, project = _configure(tmp_path, {"url": endpoint}, expose_roots, retained=False)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root) as app:
+        thread = await app.create_thread()
+        source = await app.current_configuration()
+        assert source is not None
+        recipe = app._mcp_app_owners.resolver._mcp_recipes(source, ("mcp-roots",))[0]
+        assert recipe.roots_enabled is (expose_roots is True)
+        scope = app._mcp_connections._roots_scope(thread.thread_id, "mcp-roots", recipe.transport)
+        assert scope.enabled() is (expose_roots is True)
+        if expose_roots:
+            assert list(await scope.paths()) == [entry["path"] for entry in project["roots"]]
+            # A live session stays open, but reloading configuration with opt-out
+            # immediately revokes root disclosure before any newly accepted path is read.
+            (tmp_path / "mcp/roots.json").write_text(
+                json.dumps({"mcpServers": {"roots": {"url": endpoint, "expose_roots": False}}})
+            )
+            project["roots"] = [{"path": str(tmp_path / "private replacement")}]
+            (tmp_path / "projects/main.yaml").write_text(json.dumps(project))
+            await app.reload_configuration()
+            assert scope.enabled() is False

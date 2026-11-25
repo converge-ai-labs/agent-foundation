@@ -500,6 +500,8 @@ Local OS locks exclude competing Apps from the same execution and Session bindin
 
 Pending completion hints survive restart until result expiry; expired hints no longer trigger delivery and are collected with the retained execution. Delivery ownership remains held through settlement. Active execution admission rejects input once cancellation is requested. Idle automatic continuation requires the latest root execution to be `completed`, or the latest child execution to be `succeeded` with a resumable checkpoint and unchanged configuration/generation authority. Cancelled, failed, suspended or unknown executions await explicit input; saved active status after process loss does not authorize automatic execution. New explicitly admitted input can use retained results from earlier executions. Native recovery, result retention and automatic conversation continuation are separate boundaries.
 
+The retained Tool Execution payload also stores SEP-2663 task handles. On App restart the existing execution owner recovers polling under the original Thread and saved MCP connection recipe. It does not run the original tool again.
+
 ## Recovery
 
 Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. It recovers eligible native Shell supervision and pending completion hints from their durable records. A single-use [restart handoff](#graceful-restart-handoff) separately permits continuation from an exact safe checkpoint. Root receipts, unsaved input and Python call stacks remain process-local; display and execution summaries do not grant replay authority.

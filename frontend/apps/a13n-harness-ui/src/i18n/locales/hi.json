@@ -3739,5 +3739,10 @@
   "Receive notifications from": "सूचनाओं का दायरा",
   "My runs are those started from this browser.": "मेरे रन वे हैं जो इस ब्राउज़र से शुरू हुए हैं।",
   "Entire workspace": "पूरा कार्यक्षेत्र",
-  "My runs only": "केवल मेरे रन"
+  "My runs only": "केवल मेरे रन",
+  "Accept": "स्वीकार करें",
+  "External destination": "बाहरी गंतव्य",
+  "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "ब्राउज़र में कार्रवाई पूरी करें, फिर स्वीकार करें चुनें। सर्वर के क्रेडेंशियल उस पेज पर नहीं भेजे जाते।",
+  "This field is required.": "यह फ़ील्ड आवश्यक है।",
+  "Enter a valid value for this field.": "इस फ़ील्ड के लिए मान्य मान दर्ज करें।"
 }

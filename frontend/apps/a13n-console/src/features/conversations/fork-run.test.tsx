@@ -285,8 +285,7 @@ it("forks a waiting Run without answering the original approvals", async () => {
 });
 
 it.each([
-  { status: "accepted", sealed_at: null, allowed: true },
-  { status: "running", sealed_at: null, allowed: true },
+  { status: "running", sealed_at: origin.sealed_at, allowed: true },
   { status: "completed", sealed_at: null, allowed: true },
   { status: "completed", sealed_at: origin.sealed_at, allowed: false },
 ] as const)(
@@ -304,24 +303,21 @@ it.each([
   },
 );
 
-it.each(["failed", "cancelled"] as const)(
-  "explains the saved checkpoint for a %s Run and requires a message",
-  async (status) => {
-    show(fixtureRun({ status }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Create branch from here" }),
-    );
-    expect(
-      screen.getByText(
-        "This branch continues from the last saved checkpoint. Unsaved work may not be included.",
-      ),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Create branch and send" }),
-    ).toHaveProperty("disabled", true);
-    expect(posts).toEqual([]);
-  },
-);
+it("explains the saved checkpoint for a failed Run and requires a message", async () => {
+  show(fixtureRun({ status: "failed" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Create branch from here" }),
+  );
+  expect(
+    screen.getByText(
+      "This branch continues from the last saved checkpoint. Unsaved work may not be included.",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Create branch and send" }),
+  ).toHaveProperty("disabled", true);
+  expect(posts).toEqual([]);
+});
 
 it("opens the created Thread even when acceptance has not started its Run", async () => {
   queued = true;

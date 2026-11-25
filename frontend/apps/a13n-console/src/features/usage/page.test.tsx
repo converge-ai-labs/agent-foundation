@@ -467,94 +467,72 @@ it("filters the whole page from the top member picker and switches or clears ide
   ).toBe("true");
 });
 
-it.each(["link", "row"])(
-  "restores the usage sheet and both pages after Session navigation via %s",
-  async (activation) => {
-    http.admin = true;
-    setupSessions();
-    mount();
-    const user = userEvent.setup();
-    await screen.findByText("Support assistant");
-    await user.click(
-      screen.getByRole("button", { name: "Time range: Last 7 days" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Last 30 days" }));
-    await user.click(screen.getByRole("button", { name: "Tokens" }));
-    await user.click(
-      screen.getByRole("button", { name: "Member: All members" }),
-    );
-    await user.click(
-      await screen.findByRole("button", { name: "Alice · User" }),
-    );
-    await user.click(screen.getByRole("button", { name: "Next" }));
-    await user.click(
-      await screen.findByRole("button", { name: "Second page" }),
-    );
-    const sheet = await screen.findByRole("dialog", { name: "Session usage" });
-    await within(sheet).findByRole("link", { name: "Expensive session" });
-    await user.click(within(sheet).getByRole("button", { name: "Next" }));
-    await within(sheet).findByRole("link", { name: "Untitled session" });
-    const queries = () =>
-      http.GET.mock.calls
-        .filter(([path]) => path.endsWith("sessions"))
-        .map(([, options]) => options.params.query);
-    const before = queries().at(-1);
-    if (activation === "link") {
-      await user.click(
-        within(sheet).getByRole("link", { name: "Untitled session" }),
-      );
-    } else {
-      within(sheet)
-        .getByRole("row", { name: /Untitled session/ })
-        .focus();
-      await user.keyboard("{Enter}");
-    }
-    await screen.findByRole("heading", { name: "Session Debug" });
-    expect(screen.queryByRole("dialog")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Browser Back" }));
-    const restored = await screen.findByRole("dialog", {
-      name: "Session usage",
-    });
-    await within(restored).findByRole("link", { name: "Untitled session" });
-    expect(within(restored).getByText("Second page")).toBeTruthy();
-    expect(within(restored).getByText(/Alice/)).toBeTruthy();
-    expect(queries().at(-1)).toEqual(before);
-    await user.click(
-      within(restored).getByRole("button", { name: "Previous" }),
-    );
-    await within(restored).findByRole("link", { name: "Expensive session" });
-    await user.click(within(restored).getByRole("button", { name: "Close" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByRole("button", { name: "Second page" })).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Time range: Last 30 days" }),
-    ).toBeTruthy();
-    expect(
-      screen
-        .getByRole("button", { name: "Tokens" })
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
-    await user.click(screen.getByRole("button", { name: "Browser Forward" }));
-    await user.click(
-      await screen.findByRole("button", { name: "Browser Back" }),
-    );
-    await screen.findByRole("button", { name: "Second page" });
-    expect(screen.queryByRole("dialog")).toBeNull();
-    // Explicitly reopening resets only the Session page; a new visit has no stale sheet.
-    await user.click(screen.getByRole("button", { name: "Second page" }));
-    await user.click(
-      await screen.findByRole("link", { name: "Expensive session" }),
-    );
-    await user.click(
-      await screen.findByRole("link", { name: "Fresh usage visit" }),
-    );
-    await screen.findByRole("button", { name: "Support assistant" });
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Member: All members" }),
-    ).toBeTruthy();
-  },
-);
+it("restores the usage sheet and both pages after Session navigation", async () => {
+  http.admin = true;
+  setupSessions();
+  mount();
+  const user = userEvent.setup();
+  await screen.findByText("Support assistant");
+  await user.click(
+    screen.getByRole("button", { name: "Time range: Last 7 days" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Last 30 days" }));
+  await user.click(screen.getByRole("button", { name: "Tokens" }));
+  await user.click(screen.getByRole("button", { name: "Member: All members" }));
+  await user.click(await screen.findByRole("button", { name: "Alice · User" }));
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await user.click(await screen.findByRole("button", { name: "Second page" }));
+  const sheet = await screen.findByRole("dialog", { name: "Session usage" });
+  await within(sheet).findByRole("link", { name: "Expensive session" });
+  await user.click(within(sheet).getByRole("button", { name: "Next" }));
+  await within(sheet).findByRole("link", { name: "Untitled session" });
+  const queries = () =>
+    http.GET.mock.calls
+      .filter(([path]) => path.endsWith("sessions"))
+      .map(([, options]) => options.params.query);
+  const before = queries().at(-1);
+  within(sheet)
+    .getByRole("row", { name: /Untitled session/ })
+    .focus();
+  await user.keyboard("{Enter}");
+  await screen.findByRole("heading", { name: "Session Debug" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Browser Back" }));
+  const restored = await screen.findByRole("dialog", {
+    name: "Session usage",
+  });
+  await within(restored).findByRole("link", { name: "Untitled session" });
+  expect(within(restored).getByText("Second page")).toBeTruthy();
+  expect(within(restored).getByText(/Alice/)).toBeTruthy();
+  expect(queries().at(-1)).toEqual(before);
+  await user.click(within(restored).getByRole("button", { name: "Previous" }));
+  await within(restored).findByRole("link", { name: "Expensive session" });
+  await user.click(within(restored).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("button", { name: "Second page" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Time range: Last 30 days" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Tokens" }).getAttribute("aria-pressed"),
+  ).toBe("true");
+  await user.click(screen.getByRole("button", { name: "Browser Forward" }));
+  await user.click(await screen.findByRole("button", { name: "Browser Back" }));
+  await screen.findByRole("button", { name: "Second page" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  // Explicitly reopening resets only the Session page; a new visit has no stale sheet.
+  await user.click(screen.getByRole("button", { name: "Second page" }));
+  await user.click(
+    await screen.findByRole("link", { name: "Expensive session" }),
+  );
+  await screen.findByRole("heading", { name: "Session Debug" });
+  await user.click(screen.getByRole("link", { name: "Fresh usage visit" }));
+  await screen.findByRole("button", { name: "Support assistant" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Member: All members" }),
+  ).toBeTruthy();
+});
 
 it("drops restored member filters and their cursors when admin access is lost", async () => {
   http.admin = true;

@@ -113,6 +113,50 @@ curl -sS -X POST "$A13N_URL/api/v1/environments" \
 
 For an E2B template, select existing volumes in **Create environment** or pass `"recipe_overrides":{"volume_mounts":{"/data":"project-123"}}` in the request. Each key is an absolute path inside the sandbox. Omit the override to inherit template mounts, or pass an empty map to clear them. Automatic replacements keep your selection. To use the files after deleting an instance, mount the same volume on a new one. The E2B account must have Volumes enabled.
 
+For a Daytona template, select an existing volume in **Create environment** or supply this fragment in the create request. Use a ready Daytona volume ID and an absolute path inside the sandbox. The optional `subpath` mounts one folder from the volume. Omit `volumes` to inherit the template's mounts, or pass `[]` to clear them. Replacements retain the instance selection. After deleting the sandbox, mount the same volume and subpath on a new one to read the files again.
+
+```json
+{
+  "recipe_overrides": {
+    "volumes": [
+      {
+        "volume_id": "<daytona-volume-id>",
+        "mount_path": "/data",
+        "subpath": "projects/a"
+      }
+    ]
+  }
+}
+```
+
+For a Modal template, select existing volumes by name in **Create environment** or send the following override. The provider looks up names in its configured Modal environment. `mount_path` is the directory in the sandbox. Use `sub_path` to mount a directory inside the volume and `read_only: true` for read-only access. Omit `volumes` to inherit template mounts or send `[]` to clear them. Resume and automatic replacement reuse the instance selection. After deletion, mount the same volume and subdirectory on the next instance to read the saved files.
+
+```json
+{
+  "recipe_overrides": {
+    "volumes": [
+      { "volume_name": "project-files", "mount_path": "/data", "sub_path": "/projects/a" }
+    ]
+  }
+}
+```
+
+For a boxd template, select an existing disk by ID in **Create environment** or pass the override below. Use a disk in the provider’s region that is free to attach. Each disk can attach to one machine at a time. Stopping the machine keeps the disk attached. After deleting the machine, mount the same disk on a new instance to read its files. Omit `volumes` to inherit the template mounts or pass `[]` to clear them. Templates with `from_snapshot` cannot attach disks at creation.
+
+```json
+{
+  "recipe_overrides": {
+    "volumes": [
+      {
+        "disk_id": "<boxd-disk-id>",
+        "mount_path": "/home/boxd/data",
+        "read_only": false
+      }
+    ]
+  }
+}
+```
+
 ### Stop, rename and delete
 
 Send the environment's current ETag in `If-Match` (requires `write`):

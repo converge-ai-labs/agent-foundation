@@ -11,7 +11,7 @@ dependencies = [
     "agent-client-protocol==1.0.0",
     "a13n-harness",
     "pydantic>=2.12,<3",
-    "pydantic-ai-slim==2.70.*",
+    "pydantic-ai-slim==2.74.*",
 ]
 
 [project.urls]

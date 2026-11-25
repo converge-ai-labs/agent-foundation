@@ -1,7 +1,9 @@
-// @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createTransport, NetworkError } from "./client";
 
+beforeEach(() => {
+  vi.stubGlobal("window", { location: { origin: "http://localhost:3000" } });
+});
 afterEach(() => vi.unstubAllGlobals());
 
 it("classifies browser network failures without depending on browser wording", async () => {

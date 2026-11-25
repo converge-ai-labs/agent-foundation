@@ -21,6 +21,8 @@ from a13n_harness.tools import (
     InvocationPolicyDecision,
     ToolOutputPolicy,
 )
+from a13n_harness.tools.deferred import DeferredInputState
+from pydantic_ai import DeferredToolRequests as NativeDeferredToolRequests
 from pydantic_ai import DeferredToolResults, Tool, ToolApproved
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.capabilities import Capability
@@ -242,8 +244,16 @@ async def test_approved_override_is_schema_validated_and_resources_are_resolved_
     assert resolved == [4]
 
 
-async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume() -> None:
+async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume(monkeypatch) -> None:
     executed: list[int] = []
+    validated: dict[str, dict] = {}
+    export = DeferredInputState.export
+
+    def capture_native_requests(state: DeferredInputState, native: NativeDeferredToolRequests):
+        validated.update(native.validated_args)
+        return export(state, native)
+
+    monkeypatch.setattr(DeferredInputState, "export", capture_native_requests)
 
     def change(value: int) -> int:
         executed.append(value)
@@ -260,6 +270,8 @@ async def test_unmanaged_native_approval_remains_unmarked_and_uses_native_resume
     assert first.state is not None and first.deferred is not None
     requests = first.deferred
     call_id = requests.approvals[0].target_call.tool_call_id
+    assert validated == {call_id: {"value": 1}}
+    assert requests.target_requests().validated_args == {}
     assert "a13n.harness.managed-tool-id" not in requests.metadata.get(call_id, {})
 
     second = await executable.run(

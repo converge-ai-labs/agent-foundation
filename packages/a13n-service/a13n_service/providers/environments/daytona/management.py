@@ -74,6 +74,9 @@ class DaytonaManagement(DaytonaReference, NativeManagement[DaytonaEnvironmentCon
                     "target": self.backend.target,
                     "labels": self.labels,
                     "public": False,
+                    **(
+                        {"volumes": [mount.api_mount() for mount in self.config.volumes]} if self.config.volumes else {}
+                    ),
                     "env": self.bootstrap_environment(
                         {
                             **self.config.environment,
