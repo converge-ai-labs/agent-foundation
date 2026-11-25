@@ -939,11 +939,12 @@ class _Attempt:
             part_audio = webrtc is None and stream.relay_part_audio(channel.emit)
             pcm = stream.stream_audio() if webrtc is None and not part_audio else None
             opening = await self._realtime_notices(stream, channel)
+            opening_id = None
             if opening:
                 if channel.draft:
                     await stream.recall(channel.draft)
                     opening.append(TextContent(channel.draft))
-                stream.enqueue_notice(opening)
+                opening_id = stream.enqueue_notice(opening)
             elif channel.draft:
                 await stream.send(channel.draft, respond=True)
             if channel.draft:
@@ -957,8 +958,12 @@ class _Attempt:
                 ready["audio_hz"] = 24000
             else:
                 ready["transport"] = "webrtc"
-            channel.emit(ready)
-            receive = tasks.create_task(self._realtime_input(stream, channel, output))
+
+            def start_input() -> asyncio.Task[None]:
+                channel.emit(ready)
+                return tasks.create_task(self._realtime_input(stream, channel, output, tasks))
+
+            receive = start_input() if opening_id is None else None
             audio = tasks.create_task(self._realtime_audio(pcm, channel)) if pcm is not None else None
             stop = tasks.create_task(self._close_realtime(stream, channel))
             notices = tasks.create_task(self._receive_realtime_notices(stream, channel))
@@ -966,6 +971,13 @@ class _Attempt:
                 async for item in stream:
                     await self._observe(item, output)
                     if isinstance(item, HarnessEvent) and item.run_id == stream.run_id:
+                        if (
+                            receive is None
+                            and isinstance(item.event, EnqueuedMessagesEvent)
+                            and item.event.enqueue_id == opening_id
+                            and not channel.closed.is_set()
+                        ):
+                            receive = start_input()
                         if (
                             webrtc
                             and isinstance(item.event, RealtimeOutputSpeechStartEvent)
@@ -977,10 +989,6 @@ class _Attempt:
                             and not channel.closed.is_set()
                         ):
                             channel.emit({"type": "barge_in"})
-                        if channel.resume_rtc_on_turn_end and isinstance(item.event, RealtimeTurnCompleteEvent):
-                            # GPT-Live sideband reports turn completion while the browser plays the direct media.
-                            channel.resume_rtc_on_turn_end = False
-                            channel.emit({"type": "playback_end"})
                         if isinstance(item.event, (RealtimeTurnCompleteEvent, EnqueuedMessagesEvent)):
                             await self.boundaries.stage_live(stream.export_state)
                         if not channel.closed.is_set() and (transcript := transcripts.observe(item)) is not None:
@@ -994,7 +1002,8 @@ class _Attempt:
                                 }
                             )
             finally:
-                receive.cancel()
+                if receive is not None:
+                    receive.cancel()
                 stop.cancel()
                 notices.cancel()
                 if audio is not None and channel.closed.is_set():
@@ -1055,7 +1064,15 @@ class _Attempt:
             )
         return results
 
-    async def _realtime_input(self, stream: HarnessLiveStream, channel: Channel, output: Coalescer) -> None:
+    async def _realtime_input(
+        self, stream: HarnessLiveStream, channel: Channel, output: Coalescer, tasks: asyncio.TaskGroup
+    ) -> None:
+        async def resume_playback() -> None:
+            await stream.wait_for_reply()
+            if not channel.closed.is_set():
+                channel.emit({"type": "playback_end"})
+
+        resume: asyncio.Task[None] | None = None
         while True:
             payload = await channel.incoming.get()
             if isinstance(payload, bytes):
@@ -1064,11 +1081,16 @@ class _Attempt:
             elif isinstance(payload, Media):
                 if payload.type == "interrupt":
                     channel.playback_epoch += 1
-                    channel.resume_rtc_on_turn_end = (
-                        channel.webrtc_offer is not None and not stream.supports_interruption
+                    cancelled = await stream.barge_in(
+                        played_bytes=payload.played_bytes if channel.webrtc_offer is None else None
                     )
-                    await stream.barge_in(played_bytes=payload.played_bytes if channel.webrtc_offer is None else None)
                     channel.emit({"type": "interrupted"})
+                    if channel.webrtc_offer is not None and not cancelled:
+                        if resume is not None:
+                            resume.cancel()
+                        resume = tasks.create_task(resume_playback())
+                        # Snapshot the outstanding reply before forwarding another queued text turn.
+                        await asyncio.sleep(0)
                 elif payload.type == "audio_commit":
                     await stream.commit_audio()
                 else:

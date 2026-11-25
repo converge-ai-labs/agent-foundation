@@ -73,7 +73,6 @@ class Channel:
     attached: bool = False
     audio: bool = True
     draft: str = ""
-    resume_rtc_on_turn_end: bool = False
     playback_epoch: int = 0
     playback_offset: int = 0
     verify_dispatch: Callable[[str], Awaitable[None]] | None = None

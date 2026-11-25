@@ -462,6 +462,10 @@ class HarnessLiveStream(HarnessRunStream[None]):
         self._part_audio = sink
         return True
 
+    async def wait_for_reply(self) -> None:
+        """Wait for the current exchange, returning immediately if it already ended."""
+        await self._active_session().wait_for_reply()
+
     async def barge_in(self, *, played_bytes: int | None = None) -> bool:
         profile = self._live_model.profile
         self._muted_part = self._playback_part

@@ -414,6 +414,13 @@ async def test_app_opens_realtime_over_http_and_websocket(
                     assert await socket.recv() == pcm
                 transcript = json.loads(await socket.recv())
                 assert transcript["type"] == "transcript" and transcript["text"] == "Hello!"
+                if api == "openai.live" and transport == "webrtc":
+                    # The peer is still playing the tail of the exchange the provider just completed.
+                    await socket.send('{"type":"interrupt"}')
+                    received = []
+                    while "playback_end" not in received:
+                        received.append(json.loads(await socket.recv())["type"])
+                    assert "interrupted" in received
                 await socket.send('{"type":"stop"}')
                 async for frame in socket:
                     assert json.loads(frame)["type"] in {"transcript", "sealed"}, frame
@@ -983,6 +990,18 @@ async def test_crash_before_notice_checkpoint_redelivers_on_reconnect(
         return build(root, capabilities=lambda node: [*capabilities(node), Capability(tools=[lookup])], **kwargs)
 
     monkeypatch.setattr(agent, "build", with_tool)
+    opening_started = asyncio.Event()
+    deliver_opening = asyncio.Event()
+    send = provider.connection.send
+
+    async def hold_opening(content):
+        if "opening draft" in str(content):
+            assert "tool_receipt" in str(content)
+            opening_started.set()
+            await deliver_opening.wait()
+        return await send(content)
+
+    monkeypatch.setattr(provider.connection, "send", hold_opening)
     original = _Attempt._commit_cut
     staged = asyncio.Event()
     allow = asyncio.Event()
@@ -1012,9 +1031,14 @@ async def test_crash_before_notice_checkpoint_redelivers_on_reconnect(
                     subprotocols=[ticket["subprotocol"], ticket["ticket"]],
                 ) as socket:
                     assert json.loads(await socket.recv())["type"] == "accepted"
+                    if attempt == 1:
+                        await opening_started.wait()
+                        with pytest.raises(TimeoutError):
+                            await asyncio.wait_for(socket.recv(), 0.15)
+                        deliver_opening.set()
                     assert json.loads(await socket.recv())["type"] == "ready"
                     if attempt == 0:
-                        body["thread_id"] = ticket["thread_id"]
+                        body.update(thread_id=ticket["thread_id"], draft="opening draft")
                         # Capture the completion of one independent tool operation.
                         await provider.connection.incoming.put(
                             ToolCall("call_lookup", tool_name="lookup", args="{}", response_usage_follows=True)
@@ -1057,6 +1081,11 @@ async def test_crash_before_notice_checkpoint_redelivers_on_reconnect(
                             await asyncio.sleep(0.05)
                         allow.set()
                     else:
+                        # The mic is usable before the opening reply completes.
+                        pcm = bytes(960)
+                        await socket.send(pcm)
+                        audio = await provider.connection.outgoing.get()
+                        assert isinstance(audio, BinaryAudio) and audio.data == pcm
                         await socket.send('{"type":"stop"}')
                         terminal = [json.loads(frame) async for frame in socket]
                         assert terminal[-1]["type"] == "sealed"
