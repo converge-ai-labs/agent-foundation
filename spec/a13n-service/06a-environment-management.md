@@ -224,6 +224,8 @@ Native lookup names and backing identities are distinct: Sprites state retains i
 
 #### E2B
 
+An E2B recipe can map absolute sandbox paths to existing E2B volume names in `volume_mounts`. Creation passes these bindings to the E2B SDK. Nonempty mounts participate in target identity independently of entry order. Resume reuses the original bindings. Deletion kills only the sandbox and retains the external volumes.
+
 The allocation recipe selects the template (default `base`), sandbox-wide internet access, and sandbox TTL (`timeout_seconds`, default 3600), alongside the Harness-owned execution inputs. Compatible backends can require their own templates and may lack lifecycle operations. Lifecycle calls use the explicit account API URL or `https://api.<domain>` and never inherit an ambient API URL. Ownership metadata contains the stable Environment identity and configuration fingerprint. Interrupted creation can search allocation metadata; multiple matches and incompatible metadata are conflicts. Search is not atomic create-if-absent, so Service lifecycle coordination remains necessary.
 
 Service accepts `desktop=true` without a template or execution setting: it defaults to `template="auto"`, `execution="envd_http"` and `desktop_assistance=true`. Console selects these together. [Automatic preparation](06-environments.md#automatic-e2b-desktop-builds) resolves a durable credential-scoped private build before calling the management driver. The driver rejects unresolved `auto`; Harness execution never builds templates. Explicit custom templates preserve their previous opt-in semantics.

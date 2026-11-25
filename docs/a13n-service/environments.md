@@ -111,6 +111,8 @@ curl -sS -X POST "$A13N_URL/api/v1/environments" \
   -d '{"template_id":"envtpl_...","name":"Shared data"}'
 ```
 
+For an E2B template, select existing volumes in **Create environment** or pass `"recipe_overrides":{"volume_mounts":{"/data":"project-123"}}` in the request. Each key is an absolute path inside the sandbox. Omit the override to inherit template mounts, or pass an empty map to clear them. Automatic replacements keep your selection. To use the files after deleting an instance, mount the same volume on a new one. The E2B account must have Volumes enabled.
+
 ### Stop, rename and delete
 
 Send the environment's current ETag in `If-Match` (requires `write`):

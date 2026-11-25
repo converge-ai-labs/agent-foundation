@@ -10292,6 +10292,7 @@ export interface components {
       };
       /** Name */
       name?: string | null;
+      recipe_overrides?: components["schemas"]["RecipeOverrides"];
       /** Template Id */
       template_id: string;
     };
@@ -12789,6 +12790,13 @@ export interface components {
     };
     /** @enum {string} */
     ReadView: "detailed" | "compact";
+    /** RecipeOverrides */
+    RecipeOverrides: {
+      /** Volume Mounts */
+      volume_mounts?: {
+        [key: string]: string;
+      };
+    };
     /**
      * Reclamation
      * @description Instance-scoped reclamation settings copied at reservation; no stop/resume semantics.

@@ -12654,6 +12654,9 @@
             ],
             "title": "Name"
           },
+          "recipe_overrides": {
+            "$ref": "#/components/schemas/RecipeOverrides"
+          },
           "template_id": {
             "maxLength": 41,
             "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
@@ -20413,6 +20416,21 @@
           "compact"
         ],
         "type": "string"
+      },
+      "RecipeOverrides": {
+        "additionalProperties": false,
+        "properties": {
+          "volume_mounts": {
+            "additionalProperties": {
+              "pattern": "^[a-zA-Z0-9-]+$",
+              "type": "string"
+            },
+            "title": "Volume Mounts",
+            "type": "object"
+          }
+        },
+        "title": "RecipeOverrides",
+        "type": "object"
       },
       "Reclamation": {
         "additionalProperties": false,

@@ -130,6 +130,7 @@ class E2BManagement(E2BReference, ManagementBackend):
 
     async def create(self) -> Pending | None:
         from e2b import AsyncSandbox
+        from e2b.exceptions import SandboxException
         from e2b.sandbox.commands.command_handle import CommandExitException
 
         target = await self._inspect()
@@ -146,18 +147,31 @@ class E2BManagement(E2BReference, ManagementBackend):
         if config.preparation == "headless":
             metadata[preparation.TAG] = preparation.revision()
         with sdk_errors(mutation=True):
-            sandbox = await AsyncSandbox.create(
-                template=config.template,
-                envs=self._envd_environment()
-                if config.envd_management == "preinstalled" and config.execution != "native"
-                else envd_environment(dict(config.environment), config.envd),
-                timeout=config.timeout_seconds,
-                metadata=metadata,
-                allow_internet_access=config.allow_internet_access,
-                secure=True,
-                lifecycle={"on_timeout": "kill", "auto_resume": False},
-                **self._options(),
-            )
+            try:
+                sandbox = await AsyncSandbox.create(
+                    template=config.template,
+                    volume_mounts=dict(config.volume_mounts) or None,
+                    envs=self._envd_environment()
+                    if config.envd_management == "preinstalled" and config.execution != "native"
+                    else envd_environment(dict(config.environment), config.envd),
+                    timeout=config.timeout_seconds,
+                    metadata=metadata,
+                    allow_internet_access=config.allow_internet_access,
+                    secure=True,
+                    lifecycle={"on_timeout": "kill", "auto_resume": False},
+                    **self._options(),
+                )
+            except SandboxException as error:
+                # The SDK exposes ordinary create rejections as "HTTP status: message".
+                # Leave transport failures and uncertain outcomes to lifecycle reconciliation.
+                if config.volume_mounts and str(error).startswith(("400:", "403:", "404:", "422:")):
+                    raise envd_error(
+                        "e2b",
+                        "e2b_create_rejected",
+                        Category.INVALID,
+                        description="E2B rejected sandbox creation. Check the template and that the named volumes are available to this E2B account.",
+                    ) from None
+                raise
             self._remember(sandbox.sandbox_id, revision=metadata.get(preparation.TAG))
             try:
                 if config.preparation == "headless" and not await self._prepare_envd(sandbox):

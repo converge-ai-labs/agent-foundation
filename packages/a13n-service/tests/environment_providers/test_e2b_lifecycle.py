@@ -162,11 +162,12 @@ async def test_inert_catalog_and_provider_construction(api):
 
 
 async def test_create_resume_and_exact_destruction(api):
-    config = E2BRecipe(environment={"APP_MODE": "agent-default"})
+    config = E2BRecipe(environment={"APP_MODE": "agent-default"}, volume_mounts={"/data": "project-a"})
     env = environment(configuration=config)
     await env.create()
     assert api.calls.count("create") == 1
     assert api.options[0]["envs"] == config.environment
+    assert api.options[0]["volume_mounts"] == {"/data": "project-a"}
     state = env.state
     assert state is not None and "secret" not in state.model_dump_json()
     await env.close()
@@ -186,6 +187,20 @@ async def test_create_resume_and_exact_destruction(api):
     assert await environment(state, configuration=config).inspect() == "absent"
     await environment(state, configuration=config).destroy()
     assert api.calls.count("kill") == 1
+
+
+async def test_missing_volume_fails_creation_without_retrying_without_mounts(api, monkeypatch):
+    from e2b.exceptions import SandboxException
+
+    create = AsyncMock(side_effect=SandboxException("404: private upstream detail"))
+    monkeypatch.setattr(api, "create", create)
+    env = environment(configuration=E2BRecipe(volume_mounts={"/data": "missing"}))
+    with pytest.raises(EnvironmentProviderError) as caught:
+        await env.create()
+    assert caught.value.code == "e2b_create_rejected"
+    assert "private upstream detail" not in str(caught.value)
+    create.assert_awaited_once()
+    assert create.await_args.kwargs["volume_mounts"] == {"/data": "missing"}
 
 
 async def test_failed_execution_open_keeps_the_selected_target_and_releases_scope(api, monkeypatch):

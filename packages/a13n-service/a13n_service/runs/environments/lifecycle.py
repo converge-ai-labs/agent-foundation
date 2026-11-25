@@ -35,7 +35,7 @@ from sqlalchemy.orm import aliased
 from a13n_service.infra.audit import record
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import advisory_lock, after_commit, lock, now, transaction
-from a13n_service.infra.errors import ServiceError, conflict
+from a13n_service.infra.errors import ServiceError, conflict, invalid
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.telemetry import meter
 from a13n_service.providers.environment import envd_policy
@@ -264,12 +264,19 @@ async def reserve(
     limit: int,
     name: str | None = None,
     replaces: EnvironmentRow | None = None,
+    recipe_overrides: dict | None = None,
 ) -> EnvironmentRow:
     """A new workspace-managed instance in `reserved`, from an enabled template of an enabled provider the principal
     may run. A replacement takes the slot of the locked, confirmed-lost end of its chain. Other reservations
     need a free slot. Nothing external exists until create is dispatched."""
     template = await resolve_template(session, principal, scope, template_id)
-    await resolve_provider(session, principal, EnvironmentProviderRow, scope, template.provider_id)
+    provider = await resolve_provider(session, principal, EnvironmentProviderRow, scope, template.provider_id)
+    if replaces is not None:
+        recipe_overrides = replaces.recipe_overrides
+        if recipe_overrides and replaces.provider_id != template.provider_id:
+            raise conflict("environment", replaces.id, "environment_template_moved")
+    if recipe_overrides and provider.type != "e2b":
+        raise invalid("recipe_overrides.volume_mounts", "Volume mounts require an E2B template")
     await lock_reservations(session, scope.workspace_id)
     # A confirmed loss still holds a slot. Idle deletion has already returned its slot to the workspace.
     if replaces is None or replaces.status == "deleted":
@@ -293,6 +300,7 @@ async def reserve(
         workspace_id=template.workspace_id,
         provider_id=template.provider_id,
         template_id=template.id,
+        recipe_overrides=recipe_overrides,
         name=name or template.name,
         generation=0,
         status="reserved",
@@ -459,7 +467,7 @@ async def _refusal(
         definition = runtime.registry.get("environment", provider.type)
         # Freeze effective defaults too: rebuilding an adapter after an upgrade must use the same recipe.
         try:
-            recipe = definition.validate_environment(template.config.recipe)
+            recipe = definition.validate_environment(template.config.recipe | (environment.recipe_overrides or {}))
             if environment.status == "creating":
                 await launch.freeze(
                     session,
