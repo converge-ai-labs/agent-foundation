@@ -17,7 +17,8 @@
     "./brand/mark": "./src/brand/mark.ts",
     "./brand/wordmark": "./src/brand/wordmark.tsx",
     "./mermaid-render": "./src/mermaid-render.ts",
-    "./markdown-extensions": "./src/markdown-extensions.ts"
+    "./markdown-extensions": "./src/markdown-extensions.ts",
+    "./html-code-preview": "./src/html-code-preview.tsx"
   },
   "sideEffects": [
     "**/*.css"
@@ -49,6 +50,7 @@
     "mdast-util-math": "^3.0.0",
     "mermaid": "^12.0.0",
     "micromark-util-types": "^2.0.2",
+    "parse5": "^8.0.1",
     "remark-parse": "^11.0.0",
     "tailwind-merge": "^3.4.0",
     "unified": "^11.0.5"

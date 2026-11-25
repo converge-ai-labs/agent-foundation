@@ -41,6 +41,8 @@ a13n-service --config service.toml run --role all
 curl --fail --silent --show-error https://agents.example.com/readyz
 ```
 
+组织管理员可在 **设置 → 组织 → 常规** 查看稳定版更新和安全公告。离线部署可设置 `A13N_CONTROL__UPDATE_NOTICES_ENABLED=false`，停止向 PyPI 和 GitHub 查询。
+
 ## 必需基础设施
 
 所有进程角色（`control`、`worker`、`all`）必须共享同一套 PostgreSQL、Redis、对象存储与加密密钥：

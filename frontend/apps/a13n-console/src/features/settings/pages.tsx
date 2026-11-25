@@ -16,6 +16,7 @@ import { ApiKeys } from "./keys";
 import { SettingsLayout } from "./layout";
 import { MemberSettings } from "./members";
 import { Profile } from "./profile";
+import { UpdateNotices } from "./update-notices";
 import { DeleteWorkspace, Workspaces } from "./workspaces";
 import { Webhooks } from "./webhooks/list";
 import { WebhookDetail } from "./webhooks/detail";
@@ -133,7 +134,12 @@ export function OrganizationSettings() {
           ]),
         ),
         "app-plugins": <AppManagement />,
-        general: <Profile target={scope} />,
+        general: (
+          <div className="flex flex-col gap-5">
+            <UpdateNotices organizationId={organization.id} />
+            <Profile target={scope} />
+          </div>
+        ),
         members: <MemberSettings scope={scope} />,
         workspaces: <Workspaces />,
         audit: <Audit scope={scope} />,

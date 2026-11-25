@@ -1302,6 +1302,8 @@
   "The Mermaid preview renderer could not start.": "无法启动 Mermaid 预览渲染器。",
   "Waiting for the complete diagram…": "等待完整图表…",
   "Copy diagram source": "复制图表源码",
+  "HTML preview": "HTML 预览",
+  "HTML is too large to preview (200 KB limit).": "HTML 超过 200 KB，无法预览。",
   "Copy code block": "复制代码",
   "Could not copy. Select the source to copy it manually.": "无法复制。请选中源码手动复制。",
   "{{language}} code": "{{language}} 代码",

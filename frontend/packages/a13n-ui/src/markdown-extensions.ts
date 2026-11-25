@@ -26,3 +26,11 @@ const closedDiagram: Extension = {
 export function remarkClosedDiagram(this: Processor) {
   (this.data().fromMarkdownExtensions ??= []).push(closedDiagram);
 }
+
+// Syntax highlighting wraps text in spans; the preview needs the literal source.
+type CodeNode = { type: string; value?: string; children?: CodeNode[] };
+export function markdownCodeText(node?: CodeNode): string {
+  return node?.type === "text"
+    ? (node.value ?? "")
+    : (node?.children?.map(markdownCodeText).join("") ?? "");
+}

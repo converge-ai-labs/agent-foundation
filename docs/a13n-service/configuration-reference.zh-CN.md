@@ -116,6 +116,7 @@ description: Service 设置的每个字段，及其环境变量、类型、范�
 
 | 设置                                  | 环境变量                                    | 类型 / 选项 | 约束与默认值                                    |
 | ------------------------------------- | ------------------------------------------- | ----------- | ----------------------------------------------- |
+| `control.update_notices_enabled`      | `A13N_CONTROL__UPDATE_NOTICES_ENABLED`      | 布尔值      | default=true                                    |
 | `control.scan_seconds`                | `A13N_CONTROL__SCAN_SECONDS`                | 数值        | maximum=60; exclusiveMinimum=0; default=1       |
 | `control.sweep_batch`                 | `A13N_CONTROL__SWEEP_BATCH`                 | 整数        | minimum=1; maximum=10000; default=100           |
 | `control.inbox_count`                 | `A13N_CONTROL__INBOX_COUNT`                 | 整数        | minimum=1; maximum=10000; default=128           |

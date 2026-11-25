@@ -10,6 +10,7 @@ import {
 import type { DisplayItem } from "a13n-ui/display";
 import { createClient } from "../../service-client";
 import { PaneValue } from "./transcript/debug/pane-parts";
+import { MarkdownContent } from "../../shared/markdown";
 import {
   StoredContent,
   StoredContents,
@@ -185,4 +186,37 @@ it("explains unavailable legacy content without inventing a reference", () => {
   expect(
     screen.queryByRole("button", { name: "Expand full content" }),
   ).toBeNull();
+});
+
+it("keeps an HTML prefix in source until full content is loaded", async () => {
+  const reply = item();
+  reply.content_refs!.text!.preview = "```html\n<p>Saved prefix";
+  respond = () =>
+    Response.json({
+      id: "cnt_one",
+      media_type: "text/plain",
+      value: "```html\n<p>Full document</p>\n```",
+    });
+  render(
+    <StoredContents runId="run_one" items={[reply]}>
+      <StoredContent
+        itemId="itm_one"
+        field="text"
+        renderValue={(value, partial) => (
+          <MarkdownContent
+            text={String(value)}
+            agentReply
+            previewHtml={!partial}
+          />
+        )}
+      />
+    </StoredContents>,
+  );
+  expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Expand full content" }));
+  expect(
+    (await screen.findByRole("button", { name: "Preview" })).getAttribute(
+      "aria-pressed",
+    ),
+  ).toBe("false");
 });

@@ -452,3 +452,18 @@ it("keeps guest transcript links readable without opening owner pages or Host pr
     screen.getByRole("link", { name: "External" }).getAttribute("href"),
   ).toBe("https://example.com");
 });
+
+it("renders fenced HTML as source until preview is available and selected", async () => {
+  const html = "<details><summary>More</summary>Example</details>";
+  const text = `\`\`\`html\n${html}\n\`\`\``;
+  const view = render(<MessageText text={text} />);
+  expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+  view.rerender(<MessageText text={text} previewHtml />);
+  expect(
+    screen.getByRole("region", { name: "html code" }).textContent,
+  ).toContain(html);
+  fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+  expect(
+    (await screen.findByTitle("HTML preview")).getAttribute("srcdoc"),
+  ).toContain(html);
+});

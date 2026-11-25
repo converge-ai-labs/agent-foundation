@@ -6,10 +6,12 @@ import {
   SettingsRow,
   SettingsSection,
 } from "a13n-ui";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { isRecord } from "../../service-client";
 import type { Schema } from "../../shared/api";
 import { TextAreaField, jsonObject } from "../../shared/forms";
+import { fieldSchema } from "../../shared/forms/schema-definition";
 import sharedStyles from "../../shared/shared.module.css";
 import styles from "./models.module.css";
 
@@ -49,6 +51,42 @@ export function enumValues(schema: unknown): string[] {
   return Array.isArray(schema.anyOf) ? schema.anyOf.flatMap(enumValues) : [];
 }
 
+function ProviderListField({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: Schema["JsonValue"] | undefined;
+  disabled: boolean;
+  onChange: (providers: string[] | undefined) => void;
+}) {
+  const { t } = useTranslation();
+  const [input, setInput] = useState<{ text: string; formatted: string }>();
+  const formatted = Array.isArray(value) ? value.join(", ") : "";
+  return (
+    <FormField label={label}>
+      <Input
+        disabled={disabled}
+        placeholder={t("Comma-separated providers")}
+        value={input?.formatted === formatted ? input.text : formatted}
+        onBlur={() => setInput(undefined)}
+        onChange={(event) => {
+          // Keep the user's separators and spacing while typing; JSON stores the parsed list.
+          const text = event.target.value;
+          const providers = text
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean);
+          setInput({ text, formatted: providers.join(", ") });
+          onChange(providers.length ? providers : undefined);
+        }}
+      />
+    </FormField>
+  );
+}
+
 /** The fields and JSON are two views of one draft, never competing settings. */
 export function ModelSettingsFields({
   value,
@@ -71,6 +109,26 @@ export function ModelSettingsFields({
   }
   const properties = isRecord(schema?.properties) ? schema.properties : {};
   const responses = modelApi === "openai.responses";
+  const routingSchema =
+    modelApi === "openrouter.chat_completions" &&
+    "openrouter_provider" in properties
+      ? fieldSchema(properties.openrouter_provider, schema ?? {})
+      : undefined;
+  const routingProperties = isRecord(routingSchema?.properties)
+    ? routingSchema.properties
+    : {};
+  const routing = isRecord(settings.openrouter_provider)
+    ? settings.openrouter_provider
+    : {};
+  function changeRouting(key: string, next: Schema["JsonValue"] | undefined) {
+    const updated = { ...routing };
+    if (next === undefined) delete updated[key];
+    else updated[key] = next;
+    change(
+      "openrouter_provider",
+      Object.keys(updated).length ? updated : undefined,
+    );
+  }
   function change(key: string, next: Schema["JsonValue"] | undefined) {
     const updated = { ...settings };
     if (next === undefined) delete updated[key];
@@ -82,22 +140,38 @@ export function ModelSettingsFields({
     label: string,
     defaultLabel: string,
     options: { value: string; label: string }[],
+    scope = { values: settings, update: change },
   ) {
-    const current = key in settings ? JSON.stringify(settings[key]) : "default";
+    const current =
+      key in scope.values ? JSON.stringify(scope.values[key]) : "default";
     const choices = [{ value: "default", label: defaultLabel }, ...options];
     if (!choices.some((option) => option.value === current))
-      choices.push({ value: current, label: String(settings[key]) });
+      choices.push({ value: current, label: String(scope.values[key]) });
     return (
       <ChoiceField
-        label={t(label)}
+        label={label}
         disabled={invalid}
         value={current}
         options={choices}
         onValueChange={(next) =>
-          change(key, next === "default" ? undefined : JSON.parse(next))
+          scope.update(key, next === "default" ? undefined : JSON.parse(next))
         }
       />
     );
+  }
+  const booleanOptions = [
+    { value: "true", label: t("On") },
+    { value: "false", label: t("Off") },
+  ];
+  function routingChoice(
+    key: string,
+    label: string,
+    options: { value: string; label: string }[],
+  ) {
+    return choice(key, label, t("Provider default"), options, {
+      values: routing,
+      update: changeRouting,
+    });
   }
   return (
     <SettingsSection title={t("Request defaults")} variant="plain">
@@ -109,7 +183,7 @@ export function ModelSettingsFields({
         </p>
         <div className={sharedStyles.twoColumns}>
           {"thinking" in properties &&
-            choice("thinking", "Thinking effort", t("Provider default"), [
+            choice("thinking", t("Thinking effort"), t("Provider default"), [
               { value: "true", label: t("On (default effort)") },
               { value: "false", label: t("Off") },
               ...enumValues(properties.thinking).map((effort) => ({
@@ -143,7 +217,7 @@ export function ModelSettingsFields({
             "openai_reasoning_summary" in properties &&
             choice(
               "openai_reasoning_summary",
-              "Reasoning summary",
+              t("Reasoning summary"),
               t("Provider default"),
               enumValues(properties.openai_reasoning_summary).map(
                 (summary) => ({
@@ -153,7 +227,7 @@ export function ModelSettingsFields({
               ),
             )}
           {responses &&
-            choice("openai_store", "Store response", t("Default (off)"), [
+            choice("openai_store", t("Store response"), t("Default (off)"), [
               { value: "false", label: t("Off") },
               { value: "true", label: t("On") },
               { value: "null", label: t("Provider default") },
@@ -170,6 +244,58 @@ export function ModelSettingsFields({
               }
             />
           </SettingsRow>
+        )}
+        {routingSchema && (
+          <SettingsSection
+            title={t("OpenRouter provider routing")}
+            variant="plain"
+          >
+            <div className={sharedStyles.twoColumns}>
+              {routingChoice(
+                "sort",
+                t("Sort"),
+                enumValues(routingProperties.sort).map((value) => ({
+                  value: JSON.stringify(value),
+                  label: value,
+                })),
+              )}
+              {routingChoice(
+                "data_collection",
+                t("Data collection"),
+                enumValues(routingProperties.data_collection).map((value) => ({
+                  value: JSON.stringify(value),
+                  label:
+                    value === "allow"
+                      ? t("Allow")
+                      : value === "deny"
+                        ? t("Deny")
+                        : value,
+                })),
+              )}
+              {routingChoice(
+                "zdr",
+                t("Zero Data Retention (ZDR)"),
+                booleanOptions,
+              )}
+              {routingChoice(
+                "allow_fallbacks",
+                t("Allow fallbacks"),
+                booleanOptions,
+              )}
+              <ProviderListField
+                label={t("Only providers")}
+                disabled={invalid}
+                value={routing.only}
+                onChange={(next) => changeRouting("only", next)}
+              />
+              <ProviderListField
+                label={t("Ignore providers")}
+                disabled={invalid}
+                value={routing.ignore}
+                onChange={(next) => changeRouting("ignore", next)}
+              />
+            </div>
+          </SettingsSection>
         )}
         {invalid && (
           <p role="status" className={styles.stepNote}>

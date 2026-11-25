@@ -322,6 +322,8 @@ def test_worker_has_no_mcp_and_unmarked_routes_are_absent() -> None:
         "/api/v1/runs/{run_id}/items/{item_id}/content",
         "/api/v1/traces/{trace_id}/spans/{span_id}/content",
     }
+    update_notices = "/api/v1/organizations/{organization_id}/update-notices"
+    assert schema["paths"][update_notices]["get"].get("x-a13n-mcp") is False
     assert not any(path.endswith("/authorize") for path, _ in selected)
     monitoring = {
         (path, method)

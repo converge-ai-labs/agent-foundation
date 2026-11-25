@@ -41,6 +41,8 @@ a13n-service --config service.toml run --role all
 curl --fail --silent --show-error https://agents.example.com/readyz
 ```
 
+Organization administrators can see stable release and security notices in **Settings → Organization → General**. For an offline deployment, set `A13N_CONTROL__UPDATE_NOTICES_ENABLED=false` to stop the checks against PyPI and GitHub.
+
 ## Required infrastructure
 
 Every role (`control`, `worker`, `all`) must share the same PostgreSQL, Redis, object store, and encryption keys:
