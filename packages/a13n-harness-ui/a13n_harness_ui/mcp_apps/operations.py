@@ -217,7 +217,8 @@ class AppOperations:
                 ) from exc
         policy = self.owners.permissions(owner)
         identity = ToolIdentity(source_tool_id(recipe.server_id, name, kind="mcp"))
-        mode = policy.permissions.resolve(identity)
+        annotations = tool.annotations.model_dump(by_alias=True) if tool.annotations is not None else None
+        mode = policy.permissions.resolve(identity, annotations=annotations)
         if mode == "deny":
             raise HarnessUiError("The current tool policy denies this App operation.", code="mcp_app_denied")
         # Model review gates Agent invocations, not user-operated App interactions.

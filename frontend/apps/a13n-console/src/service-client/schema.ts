@@ -5543,6 +5543,11 @@ export interface components {
        * @default []
        */
       plugins?: components["schemas"]["PluginSelection"][];
+      /**
+       * Respect Mcp Annotations
+       * @default false
+       */
+      respect_mcp_annotations?: boolean;
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */
@@ -5630,6 +5635,11 @@ export interface components {
        * @default []
        */
       plugins?: components["schemas"]["PluginSelection"][];
+      /**
+       * Respect Mcp Annotations
+       * @default false
+       */
+      respect_mcp_annotations?: boolean;
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
       /** Skill Sync */

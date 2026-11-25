@@ -92,7 +92,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `memory`: defaults for new sessions' memory settings, snapshotted at first business acceptance unless explicitly configured ([11](11-memory.md#session-selection-and-run-views)). A run override cannot change these defaults.
 - `memory_mounts`: default memory mounts `{name, memory_id, access, recall}`, at most 32 with unique names and memories, which a thread takes at its first acceptance ([11](11-memory.md#mounts)). They are referenced, not pinned, and a run's override cannot change them.
 
-Tool permissions live on each selection and compile into one Harness tool-permission table.
+Tool permissions live on each selection and compile into one Harness tool-permission table. `AgentConfig.respect_mcp_annotations` defaults to `false` and enables [Harness MCP annotation defaults](../a13n-harness/07-tool-execution.md#tool-permissions-and-review) for inherited MCP tool permissions.
 
 Connection selections validate `connection_id`, `tools`, `permission`, and `permissions`. Unknown fields are ignored during parsing.
 

@@ -9,12 +9,16 @@ from a13n_harness import AgentContext, AgentSpec, DeferredToolResume, HarnessBui
 from a13n_harness.capabilities import ToolReviewAssessment, ToolReviewRequest, ToolReviewResult
 from a13n_harness.capabilities.tool_review import ToolReviewPolicy
 from a13n_harness.content import ContentItem, ContentMetadata
+from a13n_harness.mcp import InitializationRetryClient, MCPServer
 from a13n_harness.tools import ToolIdentity, ToolPermissions, ToolPermissionsCapability, source_tool_id
-from a13n_harness.tools.approval import ApprovalPresentation, approval_presentation
+from a13n_harness.tools.approval import APPROVAL_PRESENTATION_KEY, ApprovalPresentation, approval_presentation
+from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from pydantic import ValidationError
 from pydantic_ai import RunContext, ToolApproved
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ApprovalRequired
+from pydantic_ai.mcp import MCPToolset
 from pydantic_ai.messages import ModelMessage, ModelRequest, TextContent, ToolReturnPart
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.tools import DeferredToolResults, Tool
@@ -742,3 +746,86 @@ async def test_approval_override_precedes_deferred_support_surface_filtering(mod
     assert [tool.name for tool in model.last_model_request_parameters.function_tools] == (
         ["execute"] if mode == "allow" else []
     )
+
+
+@pytest.mark.parametrize(
+    ("hints", "settings", "expected", "risk"),
+    [
+        ({"destructiveHint": True}, {}, "allow", None),
+        ({"destructiveHint": True}, {"respect_mcp_annotations": True}, "ask", "high"),
+        ({"readOnlyHint": True, "destructiveHint": True}, {"respect_mcp_annotations": True}, "allow", None),
+        (None, {"respect_mcp_annotations": True}, "allow", None),
+        ({"openWorldHint": True}, {"respect_mcp_annotations": True}, "allow", None),
+        ({"destructiveHint": True}, {"rules": {"mcp/fixture/execute": "ask"}}, "ask", "high"),
+        ({"readOnlyHint": True}, {"rules": {"mcp/fixture/*": "ask"}}, "ask", "low"),
+        (None, {"default": "ask"}, "ask", None),
+        *[
+            (hints, {"respect_mcp_annotations": True, **policy}, mode, "low" if mode == "ask" else None)
+            for mode, hints in [
+                ("allow", {"destructiveHint": True}),
+                ("deny", {"readOnlyHint": True}),
+                ("ask", {"readOnlyHint": True}),
+                ("review", {"destructiveHint": True}),
+            ]
+            for policy in [{"default": mode}, {"rules": {"mcp/fixture/execute": mode}}]
+        ],
+    ],
+)
+@pytest.mark.parametrize("native_approval", [False, True])
+async def test_mcp_annotation_permissions(hints, settings, expected, risk, native_approval) -> None:
+    calls = []
+    server = FastMCP("fixture")
+
+    @server.tool(annotations=ToolAnnotations.model_validate(hints) if hints is not None else None)
+    def execute() -> str:
+        calls.append("execute")
+        return "ok"
+
+    async def prepare(ctx):
+        async def create_toolset():
+            toolset = MCPToolset(InitializationRetryClient(server), id="fixture")
+            return toolset.approval_required() if native_approval else toolset
+
+        return create_toolset
+
+    reviewer = _Reviewer()
+    harness = HarnessBuilder().build(
+        AgentSpec(),
+        model=_model(),
+        output_type=str,
+        capabilities=(
+            MCPServer(id="fixture", prepare=prepare),
+            ToolPermissionsCapability(ToolPermissions.model_validate(settings), reviewer=reviewer),
+        ),
+    )
+    result = await harness.run("go", bindings=RunBindings.embedded())
+    assert len(reviewer.requests) == (1 if expected == "review" else 0)
+    # Native invocation-time confirmation remains independent of permission modes.
+    if native_approval and expected in {"allow", "review"}:
+        expected = "ask"
+        risk = "low" if (hints or {}).get("readOnlyHint") else "high" if (hints or {}).get("destructiveHint") else None
+    assert calls == (["execute"] if expected in {"allow", "review"} else [])
+    if expected == "ask":
+        assert result.status == "suspended"
+        assert result.deferred is not None
+        assert [call.model_call.tool_call_id for call in result.deferred.approvals] == ["call-1"]
+        presentation = ApprovalPresentation.model_validate(
+            result.deferred.metadata["call-1"][APPROVAL_PRESENTATION_KEY]
+        )
+        assert presentation.risk == risk
+    else:
+        assert result.status == "completed"
+
+
+def test_mcp_hints_only_apply_to_inherited_mcp_defaults() -> None:
+    hints = {"readOnlyHint": True}
+    policy = ToolPermissions(respect_mcp_annotations=True)
+    assert policy.resolve(ToolIdentity("tool/fixture/execute", "deny"), annotations=hints) == "deny"
+    identity = ToolIdentity("mcp/fixture/execute", "review")
+    assert policy.resolve(identity, annotations=hints) == "allow"
+    assert policy.resolve(identity, annotations={"destructiveHint": 1}) == "review"
+    assert policy.resolve(identity, annotations={"destructiveHint": False}) == "review"
+    assert policy.resolve(identity) == "review"
+    # A matching inherit rule keeps the source default under a non-inherit policy default.
+    policy = ToolPermissions(default="ask", rules={identity.tool_id: "inherit"}, respect_mcp_annotations=True)
+    assert policy.resolve(identity, annotations=hints) == "review"

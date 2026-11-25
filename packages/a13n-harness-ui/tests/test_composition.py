@@ -1463,7 +1463,8 @@ async def test_root_shell_review_merges_before_capture_and_preserves_other_rules
             {
                 "capability": "ToolPermissionsCapability",
                 "configuration": {
-                    "default": "allow",
+                    "default": "inherit",
+                    "respect_mcp_annotations": True,
                     "rules": {"environment.shell_exec": agent_mode, "environment.read": "deny", "mcp/docs/*": "ask"},
                     "review": {
                         "model": "model-missing",
@@ -1493,6 +1494,7 @@ async def test_root_shell_review_merges_before_capture_and_preserves_other_rules
     assert permissions.resolve(ToolIdentity("environment.read")) == "deny"
     assert permissions.resolve(ToolIdentity("mcp/docs/find")) == "ask"
     assert permissions.resolve(ToolIdentity("web.search")) == "allow"
+    assert permissions.resolve(ToolIdentity("mcp/other/drop"), annotations={"destructiveHint": True}) == "ask"
     assert review.policy.risk_threshold == "low"
     assert review.policy.rules["environment.shell_exec"].risk_threshold == "extra_high"
     assert review.policy.rules["environment.shell_exec"].on_flagged == "approval_required"

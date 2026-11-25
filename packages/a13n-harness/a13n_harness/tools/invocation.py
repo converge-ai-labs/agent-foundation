@@ -82,7 +82,7 @@ from a13n_harness.tools.metadata import (
     ToolOutputPolicy,
     normalize_harness_tool_metadata,
 )
-from a13n_harness.tools.permission_gate import check_permission, gate_tool, permission_mode
+from a13n_harness.tools.permission_gate import check_permission, gate_tool, permission_mode, tool_annotation_risk
 from a13n_harness.tools.policy import (
     INVOCATION_POLICY_CAPABILITY_ID,
     CredentialLease,
@@ -577,6 +577,7 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                             tool_args,
                             tool_id=check.approval.tool_id,
                             reason="policy" if _POLICY_APPROVAL_METADATA_KEY in (exc.metadata or {}) else None,
+                            risk=tool_annotation_risk(tool.tool_def),
                         ),
                     },
                 ) from exc
