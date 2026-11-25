@@ -333,15 +333,18 @@ async def test_mcp_skills_follow_workspace_conflict_policy(tmp_path, conflict):
             assert conflict != "error"
             assert ("Local workflow" in info.instructions) == (conflict == "prefer_earlier")
             assert ("Remote workflow" in info.instructions) == (conflict == "prefer_later")
-            assert "read_skill" in {tool.name for tool in info.function_tools}
+            assert ("read_skill" in {tool.name for tool in info.function_tools}) == (conflict == "prefer_later")
+            assert ("Use read_skill by name" in info.instructions) == (conflict == "prefer_later")
+            if conflict == "prefer_earlier":
+                yield "done"
+                return
             returns = _parts(messages, ToolReturnPart)
             if not returns:
                 yield _delta("read_skill", name="remote")
             else:
                 read = returns[-1].content
-                winner = "workspace" if conflict == "prefer_earlier" else "mcp:fixture"
-                assert read["source_id"] == winner
-                assert ("files" in read) == (conflict == "prefer_later")
+                assert read["source_id"] == "mcp:fixture"
+                assert "files" in read
                 yield "done"
 
         async def run():
@@ -471,7 +474,7 @@ async def test_host_selection_fences_remote_reads_by_name():
     assert not any(method == "resources/read" for method, _ in calls)
 
 
-async def test_read_skill_local_only_reads_bounded_files_without_a_file_toolset(tmp_path):
+async def test_read_skill_reads_bounded_local_files_in_a_mixed_catalog(tmp_path):
     skill = tmp_path / ".agents" / "skills" / "remote"
     (skill / "references").mkdir(parents=True)
     (skill / "SKILL.md").write_bytes(_DOC.encode())
@@ -490,7 +493,7 @@ async def test_read_skill_local_only_reads_bounded_files_without_a_file_toolset(
     observed = []
 
     async def model(messages, info):
-        assert {tool.name for tool in info.function_tools} == {"read_skill"}
+        assert {tool.name for tool in info.function_tools} == {"ping", "read_skill"}
         assert "<path>/workspace/.agents/skills/remote</path>" in info.instructions
         returns = _parts(messages, ToolReturnPart)
         if returns:
@@ -505,16 +508,14 @@ async def test_read_skill_local_only_reads_bounded_files_without_a_file_toolset(
         else:
             yield "done"
 
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        model=FunctionModel(stream_function=model),
-        output_type=str,
-        capabilities=(SkillsCapability(SkillManager.default(policy=SkillsPolicy(max_file_bytes=128))),),
-    )
-    result = await executable.run(
-        "Use skills", bindings=RunBindings.embedded(environment=_binding(tmp_path), producer_observer=observed.append)
-    )
-    assert result.output_or_raise() == "done"
+    async with _server(pages=[[_entry(name="other", root="skill://other/")]]) as (server, calls, _):
+        await _run(
+            model,
+            server,
+            manager=SkillManager.default(policy=SkillsPolicy(max_file_bytes=128)),
+            bindings=RunBindings.embedded(environment=_binding(tmp_path), producer_observer=observed.append),
+        )
+    assert not any(method == "resources/read" for method, _ in calls)
     (access,) = [
         event.event.payload
         for event in observed
@@ -556,13 +557,30 @@ async def test_read_skill_local_respects_provider_path_and_read_authority(tmp_pa
             assert "content" not in returns[-1].content
             yield "done"
 
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        model=FunctionModel(stream_function=model),
-        output_type=str,
-        capabilities=(SkillsCapability(),),
-    )
-    result = await executable.run(
-        "Use skills", bindings=RunBindings.embedded(environment=_binding(tmp_path, deny=deny))
-    )
-    assert result.output_or_raise() == "done"
+    async with _server(pages=[[_entry(name="other", root="skill://other/")]]) as (server, calls, _):
+        await _run(model, server, bindings=RunBindings.embedded(environment=_binding(tmp_path, deny=deny)))
+    assert not any(method == "resources/read" for method, _ in calls)
+
+
+@pytest.mark.parametrize("enable_mcp", [False, True])
+async def test_local_only_selection_keeps_existing_tool_inventory_and_guidance(tmp_path, enable_mcp):
+    skill = tmp_path / ".agents" / "skills" / "local"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: local\ndescription: Local workflow\n---\n")
+
+    async def model(messages, info):
+        assert {tool.name for tool in info.function_tools} == {"ping"}
+        assert "read_skill" not in info.instructions
+        assert "use the ordinary Environment file tools" in info.instructions
+        assert "<path>/workspace/.agents/skills/local</path>" in info.instructions
+        yield "done"
+
+    async with _server() as (server, calls, _):
+        await _run(
+            model,
+            server,
+            enable=enable_mcp,
+            bindings=RunBindings.embedded(environment=_binding(tmp_path), skill_selection=frozenset({"local"})),
+        )
+    assert any(method == "skills/list" for method, _ in calls) == enable_mcp
+    assert not any(method == "resources/read" for method, _ in calls)

@@ -85,9 +85,9 @@ _OPTIONAL_SOURCE_UNAVAILABLE_CODES = frozenset(
 _MAX_SKILL_SELECTION = 10_000
 _LOGGER = get_logger(__name__)
 _SKILL_ROUTING_POLICY = """At the start of a task or when its scope changes materially, consider the available
-skill descriptions. When a skill directly applies, use read_skill with its name to read SKILL.md in full before
-following the workflow. Pass a skill-relative path to read a supporting file. If the skill has a listed
-Environment path, you can also use ordinary file tools there and continue from the returned line boundary.
+skill descriptions. When a skill directly applies, use the ordinary Environment file tools to read the listed
+path's SKILL.md in full before following the workflow. If the result is incomplete, continue from the returned
+line boundary.
 
 Read supporting files as needed for the current step; there is no need to load the entire skill directory.
 Reuse a complete read while its contents remain available in context. After compaction or handoff, re-read
@@ -913,7 +913,7 @@ class _SkillsRunCapability(SkillsCapability):
         return self.catalog_measurement.text if self.catalog_measurement else None
 
     def get_toolset(self) -> FunctionToolset[AgentContext] | None:
-        if not self._local_skills and not self._remote_skills:
+        if not self._remote_skills:
             return None
         return FunctionToolset(tools=[self.read_skill], id="a13n-skills")
 
@@ -962,7 +962,13 @@ class _SkillsRunCapability(SkillsCapability):
     def _render_catalog(self) -> InstructionCatalog | None:
         if not self._catalog.items and not self._catalog.mcp_items:
             return None
-        lines = [_SKILL_ROUTING_POLICY, "", "<available-skills>"]
+        lines = [_SKILL_ROUTING_POLICY]
+        if self._remote_skills:
+            lines.append(
+                "\nUse read_skill by name to read SKILL.md for any selected skill, including entries without an "
+                "Environment path. Pass a skill-relative path to read a supporting file."
+            )
+        lines.extend(("", "<available-skills>"))
         sizes: dict[str, ContextItemUsage] = {}
         for item in sorted((*self._catalog.items, *self._catalog.mcp_items), key=lambda item: item.name):
             fields = [
