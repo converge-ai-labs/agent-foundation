@@ -215,7 +215,7 @@ async def test_uncooperative_tool_cannot_extend_worker_process_shutdown(cause):
             record = executions.admit(operation, thread_id="thread", run_id="run", tool_call_id="call", tool_name="stuck")
             executions.lease_deadlines = {record.execution_id: asyncio.get_running_loop().time() + 0.15}
             await entered.wait()
-            runtime = SimpleNamespace(executions=executions, settings=SimpleNamespace(
+            runtime = SimpleNamespace(executions=executions, realtime_bridge=None, settings=SimpleNamespace(
                 worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=0.15),
                 tool_executions=SimpleNamespace(shutdown_grace_seconds=0.01, finalization_seconds=0.01),
             ))
@@ -265,7 +265,7 @@ async def test_closed_tool_admission_exits_worker_with_all_slots_busy():
             executions.output = SimpleNamespace(run=idle)
             executions.recover = idle
             executions.lease_deadlines = {}
-            runtime = SimpleNamespace(executions=executions, settings=SimpleNamespace(
+            runtime = SimpleNamespace(executions=executions, realtime_bridge=None, settings=SimpleNamespace(
                 worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=30, scan_seconds=1),
                 tool_executions=SimpleNamespace(shutdown_grace_seconds=0.01, finalization_seconds=0.01),
             ))
@@ -313,7 +313,7 @@ async def test_worker_fatal_boundary_preserves_normal_shutdown(cause):
             executions.recover = idle
             executions.routing = SimpleNamespace(run=fail if cause == "routing" else idle)
             executions.output = SimpleNamespace(run=fail if cause == "output" else idle)
-            runtime = SimpleNamespace(executions=executions, settings=SimpleNamespace(
+            runtime = SimpleNamespace(executions=executions, realtime_bridge=None, settings=SimpleNamespace(
                 worker=SimpleNamespace(slots=1, drain_seconds=0, authority_seconds=0.01, lease_seconds=30),
                 tool_executions=SimpleNamespace(shutdown_grace_seconds=0.01, finalization_seconds=0.01),
             ))

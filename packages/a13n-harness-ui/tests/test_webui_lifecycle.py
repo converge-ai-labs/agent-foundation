@@ -23,6 +23,7 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.webui import create_webui, run
 from a13n_harness_ui.webui_lifecycle import RequestLog, WebUIServer
 from anyio import Event, fail_after, sleep, sleep_forever
+from sse_starlette.sse import AppStatus
 from starlette.routing import Route
 from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 from websockets.exceptions import ConnectionClosed
@@ -203,7 +204,11 @@ async def test_failed_startup_is_not_reported_as_success(caplog: pytest.LogCaptu
     assert "WebUI ready" not in caplog.text
 
 
-def test_stop_request_is_visible_even_during_startup(caplog: pytest.LogCaptureFixture) -> None:
+def test_stop_request_is_visible_even_during_startup(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The Uvicorn signal handler also marks all SSE streams in this process for shutdown.
+    monkeypatch.setattr(AppStatus, "should_exit", False)
     server = WebUIServer(uvicorn.Config("unused:app", log_config=None), stopping=Event())
     with caplog.at_level(logging.INFO, logger="a13n_harness_ui.webui"):
         server.handle_exit(signal.SIGINT, None)
