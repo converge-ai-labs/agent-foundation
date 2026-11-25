@@ -213,6 +213,88 @@ it("marks only the selected section read, refreshes counts, and keeps items open
   expect(screen.queryByRole("button", { name: "Mark all as read" })).toBeNull();
 });
 
+it("completes only the selected section, including read items, and refreshes both views", async () => {
+  const question = item("question", "needs_human", "Choose a timeout");
+  const update = {
+    ...item("update", "result", "Fix is ready"),
+    read_at: "2026-11-23T10:01:00Z",
+  };
+  let markedDone = false;
+  let finishBulk!: () => void;
+  const bulk = new Promise<void>((resolve) => {
+    finishBulk = resolve;
+  });
+  const submitted: unknown[] = [];
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const request = input as Request;
+    const url = new URL(request.url);
+    if (url.pathname === "/api/inbox/mark-done" && request.method === "POST") {
+      submitted.push(await request.json());
+      if (submitted.length === 1) return new Response(null, { status: 500 });
+      await bulk;
+      markedDone = true;
+      return new Response(null, { status: 204 });
+    }
+    if (url.pathname !== "/api/inbox") return Response.json([]);
+    return Response.json({
+      items:
+        url.searchParams.get("state") === "done"
+          ? markedDone
+            ? [{ ...update, done_at: "2026-11-23T10:02:00Z" }]
+            : []
+          : markedDone
+            ? [question]
+            : [question, update],
+      unread_count: 1,
+      unread_by_group: { needs_you: 1, updates: 0 },
+    });
+  });
+  mount();
+
+  const updates = within(
+    await screen.findByRole("region", { name: "Updates" }),
+  );
+  const readAction = updates.getByRole("button", { name: "Mark all as read" });
+  const doneAction = updates.getByRole("button", { name: "Mark all as done" });
+  expect(readAction.getAttribute("aria-disabled")).toBe("true");
+  expect(doneAction.getAttribute("aria-disabled")).toBeNull();
+  fireEvent.click(doneAction);
+  expect((await updates.findByRole("alert")).textContent).toContain(
+    "Could not mark this section as done.",
+  );
+  expect(
+    updates.getByRole("button", { name: "Result, Fix is ready" }),
+  ).toBeTruthy();
+  await waitFor(() =>
+    expect(doneAction.getAttribute("aria-disabled")).toBeNull(),
+  );
+
+  fireEvent.click(
+    updates.getByRole("button", { name: "Result, Fix is ready" }),
+  );
+  const markUnread = updates.getByRole<HTMLButtonElement>("button", {
+    name: "Mark as unread",
+  });
+  expect(markUnread.disabled).toBe(false);
+  fireEvent.click(doneAction);
+  await waitFor(() => expect(markUnread.disabled).toBe(true));
+  finishBulk();
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "Updates" })).toBeNull(),
+  );
+  expect(
+    screen.getByRole("button", { name: "Needs you, Choose a timeout, Unread" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Inbox, 1 unread" })).toBeTruthy();
+  expect(submitted).toEqual([{ group: "updates" }, { group: "updates" }]);
+
+  fireEvent.click(screen.getByText("Done", { exact: true }));
+  expect(
+    await screen.findByRole("button", { name: "Result, Fix is ready" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Mark all as done" })).toBeNull();
+});
+
 it("keeps pagination and bulk reading from interrupting each other", async () => {
   let finishBulk!: () => void;
   let finishPaging!: () => void;

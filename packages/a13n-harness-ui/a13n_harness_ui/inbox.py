@@ -67,6 +67,10 @@ class InboxController:
         await self._store.inbox.mark_group_read(group)
         await self._summaries.publish(kind="inbox")
 
+    async def mark_group_done(self, group: InboxGroup) -> None:
+        await self._store.inbox.mark_group_done(group)
+        await self._summaries.publish(kind="inbox")
+
     async def update(self, item_id: str, mutation: InboxItemMutation) -> InboxItem:
         item = await self._store.inbox.update(item_id, read=mutation.read, done=mutation.done)
         await self._summaries.publish(kind="inbox", root_thread_id=item.thread_id, thread_id=item.thread_id)

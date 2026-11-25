@@ -285,6 +285,65 @@ async def test_mark_read_is_scoped_to_one_open_group_across_pages(tmp_path: Path
             assert (await inbox.page(state="open", before=None, limit=1)).unread_by_group.updates == 1
 
 
+@pytest.mark.anyio
+async def test_mark_done_moves_all_open_items_in_one_group(tmp_path: Path) -> None:
+    from a13n_harness_ui.webui import create_webui
+    from httpx import ASGITransport, AsyncClient
+
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        thread = await app.create_thread()
+        inbox = app.inbox()
+        question, result, milestone, done = [
+            await inbox.post(thread_id=thread.thread_id, tool_call_id=title, kind=kind, title=title, message="Message")
+            for kind, title in (
+                ("needs_human", "Question"),
+                ("result", "Result"),
+                ("milestone", "Milestone"),
+                ("result", "Already done"),
+            )
+        ]
+        milestone = await inbox.update(milestone.item_id, InboxItemMutation(read=True))
+        done = await inbox.update(done.item_id, InboxItemMutation(done=True))
+
+        @asynccontextmanager
+        async def factory():
+            yield app
+
+        key = "test-only-key"
+        server = create_webui(factory, api_key=key)
+        async with (
+            server.router.lifespan_context(server),
+            AsyncClient(transport=ASGITransport(app=server), base_url="http://localhost") as client,
+        ):
+            path = "/api/inbox/mark-done"
+            assert (await client.post(path, json={"group": "updates"})).status_code == 401
+            client.headers["Authorization"] = f"Bearer {key}"
+            invalid = await client.post(path, json={"group": "all"})
+            assert invalid.json()["error"]["code"] == "request_invalid"
+            first = (await client.get("/api/inbox?limit=1")).json()
+            assert [item["item_id"] for item in first["items"]] == [milestone.item_id]
+            assert first["next_cursor"] == milestone.item_id
+
+            async with app.summary_events() as events:
+                assert (await client.post(path, json={"group": "updates"})).status_code == 204
+                with fail_after(2):
+                    event = await events.receive()
+                assert event.kind == "inbox" and event.inbox is None
+
+            page = await inbox.page(state="open", before=None, limit=10)
+            assert page.items == (question,)
+            assert page.unread_by_group.model_dump() == {"needs_you": 1, "updates": 0}
+            completed = await inbox.page(state="done", before=None, limit=10)
+            by_id = {item.item_id: item for item in completed.items}
+            assert by_id[done.item_id] == done
+            assert by_id[result.item_id].read_at == by_id[result.item_id].done_at is not None
+            assert by_id[milestone.item_id].read_at == milestone.read_at
+            assert by_id[milestone.item_id].done_at == by_id[result.item_id].done_at
+            assert (await client.post(path, json={"group": "updates"})).status_code == 204
+            assert (await inbox.page(state="done", before=None, limit=10)).items == completed.items
+
+
 def test_inbox_notifications_follow_scope_and_open_the_item() -> None:
     inbox = InboxNotice(item_id="inbox_1", kind="result", title="Shipped", brief="All checks passed.")
     finished = RootOperationNotice(receipt_id="receipt-1", status="completed", brief="Finished.")
