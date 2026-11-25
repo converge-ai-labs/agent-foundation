@@ -16482,6 +16482,7 @@ export interface operations {
         created_by_id?: string | null;
         source_kind?: ("user_upload" | "agent_run") | null;
         status?: "all" | "active" | "retired";
+        order?: "id" | "newest";
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */

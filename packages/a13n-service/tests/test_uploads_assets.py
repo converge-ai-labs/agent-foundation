@@ -204,6 +204,27 @@ async def test_workspace_storage_counts_tracked_bytes_once_by_creator(service) -
         await get_workspace_storage(storage, viewer, other)
 
 
+async def test_asset_newest_cursor_preserves_existing_id_order(service) -> None:  # type: ignore[no-untyped-def]
+    assets = f"{service.api}/assets"
+    # The persistence helper creates the files in a known time order; force reverse ID order.
+    for name, asset_id in (("older.txt", "ast_0000000000000000000"), ("newer.txt", "ast_fffffffffffffffffff")):
+        staged = await upload(service, b"data", name)
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr("a13n_service.resources.assets.service.new_object_id", lambda _kind, value=asset_id: value)
+            created = await service.client.post(assets, json={"upload_id": staged["upload_id"], "name": name})
+        assert created.status_code == 201, created.text
+    default = (await service.client.get(assets, params={"limit": 1})).json()
+    assert default["items"][0]["name"] == "older.txt"
+    first = (await service.client.get(assets, params={"order": "newest", "limit": 1})).json()
+    assert first["items"][0]["name"] == "newer.txt"
+    second = (
+        await service.client.get(assets, params={"order": "newest", "limit": 1, "cursor": first["next_cursor"]})
+    ).json()
+    assert second["items"][0]["name"] == "older.txt" and second["next_cursor"] is None
+    mismatch = await service.client.get(assets, params={"order": "newest", "cursor": default["next_cursor"]})
+    assert mismatch.status_code == 400 and mismatch.json()["error"]["code"] == "invalid_cursor"
+
+
 async def test_asset_filters_cover_the_full_collection(service) -> None:  # type: ignore[no-untyped-def]
     assets = f"{service.api}/assets"
     for i, name in enumerate(["report-100%.txt", "report-100x.txt", "readme.txt"]):

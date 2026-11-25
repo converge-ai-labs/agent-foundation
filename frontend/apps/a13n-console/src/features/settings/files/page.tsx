@@ -10,8 +10,13 @@ import {
   FolderSimpleIcon,
 } from "@phosphor-icons/react";
 import { Button, ChoiceField, MenuItem, ModalFrame } from "a13n-ui";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
 import { useClient } from "../../../auth/context";
@@ -103,13 +108,19 @@ export function WorkspaceFiles() {
   const client = useClient().workspace(workspace.id);
   const cache = useQueryClient();
   const [search, setSearch] = useState("");
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(search.trim().slice(0, 255)), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
   const [source, setSource] = useState<SourceKind | "all">("all");
   const [status, setStatus] = useState<Status>("all");
   const [creator, setCreator] = useState("");
   const [confirm, setConfirm] = useState<Asset | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const filters = {
-    query: search.trim().slice(0, 255) || undefined,
+    query: query || undefined,
+    order: "newest" as const,
     source_kind: source === "all" ? undefined : source,
     status,
     created_by_id: creator || undefined,
@@ -119,6 +130,7 @@ export function WorkspaceFiles() {
   const storageKey = ["workspace-storage", workspace.id];
   const files = useQuery({
     queryKey: [...filesKey, filters, page.cursor],
+    placeholderData: keepPreviousData,
     queryFn: async ({ signal }) =>
       data(
         await client.GET("/api/v1/assets", {
@@ -396,7 +408,11 @@ export function WorkspaceFiles() {
                   total: number.format(files.data.total_count),
                 })}
               >
-                <Pagination page={page} next={files.data.next_cursor} />
+                <Pagination
+                  page={page}
+                  next={files.data.next_cursor}
+                  pending={files.isPlaceholderData}
+                />
               </CollectionFooter>
             )}
           </>

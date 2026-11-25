@@ -37,7 +37,7 @@ A signed-out visitor sees sign-in. While the Service is uninitialized, sign-in c
 
 ### Workspace Files
 
-**Workspace Settings → Files** is available with workspace `read`. The page lists conversation uploads and files published by agents, with the creator and a link to the source Thread when available. Search by filename and filter by source, status, or creator across the full collection; results use cursor pagination. Readers can download active and retired files. Writers can retire active files after confirmation, moving their bytes from active to retired storage and preventing new attachments.
+**Workspace Settings → Files** is available with workspace `read`. The page lists conversation uploads and files published by agents newest first, with the creator and a link to the source Thread when available. Search by filename and filter by source, status, or creator across the full collection; results use cursor pagination. Readers can download active and retired files. Writers can retire active files after confirmation, moving their bytes from active to retired storage and preventing new attachments.
 
 The usage strip shows workspace totals for active assets, retired assets, and staged uploads. A disclosure shows the same breakdown per creator. The list filters do not change usage totals.
 

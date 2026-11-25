@@ -37,7 +37,9 @@ async def test_management_fidelity_and_audit(service: SimpleNamespace) -> None:
         assert {"get_workspace_storage", "list_assets"} <= tools
         usage = await call(http, service, "GET", "/storage")
         assert usage["status"] == 200 and usage["body"]["total_bytes"] == 0
-        files = await call(http, service, "GET", "/assets", source_kind="agent_run", status="active")
+        files = await call(
+            http, service, "GET", "/assets", source_kind="agent_run", status="active", query="report", order="newest"
+        )
         assert files["status"] == 200 and files["body"]["total_count"] == 0
         created = await call(
             http,

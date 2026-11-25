@@ -102,6 +102,7 @@ it("uses a server query on the first cursor after searching from a later page", 
     params: {
       query: {
         query: "report",
+        order: "newest",
         source_kind: undefined,
         created_by_id: undefined,
         status: "all",

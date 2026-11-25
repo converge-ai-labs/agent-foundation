@@ -31663,6 +31663,20 @@
             }
           },
           {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "id",
+              "enum": [
+                "id",
+                "newest"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
+          },
+          {
             "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
             "in": "header",
             "name": "X-Workspace-ID",

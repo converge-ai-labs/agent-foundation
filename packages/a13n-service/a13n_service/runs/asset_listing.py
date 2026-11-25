@@ -1,6 +1,6 @@
 """Workspace asset collection with provenance resolved from execution records."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query
 from sqlalchemy import func, select
@@ -34,6 +34,7 @@ async def list_assets(
     created_by_id: ObjectId | None = None,
     source_kind: SourceKind | None = None,
     status: AssetStatus = "all",
+    order: Literal["id", "newest"] = "id",
 ) -> AssetPage:
     return await _list_assets(
         runtime.storage,
@@ -45,6 +46,7 @@ async def list_assets(
         created_by_id=created_by_id,
         source_kind=source_kind,
         status=status,
+        order=order,
     )
 
 
@@ -59,6 +61,7 @@ async def _list_assets(
     created_by_id: str | None = None,
     source_kind: SourceKind | None = None,
     status: AssetStatus = "all",
+    order: Literal["id", "newest"] = "id",
 ) -> AssetPage:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -78,15 +81,27 @@ async def _list_assets(
         owner = scope.workspace_id
         if query or created_by_id is not None or source_kind is not None or status != "all":
             owner = cursors.query_owner(owner, query or None, created_by_id, source_kind, status)
-        rows, next_cursor = await cursors.id_page(
-            session,
-            matching,
-            AssetRow.id,
-            kind="assets",
-            owner=owner,
-            cursor=cursor,
-            limit=limit,
-        )
+        if order == "newest":
+            rows, next_cursor = await cursors.keyset_page(
+                session,
+                matching,
+                (AssetRow.created_at, AssetRow.id),
+                kind="assets-newest",
+                owner=owner,
+                cursor=cursor,
+                limit=limit,
+                newest_first=True,
+            )
+        else:
+            rows, next_cursor = await cursors.id_page(
+                session,
+                matching,
+                AssetRow.id,
+                kind="assets",
+                owner=owner,
+                cursor=cursor,
+                limit=limit,
+            )
         total_count = await session.scalar(matching.with_only_columns(func.count(AssetRow.id))) or 0
         items = []
         if rows:
