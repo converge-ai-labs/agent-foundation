@@ -32,13 +32,13 @@ class PausingRun:
 @dataclass
 class _CandidateOp:
     apply: Callable[[], Callable[[], None] | None]
+    cancelled: bool = False
 
 
 @dataclass
 class _CandidateBatch:
     ops: list[_CandidateOp] = field(default_factory=list)
     completed: bool = False
-    error: BaseException | None = None
 
 
 class GracefulRestart:
@@ -100,29 +100,27 @@ class GracefulRestart:
         try:
             async with self._candidate_lock:
                 if batch.completed:
-                    if batch.error is not None:
-                        raise batch.error
                     return
                 if self._next_batch is batch:
                     self._next_batch = None
+                active_ops = [pending for pending in batch.ops if not pending.cancelled]
                 rollbacks: list[Callable[[], None]] = []
-                for pending in batch.ops:
+                for pending in active_ops:
                     rollback = pending.apply()
                     if rollback is not None:
                         rollbacks.append(rollback)
                 if rollbacks:
                     try:
                         await self._publish_candidates()
-                    except BaseException as exc:
+                    except BaseException:
                         for rollback in reversed(rollbacks):
                             rollback()
-                        batch.error = exc
-                        batch.completed = True
                         raise
                 batch.completed = True
         except BaseException:
-            if not batch.completed and op in batch.ops:
-                batch.ops.remove(op)
+            op.cancelled = True
+            if not batch.completed and self._next_batch is batch and all(item.cancelled for item in batch.ops):
+                self._next_batch = None
             raise
 
     async def boundary(self, item: RestartItem) -> None:

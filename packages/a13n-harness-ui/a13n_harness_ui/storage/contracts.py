@@ -441,7 +441,7 @@ class StoredChildCheckpoint(StoredContract):
             raise ValueError("checkpoint must reference a Run composition")
         return self
 
-    @model_serializer(mode="plain")
+    @model_serializer(mode="plain", when_used="json")
     def _serialize(self) -> dict[str, Any]:
         state = self.harness_state
         if (
@@ -471,14 +471,13 @@ class StoredChildCheckpoint(StoredContract):
                 else _DEFERRED_REQUESTS_ADAPTER.dump_python(self.deferred_requests, mode="json")
             ),
             "accepted_input": None if self.accepted_input is None else self.accepted_input.model_dump(mode="json"),
+            **({"memory_cursors": dict(self.memory_cursors)} if self.memory_cursors else {}),
             "display": self.display.model_dump(mode="json"),
             "terminal": self.terminal,
             "created_at": self.created_at.isoformat().replace("+00:00", "Z")
             if self.created_at.utcoffset() == UTC.utcoffset(None)
             else self.created_at.isoformat(),
         }
-        if self.memory_cursors:
-            payload["memory_cursors"] = dict(self.memory_cursors)
         return payload
 
 

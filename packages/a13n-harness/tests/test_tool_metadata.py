@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Self
+
 import pytest
 from a13n_harness import DefinitionError
 from a13n_harness.tools import HarnessToolMetadata, ToolOutputPolicy
@@ -138,3 +140,29 @@ async def test_harness_tool_reuses_method_schema_without_retaining_instances(mon
     assert calls == 1
     assert "x-mutated" not in second_tool.function_schema.json_schema
     assert await second_tool.function_schema.call({"text": "b"}, None) == "two:b"  # type: ignore[arg-type]
+
+
+def test_harness_tool_method_schema_isolates_subclasses_returning_self() -> None:
+    from a13n_harness.tools.metadata import HarnessTool
+    from pydantic import BaseModel
+
+    class BasePayload(BaseModel):
+        kind: str = "base"
+
+        def clone(self) -> Self:
+            return self
+
+    class ChildPayload(BasePayload):
+        extra: int = 1
+
+    metadata = HarnessToolMetadata(
+        tool_id="sample.clone",
+        effects=frozenset({"read"}),
+        credential_audiences=(),
+        idempotency="read_only",
+        output_policy=ToolOutputPolicy(max_inline_bytes=512, max_output_bytes=1024),
+    )
+    base_tool = HarnessTool(BasePayload().clone, harness_metadata=metadata)
+    child_tool = HarnessTool(ChildPayload().clone, harness_metadata=metadata)
+    assert "extra" not in base_tool.function_schema.return_schema.get("properties", {})
+    assert "extra" in child_tool.function_schema.return_schema.get("properties", {})

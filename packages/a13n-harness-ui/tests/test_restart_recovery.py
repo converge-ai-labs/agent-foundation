@@ -1180,3 +1180,82 @@ async def test_model_timeout_with_failed_environment_finalization_is_not_recover
         assert await store.restarts.claim() is None
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui"):
         assert calls == 1
+
+
+async def test_coalesced_candidate_batch_does_not_propagate_leader_cancellation() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_harness_ui.restart import GracefulRestart
+    from a13n_harness_ui.restart_models import RestartBatch, RestartItem
+    from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
+    from a13n_harness_ui.storage.restarts import RestartRepository
+
+    reference = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="e" * 64)
+    published_batches: list[RestartBatch] = []
+    first_entered, release_first = Event(), Event()
+    second_entered, release_second = Event(), Event()
+    publish_calls = 0
+
+    async def gated_publish(batch: RestartBatch) -> None:
+        nonlocal publish_calls
+        publish_calls += 1
+        call_index = publish_calls
+        if call_index == 1:
+            first_entered.set()
+            await release_first.wait()
+        elif call_index == 2:
+            second_entered.set()
+            await release_second.wait()
+        published_batches.append(batch)
+
+    repository = Mock(spec=RestartRepository)
+    repository.get = AsyncMock(return_value=None)
+    repository.publish = AsyncMock(side_effect=gated_publish)
+    coordinator = GracefulRestart(repository, enabled=True)
+    for tid in ("t0", "t1", "t2", "t3"):
+        coordinator.register(tid)
+
+    def make_item(tid: str) -> RestartItem:
+        return RestartItem(
+            thread_id=tid,
+            root_thread_id=tid,
+            run_id=f"run-{tid}",
+            cause="process_loss",
+            composition=reference,
+            checkpoint=reference,
+        )
+
+    t0_task = asyncio.create_task(coordinator.boundary(make_item("t0")))
+    with fail_after(2):
+        await first_entered.wait()
+
+    # Queue t1 (leader of coalesced batch), t2 (cancelled while waiting), t3 (healthy survivor), and t0 invalidation.
+    t1_task = asyncio.create_task(coordinator.boundary(make_item("t1")))
+    t2_task = asyncio.create_task(coordinator.boundary(make_item("t2")))
+    t3_task = asyncio.create_task(coordinator.boundary(make_item("t3")))
+    inv_t0_task = asyncio.create_task(coordinator.invalidate("t0"))
+    await asyncio.sleep(0)
+
+    # Cancel t2 before the coalesced batch even acquires _candidate_lock.
+    t2_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t2_task
+
+    # Finish t0 so t1 becomes leader of the coalesced batch and enters gated_publish (call #2).
+    release_first.set()
+    await t0_task
+    with fail_after(2):
+        await second_entered.wait()
+
+    # Cancel leader t1 mid-publish: t3 and inv_t0 must NOT inherit t1's CancelledError.
+    t1_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t1_task
+
+    with fail_after(2):
+        await asyncio.gather(t3_task, inv_t0_task)
+
+    assert publish_calls == 3
+    assert len(published_batches) == 2
+    assert {item.thread_id for item in published_batches[-1].items} == {"t3"}

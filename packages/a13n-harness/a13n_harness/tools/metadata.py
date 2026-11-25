@@ -7,7 +7,7 @@ from copy import copy, deepcopy
 from dataclasses import dataclass, replace
 from types import MethodType
 from typing import Any, Literal, Protocol, overload, runtime_checkable
-from weakref import WeakKeyDictionary
+from weakref import WeakKeyDictionary, ref
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_ai import _function_schema
@@ -132,12 +132,13 @@ def _cached_method_function_schema(
     kwargs: Mapping[str, Any],
 ) -> _function_schema.FunctionSchema:
     unbound = function.__func__
+    owner_ref = ref(type(function.__self__))
     tool_name = kwargs.get("name") or function.__name__
     takes_ctx = kwargs.get("takes_ctx")
     docstring_format = kwargs.get("docstring_format", "auto")
     require_parameter_descriptions = kwargs.get("require_parameter_descriptions", False)
     schema_generator = kwargs.get("schema_generator", GenerateToolJsonSchema)
-    key = (tool_name, takes_ctx, docstring_format, require_parameter_descriptions, schema_generator)
+    key = (owner_ref, tool_name, takes_ctx, docstring_format, require_parameter_descriptions, schema_generator)
     by_key = _METHOD_FUNCTION_SCHEMAS.get(unbound)
     if by_key is None:
         by_key = {}
