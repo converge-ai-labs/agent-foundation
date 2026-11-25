@@ -15,22 +15,31 @@ from .test_tenancy import join, new_client
 pytestmark = pytest.mark.anyio
 
 RELEASES = {
-    "info": {"version": "2.0.0rc1"},
-    "releases": {
-        "1.9.0": [{"yanked": False}],
-        "1.10.0": [{"yanked": True}, {"yanked": False}],
-        "1.11.0": [{"yanked": True}],
-        "1.10.1": [{"yanked": False}],
-        "1.12.0": [],
-        "2.0.0rc1": [{"yanked": False}],
-        "2.0.0.dev1": [{"yanked": False}],
-        "0.0.0": [{"yanked": False}],
-    },
+    "files": [
+        {"filename": "a13n_service-1.9.0-py3-none-any.whl", "yanked": False},
+        {"filename": "a13n_service-1.10.0-py3-none-any.whl", "yanked": "replaced by a corrected wheel"},
+        {"filename": "a13n_service-1.10.0.tar.gz", "yanked": False},
+        {"filename": "a13n_service-1.11.0.tar.gz", "yanked": True},
+        {"filename": "a13n_service-1.10.1.tar.gz", "yanked": False},
+        {"filename": "a13n_service-2.0.0rc1-py3-none-any.whl", "yanked": False},
+        {"filename": "a13n_service-2.0.0.dev1.tar.gz", "yanked": False},
+        {"filename": "a13n_service-0.0.0.tar.gz", "yanked": False},
+    ],
 }
+
+
+async def refresh(checker: update_notices.UpdateChecker) -> tuple[bool, bool]:
+    policy = EndpointPolicy()
+    return (
+        await checker.refresh(policy, "latest_stable", update_notices._release),
+        await checker.refresh(policy, "advisories", update_notices._advisories),
+    )
 
 
 def release_response(request: httpx2.Request) -> httpx2.Response | None:
     if request.url.host == "pypi.org":
+        assert request.url.path == "/simple/a13n-service/"
+        assert request.headers["accept"] == "application/vnd.pypi.simple.v1+json"
         return httpx2.Response(200, json=RELEASES)
     tag = request.url.path.removeprefix("/repos/converge-ai-labs/agent-foundation/releases/tags/")
     if tag == request.url.path:
@@ -70,7 +79,7 @@ def upstream(monkeypatch: pytest.MonkeyPatch):
 async def test_release_orders_published_stable_versions(upstream, installed, newer):
     upstream(lambda request: release_response(request) or httpx2.Response(200, json=[]))
     checker = update_notices.UpdateChecker(installed)
-    await checker.refresh(EndpointPolicy())
+    await refresh(checker)
     release = checker.snapshot.latest_stable
     assert release is not None
     assert release.version == "1.10.0" and release.is_newer is newer
@@ -108,7 +117,7 @@ async def test_matches_only_published_high_or_critical_service_ranges(upstream):
 
     upstream(respond)
     checker = update_notices.UpdateChecker("1.9.0")
-    await checker.refresh(EndpointPolicy())
+    await refresh(checker)
     assert [(item.id, item.severity) for item in checker.snapshot.advisories] == [
         ("GHSA-cfff-gggg-hhhh", "high"),
         ("GHSA-2222-3333-4444", "critical"),
@@ -123,8 +132,10 @@ async def test_matches_only_published_high_or_critical_service_ranges(upstream):
 async def test_upstream_failures_are_independent(upstream, monkeypatch, failed_host, failure):
     monkeypatch.setattr(update_notices, "_FETCH_SECONDS", 0.1)
 
+    fail = True
+
     async def respond(request: httpx2.Request) -> httpx2.Response:
-        if request.url.host == failed_host and "/releases/tags/" not in request.url.path:
+        if fail and request.url.host == failed_host and "/releases/tags/" not in request.url.path:
             if failure == "offline":
                 raise httpx2.ConnectError("offline")
             if failure == "timeout":
@@ -136,9 +147,22 @@ async def test_upstream_failures_are_independent(upstream, monkeypatch, failed_h
 
     upstream(respond)
     checker = update_notices.UpdateChecker("1.9.0")
-    await checker.refresh(EndpointPolicy())
+    assert await refresh(checker) == (failed_host != "pypi.org", failed_host != "api.github.com")
     assert (checker.snapshot.latest_stable is None) == (failed_host == "pypi.org")
     assert bool(checker.snapshot.advisories) == (failed_host != "api.github.com")
+
+    fail = False
+    assert await refresh(checker) == (True, True)
+    confirmed = checker.snapshot
+    assert confirmed.latest_stable and confirmed.advisories
+    fail = True
+    assert await refresh(checker) == (failed_host != "pypi.org", failed_host != "api.github.com")
+    assert checker.snapshot == confirmed
+
+    # A successful empty response clears the source's old result.
+    upstream(lambda request: httpx2.Response(200, json={"files": []} if request.url.host == "pypi.org" else []))
+    assert await refresh(checker) == (True, True)
+    assert checker.snapshot.latest_stable is None and not checker.snapshot.advisories
 
 
 @pytest.mark.parametrize("installed", ["0.0.0", "1.9.0rc1", "1.9.0.dev1"])

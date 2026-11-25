@@ -7,8 +7,15 @@ from typing import Literal
 
 import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_logging import get_logger
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
-from packaging.utils import canonicalize_name
+from packaging.utils import (
+    InvalidSdistFilename,
+    InvalidWheelFilename,
+    canonicalize_name,
+    parse_sdist_filename,
+    parse_wheel_filename,
+)
 from packaging.version import InvalidVersion, Version
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -23,10 +30,12 @@ _REPO = "converge-ai-labs/agent-foundation"
 _GITHUB = f"https://github.com/{_REPO}"
 _REPO_API = f"https://api.github.com/repos/{_REPO}"
 _ADVISORIES = f"{_REPO_API}/security-advisories"
-_PYPI = f"https://pypi.org/pypi/{_PACKAGE}/json"
+_PYPI = f"https://pypi.org/simple/{_PACKAGE}/"
 _GHSA_ID = re.compile(r"GHSA-(?:[23456789cfghjmpqrvwx]{4}-){2}[23456789cfghjmpqrvwx]{4}")
 _REFRESH_SECONDS = 24 * 60 * 60
+_RETRY_SECONDS = 60 * 60
 _FETCH_SECONDS = 10.0
+logger = get_logger(__name__)
 
 
 class StableRelease(BaseModel):
@@ -89,18 +98,24 @@ def _stable_version(raw: str) -> Version | None:
 
 
 def _stable_candidates(payload: object) -> list[Version]:
-    if not isinstance(payload, dict) or not isinstance(releases := payload.get("releases"), dict):
-        return []
-    return sorted(
-        {
-            version
-            for raw, files in releases.items()
-            if (version := _stable_version(raw)) is not None
-            and isinstance(files, list)
-            and any(isinstance(file, dict) and file.get("yanked") is False for file in files)
-        },
-        reverse=True,
-    )
+    if not isinstance(payload, dict) or not isinstance(files := payload.get("files"), list):
+        raise ValueError("Expected a list of PyPI distribution files")
+    candidates: set[Version] = set()
+    for file in files:
+        if not isinstance(file, dict) or file.get("yanked", False) is not False:
+            continue
+        if not isinstance(filename := file.get("filename"), str):
+            continue
+        try:
+            if filename.endswith(".whl"):
+                name, version, _, _ = parse_wheel_filename(filename)
+            else:
+                name, version = parse_sdist_filename(filename)
+        except (InvalidWheelFilename, InvalidSdistFilename):
+            continue
+        if name == _PACKAGE and version != Version("0.0.0") and not version.is_prerelease:
+            candidates.add(version)
+    return sorted(candidates, reverse=True)
 
 
 def _match_advisory(raw: object, current: Version) -> SecurityAdvisory | None:
@@ -132,7 +147,7 @@ def _match_advisory(raw: object, current: Version) -> SecurityAdvisory | None:
 
 
 async def _release(client: httpx2.AsyncClient, current: Version) -> StableRelease | None:
-    response = await client.get(_PYPI)
+    response = await client.get(_PYPI, headers={"Accept": "application/vnd.pypi.simple.v1+json"})
     response.raise_for_status()
     candidates = await asyncio.to_thread(lambda: _stable_candidates(response.json()))
     for candidate in candidates:
@@ -176,18 +191,9 @@ async def _advisories(client: httpx2.AsyncClient, current: Version) -> tuple[Sec
         params["after"] = after
 
 
-async def _read_upstream[T](
-    policy: EndpointPolicy,
-    read: Callable[[httpx2.AsyncClient, Version], Awaitable[T]],
-    current: Version,
-    fallback: T,
-) -> T:
-    try:
-        async with asyncio.timeout(_FETCH_SECONDS):
-            async with open_http(policy, timeout=_FETCH_SECONDS, max_bytes=2 * 1024 * 1024) as client:
-                return await read(client, current)
-    except (httpx2.HTTPError, httpx2.InvalidURL, ServiceError, TimeoutError, ValueError):
-        return fallback
+async def _poll(refresh: Callable[[], Awaitable[bool]]) -> None:
+    while True:
+        await asyncio.sleep(_REFRESH_SECONDS if await refresh() else _RETRY_SECONDS)
 
 
 class UpdateChecker:
@@ -198,19 +204,27 @@ class UpdateChecker:
     async def run(self, policy: EndpointPolicy) -> None:
         if self.current is None:
             return
-        while True:
-            await self.refresh(policy)
-            await asyncio.sleep(_REFRESH_SECONDS)
+        async with asyncio.TaskGroup() as tasks:
+            tasks.create_task(_poll(lambda: self.refresh(policy, "latest_stable", _release)))
+            tasks.create_task(_poll(lambda: self.refresh(policy, "advisories", _advisories)))
 
-    async def refresh(self, policy: EndpointPolicy) -> None:
+    async def refresh(
+        self,
+        policy: EndpointPolicy,
+        field: Literal["latest_stable", "advisories"],
+        read: Callable[[httpx2.AsyncClient, Version], Awaitable[StableRelease | tuple[SecurityAdvisory, ...] | None]],
+    ) -> bool:
         if (current := self.current) is None:
-            return
-        latest, advisories = await asyncio.gather(
-            _read_upstream(policy, _release, current, None), _read_upstream(policy, _advisories, current, ())
-        )
-        self.snapshot = UpdateNotices(
-            current_version=self.snapshot.current_version, latest_stable=latest, advisories=advisories
-        )
+            return True
+        try:
+            async with asyncio.timeout(_FETCH_SECONDS):
+                async with open_http(policy, timeout=_FETCH_SECONDS, max_bytes=2 * 1024 * 1024) as client:
+                    value = await read(client, current)
+        except (httpx2.HTTPError, httpx2.InvalidURL, ServiceError, TimeoutError, ValueError) as error:
+            logger.debug("Update notice refresh failed", extra={"source": field, "error_type": type(error).__name__})
+            return False
+        self.snapshot = self.snapshot.model_copy(update={field: value})
+        return True
 
     async def read(self, runtime: Runtime, actor: Principal, organization_id: str) -> UpdateNotices:
         async with administering(

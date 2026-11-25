@@ -413,7 +413,7 @@ def build_app(
                     checker = UpdateChecker(service_version)
                     app.state.update_checker = checker
                     if config.control.update_notices_enabled:
-                        runtime.tasks.start(checker.run(runtime.endpoint_policy), name="update-notices", service=True)
+                        runtime.tasks.start(checker.run(runtime.endpoint_policy), name="update-notices")
                     if ClientSettingsRow in distribution.tables:
                         runtime.tasks.start(
                             runtime.client_sessions.serve(), name="client-environment-sessions", service=True
