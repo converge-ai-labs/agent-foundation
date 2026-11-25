@@ -23,7 +23,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP as NativeMCP
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import FunctionToolset
+from pydantic_ai.toolsets import AbstractToolset, FunctionToolset, WrapperToolset
 
 from a13n_harness._json import dump_json_text
 from a13n_harness.context import AgentContext
@@ -476,6 +476,12 @@ class _UnavailableMCP(NativeMCP[AgentContext]):
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _StartedMCPServer:
+    capability: NativeMCP[AgentContext]
+    client: Client[Any] | None = None
+
+
 class MCPServer(NativeMCP[AgentContext]):
     """A Host-prepared local MCP capability with a separate startup error policy.
 
@@ -505,16 +511,23 @@ class MCPServer(NativeMCP[AgentContext]):
         self._project = project
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        assert self.id is not None
-        cache_id = f"a13n.mcp.startup.{self.id}"
-        existing = ctx.deps._run_capability(cache_id)
-        if existing is not None:
-            if not isinstance(existing, NativeMCP):
-                raise DefinitionError(
-                    "MCP has an incompatible logical-Run replacement.", code="capability_type_mismatch"
-                )
-            return existing
+        return (await self._started(ctx)).capability
 
+    async def _started(self, ctx: RunContext[AgentContext]) -> _StartedMCPServer:
+        assert self.id is not None
+        # Skills and the MCP capability may be resolved concurrently by Pydantic AI.
+        # Share the entered Toolset, including startup failures, for the whole logical Run.
+        existing = ctx.deps._mcp_startups.get(self.id)
+        if existing is not None:
+            owner, startup = existing
+            if owner is not self:
+                raise DefinitionError("MCP server IDs must be unique within a Run.", code="mcp_definition_invalid")
+        else:
+            startup = asyncio.create_task(self._start(ctx, self.id))
+            ctx.deps._mcp_startups[self.id] = (self, startup)
+        return await startup
+
+    async def _start(self, ctx: RunContext[AgentContext], server_id: str) -> _StartedMCPServer:
         factory = await self._prepare(ctx)
         try:
             toolset = await factory()
@@ -526,14 +539,14 @@ class MCPServer(NativeMCP[AgentContext]):
                 "MCP server skipped for this Run after connection entry failure",
                 extra={"server_id": self.id, "error_type": type(exc).__name__},
             )
-            replacement = _UnavailableMCP(self.id, self._selected_tools)
+            return _StartedMCPServer(_UnavailableMCP(server_id, self._selected_tools))
         else:
             # Register cleanup before projecting, so a projection error cannot
             # leak an otherwise successfully entered Toolset.
             async def close_projection() -> None:
                 await toolset.__aexit__(None, None, None)
 
-            ctx.deps._register_run_cleanup(cache_id, close_projection)
+            ctx.deps._register_run_cleanup(f"a13n.mcp.startup.{server_id}", close_projection)
             replacement = (
                 self._project(toolset)
                 if self._project is not None
@@ -544,8 +557,11 @@ class MCPServer(NativeMCP[AgentContext]):
                     allowed_tools=list(self._selected_tools) if self._selected_tools is not None else None,
                 )
             )
-        ctx.deps._record_run_capability(cache_id, replacement)
-        return replacement
+            # Inspect the entered transport without unwrapping the tool projection.
+            source: AbstractToolset[AgentContext] = toolset
+            while isinstance(source, WrapperToolset):
+                source = source.wrapped
+            return _StartedMCPServer(replacement, source.client if isinstance(source, MCPToolset) else None)
 
 
 __all__ = [

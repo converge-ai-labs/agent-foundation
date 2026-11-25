@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from a13n_harness.environment.providers import EnvironmentRuntime
     from a13n_harness.events import HarnessEvent, HarnessEventEmitter
     from a13n_harness.execution import ExecutableAgent
+    from a13n_harness.mcp import MCPServer, _StartedMCPServer
     from a13n_harness.model_context import (
         ModelContextMiddleware,
         ModelContextProjection,
@@ -502,6 +503,9 @@ class AgentContext:
         default_factory=dict,
         repr=False,
         compare=False,
+    )
+    _mcp_startups: dict[str, tuple[MCPServer, asyncio.Task[_StartedMCPServer]]] = field(
+        default_factory=dict, repr=False, compare=False, init=False
     )
     _run_cleanup_callbacks: dict[str, Callable[[], Awaitable[None]]] = field(
         default_factory=dict,
