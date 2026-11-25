@@ -300,6 +300,10 @@ class LoginOutput(BaseModel):
     csrf_token: str
 
 
+class LogoutRedirect(BaseModel):
+    logout_url: str
+
+
 class SessionProfile(BaseModel):
     """What a browser restores from its HttpOnly cookie: the account and the token it sends on mutations."""
 

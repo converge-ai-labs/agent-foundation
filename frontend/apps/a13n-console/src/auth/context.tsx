@@ -81,14 +81,17 @@ function useIdentity(client: Client, renew: () => void) {
       void query.refetch();
     },
     logout: async () => {
+      let logoutUrl: string | undefined;
       try {
-        await client.http.POST("/api/v1/auth/logout");
+        const { data } = await client.http.POST("/api/v1/auth/logout");
+        logoutUrl = data?.logout_url;
       } catch (error) {
         if (!isUnauthorized(error)) throw error;
       }
       client.close();
       queryClient.clear();
       renew();
+      return logoutUrl;
     },
   };
 }

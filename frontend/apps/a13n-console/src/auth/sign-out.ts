@@ -7,6 +7,9 @@ export function useSignOut() {
   const navigate = useNavigate();
   return useMutation({
     mutationFn: logout,
-    onSuccess: () => navigate("/login", { replace: true }),
+    onSuccess: (logoutUrl) => {
+      if (logoutUrl) window.location.assign(logoutUrl);
+      else navigate("/login", { replace: true });
+    },
   });
 }

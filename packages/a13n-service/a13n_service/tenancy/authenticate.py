@@ -181,20 +181,25 @@ async def authenticate_secret(
         principal = await principal_for(session, access, credential.principal_id, confinement=confinement)
         current = await now(session)
         rolling = False
+        provider_id = None
         if isinstance(credential, TokenRow):
             rolling = credential.data is None
             if auth is not None:
                 if rolling and not auth.password_enabled:
                     raise unauthenticated()
                 if credential.data is not None:
-                    provider = auth.oidc.providers.get(credential.data.get("provider", ""))
-                    if provider is None or oidc_session_data(credential.data["provider"], provider) != credential.data:
+                    name = credential.data.get("provider", "")
+                    provider = auth.oidc.providers.get(name)
+                    if provider is None or any(
+                        credential.data.get(key) != value for key, value in oidc_session_data(name, provider).items()
+                    ):
                         raise unauthenticated()
+                    provider_id = name
             if rolling and credential.expires_at < current + timedelta(seconds=session_seconds) - _TOUCH_INTERVAL:
                 await _touch_credential(session, credential, session_seconds=session_seconds)
         elif credential.last_used_at is None or credential.last_used_at <= current - _TOUCH_INTERVAL:
             await _touch_credential(session, credential, session_seconds=session_seconds)
-        return Authenticated(principal, credential.id, kind, rolling_session=rolling)
+        return Authenticated(principal, credential.id, kind, rolling_session=rolling, oidc_provider_id=provider_id)
 
 
 class LocalAuthenticator:
