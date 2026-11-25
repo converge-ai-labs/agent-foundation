@@ -2393,7 +2393,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/Asset"
+              "$ref": "#/components/schemas/ListedAsset"
             },
             "title": "Items",
             "type": "array"
@@ -2408,11 +2408,16 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "total_count": {
+            "title": "Total Count",
+            "type": "integer"
           }
         },
         "required": [
           "items",
-          "next_cursor"
+          "next_cursor",
+          "total_count"
         ],
         "title": "AssetPage",
         "type": "object"
@@ -6223,6 +6228,44 @@
           "observed_at"
         ],
         "title": "CreationProgress",
+        "type": "object"
+      },
+      "CreatorStorage": {
+        "properties": {
+          "active_bytes": {
+            "title": "Active Bytes",
+            "type": "integer"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "creator_name": {
+            "title": "Creator Name",
+            "type": "string"
+          },
+          "retired_bytes": {
+            "title": "Retired Bytes",
+            "type": "integer"
+          },
+          "staged_upload_bytes": {
+            "title": "Staged Upload Bytes",
+            "type": "integer"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active_bytes",
+          "retired_bytes",
+          "staged_upload_bytes",
+          "total_bytes",
+          "created_by_id",
+          "creator_name"
+        ],
+        "title": "CreatorStorage",
         "type": "object"
       },
       "Credential": {
@@ -12261,6 +12304,123 @@
           "fork"
         ],
         "type": "string"
+      },
+      "ListedAsset": {
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "title": "Created By Id",
+            "type": "string"
+          },
+          "creator_name": {
+            "title": "Creator Name",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "workspace_id",
+          "name",
+          "content_type",
+          "size",
+          "digest",
+          "source",
+          "retired_at",
+          "version",
+          "created_by_id",
+          "created_at",
+          "updated_at",
+          "creator_name",
+          "thread_id",
+          "session_id"
+        ],
+        "title": "ListedAsset",
+        "type": "object"
       },
       "LocalResult": {
         "properties": {
@@ -29319,6 +29479,42 @@
         "title": "WorkspacePage",
         "type": "object"
       },
+      "WorkspaceStorage": {
+        "properties": {
+          "active_bytes": {
+            "title": "Active Bytes",
+            "type": "integer"
+          },
+          "by_creator": {
+            "items": {
+              "$ref": "#/components/schemas/CreatorStorage"
+            },
+            "title": "By Creator",
+            "type": "array"
+          },
+          "retired_bytes": {
+            "title": "Retired Bytes",
+            "type": "integer"
+          },
+          "staged_upload_bytes": {
+            "title": "Staged Upload Bytes",
+            "type": "integer"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active_bytes",
+          "retired_bytes",
+          "staged_upload_bytes",
+          "total_bytes",
+          "by_creator"
+        ],
+        "title": "WorkspaceStorage",
+        "type": "object"
+      },
       "WorkspaceUpdate": {
         "additionalProperties": false,
         "properties": {
@@ -31392,6 +31588,92 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "description": "Case-insensitive literal filename substring.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Case-insensitive literal filename substring.",
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_by_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created By Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_kind",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "user_upload",
+                    "agent_run"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "active",
+                "retired"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "id",
+              "enum": [
+                "id",
+                "newest"
+              ],
+              "title": "Order",
+              "type": "string"
             }
           },
           {
@@ -55471,6 +55753,65 @@
           "effect": "write",
           "group": "skills"
         }
+      }
+    },
+    "/api/v1/storage": {
+      "get": {
+        "description": "Summarize this workspace's asset and staged upload bytes by creator.",
+        "operationId": "get_workspace_storage",
+        "parameters": [
+          {
+            "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+            "in": "header",
+            "name": "X-Workspace-ID",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 41,
+                  "pattern": "^[a-z][a-z0-9]{1,7}_[0-9a-f]{20,32}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden.",
+              "title": "X-Workspace-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceStorage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Workspace Storage",
+        "tags": [
+          "assets"
+        ],
+        "x-a13n-mcp": true
       }
     },
     "/api/v1/subscriptions": {

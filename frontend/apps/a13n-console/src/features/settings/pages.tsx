@@ -11,6 +11,7 @@ import { ProvidersPage } from "../providers/page";
 import { MediaUnderstandingDefaults } from "../models/media-understanding";
 import { ServiceAccountDetail, ServiceAccounts } from "./accounts";
 import { Audit } from "./audit";
+import { WorkspaceFiles } from "./files/page";
 import { ApiKeys } from "./keys";
 import { SettingsLayout } from "./layout";
 import { MemberSettings } from "./members";
@@ -44,7 +45,9 @@ export function WorkspaceSettings() {
       section={
         subscriptionId ? "webhooks" : accountId ? "service-accounts" : undefined
       }
-      heading={!accountId && !subscriptionId}
+      heading={
+        !accountId && !subscriptionId && !(section === "files" && can("read"))
+      }
       content={{
         ...Object.fromEntries(
           appSections.map((section) => [
@@ -77,6 +80,7 @@ export function WorkspaceSettings() {
         "media-understanding": (
           <MediaUnderstandingDefaults key={workspace.id} />
         ),
+        files: <WorkspaceFiles key={workspace.id} />,
         members: <MemberSettings scope={scope} />,
         "member-keys": <ApiKeys memberKeys />,
         "service-accounts": accountId ? (

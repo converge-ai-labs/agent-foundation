@@ -4569,5 +4569,22 @@
   "Sign-in provider": "登录身份提供方",
   "This Service uses an identity provider. Go to sign in to continue.": "此 Service 通过身份提供方验证登录。请返回登录页继续。",
   "Use SSO default": "使用单点登录默认角色",
-  "Your identity provider manages your sign-in details.": "你的登录信息由身份提供方管理。"
+  "Your identity provider manages your sign-in details.": "你的登录信息由身份提供方管理。",
+  "Conversation uploads and files published by agents are visible to anyone with workspace read access.": "可读取此工作区的成员均可查看对话上传及智能体发布的文件。",
+  "Storage usage": "存储用量",
+  "Retired": "已停用",
+  "Staged uploads": "暂存上传",
+  "Usage by creator": "按创建者查看用量",
+  "Search by filename": "按文件名搜索",
+  "User upload": "用户上传",
+  "Agent run": "智能体运行",
+  "Creator": "创建者",
+  "Source / Author": "来源 / 作者",
+  "Download {{name}}": "下载 {{name}}",
+  "Retire": "停用",
+  "No matching files": "没有匹配的文件",
+  "Files uploaded in conversations or published by agents appear here.": "对话上传及智能体发布的文件会显示在这里。",
+  "{{shown}} of {{total}} files": "显示 {{shown}} 个文件，共 {{total}} 个",
+  "Retire file": "停用文件",
+  "Retired files remain downloadable and count toward storage, but cannot be attached to new messages.": "停用的文件仍可下载并计入存储用量，但不能附加到新消息。"
 }

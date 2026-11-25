@@ -6,6 +6,7 @@ import {
   ClipboardTextIcon,
   StackIcon,
   EyeIcon,
+  FolderSimpleIcon,
   DevicesIcon,
   GearSixIcon,
   SlidersIcon,
@@ -98,6 +99,12 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
       description:
         "Models that read images, video and audio for agents whose model cannot.",
       icon: EyeIcon,
+      permission: "read",
+    },
+    {
+      value: "files",
+      label: "Files",
+      icon: FolderSimpleIcon,
       permission: "read",
     },
     {
