@@ -323,6 +323,11 @@ class ToolExecutionRow(Base):
         Index(
             "ix_tool_executions_owner", "worker_id", "lease_expires_at", postgresql_where=text("completed_at IS NULL")
         ),
+        Index(
+            "ix_tool_executions_mcp_due",
+            "mcp_poll_at",
+            postgresql_where=text("completed_at IS NULL AND mcp_poll_at IS NOT NULL"),
+        ),
         Index("ix_tool_executions_expiry", "expires_at", postgresql_where=text("expires_at IS NOT NULL")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -347,6 +352,8 @@ class ToolExecutionRow(Base):
     payload_pruned: Mapped[bool] = mapped_column(default=False)
     # Native start evidence is committed before dispatch, independently of result objects.
     shell: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    mcp_task: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    mcp_poll_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     environment_mounts: Mapped[list] = mapped_column(JSONB)
 
 

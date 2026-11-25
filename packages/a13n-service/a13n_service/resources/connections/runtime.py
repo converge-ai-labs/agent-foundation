@@ -141,6 +141,7 @@ async def open_connections(
                             http,
                             timeout=settings.tool_call_seconds,
                             apps=capture is not None,
+                            durable_tasks=connection.config.durable_tasks,
                         )
                 return acquire
 
@@ -167,6 +168,7 @@ async def open_connections(
                         tools=selected.tools,
                         object_ref_tools=dict(connection.config.object_ref_tools),
                         on_error=connection.config.on_error,
+                        durable_tasks=connection.config.durable_tasks,
                         check=checked,
                         capture=partial(capture, selected) if capture is not None else None,
                     )

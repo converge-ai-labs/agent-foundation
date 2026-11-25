@@ -7,6 +7,7 @@ from typing import Any, Self
 
 from a13n_harness.context import AgentContext
 from a13n_harness.mcp import tool_progress
+from a13n_harness.mcp_tasks import enable_task_ownership, has_tasks
 from anyio import CancelScope
 from pydantic_ai import RunContext
 from pydantic_ai.mcp import MCPToolset
@@ -49,6 +50,12 @@ class HostToolset(MCPToolset[AgentContext]):
             finally:
                 self._entries -= 1
                 self.connection.release()
+
+    async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+        tools = await super().get_tools(ctx)
+        if self.connection.durable_tasks and has_tasks(self.client.server_capabilities):
+            return enable_task_ownership(tools)
+        return tools
 
     async def call_app_tool(
         self,

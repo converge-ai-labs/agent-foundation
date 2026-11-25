@@ -84,6 +84,12 @@ A persistent Host can retain a Shell start intent before dispatch, including its
 
 The Host supplies durable ownership, frozen composition, authorization and recovery scheduling. Harness restores native Shell supervision, output and cancellation under those bindings. Recovery never waits behind calls admitted after the original execution. It restores the original execution's Thread-ordering flag, so an explicitly sequential recovered Shell remains a completion barrier for later ordinary work; a later explicitly sequential call waits for any recovered Shell. Records that predate this flag default to `False` unless the Host has an authoritative persisted ordering fact. Cancellation intent survives ownership changes and is applied after native attachment. Terminal publication precedes native release. Generic Python invocations and nested CodeAct evaluation are not reconstructed through Shell recovery.
 
+### Recoverable MCP Tasks
+
+A Host-owned MCP tool call can receive a SEP-2663 task handle on the modern MCP protocol. Harness checkpoints the task ID, originating connection binding, poll deadline, and expiration on the existing Tool Execution before waiting. The foreground uses the normal Tool Execution policy and returns the same receipt when it releases the call. Recovery polls the original handle with `tasks/get`; it does not replay `tools/call`.
+
+`input_required` parks polling and retains the server's elicitation IDs and payload until cancellation or expiry. A Host with an authorized response can use `tasks/update` and publish the updated handle to resume polling. Tasks that complete yield the normal MCP tool result; terminal delivery uses the Host's existing Tool Execution result path.
+
 ## Tool Metadata
 
 ```python

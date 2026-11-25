@@ -366,3 +366,46 @@ async def test_head_collection_is_bounded_and_preserves_active_calls(tmp_path, c
         for item in originals:
             await repo.save(item)
         assert len(await repo.list("thread-a", offset=0, limit=10)) == 1
+
+
+async def test_mcp_handle_recovers_from_sqlite_without_replaying_tool(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from a13n_harness.mcp_task_state import McpTaskExecutionState
+    from a13n_harness_ui.storage import ObjectRef
+    from a13n_harness_ui.storage.tool_executions import execution_composition
+    from a13n_harness_ui.tool_executions import ToolExecutions
+
+    settings = StorageSettings(data_root=tmp_path)
+    record = execution(terminal=False).record
+    state = McpTaskExecutionState(
+        connection_id="example",
+        server_id="binding",
+        mcp_task_id="task-42",
+        tool_name="slow",
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
+    )
+    ref = ObjectRef(object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64)
+    async with open_local_store(settings) as first:
+        await seed_thread(first)
+        with execution_composition(ref):
+            await first.tool_executions.save(StoredToolExecution(record, mcp_task=state))
+    async with open_local_store(settings) as second:
+        read_model = second.objects.read_model
+        composition = object()
+
+        async def read(reference, model):
+            return composition if reference == ref else await read_model(reference, model)
+
+        async def recover(captured, saved):
+            assert captured is composition
+            assert saved.mcp_task == state
+            return "server result"
+
+        monkeypatch.setattr(second.objects, "read_model", read)
+        owner = ToolExecutions(second.tool_executions, environments=SimpleNamespace(), recover_mcp=recover)
+        await owner.recover()
+        await owner.runtime.join()
+        saved = await second.tool_executions.get(record.thread_id, record.execution_id)
+        assert saved.record.status == "succeeded" and saved.result == "server result"
+        assert await second.tool_executions.pending(record.thread_id)

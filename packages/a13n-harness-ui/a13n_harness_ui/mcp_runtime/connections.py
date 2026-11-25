@@ -13,10 +13,11 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from a13n_harness.mcp import InitializationRetryClient
+from a13n_harness.mcp_tasks import DurableTasks, task_server_id
 from a13n_logging import get_logger
 from fastmcp.client.elicitation import ElicitResult
 from fastmcp.client.progress import ProgressHandler
-from fastmcp.client.transports import ClientTransport
+from fastmcp.client.transports import ClientTransport, StreamableHttpTransport
 from mcp.client.extension import ClientExtension
 from mcp.types import (
     CallToolRequest,
@@ -135,6 +136,10 @@ class Connection:
         self.retired = False
         self._closed = False
         self._borrows = 0
+        self.durable_tasks = binding is not None and isinstance(transport, StreamableHttpTransport)
+        if self.durable_tasks:
+            assert binding is not None
+            extensions = (*extensions, DurableTasks(server_id, server_id=task_server_id(binding)))
         self.client = client_factory(
             ObservedTransport(transport, self._disconnected, self._before_request),
             mode=protocol,
@@ -397,6 +402,7 @@ class Connections:
         recipe: str,
         transport: ClientTransport,
         *,
+        binding: str | None = None,
         protocol: str,
         init_timeout: float,
         roots_transport: McpTransport | None,
@@ -409,6 +415,7 @@ class Connections:
             server_id,
             recipe,
             transport,
+            binding,
             protocol=protocol,
             init_timeout=init_timeout,
             input_handler=self._input_handler,

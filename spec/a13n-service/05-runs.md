@@ -408,6 +408,8 @@ Service inherits the default Harness context recovery policy as trusted runtime 
 
 ## Retained tool executions
 
+MCP connections can opt in to SEP-2663 with `config.durable_tasks`. After foreground release or worker loss, a control sweep claims the Tool Execution lease, checks the originating connection authority, and polls the saved task handle outside the database transaction. Input-required handles wait for input, cancellation, or expiry. Terminal results use the retained Tool Execution outbox.
+
 Harness owns the actual invocation, coroutine and native process handle. Each worker holds one Harness tool execution runtime across its attempts; Service supplies durable storage, independent owner leases, Thread-wide ordering and completion delivery. Releasing the foreground wait returns an execution receipt while the original invocation continues. Completing or handing off a Run does not finish its retained tools. Later Runs share the Thread's live execution-context owner while Environment work remains active; otherwise another worker may claim the context.
 
 A retained CodeAct execution is the whole original evaluation, including nested awaits. Its runtime bindings and clients remain on the admitting worker until cleanup finishes. Explicit CodeAct `store`/`load`/`forget` values have one PostgreSQL owner per Thread; writes survive Run checkpoint changes and later evaluation failure. Temporary interpreter bindings remain local. A later Run never replaces shared values with a stale checkpoint snapshot.
