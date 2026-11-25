@@ -13,6 +13,7 @@ import {
   ArrowUpRight,
   Check,
   CheckCircle,
+  Checks,
   EnvelopeSimple,
   EnvelopeSimpleOpen,
   Flag,
@@ -33,7 +34,8 @@ import styles from "./inbox.module.css";
 type Item = Schema<"InboxItem">;
 type Kind = Item["kind"];
 type Group = Schema<"InboxMarkReadRequest">["group"];
-const MARK_GROUP_READ = ["inbox", "mark-group-read"];
+const UPDATE_GROUP = ["inbox", "update-group"];
+const UPDATE_ITEM = ["inbox", "update-item"];
 
 function useKind(kind: Kind) {
   const { t } = useTranslation();
@@ -93,10 +95,11 @@ function useInboxUnread() {
   });
 }
 
-export function useInboxUpdate() {
+function useInboxUpdate(group: Group) {
   const { client } = useTransport();
   const queries = useQueryClient();
   return useMutation({
+    mutationKey: [...UPDATE_ITEM, group],
     mutationFn: ({
       itemId,
       ...body
@@ -162,7 +165,13 @@ function InboxRow({
 }) {
   const { t, i18n } = useTranslation();
   const projects = useProjects();
-  const update = useInboxUpdate();
+  const group = item.kind === "needs_human" ? "needs_you" : "updates";
+  const update = useInboxUpdate(group);
+  const completingGroup =
+    useIsMutating({
+      mutationKey: [...UPDATE_GROUP, group],
+      predicate: ({ state }) => state.variables === "done",
+    }) > 0;
   const { Icon, label } = useKind(item.kind);
   const unread = !item.read_at && !item.done_at;
   const done = !!item.done_at;
@@ -234,7 +243,7 @@ function InboxRow({
               size="icon-sm"
               aria-label={readLabel}
               title={readLabel}
-              disabled={update.isPending}
+              disabled={update.isPending || (!unread && completingGroup)}
               onClick={() => setRead(unread)}
             >
               {unread ? <EnvelopeSimpleOpen /> : <EnvelopeSimple />}
@@ -289,7 +298,7 @@ function InboxRow({
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={update.isPending}
+                disabled={update.isPending || completingGroup}
                 onClick={() => {
                   setRead(false);
                   onExpand(false);
@@ -322,12 +331,23 @@ function InboxGroupHeader({
   const { client } = useTransport();
   const queries = useQueryClient();
   const heading = useId();
-  const markRead = useMutation({
-    mutationKey: MARK_GROUP_READ,
-    mutationFn: () => client.POST("/api/inbox/mark-read", { body: { group } }),
+  const updatingItem =
+    useIsMutating({ mutationKey: [...UPDATE_ITEM, group] }) > 0;
+  const update = useMutation({
+    mutationKey: [...UPDATE_GROUP, group],
+    mutationFn: (action: "read" | "done") =>
+      client.POST(
+        action === "read" ? "/api/inbox/mark-read" : "/api/inbox/mark-done",
+        {
+          body: { group },
+        },
+      ),
     onSettled: () => queries.invalidateQueries({ queryKey: ["inbox"] }),
   });
-  const unavailable = !unread || fetching || markRead.isPending;
+  const actions = [
+    { action: "read", label: t("Mark all as read"), Icon: EnvelopeSimpleOpen },
+    { action: "done", label: t("Mark all as done"), Icon: Checks },
+  ] as const;
   return (
     <>
       <header className={styles.groupHeader}>
@@ -341,31 +361,47 @@ function InboxGroupHeader({
               : t("All read")}
           </span>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-describedby={heading}
-          aria-busy={markRead.isPending || undefined}
-          aria-disabled={unavailable || undefined}
-          tabIndex={unavailable ? -1 : undefined}
-          onClick={() => {
-            if (!unavailable) markRead.mutate();
-          }}
-        >
-          {markRead.isPending ? (
-            <Spinner
-              aria-hidden="true"
-              className="motion-reduce:animate-none"
-            />
-          ) : (
-            <EnvelopeSimpleOpen aria-hidden="true" />
-          )}
-          {t("Mark all as read")}
-        </Button>
+        <div className={styles.groupActions}>
+          {actions.map(({ action, label, Icon }) => {
+            const busy = update.isPending && update.variables === action;
+            const unavailable =
+              fetching ||
+              update.isPending ||
+              (action === "read" ? !unread : updatingItem);
+            return (
+              <Button
+                key={action}
+                variant="ghost"
+                size="icon"
+                aria-label={label}
+                aria-describedby={heading}
+                aria-busy={busy || undefined}
+                aria-disabled={unavailable || undefined}
+                tabIndex={unavailable ? -1 : undefined}
+                onClick={() => {
+                  if (!unavailable) update.mutate(action);
+                }}
+              >
+                {busy ? (
+                  <Spinner
+                    aria-hidden="true"
+                    className="motion-reduce:animate-none"
+                  />
+                ) : (
+                  <Icon aria-hidden="true" />
+                )}
+              </Button>
+            );
+          })}
+        </div>
       </header>
       <ErrorNotice
-        error={markRead.error}
-        message={t("Could not mark this section as read.")}
+        error={update.error}
+        message={
+          update.variables === "done"
+            ? t("Could not mark this section as done.")
+            : t("Could not mark this section as read.")
+        }
         inline
       />
     </>
@@ -377,7 +413,7 @@ export function InboxPage() {
   const { client } = useTransport();
   const [state, setState] = useState<"open" | "done">("open");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const markingRead = useIsMutating({ mutationKey: MARK_GROUP_READ }) > 0;
+  const updatingGroup = useIsMutating({ mutationKey: UPDATE_GROUP }) > 0;
   const list = useInfiniteQuery({
     queryKey: ["inbox", "list", state],
     initialPageParam: undefined as string | undefined,
@@ -481,7 +517,7 @@ export function InboxPage() {
         <Button
           variant="outline"
           loading={list.isFetchingNextPage}
-          disabled={list.isFetching || (state === "open" && markingRead)}
+          disabled={list.isFetching || (state === "open" && updatingGroup)}
           onClick={() => void list.fetchNextPage({ cancelRefetch: false })}
         >
           {t("Load more")}

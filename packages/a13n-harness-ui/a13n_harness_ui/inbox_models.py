@@ -46,6 +46,10 @@ class InboxMarkReadRequest(InboxModel):
     group: InboxGroup
 
 
+class InboxMarkDoneRequest(InboxModel):
+    group: InboxGroup
+
+
 class InboxItemMutation(InboxModel):
     read: bool | None = None
     done: bool | None = None

@@ -3602,6 +3602,8 @@
   "Mark as unread": "标记为未读",
   "Updates": "更新",
   "Mark all as read": "全部标为已读",
+  "Mark all as done": "全部标为已完成",
+  "Could not mark this section as done.": "无法将此栏全部标为已完成。",
   "All read": "无未读",
   "{{count, number}} unread": "{{count, number}} 条未读",
   "Could not mark this section as read.": "无法将此栏全部标为已读。",
