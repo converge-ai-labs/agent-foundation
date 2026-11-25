@@ -60,6 +60,10 @@ class _MountExecution:
         self._cleanup_failure: BaseException | None = None
 
     @property
+    def source(self) -> EnvironmentSource:
+        return self._source
+
+    @property
     def provider_key(self) -> str:
         return self._provider_key
 

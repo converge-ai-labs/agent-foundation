@@ -344,6 +344,9 @@ export function AgentEditor({
               }
             />
             <AgentEnvironment
+              preparation={draft.environmentPreparation}
+              onPreparationChange={draft.setEnvironmentPreparation}
+              preparationReadOnly={!!preset}
               sessionConfiguration={draft.sessionConfiguration}
               onSessionConfigurationChange={draft.setSessionConfiguration}
               sessionInvalid={

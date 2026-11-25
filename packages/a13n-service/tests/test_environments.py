@@ -1180,90 +1180,53 @@ async def test_timed_out_management_publishes_observed_state(env, monkeypatch) -
     assert row.failure["certainty"] == "unknown"
 
 
-async def test_guidance_activates_the_default_mount_without_tool_calls(env, scripted_model, runs_kit) -> None:
-    primary = True
-    model = await runs_kit.create_model(env, scripted_model)
-    agent = await runs_kit.add_agent(
+@pytest.mark.parametrize("mode", [True, "on_demand", "warmup"])
+async def test_text_only_does_not_prepare_without_environment_tools(env, scripted_model, runs_kit, mode):
+    await runs_kit.pause_sweeps(env)
+    agent = await runs_kit.create_agent(
         env,
-        "plain",
-        model,
-        default_environment_template_id=env.template["id"] if primary else None,
+        scripted_model,
+        lazy_environment=mode,
+        toolsets={toolset: {"enabled": False} for toolset in ("files", "shell", "computer")},
+        default_environment_template_id=env.template["id"],
     )
-    extra = await reserve(env, env.template["id"]) if not primary else None
     scripted_model.say("No tools needed")
-    submitted = await runs_kit.start_thread(
-        env, agent, "hello", environments=[{"name": "data", "environment_id": extra["id"]}] if extra else []
-    )
-    environment_id = submitted["run"]["environment_mounts"][0]["environment_id"]
-    await maintain_environments(env.runtime, owner="control")
-    # Explicit extra-instance creation is dispatched by maintenance; the primary is only reserved.
-    assert (await environment(env, environment_id))["status"] == ("reserved" if primary else "ready")
-    assert len(BACKEND.preparations) == (0 if primary else 1)
+    submitted = await runs_kit.start_thread(env, agent, "hello")
+    [mount] = submitted["run"]["environment_mounts"]
     await (await runs_kit.attempt(env))
     assert (await runs_kit.get_run(env, submitted["run"]["id"]))["status"] == "completed"
-    current = await environment(env, environment_id)
-    assert current["status"] == "ready"
-    assert current["operation_id"] is None
-    # A sole named user mount is the default when there is no workspace mount.
-    assert current["last_used_at"] is not None
-    assert set(BACKEND.instances) == {environment_id}
+    current = await environment(env, mount["environment_id"])
+    assert current["status"] == "reserved"
+    assert current["operation_id"] is None and current["last_used_at"] is None
+    assert BACKEND.preparations == []
 
 
-@pytest.mark.parametrize("lazy,override,with_mounts", [(False, None, True), (False, True, True)])
-async def test_preparation_policy_applies_to_all_mounts_before_the_model(
-    env, scripted_model, runs_kit, monkeypatch, lazy: bool, override: bool | None, with_mounts: bool
-) -> None:
-    from .environments_support import FakeConnector, FakeExecution
-
-    opened, closed = [], []
-    original_open, original_close = FakeConnector.open, FakeExecution.close
-
-    async def open_execution(self):
-        opened.append(self.environment_id)
-        return await original_open(self)
-
-    async def close_execution(self):
-        closed.append(self.environment_id)
-        await original_close(self)
-
-    monkeypatch.setattr(FakeConnector, "open", open_execution)
-    monkeypatch.setattr(FakeExecution, "close", close_execution)
-    model = await runs_kit.create_model(env, scripted_model)
-    agent = await runs_kit.add_agent(
-        env,
-        "preparation",
-        model,
-        lazy_environment=lazy,
-        default_environment_template_id=env.template["id"] if with_mounts else None,
+@pytest.mark.parametrize("lazy,override", [(False, None), ("eager", None), (False, True), (False, "on_demand")])
+async def test_preparation_policy_applies_to_all_mounts_before_the_model(env, scripted_model, runs_kit, lazy, override):
+    await runs_kit.pause_sweeps(env)
+    agent = await runs_kit.create_agent(
+        env, scripted_model, lazy_environment=lazy, default_environment_template_id=env.template["id"]
     )
-    extra = await reserve(env, env.template["id"]) if with_mounts else None
+    extra = await reserve(env, env.template["id"])
     gate = asyncio.Event()
     scripted_model.say("No tools needed", gate=gate)
     submitted = await runs_kit.start_thread(
         env,
         agent,
         "hello",
-        environments=[{"name": "data", "environment_id": extra["id"]}] if extra else [],
+        environments=[{"name": "data", "environment_id": extra["id"]}],
         options={"overrides": {"lazy_environment": override}},
     )
     ids = {mount["environment_id"] for mount in submitted["run"]["environment_mounts"]}
-    primary_ids = [
-        mount["environment_id"] for mount in submitted["run"]["environment_mounts"] if mount["name"] == "workspace"
-    ]
-    eager = not (lazy if override is None else override)
     task = await runs_kit.attempt(env)
     try:
         await scripted_model.request()
-        assert set(BACKEND.instances) == (ids if eager else set(primary_ids))
-        assert opened == primary_ids
-        assert closed == []
+        assert set(BACKEND.instances) == (ids if override is None else set())
     finally:
         gate.set()
         await task
-    current = await runs_kit.get_run(env, submitted["run"]["id"])
-    assert current["status"] == "completed", current
-    assert opened == closed == primary_ids
-    assert len(BACKEND.preparations) == (len(ids) if eager else len(primary_ids))
+    assert (await runs_kit.get_run(env, submitted["run"]["id"]))["status"] == "completed"
+    assert len(BACKEND.preparations) == (len(ids) if override is None else 0)
 
 
 async def test_eager_timeout_retries_with_the_accepted_policy(env, scripted_model, runs_kit, monkeypatch) -> None:
@@ -1300,8 +1263,8 @@ async def test_eager_timeout_retries_with_the_accepted_policy(env, scripted_mode
     await (await runs_kit.attempt(env))
     current = await runs_kit.get_run(env, submitted["run"]["id"])
     assert current["status"] == "completed", current
-    # Retry eagerly prepares the instance, then file context opens its execution through readiness.
-    assert preparations == [identity, identity, identity]
+    # Retry still prepares before inference. This provider has no file permissions.
+    assert preparations == [identity, identity]
     assert len(BACKEND.preparations) == 1
     assert current["options"]["overrides"]["lazy_environment"] is False
 
@@ -2130,3 +2093,212 @@ async def test_native_transport_rejects_session_configuration(env):
             pytest.fail("Native transport silently ignored Session configuration")
     assert refused.value.code == "conflict"
     assert refused.value.details["reason"] == "session_configuration_unsupported"
+
+
+@pytest.mark.parametrize("initial", [None, "old bootstrap guidance", "new bootstrap guidance"])
+async def test_bootstrap_projects_then_aligns_and_captures_final_files(
+    env, local_instance, scripted_model, runs_kit, initial
+):
+    from a13n_service.resources.environment_instances.tables import EnvironmentBootstrapSnapshotRow
+
+    await runs_kit.pause_sweeps(env)
+    identity, root = local_instance
+    guide = root / "a" / "AGENTS.md"
+    if initial is not None:
+        guide.write_text(initial + "\n")
+    mount = {"name": "workspace", "environment_id": identity, "working_directory": "/a"}
+    agent = await runs_kit.create_agent(env, scripted_model, lazy_environment="on_demand")
+
+    async def run(*, mount=mount):
+        submitted = await runs_kit.start_thread(env, agent, "Read guidance", environments=[mount])
+        await (await runs_kit.attempt(env))
+        actual = await runs_kit.get_run(env, submitted["run"]["id"])
+        assert actual["status"] == "completed", actual
+        await unmount(env, submitted["thread"]["id"])
+
+    scripted_model.call("view", {"file_path": "/workspace/AGENTS.md"}, call_id="seed")
+    scripted_model.say("Seeded")
+    await run()
+    assert "<file path=" not in json.dumps(await scripted_model.request())
+    await scripted_model.request()
+    async with transaction(env.runtime.storage) as session:
+        snapshot = await session.get(EnvironmentBootstrapSnapshotRow, (identity, "/a"))
+        assert snapshot is not None
+        [observation] = snapshot.snapshot["files"]
+        assert observation["status"] == ("absent" if initial is None else "present")
+
+    scripted_model.call(
+        "write", {"file_path": "/workspace/AGENTS.md", "content": "new bootstrap guidance\n"}, call_id="update"
+    )
+    scripted_model.say("Updated")
+    await run()
+    first, second = [json.dumps(await scripted_model.request()) for _ in range(2)]
+    if initial is None:
+        assert "<file path=" not in first
+    else:
+        assert initial in first
+    assert guide.read_text() == "new bootstrap guidance\n", second
+    # The tool arguments also contain the text; only count authored FileContext blocks.
+    assert second.count('<file path=\\"AGENTS.md\\">') == (1 if initial != "old bootstrap guidance" else 2)
+    async with transaction(env.runtime.storage) as session:
+        snapshot = await session.get(EnvironmentBootstrapSnapshotRow, (identity, "/a"))
+        assert snapshot is not None and snapshot.snapshot["files"][0]["text"] == "new bootstrap guidance\n"
+
+    current = await environment(env, identity)
+    scripted_model.say("Restricted")
+    await run(mount={**mount, "permission_ceiling": {"operations": ["environment.computer.observe"]}})
+    assert "new bootstrap guidance" not in json.dumps(await scripted_model.request())
+    assert (await environment(env, identity))["last_used_at"] == current["last_used_at"]
+
+    assert (await act(env, "DELETE", identity))[0] == 202
+    await advance(env.runtime, identity, owner="test")
+    async with transaction(env.runtime.storage) as session:
+        assert await session.get(EnvironmentBootstrapSnapshotRow, (identity, "/a")) is None
+
+
+@pytest.mark.parametrize("call_tool", [False, True])
+async def test_warmup_reuses_the_inflight_operation_and_outlives_text_completion(
+    env, scripted_model, runs_kit, monkeypatch, call_tool
+):
+    from a13n_harness.environment import EnvironmentAction, EnvironmentPermissionSet
+    from a13n_service.runs.environments.execution import Source
+
+    from . import environments_support
+    from .environments_support import FakeProvider
+
+    await runs_kit.pause_sweeps(env)
+    dispatched = asyncio.Event()
+    release = asyncio.Event()
+    tool_entered = asyncio.Event()
+    ensure_ready = Source.ensure_ready
+
+    async def observed_ready(self):
+        tool_entered.set()
+        return await ensure_ready(self)
+
+    monkeypatch.setattr(Source, "ensure_ready", observed_ready)
+    if call_tool:
+        monkeypatch.setattr(
+            environments_support,
+            "DESCRIPTOR",
+            environments_support.DESCRIPTOR.model_copy(
+                update={
+                    "permissions": EnvironmentPermissionSet(
+                        operations={EnvironmentAction.FILE_READ_TEXT, EnvironmentAction.FILE_STAT}
+                    ),
+                    "operation_families": frozenset({"files"}),
+                }
+            ),
+        )
+    operations = []
+    create = FakeProvider.create
+
+    async def blocked(self, recipe, *, environment_id, operation_id, state=None):
+        operations.append(operation_id)
+        dispatched.set()
+        await release.wait()
+        return await create(self, recipe, environment_id=environment_id, operation_id=operation_id, state=state)
+
+    monkeypatch.setattr(FakeProvider, "create", blocked)
+    agent = await runs_kit.create_agent(
+        env, scripted_model, lazy_environment="warmup", default_environment_template_id=env.template["id"]
+    )
+    gate = asyncio.Event()
+    if call_tool:
+        scripted_model.call("view", {"file_path": "/workspace/AGENTS.md"}, call_id="inflight", gate=gate)
+        scripted_model.say("Handled")
+    else:
+        scripted_model.say("Text only", gate=gate)
+    submitted = await runs_kit.start_thread(env, agent, "hello")
+    [mount] = submitted["run"]["environment_mounts"]
+    identity = mount["environment_id"]
+    task = await runs_kit.attempt(env)
+    try:
+        await scripted_model.request()
+        await asyncio.wait_for(dispatched.wait(), 5)
+        [operation] = operations
+        assert (await environment(env, identity))["operation_id"] == operation
+        gate.set()
+        if call_tool:
+            await asyncio.wait_for(tool_entered.wait(), 5)
+            assert not task.done()
+            assert (await environment(env, identity))["operation_id"] == operation
+        else:
+            await asyncio.wait_for(asyncio.shield(task), 5)
+            assert (await runs_kit.get_run(env, submitted["run"]["id"]))["status"] == "completed"
+            assert (await environment(env, identity))["operation_id"] == operation
+    finally:
+        release.set()
+        gate.set()
+        await task
+    async with asyncio.timeout(5):
+        while (await environment(env, identity))["status"] != "ready":
+            await asyncio.sleep(0.05)
+    assert operations == BACKEND.preparations == [operation]
+    assert (await runs_kit.get_run(env, submitted["run"]["id"]))["status"] == "completed"
+
+
+@pytest.mark.parametrize("legacy", [True, False])
+def test_legacy_environment_preparation_preserves_stored_digests(legacy):
+    import hashlib
+
+    from a13n_service.resources.agents import stored
+    from a13n_service.resources.agents.schemas import AgentConfig
+    from a13n_service.resources.revisions import config_digest
+    from a13n_service.runs.schemas import RunOptions, canonical_json
+
+    config = AgentConfig(model="scripted").model_dump(mode="json")
+    config["lazy_environment"] = legacy
+    reopened = stored.read(AgentConfig, config, kind="agent_revision", id="revision")
+    assert reopened.lazy_environment is legacy
+    assert config_digest(reopened.model_dump(mode="json")) == config_digest(config)
+
+    options = RunOptions.model_validate({"overrides": {"lazy_environment": True}}).model_dump(mode="json")
+    options["overrides"]["lazy_environment"] = legacy
+    reopened = stored.read(RunOptions, options, kind="run", id="run")
+    assert reopened.overrides is not None and reopened.overrides.lazy_environment is legacy
+    old_digest = hashlib.sha256(
+        canonical_json({k: v for k, v in options.items() if k not in {"configuration", "execution", "context"}})
+    ).hexdigest()
+    assert reopened.digest() == old_digest
+
+
+async def test_bootstrap_storage_fences_writes_and_caps_directories(env):
+    from datetime import UTC, datetime
+
+    from a13n_harness.environment.bootstrap import EnvironmentBootstrapSnapshot, FileBootstrapObservation
+    from a13n_service.resources.environment_instances.tables import EnvironmentBootstrapSnapshotRow as SnapshotRow
+    from a13n_service.runs.environments.bootstrap_snapshots import save
+
+    identity = (await reserve(env, env.template["id"]))["id"]
+    await advance(env.runtime, identity, owner="test")
+    async with transaction(env.runtime.storage) as session:
+        row = await session.get(EnvironmentRow, identity)
+        assert row is not None
+        generation, version = row.generation, row.version
+
+    now = datetime.now(UTC)
+    snapshot = EnvironmentBootstrapSnapshot(
+        files=(FileBootstrapObservation(path="AGENTS.md", limits=(512, 10, 80), status="absent"),)
+    )
+
+    async def record(cwd, at, value=snapshot, *, observed_generation=generation):
+        async with transaction(env.runtime.storage) as session:
+            await save(session, identity, cwd, observed_generation, at, value)
+
+    # Concurrent cwd writers serialize on the Environment row and retain the newest eight.
+    await asyncio.gather(*(record(f"/repo{i}", now + timedelta(seconds=i)) for i in range(10)))
+    await record("/repo9", now, EnvironmentBootstrapSnapshot())
+    await record("/other", now + timedelta(seconds=20), observed_generation=generation - 1)
+    async with transaction(env.runtime.storage) as session:
+        rows = (await session.scalars(select(SnapshotRow).where(SnapshotRow.environment_id == identity))).all()
+        assert {row.working_directory for row in rows} == {f"/repo{i}" for i in range(2, 10)}
+        assert all(row.snapshot["files"][0]["status"] == "absent" for row in rows)
+        row = await session.get(EnvironmentRow, identity)
+        assert row is not None and row.version == version
+
+    assert (await act(env, "DELETE", identity))[0] == 202
+    await advance(env.runtime, identity, owner="test")
+    await record("/late", now, observed_generation=generation + 1)
+    async with transaction(env.runtime.storage) as session:
+        assert not (await session.scalars(select(SnapshotRow).where(SnapshotRow.environment_id == identity))).all()

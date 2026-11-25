@@ -286,3 +286,22 @@ it("saves credential bindings with the selected environment and preserves other 
     null,
   );
 });
+
+it("shows all preparation modes and saves a deliberate change", async () => {
+  const user = userEvent.setup();
+  const preparation = screen.getByRole("combobox", {
+    name: "Environment preparation",
+  });
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  expect(preparation.textContent).toContain("On demand");
+  await user.click(preparation);
+  expect(screen.getByRole("option", { name: "On demand" })).toBeTruthy();
+  expect(
+    screen.getByRole("option", { name: "Wait before inference" }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("option", { name: "Warm up in parallel" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit.mock.calls[0]?.[0]).toMatchObject({
+    lazy_environment: "warmup",
+  });
+});

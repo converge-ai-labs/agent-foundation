@@ -110,6 +110,14 @@
         "lazy_environment": {
           "anyOf": [
             {
+              "enum": [
+                "on_demand",
+                "warmup",
+                "eager"
+              ],
+              "type": "string"
+            },
+            {
               "type": "boolean"
             },
             {

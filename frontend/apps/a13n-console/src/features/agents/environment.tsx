@@ -1,3 +1,8 @@
+import {
+  CursorClickIcon,
+  HourglassMediumIcon,
+  LightningIcon,
+} from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { ChoiceField } from "a13n-ui";
 import { useTranslation } from "react-i18next";
@@ -9,7 +14,7 @@ import { OptionsRefresh } from "../../shared/forms/options-refresh";
 import { Section } from "../../shared/page";
 import { environmentApi, environmentTemplates } from "../environments/api";
 import { useEnvironmentTypes } from "../environments/providers";
-import type { AgentConfig } from "./configuration";
+import type { AgentConfig, EnvironmentPreparation } from "./configuration";
 import { AgentSessionConfiguration } from "./session-configuration";
 
 export function AgentEnvironment({
@@ -20,6 +25,9 @@ export function AgentEnvironment({
   disabled,
   readOnly = false,
   composer = false,
+  preparation,
+  onPreparationChange,
+  preparationReadOnly,
   sessionConfiguration,
   onSessionConfigurationChange,
   sessionInvalid = false,
@@ -31,6 +39,9 @@ export function AgentEnvironment({
   disabled: boolean;
   readOnly?: boolean;
   composer?: boolean;
+  preparation: EnvironmentPreparation;
+  onPreparationChange: (value: EnvironmentPreparation) => void;
+  preparationReadOnly?: boolean;
   sessionConfiguration: AgentConfig["default_session_configuration"];
   onSessionConfigurationChange: (
     value: AgentConfig["default_session_configuration"],
@@ -149,6 +160,33 @@ export function AgentEnvironment({
           ...(value && !templates.data?.some((item) => item.id === value)
             ? [{ value, label: value }]
             : []),
+        ]}
+      />
+      <ChoiceField
+        label={t("Environment preparation")}
+        disabled={disabled}
+        readOnly={readOnly || preparationReadOnly}
+        value={preparation}
+        onValueChange={(value) => {
+          if (value === "on_demand" || value === "warmup" || value === "eager")
+            onPreparationChange(value);
+        }}
+        options={[
+          {
+            value: "on_demand",
+            label: t("On demand"),
+            icon: <CursorClickIcon />,
+          },
+          {
+            value: "warmup",
+            label: t("Warm up in parallel"),
+            icon: <LightningIcon />,
+          },
+          {
+            value: "eager",
+            label: t("Wait before inference"),
+            icon: <HourglassMediumIcon />,
+          },
         ]}
       />
       <ErrorNotice

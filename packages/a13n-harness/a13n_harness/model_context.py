@@ -125,6 +125,10 @@ class ModelContextHistory:
         """Whether this source/key/content hash occurs anywhere in retained context."""
         return (block.source_id, block.key, block.content_hash) in self._entries
 
+    def has_identity(self, source_id: str, key: str | None) -> bool:
+        """Whether this source and key occur in retained context."""
+        return any((source, block_key) == (source_id, key) for source, block_key, _ in self._entries)
+
     def matches_latest(self, block: ModelContextBlock) -> bool:
         """Compare with the most recent same-identity hash; absent or unknown is false."""
         identity = (block.source_id, block.key)

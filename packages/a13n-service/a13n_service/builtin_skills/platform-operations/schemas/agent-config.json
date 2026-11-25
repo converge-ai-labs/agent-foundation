@@ -2093,9 +2093,21 @@
       "type": "string"
     },
     "lazy_environment": {
+      "anyOf": [
+        {
+          "enum": [
+            "on_demand",
+            "warmup",
+            "eager"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "boolean"
+        }
+      ],
       "default": true,
-      "title": "Lazy Environment",
-      "type": "boolean"
+      "title": "Lazy Environment"
     },
     "media_understanding": {
       "$ref": "#/$defs/MediaUnderstandingSelection"

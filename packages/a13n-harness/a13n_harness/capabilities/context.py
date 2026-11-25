@@ -71,8 +71,14 @@ from a13n_harness.compaction import (
 )
 from a13n_harness.content import CONTENT_METADATA_KEY
 from a13n_harness.context import AgentContext
+from a13n_harness.environment.bootstrap import (
+    FileBootstrapObservation,
+    ProjectGuidanceObservation,
+    WorkspaceOutlineObservation,
+)
 from a13n_harness.environment.files import FileOperator, FileTreeRequest
-from a13n_harness.environment.models import EnvironmentError
+from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.environment.providers import FileScopeSelection
 from a13n_harness.environment.trees import tree_entry_value
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import (
@@ -224,7 +230,7 @@ class WorkspaceOutlineConfiguration(BaseModel):
 
 @dataclass(init=False)
 class WorkspaceOutlineCapability(AbstractModelContextCapability):
-    """Project a bounded workspace file outline only on input requests."""
+    """Project a bounded workspace outline and align a bootstrap projection once."""
 
     id = WORKSPACE_OUTLINE_CAPABILITY_ID
 
@@ -232,6 +238,15 @@ class WorkspaceOutlineCapability(AbstractModelContextCapability):
         if configuration is not None and not isinstance(configuration, WorkspaceOutlineConfiguration):
             configuration = WorkspaceOutlineConfiguration.model_validate(configuration, strict=True)
         self.configuration = (configuration or WorkspaceOutlineConfiguration()).model_copy(deep=True)
+        self._live: dict[FileScopeSelection, str] = {}
+
+    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+        existing = ctx.deps._run_capability(WORKSPACE_OUTLINE_CAPABILITY_ID)
+        if existing is not None:
+            return existing
+        replacement = WorkspaceOutlineCapability(self.configuration)
+        ctx.deps._record_run_capability(WORKSPACE_OUTLINE_CAPABILITY_ID, replacement)
+        return replacement
 
     async def wrap_model_context(
         self,
@@ -240,39 +255,63 @@ class WorkspaceOutlineCapability(AbstractModelContextCapability):
         handler: ModelContextNext,
     ) -> ModelContextProjection:
         projection = await handler(request)
-        if request.kind is not ModelContextRequestKind.INPUT:
+        if request.kind not in {ModelContextRequestKind.INPUT, ModelContextRequestKind.TOOL_RESULTS}:
             return projection
+        env = ctx.deps.environment
+        configuration = self.configuration
         try:
-            selection = await ctx.deps.environment.resolve_files(self.configuration.root)
-            async with ctx.deps.environment.open_files(selection) as files:
-                content = await _scan_workspace_outline(files, self.configuration)
+            route = env.bootstrap_context(configuration.root, frozenset({EnvironmentAction.FILE_LIST}))
+            profile = f"{route.virtual_path}:{configuration.model_dump_json()}" if route else ""
+            if route:
+
+                async def capture(files: FileOperator) -> WorkspaceOutlineObservation:
+                    return WorkspaceOutlineObservation(
+                        profile=profile, content=await _scan_workspace_outline(files, configuration)
+                    )
+
+                route.observe(("workspace_outline", profile), capture)
+            if route and route.deferred:
+                observation = (
+                    next((item for item in route.snapshot.workspace_outline if item.profile == profile), None)
+                    if route.snapshot
+                    else None
+                )
+                if observation is None:
+                    return projection
+                content = observation.content
+            else:
+                if not route and request.kind is not ModelContextRequestKind.INPUT:
+                    return projection
+                selection = await env.resolve_files(configuration.root)
+                if route and selection in self._live:
+                    content = self._live[selection]
+                else:
+                    async with env.open_files(selection) as files:
+                        content = await _scan_workspace_outline(files, configuration)
+                    if env.select_files(configuration.root) != selection:
+                        raise DefinitionError(
+                            "The workspace outline root changed while it was being scanned.",
+                            code="workspace_outline_stale",
+                            details={"root": configuration.root},
+                        )
+                    if route:
+                        self._live[selection] = content
         except EnvironmentError as exc:
-            if not self.configuration.required:
+            if not configuration.required:
                 return projection
             raise DefinitionError(
                 "Required workspace outline could not be loaded through the current Environment.",
                 code="workspace_outline_unavailable",
-                details={"root": self.configuration.root, "environment_code": exc.code},
+                details={"root": configuration.root, "environment_code": exc.code},
             ) from exc
-        try:
-            current = ctx.deps.environment.select_files(self.configuration.root)
-        except EnvironmentError as exc:
-            raise DefinitionError(
-                "The workspace outline root changed while it was being scanned.",
-                code="workspace_outline_stale",
-                details={"root": self.configuration.root, "environment_code": exc.code},
-            ) from exc
-        if current != selection:
-            raise DefinitionError(
-                "The workspace outline root changed while it was being scanned.",
-                code="workspace_outline_stale",
-                details={"root": self.configuration.root},
-            )
+
         block = ModelContextBlock(
             source_id=WORKSPACE_OUTLINE_CAPABILITY_ID,
             key=self.configuration.root,
             context_group="environment_context",
-            placement=ModelContextPlacement.INPUT_PREAMBLE,
+            placement=ModelContextPlacement.REQUEST_EPILOGUE
+            if request.kind is ModelContextRequestKind.TOOL_RESULTS
+            else ModelContextPlacement.INPUT_PREAMBLE,
             content=content,
         )
         if request.history.matches_latest(block):
@@ -363,9 +402,9 @@ def _file_context_paths(configuration: FileContextConfiguration) -> tuple[tuple[
     return tuple(selected)
 
 
-async def _read_file_context(
+async def _read_file_prefix(
     files: FileOperator, path: str, configuration: FileContextConfiguration, budget: int
-) -> str:
+) -> tuple[str, bool]:
     """Read bounded pages to the actual file/line/byte boundary, not just page one."""
     chunks: list[str] = []
     offset = 0
@@ -391,19 +430,30 @@ async def _read_file_context(
         has_more = page.has_more
         if page.lines_read == 0:
             break
-    section = "".join(chunks)
-    if truncated or has_more:
-        marker = "\n[File context truncated by configured limits]"
-        section = (
-            section.encode("utf-8")[: max(0, budget - len(marker.encode()))].decode("utf-8", errors="ignore") + marker
-        )
-    return section
+    return "".join(chunks), truncated or has_more
 
 
-async def _scan_project_guidance(files: FileOperator) -> str | None:
+def _render_file_prefix(text: str, truncated: bool, budget: int) -> str:
+    encoded = text.encode("utf-8")
+    if not truncated and len(encoded) <= budget:
+        return text
+    marker = b"\n[File context truncated by configured limits]"
+    return encoded[: max(0, budget - len(marker))].decode("utf-8", errors="ignore") + marker.decode()
+
+
+async def _read_file_context(
+    files: FileOperator,
+    path: str,
+    configuration: FileContextConfiguration,
+    budget: int,
+) -> str:
+    return _render_file_prefix(*(await _read_file_prefix(files, path, configuration, budget)), budget)
+
+
+async def _scan_project_guidance(files: FileOperator, *, root: str | None = None) -> ProjectGuidanceObservation:
     """Probe conventional entrypoints, never child file contents or recursive trees."""
     # Separate from the original file-content budget so hints cannot displace authored guidance.
-    max_entries, max_bytes = 64, 8 * 1024
+    max_entries = 64
     page = await files.list(".", offset=0, max_results=max_entries, include_hidden=False)
     candidates = [(".agents/skills", "directory")]
     for entry in sorted(page.entries, key=lambda item: item.path):
@@ -426,6 +476,26 @@ async def _scan_project_guidance(files: FileOperator) -> str | None:
     for (_, kind), (path, _) in zip(candidates, results, strict=True):
         if path is not None:
             (agents if kind == "file" else skills).append(path)
+
+    def relative(path: str) -> str:
+        return path.removeprefix(root.rstrip("/") + "/") if root is not None else path
+
+    return ProjectGuidanceObservation(
+        agents_md=tuple(map(relative, agents)),
+        skill_directories=tuple(map(relative, skills)),
+        incomplete=incomplete,
+    )
+
+
+def _render_project_guidance(observation: ProjectGuidanceObservation, root: str | None = None) -> str | None:
+    def virtual(path: str) -> str:
+        if root is None or path == ".agents/skills":
+            return path
+        return f"{root.rstrip('/')}/{path}"
+
+    agents = list(map(virtual, observation.agents_md))
+    skills = list(map(virtual, observation.skill_directories))
+    incomplete = observation.incomplete
     if not agents and not skills and not incomplete:
         return None
     prefix = (
@@ -438,22 +508,18 @@ async def _scan_project_guidance(files: FileOperator) -> str | None:
     while True:
         payload = {"agents_md": agents, "skill_directories": skills, "incomplete": incomplete}
         content = prefix + dump_json_bytes(payload, sort_keys=True).decode("utf-8")
-        if len(content.encode("utf-8")) <= max_bytes:
+        if len(content.encode("utf-8")) <= 8 * 1024:
             return content
         incomplete = True
         # Trim complete paths rather than emitting an unusable partial path or invalid JSON.
         (skills if skills else agents).pop()
 
 
-async def _project_guidance(context: AgentContext) -> str | None:
-    try:
-        selection = await context.environment.resolve_files(".")
-        async with context.environment.open_files(selection) as files:
-            content = await _scan_project_guidance(files)
-        current = context.environment.select_files(".")
-    except EnvironmentError as exc:
-        # Discovery never widens the current mount's read permissions.
-        return f"Project guidance discovery is unavailable ({exc.code})."
+async def _project_guidance(context: AgentContext) -> ProjectGuidanceObservation:
+    selection = await context.environment.resolve_files(".")
+    async with context.environment.open_files(selection) as files:
+        content = await _scan_project_guidance(files)
+    current = context.environment.select_files(".")
     if current != selection:
         raise DefinitionError(
             "The project guidance root changed while it was being scanned.", code="file_context_stale"
@@ -482,65 +548,90 @@ class FileContextCapability(AbstractModelContextCapability):
                 )
             return existing
 
-        sections: list[tuple[str, str]] = []
-        loaded_paths: set[tuple[str, str]] = set()
-        used_bytes = 0
-        failures: list[str] = []
-        selected_paths = _file_context_paths(self.configuration)
-        for path, explicit in selected_paths:
-            try:
-                resolved = ctx.deps.environment.resolve_path(path)
-            except EnvironmentError as exc:
-                if explicit:
-                    failures.append(f"{path}: {exc.code}")
-                continue
-            resolved_key = (resolved.mount_id, resolved.path)
-            if resolved_key in loaded_paths:
-                continue
-            remaining = self.configuration.max_bytes - used_bytes
-            if remaining < 5:
-                if explicit:
-                    failures.append(f"{path}: file_context_budget_exhausted")
-                continue
-            try:
-                section = await _read_file_context(ctx.deps.environment.files, path, self.configuration, remaining)
-            except EnvironmentError as exc:
-                if explicit:
-                    failures.append(f"{path}: {exc.code}")
-                continue
-            sections.append((path, section))
-            loaded_paths.add(resolved_key)
-            used_bytes += len(section.encode("utf-8"))
-        if self.configuration.required and failures:
-            raise DefinitionError(
-                "Required explicit file context could not be loaded through the current Environment.",
-                code="file_context_unavailable",
-                details=cast(
-                    dict[str, JsonValue],
-                    {"paths": list(self.configuration.paths), "failures": failures},
-                ),
-            )
-        guidance = await _project_guidance(ctx.deps) if self.configuration.include_project_guidance else None
-        replacement = _FileContextRunCapability(self.configuration, tuple(sections), guidance)
+        replacement = _FileContextRunCapability(self.configuration)
         ctx.deps._record_run_capability(FILE_CONTEXT_CAPABILITY_ID, replacement)
         return replacement
 
 
 @dataclass(init=False)
 class _FileContextRunCapability(FileContextCapability):
-    def __init__(
-        self,
-        configuration: FileContextConfiguration,
-        sections: tuple[tuple[str, str], ...],
-        guidance: str | None,
-    ) -> None:
+    def __init__(self, configuration: FileContextConfiguration) -> None:
         super().__init__(configuration)
-        self._sections = tuple(sections)
-        self._guidance = guidance
+        self._files: dict[FileScopeSelection, FileBootstrapObservation | str] = {}
+        self._guidance: dict[FileScopeSelection, str] = {}
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        del ctx
         return self
+
+    async def _file_observation(
+        self,
+        context: AgentContext,
+        path: str,
+        explicit: bool,
+        remaining: int,
+    ) -> FileBootstrapObservation | str | None:
+        env = context.environment
+        route = env.bootstrap_context(path, frozenset({EnvironmentAction.FILE_READ_TEXT}))
+        selection = env.select_files(path)
+        if selection in self._files:
+            return self._files[selection]
+        config = self.configuration
+        limits = (config.max_bytes, config.max_lines_per_file, config.max_line_length)
+
+        async def read(files: FileOperator) -> FileBootstrapObservation:
+            key = route.path if route else path
+            try:
+                text, truncated = await _read_file_prefix(files, path, config, config.max_bytes if route else remaining)
+            except EnvironmentError as exc:
+                if exc.code != "environment_not_found":
+                    raise
+                return FileBootstrapObservation(path=key, limits=limits, status="absent")
+            return FileBootstrapObservation(path=key, limits=limits, status="present", text=text, truncated=truncated)
+
+        if route:
+            route.observe(("file", route.path, *map(str, limits)), read)
+            if route.deferred:
+                if route.snapshot:
+                    for observation in route.snapshot.files:
+                        if observation.path == route.path and (
+                            observation.status == "absent" or observation.limits == limits
+                        ):
+                            return observation
+                if not (config.required and explicit):
+                    return None
+        try:
+            observation = await read(env.files)
+        except EnvironmentError as exc:
+            self._files[selection] = exc.code
+            return exc.code
+        self._files[env.select_files(path)] = observation
+        return observation
+
+    async def _project_guidance(self, context: AgentContext) -> str | None:
+        env = context.environment
+        actions = frozenset({EnvironmentAction.FILE_LIST, EnvironmentAction.FILE_STAT})
+        empty = "No project guidance entrypoints are available."
+        try:
+            route = env.bootstrap_context(".", actions)
+            selection = env.select_files(".")
+            if selection in self._guidance:
+                return self._guidance[selection]
+            if route:
+
+                async def capture(files: FileOperator) -> ProjectGuidanceObservation:
+                    return await _scan_project_guidance(files, root=route.virtual_path)
+
+                route.observe(("project_guidance",), capture)
+                if route.deferred:
+                    snapshot = route.snapshot
+                    if snapshot is None or snapshot.project_guidance is None:
+                        return None
+                    return _render_project_guidance(snapshot.project_guidance, route.virtual_path) or empty
+            content = _render_project_guidance(await _project_guidance(context)) or empty
+        except EnvironmentError as exc:
+            return f"Project guidance discovery is unavailable ({exc.code})."
+        self._guidance[env.select_files(".")] = content
+        return content
 
     async def wrap_model_context(
         self,
@@ -549,7 +640,7 @@ class _FileContextRunCapability(FileContextCapability):
         handler: ModelContextNext,
     ) -> ModelContextProjection:
         projection = await handler(request)
-        if request.kind is not ModelContextRequestKind.INPUT:
+        if request.kind not in {ModelContextRequestKind.INPUT, ModelContextRequestKind.TOOL_RESULTS}:
             return projection
 
         def block(key: str, content: str) -> ModelContextBlock:
@@ -561,17 +652,56 @@ class _FileContextRunCapability(FileContextCapability):
                 content=f"{_FILE_CONTEXT_OPEN}\n{content}\n{_FILE_CONTEXT_CLOSE}",
             )
 
-        paths = "\n".join(path for path, _ in self._sections)
-        blocks = [block("files", f"Current file context paths: {paths or 'No file context is loaded.'}")]
-        blocks.extend(
-            block(f"file:{path}", f'<file path="{_xml_attribute(path)}">\n{content}\n</file>')
-            for path, content in self._sections
-        )
+        blocks: list[ModelContextBlock] = []
+        paths: list[str] = []
+        failures: list[str] = []
+        selected_paths: set[tuple[str, str]] = set()
+        remaining = self.configuration.max_bytes
+        deferred = False
+        for path, explicit in _file_context_paths(self.configuration):
+            key = f"file:{path}"
+            try:
+                resolved = ctx.deps.environment.resolve_path(path)
+                identity = (resolved.mount_id, resolved.path)
+                if identity in selected_paths:
+                    continue
+                selected_paths.add(identity)
+                observed = (
+                    await self._file_observation(ctx.deps, path, explicit, remaining)
+                    if remaining >= 5
+                    else "file_context_budget_exhausted"
+                )
+            except EnvironmentError as exc:
+                observed = exc.code
+            if observed is None:
+                deferred = True
+            elif isinstance(observed, str) or observed.status == "absent":
+                if explicit:
+                    failures.append(f"{path}: {observed if isinstance(observed, str) else 'environment_not_found'}")
+                if not isinstance(observed, str) and request.history.has_identity(FILE_CONTEXT_CAPABILITY_ID, key):
+                    blocks.append(block(key, f"File is absent: {path}"))
+            else:
+                content = _render_file_prefix(observed.text, observed.truncated, remaining)
+                remaining -= len(content.encode("utf-8"))
+                paths.append(path)
+                blocks.append(block(key, f'<file path="{_xml_attribute(path)}">\n{content}\n</file>'))
+        if self.configuration.required and failures:
+            raise DefinitionError(
+                "Required explicit file context could not be loaded through the current Environment.",
+                code="file_context_unavailable",
+                details=cast(dict[str, JsonValue], {"paths": list(self.configuration.paths), "failures": failures}),
+            )
+        if not deferred:
+            blocks.insert(
+                0, block("files", f"Current file context paths: {chr(10).join(paths) or 'No file context is loaded.'}")
+            )
         if self.configuration.include_project_guidance:
-            guidance = self._guidance or "No project guidance entrypoints are available."
-            blocks.append(block("project-guidance", f"<project-guidance>\n{guidance}\n</project-guidance>"))
-        selected = tuple(item for item in blocks if not request.history.matches_latest(item))
-        return ModelContextProjection(blocks=(*projection.blocks, *selected))
+            guidance = await self._project_guidance(ctx.deps)
+            if guidance is not None:
+                blocks.append(block("project-guidance", f"<project-guidance>\n{guidance}\n</project-guidance>"))
+        return ModelContextProjection(
+            blocks=(*projection.blocks, *(item for item in blocks if not request.history.matches_latest(item)))
+        )
 
 
 class HandoffConfiguration(BaseModel):

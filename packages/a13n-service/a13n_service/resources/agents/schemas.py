@@ -283,6 +283,9 @@ class NativeToolSearch(_Frozen):
     sources: AutomaticToolSearch = Field(default_factory=AutomaticToolSearch)
 
 
+EnvironmentPreparation = Literal["on_demand", "warmup", "eager"] | bool
+
+
 class AgentConfig(_Frozen):
     execution: ExecutionOverride | None = Field(default=None, exclude_if=lambda value: value is None)
     model: Key
@@ -316,8 +319,8 @@ class AgentConfig(_Frozen):
     default_session_configuration: SessionConfiguration | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
-    # Otherwise create/start mounted instances before Harness; execution connections still open on first use.
-    lazy_environment: bool = True
+    # Preserve boolean spellings in stored revisions and Run options.
+    lazy_environment: EnvironmentPreparation = True
     # Added to a thread's memory mounts at its first acceptance, for names and memories it does not use yet.
     memory_mounts: MemoryMounts = ()
     # Snapshotted by a new Session at its first business acceptance unless explicitly configured.
@@ -392,7 +395,7 @@ class AgentConfigurationChanges(_Frozen):
     default_environment_template_id: ObjectId | MISSING | None = Field(default=MISSING)
     default_environment_id: ObjectId | MISSING | None = Field(default=MISSING)
     default_session_configuration: SessionConfiguration | MISSING | None = Field(default=MISSING)
-    lazy_environment: bool | MISSING = Field(default=MISSING)
+    lazy_environment: EnvironmentPreparation | MISSING = Field(default=MISSING)
     memory_mounts: MemoryMounts | MISSING = Field(default=MISSING)
     memory: SessionMemorySettings | MISSING = Field(default=MISSING)
 
@@ -427,7 +430,7 @@ class AgentOverride(_Frozen):
     model_settings: ModelSettings | None = None
     model_characteristics: AgentModelCharacteristics | None = None
     instructions: Instructions | None = None
-    lazy_environment: bool | None = None
+    lazy_environment: EnvironmentPreparation | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
     skill_sync: SkillSync | None = None

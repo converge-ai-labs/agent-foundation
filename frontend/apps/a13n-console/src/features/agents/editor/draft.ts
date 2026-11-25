@@ -22,6 +22,8 @@ import { requiresReviewer, validateReviewer } from "../reviewer";
 import {
   advancedConfig,
   buildConfig,
+  preparationMode,
+  type EnvironmentPreparation,
   type AgentConfig,
 } from "../configuration";
 
@@ -74,6 +76,9 @@ export function useAgentDraft(
     [maxTokens, setMaxTokens] = useState(initialMaxTokensText),
     [settings, setSettings] = useState(initialSettingsText),
     [advanced, setAdvanced] = useState(advancedConfig(initial)),
+    [environmentPreparation, setEnvironmentPreparation] = useState(
+      preparationMode(initial.lazy_environment),
+    ),
     [environmentId, setEnvironmentId] = useState(
       initial.default_environment_id ?? null,
     ),
@@ -128,6 +133,7 @@ export function useAgentDraft(
         (mediaUnderstanding[kind] ?? null) !==
         (initial.media_understanding?.[kind] ?? null),
     ) ||
+    environmentPreparation !== preparationMode(initial.lazy_environment) ||
     environmentId !== (initial.default_environment_id ?? null) ||
     JSON.stringify(sessionConfiguration) !==
       JSON.stringify(initial.default_session_configuration) ||
@@ -177,6 +183,13 @@ export function useAgentDraft(
     setSettings,
     advanced,
     setAdvanced,
+    environmentPreparation,
+    setEnvironmentPreparation: (value: EnvironmentPreparation) =>
+      setEnvironmentPreparation(value),
+    lazyEnvironment:
+      environmentPreparation === preparationMode(initial.lazy_environment)
+        ? initial.lazy_environment
+        : environmentPreparation,
     environmentId,
     setEnvironmentId,
     environmentTemplateId,
@@ -389,6 +402,9 @@ export function buildDraftConfig(
           memory: draft.memory,
           default_environment_template_id: draft.environmentTemplateId,
           default_environment_id: draft.environmentId,
+          ...(draft.lazyEnvironment === undefined
+            ? {}
+            : { lazy_environment: draft.lazyEnvironment }),
           ...(draft.sessionConfiguration === undefined
             ? {}
             : {

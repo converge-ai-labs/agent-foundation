@@ -683,7 +683,9 @@ async def test_a_skill_package_the_object_store_cannot_serve_is_materialized_by_
     """An object store outage while a run materializes its pinned skills ends the attempt, and a later one
     retries."""
     async with serve(settings=_with_local_environments(settings)) as service:
-        run, skills_root = await _skilled_run(service, runs_kit, scripted_model, tmp_path, mode)
+        run, skills_root = await _skilled_run(
+            service, runs_kit, scripted_model, tmp_path, mode, options={"overrides": {"lazy_environment": "eager"}}
+        )
 
         async def unavailable(*args: object, **kwargs: object) -> None:
             raise ServiceError("unavailable", "The object store is unavailable", {"dependency": "objects"})
@@ -714,7 +716,9 @@ async def test_a_lease_lost_while_skills_materialize_ends_the_attempt_unsealed(
 ) -> None:  # type: ignore[no-untyped-def]
     """The Harness wraps what a skill materializer raises; a lost lease still ends the attempt without a seal."""
     async with serve(settings=_with_local_environments(settings)) as service:
-        run, skills_root = await _skilled_run(service, runs_kit, scripted_model, tmp_path, mode)
+        run, skills_root = await _skilled_run(
+            service, runs_kit, scripted_model, tmp_path, mode, options={"overrides": {"lazy_environment": "eager"}}
+        )
 
         async def lost(*args: object, **kwargs: object) -> None:
             raise LeaseLost()
@@ -739,6 +743,7 @@ async def test_worker_reclaims_idle_cache_and_releases_its_reader_pin(
         (root / ".cache" / "pins" / old).mkdir(parents=True)
         (root / ".cache" / "entries").mkdir(parents=True)
         (root / ".cache" / "entries" / old).write_text("1")
+        scripted_model.call("view", {"file_path": "/workspace/AGENTS.md"}, call_id="activate")
         scripted_model.say("Reviewed")
         await (await runs_kit.attempt(service))
         completed = await runs_kit.get_run(service, run["id"])
@@ -761,6 +766,7 @@ async def test_run_override_switches_shared_agent_to_isolated_materialization(
             tmp_path,
             options={"overrides": {"skill_sync": {"mode": "isolated"}}},
         )
+        scripted_model.call("view", {"file_path": "/workspace/AGENTS.md"}, call_id="activate")
         scripted_model.say("Reviewed")
         await (await runs_kit.attempt(service))
         completed = await runs_kit.get_run(service, run["id"])
