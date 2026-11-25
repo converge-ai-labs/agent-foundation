@@ -129,6 +129,11 @@ it.each(["enter", "mod-enter"])(
       isComposing: true,
       ctrlKey: preference === "mod-enter",
     });
+    fireEvent.keyDown(textbox, {
+      key: "Enter",
+      keyCode: 229,
+      ctrlKey: preference === "mod-enter",
+    });
     fireEvent.compositionStart(textbox);
     fireEvent.keyDown(textbox, {
       key: "Enter",
@@ -655,81 +660,94 @@ it("keeps the placeholder out of authored input and preserves the editor across 
   expect(draft.doc.getText("text").toString()).toBe("Keep this objective");
 });
 
-it("completes dollar skills without sending, and retains the editor across catalog context changes", async () => {
-  const { startCompletion } = await import("@codemirror/autocomplete");
-  const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
-  const draft = new ThreadDraft();
-  const editor = { current: null as EditorView | null };
-  const submit = vi.fn();
-  const loadSkills = vi.fn(async () => ({
-    catalog_id: "a".repeat(64),
-    context_kind: "draft" as const,
-    items: [
-      {
-        item_id: "b".repeat(64),
-        name: "review",
-        description: "Review carefully",
-        source_id: "project",
-        logical_path: ".agents/skills/review",
-      },
-    ],
-  }));
-  const props = {
-    draft,
-    editor,
-    submit,
-    loadSkills,
-    profile: { display_name: "Alice", color: "#2563eb" },
-    presence: vi.fn(),
-  };
-  const view = render(<ComposerEditor {...props} skillContext="first" />);
-  const original = editor.current;
-  act(() => {
-    editor.current!.dispatch({
-      changes: { from: 0, insert: "Use $rev" },
-      selection: { anchor: 8 },
-    });
-    editor.current!.focus();
-    startCompletion(editor.current!);
-  });
-  await screen.findByRole("option", { name: /Review/ });
-  expect(screen.getByText("Review carefully")).toBeTruthy();
-  // CodeMirror compares Date.now against the completion's opening timestamp.
-  now.mockReturnValue(1_100);
-  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
-  fireEvent.keyDown(textbox, { key: "Enter" });
-  expect(submit).not.toHaveBeenCalled();
-  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
-  fireEvent.keyDown(textbox, { key: "Backspace" });
-  expect(draft.doc.getText("text").toString()).toBe("Use ");
-  act(() => draft.undo.undo());
-  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
-  fireEvent.keyDown(textbox, { key: "Enter" });
-  expect(submit).toHaveBeenCalledOnce();
-  view.rerender(<ComposerEditor {...props} skillContext="second" />);
-  expect(editor.current).toBe(original);
-  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
-  act(() => {
-    draft.replacement = {
-      draft_id: "replacement",
-      participant_id: "participant-one",
-      participants: {},
-      update_base64: encode(Y.encodeStateAsUpdate(new Y.Doc())),
+it.each([false, true])(
+  "keeps Enter with Skill completion and retains the editor across context changes (coarse pointer: %s)",
+  async (coarse) => {
+    if (coarse) {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: query === "(pointer: coarse)",
+        addEventListener() {},
+        removeEventListener() {},
+      }));
+    }
+    const { startCompletion } = await import("@codemirror/autocomplete");
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const draft = new ThreadDraft();
+    const editor = { current: null as EditorView | null };
+    const submit = vi.fn();
+    const loadSkills = vi.fn(async () => ({
+      catalog_id: "a".repeat(64),
+      context_kind: "draft" as const,
+      items: [
+        {
+          item_id: "b".repeat(64),
+          name: "review",
+          description: "Review carefully",
+          source_id: "project",
+          logical_path: ".agents/skills/review",
+        },
+      ],
+    }));
+    const props = {
+      draft,
+      editor,
+      submit,
+      loadSkills,
+      profile: { display_name: "Alice", color: "#2563eb" },
+      presence: vi.fn(),
     };
-    draft.joinReplacement(false);
-  });
-  view.rerender(<ComposerEditor {...props} skillContext="second" />);
-  expect(editor.current).not.toBe(original);
-  act(() => {
-    editor.current!.dispatch({
-      changes: { from: 0, insert: "$rev" },
-      selection: { anchor: 4 },
+    const view = render(<ComposerEditor {...props} skillContext="first" />);
+    const original = editor.current;
+    act(() => {
+      editor.current!.dispatch({
+        changes: { from: 0, insert: "Use $rev" },
+        selection: { anchor: 8 },
+      });
+      editor.current!.focus();
+      startCompletion(editor.current!);
     });
-    editor.current!.focus();
-    startCompletion(editor.current!);
-  });
-  await screen.findByRole("option", { name: /Review/ });
-});
+    await screen.findByRole("option", { name: /Review/ });
+    expect(screen.getByText("Review carefully")).toBeTruthy();
+    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    expect(draft.doc.getText("text").toString()).toBe("Use $rev");
+    expect(submit).not.toHaveBeenCalled();
+    // CodeMirror compares Date.now against the completion's opening timestamp.
+    now.mockReturnValue(1_100);
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    expect(submit).not.toHaveBeenCalled();
+    expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+    fireEvent.keyDown(textbox, { key: "Backspace" });
+    expect(draft.doc.getText("text").toString()).toBe("Use ");
+    act(() => draft.undo.undo());
+    expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+    fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: coarse });
+    expect(submit).toHaveBeenCalledOnce();
+    view.rerender(<ComposerEditor {...props} skillContext="second" />);
+    expect(editor.current).toBe(original);
+    expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+    act(() => {
+      draft.replacement = {
+        draft_id: "replacement",
+        participant_id: "participant-one",
+        participants: {},
+        update_base64: encode(Y.encodeStateAsUpdate(new Y.Doc())),
+      };
+      draft.joinReplacement(false);
+    });
+    view.rerender(<ComposerEditor {...props} skillContext="second" />);
+    expect(editor.current).not.toBe(original);
+    act(() => {
+      editor.current!.dispatch({
+        changes: { from: 0, insert: "$rev" },
+        selection: { anchor: 4 },
+      });
+      editor.current!.focus();
+      startCompletion(editor.current!);
+    });
+    await screen.findByRole("option", { name: /Review/ });
+  },
+);
 
 it("sends ordinary text without starting skill completion", async () => {
   const { completionStatus } = await import("@codemirror/autocomplete");

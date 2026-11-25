@@ -1502,9 +1502,9 @@ export function Composer({
                         : t("Send")
               }
               title={
-                stopAction
-                  ? (stopNotice ?? t("Stop this operation"))
-                  : blockedReason
+                (stopAction ? stopNotice : undefined) ??
+                blockedReason ??
+                (stopAction ? t("Stop this operation") : undefined)
               }
               onClick={() =>
                 stopAction ? void stop() : void submit(busy ? "steer" : "send")

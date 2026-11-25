@@ -57,7 +57,6 @@ export function useComposerSendShortcut() {
   const command = usesCommandKey();
   const modifiedEnter = `${command ? "Meta" : "Control"}+Enter`;
   return {
-    touch,
     plainEnterSends,
     command,
     label: plainEnterSends ? "Enter" : `${command ? "⌘" : "Ctrl"} + Enter`,

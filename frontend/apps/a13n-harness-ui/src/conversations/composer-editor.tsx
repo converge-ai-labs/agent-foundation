@@ -267,12 +267,14 @@ export function ComposerEditor({
             )
               return false;
 
-            const { command, plainEnterSends, touch } = shortcutRef.current;
+            const { command, plainEnterSends } = shortcutRef.current;
             const plain = !event.metaKey && !event.ctrlKey;
             if (plain) {
-              if (touch) return insertNewline(view);
-              // Let the Skill picker handle Enter while it shows candidates.
-              if (currentCompletions(view.state).length) return false;
+              if (currentCompletions(view.state).length) {
+                // Keep Enter with the Skill picker, even during its opening delay.
+                acceptCompletion(view);
+                return true;
+              }
               if (!plainEnterSends) return insertNewline(view);
             } else if (
               !(command
