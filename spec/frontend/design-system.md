@@ -58,7 +58,7 @@ Neutral surfaces carry the interface. Primary buttons are near-black in light mo
 
 ## HTML Code Preview
 
-Assistant Markdown shows fenced `html` as copyable source. Once the reply stops streaming, the code toolbar offers **Preview** next to **Copy**. Preview replaces the source with an internally scrollable frame. Turning it off releases the frame; reloading starts in source. Source over 200 KB (UTF-8) stays visible with a size notice.
+Assistant Markdown shows fenced `html` as copyable source. Once the reply stops streaming, the code toolbar offers **Preview** next to **Copy**. Preview replaces the source with an internally scrollable frame. Turning it off releases the frame; reloading starts in source. A truncated reply stays in source until its complete content is available. Source over 200 KB (UTF-8) stays visible with a size notice.
 
 The shared UI admits static HTML and SVG, inline CSS, and native interactions such as `details`. It strips scripts, external navigation and resource hints before loading a scriptless, opaque-origin iframe whose policy blocks external resources. Snippets get theme-aware document defaults; complete documents keep their own presentation.
 

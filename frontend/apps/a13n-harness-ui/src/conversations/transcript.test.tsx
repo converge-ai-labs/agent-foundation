@@ -343,3 +343,22 @@ it("exposes HTML preview once the live reply ends, before saved history arrives"
       .getAttribute("aria-pressed"),
   ).toBe("false");
 });
+
+it("keeps truncated saved HTML in source", () => {
+  const entry = {
+    position: 0,
+    message_kind: "response",
+    parts: [
+      {
+        kind: "assistant",
+        text: "```html\n<p>Saved prefix",
+        text_truncated: true,
+      },
+    ],
+  } satisfies Schema<"TranscriptEntry">;
+  render(<SavedEntry entry={entry} />);
+  expect(
+    screen.getByRole("region", { name: "html code" }).textContent,
+  ).toContain("<p>Saved prefix");
+  expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+});

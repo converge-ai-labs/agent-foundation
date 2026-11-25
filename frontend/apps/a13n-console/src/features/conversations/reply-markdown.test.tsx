@@ -119,7 +119,7 @@ it("offers HTML preview only for settled agent replies and copies the original h
   const text = `\`\`\`html\n${html}\n\`\`\``;
   const view = render(<MarkdownContent text={text} />);
   expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
-  view.rerender(<MarkdownContent text={text} agentReply streaming />);
+  view.rerender(<MarkdownContent text={text} agentReply previewHtml={false} />);
   expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
   view.rerender(<MarkdownContent text={text} agentReply />);
   expect(view.container.querySelector("pre")?.hidden).toBe(false);

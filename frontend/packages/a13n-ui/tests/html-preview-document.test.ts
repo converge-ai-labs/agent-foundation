@@ -9,9 +9,7 @@ it("wraps snippets in a themed document with a CSP before author styles", () => 
     /^<!DOCTYPE html><html><head><meta http-equiv="Content-Security-Policy"/,
   );
   expect(result).toContain("default-src 'none'");
-  expect(result).toContain(
-    "style-src 'unsafe-inline'; img-src data:; font-src data:",
-  );
+  expect(result).toContain("style-src 'unsafe-inline'; img-src data:");
   expect(result).toContain("color-scheme: light dark");
   expect(result).toContain("system-ui, sans-serif");
   expect(result).toContain("<p>Hello</p>");
@@ -58,4 +56,17 @@ it("bounds nesting without losing following content", () => {
   );
   expect(result).not.toContain("middle");
   expect(result).toContain("<p>After</p>");
+});
+
+it("keeps declarative label associations, hidden content and SVG presentation", () => {
+  const result =
+    buildHtmlPreviewDocument(`<input type="checkbox" id="choice"><label for="choice">Choice</label>
+<p hidden>Hidden</p><meter min="0" max="10" low="2" high="8" optimum="5"></meter>
+<svg><text font-size="12" dominant-baseline="middle">Label</text></svg>`);
+  expect(result).toContain('<label for="choice">Choice</label>');
+  expect(result).toContain('<p hidden="">Hidden</p>');
+  expect(result).toContain('low="2" high="8" optimum="5"');
+  expect(result).toContain(
+    '<text font-size="12" dominant-baseline="middle">Label</text>',
+  );
 });

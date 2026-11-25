@@ -99,7 +99,7 @@ export function RunBlock({
           <MarkdownContent
             text={run.output}
             agentReply
-            streaming={isActiveRun(run.status)}
+            previewHtml={!isActiveRun(run.status)}
           />
         )}
         {children}

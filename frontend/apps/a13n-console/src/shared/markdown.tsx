@@ -186,18 +186,18 @@ export const MarkdownContent = memo(function MarkdownContent({
   highlight = true,
   compactLinks = false,
   agentReply = false,
-  streaming = false,
+  previewHtml = true,
 }: {
   text: string;
   literalHtml?: boolean;
   highlight?: boolean;
   compactLinks?: boolean;
   agentReply?: boolean;
-  streaming?: boolean;
+  previewHtml?: boolean;
 }) {
   return (
     <div className={styles.markdown}>
-      <HtmlPreviewEnabled value={agentReply && !streaming}>
+      <HtmlPreviewEnabled value={agentReply && previewHtml}>
         <Markdown
           skipHtml={!literalHtml}
           remarkPlugins={

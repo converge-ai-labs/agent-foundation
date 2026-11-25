@@ -20,18 +20,18 @@ const svgElements = new Set(
   ),
 );
 const htmlAttributes = new Set(
-  "alt checked colspan datetime dir disabled height lang max min name open placeholder readonly reversed role rowspan scope span start step type value width".split(
+  "alt checked colspan datetime dir disabled for height hidden high lang low max min name open optimum placeholder readonly reversed role rowspan scope span start step type value width".split(
     " ",
   ),
 );
 const svgAttributes = new Set(
-  "clip-path clip-rule clipPathUnits cx cy d dx dy fill fill-opacity fill-rule fx fy gradientTransform gradientUnits height marker-end marker-mid marker-start markerHeight markerUnits markerWidth mask maskContentUnits maskUnits offset opacity orient patternContentUnits patternTransform patternUnits points preserveAspectRatio r refX refY rx ry spreadMethod stop-color stop-opacity stroke stroke-dasharray stroke-dashoffset stroke-linecap stroke-linejoin stroke-opacity stroke-width text-anchor textLength transform vector-effect viewBox width x x1 x2 y y1 y2".split(
+  "clip-path clip-rule clipPathUnits cx cy d display dominant-baseline dx dy fill fill-opacity fill-rule font-family font-size font-weight fx fy gradientTransform gradientUnits height marker-end marker-mid marker-start markerHeight markerUnits markerWidth mask maskContentUnits maskUnits offset opacity orient patternContentUnits patternTransform patternUnits points preserveAspectRatio r refX refY rx ry spreadMethod stop-color stop-opacity stroke stroke-dasharray stroke-dashoffset stroke-linecap stroke-linejoin stroke-miterlimit stroke-opacity stroke-width text-anchor textLength transform vector-effect viewBox visibility width x x1 x2 y y1 y2".split(
     " ",
   ),
 );
 
 const CSP =
-  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
+  "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'";
 const fragmentDefaults = `<style>
 :root { color-scheme: light dark; }
 body { margin: 16px; color: CanvasText; background: Canvas; font-family: system-ui, sans-serif; }

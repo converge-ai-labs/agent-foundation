@@ -712,7 +712,10 @@ function Rows({
             }
             slot={row.replySlot}
           >
-            <MessageText text={row.text} previewHtml={!row.streaming} />
+            <MessageText
+              text={row.text}
+              previewHtml={!row.streaming && !row.truncated}
+            />
           </AnnotatedReply>
           {row.truncated && (
             <small>{t("Saved preview truncated by the server.")}</small>
