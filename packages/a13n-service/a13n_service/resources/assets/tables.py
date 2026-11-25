@@ -3,7 +3,16 @@
 from datetime import datetime
 from typing import ClassVar
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -16,6 +25,7 @@ class AssetRow(Stamped, Base):
     __table_args__ = (
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         UniqueConstraint("workspace_id", "id"),
+        Index("ix_assets_workspace_created", "workspace_id", "created_at", "id"),
         # One asset per staged upload: creating it again from the same upload reads the existing one back.
         UniqueConstraint("workspace_id", "content_ref"),
         CheckConstraint("size >= 0", name="size"),

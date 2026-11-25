@@ -1,61 +1,87 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from "vitest";
 import { renderDiagram } from "../src/mermaid-render";
+import type { FrameReply } from "../src/mermaid-protocol";
 
-const { load, layout } = vi.hoisted(() => ({ load: vi.fn(), layout: vi.fn() }));
-vi.mock("mermaid", () => {
-  load();
-  return { default: { initialize: vi.fn(), render: layout } };
-});
-
-it("does not import Mermaid for a rejected first preview", async () => {
-  await expect(renderDiagram("pie title Source only", false)).rejects.toThrow(
-    "source view",
+function reply(frame: HTMLIFrameElement, data: FrameReply, origin = "null") {
+  window.dispatchEvent(
+    new MessageEvent("message", { source: frame.contentWindow, origin, data }),
   );
-  expect(load).not.toHaveBeenCalled();
-});
+}
 
-it.each([
-  "---\ntitle: Custom configuration\n---\nflowchart LR\nA --> B",
-  "%%{init: {}}%%\nflowchart LR\nA --> B",
-  "flowchart LR\nA@{ shape: rect }",
-  "flowchart LR; A --> B; classDef note fill:red",
-  "stateDiagram-v2\nstyle A fill:red\nA --> B",
-  "sequenceDiagram\nproperties Actor: {}",
-  "sequenceDiagram\ndetails Actor: {}",
-  "sequenceDiagram\n\u00a0PrOpErTiEs Actor: {}",
-  "sequenceDiagram\nrect rgb(220, 230, 240)\nA->>B: Hello\nend",
-  "stateDiagram-v2 style A fill:red\nA --> B",
-  "sequenceDiagram\nA->>B: $$x$$",
-  "flowchart LR\nA[<strong>Label</strong>] --> B",
-  "pie title Source only\nA: 1",
-  "flowchart LR\n" + " ".repeat(50_000),
-])(
-  "leaves unsupported diagram source out of the live layout (%#)",
-  async (source) => {
-    layout.mockClear();
-    await expect(renderDiagram(source, false)).rejects.toThrow("source view");
-    expect(layout).not.toHaveBeenCalled();
-  },
-);
-
-it.each([
-  ["Chinese flowchart", 'flowchart LR\nA["开始"] --> B["完成"]'],
-  ["bidirectional flowchart", "flowchart LR\nA <--> B"],
-  ["sequence message", "sequenceDiagram\nA-->>B: 已完成"],
-  [
-    "state transition and fork",
-    "stateDiagram-v2\n[*] --> A\nstate A <<fork>>\nA --> B\nA --> C",
-  ],
-])("passes a plain %s unchanged to Mermaid layout", async (_name, source) => {
-  layout.mockResolvedValue({
-    svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 12"/>',
+it("keeps oversized diagrams and unsupported configuration out of the sandbox", async () => {
+  await expect(renderDiagram("x".repeat(50_001), false)).resolves.toEqual({
+    reason: "Diagram source exceeds 50,000 characters.",
   });
-  const image = await renderDiagram(source, false);
-  expect(layout).toHaveBeenLastCalledWith(
-    expect.any(String),
-    source,
-    expect.any(HTMLDivElement),
-  );
-  expect(image).toMatch(/^data:image\/svg\+xml;charset=utf-8,/);
+  for (const directive of ["---\nconfig: {}\n---", "%%{init: {}}%%"]) {
+    await expect(
+      renderDiagram(`${directive}\nflowchart LR\nA --> B`, false),
+    ).resolves.toEqual({
+      reason: "Diagram configuration directives are not supported in previews.",
+    });
+  }
+  expect(document.querySelector("iframe")).toBeNull();
+});
+
+it("queues complete diagrams in one opaque frame, ignores unrelated replies and recovers after timeout", async () => {
+  vi.useFakeTimers();
+  try {
+    const source =
+      'flowchart LR\nA@{ shape: rect, label: "First<br/>Second" } --> B\nclassDef note fill:red';
+    const first = renderDiagram(source, true);
+    const second = renderDiagram("classDiagram\nclass Topic", false);
+    await vi.advanceTimersByTimeAsync(0);
+    const frame = document.querySelector("iframe")!;
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    const post = vi
+      .spyOn(frame.contentWindow!, "postMessage")
+      .mockImplementation(() => {});
+    reply(frame, { kind: "mermaid-ready" }, window.location.origin);
+    expect(post).not.toHaveBeenCalled();
+    reply(frame, { kind: "mermaid-ready" });
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      { kind: "render-mermaid", id: 1, source, dark: true },
+      "*",
+    );
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 12"/>';
+    reply(frame, { kind: "mermaid-result", id: 12, svg });
+    reply(frame, { kind: "mermaid-result", id: 1, svg });
+    const result = await first;
+    expect(result.src).toMatch(/^data:image\/svg\+xml;charset=utf-8,/);
+    expect(decodeURIComponent(result.src!)).toContain('width="16" height="12"');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(post).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 2, dark: false }),
+      "*",
+    );
+    await vi.advanceTimersByTimeAsync(8_000);
+    await expect(second).resolves.toEqual({
+      reason: "Diagram rendering timed out.",
+    });
+    expect(frame.isConnected).toBe(false);
+
+    const missing = renderDiagram("flowchart LR\nA --> B", false);
+    const alsoMissing = renderDiagram("pie title Work", false);
+    await vi.advanceTimersByTimeAsync(8_000);
+    expect(await Promise.all([missing, alsoMissing])).toEqual([
+      { reason: "The Mermaid preview renderer could not start." },
+      { reason: "The Mermaid preview renderer could not start." },
+    ]);
+
+    const third = renderDiagram("not a diagram", false);
+    await vi.advanceTimersByTimeAsync(0);
+    const replacement = document.querySelector("iframe")!;
+    expect(replacement).not.toBe(frame);
+    reply(replacement, { kind: "mermaid-ready" });
+    reply(replacement, {
+      kind: "mermaid-result",
+      id: 5,
+      reason: "unsupported-type",
+    });
+    await expect(third).resolves.toEqual({
+      reason: "This Mermaid diagram type is not recognized.",
+    });
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -1,5 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
-import { cossLicense } from "a13n-ui/vite";
+import { cossLicense, mermaidFrame } from "a13n-ui/vite";
 import { defineConfig } from "vite";
 import { novncLicense } from "./novnc-license";
 
@@ -7,7 +7,13 @@ import { pdfResources } from "./pdf-resources";
 
 export default defineConfig({
   worker: { format: "es" },
-  plugins: [tailwindcss(), cossLicense(), novncLicense(), pdfResources()],
+  plugins: [
+    tailwindcss(),
+    cossLicense(),
+    mermaidFrame(),
+    novncLicense(),
+    pdfResources(),
+  ],
   server: {
     host: "127.0.0.1",
     port: 5174,

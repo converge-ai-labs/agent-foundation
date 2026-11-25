@@ -7,13 +7,12 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, now, short_session, transaction, violated_constraint
 from a13n_service.infra.errors import ServiceError, conflict
 from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.infra.objects.interface import ObjectRef, ObjectStore, read
-from a13n_service.resources.assets.schemas import Asset, AssetCreate, AssetPage
+from a13n_service.resources.assets.schemas import Asset, AssetCreate
 from a13n_service.resources.assets.tables import AssetRow
 from a13n_service.resources.rows import audit_row, find_row
 from a13n_service.resources.uploads import service as uploads
@@ -78,23 +77,6 @@ async def get_asset(storage: Storage, actor: Principal, workspace_id: str, asset
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
         return Asset.model_validate(await find_row(session, actor, AssetRow, scope, asset_id, "read"))
-
-
-async def list_assets(
-    storage: Storage, actor: Principal, workspace_id: str, *, limit: int, cursor: str | None
-) -> AssetPage:
-    async with short_session(storage) as session:
-        scope = await workspace_scope(session, actor, workspace_id, "read")
-        rows, next_cursor = await cursors.id_page(
-            session,
-            select(AssetRow).where(AssetRow.workspace_id == scope.workspace_id),
-            AssetRow.id,
-            kind="assets",
-            owner=scope.workspace_id,
-            cursor=cursor,
-            limit=limit,
-        )
-        return AssetPage(items=[Asset.model_validate(row) for row in rows], next_cursor=next_cursor)
 
 
 async def retire_asset(
