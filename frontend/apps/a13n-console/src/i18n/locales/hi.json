@@ -4569,5 +4569,21 @@
   "Sign-in provider": "साइन-इन प्रदाता",
   "This Service uses an identity provider. Go to sign in to continue.": "यह Service एक पहचान प्रदाता इस्तेमाल करती है। जारी रखने के लिए साइन-इन पेज पर जाएँ।",
   "Use SSO default": "एसएसओ की डिफ़ॉल्ट भूमिका इस्तेमाल करें",
-  "Your identity provider manages your sign-in details.": "आपकी साइन-इन जानकारी आपका पहचान प्रदाता प्रबंधित करता है।"
+  "Your identity provider manages your sign-in details.": "आपकी साइन-इन जानकारी आपका पहचान प्रदाता प्रबंधित करता है।",
+  "Preview {{name}}": "{{name}} का पूर्वावलोकन",
+  "{{size}} KiB": "{{size}} KiB",
+  "{{size}} B": "{{size}} B",
+  "This file type is available to download.": "इस प्रकार की फ़ाइल डाउनलोड करके देखी जा सकती है।",
+  "This file is too large to preview. Download it to view the full file.": "फ़ाइल पूर्वावलोकन के लिए बहुत बड़ी है। पूरी फ़ाइल देखने के लिए इसे डाउनलोड करें।",
+  "This file could not be previewed.": "इस फ़ाइल का पूर्वावलोकन नहीं किया जा सका।",
+  "Open in browser": "ब्राउज़र में खोलें",
+  "File source": "फ़ाइल का स्रोत",
+  "CSV preview": "CSV पूर्वावलोकन",
+  "The table shows the first 100 rows and 30 columns.": "तालिका में पहली 100 पंक्तियाँ और पहले 30 स्तंभ दिखते हैं।",
+  "Close files panel": "फ़ाइल पैनल बंद करें",
+  "Conversation files": "बातचीत की फ़ाइलें",
+  "Find files in older runs": "पुराने रन में फ़ाइलें खोजें",
+  "Select a file to preview it.": "पूर्वावलोकन के लिए कोई फ़ाइल चुनें।",
+  "No files found": "कोई फ़ाइल नहीं मिली",
+  "Attachments and files published by the agent appear here.": "अनुलग्नक और एजेंट की प्रकाशित फ़ाइलें यहाँ दिखती हैं।"
 }

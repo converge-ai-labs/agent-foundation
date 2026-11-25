@@ -18,6 +18,7 @@ import {
   CopyIcon,
   DotsThreeOutlineVerticalIcon,
   MonitorIcon,
+  FolderOpenIcon,
   GlobeIcon,
   PencilSimpleIcon,
   SlidersHorizontalIcon,
@@ -58,6 +59,9 @@ export function SessionHeader({
   desktopOpen = false,
   onToggleDesktop,
   desktopTriggerRef,
+  filesOpen = false,
+  onToggleFiles,
+  filesTriggerRef,
 }: {
   browserOpen?: boolean;
   onToggleBrowser?: () => void;
@@ -65,6 +69,9 @@ export function SessionHeader({
   desktopOpen?: boolean;
   onToggleDesktop?: () => void;
   desktopTriggerRef?: Ref<HTMLButtonElement>;
+  filesOpen?: boolean;
+  onToggleFiles?: () => void;
+  filesTriggerRef?: Ref<HTMLButtonElement>;
 }) {
   const { t } = useTranslation();
   const { sessionId = "", threadId = "", runId } = useParams();
@@ -233,6 +240,26 @@ export function SessionHeader({
             <TooltipPopup>{t("Desktop")}</TooltipPopup>
           </Tooltip>
         )}
+      {thread && onToggleFiles && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                ref={filesTriggerRef}
+                variant={filesOpen ? "secondary" : "ghost"}
+                size="icon-sm"
+                aria-label={t("Files")}
+                aria-expanded={filesOpen}
+                aria-controls="session-files"
+                onClick={onToggleFiles}
+              />
+            }
+          >
+            <FolderOpenIcon size={16} aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipPopup>{t("Files")}</TooltipPopup>
+        </Tooltip>
+      )}
       <Menu>
         <MenuTrigger
           render={

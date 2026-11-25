@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { createClient, type Client } from "../../../service-client";
 import { AssetAttachment } from "./attachment";
+import { PreviewFileContext } from "../files/selection";
 import { downloadBlob } from "../../../shared/download";
 
 let client: Client;
@@ -23,11 +24,14 @@ afterEach(() => {
   allowed = true;
 });
 
-function mount(publication?: {
-  runId: string;
-  toolCallId: string;
-  legacy: boolean;
-}) {
+function mount(
+  publication?: {
+    runId: string;
+    toolCallId: string;
+    legacy: boolean;
+  },
+  onPreview?: (file: { assetId: string }) => void,
+) {
   render(
     <QueryClientProvider
       client={
@@ -39,7 +43,9 @@ function mount(publication?: {
         })
       }
     >
-      <AssetAttachment assetId="ast_fixture" publication={publication} />
+      <PreviewFileContext.Provider value={onPreview ?? null}>
+        <AssetAttachment assetId="ast_fixture" publication={publication} />
+      </PreviewFileContext.Provider>
     </QueryClientProvider>,
   );
 }
@@ -66,10 +72,17 @@ it("loads file identity but downloads authenticated content only on request", as
           });
     },
   });
-  mount();
+  const onPreview = vi.fn();
+  mount(undefined, onPreview);
   expect(await screen.findByText("review.md")).toBeTruthy();
   expect(requests).toHaveLength(1);
   const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Preview {{name}}" }));
+  expect(onPreview).toHaveBeenCalledWith({
+    assetId: "ast_fixture",
+    publication: undefined,
+  });
+  expect(requests).toHaveLength(1);
   await user.click(screen.getByRole("button", { name: "Download review.md" }));
   await waitFor(() => expect(downloadBlob).toHaveBeenCalledOnce());
   expect(new URL(requests[1]!.url).pathname).toBe(

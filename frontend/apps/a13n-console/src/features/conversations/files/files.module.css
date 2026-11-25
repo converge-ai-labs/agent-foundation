@@ -1,0 +1,154 @@
+.panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.catalog {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 38%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.list {
+  width: 100%;
+  min-height: 0;
+  max-height: 105px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.file {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: var(--a13n-radius-tile);
+  color: var(--a13n-secondary);
+  text-align: start;
+  font-size: var(--a13n-text-xs);
+  cursor: pointer;
+}
+.file svg {
+  flex: none;
+}
+.file span,
+.fileIdentity > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file:hover,
+.file[aria-current] {
+  color: var(--a13n-text);
+  background: var(--a13n-elevated);
+}
+.file[aria-current] {
+  font-weight: 600;
+}
+.body {
+  min-height: 0;
+  flex: 1;
+  padding: 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.preview {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
+.fileHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.fileIdentity {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.fileIdentity h3 {
+  margin: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 600;
+}
+.fileIdentity small,
+.notice {
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+.mode {
+  display: flex;
+  gap: 4px;
+}
+.tableFrame,
+.imageFrame,
+.pdf {
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: var(--a13n-radius-tile);
+}
+.tableFrame {
+  overflow: auto;
+}
+.tableFrame table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: start;
+  font-size: var(--a13n-text-xs);
+}
+.tableFrame :is(th, td) {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.tableFrame th {
+  background: var(--a13n-elevated);
+  font-weight: 600;
+}
+.tableFrame tbody tr:last-child td {
+  border-bottom: 0;
+}
+.imageFrame {
+  display: grid;
+  place-items: center;
+  padding: 12px;
+}
+.imageFrame img {
+  max-width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+}
+.pdf {
+  width: 100%;
+  height: 60vh;
+}
+.openPdf {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  text-decoration: underline;
+  font-size: var(--a13n-text-sm);
+}
+@media (max-width: 1100px) {
+  .body {
+    padding: 12px;
+  }
+  .pdf {
+    height: 45vh;
+  }
+}

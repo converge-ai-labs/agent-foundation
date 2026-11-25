@@ -4,7 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   Link,
   Navigate,
@@ -56,7 +56,11 @@ import { validSpaceSelection } from "../memories/session-settings";
 import { RunCollapseProvider } from "./transcript/debug/collapse";
 import { ThreadInbox } from "./transcript/inbox";
 import { SessionMemoryControl } from "./composer/session-memory";
+import { PreviewFileContext } from "./files/selection";
+import type { FileReference } from "./files/assets";
 import styles from "./conversations.module.css";
+
+const FilesPanel = lazy(() => import("./files/panel"));
 
 export function ConversationsPage() {
   const { sessionId } = useParams();
@@ -350,11 +354,26 @@ export function SessionLayout() {
     open: false,
   });
   const browserTrigger = useRef<HTMLButtonElement>(null);
+  const filesScope = `${workspace.id}:${sessionId}:${threadId ?? ""}`;
+  const [filesPanel, setFilesPanel] = useState<{
+    scope: string;
+    selected?: FileReference;
+  }>();
+  const filesTrigger = useRef<HTMLButtonElement>(null);
+  const canOpenFiles =
+    !!threadId && target?.session_id === sessionId && can("read");
+  const filesOpen = canOpenFiles && filesPanel?.scope === filesScope;
+  const openFiles = (selected?: FileReference) => {
+    setDesktopThread(undefined);
+    setBrowserPanel((current) => ({ ...current, open: false }));
+    setFilesPanel({ scope: filesScope, selected });
+  };
   const [desktopThread, setDesktopThread] = useState<string>();
   const desktopTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     setDesktopThread(undefined);
-  }, [workspace.id, threadId]);
+    setFilesPanel(undefined);
+  }, [workspace.id, sessionId, threadId]);
   const desktopOpen =
     desktopThread === threadId &&
     !!threadId &&
@@ -411,14 +430,26 @@ export function SessionLayout() {
               browserTriggerRef={browserTrigger}
               onToggleBrowser={() => {
                 setDesktopThread(undefined);
+                setFilesPanel(undefined);
                 if (threadId) setBrowserPanel({ threadId, open: !browserOpen });
               }}
               desktopOpen={desktopOpen}
               desktopTriggerRef={desktopTrigger}
               onToggleDesktop={() => {
                 setBrowserPanel((current) => ({ ...current, open: false }));
+                setFilesPanel(undefined);
                 setDesktopThread(desktopOpen ? undefined : threadId);
               }}
+              filesOpen={filesOpen}
+              filesTriggerRef={filesTrigger}
+              onToggleFiles={
+                canOpenFiles
+                  ? () => {
+                      if (filesOpen) setFilesPanel(undefined);
+                      else openFiles();
+                    }
+                  : undefined
+              }
             />
             <div className={styles.sessionWorkspace}>
               <div
@@ -442,7 +473,11 @@ export function SessionLayout() {
                   {session.isPending ? (
                     <SessionBodyLoading />
                   ) : !session.data ? null : threadId ? (
-                    <Outlet />
+                    <PreviewFileContext.Provider
+                      value={canOpenFiles ? openFiles : null}
+                    >
+                      <Outlet />
+                    </PreviewFileContext.Provider>
                   ) : first ? (
                     <Navigate to={`threads/${first.id}${search}`} replace />
                   ) : roots.isPending ||
@@ -481,6 +516,33 @@ export function SessionLayout() {
                     />
                   </aside>
                 )}
+              {filesOpen && (
+                <aside
+                  id="session-files"
+                  aria-label={t("Files")}
+                  className={styles.resourcePane}
+                >
+                  <Suspense fallback={<Loading variant="list" rows={2} />}>
+                    <FilesPanel
+                      key={filesScope}
+                      runId={
+                        target?.current_run_id ??
+                        target?.last_run_id ??
+                        selectedRun ??
+                        ""
+                      }
+                      selected={filesPanel.selected}
+                      onSelect={(selected) =>
+                        setFilesPanel({ scope: filesScope, selected })
+                      }
+                      onClose={() => {
+                        setFilesPanel(undefined);
+                        filesTrigger.current?.focus();
+                      }}
+                    />
+                  </Suspense>
+                </aside>
+              )}
               {desktopOpen && threadId && target?.session_id === sessionId && (
                 <aside
                   id="session-desktop"

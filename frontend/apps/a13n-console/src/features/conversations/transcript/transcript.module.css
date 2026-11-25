@@ -123,6 +123,18 @@
   box-shadow: var(--a13n-shadow-subtle);
   color: var(--a13n-secondary);
 }
+.attachmentPreview {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  border-radius: var(--a13n-radius-tile);
+  text-align: start;
+  cursor: pointer;
+}
+.attachmentPreview:hover strong {
+  text-decoration: underline;
+}
 .attachmentCopy {
   display: grid;
   min-width: 0;

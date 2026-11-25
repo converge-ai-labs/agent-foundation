@@ -80,7 +80,15 @@ export function transcriptBlocks(
 
 // Older displays only kept direct calls and their result. The attachment
 // confirms the asset's run and call from workspace metadata before showing it.
-function legacyPublication(entry: TimelineEntry): PublishedAsset | undefined {
+export function legacyPublication(
+  entry: Pick<TimelineEntry, "kind"> &
+    Partial<
+      Pick<
+        ActionEntry,
+        "name" | "state" | "failure" | "subagentRunId" | "toolCallId" | "result"
+      >
+    >,
+): PublishedAsset | undefined {
   if (
     entry.kind === "tool" &&
     entry.name === "publish_asset" &&

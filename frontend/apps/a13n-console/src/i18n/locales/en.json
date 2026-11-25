@@ -4569,5 +4569,21 @@
   "Sign-in provider": "Sign-in provider",
   "This Service uses an identity provider. Go to sign in to continue.": "This Service uses an identity provider. Go to sign in to continue.",
   "Use SSO default": "Use SSO default",
-  "Your identity provider manages your sign-in details.": "Your identity provider manages your sign-in details."
+  "Your identity provider manages your sign-in details.": "Your identity provider manages your sign-in details.",
+  "Preview {{name}}": "Preview {{name}}",
+  "{{size}} KiB": "{{size}} KiB",
+  "{{size}} B": "{{size}} B",
+  "This file type is available to download.": "This file type is available to download.",
+  "This file is too large to preview. Download it to view the full file.": "This file is too large to preview. Download it to view the full file.",
+  "This file could not be previewed.": "This file could not be previewed.",
+  "Open in browser": "Open in browser",
+  "File source": "File source",
+  "CSV preview": "CSV preview",
+  "The table shows the first 100 rows and 30 columns.": "The table shows the first 100 rows and 30 columns.",
+  "Close files panel": "Close files panel",
+  "Conversation files": "Conversation files",
+  "Find files in older runs": "Find files in older runs",
+  "Select a file to preview it.": "Select a file to preview it.",
+  "No files found": "No files found",
+  "Attachments and files published by the agent appear here.": "Attachments and files published by the agent appear here."
 }

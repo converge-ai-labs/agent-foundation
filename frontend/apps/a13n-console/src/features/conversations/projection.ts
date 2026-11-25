@@ -46,7 +46,7 @@ export function isAssetId(value: unknown): value is string {
   return typeof value === "string" && /^ast_[a-zA-Z0-9]+$/.test(value);
 }
 
-function publishedAsset(item: DisplayItem): PublishedAsset | undefined {
+export function publishedAsset(item: DisplayItem): PublishedAsset | undefined {
   const { content } = item;
   if (
     item.kind !== "observation" ||
