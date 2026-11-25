@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import json
 import os
@@ -84,20 +83,19 @@ async def test_design_review_configuration_disables_host_browser(tmp_path: Path)
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("role", ["running-message", "running-steer"])
-async def test_design_review_specialist_stays_running_after_pause(role: str) -> None:
+async def test_design_review_specialist_requests_one_pause_until_preview_closes(role: str) -> None:
     review = importlib.import_module("dev.harness-ui.review")
-    messages = [
-        ModelRequest(parts=[UserPromptPart(f"Fixture role: {role}.")]),
-        ModelRequest(parts=[ToolReturnPart("review_pause", "Next batch ready.")]),
-    ]
-    preview_closing = asyncio.Event()
-    stream = review.model(messages, None, preview_closing=preview_closing)
-    assert isinstance(await anext(stream), str), "An idle specialist must not request another tool call"
-    next_chunk = asyncio.create_task(anext(stream, None))
-    await asyncio.sleep(0)
-    assert not next_chunk.done()
-    preview_closing.set()
-    assert await next_chunk is None
+    messages = [ModelRequest(parts=[UserPromptPart(f"Fixture role: {role}.")])]
+    if role == "running-message":
+        messages.append(ModelRequest(parts=[ToolReturnPart("send_parent_message", "Delivered.")]))
+    calls = [chunk[0] async for chunk in review.model(messages, None) if isinstance(chunk, dict)]
+    assert len(calls) == 1
+    assert calls[0].name == "review_pause"
+    assert json.loads(calls[0].json_args) == {"until_preview_closes": True}
+
+    messages.append(ModelRequest(parts=[ToolReturnPart("review_pause", "The preview is closing.")]))
+    response = [chunk async for chunk in review.model(messages, None)]
+    assert response and all(isinstance(chunk, str) for chunk in response)
 
 
 @pytest.mark.anyio

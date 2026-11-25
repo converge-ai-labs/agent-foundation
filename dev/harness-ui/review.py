@@ -10,7 +10,6 @@ import subprocess
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -350,9 +349,7 @@ def seed_memory(configuration_root: Path) -> None:
         target.write_text(text)
 
 
-async def model(
-    messages, info, *, preview_closing: asyncio.Event
-) -> AsyncIterator[str | dict[int, DeltaToolCall] | dict[int, DeltaThinkingPart]]:
+async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] | dict[int, DeltaThinkingPart]]:
     authored = [
         text
         for message in messages
@@ -408,12 +405,10 @@ async def model(
             }
             return
         if any(part.tool_name == "review_pause" for part in returns):
-            # Keep the specialist running without starting another tool/model cycle.
-            yield "Waiting for the remaining checkout checks."
-            await preview_closing.wait()
+            yield "The checkout review has ended."
             return
         yield "Checking the checkout edge cases and collecting the results.\n\n"
-        yield {0: DeltaToolCall(name="review_pause", json_args="{}")}
+        yield {0: DeltaToolCall(name="review_pause", json_args='{"until_preview_closes":true}')}
         return
     if authored and authored[-1] == "Summarize the background review handoff.":
         start = max(
@@ -717,8 +712,11 @@ async def serve(root: Path, port: int):
             }
 
         @tools.tool_plain
-        async def review_pause() -> str:
-            """Wait briefly for the next scripted review batch."""
+        async def review_pause(until_preview_closes: bool = False) -> str:
+            """Wait for the next scripted batch or for the preview to close."""
+            if until_preview_closes:
+                await preview_closing.wait()
+                return "The preview is closing."
             await asyncio.sleep(15)
             return "Next batch ready."
 
@@ -763,7 +761,7 @@ async def serve(root: Path, port: int):
         )
 
     async def resolve(self, model_id, *, thread_id):
-        return FunctionModel(function=dictation, stream_function=partial(model, preview_closing=preview_closing))
+        return FunctionModel(function=dictation, stream_function=model)
 
     async def directory():
         return model_catalog.bundled_models()
