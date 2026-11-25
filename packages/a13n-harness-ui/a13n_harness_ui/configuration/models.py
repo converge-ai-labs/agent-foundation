@@ -291,7 +291,11 @@ class BotConfiguration(ConfigurationModel):
     connector_interval_seconds: int = Field(default=60, ge=1, le=86400)
 
 
+ComposerSendShortcut = Literal["enter", "mod-enter"]
+
+
 class WebUiConfiguration(ConfigurationModel):
+    send_shortcut: ComposerSendShortcut = Field(default="enter", exclude_if=lambda value: value == "enter")
     allowed_origins: tuple[str, ...] = ()
     bot: BotConfiguration = Field(default_factory=BotConfiguration)
 

@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from a13n_harness_ui.configuration.models import ComposerSendShortcut
 from a13n_harness_ui.surfaces import SurfaceModel
 
 ShareScope = Literal["project", "thread"]
@@ -41,6 +42,7 @@ class ShareCreated(SurfaceModel):
 
 class ShareAccess(SurfaceModel):
     input_prediction_enabled: bool = False
+    send_shortcut: ComposerSendShortcut = "enter"
     grant: ShareGrant
     title: str
 

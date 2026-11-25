@@ -21,7 +21,6 @@ import { DraftContext, type SourceDraft } from "./configuration/drafts";
 import { Workbench } from "./shell/workbench";
 import { NotificationsProvider } from "./shell/notifications";
 import { disablePush } from "./shell/push";
-import { SendShortcutProvider } from "./conversations/send-shortcut";
 import { ComposerDrafts } from "./conversations/composer";
 import { NewConversationDrafts } from "./conversations/new-conversation";
 import { NewDraftStore } from "./conversations/new-draft";
@@ -67,9 +66,7 @@ export function BrowserApp() {
   return (
     <AppearanceProvider>
       <LanguageProvider>
-        <SendShortcutProvider>
-          <BrowserContent />
-        </SendShortcutProvider>
+        <BrowserContent />
       </LanguageProvider>
     </AppearanceProvider>
   );

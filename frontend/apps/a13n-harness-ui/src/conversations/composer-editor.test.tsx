@@ -8,9 +8,8 @@ import {
   waitFor,
   act,
 } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import * as Y from "yjs";
-import { SendShortcutChoice, SendShortcutProvider } from "./send-shortcut";
+import { SendShortcutContext } from "./send-shortcut";
 import { ComposerEditor } from "./composer-editor";
 import { ThreadDraft, encode, values } from "./draft";
 import type { EditorView } from "@codemirror/view";
@@ -39,7 +38,6 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  localStorage.clear();
 });
 it("mounts the actual CodeMirror binding and retains remote updates without replacing the editor", async () => {
   const draft = new ThreadDraft();
@@ -67,29 +65,23 @@ it("mounts the actual CodeMirror binding and retains remote updates without repl
   fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
   expect(submit).toHaveBeenCalledTimes(2);
 });
-it("updates the mounted editor and restores the shortcut from browser storage", async () => {
+it("updates the mounted editor when the accepted shortcut changes", () => {
   const draft = new ThreadDraft();
   const submit = vi.fn();
-  const surface = (
-    <SendShortcutProvider>
-      <SendShortcutChoice />
+  const surface = (shortcut: "enter" | "mod-enter") => (
+    <SendShortcutContext value={shortcut}>
       <ComposerEditor
         draft={draft}
         profile={{ display_name: "Alice", color: "#2563eb" }}
         presence={() => {}}
         submit={submit}
       />
-    </SendShortcutProvider>
+    </SendShortcutContext>
   );
-  const { unmount } = render(surface);
+  const { rerender } = render(surface("enter"));
   const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
   expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Enter Control+Enter");
-  const choice = screen.getByRole("combobox", { name: "Send messages with" });
-  expect(choice.textContent).toContain("Enter (default)");
-  await userEvent.click(choice);
-  await userEvent.click(
-    await screen.findByRole("option", { name: "Ctrl + Enter" }),
-  );
+  rerender(surface("mod-enter"));
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(textbox);
   expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Control+Enter");
   expect(textbox.getAttribute("aria-description")).toContain(
@@ -101,27 +93,21 @@ it("updates the mounted editor and restores the shortcut from browser storage", 
   expect(submit).not.toHaveBeenCalled();
   fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
   expect(submit).toHaveBeenCalledOnce();
-  unmount();
-  render(surface);
-  expect(
-    screen.getByRole("combobox", { name: "Send messages with" }).textContent,
-  ).toContain("Ctrl + Enter");
 });
 
-it.each(["enter", "mod-enter"])(
+it.each(["enter", "mod-enter"] as const)(
   "does not send while an IME is composing in %s mode",
   (preference) => {
-    localStorage.setItem("a13n-harness-ui.send-shortcut", preference);
     const submit = vi.fn();
     render(
-      <SendShortcutProvider>
+      <SendShortcutContext value={preference}>
         <ComposerEditor
           draft={new ThreadDraft()}
           profile={{ display_name: "Alice", color: "#2563eb" }}
           presence={() => {}}
           submit={submit}
         />
-      </SendShortcutProvider>,
+      </SendShortcutContext>,
     );
     const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
     fireEvent.keyDown(textbox, {
@@ -144,7 +130,7 @@ it.each(["enter", "mod-enter"])(
   },
 );
 
-it.each(["enter", "mod-enter"])(
+it.each(["enter", "mod-enter"] as const)(
   "inserts a new line on a coarse pointer in %s mode",
   (preference) => {
     vi.stubGlobal("matchMedia", (query: string) => ({
@@ -152,18 +138,17 @@ it.each(["enter", "mod-enter"])(
       addEventListener() {},
       removeEventListener() {},
     }));
-    localStorage.setItem("a13n-harness-ui.send-shortcut", preference);
     const draft = new ThreadDraft();
     const submit = vi.fn();
     render(
-      <SendShortcutProvider>
+      <SendShortcutContext value={preference}>
         <ComposerEditor
           draft={draft}
           profile={{ display_name: "Alice", color: "#2563eb" }}
           presence={() => {}}
           submit={submit}
         />
-      </SendShortcutProvider>,
+      </SendShortcutContext>,
     );
     const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
     expect(textbox.getAttribute("enterkeyhint")).toBe("enter");
@@ -176,17 +161,16 @@ it.each(["enter", "mod-enter"])(
 
 it("uses the command key and Meta accessibility metadata on Apple platforms", () => {
   vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
-  localStorage.setItem("a13n-harness-ui.send-shortcut", "mod-enter");
   const submit = vi.fn();
   render(
-    <SendShortcutProvider>
+    <SendShortcutContext value="mod-enter">
       <ComposerEditor
         draft={new ThreadDraft()}
         profile={{ display_name: "Alice", color: "#2563eb" }}
         presence={() => {}}
         submit={submit}
       />
-    </SendShortcutProvider>,
+    </SendShortcutContext>,
   );
   const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
   expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Meta+Enter");
