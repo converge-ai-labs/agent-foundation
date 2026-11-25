@@ -24,6 +24,7 @@ ATTACH_SECONDS = 20
 HEARTBEAT_SECONDS = 1
 _PEER_TIMEOUT = 6
 _STREAM_LIMIT = 128
+_COMMIT_WAIT = 0.15
 _PCM_HEADER = struct.Struct("!QQ")
 
 
@@ -109,14 +110,16 @@ class Pipe:
         self.attempt_id = ""
         self.peer = ""
         self.cursor = b"0-0"
-        self.pending: deque[bytes] = deque()
+        self.pending: deque[tuple[bytes, float]] = deque()
         self.audio: deque[bytes] = deque(maxlen=32)
         self.wake = asyncio.Event()
         self.scan = True
         self.failed = False
         self.sent = self.received = self.epoch = 0
-        self.commit_seq: int | None = None
-        self.commit_deadline = 0.0
+        self.segment = 0
+        self.segment_gap = False
+        self.resumed_after_gap = False
+        self.explicit_commits = False
         self.control_sent = self.control_received = 0
         self.last_check = 0.0
         self.started = asyncio.get_running_loop().time()
@@ -163,11 +166,14 @@ class Pipe:
                 return
             if frame.startswith(b"b"):
                 self.sent += 1
-                packet = _PCM_HEADER.pack(self.sent, self.epoch) + frame[1:]
+                generation = self.segment if self.side == "control" else self.epoch
+                packet = _PCM_HEADER.pack(self.sent, generation) + frame[1:]
                 await self.redis.publish(
                     f"a13n:rt:{self.peer}:pcm", self.outbox.encode() + b" " + self.fence + b" " + packet
                 )
                 return
+            if frame.startswith(b"commit:"):
+                self.segment += 1
             self.control_sent += 1
             async with self.redis.pipeline(transaction=True) as batch:
                 batch.xadd(
@@ -186,6 +192,7 @@ class Pipe:
         deadline = self.started + ATTACH_SECONDS
         try:
             while True:
+                self.wake.clear()
                 if self.failed:
                     raise unavailable()
                 clock = asyncio.get_running_loop().time()
@@ -216,40 +223,63 @@ class Pipe:
                             self.control_received += 1
                             if int(fields[b"seq"]) != self.control_received:
                                 raise unavailable()
-                            self.pending.append(frame)
+                            if len(self.pending) >= _STREAM_LIMIT:
+                                raise unavailable()
+                            self.pending.append((frame, clock))
+                commit_deadline = None
                 if self.pending:
-                    return self.pending.popleft()
-                if self.commit_seq is not None:
-                    if not self.commit_deadline:
-                        self.commit_deadline = clock + 0.15
-                    if self.received >= self.commit_seq or clock >= self.commit_deadline:
-                        gap = self.received != self.commit_seq
-                        self.received = max(self.received, self.commit_seq)
-                        self.commit_seq = None
-                        self.commit_deadline = 0.0
+                    frame, arrived = self.pending[0]
+                    if not frame.startswith(b"commit:"):
+                        self.pending.popleft()
+                        return frame
+                    last_seq = int(frame[7:])
+                    commit_deadline = arrived + _COMMIT_WAIT
+                    buffered = self.audio and _PCM_HEADER.unpack_from(self.audio[0])[1] <= self.segment
+                    if self.received >= last_seq or (clock >= commit_deadline and not buffered):
+                        self.pending.popleft()
+                        gap = self.received != last_seq
+                        self.explicit_commits = True
+                        self.received = max(self.received, last_seq)
+                        self.segment += 1
+                        if self.segment_gap:
+                            self.segment_gap = False
+                            if self.resumed_after_gap:
+                                self.resumed_after_gap = False
+                                # Continuous input may have resumed after the reset before its first commit arrived.
+                                return b"reset"
+                            continue
                         return b"gap" if gap else b"commit"
                 if self.audio:
-                    packet = self.audio.popleft()
-                    seq, epoch = _PCM_HEADER.unpack_from(packet)
-                    if seq <= self.received:
-                        continue
-                    gap = seq != self.received + 1
-                    self.received = seq
-                    if self.side == "control" and epoch != self.epoch:
-                        continue
-                    if gap:
-                        if self.side == "worker":
+                    packet = self.audio[0]
+                    seq, generation = _PCM_HEADER.unpack_from(packet)
+                    # Later input may arrive before the Stream announces the preceding commit.
+                    if self.side == "control" or generation <= self.segment:
+                        self.audio.popleft()
+                        if seq <= self.received:
+                            continue
+                        gap = seq != self.received + 1
+                        self.received = seq
+                        if self.side == "control":
+                            if generation != self.epoch:
+                                continue
+                        elif self.segment_gap and (self.explicit_commits or commit_deadline is not None):
+                            continue
+                        elif gap:
+                            # An explicit commit gives us a known boundary to discard through.
+                            # Auto-VAD has no commit: resume live PCM after the provider reset.
+                            self.segment_gap = True
+                            self.resumed_after_gap = False
                             return b"gap"
-                        raise unavailable()
-                    return b"b" + packet[_PCM_HEADER.size :]
+                        elif self.segment_gap:
+                            self.resumed_after_gap = True
+                        return b"b" + packet[_PCM_HEADER.size :]
                 if attaching and clock >= deadline:
                     raise unavailable()
-                self.wake.clear()
                 try:
                     await asyncio.wait_for(
                         self.wake.wait(),
-                        min(HEARTBEAT_SECONDS, max(0, self.commit_deadline - clock))
-                        if self.commit_deadline
+                        min(HEARTBEAT_SECONDS, max(0, commit_deadline - clock))
+                        if commit_deadline is not None
                         else HEARTBEAT_SECONDS,
                     )
                 except TimeoutError:

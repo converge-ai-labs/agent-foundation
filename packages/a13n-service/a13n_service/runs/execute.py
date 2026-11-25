@@ -63,12 +63,10 @@ from pydantic_ai.messages import (
     EnqueuedMessagesEvent,
     ModelMessage,
     ModelRequest,
-    PartStartEvent,
     RealtimeInputSpeechStartEvent,
     RealtimeOutputSpeechStartEvent,
     RealtimeResponseInterruptedEvent,
     RealtimeTurnCompleteEvent,
-    SpeechPart,
     TextContent,
     UserContent,
 )
@@ -938,6 +936,8 @@ class _Attempt:
             await claim.start(self.runtime, self.lease, harness_run_id=stream.run_id)
             self.boundaries.primary = stream.run_id
             self.offers.requested = True
+            part_audio = webrtc is None and stream.relay_part_audio(channel.emit)
+            pcm = stream.stream_audio() if webrtc is None and not part_audio else None
             opening = await self._realtime_notices(stream, channel)
             if opening:
                 if channel.draft:
@@ -959,20 +959,13 @@ class _Attempt:
                 ready["transport"] = "webrtc"
             channel.emit(ready)
             receive = tasks.create_task(self._realtime_input(stream, channel, output))
-            audio = tasks.create_task(self._realtime_audio(stream, channel)) if webrtc is None else None
+            audio = tasks.create_task(self._realtime_audio(pcm, channel)) if pcm is not None else None
             stop = tasks.create_task(self._close_realtime(stream, channel))
             notices = tasks.create_task(self._receive_realtime_notices(stream, channel))
             try:
                 async for item in stream:
                     await self._observe(item, output)
                     if isinstance(item, HarnessEvent) and item.run_id == stream.run_id:
-                        if (
-                            channel.mute_pcm
-                            and isinstance(item.event, PartStartEvent)
-                            and isinstance(item.event.part, SpeechPart)
-                            and item.event.part.speaker == "assistant"
-                        ):
-                            channel.mute_pcm = False
                         if (
                             webrtc
                             and isinstance(item.event, RealtimeOutputSpeechStartEvent)
@@ -984,6 +977,10 @@ class _Attempt:
                             and not channel.closed.is_set()
                         ):
                             channel.emit({"type": "barge_in"})
+                        if channel.resume_rtc_on_turn_end and isinstance(item.event, RealtimeTurnCompleteEvent):
+                            # GPT-Live sideband reports turn completion while the browser plays the direct media.
+                            channel.resume_rtc_on_turn_end = False
+                            channel.emit({"type": "playback_end"})
                         if isinstance(item.event, (RealtimeTurnCompleteEvent, EnqueuedMessagesEvent)):
                             await self.boundaries.stage_live(stream.export_state)
                         if not channel.closed.is_set() and (transcript := transcripts.observe(item)) is not None:
@@ -1066,10 +1063,11 @@ class _Attempt:
                     await stream.send_audio(payload)
             elif isinstance(payload, Media):
                 if payload.type == "interrupt":
-                    interrupted = await stream.barge_in(
-                        played_bytes=payload.played_bytes if channel.webrtc_offer is None else None
+                    channel.playback_epoch += 1
+                    channel.resume_rtc_on_turn_end = (
+                        channel.webrtc_offer is not None and not stream.supports_interruption
                     )
-                    channel.mute_pcm = channel.webrtc_offer is None and not interrupted
+                    await stream.barge_in(played_bytes=payload.played_bytes if channel.webrtc_offer is None else None)
                     channel.emit({"type": "interrupted"})
                 elif payload.type == "audio_commit":
                     await stream.commit_audio()
@@ -1079,9 +1077,9 @@ class _Attempt:
                 await stream.send(payload, respond=True)
                 output.realtime_input(payload)
 
-    async def _realtime_audio(self, stream: HarnessLiveStream, channel: Channel) -> None:
-        async for chunk in stream.stream_audio():
-            if not channel.closed.is_set() and not channel.mute_pcm:
+    async def _realtime_audio(self, pcm: AsyncIterator[bytes], channel: Channel) -> None:
+        async for chunk in pcm:
+            if not channel.closed.is_set():
                 channel.emit(chunk)
 
     async def _close_realtime(self, stream: HarnessLiveStream, channel: Channel) -> None:

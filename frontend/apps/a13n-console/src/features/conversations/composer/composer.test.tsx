@@ -267,10 +267,31 @@ it("transfers call controls to the accepted Run while the same socket becomes re
     }
   }
   const stop = vi.fn();
+  let clock = 0;
+  const sources: {
+    start: ReturnType<typeof vi.fn>;
+    stop: ReturnType<typeof vi.fn>;
+  }[] = [];
+  const port = {
+    onmessage: undefined as ((event: MessageEvent) => void) | undefined,
+  };
   vi.stubGlobal("WebSocket", Socket);
   vi.stubGlobal(
     "AudioContext",
     class {
+      get currentTime() {
+        return clock;
+      }
+      getOutputTimestamp = () => ({ contextTime: clock });
+      createBuffer = (_channels: number, count: number) => ({
+        duration: count / 24000,
+        getChannelData: () => new Float32Array(count),
+      });
+      createBufferSource = () => {
+        const source = { start: vi.fn(), stop: vi.fn(), connect: vi.fn() };
+        sources.push(source);
+        return source;
+      };
       resume = async () => {};
       close = async () => {};
       audioWorklet = { addModule: async () => {} };
@@ -280,7 +301,7 @@ it("transfers call controls to the accepted Run while the same socket becomes re
   vi.stubGlobal(
     "AudioWorkletNode",
     class {
-      port = {};
+      port = port;
       connect() {}
       disconnect() {}
     },
@@ -329,6 +350,36 @@ it("transfers call controls to the accepted Run while the same socket becomes re
     expect(
       screen.getByRole("button", { name: "Interrupt response" }),
     ).toBeTruthy();
+    const speech = () =>
+      port.onmessage?.(new MessageEvent("message", { data: "speech" }));
+    speech();
+    expect(send).not.toHaveBeenCalled();
+    for (const offset of [0, 9600]) {
+      if (offset) receive({ type: "playback_position", offset });
+      act(() =>
+        socket.onmessage?.(
+          new MessageEvent("message", { data: new ArrayBuffer(4800) }),
+        ),
+      );
+      const current = sources.at(-1)!;
+      clock = current.start.mock.calls[0]![0] + 0.03125;
+      speech();
+      expect(current.stop).toHaveBeenCalledOnce();
+      expect(send).toHaveBeenLastCalledWith(
+        JSON.stringify({ type: "interrupt", played_bytes: offset + 1500 }),
+      );
+      receive({ type: "interrupted" });
+      clock = 1;
+    }
+    act(() =>
+      socket.onmessage?.(
+        new MessageEvent("message", { data: new ArrayBuffer(4800) }),
+      ),
+    );
+    clock += 1;
+    const count = send.mock.calls.length;
+    speech();
+    expect(send).toHaveBeenCalledTimes(count);
     expect(close).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "End realtime chat" }));

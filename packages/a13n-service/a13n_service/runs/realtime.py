@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field, replace
@@ -61,7 +62,7 @@ class Channel:
     workspace_id: str
     incoming: asyncio.Queue[bytes | str | Media] = field(default_factory=lambda: asyncio.Queue(64))
     outgoing: asyncio.Queue[dict[str, str | int | bool]] = field(default_factory=lambda: asyncio.Queue(128))
-    pcm: asyncio.Queue[bytes] = field(default_factory=lambda: asyncio.Queue(32))
+    pcm: asyncio.Queue[tuple[int, bytes]] = field(default_factory=lambda: asyncio.Queue(32))
     decided: set[str] = field(default_factory=set)
     dispatched: set[str] = field(default_factory=set)
     approved: set[str] = field(default_factory=set)
@@ -72,7 +73,9 @@ class Channel:
     attached: bool = False
     audio: bool = True
     draft: str = ""
-    mute_pcm: bool = False
+    resume_rtc_on_turn_end: bool = False
+    playback_epoch: int = 0
+    playback_offset: int = 0
     verify_dispatch: Callable[[str], Awaitable[None]] | None = None
     approvals: dict[str, asyncio.Future[bool]] = field(default_factory=dict)
     webrtc_offer: str | None = None
@@ -85,7 +88,10 @@ class Channel:
     def emit(self, frame: Frame) -> None:
         try:
             if isinstance(frame, bytes):
-                self.pcm.put_nowait(frame)
+                if self.pcm.full():
+                    self.pcm.get_nowait()
+                self.pcm.put_nowait((self.playback_epoch, self.playback_offset.to_bytes(8) + frame))
+                self.playback_offset += len(frame)
             else:
                 self.outgoing.put_nowait(frame)
         except asyncio.QueueFull:
@@ -660,6 +666,9 @@ async def relay(
     attached = asyncio.Event()
     ready = asyncio.Event()
 
+    # A new epoch's binary frames may arrive before its ordered interruption receipt.
+    waiting_pcm: deque[bytes] = deque(maxlen=32)
+
     async def pulse() -> None:
         await attached.wait()
         while True:
@@ -693,6 +702,7 @@ async def relay(
                         await pipe.send(b"commit:" + str(pipe.sent).encode())
                         continue
                     pipe.epoch += 1
+                    waiting_pcm.clear()
                 if isinstance(command, Approval):
                     await reauthorize()
                 frame = b"j" + command.model_dump_json().encode()
@@ -706,6 +716,17 @@ async def relay(
         await authorize_attachment(pipe.attempt_id)
         await pipe.send(b"o" + (offer or "").encode())
         attached.set()
+        next_offset = 0
+        acknowledged_epoch = 0
+
+        async def play(raw: bytes) -> None:
+            nonlocal next_offset
+            offset = int.from_bytes(raw[1:9])
+            if offset != next_offset:
+                await socket.send_json({"type": "playback_position", "offset": offset})
+            await socket.send_bytes(raw[9:])
+            next_offset = offset + len(raw) - 9
+
         while True:
             raw = await pipe.receive()
             if raw == b"closed":
@@ -717,12 +738,19 @@ async def relay(
             async with asyncio.timeout(5):
                 if raw.startswith(b"b"):
                     if ready.is_set():
-                        await socket.send_bytes(raw[1:])
+                        if acknowledged_epoch == pipe.epoch:
+                            await play(raw)
+                        else:
+                            waiting_pcm.append(raw)
                 else:
                     event = _OUTPUT.validate_json(raw[1:])
                     if event.get("type") == "ready":
                         ready.set()
                     await socket.send_json(event)
+                    if event.get("type") == "interrupted":
+                        acknowledged_epoch += 1
+                        while waiting_pcm and acknowledged_epoch == pipe.epoch:
+                            await play(waiting_pcm.popleft())
 
     async def verify() -> None:
         while True:
@@ -814,20 +842,12 @@ async def _worker_io(pipe: Pipe, channel: Channel) -> AsyncIterator[None]:
                     return
                 if raw == b"ping":
                     continue
-                if raw.startswith(b"commit:"):
-                    last_seq = int(raw[7:])
-                    if last_seq != pipe.received:
-                        # Allow frames from the other Redis lane to arrive, without blocking stop or approvals.
-                        pipe.commit_seq = last_seq
-                        pipe.wake.set()
-                    else:
-                        channel.incoming.put_nowait(Media(type="audio_commit"))
-                    continue
                 if raw == b"commit":
                     channel.incoming.put_nowait(Media(type="audio_commit"))
                     continue
-                if raw == b"gap":
-                    channel.emit({"type": "input_discontinuity"})
+                if raw in {b"gap", b"reset"}:
+                    if raw == b"gap":
+                        channel.emit({"type": "input_discontinuity"})
                     channel.incoming.put_nowait(Media(type="input_discontinuity"))
                     continue
                 if raw.startswith(b"b"):
@@ -866,7 +886,9 @@ async def _worker_io(pipe: Pipe, channel: Channel) -> AsyncIterator[None]:
     async def media() -> None:
         try:
             while True:
-                await pipe.send(b"b" + await channel.pcm.get())
+                epoch, frame = await channel.pcm.get()
+                if epoch == pipe.epoch:
+                    await pipe.send(b"b" + frame)
         except ServiceError:
             channel.failed = True
             channel.closed.set()

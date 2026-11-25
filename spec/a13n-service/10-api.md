@@ -395,6 +395,8 @@ Retained-execution list, detail and bounded-result queries are admitted to MCP u
 | `/runs/{run}/attempts`                  | GET                | [05](05-runs.md#reads)                            |
 | `/runs/{run}/attempts/{attempt}`        | GET                | [05](05-runs.md#reads)                            |
 
+**Realtime session playback.** Realtime WebSocket output uses raw PCM binary frames. The initial offset is zero. Each frame starts at the preceding frame’s end unless a JSON `playback_position` event supplies the `offset` of the next binary frame after a discontinuity. A PCM client sends `interrupt.played_bytes` in this coordinate system at the actual device playhead, discards its outstanding playback, and resumes on `interrupted`. Playback-only clients may ignore position updates. WebRTC uses provider-side playback and truncation semantics. After interrupting WebRTC audio, mute the media element and unmute on `playback_start` for OpenAI Realtime or `playback_end` when GPT-Live finishes the muted turn.
+
 ### Environments
 
 | Path                                                                                                           | Methods            | Owner                                                                                                   |

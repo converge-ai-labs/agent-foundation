@@ -44,6 +44,7 @@ from pydantic_ai.realtime.codec import (
     TextContext,
     ToolCall,
     ToolResult,
+    TruncateOutput,
 )
 from pydantic_ai.realtime.lifecycle import InferredLifecycle, LifecycleEvent, RealtimeFrame
 from pydantic_ai.realtime.openai import OpenAIRealtimeModel
@@ -421,6 +422,59 @@ async def test_app_opens_realtime_over_http_and_websocket(
         assert run["status"] == "completed"
         assert provider.hangups == (1 if transport == "webrtc" else 0)
         assert ("user", "Hello from an App.") in runs_kit.texts(await runs_kit.items(service, run["id"]))
+
+
+@pytest.mark.parametrize(
+    ("api", "adapter"), [("openai.realtime", OpenAIRealtimeModel), ("openai.live", OpenAILiveModel)]
+)
+async def test_two_pcm_interruptions_preserve_playback_and_model_guarantees(
+    settings, serve, runs_kit, monkeypatch, api, adapter
+):
+    provider = ScriptedRealtimeProvider()
+    monkeypatch.setattr(adapter, "connect", provider.connect)
+    async with serve(role="all", settings=settings) as service:
+        voice = await create_voice_agent(service, runs_kit, api)
+        response = await service.client.post(f"{service.api}/realtime/sessions", json={"agent_id": voice["id"]})
+        ticket = response.json()
+        async with (
+            serve_http(service.app, lifespan="off") as url,
+            connect(
+                url.replace("http://", "ws://") + ticket["websocket_path"],
+                subprotocols=[ticket["subprotocol"], ticket["ticket"]],
+            ) as ws,
+            asyncio.timeout(15),
+        ):
+            assert json.loads(await ws.recv())["type"] == "accepted"
+            assert json.loads(await ws.recv())["type"] == "ready"
+            pcm = bytes(4800)  # 100 ms of 24 kHz PCM16 in each reply.
+            for turn in range(2):
+                item = f"audio{turn}"
+                await ws.send(json.dumps({"type": "text", "text": item}))
+                while await provider.connection.outgoing.get() != item:
+                    pass
+                await provider.connection.incoming.put(AudioDelta(pcm, item_id=item))
+                frame = await ws.recv()
+                while isinstance(frame, str):
+                    assert json.loads(frame)["type"] == "transcript"
+                    frame = await ws.recv()
+                assert frame == pcm
+                await ws.send(json.dumps({"type": "interrupt", "played_bytes": turn * len(pcm) + 1200}))
+                if api == "openai.realtime":
+                    cut = await provider.connection.outgoing.get()
+                    assert isinstance(cut, TruncateOutput)
+                    assert (cut.item_id, cut.audio_end_ms) == (item, 25)
+                else:
+                    assert provider.connection.outgoing.empty()
+                control = json.loads(await ws.recv())["type"]
+                while control == "transcript":
+                    control = json.loads(await ws.recv())["type"]
+                assert control == "interrupted"
+                # A late tail from this item cannot play in the new epoch.
+                await provider.connection.incoming.put(AudioDelta(bytes(240), item_id=item))
+                await provider.connection.incoming.put(ResponseDone())
+            await ws.send('{"type":"stop"}')
+            async for frame in ws:
+                assert json.loads(frame)["type"] in {"sealed", "transcript"}
 
 
 async def test_split_realtime_stops_when_no_capable_worker_attaches(
@@ -888,14 +942,22 @@ async def test_control_delivery_with_saturated_pcm(service):
         control.peer = other.id
         worker.peer = worker.control_id = first.id
         async with control.subscribe(), worker.subscribe(), asyncio.timeout(5):
-            for _ in range(128):
-                await worker.send(b"b" + bytes(960))
+            for seq in range(1, 129):
+                await worker.send(b"b" + seq.to_bytes(2) * 480)
+            # Wait for the final publication on the independent PCM subscription.
+            while not control.audio or not control.audio[-1].endswith((128).to_bytes(2)):
+                await asyncio.sleep(0.001)
+            assert len(control.audio) == 32
+            assert await control.receive() == b"b" + (97).to_bytes(2) * 480
             for frame in (b'j{"type":"approval","call_id":"one","approve":true}', b"stop"):
                 await control.send(frame)
                 assert await worker.receive() == frame
+            sealed = b'j{"type":"sealed","status":"completed"}'
+            await worker.send(sealed)
+            while (frame := await control.receive()) != sealed:
+                assert frame.startswith(b"b")
             await control.shutdown()
             assert await worker.receive() == b"closed"
-            assert len(control.audio) <= 32
     finally:
         await other.close()
 

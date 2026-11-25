@@ -367,6 +367,9 @@ class HarnessLiveStream(HarnessRunStream[None]):
         self._live_model = model
         self._live_model_settings = deepcopy(model_settings)
         self._audio_retention: AudioRetention = audio_retention
+        self._playback_part: int | None = None
+        self._muted_part: int | None = None
+        self._part_audio: Callable[[bytes], None] | None = None
         self._memory_context_bytes = memory_context_bytes
         self._webrtc = webrtc
         self._result_output_adapter = TypeAdapter(type(None))
@@ -452,8 +455,16 @@ class HarnessLiveStream(HarnessRunStream[None]):
     def supports_interruption(self) -> bool:
         return bool(self._live_model.profile.get("supports_interruption"))
 
+    def relay_part_audio(self, sink: Callable[[bytes], None]) -> bool:
+        """Relay PCM with native speech-part boundaries for adapters without playback truncation."""
+        if self._live_model.profile.get("supports_output_truncation"):
+            return False
+        self._part_audio = sink
+        return True
+
     async def barge_in(self, *, played_bytes: int | None = None) -> bool:
         profile = self._live_model.profile
+        self._muted_part = self._playback_part
         if self.supports_interruption:
             if played_bytes is not None and profile.get("supports_output_truncation"):
                 await self.interrupt(played_bytes=played_bytes)
@@ -604,6 +615,16 @@ class HarnessLiveStream(HarnessRunStream[None]):
                 if initial_input is not None:
                     await self.send(initial_input)
                 async for event in session:
+                    if (
+                        self._part_audio is not None
+                        and isinstance(event, PartDeltaEvent)
+                        and isinstance(event.delta, SpeechPartDelta)
+                        and event.delta.speaker == "assistant"
+                        and event.delta.audio_chunk
+                    ):
+                        self._playback_part = event.index
+                        if event.index != self._muted_part:
+                            self._part_audio(event.delta.audio_chunk)
                     if (
                         isinstance(event, PartEndEvent)
                         and isinstance(event.part, SpeechPart)
