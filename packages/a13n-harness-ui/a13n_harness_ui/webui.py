@@ -2751,7 +2751,10 @@ def create_webui(
         access = await app().sharing.authenticate(share_id, request.headers["authorization"][7:])
         source = await app().current_configuration()
         return access.model_copy(
-            update={"input_prediction_enabled": source is not None and source.document.input_prediction.enabled}
+            update={
+                "input_prediction_enabled": source is not None and source.document.input_prediction.enabled,
+                "send_shortcut": source.document.webui.send_shortcut if source is not None else "enter",
+            }
         )
 
     @guest.get("/threads", response_model=ThreadPage)
