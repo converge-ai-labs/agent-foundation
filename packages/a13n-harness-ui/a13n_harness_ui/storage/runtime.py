@@ -234,7 +234,7 @@ class LocalStore:
         return tuple(dict.fromkeys(repaired))
 
     async def refresh_object_count(self) -> None:
-        self._object_count = len(await self.objects.references())
+        self._object_count = await self.objects.count()
 
     async def object_count(self) -> int:
         """Return the maintenance sample without enumerating files on status requests."""

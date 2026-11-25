@@ -15,7 +15,7 @@ from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.models import ModelRequestContext
 
 from a13n_harness_ui.errors import RunCoordinationError
-from a13n_harness_ui.restart_models import RestartBatch, RestartItem
+from a13n_harness_ui.restart_models import RestartBatch, RestartItem, RestartResult
 from a13n_harness_ui.shutdown import Shutdown
 from a13n_harness_ui.storage.restarts import RestartRepository
 
@@ -27,6 +27,18 @@ class PausingRun:
     boundary: RestartItem | None = None
     state: HarnessState | None = None
     release: Event = field(default_factory=Event)
+
+
+@dataclass
+class _CandidateOp:
+    apply: Callable[[], Callable[[], None] | None]
+
+
+@dataclass
+class _CandidateBatch:
+    ops: list[_CandidateOp] = field(default_factory=list)
+    completed: bool = False
+    error: BaseException | None = None
 
 
 class GracefulRestart:
@@ -49,7 +61,9 @@ class GracefulRestart:
         self._candidates: dict[str, RestartItem] = {}
         self._suppressed: set[str] = set()
         self._candidate_lock = Lock()
+        self._next_batch: _CandidateBatch | None = None
         self._watch_id = f"restart-{uuid4().hex}"
+        self._cached_results: tuple[RestartResult, ...] | None = None
 
     def signal(self) -> None:
         self.changed.set()
@@ -64,36 +78,78 @@ class GracefulRestart:
     async def _publish_candidates(self) -> None:
         # The WebUI automation ownership lock fences this writer across Apps;
         # the local lock serializes concurrent root checkpoint/response hooks.
-        previous = await self.repository.get()
+        if self._cached_results is None:
+            previous = await self.repository.get()
+            self._cached_results = previous.results if previous is not None else ()
         await self.repository.publish(
             RestartBatch(
                 batch_id=self._watch_id,
                 state="watching",
                 items=tuple(self._candidates.values()),
-                results=previous.results if previous is not None else (),
+                results=self._cached_results,
             )
         )
+
+    async def _commit_candidate_op(self, apply: Callable[[], Callable[[], None] | None]) -> None:
+        batch = self._next_batch
+        if batch is None:
+            batch = _CandidateBatch()
+            self._next_batch = batch
+        op = _CandidateOp(apply=apply)
+        batch.ops.append(op)
+        try:
+            async with self._candidate_lock:
+                if batch.completed:
+                    if batch.error is not None:
+                        raise batch.error
+                    return
+                if self._next_batch is batch:
+                    self._next_batch = None
+                rollbacks: list[Callable[[], None]] = []
+                for pending in batch.ops:
+                    rollback = pending.apply()
+                    if rollback is not None:
+                        rollbacks.append(rollback)
+                if rollbacks:
+                    try:
+                        await self._publish_candidates()
+                    except BaseException as exc:
+                        for rollback in reversed(rollbacks):
+                            rollback()
+                        batch.error = exc
+                        batch.completed = True
+                        raise
+                batch.completed = True
+        except BaseException:
+            if not batch.completed and op in batch.ops:
+                batch.ops.remove(op)
+            raise
 
     async def boundary(self, item: RestartItem) -> None:
         """Arm a saved root request; child executions retain separate ownership."""
         if not self.enabled:
             return
-        async with self._candidate_lock:
+
+        def apply() -> Callable[[], None] | None:
             entry = self.active.get(item.thread_id)
             if entry is None:
-                return
+                return None
             entry.boundary = item
-            if not self.restoring and item.thread_id not in self._suppressed:
-                previous = self._candidates.get(item.thread_id)
-                self._candidates[item.thread_id] = item
-                try:
-                    await self._publish_candidates()
-                except BaseException:
-                    if previous is None:
-                        self._candidates.pop(item.thread_id, None)
-                    else:
-                        self._candidates[item.thread_id] = previous
-                    raise
+            if self.restoring or item.thread_id in self._suppressed:
+                return None
+            had_previous = item.thread_id in self._candidates
+            previous = self._candidates.get(item.thread_id)
+            self._candidates[item.thread_id] = item
+
+            def rollback() -> None:
+                if not had_previous or previous is None:
+                    self._candidates.pop(item.thread_id, None)
+                else:
+                    self._candidates[item.thread_id] = previous
+
+            return rollback
+
+        await self._commit_candidate_op(apply)
 
     async def invalidate(self, thread_id: str, *, suppress: bool = False) -> None:
         """Withdraw before response processing, explicit Stop, or terminal retirement."""
@@ -103,17 +159,22 @@ class GracefulRestart:
         # waiting to withdraw the durable process-loss candidate.
         if suppress:
             self._suppressed.add(thread_id)
-        async with self._candidate_lock:
+
+        def apply() -> Callable[[], None] | None:
             previous = self._candidates.pop(thread_id, None)
-            if previous is not None:
-                try:
-                    await self._publish_candidates()
-                except BaseException:
-                    self._candidates[thread_id] = previous
-                    raise
+            if previous is None:
+                return None
+
+            def rollback() -> None:
+                self._candidates[thread_id] = previous
+
+            return rollback
+
+        await self._commit_candidate_op(apply)
 
     async def arm_restored(self, *, blocked_roots: set[str]) -> None:
         async with self._candidate_lock:
+            self._cached_results = None
             for thread_id, entry in self.active.items():
                 if (
                     thread_id not in blocked_roots

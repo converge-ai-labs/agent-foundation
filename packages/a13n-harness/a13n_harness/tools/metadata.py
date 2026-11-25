@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from copy import copy
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from copy import copy, deepcopy
+from dataclasses import dataclass, replace
+from types import MethodType
 from typing import Any, Literal, Protocol, overload, runtime_checkable
+from weakref import WeakKeyDictionary
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pydantic_ai.tools import Tool, ToolFuncEither
+from pydantic_ai import _function_schema
+from pydantic_ai.tools import GenerateToolJsonSchema, Tool, ToolFuncEither
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
@@ -119,6 +122,46 @@ class HarnessToolMetadata:
         object.__setattr__(self, "superseded_by_tool_ids", normalized["superseded_by_tool_ids"])
 
 
+_METHOD_FUNCTION_SCHEMAS: WeakKeyDictionary[
+    Callable[..., Any], dict[tuple[Any, ...], _function_schema.FunctionSchema]
+] = WeakKeyDictionary()
+
+
+def _cached_method_function_schema(
+    function: MethodType,
+    kwargs: Mapping[str, Any],
+) -> _function_schema.FunctionSchema:
+    unbound = function.__func__
+    tool_name = kwargs.get("name") or function.__name__
+    takes_ctx = kwargs.get("takes_ctx")
+    docstring_format = kwargs.get("docstring_format", "auto")
+    require_parameter_descriptions = kwargs.get("require_parameter_descriptions", False)
+    schema_generator = kwargs.get("schema_generator", GenerateToolJsonSchema)
+    key = (tool_name, takes_ctx, docstring_format, require_parameter_descriptions, schema_generator)
+    by_key = _METHOD_FUNCTION_SCHEMAS.get(unbound)
+    if by_key is None:
+        by_key = {}
+        _METHOD_FUNCTION_SCHEMAS[unbound] = by_key
+    template = by_key.get(key)
+    if template is None:
+        built = _function_schema.function_schema(
+            function,
+            schema_generator,
+            tool_name=tool_name,
+            takes_ctx=takes_ctx,
+            docstring_format=docstring_format,
+            require_parameter_descriptions=require_parameter_descriptions,
+        )
+        template = replace(built, function=unbound)
+        by_key[key] = template
+    return replace(
+        template,
+        function=function,
+        json_schema=deepcopy(template.json_schema),
+        return_schema=deepcopy(template.return_schema),
+    )
+
+
 class HarnessTool(Tool[AgentContext]):
     """Thin native Tool helper that attaches complete managed metadata."""
 
@@ -139,6 +182,8 @@ class HarnessTool(Tool[AgentContext]):
                 code="tool_metadata_reserved",
             )
         combined[HARNESS_TOOL_METADATA_KEY] = harness_metadata
+        if isinstance(function, MethodType) and "function_schema" not in kwargs:
+            kwargs["function_schema"] = _cached_method_function_schema(function, kwargs)
         super().__init__(function, metadata=combined, **kwargs)
 
 

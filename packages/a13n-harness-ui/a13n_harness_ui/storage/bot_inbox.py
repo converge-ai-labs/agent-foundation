@@ -26,6 +26,28 @@ class BotInboxRepository:
 
     async def heartbeat(self, *, policy: BotConfiguration, now: datetime, text: str) -> bool:
         """Retain/coalesce a due opportunity and advance its clock in one transaction."""
+        async with short_session(self._sessions) as session:
+            row = await session.get(BotStateRecord, 1)
+            state = BotState() if row is None else BotState.model_validate_json(row.payload)
+            if not policy.heartbeat_enabled:
+                has_heartbeat = (
+                    await session.scalar(
+                        select(BotInboxRecord.input_id).where(BotInboxRecord.source == "heartbeat").limit(1)
+                    )
+                    is not None
+                )
+                if not has_heartbeat and state.next_heartbeat_at is None and state.heartbeat_interval_seconds is None:
+                    return False
+            elif not policy.enabled:
+                if state.next_heartbeat_at is None and state.heartbeat_interval_seconds is None:
+                    return False
+            elif (
+                state.next_heartbeat_at is not None
+                and state.heartbeat_interval_seconds == policy.interval_seconds
+                and state.next_heartbeat_at > now
+            ):
+                return False
+
         due = False
         async with transaction(self._sessions) as session:
             row = await session.get(BotStateRecord, 1)

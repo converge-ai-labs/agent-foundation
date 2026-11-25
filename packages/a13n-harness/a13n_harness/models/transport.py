@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import math
+import os
+import ssl
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any
 
 import httpx2
@@ -12,6 +15,35 @@ from tenacity import retry_if_exception, stop_after_attempt, wait_exponential
 
 from a13n_harness.configuration import RunConfiguration
 from a13n_harness.http import outbound_tls_verify
+
+
+@lru_cache(maxsize=8)
+def _cached_ca_ssl_context(cafile: str | None, capath: str | None, mtime_ns: int | None) -> ssl.SSLContext:
+    del mtime_ns
+    return ssl.create_default_context(cafile=cafile, capath=capath)
+
+
+def _resolved_tls_verify() -> ssl.SSLContext | bool:
+    if not outbound_tls_verify():
+        return False
+    cafile = os.environ.get("SSL_CERT_FILE")
+    if cafile:
+        try:
+            mtime_ns = os.stat(cafile).st_mtime_ns
+        except OSError:
+            return True
+        return _cached_ca_ssl_context(cafile, None, mtime_ns)
+    capath = os.environ.get("SSL_CERT_DIR")
+    if capath:
+        try:
+            mtime_ns = os.stat(capath).st_mtime_ns
+        except OSError:
+            return True
+        return _cached_ca_ssl_context(None, capath, mtime_ns)
+    # Keep per-client truststore contexts when using OS certificate stores so
+    # concurrent handshakes never mutate one shared truststore SSLContext.
+    return True
+
 
 DEFAULT_MODEL_HTTP_RETRY_STATUS_CODES = frozenset({429, 502, 503, 504})
 _MAX_RETRY_ERROR_BODY_BYTES = 64 * 1024
@@ -100,7 +132,7 @@ class _ModelHttpClient(httpx2.AsyncClient):
             configuration.authorize_url(str(request.url))
 
         super().__init__(
-            verify=outbound_tls_verify(), timeout=timeout, transport=transport, event_hooks={"request": [authorize]}
+            verify=_resolved_tls_verify(), timeout=timeout, transport=transport, event_hooks={"request": [authorize]}
         )
 
     # Keep the dependency's private construction hooks localized here. Delegating

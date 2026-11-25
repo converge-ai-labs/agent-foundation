@@ -57,7 +57,7 @@ class ToolExecutions:
         self._environments = environments
         self._recover_mcp = recover_mcp
         self._recovery_lock = Lock()
-        self.runtime = ToolExecutionRuntime(store=store, on_completed=self._completed)
+        self.runtime = ToolExecutionRuntime(store=store, max_active=256, on_completed=self._completed)
         self._states: dict[str, CodeActStateOwner] = {}
         self._pending: OrderedDict[str, set[str]] = OrderedDict()
         self._subagent_inputs: dict[str, list[tuple[str, tuple[str, ...]]]] = {}

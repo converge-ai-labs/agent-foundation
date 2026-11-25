@@ -116,6 +116,7 @@ class BotController:
         self._lock = Lock()
         self._settlement_lock = Lock()
         self._inbox_changed = Event()
+        self._admitted_changed = Event()
         self._owned = False
         self.notes = store.bot_notes
         self.notes.on_change = self._note_changed
@@ -257,6 +258,7 @@ class BotController:
                 )
                 if result.accepted:
                     await self._store.bot.save_input(item.model_copy(update={"state": "admitted"}))
+                    self._admitted_changed.set()
             except BaseException:
                 await self._save_interrupted(
                     item,
@@ -274,10 +276,14 @@ class BotController:
 
     async def introduce_workspace(self) -> None:
         """Send one visible ordinary user input when an unused Bot first becomes usable."""
+        if not await self._can_deliver():
+            return
         with CancelScope(shield=True):
             async with self._lock:
+                if not await self._can_deliver():
+                    return
                 state = await self._store.bot.state()
-                if not await self._can_deliver() or state.paused or state.activated:
+                if state.paused or state.activated:
                     return
                 if await self._store.bot.inputs() or await self._store.bot.messages():
                     return
@@ -353,6 +359,7 @@ class BotController:
                 await self._store.bot.save_input(
                     item.model_copy(update={"state": "admitted", "receipt_id": receipt.receipt_id})
                 )
+                self._admitted_changed.set()
             assert receipt is not None
             return receipt
 
@@ -541,9 +548,13 @@ class BotController:
         """Freeze one batch; exact native acceptance consumes only its selected IDs."""
         # An immediately notified report must not win the first activation over visible orientation.
         await self.introduce_workspace()
+        if not await self._can_deliver():
+            return
         async with self._lock:
+            if not await self._can_deliver():
+                return
             state = await self._store.bot.state()
-            if not await self._can_deliver() or state.paused:
+            if state.paused:
                 return
             batch = await self._store.bot_inbox.pending()
             if not batch:
@@ -625,6 +636,7 @@ class BotController:
             item = item.model_copy(update={"receipt_id": receipt.receipt_id})
             try:
                 await self._store.bot.save_input(item.model_copy(update={"state": "admitted"}))
+                self._admitted_changed.set()
                 state = await self._store.bot.state()
                 await self._store.bot.save_state(
                     state.model_copy(update={"activated": True, "last_attempt_at": datetime.now(UTC)})
@@ -639,19 +651,26 @@ class BotController:
 
     async def _settlement_loop(self) -> None:
         while True:
+            signal = self._admitted_changed
+            self._admitted_changed = Event()
+            settled = False
             try:
-                await self._settle_one()
+                settled = await self._settle_one()
             except Exception:
                 get_logger(__name__).exception("Bot receipt settlement failed")
-            await sleep(0.05)
+                await sleep(0.05)
+                continue
+            if not settled:
+                with move_on_after(1.0):
+                    await signal.wait()
 
-    async def _settle_one(self) -> None:
+    async def _settle_one(self) -> bool:
         async with self._settlement_lock:
             item = next(
                 (item for item in await self._store.bot.inputs(pending_only=True) if item.state == "admitted"), None
             )
             if item is None:
-                return
+                return False
             try:
                 await self._finish(item)
             except BaseException:
@@ -663,6 +682,7 @@ class BotController:
                         "Bot processing was interrupted. Review the reported error and working Thread results before continuing.",
                     )
                 raise
+            return True
 
     async def _finish(self, item: BotInput) -> None:
         assert item.receipt_id is not None

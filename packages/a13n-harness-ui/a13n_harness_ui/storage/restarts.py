@@ -1,5 +1,7 @@
 """Locally owned safe-boundary handoffs, with a single atomic startup claim."""
 
+from sqlalchemy.dialects.sqlite import insert
+
 from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.restart_models import RestartBatch
 
@@ -17,12 +19,15 @@ class RestartRepository:
             return None if record is None else RestartBatch.model_validate_json(record.payload)
 
     async def publish(self, batch: RestartBatch) -> None:
+        payload = batch.model_dump_json()
+        stmt = insert(PlannedRestartRecord).values(singleton_id=1, payload=payload)
         async with transaction(self._sessions) as session:
-            previous = await session.get(PlannedRestartRecord, 1)
-            if previous is not None:
-                previous.payload = batch.model_dump_json()
-            else:
-                session.add(PlannedRestartRecord(singleton_id=1, payload=batch.model_dump_json()))
+            await session.execute(
+                stmt.on_conflict_do_update(
+                    index_elements=[PlannedRestartRecord.singleton_id],
+                    set_={"payload": stmt.excluded.payload},
+                )
+            )
 
     async def replace(self, expected: RestartBatch, replacement: RestartBatch) -> None:
         async with transaction(self._sessions) as session:

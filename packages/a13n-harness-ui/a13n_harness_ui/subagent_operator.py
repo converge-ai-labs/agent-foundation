@@ -148,7 +148,7 @@ from a13n_harness_ui.storage.contracts import (
     StoredPrincipal,
 )
 from a13n_harness_ui.storage.repositories import ChildCompletionGuard
-from a13n_harness_ui.storage.tool_executions import completion_ids, execution_composition
+from a13n_harness_ui.storage.tool_executions import execution_composition, state_completion_ids
 from a13n_harness_ui.surfaces import (
     ChildActivityView,
     ChildExecutionModel,
@@ -224,6 +224,7 @@ class ParentRunScope:
     run_id: str
     instance: AgentInstanceContext
     composition: ResolvedRunComposition
+    composition_ref: ObjectRef | None = None
     external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
 
     @property
@@ -440,6 +441,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         run_id: str,
         instance: AgentInstanceContext,
         composition: ResolvedRunComposition,
+        composition_ref: ObjectRef | None = None,
         external_context: ExternalContext | None = None,
     ) -> AsyncGenerator[None]:
         """Authorize operator calls from one exact currently active Harness Run."""
@@ -465,6 +467,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_id=run_id,
             instance=instance,
             composition=composition,
+            composition_ref=composition_ref,
             external_context=(external_context or ExternalContext()).model_copy(deep=True),
         )
         async with self._lock:
@@ -1119,6 +1122,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     agent_instance_id=_public_id("agent"),
                 ),
                 composition=composition,
+                composition_ref=authority.parent_composition,
             ),
             identity=AgentIdentityRef(
                 issuer=authority.identity.issuer, subject=authority.identity.subject, **authority.identity.claims
@@ -1348,6 +1352,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             run_id=item.parent_run_id,
             instance=AgentInstanceContext(identity=parent_identity, agent_instance_id=_public_id("agent")),
             composition=parent_composition,
+            composition_ref=item.parent_composition,
         )
         reconstructed = await self._reconstruct_child(composition, memory_positions=checkpoint.memory_cursors)
         environment = await self._environments.prepare(composition)
@@ -1803,6 +1808,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 run_id=prepared.stream.run_id,
                 instance=instance,
                 composition=prepared.composition,
+                composition_ref=prepared.head.run_composition,
                 external_context=prepared.external_context,
             ):
                 with execution_composition(prepared.head.run_composition):
@@ -1822,8 +1828,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                                 else ()
                             )
                             events = (*observer.observe(item), *image_events, *app_events)
-                            compactor.observe(events)
-                            async with self._lock:
+                            if compactor.observe(events):
                                 active.display = compactor.snapshot()
                             if isinstance(item, HarnessRunResultEvent):
                                 # Completion remains fenced by cleanup and checkpoint
@@ -1905,6 +1910,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 )
                 # Stop remains admissible while the checkpoint is being written.
                 # Serialize its acceptance with the final durable state selection.
+                completions = await to_thread.run_sync(state_completion_ids, state)
                 async with active.settlement_lock:
                     status = "cancelled" if active.status == "cancelling" else "succeeded"
                     await self._store.child_executions.finish(
@@ -1913,7 +1919,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         expected_checkpoint=expected,
                         checkpoint=checkpoint,
                         child_run_id=result.run_id,
-                        tool_completions=completion_ids(state.message_history),
+                        tool_completions=completions,
                     )
                     active.status = status
             except BaseException as exc:
@@ -1988,6 +1994,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 )
             except Exception:
                 checkpoint = None
+        completions = (
+            await to_thread.run_sync(state_completion_ids, state)
+            if checkpoint is not None and state is not None
+            else ()
+        )
         await self._store.child_executions.finish(
             execution_id=head.execution_id,
             status=status,  # type: ignore[arg-type]
@@ -1995,9 +2006,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             checkpoint=checkpoint,
             child_run_id=result.run_id,
             failure=failure,
-            tool_completions=completion_ids(state.message_history)
-            if checkpoint is not None and state is not None
-            else (),
+            tool_completions=completions,
         )
 
     async def _publish_checkpoint(
@@ -2015,23 +2024,24 @@ class HarnessUiSubagentOperator(SubagentOperator):
         accepted: DeferredToolResume | None = None,
     ) -> ObjectRef:
         head = prepared.head
+        reference = await self._publish_checkpoint_object(
+            prepared=prepared,
+            memory_positions=memory_positions,
+            run_id=run_id,
+            state=state,
+            deferred_requests=deferred_requests,
+            display=display,
+            terminal=terminal,
+            accepted=accepted,
+        )
+        completions = await to_thread.run_sync(state_completion_ids, state)
         async with checkpoint_lock(self._store.layout.root, head.child_thread_id):
-            reference = await self._publish_checkpoint_object(
-                prepared=prepared,
-                memory_positions=memory_positions,
-                run_id=run_id,
-                state=state,
-                deferred_requests=deferred_requests,
-                display=display,
-                terminal=terminal,
-                accepted=accepted,
-            )
             await self._store.child_executions.select_checkpoint(
                 execution_id=head.execution_id,
                 expected=expected,
                 checkpoint=reference,
                 child_run_id=run_id,
-                tool_completions=completion_ids(state.message_history),
+                tool_completions=completions,
             )
         await self._remove_superseded_checkpoint(head, superseded)
         async with self._lock:
@@ -2051,11 +2061,16 @@ class HarnessUiSubagentOperator(SubagentOperator):
         memory_positions: Mapping[str, str | None] | None = None,
     ) -> ObjectRef:
         head = prepared.head
-        parent_composition = await self._store.objects.publish_model(
-            object_kind=ObjectKind.run_composition, value=prepared.scope.composition
-        )
+        if prepared.scope.composition_ref is not None:
+            parent_composition_ref = prepared.scope.composition_ref
+        else:
+            parent_composition = await self._store.objects.publish_model(
+                object_kind=ObjectKind.run_composition, value=prepared.scope.composition
+            )
+            parent_composition_ref = parent_composition.ref
+            object.__setattr__(prepared.scope, "composition_ref", parent_composition_ref)
         authority = StoredChildAuthority(
-            parent_composition=parent_composition.ref,
+            parent_composition=parent_composition_ref,
             parent_run_id=prepared.scope.run_id,
             parent_identity=StoredPrincipal(
                 issuer=prepared.scope.instance.identity.issuer,
@@ -2471,51 +2486,60 @@ class _DisplayCompactor:
         self._tool_parts: dict[tuple[str | None, str], tuple[dict[str, JsonValue], ...]] = {}
         self._tool_ended: set[tuple[str | None, str]] = set()
 
-    def observe(self, events: Sequence[AguiEvent]) -> None:
+    def observe(self, events: Sequence[AguiEvent]) -> bool:
+        dirty = False
         for event in events:
-            data = event.model_dump(mode="python")
-            scope = data.get("subagent_run_id")
-            message_key = (scope, data.get("message_id", ""))
-            tool_key = (scope, data.get("tool_call_id", ""))
             metadata = ContentMetadata.from_native(event.metadata)
-            if not metadata.display or data.get("role") == "user":
+            extra = event.model_extra or {}
+            fields = event.__dict__
+            role = fields.get("role") or extra.get("role")
+            if not metadata.display or role == "user":
                 continue
+            raw_scope = fields.get("subagent_run_id") or extra.get("subagent_run_id") or extra.get("subagentRunId")
+            scope = raw_scope if isinstance(raw_scope, str) else None
             if isinstance(event, CustomEvent) and event.name == METADATA_KEY:
                 value = event.value
                 if isinstance(value, dict) and isinstance(value.get("event"), dict):
                     for item in value["event"].get("apps", []):
                         reference = AppReference.model_validate(item, strict=False)
                         self._apps[reference.app_id] = reference
+                        dirty = True
                     while len(self._apps) > 128:
                         del self._apps[next(iter(self._apps))]
             elif isinstance(event, TextMessageStartEvent):
-                self._text[message_key] = ""
+                self._text[(scope, event.message_id)] = ""
             elif isinstance(event, TextMessageContentEvent):
+                message_key = (scope, event.message_id)
                 self._text[message_key] = _append_bounded(self._text.get(message_key, ""), event.delta)
             elif isinstance(event, TextMessageEndEvent):
-                text = self._text.pop(message_key, "")
+                text = self._text.pop((scope, event.message_id), "")
                 if text:
                     self._append(CompactChildActivity(kind="text", text=text, subagent_run_id=scope))
+                    dirty = True
             elif isinstance(event, ReasoningMessageStartEvent):
-                self._reasoning[message_key] = ""
+                self._reasoning[(scope, event.message_id)] = ""
             elif isinstance(event, ReasoningMessageContentEvent):
+                message_key = (scope, event.message_id)
                 self._reasoning[message_key] = _append_bounded(
                     self._reasoning.get(message_key, ""),
                     event.delta,
                 )
             elif isinstance(event, ReasoningMessageEndEvent):
-                text = self._reasoning.pop(message_key, "")
+                text = self._reasoning.pop((scope, event.message_id), "")
                 if text:
                     self._append(CompactChildActivity(kind="thinking", text=text, subagent_run_id=scope))
+                    dirty = True
             elif isinstance(event, ToolCallStartEvent):
-                self._tool_names[tool_key] = event.tool_call_name
+                self._tool_names[(scope, event.tool_call_id)] = event.tool_call_name
             elif isinstance(event, ToolCallArgsEvent):
+                tool_key = (scope, event.tool_call_id)
                 self._tool_arguments[tool_key] = _append_bounded(
                     self._tool_arguments.get(tool_key, ""),
                     event.delta,
                     limit=_MAX_TOOL_VALUE_TEXT,
                 )
             elif isinstance(event, ToolCallResultEvent):
+                tool_key = (scope, event.tool_call_id)
                 if isinstance(event.content, str):
                     self._tool_results[tool_key] = event.content[:_MAX_TOOL_VALUE_TEXT]
                 else:
@@ -2524,11 +2548,13 @@ class _DisplayCompactor:
                         self._tool_parts[tool_key] = parts
                     self._tool_results[tool_key] = ""
                 if tool_key in self._tool_ended:
-                    self._finish_tool(tool_key)
+                    dirty |= self._finish_tool(tool_key)
             elif isinstance(event, ToolCallEndEvent):
+                tool_key = (scope, event.tool_call_id)
                 self._tool_ended.add(tool_key)
                 if tool_key in self._tool_results:
-                    self._finish_tool(tool_key)
+                    dirty |= self._finish_tool(tool_key)
+        return dirty
 
     def snapshot(self) -> CompactChildDisplay:
         return CompactChildDisplay(
@@ -2537,11 +2563,11 @@ class _DisplayCompactor:
             final_answer=self._final_answer,
         )
 
-    def _finish_tool(self, tool_call_id: tuple[str | None, str]) -> None:
+    def _finish_tool(self, tool_call_id: tuple[str | None, str]) -> bool:
         name = self._tool_names.pop(tool_call_id, None)
         self._tool_ended.discard(tool_call_id)
         if name is None:
-            return
+            return False
         self._append(
             CompactChildActivity(
                 kind="tool",
@@ -2552,6 +2578,7 @@ class _DisplayCompactor:
                 subagent_run_id=tool_call_id[0],
             )
         )
+        return True
 
     def _append(self, activity: CompactChildActivity) -> None:
         self._activities.append(activity)

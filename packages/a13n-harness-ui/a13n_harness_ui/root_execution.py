@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import errno
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager, nullcontext
@@ -119,6 +120,8 @@ from a13n_harness_ui.tool_evidence import ToolEvidenceCollector
 from a13n_harness_ui.tool_executions import ToolExecutions
 from a13n_harness_ui.tool_images import ToolImageCollector
 
+_DEFAULT_PROJECT_CONTINUATION = project_continuation
+
 
 @dataclass(frozen=True, slots=True)
 class RootContinuationSelection:
@@ -230,6 +233,11 @@ class RootRunExecutor:
         self._root_capability_factory: Callable[[ResolvedRunComposition], AbstractCapability[AgentContext]] | None = (
             None
         )
+        self._pending_inspections: dict[
+            str,
+            tuple[Thread, ObjectRef, HarnessState, Continuation, str, str, Sequence[ModelMessage] | None],
+        ] = {}
+        self._inspection_tasks: dict[str, asyncio.Task[None]] = {}
 
     def replace_subscription_sources(self, sources: Mapping[str, SubscriptionSource]) -> None:
         """Apply account rediscovery to future Runs; existing resolvers retain their sources."""
@@ -480,12 +488,20 @@ class RootRunExecutor:
                 steers: tuple[str, ...] = ()
                 if strict_inputs is not None:
                     state, steers = strict_inputs.prepare_cut(state, primary=True)
-                history = await to_thread.run_sync(lambda: state.message_history)
+
+                def decode_checkpoint_history() -> tuple[tuple[ModelMessage, ...], tuple[str, ...]]:
+                    decoded = state.message_history
+                    raw = state.message_history_json
+                    completions = (
+                        ()
+                        if isinstance(raw, bytes) and b"tool_execution.completion" not in raw
+                        else completion_ids(decoded)
+                    )
+                    return decoded, completions
+
+                history, completions = await to_thread.run_sync(decode_checkpoint_history)
                 frozen = display.capture(history)
-                excerpt, completions = await to_thread.run_sync(
-                    lambda h=history: (checkpoint_excerpt(thread.excerpt, h), completion_ids(h))
-                )
-                del history
+                excerpt = await to_thread.run_sync(checkpoint_excerpt, thread.excerpt, history)
                 # RootCheckpointCapability joins this operation and its marker
                 # before propagating either native or AnyIO cancellation.
                 selected = await self._select_state(
@@ -500,7 +516,10 @@ class RootRunExecutor:
                     excerpt=excerpt,
                     activity_changed=excerpt != thread.excerpt,
                     tool_completions=completions,
+                    messages=history,
+                    terminal=False,
                 )
+                del history
                 if selected.status != "selected" or selected.reference is None:
                     assert selected.error is not None
                     checkpoint_error = selected.error
@@ -1045,6 +1064,7 @@ class RootRunExecutor:
                         )
                 else:
                     continuation = RootContinuationSelection(status="not_available")
+                await self._drain_inspection(thread.thread_id)
                 if continuation.error is not None:
                     get_logger(__name__).error(
                         "Root continuation save failed: thread_id=%s exception_type=%s",
@@ -1148,6 +1168,7 @@ class RootRunExecutor:
                     run_id=run_id,
                     instance=instance,
                     composition=composition,
+                    composition_ref=composition_ref,
                     external_context=external_context,
                 ):
                     yield
@@ -1214,6 +1235,8 @@ class RootRunExecutor:
         superseded: ObjectRef | None = None,
         memory_positions: Mapping[str, str | None] | None = None,
         tool_completions: tuple[str, ...] | None = None,
+        messages: Sequence[ModelMessage] | None = None,
+        terminal: bool = True,
     ) -> RootContinuationSelection:
         """Select native state with a display already frozen on the producer's event loop."""
         if state is None:
@@ -1239,7 +1262,12 @@ class RootRunExecutor:
                 created_at=datetime.now(UTC),
             )
             completions = tool_completions if tool_completions is not None else state_completion_ids(state)
-            return continuation, project_continuation(continuation), completions
+            projected = (
+                project_continuation(continuation, messages=messages)
+                if project_continuation is _DEFAULT_PROJECT_CONTINUATION
+                else project_continuation(continuation)
+            )
+            return continuation, projected, completions
 
         try:
             # The request checkpoint joins this work before model execution or
@@ -1274,27 +1302,119 @@ class RootRunExecutor:
                         )
         except Exception as exc:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
-        await self._store.publish_work(thread.thread_id, published_ref, state)
-        # A disposable inspection index cannot change a successfully selected
-        # execution checkpoint. A later checkpoint or history read can catch up.
-        try:
-            inspection = await to_thread.run_sync(build_thread_inspection, selected, continuation)
-            indexed = await self._store.inspections.publish(
+        expected_source = (
+            thread.continuation.logical_digest
+            if thread.continuation is not None
+            else f"initial:{thread.initial_state.logical_digest}"
+        )
+        # Disposable derived indexes cannot change a successfully selected
+        # execution checkpoint. Offload request-boundary indexing so model calls
+        # start immediately; terminal settlement drains and publishes synchronously.
+        if not terminal:
+            self._schedule_inspection(
                 thread.thread_id,
+                selected,
+                published_ref,
+                state,
+                continuation,
                 published_ref.logical_digest,
+                expected_source,
+                messages,
+            )
+            return RootContinuationSelection(status="selected", reference=published_ref)
+        await self._drain_inspection(thread.thread_id, discard_pending=True)
+        await self._store.publish_work(thread.thread_id, published_ref, state)
+        await self._publish_inspection(
+            thread.thread_id,
+            selected,
+            continuation,
+            published_ref.logical_digest,
+            expected_source,
+            messages,
+        )
+        return RootContinuationSelection(status="selected", reference=published_ref)
+
+    def _schedule_inspection(
+        self,
+        thread_id: str,
+        selected: Thread,
+        published_ref: ObjectRef,
+        state: HarnessState,
+        continuation: Continuation,
+        source_id: str,
+        expected_source: str,
+        messages: Sequence[ModelMessage] | None,
+    ) -> None:
+        self._pending_inspections[thread_id] = (
+            selected,
+            published_ref,
+            state,
+            continuation,
+            source_id,
+            expected_source,
+            messages,
+        )
+        existing = self._inspection_tasks.get(thread_id)
+        if existing is None or existing.done():
+            self._inspection_tasks[thread_id] = asyncio.create_task(
+                self._run_pending_inspections(thread_id),
+                name=f"inspection:{thread_id}",
+            )
+
+    async def _run_pending_inspections(self, thread_id: str) -> None:
+        try:
+            while (item := self._pending_inspections.pop(thread_id, None)) is not None:
+                selected, published_ref, state, continuation, source_id, expected_source, messages = item
+                await self._store.publish_work(thread_id, published_ref, state)
+                await self._publish_inspection(
+                    thread_id,
+                    selected,
+                    continuation,
+                    source_id,
+                    expected_source,
+                    messages,
+                )
+        finally:
+            current = self._inspection_tasks.get(thread_id)
+            if current is asyncio.current_task():
+                self._inspection_tasks.pop(thread_id, None)
+
+    async def _drain_inspection(self, thread_id: str, *, discard_pending: bool = False) -> None:
+        if discard_pending:
+            self._pending_inspections.pop(thread_id, None)
+        task = self._inspection_tasks.get(thread_id)
+        if task is not None and not task.done():
+            try:
+                await asyncio.shield(task)
+            except BaseException:
+                pass
+
+    async def _publish_inspection(
+        self,
+        thread_id: str,
+        selected: Thread,
+        continuation: Continuation,
+        source_id: str,
+        expected_source: str,
+        messages: Sequence[ModelMessage] | None,
+    ) -> None:
+        try:
+            inspection = await to_thread.run_sync(
+                partial(build_thread_inspection, selected, continuation, messages=messages)
+            )
+            indexed = await self._store.inspections.publish(
+                thread_id,
+                source_id,
                 inspection,
-                expected_source=thread.continuation.logical_digest
-                if thread.continuation is not None
-                else f"initial:{thread.initial_state.logical_digest}",
+                expected_source=expected_source,
             )
             if not indexed:
-                get_logger(__name__).info("Transcript index update skipped", extra={"thread_id": thread.thread_id})
+                get_logger(__name__).info("Transcript index update skipped", extra={"thread_id": thread_id})
         except Exception as exc:
             get_logger("a13n_harness_ui.storage").warning(
                 "Could not publish Thread inspection index",
-                extra={"thread_id": thread.thread_id, "error_type": type(exc).__name__},
+                extra={"thread_id": thread_id, "error_type": type(exc).__name__},
             )
-        return RootContinuationSelection(status="selected", reference=published_ref)
 
     async def _publish_live(
         self,

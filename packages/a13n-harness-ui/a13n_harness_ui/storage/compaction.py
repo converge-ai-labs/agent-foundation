@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from a13n_harness import HarnessState
-from a13n_harness.compaction import CompactionOperation, compaction_disposition
+from a13n_harness.compaction import COMPACTION_CAPABILITY_ID, CompactionOperation, compaction_disposition
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +57,9 @@ class CompactionRepository:
 
     async def settlement(self, state: HarnessState) -> CompactionSettlement | None:
         """Prepare a matching native marker; only checkpoint commit may settle it."""
+        entries_raw = state.agent_context_state.entries_json
+        if isinstance(entries_raw, bytes) and COMPACTION_CAPABILITY_ID.encode() not in entries_raw and not state.refs:
+            return None
         operation = await self.get(state.thread_id)
         if operation is None:
             return None

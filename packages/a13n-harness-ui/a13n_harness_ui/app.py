@@ -1025,6 +1025,20 @@ class HarnessUiApp:
             await sleep(0.5)
             if self._state is not AppState.ready:
                 return
+            path = self._require_configuration_path()
+            if not self._configuration_seen and not path.exists():
+                continue
+            # Fast unlocked fingerprint check avoids acquiring _configuration_lock
+            # or touching SQLite on idle ticks when files have not changed.
+            try:
+                observed = await configuration_tree_fingerprint(
+                    path,
+                    content_plugin_root=self._content_plugin_root,
+                )
+            except HarnessUiError:
+                observed = None
+            if observed is not None and observed == self._configuration_fingerprint:
+                continue
             # App-owned publication and acceptance share one critical section.
             # External editors remain last-write-wins; this only avoids racing
             # our own SQLite head selection or observing our partial setup writes.

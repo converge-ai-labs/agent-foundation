@@ -391,7 +391,7 @@ async def test_database_configures_sqlite_and_short_transactions(tmp_path: Path,
             assert (await connection.execute(text("PRAGMA journal_mode"))).scalar_one() == "wal"
             assert (await connection.execute(text("PRAGMA foreign_keys"))).scalar_one() == 1
             assert (await connection.execute(text("PRAGMA busy_timeout"))).scalar_one() == expected_timeout_ms
-            assert (await connection.execute(text("PRAGMA synchronous"))).scalar_one() == 2
+            assert (await connection.execute(text("PRAGMA synchronous"))).scalar_one() == 1
 
         now = datetime.now(UTC)
         async with transaction(database.sessions) as session:

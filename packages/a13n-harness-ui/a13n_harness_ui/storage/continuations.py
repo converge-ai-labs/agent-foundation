@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import OrderedDict
 from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
@@ -10,7 +11,7 @@ from a13n_harness import HarnessState
 from anyio import to_thread
 from pydantic import Field, RootModel, model_serializer
 
-from a13n_harness_ui.display_history import detach_display_history
+from a13n_harness_ui.display_history import _STATE_KEY, detach_display_history
 from a13n_harness_ui.errors import ObjectIntegrityError
 
 from .contracts import Continuation, ContinuationMetadata, ReferencedContinuation, StoredContinuation, StoredContract
@@ -96,11 +97,19 @@ def _check_owner(expected: str, actual: str) -> None:
         )
 
 
+_RECENT_MANIFEST_REFS: OrderedDict[ObjectRef, tuple[ObjectRef, ObjectRef | None]] = OrderedDict()
+_MAX_CACHED_MANIFESTS = 512
+
+
 async def publish_continuation(objects: ImmutableObjectStore, value: Continuation) -> ObjectRef:
     """Publish owned state and display before the manifest; selection remains the caller's CAS."""
     if not value.display_loaded:
         raise ValueError("Load display before publishing a continuation")
-    state, legacy_display = await to_thread.run_sync(detach_display_history, value.harness_state)
+    entries_raw = value.harness_state.agent_context_state.entries_json
+    if not isinstance(entries_raw, bytes) or _STATE_KEY.encode() in entries_raw or bool(value.harness_state.refs):
+        state, legacy_display = await to_thread.run_sync(detach_display_history, value.harness_state)
+    else:
+        state, legacy_display = value.harness_state, None
     archive = value.display
     if archive is None and legacy_display is not None:
         archive = DisplayArchive(tail=legacy_display)
@@ -121,11 +130,23 @@ async def publish_continuation(objects: ImmutableObjectStore, value: Continuatio
         {**_metadata(value), "checkpoint_id": checkpoint_id, "native_state": native.ref, "display": display_ref},
         extra="allow",
     )
-    return (await objects.publish_model(object_kind=ObjectKind.continuation, value=manifest)).ref
+    manifest_ref = (await objects.publish_model(object_kind=ObjectKind.continuation, value=manifest)).ref
+    _RECENT_MANIFEST_REFS[manifest_ref] = (native.ref, display_ref)
+    if len(_RECENT_MANIFEST_REFS) > _MAX_CACHED_MANIFESTS:
+        _RECENT_MANIFEST_REFS.popitem(last=False)
+    return manifest_ref
 
 
 async def remove_continuation(objects: ImmutableObjectStore, reference: ObjectRef) -> None:
     """Release a superseded checkpoint under its Thread lock, never shared prefix segments."""
+    cached = _RECENT_MANIFEST_REFS.pop(reference, None)
+    if cached is not None:
+        native_ref, display_ref = cached
+        await objects.remove(reference)
+        await objects.remove(native_ref)
+        if display_ref is not None:
+            await objects.remove(display_ref)
+        return
     stored = (await objects.read_model(reference, ContinuationPayload)).root
     await objects.remove(reference)
     if isinstance(stored, ReferencedContinuation):

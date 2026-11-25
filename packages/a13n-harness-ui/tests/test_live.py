@@ -676,3 +676,115 @@ async def test_live_hub_drops_progress_under_pressure_without_evicting_real_even
     snapshot = await hub.snapshot(root_thread_id="thread")
     assert [item.payload["delta"] for item in snapshot if item.payload is not None] == ["before", "after"]
     await hub.close()
+
+
+async def test_multi_tab_summary_and_focus_handoff_under_parallel_burst() -> None:
+    from a13n_harness_ui.display_history import DisplayPublication
+    from a13n_harness_ui.live import RootOperationNotice
+    from a13n_stream_protocol.display import DisplayFold
+    from anyio import create_task_group, fail_after
+
+    live_hub = HarnessUiLiveHub(epoch="live-burst")
+    summary_hub = HarnessUiSummaryHub(epoch="summary-burst")
+    thread_ids = tuple(f"thread-{idx}" for idx in range(8))
+
+    async with (
+        summary_hub.subscribe() as tab_one_summary,
+        summary_hub.subscribe() as tab_two_summary,
+        live_hub.subscribe(root_thread_id="thread-0") as tab_one_focus,
+    ):
+        folds = {tid: DisplayFold(f"run-{tid}", full_content=True) for tid in thread_ids}
+
+        async def burst_thread(tid: str) -> None:
+            fold = folds[tid]
+            for step in range(25):
+                delta = f"{tid}-chunk-{step} "
+                evt = _text_event(delta)
+                obs = fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "message-1", "delta": delta}])
+                await live_hub.publish(
+                    run_kind="root",
+                    root_thread_id=tid,
+                    parent_thread_id=None,
+                    thread_id=tid,
+                    run_id=f"run-{tid}",
+                    events=(evt,),
+                    display=DisplayPublication(tuple(obs), tuple(fold.items.values()), fold.export_continuation()),
+                )
+                await summary_hub.publish(kind="root_operation", root_thread_id=tid, thread_id=tid)
+
+        async with create_task_group() as tg:
+            for tid in thread_ids:
+                tg.start_soon(burst_thread, tid)
+
+        # Mid-run handoff: Tab 2 switches focus to thread-5 after 25 chunks were already emitted
+        from a13n_stream_protocol import CustomEventAssembler
+
+        async with live_hub.subscribe(root_thread_id="thread-5") as tab_two_focus:
+            bootstrap = tab_two_focus.take_root_stream()
+            assert bootstrap is not None
+            assert bootstrap.summary.run_id == "run-thread-5"
+            assembler = CustomEventAssembler()
+            assembled_items = []
+            for replay_event in bootstrap.events:
+                assembled = assembler.accept(replay_event.model_dump(mode="json", by_alias=True))
+                if assembled is not None:
+                    assembled_items.extend(assembled["value"]["items"])
+            bootstrap_text = "".join(
+                str(item.get("content", {}).get("text", "")) for item in assembled_items if isinstance(item, dict)
+            )
+            for step in range(25):
+                assert f"thread-5-chunk-{step} " in bootstrap_text
+
+            # Emit final chunks and completion notices for all 8 threads
+            for tid in thread_ids:
+                fold = folds[tid]
+                tail = f"{tid}-final"
+                obs = fold.fold([{"type": "TEXT_MESSAGE_CONTENT", "messageId": "message-1", "delta": tail}])
+                await live_hub.publish(
+                    run_kind="root",
+                    root_thread_id=tid,
+                    parent_thread_id=None,
+                    thread_id=tid,
+                    run_id=f"run-{tid}",
+                    events=(_text_event(tail),),
+                    display=DisplayPublication(tuple(obs), tuple(fold.items.values()), fold.export_continuation()),
+                )
+                await summary_hub.publish(
+                    kind="root_operation",
+                    root_thread_id=tid,
+                    thread_id=tid,
+                    notice=RootOperationNotice(
+                        receipt_id=f"receipt-{tid}",
+                        status="completed",
+                        brief=f"Done {tid}",
+                    ),
+                )
+
+            with fail_after(2):
+                tail_event = await tab_two_focus.receive()
+            assert tail_event.payload is not None and tail_event.payload["delta"] == "thread-5-final"
+
+        # Verify Tab 1 received all 26 chunks for thread-0 with zero cross-thread noise
+        tab_one_deltas = []
+        with fail_after(2):
+            for _ in range(26):
+                received = await tab_one_focus.receive()
+                assert received.root_thread_id == "thread-0"
+                assert received.payload is not None
+                tab_one_deltas.append(received.payload["delta"])
+        assert tab_one_deltas[0] == "thread-0-chunk-0 "
+        assert tab_one_deltas[-1] == "thread-0-final"
+
+        # Verify both tabs received all 208 summary events including all 8 completion notices without overflow
+        expected_total = len(thread_ids) * 26
+        for sub in (tab_one_summary, tab_two_summary):
+            notices = {}
+            with fail_after(2):
+                for _ in range(expected_total):
+                    inv = await sub.receive()
+                    if inv.notice is not None:
+                        notices[inv.root_thread_id] = inv.notice.status
+            assert notices == {tid: "completed" for tid in thread_ids}
+
+    await live_hub.close()
+    await summary_hub.close()

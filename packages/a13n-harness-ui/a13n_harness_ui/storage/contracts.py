@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self, cast
 
 from a13n_harness import DeferredToolRequests, DeferredToolResume, HarnessState, SafeFailure
 from a13n_harness.environment.models import EnvironmentState
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 from pydantic_ai.tools import DeferredToolResults
 
 from a13n_harness_ui.conversation import ConversationExcerpt
@@ -21,6 +31,8 @@ from .objects import ObjectKind, ObjectRef
 
 type Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 type ExecutionStatus = Literal["running", "succeeded", "failed", "cancelled", "lost"]
+
+_DEFERRED_REQUESTS_ADAPTER: TypeAdapter[DeferredToolRequests] = TypeAdapter(DeferredToolRequests)
 
 
 class StoredContract(BaseModel):
@@ -428,6 +440,46 @@ class StoredChildCheckpoint(StoredContract):
         if self.run_composition.object_kind is not ObjectKind.run_composition:
             raise ValueError("checkpoint must reference a Run composition")
         return self
+
+    @model_serializer(mode="plain")
+    def _serialize(self) -> dict[str, Any]:
+        state = self.harness_state
+        if (
+            type(state) is not HarnessState
+            or not isinstance(state.message_history_json, bytes)
+            or not isinstance(state.environment_states_json, bytes)
+        ):
+            state_payload = state.model_dump(mode="json")
+        else:
+            state_payload = state.model_dump(mode="json", exclude={"message_history", "environment_states"})
+            state_payload["message_history"] = json.loads(state.message_history_json)
+            state_payload["environment_states"] = json.loads(cast(bytes, state.environment_states_json))
+        payload: dict[str, Any] = {
+            **(self.model_extra or {}),
+            "schema_version": self.schema_version,
+            "harness_release": self.harness_release,
+            "execution_id": self.execution_id,
+            "child_thread_id": self.child_thread_id,
+            "child_run_id": self.child_run_id,
+            "segment_index": self.segment_index,
+            "run_composition": self.run_composition.model_dump(mode="json"),
+            "authority": None if self.authority is None else self.authority.model_dump(mode="json"),
+            "harness_state": state_payload,
+            "deferred_requests": (
+                None
+                if self.deferred_requests is None
+                else _DEFERRED_REQUESTS_ADAPTER.dump_python(self.deferred_requests, mode="json")
+            ),
+            "accepted_input": None if self.accepted_input is None else self.accepted_input.model_dump(mode="json"),
+            "display": self.display.model_dump(mode="json"),
+            "terminal": self.terminal,
+            "created_at": self.created_at.isoformat().replace("+00:00", "Z")
+            if self.created_at.utcoffset() == UTC.utcoffset(None)
+            else self.created_at.isoformat(),
+        }
+        if self.memory_cursors:
+            payload["memory_cursors"] = dict(self.memory_cursors)
+        return payload
 
 
 class ChildExecutionHead(StoredContract):
