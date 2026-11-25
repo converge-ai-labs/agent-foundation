@@ -18,7 +18,14 @@ import { modelControlRequest } from "./model-controls";
 import { useAppContextSelection } from "../mcp-apps/context-selection";
 import { AppContextPendingError } from "../mcp-apps/app-session";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame, Switch } from "a13n-ui";
+import {
+  Button,
+  ModalFrame,
+  Switch,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+} from "a13n-ui";
 import {
   Plus,
   ArrowUp,
@@ -47,6 +54,7 @@ import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { AnnotationChip } from "./annotation-chip";
 import { withReplyAnnotations } from "./reply-quote";
+import { useComposerSendShortcut } from "./send-shortcut";
 import { ComposerEditor } from "./composer-editor";
 import { CoordinatorIcon } from "./coordinator-icon";
 import { useCoordinatorMutation } from "./coordinator-settings";
@@ -428,6 +436,7 @@ export function Composer({
   renderHeader?: (modes: ReactNode) => ReactNode;
 }) {
   const { t } = useTranslation();
+  const sendShortcut = useComposerSendShortcut();
   const draft = useDraft(threadId);
   const [dictating, setDictating] = useState(false);
   const disconnected = useContext(ConnectionNoticeContext);
@@ -1470,38 +1479,49 @@ export function Composer({
               />
             )}
           </div>
-          <Button
-            ref={sendButton}
-            size="icon"
-            className={styles.sendButton}
-            aria-label={
-              stopAction
-                ? stopLabel
-                : pending
-                  ? t("Submitting")
-                  : preparing
-                    ? t("Preparing")
-                    : busy
-                      ? t("Steer")
-                      : t("Send")
-            }
-            title={
-              (stopAction ? stopNotice : undefined) ??
-              blockedReason ??
-              (stopAction
-                ? t("Stop this operation")
-                : busy
-                  ? t("Steer current operation - Enter")
-                  : t("Send message - Enter"))
-            }
-            disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
-            loading={stopAction ? stopping : pending || preparing}
-            onClick={() =>
-              stopAction ? void stop() : void submit(busy ? "steer" : "send")
-            }
-          >
-            {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
-          </Button>
+          <Tooltip disabled={stopAction || (busy ? !canSteer : !canSend)}>
+            <TooltipTrigger
+              render={
+                <Button
+                  ref={sendButton}
+                  size="icon"
+                  disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
+                  loading={stopAction ? stopping : pending || preparing}
+                />
+              }
+              className={styles.sendButton}
+              aria-label={
+                stopAction
+                  ? stopLabel
+                  : pending
+                    ? t("Submitting")
+                    : preparing
+                      ? t("Preparing")
+                      : busy
+                        ? t("Steer")
+                        : t("Send")
+              }
+              title={
+                stopAction
+                  ? (stopNotice ?? t("Stop this operation"))
+                  : blockedReason
+              }
+              onClick={() =>
+                stopAction ? void stop() : void submit(busy ? "steer" : "send")
+              }
+            >
+              {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {busy
+                ? t("Steer current operation - {{shortcut}}", {
+                    shortcut: sendShortcut.label,
+                  })
+                : t("Send message - {{shortcut}}", {
+                    shortcut: sendShortcut.label,
+                  })}
+            </TooltipPopup>
+          </Tooltip>
         </div>
       </div>
       {preview?.image && preview.url && (

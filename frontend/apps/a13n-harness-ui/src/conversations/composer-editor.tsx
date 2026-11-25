@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { X } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
+import { useComposerSendShortcut } from "./send-shortcut";
 import { useAppearance } from "../appearance/react";
 import { useTranslation } from "../i18n";
 import {
@@ -116,13 +117,20 @@ export function ComposerEditor({
   const load = useRef(loadSkills);
   load.current = loadSkills;
   const currentView = useRef<EditorView | null>(null);
-  const description = local
+  const shortcut = useComposerSendShortcut();
+  const shortcutRef = useRef(shortcut);
+  shortcutRef.current = shortcut;
+  const shortcutHint = shortcut.plainEnterSends
+    ? t("Enter to send, Shift+Enter for a new line.")
+    : t("{{shortcut}} to send, Enter for a new line.", {
+        shortcut: shortcut.label,
+      });
+  const draftDescription = local
     ? t(
-        "Private until you send. Drafts stay in this browser when storage is available. Files upload on Send; reattach them after a reload if needed. Enter to send, Shift+Enter for a new line.",
+        "Private until you send. Drafts stay in this browser when storage is available. Files upload on Send; reattach them after a reload if needed.",
       )
-    : t(
-        "Shared draft. Lost if the server restarts. Enter to send, Shift+Enter for a new line.",
-      );
+    : t("Shared draft. Lost if the server restarts.");
+  const description = `${draftDescription} ${shortcutHint}`;
   const predictionDescription = prediction
     ? t(
         "Suggested follow-up: {{text}} Press Tab to fill or Escape to dismiss.",
@@ -137,6 +145,8 @@ export function ComposerEditor({
         "aria-label": local ? t("Message") : t("Shared prompt"),
         "data-composer-editor": "",
         "aria-multiline": "true",
+        "aria-keyshortcuts": shortcut.ariaKeyShortcuts,
+        enterkeyhint: shortcut.plainEnterSends ? "send" : "enter",
         "aria-description":
           !state.doc.length && predictionDescription
             ? `${predictionDescription} ${description}`
@@ -144,7 +154,14 @@ export function ComposerEditor({
         role: "textbox",
       })),
     ],
-    [description, local, predictionDescription, t],
+    [
+      description,
+      local,
+      predictionDescription,
+      shortcut.ariaKeyShortcuts,
+      shortcut.plainEnterSends,
+      t,
+    ],
   );
   const currentAttributes = useRef(contentAttributes);
   currentAttributes.current = contentAttributes;
@@ -238,7 +255,36 @@ export function ComposerEditor({
         drawSelection(),
         EditorView.domEventHandlers({
           focus: activate,
-          keydown: activate,
+          keydown: (event, view) => {
+            activate();
+            if (
+              event.key !== "Enter" ||
+              event.isComposing ||
+              event.keyCode === 229 ||
+              view.compositionStarted ||
+              event.shiftKey ||
+              event.altKey
+            )
+              return false;
+
+            const { command, plainEnterSends, touch } = shortcutRef.current;
+            const plain = !event.metaKey && !event.ctrlKey;
+            if (plain) {
+              if (touch) return insertNewline(view);
+              // Let the Skill picker handle Enter while it shows candidates.
+              if (currentCompletions(view.state).length) return false;
+              if (!plainEnterSends) return insertNewline(view);
+            } else if (
+              !(command
+                ? event.metaKey && !event.ctrlKey
+                : event.ctrlKey && !event.metaKey)
+            ) {
+              return false;
+            }
+            if (!(predictionRef.current && !view.state.doc.length))
+              send.current();
+            return true;
+          },
           pointerdown: activate,
           input: activate,
           blur: clearCursor,
@@ -264,23 +310,6 @@ export function ComposerEditor({
         skills.current.of([]),
         placeholderSlot.current.of([]),
         keymap.of([
-          ...["Enter", "Mod-Enter"].map((key) => ({
-            key,
-            run: (editor: EditorView) => {
-              // Only visible candidates may consume Enter instead of sending.
-              if (
-                key === "Enter" &&
-                currentCompletions(editor.state).length > 0
-              )
-                return true;
-              if (
-                !editor.compositionStarted &&
-                !(predictionRef.current && !editor.state.doc.length)
-              )
-                send.current();
-              return true;
-            },
-          })),
           { key: "Tab", run: (view) => acceptRef.current?.(view) ?? false },
           {
             key: "Escape",

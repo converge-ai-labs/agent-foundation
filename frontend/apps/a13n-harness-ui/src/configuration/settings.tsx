@@ -1,6 +1,7 @@
 import { AppearanceSettings } from "./appearance";
 import type { RootSettingsGroup } from "./fields";
 import { ConnectorsSection } from "../connectors/connections";
+import { SendShortcutChoice } from "../conversations/send-shortcut";
 import { LanguageChoice } from "../i18n/language";
 import { WebProvidersSection } from "./web-provider-list";
 import { useTranslation } from "../i18n";
@@ -79,6 +80,9 @@ export function PreferencesPage() {
       <PageHeader title={t("Preferences")} />
       <SettingsSection title={t("Language")}>
         <LanguageChoice settingsRow />
+      </SettingsSection>
+      <SettingsSection title={t("Chat input")}>
+        <SendShortcutChoice />
       </SettingsSection>
       <section id="appearance">
         <AppearanceSettings />

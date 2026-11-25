@@ -8,7 +8,9 @@ import {
   waitFor,
   act,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import * as Y from "yjs";
+import { SendShortcutChoice, SendShortcutProvider } from "./send-shortcut";
 import { ComposerEditor } from "./composer-editor";
 import { ThreadDraft, encode, values } from "./draft";
 import type { EditorView } from "@codemirror/view";
@@ -36,6 +38,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  localStorage.clear();
 });
 it("mounts the actual CodeMirror binding and retains remote updates without replacing the editor", async () => {
   const draft = new ThreadDraft();
@@ -63,27 +67,133 @@ it("mounts the actual CodeMirror binding and retains remote updates without repl
   fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
   expect(submit).toHaveBeenCalledTimes(2);
 });
-it("does not submit Enter while an IME is composing", () => {
+it("updates the mounted editor and restores the shortcut from browser storage", async () => {
+  const draft = new ThreadDraft();
+  const submit = vi.fn();
+  const surface = (
+    <SendShortcutProvider>
+      <SendShortcutChoice />
+      <ComposerEditor
+        draft={draft}
+        profile={{ display_name: "Alice", color: "#2563eb" }}
+        presence={() => {}}
+        submit={submit}
+      />
+    </SendShortcutProvider>
+  );
+  const { unmount } = render(surface);
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Enter Control+Enter");
+  const choice = screen.getByRole("combobox", { name: "Send messages with" });
+  expect(choice.textContent).toContain("Enter (default)");
+  await userEvent.click(choice);
+  await userEvent.click(
+    await screen.findByRole("option", { name: "Ctrl + Enter" }),
+  );
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(textbox);
+  expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Control+Enter");
+  expect(textbox.getAttribute("aria-description")).toContain(
+    "Ctrl + Enter to send, Enter for a new line.",
+  );
+  fireEvent.keyDown(textbox, { key: "Enter" });
+  fireEvent.keyDown(textbox, { key: "Enter", shiftKey: true });
+  expect(draft.doc.getText("text").toString()).toBe("\n\n");
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
+  expect(submit).toHaveBeenCalledOnce();
+  unmount();
+  render(surface);
+  expect(
+    screen.getByRole("combobox", { name: "Send messages with" }).textContent,
+  ).toContain("Ctrl + Enter");
+});
+
+it.each(["enter", "mod-enter"])(
+  "does not send while an IME is composing in %s mode",
+  (preference) => {
+    localStorage.setItem("a13n-harness-ui.send-shortcut", preference);
+    const submit = vi.fn();
+    render(
+      <SendShortcutProvider>
+        <ComposerEditor
+          draft={new ThreadDraft()}
+          profile={{ display_name: "Alice", color: "#2563eb" }}
+          presence={() => {}}
+          submit={submit}
+        />
+      </SendShortcutProvider>,
+    );
+    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+    fireEvent.keyDown(textbox, {
+      key: "Enter",
+      isComposing: true,
+      ctrlKey: preference === "mod-enter",
+    });
+    fireEvent.compositionStart(textbox);
+    fireEvent.keyDown(textbox, {
+      key: "Enter",
+      ctrlKey: preference === "mod-enter",
+    });
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.compositionEnd(textbox);
+  },
+);
+
+it.each(["enter", "mod-enter"])(
+  "inserts a new line on a coarse pointer in %s mode",
+  (preference) => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(pointer: coarse)",
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    localStorage.setItem("a13n-harness-ui.send-shortcut", preference);
+    const draft = new ThreadDraft();
+    const submit = vi.fn();
+    render(
+      <SendShortcutProvider>
+        <ComposerEditor
+          draft={draft}
+          profile={{ display_name: "Alice", color: "#2563eb" }}
+          presence={() => {}}
+          submit={submit}
+        />
+      </SendShortcutProvider>,
+    );
+    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+    expect(textbox.getAttribute("enterkeyhint")).toBe("enter");
+    expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Control+Enter");
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    expect(draft.doc.getText("text").toString()).toBe("\n");
+    expect(submit).not.toHaveBeenCalled();
+  },
+);
+
+it("uses the command key and Meta accessibility metadata on Apple platforms", () => {
+  vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
+  localStorage.setItem("a13n-harness-ui.send-shortcut", "mod-enter");
   const submit = vi.fn();
   render(
-    <ComposerEditor
-      draft={new ThreadDraft()}
-      profile={{ display_name: "Alice", color: "#2563eb" }}
-      presence={() => {}}
-      submit={submit}
-    />,
+    <SendShortcutProvider>
+      <ComposerEditor
+        draft={new ThreadDraft()}
+        profile={{ display_name: "Alice", color: "#2563eb" }}
+        presence={() => {}}
+        submit={submit}
+      />
+    </SendShortcutProvider>,
   );
   const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
-  fireEvent.compositionStart(textbox);
-  fireEvent.keyDown(textbox, { key: "Enter", isComposing: true, keyCode: 229 });
-  fireEvent.keyDown(textbox, {
-    key: "Enter",
-    ctrlKey: true,
-    isComposing: true,
-  });
+  expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Meta+Enter");
+  expect(textbox.getAttribute("aria-description")).toContain(
+    "⌘ + Enter to send",
+  );
+  fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
   expect(submit).not.toHaveBeenCalled();
-  fireEvent.compositionEnd(textbox);
+  fireEvent.keyDown(textbox, { key: "Enter", metaKey: true });
+  expect(submit).toHaveBeenCalledOnce();
 });
+
 it.each(["", "Shared"])(
   "renders relative collaborator positions in %j without changing authored text",
   async (text) => {
