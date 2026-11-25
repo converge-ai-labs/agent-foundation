@@ -349,6 +349,8 @@ Provider file arguments remain provider-local after routing. Paths returned by s
 
 Tool results use bounded disclosures and stable model-safe errors. An absolute path outside every available mount returns `environment_selection_invalid` with an actionable routing diagnostic: the path was not checked for existence, and relocating files or worktrees is not a routing remedy. Any Shell alternative remains subject to the selected Environment's authority and the user's task. A failed file lookup within a selected mount returns `environment_not_found` with path-verification guidance, rather than implying an unavailable route or global Host absence. Structured safe hints are preserved without exposing raw provider exceptions. Internal mount identity, generation, state, and receipts are not model-editable arguments.
 
+[Skills over MCP](09-context-and-memory.md#skills-over-mcp) use a Run-scoped reader outside Environment file routing. Their URIs are not Environment paths or mount selectors, and reading them requires no writable workspace.
+
 ## Shell Executions and Observations
 
 `DynamicEnvironmentCapability` composes the standard Shell Toolset over the current entered `BoundEnvironment`. Foreground-only execution returns a bounded inline/observed command result without requiring standalone output permissions. The Provider owns internal capture materialization and cleanup. Background observation requires start, inspect, wait, read-output and release, not stdin, all signals, native discovery or standalone output resources.
