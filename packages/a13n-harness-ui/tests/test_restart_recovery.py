@@ -1329,3 +1329,99 @@ async def test_cancelled_follower_during_inflight_publish_rolls_back_its_boundar
 
     assert {item.thread_id for item in published_batches[-1].items} == {"t0", "t1"}
     assert "t2" not in coordinator._candidates
+    assert coordinator.active["t2"].boundary is None
+
+
+async def test_cancelled_follower_does_not_undo_later_same_thread_invalidation_or_boundary() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_harness_ui.restart import GracefulRestart
+    from a13n_harness_ui.restart_models import RestartBatch, RestartItem
+    from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
+    from a13n_harness_ui.storage.restarts import RestartRepository
+
+    def make_ref(ch: str) -> ObjectRef:
+        return ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest=ch * 64)
+
+    def make_item(tid: str, ch: str) -> RestartItem:
+        ref = make_ref(ch)
+        return RestartItem(
+            thread_id=tid,
+            root_thread_id=tid,
+            run_id=f"run-{tid}-{ch}",
+            cause="process_loss",
+            composition=ref,
+            checkpoint=ref,
+        )
+
+    # Scenario 1: Thread "t1" already has candidate P; batch contains
+    # [leader t0 boundary, cancelled t1 boundary(A), non-cancelled t1 invalidate(suppress=True)].
+    # Reconciling must NOT resurrect P after Stop withdrew t1.
+    published: list[RestartBatch] = []
+    gate_entered, gate_release = Event(), Event()
+    arm_gate = False
+
+    async def gated_publish(batch: RestartBatch) -> None:
+        if arm_gate:
+            gate_entered.set()
+            await gate_release.wait()
+        published.append(batch)
+
+    repository = Mock(spec=RestartRepository)
+    repository.get = AsyncMock(return_value=None)
+    repository.publish = AsyncMock(side_effect=gated_publish)
+    coordinator = GracefulRestart(repository, enabled=True)
+    coordinator.register("t0")
+    coordinator.register("t1")
+    coordinator.register("t2")
+
+    await coordinator.boundary(make_item("t1", "1"))
+    await coordinator.boundary(make_item("t2", "1"))
+    assert {item.thread_id for item in published[-1].items} == {"t1", "t2"}
+
+    # Hold _candidate_lock with a dummy write so the next batch coalesces.
+    arm_gate = True
+    blocker_task = asyncio.create_task(coordinator.boundary(make_item("t0", "1")))
+    with fail_after(2):
+        await gate_entered.wait()
+
+    gate_entered = Event()
+    gate_release_second = Event()
+
+    async def second_gated_publish(batch: RestartBatch) -> None:
+        gate_entered.set()
+        await gate_release_second.wait()
+        published.append(batch)
+
+    repository.publish.side_effect = second_gated_publish
+
+    leader_task = asyncio.create_task(coordinator.boundary(make_item("t0", "2")))
+    cancelled_a_on_t1 = asyncio.create_task(coordinator.boundary(make_item("t1", "2")))
+    stop_t1 = asyncio.create_task(coordinator.invalidate("t1", suppress=True))
+    cancelled_a_on_t2 = asyncio.create_task(coordinator.boundary(make_item("t2", "2")))
+    newer_b_on_t2 = asyncio.create_task(coordinator.boundary(make_item("t2", "3")))
+    await asyncio.sleep(0)
+
+    # Release first publish so leader_task starts publishing the coalesced batch.
+    gate_release.set()
+    await blocker_task
+    with fail_after(2):
+        await gate_entered.wait()
+
+    # Cancel both intermediate boundary(A) followers while leader_task is mid-publish.
+    cancelled_a_on_t1.cancel()
+    cancelled_a_on_t2.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_a_on_t1
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_a_on_t2
+
+    gate_release_second.set()
+    with fail_after(2):
+        await asyncio.gather(leader_task, stop_t1, newer_b_on_t2)
+
+    final_by_tid = {item.thread_id: item.run_id for item in published[-1].items}
+    assert "t1" not in final_by_tid
+    assert "t1" not in coordinator._candidates
+    assert final_by_tid == {"t0": "run-t0-2", "t2": "run-t2-3"}

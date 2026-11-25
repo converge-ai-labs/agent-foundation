@@ -238,7 +238,7 @@ class RootRunExecutor:
             tuple[Thread, ObjectRef, HarnessState, Continuation, str, str, Sequence[ModelMessage] | None],
         ] = {}
         self._inspection_tasks: dict[str, asyncio.Task[None]] = {}
-        self._unindexed_base_sources: dict[str, str] = {}
+        self._last_indexed_sources: dict[str, str] = {}
 
     def replace_subscription_sources(self, sources: Mapping[str, SubscriptionSource]) -> None:
         """Apply account rediscovery to future Runs; existing resolvers retain their sources."""
@@ -1069,7 +1069,7 @@ class RootRunExecutor:
                     await self._drain_inspection(thread.thread_id)
                 finally:
                     self._pending_inspections.pop(thread.thread_id, None)
-                    self._unindexed_base_sources.pop(thread.thread_id, None)
+                    self._last_indexed_sources.pop(thread.thread_id, None)
                 if continuation.error is not None:
                     get_logger(__name__).error(
                         "Root continuation save failed: thread_id=%s exception_type=%s",
@@ -1312,7 +1312,7 @@ class RootRunExecutor:
             if thread.continuation is not None
             else f"initial:{thread.initial_state.logical_digest}"
         )
-        expected_source = self._unindexed_base_sources.setdefault(thread.thread_id, step_expected_source)
+        self._last_indexed_sources.setdefault(thread.thread_id, step_expected_source)
         # Disposable derived indexes cannot change a successfully selected
         # execution checkpoint. Offload request-boundary indexing so model calls
         # start immediately; terminal settlement drains and publishes synchronously.
@@ -1324,7 +1324,7 @@ class RootRunExecutor:
                 state,
                 continuation,
                 published_ref.logical_digest,
-                expected_source,
+                step_expected_source,
                 messages,
             )
             return RootContinuationSelection(status="selected", reference=published_ref)
@@ -1335,10 +1335,10 @@ class RootRunExecutor:
             selected,
             continuation,
             published_ref.logical_digest,
-            self._unindexed_base_sources.get(thread.thread_id, step_expected_source),
+            self._last_indexed_sources.get(thread.thread_id, step_expected_source),
             messages,
         )
-        self._unindexed_base_sources.pop(thread.thread_id, None)
+        self._last_indexed_sources.pop(thread.thread_id, None)
         return RootContinuationSelection(status="selected", reference=published_ref)
 
     def _schedule_inspection(
@@ -1371,14 +1371,14 @@ class RootRunExecutor:
     async def _run_pending_inspections(self, thread_id: str) -> None:
         try:
             while (item := self._pending_inspections.pop(thread_id, None)) is not None:
-                selected, published_ref, state, continuation, source_id, expected_source, messages = item
+                selected, published_ref, state, continuation, source_id, fallback_expected, messages = item
                 await self._store.publish_work(thread_id, published_ref, state)
                 await self._publish_inspection(
                     thread_id,
                     selected,
                     continuation,
                     source_id,
-                    expected_source,
+                    self._last_indexed_sources.get(thread_id, fallback_expected),
                     messages,
                 )
         finally:
@@ -1416,7 +1416,7 @@ class RootRunExecutor:
                 expected_source=expected_source,
             )
             if indexed:
-                self._unindexed_base_sources.pop(thread_id, None)
+                self._last_indexed_sources[thread_id] = source_id
             else:
                 get_logger(__name__).info("Transcript index update skipped", extra={"thread_id": thread_id})
         except Exception as exc:
