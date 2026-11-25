@@ -6909,12 +6909,22 @@ export interface components {
              */
             server_name?: string | null;
             /**
+             * View Id
+             * @default null
+             */
+            view_id?: string | null;
+            /**
              * Mode
              * @enum {string}
              */
             mode: "form" | "url" | "question";
             /** Message */
             message: string;
+            /**
+             * Questions
+             * @default []
+             */
+            questions?: components["schemas"]["UserQuestion"][];
             /**
              * Schema
              * @default null
@@ -6933,21 +6943,6 @@ export interface components {
              */
             url_host?: string | null;
             /**
-             * Expires At
-             * Format: date-time
-             */
-            expires_at: string;
-            /**
-             * View Id
-             * @default null
-             */
-            view_id?: string | null;
-            /**
-             * Questions
-             * @default []
-             */
-            questions?: components["schemas"]["UserQuestion"][];
-            /**
              * Private Form
              * @default false
              */
@@ -6958,6 +6953,11 @@ export interface components {
              * @enum {string}
              */
             state?: "pending" | "accepted" | "declined" | "cancelled" | "expired" | "unavailable";
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
         };
         /** McpIntegrationView */
         McpIntegrationView: {

@@ -403,6 +403,7 @@ class ThreadService:
                         prompted=False,
                         commands=prior_acp.commands,
                         options=prior_acp.options,
+                        explicit_options=prior_acp.explicit_options,
                     )
         now = datetime.now(UTC)
         copied: Thread | None = None

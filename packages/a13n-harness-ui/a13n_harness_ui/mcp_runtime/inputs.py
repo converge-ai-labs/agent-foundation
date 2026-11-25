@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, Self
 from uuid import uuid4
 
 from a13n_harness.mcp_inputs import McpInputResponse as McpInputResponse
@@ -15,7 +15,7 @@ from a13n_harness.toolsets.interaction import AskUserQuestionRequest, UserQuesti
 from a13n_stream_protocol.interactions import McpElicitation
 from fastmcp.client.elicitation import ElicitResult
 from mcp.types import ElicitRequestFormParams, ElicitRequestParams
-from pydantic import BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
 from a13n_harness_ui.errors import HarnessUiError
 
@@ -26,12 +26,64 @@ class InputModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-class McpInputRequestView(McpElicitation):
+class McpInputRequestView(BaseModel):
+    model_config = ConfigDict(frozen=True, populate_by_name=True)
+
+    kind: Literal["mcp_elicitation"] = "mcp_elicitation"
+    request_id: str
+    thread_id: str
+    run_id: str | None = None
+    tool_call_id: str | None = None
+    server_id: str
+    server_name: str | None = None
     view_id: str | None = None
     mode: Literal["form", "url", "question"]
+    message: str
     questions: tuple[UserQuestion, ...] = ()
+    schema_: dict[str, JsonValue] | None = Field(default=None, alias="schema")
+    url: str | None = None
+    url_host: str | None = None
     private_form: bool = False
     state: Literal["pending", "accepted", "declined", "cancelled", "expired", "unavailable"] = "pending"
+    expires_at: AwareDatetime
+
+    @classmethod
+    def project(
+        cls,
+        request: McpTaskInputRequest,
+        *,
+        request_id: str,
+        thread_id: str,
+        run_id: str | None,
+        tool_call_id: str | None,
+        server_id: str,
+        server_name: str | None = None,
+        expires_at: AwareDatetime,
+    ) -> Self:
+        projected = McpElicitation.project(
+            request,
+            request_id=request_id,
+            thread_id=thread_id,
+            run_id=run_id,
+            tool_call_id=tool_call_id,
+            server_id=server_id,
+            server_name=server_name,
+            expires_at=expires_at,
+        )
+        return cls(
+            request_id=projected.request_id,
+            thread_id=projected.thread_id,
+            run_id=projected.run_id,
+            tool_call_id=projected.tool_call_id,
+            server_id=projected.server_id,
+            server_name=projected.server_name,
+            mode=projected.mode,
+            message=projected.message,
+            schema=projected.schema_,
+            url=projected.url,
+            url_host=projected.url_host,
+            expires_at=projected.expires_at,
+        )
 
 
 class McpIntegrationView(InputModel):
@@ -180,7 +232,7 @@ class Inputs:
                     content = validate_user_question_result({"questions": questions}, response.content)
                 except ValueError as exc:
                     raise ValueError("Input does not answer the pending questions.") from exc
-                return McpInputResponse(action="accept", content=content)
+                return McpInputResponse.model_validate({"action": "accept", "content": content})
 
             validator: Callable[[McpInputResponse], McpInputResponse] = validate_question
         else:
