@@ -33,21 +33,20 @@ export function MarkdownDiagram({
   const [showSource, setShowSource] = useState(false);
   const [result, setResult] = useState<{
     source: string;
-    src: string | null;
+    preview: Awaited<ReturnType<typeof renderDiagram>>;
   }>();
   useEffect(() => {
     let live = true;
-    void renderDiagram(source, dark).then(
-      (src) => live && setResult({ source, src }),
-      () => live && setResult({ source, src: null }),
-    );
+    void renderDiagram(source, dark).then((preview) => {
+      if (live) setResult({ source, preview });
+    });
     return () => {
       live = false;
     };
   }, [source, dark]);
 
   // Preserve the old theme's image while recoloring, never an earlier source.
-  const current = result?.source === source ? result : undefined;
+  const current = result?.source === source ? result.preview : undefined;
   const src = current?.src;
   const label = t("Mermaid diagram");
   const sourceLabel = t("Diagram source");
@@ -83,11 +82,7 @@ export function MarkdownDiagram({
           )
         ) : (
           <p className={styles.diagramStatus} role="status">
-            {current
-              ? t(
-                  "Diagram preview unavailable. The original source is shown below.",
-                )
-              : t("Rendering diagram…")}
+            {current?.reason ? t(current.reason) : t("Rendering diagram…")}
           </p>
         )
       }

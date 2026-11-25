@@ -84,14 +84,14 @@ async def test_webui_enables_only_a_distinct_sandbox_and_keeps_api_auth(tmp_path
             response = await client.get("/")
             assert response.status_code == 200
             policy = response.headers["content-security-policy"]
-            assert "frame-src http://127.0.0.1:" in policy
+            assert "frame-src 'self' http://127.0.0.1:" in policy
             assert (await client.post("/api/threads/other/apps/open", json={})).status_code == 401
             # An opaque App cannot use the authenticated Host API, even knowing its key.
             response = await client.post(
                 "/api/threads/other/apps/open", json={}, headers={"Origin": "null", "Authorization": "Bearer test-key"}
             )
             assert response.status_code == 403
-            sandbox = policy.split("frame-src ")[1]
+            sandbox = policy.split("frame-src 'self' ")[1]
             async with httpx.AsyncClient(trust_env=False) as direct:
                 response = await direct.get(f"{sandbox}/api/status")
                 assert response.status_code == 404
@@ -142,7 +142,7 @@ async def test_sandbox_bind_failure_preserves_webui_and_reports_text_fallback(tm
             ) as client:
                 page = await client.get("/")
                 assert page.status_code == 200
-                assert "frame-src 'none'" in page.headers["content-security-policy"]
+                assert "frame-src 'self'" in page.headers["content-security-policy"]
                 response = await client.post("/api/threads/other/apps/open", json={})
                 assert response.status_code == 400
                 assert "mcp_apps_sandbox_unavailable" in response.text
