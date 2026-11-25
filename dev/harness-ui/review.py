@@ -29,6 +29,7 @@ from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.surfaces import NewThreadDefaults, SkillReference
 from a13n_harness_ui.webui import create_webui
+from anyio import sleep_forever
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
@@ -404,8 +405,12 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
                 )
             }
             return
-        if not any(part.tool_name == "review_pause" for part in returns):
-            yield "Checking the checkout edge cases and collecting the results.\n\n"
+        if any(part.tool_name == "review_pause" for part in returns):
+            # Keep the specialist running without starting another tool/model cycle.
+            yield "Waiting for the remaining checkout checks."
+            await sleep_forever()
+            return
+        yield "Checking the checkout edge cases and collecting the results.\n\n"
         yield {0: DeltaToolCall(name="review_pause", json_args="{}")}
         return
     if authored and authored[-1] == "Summarize the background review handoff.":

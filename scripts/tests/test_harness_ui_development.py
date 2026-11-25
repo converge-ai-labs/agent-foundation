@@ -12,6 +12,8 @@ from pathlib import Path
 import pytest
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.settings_loader import load_harness_ui_settings
+from anyio import move_on_after
+from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 
 launcher = importlib.import_module("dev.harness-ui.cli")
 cli_module = importlib.import_module("a13n_harness_ui.cli")
@@ -78,6 +80,20 @@ async def test_design_review_configuration_disables_host_browser(tmp_path: Path)
     loaded = await load_harness_ui_settings(configuration)
     assert loaded.candidate_error is None
     assert loaded.configuration.document.browser.mode == "disabled"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("role", ["running-message", "running-steer"])
+async def test_design_review_specialist_stays_running_after_pause(role: str) -> None:
+    review = importlib.import_module("dev.harness-ui.review")
+    messages = [
+        ModelRequest(parts=[UserPromptPart(f"Fixture role: {role}.")]),
+        ModelRequest(parts=[ToolReturnPart("review_pause", "Next batch ready.")]),
+    ]
+    with move_on_after(0.05) as wait:
+        async for chunk in review.model(messages, None):
+            assert isinstance(chunk, str), "An idle specialist must not request another tool call"
+    assert wait.cancelled_caught
 
 
 @pytest.mark.anyio
