@@ -1078,6 +1078,45 @@ async def test_late_spoken_recall_is_silent_at_the_next_turn_boundary() -> None:
         await observer
 
 
+async def test_live_recall_deduplicates_across_turns_and_spends_one_byte_budget() -> None:
+    store = FakeRecordStore(["A" * 120])
+    agent = HarnessBuilder().build(
+        AgentDefinition(
+            output_type=str,
+            agent=AgentSpec(),
+            capabilities=(RecordMemoryCapability([RecordMount("facts", store, "read", recall=True)]),),
+        )
+    )
+    model = _Model()
+    async with asyncio.timeout(5), agent.live(model=model, memory_context_bytes=1024) as live:
+        consumer = asyncio.create_task(_collect(live))
+        for letter in ("A", "B", "A"):
+            store.records["r1"] = letter * 120
+            await live.recall("Recall the record.")
+        delivered = [model.connection.sent.get_nowait(), model.connection.sent.get_nowait()]
+        assert all(isinstance(frame, TextContext) for frame in delivered)
+        assert "A" * 120 in delivered[0].text and "B" * 120 in delivered[1].text
+        assert model.connection.sent.empty()
+        spent = sum(len(frame.text.encode()) for frame in delivered)
+        store.records["r1"] = "音" * 180
+        await live.recall("Recall the record.")
+        assert model.connection.sent.empty()
+        await live.close()
+        await consumer
+
+    # A fresh call can fit the same UTF-8 result within its own budget.
+    model = _Model()
+    async with asyncio.timeout(5), agent.live(model=model, memory_context_bytes=1024) as live:
+        consumer = asyncio.create_task(_collect(live))
+        await asyncio.gather(live.recall("Recall the record."), live.recall("Recall the record."))
+        frame = model.connection.sent.get_nowait()
+        assert isinstance(frame, TextContext) and "音" * 180 in frame.text
+        assert len(frame.text.encode()) <= 1024 < spent + len(frame.text.encode())
+        assert model.connection.sent.empty()
+        await live.close()
+        await consumer
+
+
 @pytest.mark.parametrize("approved", [False, True])
 async def test_realtime_waits_for_host_decision_before_an_approved_tool(approved: bool) -> None:
     pending, answer = asyncio.Event(), asyncio.Event()

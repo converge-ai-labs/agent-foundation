@@ -96,6 +96,8 @@ class _LiveCapability(AbstractCapability[AgentContext]):
     def __init__(self, stream: HarnessLiveStream) -> None:
         self.stream = stream
         self.spoken: dict[asyncio.Task[ModelContextProjection], tuple[int, str]] = {}
+        self.recall_bytes_sent = 0
+        self.recall_lock = asyncio.Lock()
         self.turn = 0
         self.initial = ModelContextProjection()
         self._initial_instructions: str | None = None
@@ -206,47 +208,40 @@ class _LiveCapability(AbstractCapability[AgentContext]):
             self.spoken[asyncio.create_task(self.retrieve(query))] = self.turn, query
 
     async def flush_recall(self) -> None:
-        remaining = self.stream._memory_context_bytes
-        for task, (turn, query) in tuple(self.spoken.items()):
-            if task.done():
-                del self.spoken[task]
-                remaining -= await self.inject(task.result(), remaining, turn=turn, query=query)
+        for task in tuple(self.spoken):
+            if task.done() and (origin := self.spoken.pop(task, None)) is not None:
+                turn, query = origin
+                await self.inject(task.result(), turn=turn, query=query)
 
-    async def inject(
-        self, projection: ModelContextProjection, budget: int, *, turn: int | None = None, query: str = ""
-    ) -> int:
-        blocks = []
-        used = 0
-        known = {(block.memory_mount, block.content_hash) for block in self.delivered.blocks}
-        for block in projection.blocks:
-            identity = (block.memory_mount, block.content_hash)
-            if block.memory_mount is None or identity in known:
-                continue
-            text = (
-                block.content
-                if turn is None
-                else json.dumps(
-                    {
-                        "trust": "untrusted",
-                        "mount": block.memory_mount,
-                        "query": query,
-                        "turn": turn,
-                        "content": block.content,
-                    },
-                    ensure_ascii=False,
+    async def inject(self, projection: ModelContextProjection, *, turn: int | None = None, query: str = "") -> None:
+        # Typed input and a completed spoken turn can reach delivery concurrently.
+        async with self.recall_lock:
+            confirmed = []
+            for block in projection.blocks:
+                if block.memory_mount is None or self.history.contains(block):
+                    continue
+                text = (
+                    block.content
+                    if turn is None
+                    else json.dumps(
+                        {
+                            "trust": "untrusted",
+                            "mount": block.memory_mount,
+                            "query": query,
+                            "turn": turn,
+                            "content": block.content,
+                        },
+                        ensure_ascii=False,
+                    )
                 )
-            )
-            size = len(text.encode())
-            if used + size > budget:
-                continue
-            await self.stream._send_context(text)
-            blocks.append(block)
-            known.add(identity)
-            used += size
-        projection._confirm(tuple(blocks))
-        latest = {(block.source_id, block.key): block for block in (*self.delivered.blocks, *blocks)}
-        self.delivered = ModelContextProjection(tuple(latest.values()))
-        return used
+                size = len(text.encode())
+                if self.recall_bytes_sent + size > self.stream._memory_context_bytes:
+                    continue
+                await self.stream._send_context(text)
+                self.recall_bytes_sent += size
+                self.delivered = ModelContextProjection((*self.delivered.blocks, block))
+                confirmed.append(block)
+            projection._confirm(tuple(confirmed))
 
     async def wrap_tool_execute(
         self,
@@ -427,7 +422,7 @@ class HarnessLiveStream(HarnessRunStream[None]):
     async def recall(self, text: str) -> None:
         if self._bridge is not None:
             await self._bridge.flush_recall()
-            await self._bridge.inject(await self._bridge.retrieve(text), self._memory_context_bytes)
+            await self._bridge.inject(await self._bridge.retrieve(text))
 
     async def _send_context(self, text: str) -> None:
         session = self._active_session()
