@@ -454,7 +454,7 @@ async def test_publish_asset_attributes_the_run_and_bounds_the_file(
     runtime, tenant = service.runtime, service.tenant
     await runs_kit.pause_sweeps(service)
     agent = await runs_kit.create_agent(service, scripted_model)
-    await runs_kit.start_thread(service, agent, "publish a report")
+    submitted = await runs_kit.start_thread(service, agent, "publish a report")
     (lease,) = await claim(runtime, worker_id="asset-test", worker_build="test", limit=1)
     workspace = tmp_path / ENVIRONMENT
     workspace.mkdir()
@@ -506,6 +506,14 @@ async def test_publish_asset_attributes_the_run_and_bounds_the_file(
         actor.id,
     )
     assert asset.source == {"run_id": lease.run_id, "run_attempt_id": lease.attempt_id, "tool_call_id": "call_publish"}
+    listed = await service.client.get(f"{service.api}/assets", params={"source_kind": "agent_run"})
+    assert listed.status_code == 200, listed.text
+    (item,) = listed.json()["items"]
+    assert (item["id"], item["thread_id"], item["session_id"]) == (
+        asset.id,
+        submitted["thread"]["id"],
+        submitted["thread"]["session_id"],
+    )
     assert (await read_asset_content(runtime.storage, runtime.objects, actor, tenant.workspace_id, asset.id))[1] == (
         b"the report"
     )

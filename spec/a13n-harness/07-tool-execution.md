@@ -268,7 +268,13 @@ Every locally executable function or unapproved tool has one trusted `ToolIdenti
 
 Managed tools retain `HarnessToolMetadata.tool_id`. Other tools use `tool/<source-id>/<original-name>` or `mcp/<source-id>/<original-name>`, with each source/name segment percent-encoded. MCP sources require an explicit stable source ID; ordinary sources without an ID use `native`. Native prefix/rename wrappers preserve identity. Hosts apply `ToolIdentityToolset` before custom presentation wrappers that cannot preserve original identity themselves. Explicit identity metadata is trusted code, not model input; duplicate effective identities fail preparation rather than selecting an arbitrary tool.
 
-`ToolPermissionsCapability` selects a frozen `ToolPermissions(default="inherit", rules={})`. Rules match exact IDs first, then the longest namespace prefix ending in `.*` or `/*`, then `*`, then `default`. `inherit` resolves the tool's declared default; it is not an execution decision. All tools default to `allow`, without review; external and provider-native tools retain separate authority boundaries. A trusted explicit tool default or permission rule can opt a locally executable tool into `review`. Installing a reviewer or defining risk rules alone never enables review. Effective modes are:
+`ToolPermissionsCapability` selects a frozen `ToolPermissions(default="inherit", rules={})`. Rules match exact IDs first, then the longest namespace prefix ending in `.*` or `/*`, then `*`, then `default`. `inherit` resolves the tool's declared default; it is not an execution decision. All tools default to `allow`, without review; external and provider-native tools retain separate authority boundaries. A trusted explicit tool default or permission rule can opt a locally executable tool into `review`. Installing a reviewer or defining risk rules alone never enables review.
+
+`ToolPermissions.respect_mcp_annotations` defaults to `false`. When enabled and both the selected setting and policy default are `inherit`, an MCP tool with `readOnlyHint: true` resolves to `allow`; otherwise `destructiveHint: true` resolves to `ask`. Use explicit boolean hints from the tool definition; missing or other hints fall back to the tool's declared default. The trusted MCP identity scopes this interpretation. Server hints cannot override a matching concrete rule or non-inherited policy default. An explicit `inherit` rule under a concrete default continues to use the tool's declared default.
+
+MCP approvals include the annotation risk (`low` for explicitly read-only, `high` for explicitly destructive and not read-only) independently of the permission opt-in. A completed tool review supplies its own risk assessment.
+
+Effective modes are:
 
 | Mode     | Behavior                                                                                 |
 | -------- | ---------------------------------------------------------------------------------------- |

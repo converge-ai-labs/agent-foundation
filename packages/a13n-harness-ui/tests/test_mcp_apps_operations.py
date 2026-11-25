@@ -113,10 +113,15 @@ async def apps(tmp_path: Path, request: pytest.FixtureRequest, app_transport):
             await connections.close()
 
 
-async def _policy(operations: AppOperations, mode: str, *, tools=None, review=None) -> None:
+async def _policy(
+    operations: AppOperations, mode: str, *, tools=None, review=None, respect_mcp_annotations=False
+) -> None:
     path = operations.configuration_root / "agents/assistant.yaml"
     agent = yaml.safe_load(path.read_text())
-    permissions = {"rules": {"mcp/mcp-docs/counter": mode, "mcp/mcp-docs/reset": mode}}
+    permissions = {
+        "rules": {"mcp/mcp-docs/counter": mode, "mcp/mcp-docs/reset": mode},
+        "respect_mcp_annotations": respect_mcp_annotations,
+    }
     if review is not None:
         permissions["review"] = review
     agent["capabilities"] = [{"capability": "ToolPermissionsCapability", "configuration": permissions}]
@@ -681,3 +686,19 @@ async def test_app_calls_obey_server_tool_selection(apps) -> None:
     await _accept(operations)
     await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="server-denied", name="reset"))
     assert (await _settle(operations, view.view_id, "server-denied")).status == "failed"
+
+
+@pytest.mark.parametrize(
+    ("enabled", "mode", "status"),
+    [
+        (False, "inherit", "completed"),
+        (True, "inherit", "approval_required"),
+        (True, "allow", "completed"),
+    ],
+)
+async def test_app_owner_applies_mcp_annotation_policy(apps, enabled, mode, status) -> None:
+    operations, reference = apps
+    await _policy(operations, mode, respect_mcp_annotations=enabled)
+    view = await operations.activate(reference)
+    await operations.call_tool("thread-1", view.view_id, AppToolRequest(request_key="reset", name="reset"))
+    assert (await _settle(operations, view.view_id, "reset")).status == status
