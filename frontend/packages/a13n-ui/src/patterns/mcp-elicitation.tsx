@@ -133,11 +133,6 @@ export function McpElicitationForm({
       </header>
       {context}
       <p className={styles.reason}>{request.message}</p>
-      <p className={styles.hint}>
-        {t(
-          "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
-        )}
-      </p>
       {request.mode === "url" ? (
         <div className={styles.destination}>
           <p className={styles.hint}>{t("External destination")}</p>
@@ -168,6 +163,11 @@ export function McpElicitationForm({
           }}
         >
           <div className={styles.request}>
+            <p className={styles.hint}>
+              {t(
+                "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
+              )}
+            </p>
             {Object.entries(properties).map(([name, value]) => {
               const field = record(value) ?? {};
               const label =

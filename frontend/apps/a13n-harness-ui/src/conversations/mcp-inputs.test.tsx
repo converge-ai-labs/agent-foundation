@@ -216,6 +216,7 @@ it("shows the URL destination and opens it only on explicit link activation", as
   const link = await screen.findByRole("link", { name: "Open external page" });
   expect(screen.getByText("Calendar integration")).toBeTruthy();
   expect(screen.getByText("calendar.example.org")).toBeTruthy();
+  expect(screen.queryByText(/Don.t include passwords/)).toBeNull();
   expect(link.getAttribute("href")).toBe(
     "https://calendar.example.org/continue",
   );
@@ -234,6 +235,7 @@ it("shows the URL destination and opens it only on explicit link activation", as
 it("shows missing required input beside the field before submitting", async () => {
   mount();
   await screen.findByLabelText("Name");
+  expect(screen.getByText(/Don.t include passwords/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Accept" }));
   expect(screen.getByText("This field is required.")).toBeTruthy();
   expect(screen.getByLabelText("Name").getAttribute("aria-invalid")).toBe(
