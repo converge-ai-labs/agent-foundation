@@ -13,6 +13,7 @@ NOT_OBJECT_KEYED = {
     "app_databases",  # Deployment namespace ownership is keyed by the installed App ID.
     "browser_downloads",
     "client_environment_settings",
+    "environment_bootstrap_snapshots",
     "browser_tabs",
     "browser_selections",
     "thread_browsers",
@@ -49,6 +50,10 @@ def test_rows_have_object_ids_unless_keyed_by_another_owner() -> None:
     }
     assert set(metadata.tables) - keyed == NOT_OBJECT_KEYED
     assert list(metadata.tables["client_environment_settings"].primary_key.columns.keys()) == ["environment_id"]
+    assert list(metadata.tables["environment_bootstrap_snapshots"].primary_key.columns.keys()) == [
+        "environment_id",
+        "working_directory",
+    ]
     assert [column.name for column in metadata.tables["thread_browsers"].primary_key.columns] == ["thread_id"]
     assert [column.name for column in metadata.tables["browser_downloads"].primary_key.columns] == [
         "browser_id",

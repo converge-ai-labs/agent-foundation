@@ -98,7 +98,7 @@ class Source:
     mount: EnvironmentMount
     descriptor: EnvironmentDescriptor
     provider_key: str
-    state: EnvironmentState | None
+    management_state: EnvironmentState | None
     configuration: RunConfiguration | None = None
     activated: bool = False
     skill_cache: Cache | None = None
@@ -109,6 +109,12 @@ class Source:
     captures: dict[tuple[str, ...], BootstrapCapture] = field(default_factory=dict)
     observation: tuple[int, datetime, EnvironmentBootstrapSnapshot] | None = None
     skill_materializer: Callable[..., Awaitable[None]] | None = None
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        state = self.management_state
+        # Outbound mounts use an Envd execution adapter over a different provisioning provider.
+        return state if state is not None and state.provider_key == self.provider_key else None
 
     @property
     def working_directory(self) -> str:
@@ -227,7 +233,7 @@ class Source:
 
     @asynccontextmanager
     async def computer_guard(self, call: ComputerCall) -> AsyncGenerator[None]:
-        async with desktop_admission.operation(self.runtime, self.lease, self.mount, self.state, call):
+        async with desktop_admission.operation(self.runtime, self.lease, self.mount, self.management_state, call):
             yield
 
     async def ensure_ready(self) -> EnvironmentConnector:
@@ -260,7 +266,7 @@ class Source:
             if error.code == "unavailable":
                 raise
             raise EnvironmentUnavailable(error.message) from error
-        self.state = prepared.target.state
+        self.management_state = prepared.target.state
         return _DirectoryConnector(connector, prepared, seconds, self)
 
 
