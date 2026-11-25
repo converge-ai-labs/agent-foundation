@@ -404,9 +404,11 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
                 )
             }
             return
-        if not any(part.tool_name == "review_pause" for part in returns):
-            yield "Checking the checkout edge cases and collecting the results.\n\n"
-        yield {0: DeltaToolCall(name="review_pause", json_args="{}")}
+        if any(part.tool_name == "review_pause" for part in returns):
+            yield "The checkout review has ended."
+            return
+        yield "Checking the checkout edge cases and collecting the results.\n\n"
+        yield {0: DeltaToolCall(name="review_pause", json_args='{"until_preview_closes":true}')}
         return
     if authored and authored[-1] == "Summarize the background review handoff.":
         start = max(
@@ -668,6 +670,7 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
 
 async def serve(root: Path, port: int):
     path = configuration(root)
+    preview_closing = asyncio.Event()
     fixture_runtime = {}
     original = AgentReconstructor.reconstruct
 
@@ -709,8 +712,11 @@ async def serve(root: Path, port: int):
             }
 
         @tools.tool_plain
-        async def review_pause() -> str:
-            """Wait briefly for the next scripted review batch."""
+        async def review_pause(until_preview_closes: bool = False) -> str:
+            """Wait for the next scripted batch or for the preview to close."""
+            if until_preview_closes:
+                await preview_closing.wait()
+                return "The preview is closing."
             await asyncio.sleep(15)
             return "Next batch ready."
 
@@ -1000,7 +1006,10 @@ async def serve(root: Path, port: int):
                 "All responses and tool results are scripted. Try [slow], [long], [thought], [retry], [answer], [failure], or [question].",
                 flush=True,
             )
-            yield app
+            try:
+                yield app
+            finally:
+                preview_closing.set()
 
     server = create_webui(app_context, api_key="test-only-key")
     await uvicorn.Server(uvicorn.Config(server, host="127.0.0.1", port=port, log_level="warning")).serve()
