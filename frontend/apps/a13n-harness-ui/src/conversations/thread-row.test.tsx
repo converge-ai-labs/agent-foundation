@@ -351,14 +351,14 @@ it("keeps Coordinator identity and trailing activity through state changes", () 
 
   row.thread.root_activity.state = "preparing";
   rerender(row, 2);
-  expect(summary.textContent).toBe("2 active");
+  expect(summary.textContent).toBe("2");
   const status = within(link).getByTitle("Preparing");
   const spinner = status.querySelector("svg");
   expect(spinner).not.toBeNull();
 
   row.thread.root_activity.state = "running";
   rerender(row, 1);
-  expect(summary.textContent).toBe("1 active");
+  expect(summary.textContent).toBe("1");
   expect(within(link).getByTitle("Running").querySelector("svg")).toBe(spinner);
 
   row.pending_decision = { kind: "question", count: 1 };

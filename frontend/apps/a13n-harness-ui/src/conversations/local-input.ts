@@ -60,7 +60,10 @@ export function conversationTitle(
   fallback = "Untitled chat",
 ) {
   const first = localInputs.find(
-    (input) => input.action === "send" && input.state === "accepted",
+    (input) =>
+      input.action === "send" &&
+      input.state !== "rejected" &&
+      input.state !== "unknown",
   );
   return (
     thread?.title ||

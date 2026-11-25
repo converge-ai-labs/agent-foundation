@@ -25,14 +25,23 @@
   margin-right: 4px;
 }
 .workers {
-  --thread-label-inset: 16px;
-  margin-inline-start: 12px;
-  padding-inline-start: 12px;
+  /* A quiet section marker beside the worker rows; their labels keep the same
+     inset as the Coordinator title. */
+  --thread-label-inset: 22px;
+  margin-inline-start: 9px;
   border-inline-start: 1px solid var(--a13n-border-soft);
   margin-bottom: 8px;
 }
 .workers > small {
   display: block;
-  padding: 8px 12px;
+  padding: 8px 12px 8px var(--thread-label-inset);
   color: var(--a13n-secondary);
+}
+.workers > button {
+  justify-content: flex-start;
+  margin-inline-start: calc(var(--thread-label-inset) - 8px);
+  padding-inline: 7px;
+  color: var(--harness-log-text);
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
+  font-weight: 400;
 }

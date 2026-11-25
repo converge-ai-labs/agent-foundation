@@ -46,7 +46,7 @@ const saved = (parts: Schema<"TranscriptPart">[], position = 0) =>
   ({ position, message_kind: "request", parts }) as Schema<"TranscriptEntry">;
 
 it.each(["send", "steer"] as const)(
-  "waits for server evidence before showing %s input and keeps accepted/saved cutover stable",
+  "echoes authored %s input before server evidence and keeps accepted/saved cutover stable",
   (action) => {
     const input: LocalInput = { ...local(), action, state: "preparing" };
     const view = render(
@@ -57,7 +57,9 @@ it.each(["send", "steer"] as const)(
         threadId="one"
       />,
     );
-    expect(screen.queryByText("Hello")).toBeNull();
+    // The authored text is readable as soon as Send starts preparing it, and it
+    // must keep one node through admission so nothing remounts on the way in.
+    const message = screen.getByText("Hello");
     expect(screen.queryByRole("status")).toBeNull();
     input.state = "pending";
     view.rerender(
@@ -68,7 +70,7 @@ it.each(["send", "steer"] as const)(
         threadId="one"
       />,
     );
-    expect(screen.queryByText("Hello")).toBeNull();
+    expect(screen.getByText("Hello")).toBe(message);
     expect(screen.queryByRole("status")).toBeNull();
     const block = {
       id: "run:input:0",
@@ -84,7 +86,7 @@ it.each(["send", "steer"] as const)(
         threadId="one"
       />,
     );
-    const message = screen.getByText("Hello");
+    expect(screen.getByText("Hello")).toBe(message);
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.queryByText("H")).toBeNull();
     input.state = "accepted";
@@ -159,8 +161,8 @@ it("keeps rejected and uncertain local input out of the transcript", () => {
   expect(screen.queryByRole("status")).toBeNull();
 });
 
-it.each(["preparing", "pending", "rejected", "unknown", "accepted"] as const)(
-  "uses only acknowledged local input for bubbles and title fallback (%s)",
+it.each(["preparing", "pending", "accepted", "rejected", "unknown"] as const)(
+  "echoes local input in every state whose delivery is not the open question (%s)",
   (state) => {
     const input = { ...local(), state };
     render(
@@ -171,9 +173,10 @@ it.each(["preparing", "pending", "rejected", "unknown", "accepted"] as const)(
         threadId="one"
       />,
     );
-    expect(!!screen.queryByText("Hello")).toBe(state === "accepted");
+    const echoed = state !== "rejected" && state !== "unknown";
+    expect(!!screen.queryByText("Hello")).toBe(echoed);
     expect(conversationTitle(undefined, [input])).toBe(
-      state === "accepted" ? "Hello" : "Untitled chat",
+      echoed ? "Hello" : "Untitled chat",
     );
   },
 );

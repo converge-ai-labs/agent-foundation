@@ -987,10 +987,17 @@ export function ConversationTranscript({
       }),
   ];
   for (const [id, input] of local) {
-    // Preparation and unconfirmed submissions belong in the composer, not the
-    // transcript. Server-observed input above remains authoritative even if its
-    // HTTP acknowledgement is delayed or lost.
-    if (input.state === "accepted" && !observed.has(id))
+    // An authored input is readable as soon as Send starts preparing it, so the
+    // transcript echoes it immediately instead of holding the message back until
+    // the server acknowledges admission. Server-observed input above remains
+    // authoritative even if its HTTP acknowledgement is delayed or lost. A
+    // rejected or unconfirmed input stays in the composer with its recovery
+    // controls, because its delivery is still the open question.
+    if (
+      input.state !== "rejected" &&
+      input.state !== "unknown" &&
+      !observed.has(id)
+    )
       rows.push({
         id,
         kind: "input",
