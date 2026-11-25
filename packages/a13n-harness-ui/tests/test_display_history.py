@@ -737,3 +737,41 @@ def test_saved_tool_parts_preserve_native_display_metadata() -> None:
     parts = display_entries(history)[0].parts
     assert [part.kind for part in parts] == ["tool_call", "tool_result"]
     assert all(part.metadata.display is False for part in parts)
+
+
+def test_progress_flood_does_not_reset_the_sequenced_display_suffix() -> None:
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent, HarnessExtensionEvent
+    from a13n_stream_protocol.observer import TOOL_PROGRESS_EVENT
+    from ag_ui.core import TextMessageStartEvent, ToolCallStartEvent
+
+    collector = DisplayHistoryCollector(())
+
+    def report(sequence: int) -> None:
+        collector.observe(
+            HarnessEvent(
+                thread_id="thread",
+                run_id="run",
+                sequence=sequence,
+                occurred_at=datetime.now(UTC),
+                event=HarnessExtensionEvent(
+                    kind="tool_progress", payload={"tool_call_id": "call", "progress": sequence, "message": "x" * 512}
+                ),
+            )
+        )
+
+    report(0)  # Initialize the fold; the unknown call has no overlay.
+    collector.supplement([ToolCallStartEvent(tool_call_id="call", tool_call_name="scan")])
+    for sequence in range(1, 600):
+        report(sequence)
+    collector.supplement([TextMessageStartEvent(message_id="response", role="assistant")])
+
+    publication = collector.drain()
+    assert publication is not None and not publication.reset
+    assert [observation.sequence for observation in publication.observations] == [1, 2]
+    assert len(publication.progress) == 1
+    assert publication.progress[0].event["name"] == TOOL_PROGRESS_EVENT
+    tool = next(item for item in publication.items if item.kind == "tool_call")
+    assert tool.content["progress"]["progress"] == 599
+    assert all("progress" not in item.content for item in collector.capture().items)

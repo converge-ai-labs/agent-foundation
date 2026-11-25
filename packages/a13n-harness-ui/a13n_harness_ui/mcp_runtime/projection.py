@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, Self
 
 from a13n_harness.context import AgentContext
+from a13n_harness.mcp import tool_progress
 from anyio import CancelScope
 from pydantic_ai import RunContext
 from pydantic_ai.mcp import MCPToolset
@@ -71,6 +72,7 @@ class HostToolset(MCPToolset[AgentContext]):
     ) -> Any:
         token = operation_context.set(Operation(run_id=ctx.deps.run_id, tool_call_id=ctx.tool_call_id))
         try:
-            return await super().call_tool(name, tool_args, ctx, tool)
+            async with tool_progress(ctx):
+                return await super().call_tool(name, tool_args, ctx, tool)
         finally:
             operation_context.reset(token)

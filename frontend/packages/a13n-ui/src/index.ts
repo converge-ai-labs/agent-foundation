@@ -58,3 +58,5 @@ export { ReadOnlyField } from "./patterns/read-only-field";
 export { modelBrand } from "./brand/model-brand";
 
 export { FileTypeIcon } from "./components/file-type-icon";
+
+export { ToolProgressLine } from "./patterns/tool-progress";

@@ -1,5 +1,9 @@
 import { readContentParts } from "a13n-ui";
-import { toolExecutionReceipt } from "a13n-ui/display";
+import {
+  readToolProgress,
+  toolExecutionReceipt,
+  type ToolProgress,
+} from "a13n-ui/display";
 import type { ContentPart } from "@ag-ui/core";
 import { isRecord } from "../../service-client";
 import { inDisplayOrder, type DisplayItem } from "./display";
@@ -22,6 +26,7 @@ export interface PresentedItem {
   role: string;
   toolName: string;
   toolCallId?: string;
+  progress?: ToolProgress;
   publication?: PublishedAsset;
   arguments: string;
   incomplete?: boolean;
@@ -94,6 +99,10 @@ export function presentItem(item: DisplayItem): PresentedItem {
     toolCallId: content.provider
       ? undefined
       : text(content.toolCallId) || undefined,
+    progress:
+      item.state === "in_progress"
+        ? readToolProgress(content.progress)
+        : undefined,
     arguments: text(content.arguments),
     ...(content.incomplete === true || item.content_refs?.arguments
       ? { incomplete: true }

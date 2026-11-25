@@ -5,8 +5,12 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+import math
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
+from datetime import timedelta
 from types import MappingProxyType
 from typing import Any, Literal, Protocol, Self, cast
 from urllib.parse import urlparse
@@ -15,20 +19,22 @@ import httpx2
 from a13n_logging import get_logger
 from anyio import BrokenResourceError, CancelScope, ClosedResourceError, EndOfStream, sleep
 from fastmcp import Client
+from fastmcp.client.progress import ProgressHandler
 from fastmcp.client.roots import RootsHandler, RootsList
 from fastmcp.client.transports import ClientTransport
 from mcp import MCPError
-from mcp.types import CONNECTION_CLOSED
+from mcp.types import CONNECTION_CLOSED, CallToolResult
 from pydantic import JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP as NativeMCP
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import AbstractToolset, FunctionToolset, WrapperToolset
+from pydantic_ai.toolsets import AbstractToolset, FunctionToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness._json import dump_json_text
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
+from a13n_harness.events import ToolProgressPayload, emit_harness_event
 from a13n_harness.http import outbound_tls_verify
 
 _TRANSIENT_HTTP_STATUS = {408, 429, 502, 503, 504}
@@ -241,8 +247,7 @@ class ContextualMCP(NativeMCP[AgentContext]):
         _require_no_header_conflicts(static_headers, validated_dynamic_headers)
         merged_headers = {**static_headers, **validated_dynamic_headers}
 
-        local: bool | MCPToolset[AgentContext] | None = self._recipe.local
-        client = None
+        client: httpx2.AsyncClient | None = None
         if ctx.deps.configuration.allowed_hosts is not None:
 
             async def authorize(request: httpx2.Request) -> None:
@@ -252,17 +257,31 @@ class ContextualMCP(NativeMCP[AgentContext]):
                 verify=outbound_tls_verify(), follow_redirects=False, event_hooks={"request": [authorize]}
             )
             ctx.deps._register_run_cleanup(cache_id, client.aclose)
-        if client is not None or (self._recipe.roots is not None and local is not False):
+
+        local: bool | ProgressMCPToolset = False
+        if self._recipe.local is not False:
             local_headers = dict(merged_headers)
             if self._recipe.authorization_token:
                 local_headers["Authorization"] = self._recipe.authorization_token
-            local = MCPToolset(
+            # A Host-owned HTTP client carries its own headers and request guards.
+            if client is not None:
+                client.headers.update(local_headers)
+            local = ProgressMCPToolset(
                 self._recipe.url,
                 id=self._recipe.capability_id,
-                headers=local_headers or None,
+                headers=(local_headers or None) if client is None else None,
                 http_client=client,
                 include_instructions=True,
                 roots=self._recipe.roots,
+            )
+            # Pydantic AI owns URL transport selection and tool-list invalidation.
+            upstream = local.client
+            local.client = _ProgressClient(
+                upstream.transport,
+                init_timeout=5,
+                timeout=300,
+                roots=self._recipe.roots,
+                message_handler=upstream._base_message_handler,
             )
 
         replacement = NativeMCP[AgentContext](
@@ -388,7 +407,92 @@ def _transient_initialization(error: BaseException) -> bool:
     )
 
 
-class InitializationRetryClient(Client[ClientTransport]):
+_PROGRESS_INTERVAL = 0.25
+
+
+class _ToolProgress:
+    def __init__(self, deps: AgentContext, tool_call_id: str) -> None:
+        self.deps, self.tool_call_id = deps, tool_call_id
+        self.loop = asyncio.get_running_loop()
+        self.next_at = 0.0
+        self.pending: ToolProgressPayload | None = None
+        self.trailing: asyncio.Task[None] | None = None
+        self.closed = False
+
+    async def report(self, progress: float, total: float | None, message: str | None) -> None:
+        if self.closed:
+            return
+        self.pending = ToolProgressPayload(
+            tool_call_id=self.tool_call_id,
+            progress=progress if math.isfinite(progress) else None,
+            total=total if total is not None and math.isfinite(total) else None,
+            message=message[:512] if message is not None else None,
+        )
+        if self.trailing is None:
+            self.trailing = asyncio.create_task(self._drain())
+
+    async def _drain(self) -> None:
+        try:
+            while self.pending is not None and not self.closed:
+                delay = self.next_at - self.loop.time()
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                await self._flush()
+        except Exception:
+            get_logger(__name__).warning("Could not publish MCP tool progress", exc_info=True)
+        finally:
+            self.trailing = None
+
+    async def _flush(self) -> None:
+        pending, self.pending = self.pending, None
+        if pending is not None:
+            self.next_at = self.loop.time() + _PROGRESS_INTERVAL
+            await emit_harness_event(self.deps.events, kind="tool_progress", payload=pending)
+
+    def close(self) -> None:
+        self.closed = True
+        self.pending = None
+        if self.trailing is not None:
+            self.trailing.cancel()
+
+
+_active_progress: ContextVar[_ToolProgress | None] = ContextVar("mcp_tool_progress", default=None)
+
+
+@asynccontextmanager
+async def tool_progress(ctx: RunContext[AgentContext]) -> AsyncIterator[None]:
+    """Bind progress to a model tool invocation; SDK callbacks may run on another task."""
+    progress = _ToolProgress(ctx.deps, ctx.tool_call_id) if ctx.tool_call_id else None
+    token = _active_progress.set(progress)
+    try:
+        yield
+    finally:
+        _active_progress.reset(token)
+        if progress is not None:
+            progress.close()
+
+
+class _ProgressClient(Client[ClientTransport]):
+    async def call_tool_mcp(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        progress_handler: ProgressHandler | None = None,
+        timeout: timedelta | float | int | None = None,
+        meta: dict[str, Any] | None = None,
+    ) -> CallToolResult:
+        if (active := _active_progress.get()) is not None:
+            delegate = progress_handler or self._progress_handler
+
+            async def report(progress: float, total: float | None, message: str | None) -> None:
+                await active.report(progress, total, message)
+                await delegate(progress, total, message)
+
+            progress_handler = report
+        return await super().call_tool_mcp(name, arguments, progress_handler, timeout, meta)
+
+
+class InitializationRetryClient(_ProgressClient):
     """At most three initialization attempts, with 1s/2s cancellable backoff.
 
     Ready business requests retain upstream semantics and are never replayed by
@@ -489,6 +593,24 @@ class _StartedMCPServer:
     client: Client[Any] | None = None
 
 
+class ProgressMCPToolset(MCPToolset[AgentContext]):
+    """Model invocation scope for a toolset backed by a Harness MCP client."""
+
+    async def call_tool(
+        self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
+    ) -> Any:
+        async with tool_progress(ctx):
+            return await super().call_tool(name, tool_args, ctx, tool)
+
+
+class _ProgressToolset(WrapperToolset[AgentContext]):
+    async def call_tool(
+        self, name: str, tool_args: dict[str, Any], ctx: RunContext[AgentContext], tool: ToolsetTool[AgentContext]
+    ) -> Any:
+        async with tool_progress(ctx):
+            return await self.wrapped.call_tool(name, tool_args, ctx, tool)
+
+
 class MCPServer(NativeMCP[AgentContext]):
     """A Host-prepared local MCP capability with a separate startup error policy.
 
@@ -560,7 +682,7 @@ class MCPServer(NativeMCP[AgentContext]):
                 else NativeMCP[AgentContext](
                     id=self.id,
                     native=False,
-                    local=toolset,
+                    local=_ProgressToolset(toolset),
                     allowed_tools=list(self._selected_tools) if self._selected_tools is not None else None,
                 )
             )
@@ -580,9 +702,11 @@ __all__ = [
     "MCPHeadersFactory",
     "MCPServer",
     "PrepareToolset",
+    "ProgressMCPToolset",
     "ProjectToolset",
     "StartupErrorPolicy",
     "ToolsetFactory",
     "UnavailableMCPToolset",
     "raise_initialization_status",
+    "tool_progress",
 ]

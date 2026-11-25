@@ -1,3 +1,4 @@
+import { ToolProgressLine } from "a13n-ui";
 import { CaretRightIcon } from "@phosphor-icons/react";
 import type { TFunction } from "i18next";
 import { Fragment, useState } from "react";
@@ -85,6 +86,19 @@ export function WorkLine({
           </Link>
         )}
       </div>
+      {!open &&
+        entries.map(
+          ({ entry, id, state }) =>
+            state === "working" &&
+            "progress" in entry &&
+            entry.progress && (
+              <ToolProgressLine
+                key={id}
+                value={entry.progress}
+                label={entryLabel(entry, t).name}
+              />
+            ),
+        )}
       {open && (
         <ol className={styles.workRows}>
           {entries.map((work) => (
@@ -149,6 +163,7 @@ function Phrase({ entry }: { entry: WorkEntry["entry"] }) {
  * shows the same excerpt the Debug timeline shows.
  */
 function WorkRow({ work }: { work: WorkEntry }) {
+  const { t } = useTranslation();
   const entry = work.entry;
   const Glyph = entryGlyph(entry);
   const subject = entrySubject(entry);
@@ -173,6 +188,14 @@ function WorkRow({ work }: { work: WorkEntry }) {
           : formatDuration(entry.durationMs)}
       </span>
       {content ? <span /> : <StateMark state={work.state} size={13} />}
+      {work.state === "working" && "progress" in entry && entry.progress && (
+        <div className={styles.workRowContent}>
+          <ToolProgressLine
+            value={entry.progress}
+            label={entryLabel(entry, t).name}
+          />
+        </div>
+      )}
       <ItemContents
         itemId={entry.itemId ?? entry.id}
         className={styles.workRowContent}
