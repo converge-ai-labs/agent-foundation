@@ -299,10 +299,10 @@ async def test_publication_retry_commits_result_and_notification_once(service, s
     )
     save, attempts = store._save, 0
 
-    async def uncertain(value):
+    async def uncertain(value, **kwargs):
         nonlocal attempts
         attempts += 1
-        await save(value)
+        await save(value, **kwargs)
         if attempts == 1:
             raise ConnectionError("Commit response lost")
 
