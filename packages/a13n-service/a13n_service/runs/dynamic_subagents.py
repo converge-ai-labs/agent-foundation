@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.infra.errors import invalid
 from a13n_service.infra.platform import PLATFORM_GROUPS
+from a13n_service.providers.realtime import PROTOCOLS
 from a13n_service.resources.agents.schemas import AgentConfig, Instructions, ToolSearch
 from a13n_service.resources.agents.validation import validate_config
 from a13n_service.resources.models.service import model_settings, resolve_model
@@ -74,6 +75,8 @@ async def derive(
     if model not in {parent.model, *policy.allowed_models}:
         raise invalid("model", "The model is not allowed by the parent's dynamic policy")
     target = await resolve_model(session, principal, scope, model, authority=authority)
+    if target.config.model_api in PROTOCOLS:
+        raise invalid("model", "Subagents require a non-realtime model")
     same_model = model == parent.model
     settings = dict(parent.model_settings) if same_model else {}
     thinking = request.thinking if request.thinking is not None else policy.default_thinking
@@ -169,8 +172,17 @@ async def derive(
 class SpawnCapability(AbstractCapability[AgentContext]):
     id = "a13n.service.dynamic-subagents"
 
-    def __init__(self, spawn: Callable[[Spawn, str | None], Awaitable[AsyncExecutionView]], config: AgentConfig):
+    def __init__(
+        self,
+        spawn: Callable[[Spawn, str | None], Awaitable[AsyncExecutionView]],
+        config: AgentConfig,
+        *,
+        realtime_parent: bool,
+    ):
         self.spawn, self.config = spawn, config
+        self.models = set(config.subagents.dynamic.allowed_models)
+        if not realtime_parent:
+            self.models.add(config.model)
 
     def get_instructions(self) -> str:
         selected = self.config
@@ -187,7 +199,7 @@ class SpawnCapability(AbstractCapability[AgentContext]):
             "Its instructions extend your authored instructions. Omit selection categories to inherit them, "
             "or pass a subset (empty lists remove a category). No conversation history is copied. "
             f"Available selection identifiers: {inventory}. "
-            f"Allowed models: {sorted({selected.model, *selected.subagents.dynamic.allowed_models})}."
+            f"Allowed models: {sorted(self.models)}."
         )
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:

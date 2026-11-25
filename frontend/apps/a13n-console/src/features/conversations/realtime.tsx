@@ -5,14 +5,23 @@ import {
 } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { Composer } from "./composer";
 import captureModule from "./realtime-capture.js?url&no-inline";
-import { RealtimeInputMessage } from "./transcript/user-message";
+import { invalidateConversation, runPath } from "./api";
 
 interface Selection {
   agentId?: string;
@@ -77,11 +86,6 @@ export function useRealtimeAvailability(
   });
 }
 
-type Message = {
-  message_id: string;
-  role: "user" | "assistant";
-  text: string;
-};
 type Approval = {
   type: "approval_required";
   call_id: string;
@@ -103,30 +107,17 @@ type Event =
     }
   | { type: "answer"; sdp: string }
   | { type: "ready"; accepts_text: boolean; supports_interruption: boolean }
-  | ({ type: "transcript"; final: boolean } & Message)
   | { type: "error"; message: string };
 
-export function RealtimeComposer({
-  agentId,
-  revisionId,
-  threadId,
-  forkRunId,
-  freshEnvironments,
-  displayedRunId,
-  availability,
-  onFinished,
-  agentName,
-  initial,
-}: Selection & {
+interface CallOptions extends Selection {
   availability: Availability;
   freshEnvironments?: boolean;
-  displayedRunId?: string;
-  agentName?: string;
-  initial?: Schema["MessagePayload"];
-  onFinished: (receipt: RealtimeReceipt) => void;
-}) {
+  onAccepted: (receipt: RealtimeReceipt) => void;
+}
+
+function useRealtimeCall() {
   const { t } = useTranslation();
-  const { workspace } = useWorkspace();
+  const { workspace, basePath } = useWorkspace();
   const client = useClient();
   const cache = useQueryClient();
   const interruptPlayback = useRef<(() => void) | null>(null);
@@ -134,18 +125,40 @@ export function RealtimeComposer({
     "idle" | "connecting" | "ready" | "ending"
   >("idle");
   const [error, setError] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [owner, setOwner] = useState<string>();
+  const [activeRun, setActiveRun] = useState<{
+    id: string;
+    availability: Availability;
+  }>();
   const [approvals, setApprovals] = useState<Approval[]>([]);
-  const [previewRunId, setPreviewRunId] = useState<string>();
   const [supportsInterruption, setSupportsInterruption] = useState(false);
-  const [acceptsText, setAcceptsText] = useState(availability.accepts_text);
+  const [acceptsText, setAcceptsText] = useState(true);
   const socket = useRef<WebSocket | null>(null);
   const cleanup = useRef<(() => void) | null>(null);
   const stopMedia = useRef<(() => void) | null>(null);
 
   useEffect(() => () => cleanup.current?.(), []);
 
-  async function start(firstText?: string): Promise<void | false> {
+  const dialingOwner = useRef<string | undefined>(undefined);
+  const runRoute = useRef<string | undefined>(undefined);
+  const { pathname } = useLocation();
+  useEffect(() => {
+    if (runRoute.current && pathname !== runRoute.current) cleanup.current?.();
+  }, [pathname]);
+
+  async function start(
+    ownerId: string,
+    {
+      agentId,
+      revisionId,
+      threadId,
+      forkRunId,
+      freshEnvironments,
+      availability,
+      onAccepted,
+    }: CallOptions,
+    firstText?: string,
+  ): Promise<void | false> {
     if (!agentId || cleanup.current || !availability.can_start)
       throw new Error(t("Realtime connection failed"));
     const useWebRTC =
@@ -217,6 +230,10 @@ export function RealtimeComposer({
     };
     const dispose = () => {
       disposed = true;
+      dialingOwner.current = undefined;
+      runRoute.current = undefined;
+      setActiveRun(undefined);
+      setPhase("idle");
       interruptPlayback.current = null;
       abort.abort();
       clearTimeout(startupTimer);
@@ -239,7 +256,6 @@ export function RealtimeComposer({
         return;
       }
       dispose();
-      setPhase("idle");
     };
     const startConversation = () => {
       if (
@@ -263,7 +279,6 @@ export function RealtimeComposer({
       setSupportsInterruption(serverReady.supports_interruption);
       setPhase("ready");
       if (firstText && serverReady.accepts_text) {
-        addText(firstText);
         settleFirst?.();
       } else {
         settleFirst?.(new Error(t("Realtime connection failed")));
@@ -273,9 +288,9 @@ export function RealtimeComposer({
     cleanup.current = dispose;
     setError("");
     setPhase("connecting");
-    setMessages([]);
+    setOwner(ownerId);
+    dialingOwner.current = ownerId;
     setApprovals([]);
-    setPreviewRunId(undefined);
     try {
       await context?.resume();
       if (disposed) return false;
@@ -424,7 +439,11 @@ export function RealtimeComposer({
           setError(t("Voice input was interrupted. Please repeat that part."));
         if (event.type === "accepted") {
           receipt = event;
-          setPreviewRunId(event.run_id);
+          dialingOwner.current = undefined;
+          runRoute.current = runPath(basePath, event);
+          setOwner(event.run_id);
+          setActiveRun({ id: event.run_id, availability });
+          onAccepted(event);
         }
         if (event.type === "answer" && peer) {
           void peer
@@ -441,17 +460,6 @@ export function RealtimeComposer({
               ? items
               : [...items, event],
           );
-        }
-        if (event.type === "transcript") {
-          const { message_id, role, text } = event;
-          const message: Message = { message_id, role, text };
-          setMessages((items) => {
-            if (items.some((item) => item.message_id === message_id))
-              return items.map((item) =>
-                item.message_id === message_id ? message : item,
-              );
-            return text.trim() ? [...items, message] : items;
-          });
         }
         if (event.type === "error") {
           setError(event.message);
@@ -502,13 +510,19 @@ export function RealtimeComposer({
               availability,
             );
           }
-          if (!disposed) onFinished(receipt);
+          if (!disposed) {
+            void invalidateConversation(cache, workspace.id, {
+              sessionId: receipt.session_id,
+              threadId: receipt.thread_id,
+              runId: receipt.run_id,
+            });
+            if (!runRoute.current) onAccepted(receipt);
+          }
         } catch {
           if (!disposed) setError(t("Realtime connection failed"));
         } finally {
           if (!disposed) {
             dispose();
-            setPhase("idle");
           }
         }
       };
@@ -516,39 +530,14 @@ export function RealtimeComposer({
     } catch (cause) {
       if (disposed) return false;
       dispose();
-      setPhase("idle");
       throw cause;
     }
   }
 
-  function addText(text: string) {
-    const message: Message = {
-      message_id: crypto.randomUUID(),
-      role: "user",
-      text,
-    };
-    setMessages((items) => [...items, message]);
-  }
-
-  async function submit(payload: Schema["MessagePayload"]) {
-    const text = payload.content
-      .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
-      .join("\n\n");
-    if (!text || text.length > 8192)
-      throw new Error(
-        t("Realtime messages must be between 1 and 8,192 characters."),
-      );
-    if (phase === "idle") {
-      return await start(text);
-    } else if (
-      phase === "ready" &&
-      socket.current?.readyState === WebSocket.OPEN
-    ) {
-      socket.current.send(JSON.stringify({ type: "text", text }));
-      addText(text);
-    } else {
+  function sendText(text: string) {
+    if (phase !== "ready" || socket.current?.readyState !== WebSocket.OPEN)
       throw new Error(t("Realtime connection failed"));
-    }
+    socket.current.send(JSON.stringify({ type: "text", text }));
   }
 
   function decide(callId: string, approve: boolean) {
@@ -571,20 +560,95 @@ export function RealtimeComposer({
     }
   }
 
+  return {
+    phase,
+    owner,
+    activeRun,
+    error,
+    setError,
+    approvals,
+    acceptsText,
+    supportsInterruption,
+    start,
+    sendText,
+    stop,
+    decide,
+    interruptPlayback,
+    dialingOwner,
+    cleanup,
+  };
+}
+
+const CallContext = createContext<ReturnType<typeof useRealtimeCall> | null>(
+  null,
+);
+
+export function RealtimeCallProvider({ children }: { children: ReactNode }) {
+  const call = useRealtimeCall();
+  return <CallContext.Provider value={call}>{children}</CallContext.Provider>;
+}
+
+export function useActiveRealtimeAvailability(runId: string) {
+  const call = useContext(CallContext);
+  return call?.activeRun?.id === runId
+    ? call.activeRun.availability
+    : undefined;
+}
+
+export function RealtimeComposer({
+  displayedRunId,
+  agentName,
+  initial,
+  ...options
+}: CallOptions & {
+  displayedRunId?: string;
+  agentName?: string;
+  initial?: Schema["MessagePayload"];
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const call = useContext(CallContext);
+  if (!call) throw new Error(t("Realtime conversation is unavailable."));
+  const {
+    dialingOwner,
+    cleanup,
+    owner,
+    sendText,
+    supportsInterruption,
+    interruptPlayback,
+    stop,
+    decide,
+    setError,
+  } = call;
+  const mine = owner === id || (!!displayedRunId && owner === displayedRunId);
+  const phase = mine ? call.phase : "idle";
+  const error = mine ? call.error : "";
+  const approvals = mine ? call.approvals : [];
+  const { availability } = options;
+  const acceptsText =
+    phase === "ready" ? call.acceptsText : availability.accepts_text;
+  useEffect(
+    () => () => {
+      if (dialingOwner.current === id) cleanup.current?.();
+    },
+    [id, dialingOwner, cleanup],
+  );
+
+  const start = (text?: string) => call.start(id, options, text);
+  async function submit(payload: Schema["MessagePayload"]) {
+    const text = payload.content
+      .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
+      .join("\n\n");
+    if (!text || text.length > 8192)
+      throw new Error(
+        t("Realtime messages must be between 1 and 8,192 characters."),
+      );
+    if (phase === "idle") return await start(text);
+    sendText(text);
+  }
+
   return (
     <>
-      {(!displayedRunId || previewRunId !== displayedRunId) &&
-        messages.some(({ text }) => text.trim()) && (
-          <div className="grid max-h-60 gap-2 overflow-auto" aria-live="polite">
-            {messages.map(({ message_id, role, text }) =>
-              !text.trim() ? null : role === "user" ? (
-                <RealtimeInputMessage key={message_id} text={text} />
-              ) : (
-                <p key={message_id}>{text}</p>
-              ),
-            )}
-          </div>
-        )}
       {approvals.map((approval) => (
         <section
           key={approval.call_id}
@@ -620,7 +684,8 @@ export function RealtimeComposer({
         textInput={acceptsText}
         attachmentsEnabled={false}
         submitDisabled={
-          (phase === "idle" && !availability.can_start) ||
+          (phase === "idle" &&
+            (!availability.can_start || call.phase !== "idle")) ||
           phase === "connecting" ||
           phase === "ending"
         }

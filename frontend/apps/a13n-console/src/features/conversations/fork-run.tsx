@@ -237,7 +237,7 @@ export function ForkRun({
               forkRunId={run.id}
               freshEnvironments={fresh}
               availability={realtime.data}
-              onFinished={(receipt) => {
+              onAccepted={(receipt) => {
                 void invalidateConversation(cache, workspace.id, {
                   sessionId: receipt.session_id,
                   threadId: receipt.thread_id,

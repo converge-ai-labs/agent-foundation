@@ -83,7 +83,13 @@ from a13n_service.resources.agents.validation import connection_info, require_su
 from a13n_service.resources.models.media import workspace_media
 from a13n_service.resources.models.realtime import open_realtime_model
 from a13n_service.resources.models.runtime import open_model
-from a13n_service.resources.models.service import ResolvedModel, model_settings, require_understanding, resolve_model
+from a13n_service.resources.models.service import (
+    ResolvedModel,
+    model_settings,
+    require_request_model,
+    require_understanding,
+    resolve_model,
+)
 from a13n_service.runs.definitions import Definition
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tool_discovery import native_discovery
@@ -206,6 +212,7 @@ async def resolve(
         )
         reviewer = None if config.reviewer is None else await model(config.reviewer.model)
         if reviewer is not None and config.reviewer is not None:
+            require_request_model(reviewer, field="reviewer.model")
             model_settings(
                 reviewer.config,
                 reviewer.provider,

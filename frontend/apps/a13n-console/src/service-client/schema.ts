@@ -12867,6 +12867,8 @@ export interface components {
       oauth_scheme?: string | null;
       /** Operations */
       operations?: components["schemas"]["WebOperation"][] | null;
+      /** Realtime Model Apis */
+      realtime_model_apis?: string[] | null;
       /** Settings Schemas */
       settings_schemas?: {
         [key: string]: {

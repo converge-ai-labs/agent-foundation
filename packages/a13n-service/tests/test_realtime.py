@@ -89,6 +89,32 @@ async def create_voice_agent(service, runs_kit, model_api="openai.realtime"):
     return await runs_kit.add_agent(service, "voice", model.json()["key"])
 
 
+async def test_realtime_subagent_model_selection(service, runs_kit, realtime_agent, scripted_model):
+    text = await runs_kit.create_model(service, scripted_model)
+    for policy, field in [
+        ({"mode": mode, "named": {"child": {"agent_id": realtime_agent["id"]}}}, "subagents.named.child")
+        for mode in ("inline", "async")
+    ] + [
+        ({"dynamic": {"enabled": True}}, "subagents.dynamic.default_model"),
+        (
+            {"dynamic": {"enabled": True, "allowed_models": [text, "voice"], "default_model": text}},
+            "subagents.dynamic.allowed_models",
+        ),
+    ]:
+        response = await service.client.post(
+            f"{service.api}/agents",
+            json={"name": "Parent", "config": {"model": "voice", "subagents": {"mode": "async", **policy}}},
+        )
+        assert response.status_code == 400, response.text
+        assert response.json()["error"]["details"]["field"] == field
+    await runs_kit.add_agent(
+        service,
+        "Parent",
+        "voice",
+        subagents={"mode": "async", "dynamic": {"enabled": True, "allowed_models": [text], "default_model": text}},
+    )
+
+
 async def test_http_submission_requires_a_realtime_connection(service, runs_kit, realtime_agent):
     response = await service.client.post(
         f"{service.api}/threads",
@@ -205,6 +231,7 @@ class ScriptedRealtimeProvider:
     def __init__(self) -> None:
         self.connection = ScriptedConnection()
         self.messages: Sequence[ModelMessage] = ()
+        self.settings: RealtimeModelSettings = {}
         self.tools: set[str] = set()
 
     @asynccontextmanager
@@ -215,6 +242,7 @@ class ScriptedRealtimeProvider:
         model_settings: RealtimeModelSettings | None,
         model_request_parameters: ModelRequestParameters,
     ) -> AsyncIterator[RealtimeConnection]:
+        self.settings = model_settings or {}
         self.messages = messages
         self.tools = {tool.name for tool in model_request_parameters.function_tools}
         yield self.connection
@@ -253,12 +281,14 @@ class ScriptedWebRTCProvider(ScriptedRealtimeProvider):
         ("openai.realtime", "websocket", OpenAIRealtimeModel, False),
         ("openai.realtime", "webrtc", OpenAIRealtimeModel, False),
         ("openai.live", "webrtc", OpenAILiveModel, True),
+        ("openai.live", "websocket", OpenAILiveModel, False),
         ("xai.realtime", "websocket", XaiRealtimeModel, True),
     ],
 )
 async def test_app_opens_realtime_over_http_and_websocket(
     settings, serve, service_app, runs_kit, monkeypatch, api, transport, adapter, split
 ):
+    audio_enabled = (api, transport) != ("openai.live", "websocket")
     provider = ScriptedWebRTCProvider()
     monkeypatch.setattr(adapter, "connect", provider.connect)
     calls = []
@@ -315,7 +345,7 @@ async def test_app_opens_realtime_over_http_and_websocket(
         response = await service.client.post(
             f"{service.api}/realtime/sessions",
             headers=bearer,
-            json={"agent_id": agent_view["id"], "transport": transport},
+            json={"agent_id": agent_view["id"], "transport": transport, "audio": audio_enabled},
         )
         assert response.status_code == 201, response.text
         assert response.headers["cache-control"] == "no-store"
@@ -348,20 +378,24 @@ async def test_app_opens_realtime_over_http_and_websocket(
                         "type": "ready",
                         "audio_hz": 24000,
                         "accepts_text": True,
-                        "supports_interruption": True,
+                        "supports_interruption": api != "openai.live",
                     }
+                if api == "openai.live":
+                    assert provider.settings.get("openai_live_idle_audio", False) is (not audio_enabled)
+                if api == "openai.realtime":
+                    assert provider.settings["turn_detection"]["silence_duration_ms"] == 850
                 with pytest.raises(InvalidStatus):
                     async with connect(socket_url, subprotocols=protocols):
                         pytest.fail("A used ticket cannot open a second connection")
                 await socket.send(json.dumps({"type": "text", "text": "Hello from an App."}))
                 assert await provider.connection.outgoing.get() == "Hello from an App."
                 pcm = b"\x01\x00" * 480
-                if transport == "websocket":
+                if transport == "websocket" and audio_enabled:
                     await socket.send(pcm)
                     audio = await provider.connection.outgoing.get()
                     assert isinstance(audio, BinaryAudio) and audio.data == pcm
                     await provider.connection.incoming.put(AudioDelta(pcm))
-                else:
+                elif transport == "webrtc":
                     await provider.connection.incoming.put(
                         ToolCall("call_order", tool_name="lookup_order", args="{}", response_usage_follows=True)
                     )
@@ -375,7 +409,7 @@ async def test_app_opens_realtime_over_http_and_websocket(
                     assert calls == ["lookup_order"]
                 await provider.connection.incoming.put(OutputTranscript("Hello!", is_final=True))
                 await provider.connection.incoming.put(ResponseDone())
-                if transport == "websocket":
+                if transport == "websocket" and audio_enabled:
                     assert await socket.recv() == pcm
                 transcript = json.loads(await socket.recv())
                 assert transcript["type"] == "transcript" and transcript["text"] == "Hello!"

@@ -105,7 +105,13 @@ async def resolve_media_model(
     return model
 
 
+def require_request_model(model: ResolvedModel, *, field: str) -> None:
+    if model.config.model_api in PROTOCOLS:
+        raise invalid(field, "This selection requires a non-realtime model")
+
+
 def require_understanding(model: ResolvedModel, kind: NativeInputMediaKind) -> None:
+    require_request_model(model, field=f"media_understanding.{kind}")
     if ModelCapability(f"{kind}_understanding") not in model.config.characteristics.capabilities:
         raise invalid("model", f"does not declare {kind}_understanding")
 

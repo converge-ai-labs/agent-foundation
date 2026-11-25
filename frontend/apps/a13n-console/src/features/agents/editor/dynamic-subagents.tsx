@@ -15,6 +15,7 @@ import {
   modelOption,
   modelPopupWidth,
 } from "../../models/media-understanding-fields";
+import { realtimeModelApis } from "../../models/model-options";
 import { ModelKeyLabel } from "../../models/model-icon";
 import { useModelProviderDefinitions } from "../../models/provider-definitions";
 import { thinkingEfforts, thinkingSelection, type AgentDraft } from "./draft";
@@ -40,7 +41,16 @@ export function DynamicSubagentsSettings({
   const models = choices.data?.models ?? [];
   const provider = (id: string) =>
     choices.data?.providers.find((item) => item.id === id);
-  const eligible = models.filter((item) => provider(item.provider_id)?.enabled);
+  const realtimeApis = realtimeModelApis(definitions.data?.items);
+  const realtimeParent = realtimeApis.has(
+    models.find((item) => item.key === draft.model)?.config.model_api ?? "",
+  );
+  const eligible = models.filter(
+    (item) =>
+      provider(item.provider_id)?.enabled &&
+      !!definitions.data &&
+      !realtimeApis.has(item.config.model_api),
+  );
   const selected = models.find(
     (item) => item.key === (policy.default_model ?? draft.model),
   );
@@ -59,7 +69,9 @@ export function DynamicSubagentsSettings({
   ];
   if (!thinkingOptions.some((option) => option.value === thinking))
     thinkingOptions.push({ value: thinking, label: thinking });
-  const permitted = [...new Set([draft.model, ...allowed])].filter(Boolean);
+  const permitted = [
+    ...new Set([...(realtimeParent ? [] : [draft.model]), ...allowed]),
+  ].filter(Boolean);
   const defaultOptions = permitted.map((key) => {
     const model = eligible.find((item) => item.key === key);
     return model
@@ -115,11 +127,13 @@ export function DynamicSubagentsSettings({
                   "Used unless the agent selects another allowed model.",
                 )}
                 error={
-                  invalidDefault
-                    ? t(
-                        "The default model must be the parent model or an allowed model.",
-                      )
-                    : undefined
+                  realtimeParent && !policy.default_model
+                    ? t("Subagents require a non-realtime model.")
+                    : invalidDefault
+                      ? t(
+                          "The default model must be the parent model or an allowed model.",
+                        )
+                      : undefined
                 }
               >
                 <SearchPicker
@@ -148,6 +162,7 @@ export function DynamicSubagentsSettings({
                             models.find((item) => item.key === draft.model)
                               ?.name ?? draft.model,
                           icon: <InheritIcon />,
+                          disabled: !definitions.data || realtimeParent,
                         },
                         ...defaultOptions,
                       ],
@@ -181,7 +196,7 @@ export function DynamicSubagentsSettings({
               {readOnly ? (
                 <ReadOnlyField
                   label={t("Additional models")}
-                  description={t("The parent model is always allowed.")}
+                  description={t("Subagents require a non-realtime model.")}
                   data-field-layout="setting"
                 >
                   {allowed.length ? allowed.length : t("None")}
@@ -189,7 +204,7 @@ export function DynamicSubagentsSettings({
               ) : (
                 <FormField
                   label={t("Additional models")}
-                  description={t("The parent model is always allowed.")}
+                  description={t("Subagents require a non-realtime model.")}
                 >
                   <SearchPicker
                     label={t("Add allowed model")}

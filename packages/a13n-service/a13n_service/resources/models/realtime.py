@@ -8,8 +8,6 @@ from a13n_harness.providers.model.credentials import ApiKeyCredential
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.xai import XaiProvider
 from pydantic_ai.realtime import RealtimeModel
-from pydantic_ai.realtime.openai import OpenAIRealtimeModel
-from pydantic_ai.realtime.openai_live import OpenAILiveModel
 from pydantic_ai.realtime.xai import XaiRealtimeModel
 
 from a13n_service.infra.crypto import KeyRing
@@ -53,13 +51,11 @@ async def open_realtime_model(
 
     api_key = connection.credential.api_key.get_secret_value()
     model_name = model.config.model_name
-    if api == "xai.realtime":
-        yield XaiRealtimeModel(model_name, provider=XaiProvider(api_key=api_key))
+    adapter = protocol.adapter
+    if issubclass(adapter, XaiRealtimeModel):
+        yield adapter(model_name, provider=XaiProvider(api_key=api_key))
         return
 
     async with open_http(policy, timeout=settings.model_timeout, max_bytes=settings.response_bytes) as client:
         provider = OpenAIProvider(api_key=api_key, base_url=endpoint, http_client=client)
-        if api == "openai.live":
-            yield OpenAILiveModel(model_name, provider=provider)
-        else:
-            yield OpenAIRealtimeModel(model_name, provider=provider)
+        yield adapter(model_name, provider=provider)

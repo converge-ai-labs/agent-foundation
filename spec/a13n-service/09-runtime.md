@@ -180,14 +180,6 @@ A provider call, a credential refresh, an environment operation and an object wr
 
 The package carries the Console production build under `a13n_service/static/`, placed there before packaging (`make a13n-service-assets`); a wheel or sdist without it fails to build, and the image builds it in a Node.js stage. API-serving roles answer what no route matched from it: `GET` and `HEAD` of `/assets/...` return the content-hashed file with `Cache-Control: public, max-age=31536000, immutable`, and any other browser path returns `index.html` with `Cache-Control: no-store`, since the Console routes in the browser. Paths under `/api`, other methods and missing assets keep the router's own answers ([HTTP ingress](#http-ingress-and-escaping-failures)), so the API behaves identically with or without a build. A source checkout has no build and serves the API only; the Console development server proxies `/api` to it.
 
-## Update notices
-
-Each `control` or `all` process refreshes a process-local snapshot at startup in the background and refreshes each source independently every 24 hours. `control.update_notices_enabled` defaults to `true`; set `A13N_CONTROL__UPDATE_NOTICES_ENABLED=false` to disable both checks. A `worker` does not check. Unversioned source builds (`0.0.0`) and prerelease builds do not check.
-
-The process reads `a13n-service` release metadata from PyPI and published security advisories from the Agent Foundation repository on GitHub. It compares Python package versions, requires both a non-yanked distribution and a published stable GitHub Release, and matches only high or critical, non-withdrawn advisories with a `pip` / `a13n-service` affected range containing the installed version. Requests contain no Service version, instance, tenant, or trace metadata and hold no database session. On failure the process keeps the last successful result from that source and retries it after one hour. A source without a successful result contributes no notices. The check does not affect startup, readiness, or the other source.
-
-`GET /api/v1/organizations/{organization_id}/update-notices` requires `admin` at the named organization. Every organization sees the same process-local observations through this scoped endpoint. It returns `current_version`, `latest_stable` (version, release URL and `is_newer`, or `null`), and `advisories` (advisory ID, plain-text summary, severity, GitHub URL, and upstream revision timestamp when available). Reads do not trigger a refresh. Disabled and not-yet-checked snapshots contain the current version, a null release and an empty advisory list. This operational view is excluded from MCP.
-
 ### Realtime conversations
 
 The client connects to an API-serving replica (`control` or `all`). A Worker claims the Run through PostgreSQL and connects outbound to Redis and the model provider. PostgreSQL owns ticket redemption, Thread eligibility, Attempt leases, checkpoints and Run status.
@@ -205,6 +197,14 @@ A realtime Run has its own Worker slot and one Attempt. A startup deadline, lost
 Native deferred-tool handling accepts one decision per Attempt and call. The execution gate rechecks liveness and authority after the tool checkpoint commits. A close before dispatch expires the call; foreground work interrupted after dispatch may already have external effects. Closing a call never grants approval to a subsequent Run.
 
 The client stops media immediately on hangup. The Worker closes the provider session, flushes state and commits the seal before sending `sealed` with the Run ID and status. Clients missing the receipt read the Run and check Thread eligibility. Provider settings come from the selected realtime API schema. Run admission covers session startup, native request limits apply during execution, and paid tools retain normal dispatch checks. Policies requiring strict per-dispatch model reservations cannot admit a transport without a pre-dispatch hook.
+
+## Update notices
+
+Each `control` or `all` process refreshes a process-local snapshot at startup in the background and refreshes each source independently every 24 hours. `control.update_notices_enabled` defaults to `true`; set `A13N_CONTROL__UPDATE_NOTICES_ENABLED=false` to disable both checks. A `worker` does not check. Unversioned source builds (`0.0.0`) and prerelease builds do not check.
+
+The process reads `a13n-service` release metadata from PyPI and published security advisories from the Agent Foundation repository on GitHub. It compares Python package versions, requires both a non-yanked distribution and a published stable GitHub Release, and matches only high or critical, non-withdrawn advisories with a `pip` / `a13n-service` affected range containing the installed version. Requests contain no Service version, instance, tenant, or trace metadata and hold no database session. On failure the process keeps the last successful result from that source and retries it after one hour. A source without a successful result contributes no notices. The check does not affect startup, readiness, or the other source.
+
+`GET /api/v1/organizations/{organization_id}/update-notices` requires `admin` at the named organization. Every organization sees the same process-local observations through this scoped endpoint. It returns `current_version`, `latest_stable` (version, release URL and `is_newer`, or `null`), and `advisories` (advisory ID, plain-text summary, severity, GitHub URL, and upstream revision timestamp when available). Reads do not trigger a refresh. Disabled and not-yet-checked snapshots contain the current version, a null release and an empty advisory list. This operational view is excluded from MCP.
 
 ## HTTP ingress and escaping failures
 

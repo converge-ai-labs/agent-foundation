@@ -149,9 +149,7 @@ export function useModelDraft({
       model_name: channels.includes(item.ref.provider) ? item.ref.model : "",
       model_api: channels.includes(item.ref.provider)
         ? (item.model_api ??
-          (["openai.realtime", "openai.live", "xai.realtime"].includes(
-            callingApi,
-          )
+          (definition?.realtime_model_apis?.includes(callingApi)
             ? (definition?.default_model_api ?? "")
             : callingApi))
         : "openai.chat_completions",

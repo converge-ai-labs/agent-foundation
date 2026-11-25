@@ -12,7 +12,11 @@ import { conversationQueries, runPath, type ViewLevel } from "../api";
 import { SessionBodyLoading, SessionError } from "../session-feedback";
 import { useRun, useSession } from "../queries";
 import { runResubmission, type Resubmission } from "../resubmit";
-import { RealtimeComposer, useRealtimeAvailability } from "../realtime";
+import {
+  useActiveRealtimeAvailability,
+  RealtimeComposer,
+  useRealtimeAvailability,
+} from "../realtime";
 import { BranchOrigin } from "../thread-branches";
 import { RunNavigator } from "./debug/run-navigator";
 import { DebugPendingRun } from "./debug/run-section";
@@ -102,7 +106,11 @@ export function RunContent({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, run, runIds.join(":")]);
   const { level } = useViewLevel(thread, session.data);
-  const latest = thread?.current_run_id ?? thread?.last_run_id;
+  // Acceptance names the live Run before the Thread stream refreshes its current pointer.
+  const activeVoice = useActiveRealtimeAvailability(runId);
+  const latest = activeVoice
+    ? runId
+    : (thread?.current_run_id ?? thread?.last_run_id);
   const successor = useRun(following && latest !== runId ? latest : undefined);
   const indirect = !!successor.data && successor.data.parent_run_id !== runId;
   const lineage = useInfiniteQuery({
@@ -259,10 +267,12 @@ function RunBody({
   const { t } = useTranslation();
   const { can, basePath } = useWorkspace();
   const navigate = useNavigate();
-  const realtime = useRealtimeAvailability(
+  const activeVoice = useActiveRealtimeAvailability(run.id);
+  const availableVoice = useRealtimeAvailability(
     { agentId: run.agent_id, threadId: thread.id },
     !!thread.current_run_id,
   ).data;
+  const realtime = activeVoice ?? availableVoice;
   const interactive = useInteractiveThread(thread);
   const transcript = useRef<HTMLDivElement>(null);
   const scroll = useTranscriptScroll(transcript, level, inspectionId);
@@ -356,7 +366,7 @@ function RunBody({
             threadId={thread.id}
             displayedRunId={run.id}
             availability={realtime}
-            onFinished={(receipt) => {
+            onAccepted={(receipt) => {
               navigate(runPath(basePath, receipt) + "?follow=latest", {
                 state: { continuedFrom: run.id },
               });

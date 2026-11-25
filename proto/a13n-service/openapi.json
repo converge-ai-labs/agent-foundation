@@ -20436,6 +20436,20 @@
             ],
             "title": "Operations"
           },
+          "realtime_model_apis": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realtime Model Apis"
+          },
           "settings_schemas": {
             "anyOf": [
               {

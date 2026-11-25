@@ -474,8 +474,10 @@ def _describe(registry: Registry, definition: RegisteredProvider) -> ProviderTyp
         described.default_model_api = apis[0]
         described.model_api_labels = {api: MODEL_APIS[api].display_name for api in apis}
         described.settings_schemas = {api: dict(registry.model_settings[api]) for api in apis}
+        described.realtime_model_apis = []
         for api, protocol in PROTOCOLS.items():
             if protocol.provider == definition.type:
+                described.realtime_model_apis.append(api)
                 described.model_apis.append(api)
                 described.model_api_labels[api] = protocol.label
                 described.settings_schemas[api] = dict(registry.model_settings[api])

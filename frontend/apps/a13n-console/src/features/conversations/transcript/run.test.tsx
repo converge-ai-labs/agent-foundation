@@ -267,7 +267,7 @@ it("reads the level from the URL and shows the run's display at either level", a
   expect(panels).toEqual([]);
 });
 
-it("copies each assistant reply separately in an interleaved voice conversation", async () => {
+it("copies only the last assistant reply in an interleaved voice conversation", async () => {
   realtime = true;
   const user = userEvent.setup();
   displayItems = ["First reply", "Next question", "Second reply"].map(
@@ -283,12 +283,9 @@ it("copies each assistant reply separately in an interleaved voice conversation"
     }),
   );
   show();
-  const buttons = await screen.findAllByRole("button", { name: "Copy reply" });
-  expect(buttons).toHaveLength(2);
-  for (const [index, text] of ["First reply", "Second reply"].entries()) {
-    await user.click(buttons[index]!);
-    expect(await navigator.clipboard.readText()).toBe(text);
-  }
+  const button = await screen.findByRole("button", { name: "Copy reply" });
+  await user.click(button);
+  expect(await navigator.clipboard.readText()).toBe("Second reply");
 });
 
 it("keeps retained observations inside Debug and loads their full content on demand", async () => {

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -8,11 +9,13 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
-import { RealtimeComposer } from "../realtime";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
+import { RealtimeCallProvider, RealtimeComposer } from "../realtime";
 import { Composer } from "./composer";
 
+const ticketRequest = vi.hoisted(() => vi.fn());
 vi.mock("../../../auth/context", () => ({
-  useClient: () => ({ http: {}, workspace: () => ({}) }),
+  useClient: () => ({ http: {}, workspace: () => ({ POST: ticketRequest }) }),
 }));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -104,11 +107,19 @@ it("retains message and attachment drafts when closing the attachment dialog", a
 it("keeps the waveform action with and without a realtime draft", () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <RealtimeComposer
-        agentId="agent"
-        availability={{ realtime: true, can_start: true, accepts_text: true }}
-        onFinished={vi.fn()}
-      />
+      <MemoryRouter>
+        <RealtimeCallProvider>
+          <RealtimeComposer
+            agentId="agent"
+            availability={{
+              realtime: true,
+              can_start: true,
+              accepts_text: true,
+            }}
+            onAccepted={vi.fn()}
+          />
+        </RealtimeCallProvider>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   const input = screen.getByRole("textbox", { name: "Message" });
@@ -162,12 +173,20 @@ it("keeps an unsent draft when opening the microphone is cancelled", async () =>
   try {
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <RealtimeComposer
-          agentId="agent"
-          initial={{ content: [{ type: "text", text: "Keep this draft" }] }}
-          availability={{ realtime: true, can_start: true, accepts_text: true }}
-          onFinished={vi.fn()}
-        />
+        <MemoryRouter>
+          <RealtimeCallProvider>
+            <RealtimeComposer
+              agentId="agent"
+              initial={{ content: [{ type: "text", text: "Keep this draft" }] }}
+              availability={{
+                realtime: true,
+                can_start: true,
+                accepts_text: true,
+              }}
+              onAccepted={vi.fn()}
+            />
+          </RealtimeCallProvider>
+        </MemoryRouter>
       </QueryClientProvider>,
     );
     const input = screen.getByRole<HTMLTextAreaElement>("textbox", {
@@ -219,4 +238,106 @@ it("uses the ordinary composer shortcuts for a voice draft", async () => {
   expect(submit.mock.calls[0]![0]).toEqual({
     content: [{ type: "text", text: "Typed input" }],
   });
+});
+
+it("transfers call controls to the accepted Run while the same socket becomes ready", async () => {
+  const receipt = { session_id: "session", thread_id: "thread", run_id: "run" };
+  const path = "/workspace/design/sessions/session/threads/thread/runs/run";
+  ticketRequest.mockResolvedValue({
+    response: new Response(),
+    data: {
+      ...receipt,
+      websocket_path: "/realtime",
+      subprotocol: "test",
+      ticket: "ticket",
+    },
+  });
+  const close = vi.fn();
+  const send = vi.fn();
+  let socket: Socket;
+  class Socket {
+    static OPEN = 1;
+    static CLOSING = 2;
+    readyState = Socket.OPEN;
+    close = close;
+    send = send;
+    onmessage?: (event: MessageEvent) => void;
+    constructor() {
+      socket = this;
+    }
+  }
+  const stop = vi.fn();
+  vi.stubGlobal("WebSocket", Socket);
+  vi.stubGlobal(
+    "AudioContext",
+    class {
+      resume = async () => {};
+      close = async () => {};
+      audioWorklet = { addModule: async () => {} };
+      createMediaStreamSource = () => ({ connect: vi.fn() });
+    },
+  );
+  vi.stubGlobal(
+    "AudioWorkletNode",
+    class {
+      port = {};
+      connect() {}
+      disconnect() {}
+    },
+  );
+  const media = Object.getOwnPropertyDescriptor(navigator, "mediaDevices");
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: {
+      getUserMedia: async () => ({ getTracks: () => [{ stop }] }),
+    },
+  });
+  function Dial({ inRun }: { inRun: boolean }) {
+    const navigate = useNavigate();
+    return (
+      <RealtimeComposer
+        agentId="agent"
+        displayedRunId={inRun ? "run" : undefined}
+        availability={{ realtime: true, can_start: !inRun, accepts_text: true }}
+        onAccepted={() => navigate(path)}
+      />
+    );
+  }
+  const receive = (frame: object) =>
+    act(() =>
+      socket.onmessage?.(
+        new MessageEvent("message", { data: JSON.stringify(frame) }),
+      ),
+    );
+  try {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter initialEntries={["/new"]}>
+          <RealtimeCallProvider>
+            <Routes>
+              <Route path="/new" element={<Dial key="new" inRun={false} />} />
+              <Route path={path} element={<Dial key="run" inRun />} />
+            </Routes>
+          </RealtimeCallProvider>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Start voice chat" }));
+    await waitFor(() => expect(socket?.onmessage).toBeDefined());
+    receive({ type: "accepted", ...receipt });
+    receive({ type: "ready", accepts_text: true, supports_interruption: true });
+    expect(
+      screen.getByRole("button", { name: "Interrupt response" }),
+    ).toBeTruthy();
+    expect(close).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "End realtime chat" }));
+    expect(send).toHaveBeenCalledWith(JSON.stringify({ type: "stop" }));
+    expect(stop).toHaveBeenCalledOnce();
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+    if (media) Object.defineProperty(navigator, "mediaDevices", media);
+    else Reflect.deleteProperty(navigator, "mediaDevices");
+  }
 });

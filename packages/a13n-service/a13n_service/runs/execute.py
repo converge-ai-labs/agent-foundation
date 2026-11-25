@@ -580,6 +580,7 @@ class _Attempt:
         assert plan.tail.search is not None
         self.search = Index(plan.tail.search, runtime.settings.run_search)
         worker = runtime.settings.worker
+        self.realtime_protocol = PROTOCOLS.get(plan.agent.model.config.model_api)
         self.fold = DisplayFold(
             lease.run_id,
             plan.tail,
@@ -587,7 +588,7 @@ class _Attempt:
             page_items=worker.page_items,
             page_bytes=worker.page_bytes,
             memory_ids={memory.mount.name: memory.mount.memory_id for memory in plan.host.memories},
-            group_live_user_speech=plan.agent.model.config.model_api == "openai.live",
+            group_live_user_speech=bool(self.realtime_protocol and self.realtime_protocol.group_user_speech),
         )
         if plan.tail.position.attempt != lease.number:
             self.fold.interrupt(open_tool_calls(plan.state.message_history))
@@ -790,7 +791,11 @@ class _Attempt:
                         ),
                         *host.capabilities(node, retain_tools=self.plan.retain_tools),
                         *(
-                            [SpawnCapability(self._operator(node).spawn, node.config)]
+                            [
+                                SpawnCapability(
+                                    self._operator(node).spawn, node.config, realtime_parent=self.lease.realtime
+                                )
+                            ]
                             if node.revision_id is not None
                             and node.config.subagents.dynamic.enabled
                             and self.plan.root_run_id == self.lease.run_id
@@ -840,8 +845,8 @@ class _Attempt:
                 producer_observer=output.observe,
                 environment=host.environment,
             )
-            if root.model.config.model_api in PROTOCOLS:
-                return await self._realtime(executable, bindings, output)
+            if self.realtime_protocol is not None:
+                return await self._realtime(executable, bindings, output), None
             if self.lease.realtime:
                 raise ServiceError("conflict", "The Agent's primary model no longer uses a realtime API")
             start = partial(
@@ -896,8 +901,9 @@ class _Attempt:
             raise ServiceError("conflict", BUDGET_RESTRICTION)
         channel.attached = True
         await prove(self.runtime.storage, self.lease)
-        model_api = self.plan.agent.model.config.model_api
-        transcripts = LiveTranscripts(group_user_speech=model_api == "openai.live")
+        protocol = self.realtime_protocol
+        assert protocol is not None
+        transcripts = LiveTranscripts(group_user_speech=protocol.group_user_speech)
         webrtc = (
             LiveWebRTC(
                 channel.webrtc_offer,
@@ -907,11 +913,7 @@ class _Attempt:
             if channel.webrtc_offer is not None
             else None
         )
-        settings: RealtimeModelSettings = {}
-        if webrtc is None and not channel.audio and model_api == "openai.live":
-            settings = {"openai_live_idle_audio": True}  # type: ignore[typeddict-unknown-key]
-        elif channel.audio and model_api == "openai.realtime":
-            settings = {"turn_detection": {"silence_duration_ms": 850}}
+        settings = (protocol.audio_defaults if channel.audio else protocol.text_defaults).copy()
         settings.update(
             cast(
                 RealtimeModelSettings,

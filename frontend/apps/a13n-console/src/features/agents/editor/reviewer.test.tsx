@@ -1,6 +1,13 @@
 import { useAgentDraft, type AgentDraft } from "./draft";
 import type { useAgentChoices } from "../choices";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  cleanup,
+  render as renderUI,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../../shared/api";
@@ -9,12 +16,29 @@ import { ReviewerSection, ReviewerSettings } from "./reviewer";
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+vi.mock("../../../auth/context", () => ({ useClient: () => ({}) }));
+function render(element: ReactElement) {
+  const cache = new QueryClient({
+    defaultOptions: { queries: { staleTime: Infinity } },
+  });
+  cache.setQueryData(["model-provider-types"], {
+    items: [{ realtime_model_apis: ["test.voice_protocol"] }],
+  });
+  return renderUI(
+    <QueryClientProvider client={cache}>{element}</QueryClientProvider>,
+  );
+}
 afterEach(cleanup);
 const models = [
   {
     key: "review-model",
     name: "Reviewer",
     config: { model_api: "test", model_name: "test-model" },
+  },
+  {
+    key: "voice",
+    name: "Voice model",
+    config: { model_api: "test.voice_protocol", model_name: "voice" },
   },
 ] as Schema["Model"][];
 
@@ -46,7 +70,9 @@ it("requires a model, validates advanced settings, and applies without publishin
   ).toBeTruthy();
   expect(onApply).not.toHaveBeenCalled();
   await user.click(screen.getByRole("combobox", { name: "Review model" }));
-  await user.click(await screen.findByRole("option", { name: "Reviewer" }));
+  const option = await screen.findByRole("option", { name: "Reviewer" });
+  expect(screen.queryByRole("option", { name: "Voice model" })).toBeNull();
+  await user.click(option);
   const settings = screen.getByLabelText("Review model settings (JSON)");
   await user.clear(settings);
   await user.paste('{"unknown": true}');

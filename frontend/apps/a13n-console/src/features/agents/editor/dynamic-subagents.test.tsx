@@ -14,7 +14,16 @@ const research = { ...parent, key: "research", name: "Research model" };
 vi.mock("../choices", () => ({
   useAgentChoices: () => ({
     data: {
-      models: [parent, research],
+      models: [
+        parent,
+        research,
+        {
+          ...parent,
+          key: "voice",
+          name: "Voice model",
+          config: { model_api: "test.voice_protocol" },
+        },
+      ],
       providers: [
         {
           id: "provider",
@@ -32,6 +41,7 @@ vi.mock("../../models/provider-definitions", () => ({
     data: {
       items: [
         {
+          realtime_model_apis: ["test.voice_protocol"],
           settings_schemas: {
             "openai.chat_completions": {
               properties: {
@@ -59,9 +69,9 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 afterEach(cleanup);
-function Editor() {
+function Editor({ model = "parent" }: { model?: string }) {
   const draft = useAgentDraft({
-    model: "parent",
+    model,
     subagents: {
       mode: "inline",
       dynamic: {
@@ -117,4 +127,19 @@ it("requires an explicit async choice, preserves defaults and resets a removed d
   expect(
     screen.getByRole("combobox", { name: "Default model" }).textContent,
   ).toContain("Parent model");
+});
+
+it("requires a non-realtime default when a voice parent spawns dynamic subagents", async () => {
+  const user = userEvent.setup();
+  render(<Editor model="voice" />);
+  await user.click(screen.getByRole("switch", { name: "Dynamic subagents" }));
+  await user.click(screen.getByRole("button", { name: "Use async" }));
+  await user.click(
+    screen.getByRole("button", { name: "Remove allowed model research" }),
+  );
+  expect(
+    screen.getAllByText("Subagents require a non-realtime model.").length,
+  ).toBeGreaterThan(0);
+  const field = screen.getByRole("combobox", { name: "Default model" });
+  expect(field.getAttribute("aria-invalid")).toBe("true");
 });

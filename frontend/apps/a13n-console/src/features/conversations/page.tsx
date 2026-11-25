@@ -59,7 +59,11 @@ import { SessionMemoryControl } from "./composer/session-memory";
 import { PreviewFileContext } from "./files/selection";
 import type { FileReference } from "./files/assets";
 import styles from "./conversations.module.css";
-import { RealtimeComposer, useRealtimeAvailability } from "./realtime";
+import {
+  RealtimeCallProvider,
+  RealtimeComposer,
+  useRealtimeAvailability,
+} from "./realtime";
 
 const FilesPanel = lazy(() => import("./files/panel"));
 
@@ -67,9 +71,12 @@ export function ConversationsPage() {
   const { sessionId } = useParams();
   const location = useLocation();
   const nested = !!sessionId || /\/sessions\/new\/?$/.test(location.pathname);
+  const { workspace } = useWorkspace();
   return nested ? (
     <div className={`${styles.sessionStage} a13n-scrollbar`}>
-      <Outlet />
+      <RealtimeCallProvider key={workspace.id}>
+        <Outlet />
+      </RealtimeCallProvider>
     </div>
   ) : (
     <SessionList />
@@ -247,7 +254,7 @@ export function NewConversation() {
                 : undefined
             }
             availability={realtime}
-            onFinished={(run) => {
+            onAccepted={(run) => {
               void invalidateConversation(cache, workspace.id, {
                 sessionId: run.session_id,
                 threadId: run.thread_id,

@@ -33,7 +33,6 @@ export function AgentTurn({
   model,
   childPath,
   footer,
-  copyMessages = false,
   children,
 }: {
   blocks: readonly TranscriptBlock[];
@@ -49,7 +48,6 @@ export function AgentTurn({
   childPath?: string | null;
   /** The quiet actions that close the answer. */
   footer?: ReactNode;
-  copyMessages?: boolean;
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -104,11 +102,7 @@ export function AgentTurn({
               itemId={block.entry.id}
             />
           ) : (
-            <AgentMessage
-              key={block.id}
-              entry={block.entry}
-              copy={copyMessages}
-            />
+            <AgentMessage key={block.id} entry={block.entry} />
           ),
         )}
         {children}
@@ -126,7 +120,7 @@ function renderReply(value: unknown, previewHtml: boolean) {
   );
 }
 
-function AgentMessage({ entry, copy }: { entry: ContentEntry; copy: boolean }) {
+function AgentMessage({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
   const streaming = entry.state === "in_progress";
   return (
@@ -152,16 +146,11 @@ function AgentMessage({ entry, copy }: { entry: ContentEntry; copy: boolean }) {
       )}
       {entry.failure != null && <JsonView value={entry.failure} />}
       <LegacyTruncation itemId={entry.id} />
-      {copy && entry.state === "completed" && entry.text && (
-        <div className={styles.turnActions}>
-          <CopyReply entry={entry} />
-        </div>
-      )}
     </article>
   );
 }
 
-/** Copy the complete text of this assistant message. */
+/** The answer as a whole is copied from its last reply, once it is complete. */
 export function CopyReply({ entry }: { entry: ContentEntry }) {
   const { t } = useTranslation();
   // A reply kept in storage is read whole from its own view, never from a preview.

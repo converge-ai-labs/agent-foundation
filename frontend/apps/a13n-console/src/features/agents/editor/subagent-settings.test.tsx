@@ -7,7 +7,7 @@ import { SubagentSettings } from "./subagent-settings";
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
 vi.mock("../../../auth/context", () => ({
-  useClient: () => ({ workspace: () => http }),
+  useClient: () => ({ http, workspace: () => http }),
 }));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -31,13 +31,24 @@ const child = {
   archived_at: null,
 } as Schema["Agent"];
 function setup(props: Partial<Parameters<typeof SubagentSettings>[0]> = {}) {
-  http.GET.mockResolvedValue({
+  http.GET.mockImplementation(async (path: string) => ({
     data: {
-      items: [{ id: "ar_pinned", number: 2, note: "Reviewed" }],
+      items: path.endsWith("/revisions")
+        ? [
+            {
+              id: "ar_pinned",
+              number: 2,
+              note: "Reviewed",
+              config: { model: "text" },
+            },
+          ]
+        : path.endsWith("/models")
+          ? [{ key: "text", config: { model_api: "test.chat" } }]
+          : [],
       next_cursor: null,
     },
     response: new Response(),
-  });
+  }));
   const onApply = vi.fn(),
     onClose = vi.fn();
   render(
