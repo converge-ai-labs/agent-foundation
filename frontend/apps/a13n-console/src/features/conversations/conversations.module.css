@@ -44,6 +44,22 @@
     border-bottom: 1px solid var(--a13n-border-soft);
   }
 }
+/* On phones, give Files the workspace without resizing the transcript's
+   scrollport or leaving a clipped strip of transcript beneath the panel. */
+@media (max-width: 480px) {
+  .sessionWorkspace[data-files-open] {
+    position: relative;
+  }
+  .sessionWorkspace[data-files-open] .sessionContent {
+    visibility: hidden;
+  }
+  .sessionWorkspace[data-files-open] .filesPane {
+    position: absolute;
+    inset: 0;
+    max-height: none;
+    border-bottom: 0;
+  }
+}
 .sessionContent {
   flex: 1;
   min-width: 0;
