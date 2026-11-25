@@ -416,7 +416,7 @@ class HarnessUiLiveHub:
         if display is not None:
             if run_kind != "root":
                 raise ValueError("Compact baseline publication requires a root Run")
-            frames = [
+            frames: list[tuple[AguiEvent, StreamPosition | None, ItemRef | None]] = [
                 (
                     _AGUI_ADAPTER.validate_python(observation.event),
                     StreamPosition(attempt=display.continuation.position.attempt, sequence=observation.sequence),
