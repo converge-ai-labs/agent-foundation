@@ -683,7 +683,7 @@ class MCPServer(NativeMCP[AgentContext]):
                 else NativeMCP[AgentContext](
                     id=self.id,
                     native=False,
-                    local=_ProgressToolset(toolset),
+                    local=_ProgressToolset(toolset),  # pyright: ignore[reportArgumentType]
                     allowed_tools=list(self._selected_tools) if self._selected_tools is not None else None,
                 )
             )
