@@ -25,7 +25,7 @@ pytestmark = pytest.mark.anyio
     "loss", ["reset", "sequence", "terminal", "overflow", "overflow-terminal", "overflow-initial", "overflow-child"]
 )
 async def test_root_display_recovers_tool_results_and_keeps_streaming_before_completion(tmp_path, loss):
-    hub = HarnessUiLiveHub()
+    hub = HarnessUiLiveHub(subscriber_buffer_size=64)
     fold = DisplayFold("run-one", full_content=True)
     renderer = StreamRenderer(Status(mode="detailed"))
     updated, finish = asyncio.Event(), asyncio.Event()
