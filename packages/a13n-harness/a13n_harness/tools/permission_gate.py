@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 from dataclasses import dataclass, replace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from pydantic import JsonValue, TypeAdapter
 from pydantic_ai import RunContext
@@ -43,7 +43,11 @@ from a13n_harness.tools.approval import (
 )
 from a13n_harness.tools.diagnostics import INVALID_ARGUMENT, system_failure
 from a13n_harness.tools.identity import ToolPermissionMode, tool_identity
-from a13n_harness.tools.permissions import TOOL_PERMISSIONS_CAPABILITY_ID, ToolPermissionsCapability
+from a13n_harness.tools.permissions import (
+    TOOL_PERMISSIONS_CAPABILITY_ID,
+    ToolPermissionsCapability,
+    mcp_annotation_risk,
+)
 from a13n_harness.tools.policy import InvocationDecisionKind
 
 _JSON = TypeAdapter(dict[str, JsonValue])
@@ -63,7 +67,11 @@ def permission_mode(ctx: RunContext[AgentContext], tool_def: ToolDefinition) -> 
         return identity.default_mode
     if not isinstance(capability, ToolPermissionsCapability):
         raise DefinitionError("Incompatible tool permissions.", code="capability_type_mismatch")
-    return capability.permissions.resolve(identity)
+    return capability.permissions.resolve(identity, annotations=(tool_def.metadata or {}).get("annotations"))
+
+
+def tool_annotation_risk(tool_def: ToolDefinition) -> Literal["low", "high"] | None:
+    return mcp_annotation_risk(tool_identity(tool_def), (tool_def.metadata or {}).get("annotations"))
 
 
 def _arguments(args: dict[str, Any]) -> dict[str, JsonValue]:
@@ -122,6 +130,7 @@ async def check_permission(
                     arguments,
                     tool_id=approval.tool_id,
                     reason="permission",
+                    risk=tool_annotation_risk(tool_def),
                 ),
                 "reason": "Tool permission configuration requires approval.",
             },
@@ -253,7 +262,7 @@ async def _review(
                     arguments,
                     tool_id=approval.tool_id,
                     reason="review" if result is not None else "review_error",
-                    risk=result.assessment.risk.value if result is not None else None,
+                    risk=result.assessment.risk.value if result is not None else tool_annotation_risk(tool_def),
                 ),
                 "reason": reason,
                 **review_metadata,
@@ -378,12 +387,16 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
                         check.approval,
                         metadata={
                             **(exc.metadata or {}),
-                            APPROVAL_PRESENTATION_KEY: approval_presentation(args, tool_id=check.approval.tool_id),
+                            APPROVAL_PRESENTATION_KEY: approval_presentation(
+                                args, tool_id=check.approval.tool_id, risk=tool_annotation_risk(tool.tool_def)
+                            ),
                         },
                     ) from exc
             if tool.tool_def.kind == "unapproved" and not ctx.tool_call_approved:
                 ctx.deps._tool_pending_approvals[check.approval.tool_call_id] = {
-                    APPROVAL_PRESENTATION_KEY: approval_presentation(args, tool_id=check.approval.tool_id),
+                    APPROVAL_PRESENTATION_KEY: approval_presentation(
+                        args, tool_id=check.approval.tool_id, risk=tool_annotation_risk(tool.tool_def)
+                    ),
                 }
 
     return replace(tool, args_validator_func=validate)

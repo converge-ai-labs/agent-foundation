@@ -63,6 +63,19 @@ security:
 
 若使用 TypeSafe Jev 作为 `model-review`，新建一个 `route: typesafe:jev-latest` 且 `authentication: {kind: api_key, env: TYPESAFE_API_KEY}` 的模型资源即可。
 
+## 根据 MCP 工具标注请求审批
+
+给智能体添加权限能力，即可在调用 MCP 服务器标为破坏性的工具前请求审批。如果已配置 `ToolPermissionsCapability`，将此字段合并到现有配置中：
+
+```yaml
+capabilities:
+  - capability: ToolPermissionsCapability
+    configuration:
+      respect_mcp_annotations: true
+```
+
+该设置默认为 `false`。启用后，继承权限的工具若标注了 `readOnlyHint: true`，则直接放行；若标注了 `destructiveHint: true` 且未标为只读，则请求审批。其他工具沿用来源默认权限。服务器标注仅作提示；需要强制执行的策略请写成显式规则。
+
 ## 启用内置子智能体、MCP 服务器与技能
 
 - **内置子智能体（`explorer`、`code-reviewer`、`executor`）：** 在 `a13n-harness-ui.yaml` 中合并 `subagents: {include: [explorer, code-reviewer]}`（`[]` 关闭自动注入；可通过 `a13n-harness-ui config subagents --format json` 查看）。

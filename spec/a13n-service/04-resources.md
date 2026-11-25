@@ -92,7 +92,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `memory`: defaults for new sessions' memory settings, snapshotted at first business acceptance unless explicitly configured ([11](11-memory.md#session-selection-and-run-views)). A run override cannot change these defaults.
 - `memory_mounts`: default memory mounts `{name, memory_id, access, recall}`, at most 32 with unique names and memories, which a thread takes at its first acceptance ([11](11-memory.md#mounts)). They are referenced, not pinned, and a run's override cannot change them.
 
-Tool permissions live on each selection and compile into one Harness tool-permission table.
+Tool permissions live on each selection and compile into one Harness tool-permission table. `AgentConfig.respect_mcp_annotations` defaults to `false` and enables [Harness MCP annotation defaults](../a13n-harness/07-tool-execution.md#tool-permissions-and-review) for inherited MCP tool permissions.
 
 Connection selections validate `connection_id`, `tools`, `permission`, and `permissions`. Unknown fields are ignored during parsing.
 
@@ -577,6 +577,10 @@ assets   (ast_)
 ```
 
 An asset is immutable content with metadata. `POST /assets {upload_id, name}` returns 201 with the new asset, or 200 when the same upload and name already made one; the same upload with another name is 409 `upload_in_use`. The built-in `publish_asset` tool publishes a file of the run's environment the same way under the run's authority, with `source = {run_id, run_attempt_id, tool_call_id}`. Inbox entries and run outputs reference assets by ID; new input naming a retired asset, or one of another workspace, is `invalid_argument` (field `content.{index}.asset_id` of the part naming it, reason `not_usable`, with the asset's `kind` and `id`). How a message's asset reaches the model is [05](05-runs.md#how-files-reach-the-model). `DELETE` retires an asset (`write`, `If-Match`, idempotent); `GET …/content` still serves a retired asset, as an attachment ([10](10-api.md#representations)). No asset content is physically deleted.
+
+`GET /assets` requires workspace `read`. It lists assets in ID order by default. `order=newest` orders by descending creation time, then descending ID. `query` matches a case-insensitive literal substring of the asset name; `created_by_id` selects an exact principal; `source_kind` selects `user_upload` (no run provenance) or `agent_run`; `status` selects `active`, `retired`, or `all` (default). Filters combine with AND and apply before pagination. `total_count` counts matching assets across all pages. A listed asset includes `creator_name` and, when its source Run resolves in the workspace, `thread_id` and `session_id`; otherwise both IDs are null.
+
+`GET /storage` requires workspace `read`. It reports `active_bytes`, `retired_bytes`, and `staged_upload_bytes`, with `total_bytes` equal to their sum. `by_creator` contains the same totals per recorded principal, with `created_by_id` and `creator_name`. Workspace readers can see creator names and totals for principals with tracked files in that workspace. Asset bytes are attributed to the asset creator; staged bytes to the upload creator. An upload counts as staged until an asset references its object key, regardless of other uses of that upload. Retired assets retain their references. Totals cover tracked rows in the workspace; they exclude untracked objects and other object types.
 
 ## Subscriptions
 

@@ -31,6 +31,8 @@ Set `allow`, `ask`, `review`, `deny`, or `inherit` on `toolsets.<toolset>.tools.
 - **`ask`:** Pauses the run as `waiting` (`pending.approvals`).
 - **`review`:** Evaluates risk (`low`..`extra_high`) with the configured `reviewer` model and applies your threshold policy (deny or ask a human; defaults deny `extra_high` and ask on review error).
 
+In the Agent configuration JSON, set `respect_mcp_annotations: true` to use MCP server hints for tools with `inherit` permission. Tools marked `readOnlyHint: true` run without approval; other tools marked `destructiveHint: true` request approval. Tools without either hint keep their source defaults. The option defaults to `false`; explicit permissions always take precedence.
+
 ## Client tools and questions
 
 Declare application-executed tools in `client_tools` and enable `user_questions: true` for `ask_user_question`:

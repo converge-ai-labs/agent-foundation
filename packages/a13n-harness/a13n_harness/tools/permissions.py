@@ -37,12 +37,24 @@ TOOL_PERMISSIONS_CAPABILITY_ID = "a13n.tool-permissions"
 type ToolPermissionSetting = ToolPermissionMode | Literal["inherit"]
 
 
+def mcp_annotation_risk(identity: ToolIdentity, annotations: object = None) -> Literal["low", "high"] | None:
+    """Classify explicit server hints for a tool in the trusted MCP namespace."""
+    if not identity.tool_id.startswith("mcp/") or not isinstance(annotations, Mapping):
+        return None
+    if annotations.get("readOnlyHint") is True:
+        return "low"
+    if annotations.get("destructiveHint") is True:
+        return "high"
+    return None
+
+
 class ToolPermissions(BaseModel):
     """Portable configuration. Inherit resolves a tool default, never an execution decision."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     default: ToolPermissionSetting = "inherit"
+    respect_mcp_annotations: bool = False
     rules: dict[str, ToolPermissionSetting] = Field(default_factory=dict, max_length=1024)
 
     @field_validator("rules")
@@ -56,8 +68,18 @@ class ToolPermissions(BaseModel):
         """Select the authored setting without erasing an explicit inheritance choice."""
         return match_selector(self.rules, identity.tool_id) or self.default
 
-    def resolve(self, identity: ToolIdentity) -> ToolPermissionMode:
+    def _effective_setting(self, identity: ToolIdentity, annotations: object) -> ToolPermissionSetting:
         setting = self.setting_for(identity)
+        if setting == "inherit" and self.default == "inherit" and self.respect_mcp_annotations:
+            risk = mcp_annotation_risk(identity, annotations)
+            if risk == "low":
+                return "allow"
+            if risk == "high":
+                return "ask"
+        return setting
+
+    def resolve(self, identity: ToolIdentity, *, annotations: object = None) -> ToolPermissionMode:
+        setting = self._effective_setting(identity, annotations)
         return identity.default_mode if setting == "inherit" else setting
 
 
@@ -124,9 +146,10 @@ class ToolPermissionsCapability(AbstractCapability[AgentContext]):
         default: ToolPermissionSetting = "inherit",
         rules: dict[str, ToolPermissionSetting] | None = None,
         review: ToolReviewConfig | None = None,
+        respect_mcp_annotations: bool = False,
     ) -> ToolPermissionsCapability:
         return cls(
-            ToolPermissions(default=default, rules=rules or {}),
+            ToolPermissions(default=default, rules=rules or {}, respect_mcp_annotations=respect_mcp_annotations),
             review=ToolReviewConfig.model_validate(review) if review is not None else None,
         )
 
@@ -202,7 +225,8 @@ class _ToolPermissionsToolset(WrapperToolset[AgentContext]):
         for name, tool in tools.items():
             if tool.tool_def.kind == "unapproved":
                 identified = identify_tool(tool)
-                if self.permissions.setting_for(tool_identity(identified.tool_def)) != "inherit":
+                annotations = (identified.tool_def.metadata or {}).get("annotations")
+                if self.permissions._effective_setting(tool_identity(identified.tool_def), annotations) != "inherit":
                     # Keep the source Tool and its prepared definition reusable by other Runs/Hosts.
                     tool = replace(identified, tool_def=replace(identified.tool_def, kind="function"))
             prepared[name] = tool

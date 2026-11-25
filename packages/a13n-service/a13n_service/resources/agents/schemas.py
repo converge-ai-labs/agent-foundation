@@ -297,6 +297,7 @@ class AgentConfig(_Frozen):
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
     skill_sync: SkillSync = Field(default_factory=SharedSkillSync)
     connection_tools: tuple[ConnectionSelection, ...] = Field(default=(), max_length=128)
+    respect_mcp_annotations: bool = False
     tool_search: ToolSearch | NativeToolSearch | None = Field(default=None, exclude_if=lambda value: value is None)
     builtin_skills: frozenset[BuiltinSkillName] = frozenset()
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
@@ -377,6 +378,7 @@ class AgentConfigurationChanges(_Frozen):
     skills: tuple[SkillSelection, ...] | MISSING = Field(default=MISSING, max_length=512)
     skill_sync: SkillSync | MISSING = Field(default=MISSING)
     connection_tools: tuple[ConnectionSelection, ...] | MISSING = Field(default=MISSING, max_length=128)
+    respect_mcp_annotations: bool | MISSING = Field(default=MISSING)
     tool_search: ToolSearch | NativeToolSearch | MISSING | None = Field(default=MISSING)
     builtin_skills: frozenset[BuiltinSkillName] | MISSING = Field(default=MISSING)
     client_tools: tuple[ClientToolDefinition, ...] | MISSING = Field(default=MISSING, max_length=128)

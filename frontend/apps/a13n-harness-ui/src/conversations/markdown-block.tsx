@@ -35,8 +35,7 @@ function Diagram({
   );
   const [result, setResult] = useState<{
     source: string;
-    src?: string;
-    error?: boolean;
+    preview: Awaited<ReturnType<typeof renderDiagram>>;
   }>();
   const [original, setOriginal] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -52,24 +51,15 @@ function Diagram({
   }, []);
   useEffect(() => {
     let active = true;
-    void renderDiagram(source, dark).then(
-      (src) => {
-        if (active) setResult({ source, src });
-      },
-      () => {
-        if (active)
-          setResult({
-            source,
-            error: true,
-          });
-      },
-    );
+    void renderDiagram(source, dark).then((preview) => {
+      if (active) setResult({ source, preview });
+    });
     return () => {
       active = false;
     };
   }, [source, dark]);
   // Retain the previous theme's image during recoloring, but never a different diagram.
-  const current = result?.source === source ? result : undefined;
+  const current = result?.source === source ? result.preview : undefined;
   return (
     <>
       {header(
@@ -106,11 +96,9 @@ function Diagram({
           {t("Rendering diagram…")}
         </p>
       )}
-      {current?.error && (
+      {current?.reason && (
         <p className={styles.diagramStatus} role="status">
-          {t(
-            "Diagram preview unavailable. The original source is shown below.",
-          )}
+          {t(current.reason)}
         </p>
       )}
       {(original || !current?.src) && (

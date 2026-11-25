@@ -1,7 +1,34 @@
-// Mermaid owns its parser/layout. Load it only when a complete diagram is shown.
-// Its global configuration/render state must not race across messages or themes.
+import frameUrl from "./mermaid-frame-url";
+import {
+  maxTextSize,
+  type FrameReply,
+  type FrameRequest,
+} from "./mermaid-protocol";
+
+const failureMessages = {
+  "too-long": "Diagram source exceeds 50,000 characters.",
+  "too-many-edges": "Diagram exceeds 500 connections.",
+  "unsupported-directive":
+    "Diagram configuration directives are not supported in previews.",
+  "unsupported-type": "This Mermaid diagram type is not recognized.",
+  "image-unavailable":
+    "An image in this diagram could not load. External images are disabled in previews.",
+  "invalid-diagram": "Mermaid could not render this diagram. Check its syntax.",
+  "timed-out": "Diagram rendering timed out.",
+  unavailable: "The Mermaid preview renderer could not start.",
+} as const;
+
+type FailureReason = (typeof failureMessages)[keyof typeof failureMessages];
+type DiagramResult =
+  { src: string; reason?: never } | { src?: never; reason: FailureReason };
+
+// Mermaid shares mutable parser and theme state. Send one job at a time.
 let queue: Promise<unknown> = Promise.resolve();
+let iframe: HTMLIFrameElement | undefined;
 let serial = 0;
+let unavailableThrough = 0;
+const timeoutMs = 8_000;
+
 // Mermaid emits width="100%" without a height, which gives an <img> a 300×150
 // default box and shrinks tall diagrams until their labels are unreadable.
 // Pin the layout's own size so the image renders at 1:1 and only scales down
@@ -27,70 +54,92 @@ export function intrinsicSize(svg: string) {
   root.style.removeProperty("max-width");
   return new XMLSerializer().serializeToString(root);
 }
-const maxTextSize = 50_000;
-const staticDiagram =
-  /^(?:flowchart|graph|sequenceDiagram|stateDiagram-v2)(?=\s|;|$)/;
-const authoredSettings = /^\s*---|%%\s*\{/m;
-const authoredAssets = /@\s*\{|\b(?:style|classDef|linkStyle)\b/i;
-const sequenceAssets = /\b(?:properties|details|rect)\b/i;
-const richLabels = /<\/?[a-z!]|\$\$|&(?:lt|#0*60|#x0*3c)|#(?:lt|60|x3c);/i;
 
-function supportsStaticLayout(source: string) {
-  const body = source.replace(/^\s*(?:%%[^\r\n]*(?:\r\n?|\n)\s*)*/, "");
-  return (
-    staticDiagram.test(body) &&
-    !authoredSettings.test(source) &&
-    !authoredAssets.test(source) &&
-    !(body.startsWith("sequenceDiagram") && sequenceAssets.test(body)) &&
-    !richLabels.test(body.replace(/<<(?:fork|join|choice)>>/gi, ""))
-  );
+function renderInFrame(
+  id: number,
+  source: string,
+  dark: boolean,
+): Promise<DiagramResult> {
+  const start = !iframe;
+  const frame = iframe ?? document.createElement("iframe");
+  const request: FrameRequest = { kind: "render-mermaid", id, source, dark };
+  return new Promise((resolve) => {
+    let ready = !start;
+    let deadline = performance.now() + timeoutMs;
+    let timer = window.setTimeout(expire, timeoutMs);
+    function expire() {
+      frame.remove();
+      iframe = undefined;
+      // Fail the queued batch once when the preview asset cannot start. A
+      // later request can retry; a render timeout only fails its own job.
+      if (!ready) unavailableThrough = serial;
+      finish({ reason: failureMessages[ready ? "timed-out" : "unavailable"] });
+    }
+    function finish(result: DiagramResult) {
+      window.clearTimeout(timer);
+      window.removeEventListener("message", receive);
+      resolve(result);
+    }
+    function send() {
+      // Opaque origins cannot be specified as postMessage targets.
+      frame.contentWindow!.postMessage(request, "*");
+    }
+    function receive({
+      origin,
+      source: sender,
+      data,
+    }: MessageEvent<FrameReply>) {
+      if (origin !== "null" || sender !== frame.contentWindow) return;
+      if (performance.now() >= deadline) {
+        expire();
+        return;
+      }
+      if (!ready && data?.kind === "mermaid-ready") {
+        ready = true;
+        deadline = performance.now() + timeoutMs;
+        window.clearTimeout(timer);
+        timer = window.setTimeout(expire, timeoutMs);
+        send();
+      } else if (ready && data?.kind === "mermaid-result" && data.id === id) {
+        if (data.reason) finish({ reason: failureMessages[data.reason] });
+        else if (typeof data.svg === "string")
+          finish({
+            src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(intrinsicSize(data.svg))}`,
+          });
+      }
+    }
+    window.addEventListener("message", receive);
+    if (start) {
+      frame.setAttribute("sandbox", "allow-scripts");
+      frame.setAttribute("aria-hidden", "true");
+      frame.tabIndex = -1;
+      // Keep the document laid out for text measurement without affecting the app.
+      frame.style.cssText =
+        "position:fixed;inset:0;width:100%;height:100%;border:0;visibility:hidden;pointer-events:none";
+      frame.src = frameUrl;
+      document.body.append(frame);
+      iframe = frame;
+    } else send();
+  });
 }
 
-export function renderDiagram(source: string, dark: boolean): Promise<string> {
-  // Strict sanitizes the serialized SVG, but Mermaid lays it out in the live
-  // document first. Admit only the reviewed text diagram types, without
-  // directives, custom styles, assets, actor metadata or rich labels.
-  if (source.length > maxTextSize || !supportsStaticLayout(source))
-    return Promise.reject(new Error("Diagram requires source view."));
-  const render = queue.then(async () => {
-    const { default: mermaid } = await import("mermaid");
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      suppressErrorRendering: true,
-      maxTextSize,
-      maxEdges: 500,
-      theme: "base",
-      htmlLabels: false,
-      flowchart: { htmlLabels: false, curve: "basis", padding: 18 },
-      fontFamily: "system-ui, sans-serif",
-      themeVariables: {
-        darkMode: dark,
-        fontSize: "14px",
-        primaryColor: dark ? "#27272a" : "#f4f4f5",
-        primaryTextColor: dark ? "#e4e4e7" : "#27272a",
-        primaryBorderColor: dark ? "#71717a" : "#a1a1aa",
-        lineColor: dark ? "#a1a1aa" : "#71717a",
-        secondaryColor: dark ? "#243044" : "#eff6ff",
-        tertiaryColor: dark ? "#202024" : "#fafafa",
-        background: dark ? "#18181b" : "#ffffff",
-      },
+export function renderDiagram(
+  source: string,
+  dark: boolean,
+): Promise<DiagramResult> {
+  if (source.length > maxTextSize)
+    return Promise.resolve({ reason: failureMessages["too-long"] });
+  // Keep the application's theme and limits; diagram statements go to Mermaid untouched.
+  if (/^\s*---[ \t]*(?:\r?\n|$)|%%\s*\{/.test(source))
+    return Promise.resolve({
+      reason: failureMessages["unsupported-directive"],
     });
-    // Mermaid needs a laid-out DOM for text measurement. Keep its temporary
-    // SVG out of document flow so opening a diagram cannot scroll the workbench.
-    const host = document.createElement("div");
-    host.style.cssText =
-      "position:fixed;inset:0;overflow:hidden;visibility:hidden;pointer-events:none";
-    document.body.append(host);
-    try {
-      const { svg } = await mermaid.render(`diagram-${++serial}`, source, host);
-      // An image document cannot execute diagram callbacks or inject styles into
-      // the application. Do not bind Mermaid's optional interactive callbacks.
-      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(intrinsicSize(svg))}`;
-    } finally {
-      host.remove();
-    }
-  });
-  queue = render.catch(() => {});
-  return render;
+  const id = ++serial;
+  const result = queue.then(() =>
+    id <= unavailableThrough
+      ? { reason: failureMessages.unavailable }
+      : renderInFrame(id, source, dark),
+  );
+  queue = result.catch(() => {});
+  return result.catch(() => ({ reason: failureMessages.unavailable }));
 }
