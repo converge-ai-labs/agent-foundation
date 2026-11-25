@@ -388,6 +388,8 @@
   "Update Model": "更新模型",
   "List Organizations": "列出组织",
   "Get Organization": "获取组织",
+  "Get Update Notices": "获取更新提示",
+  "Read the Control process's cached release and security notices as an organization administrator.": "组织管理员可读取控制进程缓存的版本更新提示和安全公告。",
   "Update Organization": "更新组织",
   "List Organization Audit Events": "列出组织审计事件",
   "List Organization Grants": "列出组织授权",
