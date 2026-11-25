@@ -31,6 +31,8 @@ description: 在 Service 中管理不可变智能体版本、配置工具权限�
 - **`ask`：** 将运行挂起为 `waiting`（出现在 `pending.approvals` 中）。
 - **`review`：** 调用 `reviewer` 审查模型评估风险等级（`low`..`extra_high`），达到阈值时拒绝或请求人工审批（默认拒绝 `extra_high` 且在审查异常时请求人工确认）。
 
+在智能体的 JSON 配置中设置 `respect_mcp_annotations: true`，即可为权限为 `inherit` 的 MCP 工具采用服务器标注。标有 `readOnlyHint: true` 的工具直接放行；其他标有 `destructiveHint: true` 的工具需要审批。没有这两种标注的工具沿用来源默认权限。该选项默认为 `false`，显式权限始终优先。
+
 ## 客户端工具与提问
 
 在 `client_tools` 中声明由业务应用自行执行的工具，并设置 `user_questions: true` 开启 `ask_user_question`：

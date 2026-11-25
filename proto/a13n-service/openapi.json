@@ -296,6 +296,11 @@
             "title": "Plugins",
             "type": "array"
           },
+          "respect_mcp_annotations": {
+            "default": false,
+            "title": "Respect Mcp Annotations",
+            "type": "boolean"
+          },
           "retries": {
             "anyOf": [
               {
@@ -525,6 +530,11 @@
             "maxItems": 128,
             "title": "Plugins",
             "type": "array"
+          },
+          "respect_mcp_annotations": {
+            "default": false,
+            "title": "Respect Mcp Annotations",
+            "type": "boolean"
           },
           "retries": {
             "anyOf": [

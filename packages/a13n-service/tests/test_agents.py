@@ -28,6 +28,7 @@ from a13n_harness.plugin_factories import (
 )
 from a13n_harness.pricing import AbstractModelCostCapability
 from a13n_harness.tools.client import ClientToolsCapability
+from a13n_harness.tools.identity import ToolIdentity
 from a13n_harness.tools.permissions import ToolPermissionsCapability
 from a13n_service.infra import cursors
 from a13n_service.infra.audit import AuditEventRow
@@ -39,12 +40,14 @@ from a13n_service.resources.agents import composer as builtin_composer
 from a13n_service.resources.agents import definition, toolsets
 from a13n_service.resources.agents.schemas import (
     AgentConfig,
+    AgentConfigurationChanges,
     AgentOverride,
     AgentValidate,
     OutputSpec,
     RetryConfig,
     SkillSelection,
     SubagentSelection,
+    apply_configuration_changes,
     apply_override,
     freeze_override,
 )
@@ -1405,3 +1408,19 @@ async def test_transactional_revision_publication_enforces_boundary_and_rolls_ba
     async with transaction(runtime.storage) as session:
         with pytest.raises(ServiceError):
             await publish_revision(session, actor, tenant.workspace_id, agent["id"], body, **kwargs)
+
+
+@pytest.mark.parametrize("enabled", [None, False, True])
+def test_mcp_annotation_permissions_from_agent_configuration(enabled) -> None:
+    settings = {} if enabled is None else {"respect_mcp_annotations": enabled}
+    stored = config(connection_tools=[{"connection_id": MCP, "permissions": {"locked": "deny"}}], **settings)
+    parsed = AgentConfig.model_validate_json(stored.model_dump_json())
+    assert parsed.respect_mcp_annotations is bool(enabled)
+    permissions = definition.tool_permissions(parsed, {MCP: "mcp"})
+    assert permissions.resolve(ToolIdentity(f"mcp/{MCP}/drop"), annotations={"destructiveHint": True}) == (
+        "ask" if enabled else "allow"
+    )
+    assert permissions.resolve(ToolIdentity(f"mcp/{MCP}/locked"), annotations={"readOnlyHint": True}) == "deny"
+    changes = AgentConfigurationChanges.model_validate({"respect_mcp_annotations": not enabled})
+    assert apply_configuration_changes(parsed, changes).respect_mcp_annotations is (not enabled)
+    assert AgentConfig.model_validate({"model": parsed.model}).respect_mcp_annotations is False

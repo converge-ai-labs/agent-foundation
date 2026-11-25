@@ -45,7 +45,7 @@ def create_server() -> FastMCP:
             meta={"private": "not-for-the-model"},
         )
 
-    @server.tool(meta={"ui": {"visibility": ["app"]}})
+    @server.tool(meta={"ui": {"visibility": ["app"]}}, annotations={"destructiveHint": True})
     def reset() -> str:
         nonlocal count
         count = 0
