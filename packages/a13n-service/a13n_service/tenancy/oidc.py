@@ -1,4 +1,4 @@
-"""OIDC authorization code exchange and first-login provisioning for the Service browser session."""
+"""OIDC sign-in and logout for Service browser sessions."""
 
 import base64
 import hashlib
@@ -9,16 +9,17 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
+from time import time
 from urllib.parse import quote_plus
 
 import httpx2
 import jwt
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_logging import exception_details, get_logger
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ValidationError, field_validator
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,11 +35,12 @@ from a13n_service.tenancy.authenticate import Login, oidc_session_data, open_ses
 from a13n_service.tenancy.authorize import Scope, WorkspaceScope
 from a13n_service.tenancy.credentials import new_secret
 from a13n_service.tenancy.grants import add_grant
-from a13n_service.tenancy.tables import OIDCGrantRow, OrganizationRow, PrincipalRow, WorkspaceRow
+from a13n_service.tenancy.tables import OIDCGrantRow, OrganizationRow, PrincipalRow, TokenRow, WorkspaceRow
 
 FLOW_SECONDS = 600
 _TOKEN_CLOCK_SKEW_SECONDS = 30
 _SIGNING_ALGORITHMS = ("RS256", "ES256")
+_LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout"
 _PROVIDER_ERROR = re.compile(r"[a-z0-9_.-]{1,64}")
 
 
@@ -48,6 +50,12 @@ class _Discovery(BaseModel):
     token_endpoint: str
     jwks_uri: str
     code_challenge_methods_supported: list[str] | None = None
+    end_session_endpoint: str | None = None
+
+    @field_validator("end_session_endpoint", mode="before")
+    @classmethod
+    def optional_logout_endpoint(cls, value: object) -> str | None:
+        return value if isinstance(value, str) else None
 
 
 class _TokenResponse(BaseModel):
@@ -70,6 +78,7 @@ class Identity:
     name: str
     email: str | None
     matched_grants: tuple[OIDCGrantSpec, ...] = ()
+    sid: str | None = None
 
 
 class Stage(StrEnum):
@@ -80,6 +89,7 @@ class Stage(StrEnum):
     TOKEN_EXCHANGE = "token_exchange"
     JWKS = "jwks"
     ID_TOKEN = "id_token"
+    LOGOUT_TOKEN = "logout_token"
     PROVISION = "provision"
 
 
@@ -182,7 +192,7 @@ def _upstream(stage: Stage) -> Iterator[None]:
         if error.code != "payload_too_large":
             raise
         raise Failure(stage, Reason.RESPONSE_TOO_LARGE, code="unavailable") from None
-    except jwt.PyJWTError as error:
+    except (jwt.PyJWTError, RecursionError) as error:
         if isinstance(error, jwt.ExpiredSignatureError):
             reason = Reason.TOKEN_EXPIRED
         elif isinstance(error, jwt.ImmatureSignatureError):
@@ -194,7 +204,7 @@ def _upstream(stage: Stage) -> Iterator[None]:
         elif isinstance(error, jwt.InvalidSignatureError):
             reason = Reason.INVALID_SIGNATURE
         else:
-            reason = Reason.INVALID_TOKEN if stage is Stage.ID_TOKEN else Reason.INVALID_RESPONSE
+            reason = Reason.INVALID_TOKEN if stage in {Stage.ID_TOKEN, Stage.LOGOUT_TOKEN} else Reason.INVALID_RESPONSE
         raise Failure(stage, reason, code="unavailable") from None
 
 
@@ -233,22 +243,36 @@ def console_destination(value: str) -> str:
     return value
 
 
+async def _discover(provider: OIDCProvider) -> _Discovery:
+    with _upstream(Stage.DISCOVERY):
+        async with open_http(oidc_endpoint_policy(provider.issuer), timeout=5, max_bytes=128 * 1024) as http:
+            response = await http.get(f"{provider.issuer.rstrip('/')}/.well-known/openid-configuration")
+            discovery = _parse_response(_Discovery, response, Stage.DISCOVERY)
+        if discovery.issuer != provider.issuer:
+            raise Failure(Stage.DISCOVERY, Reason.ISSUER_MISMATCH, code="unavailable")
+        return discovery
+
+
+def _browser_endpoint(provider: OIDCProvider, endpoint: str) -> httpx2.URL:
+    # The browser visits these URLs directly, outside of open_http.
+    if any(not c.isprintable() or c.isspace() or c in "\\#" for c in endpoint):
+        raise EndpointPolicyError("invalid OIDC browser endpoint")
+    oidc_endpoint_policy(provider.issuer).validate_syntax(endpoint)
+    return httpx2.URL(endpoint)
+
+
 async def start(
     redis: Redis, name: str, provider: OIDCProvider, *, redirect_uri: str, return_to: str = "/"
 ) -> tuple[str, str]:
+    discovery = await _discover(provider)
     with _upstream(Stage.DISCOVERY):
+        authorization = _browser_endpoint(provider, discovery.authorization_endpoint)
         policy = oidc_endpoint_policy(provider.issuer)
-        async with open_http(policy, timeout=5, max_bytes=128 * 1024) as http:
-            response = await http.get(f"{provider.issuer.rstrip('/')}/.well-known/openid-configuration")
-            discovery = _parse_response(_Discovery, response, Stage.DISCOVERY)
-        for endpoint in (discovery.authorization_endpoint, discovery.token_endpoint, discovery.jwks_uri):
-            # The authorization endpoint is visited by the browser, not by open_http.
+        for endpoint in (discovery.token_endpoint, discovery.jwks_uri):
             if any(c.isspace() or c in "\\#" for c in endpoint):
                 raise Failure(Stage.DISCOVERY, Reason.INVALID_ENDPOINT, code="unavailable")
             policy.validate_syntax(endpoint)
         methods = discovery.code_challenge_methods_supported
-        if discovery.issuer != provider.issuer:
-            raise Failure(Stage.DISCOVERY, Reason.ISSUER_MISMATCH, code="unavailable")
         if methods is not None and "S256" not in methods:
             raise Failure(Stage.DISCOVERY, Reason.PKCE_UNSUPPORTED, code="unavailable")
 
@@ -264,7 +288,7 @@ async def start(
         "code_challenge": challenge,
         "code_challenge_method": "S256",
     }
-    target = str(httpx2.URL(discovery.authorization_endpoint).copy_merge_params(params))
+    target = str(authorization.copy_merge_params(params))
     key = _flow_key(name, provider, redirect_uri, state, browser)
     await redis.set(
         key,
@@ -319,12 +343,23 @@ def _match_claim(claim: str, expected: str | list[str], claims: dict[str, object
     )
 
 
-def _identity(token: str, keys: list[jwt.PyJWK], provider: OIDCProvider, nonce: str) -> Identity:
+def _signing_header(token: str) -> tuple[str, str | None]:
     header = jwt.get_unverified_header(token)
     algorithm = header.get("alg")
     kid = header.get("kid")
-    if algorithm not in _SIGNING_ALGORITHMS or (kid is not None and not isinstance(kid, str)):
+    if (
+        not isinstance(algorithm, str)
+        or algorithm not in _SIGNING_ALGORITHMS
+        or (kid is not None and not isinstance(kid, str))
+    ):
         raise jwt.InvalidTokenError("unsupported OIDC signing algorithm or key")
+    return algorithm, kid
+
+
+def _decode_token(
+    token: str, header: tuple[str, str | None], keys: list[jwt.PyJWK], provider: OIDCProvider, *, required: list[str]
+) -> dict[str, object]:
+    algorithm, kid = header
     matches = [
         key
         for key in keys
@@ -335,18 +370,36 @@ def _identity(token: str, keys: list[jwt.PyJWK], provider: OIDCProvider, nonce: 
     if len(matches) != 1:
         raise jwt.InvalidTokenError("no unique OIDC signing key")
     try:
-        claims = jwt.decode(
+        return jwt.decode(
             token,
             matches[0],
             algorithms=[algorithm],
             audience=provider.client_id,
             issuer=provider.issuer,
             leeway=_TOKEN_CLOCK_SKEW_SECONDS,
-            options={"require": ["iss", "sub", "aud", "exp", "iat", "nonce"]},
+            options={"require": required},
         )
     except (TypeError, OverflowError):
         # PyJWT's NumericDate conversion can raise these on invalid signed claim types or values.
-        raise jwt.InvalidTokenError("invalid ID token claim type") from None
+        raise jwt.InvalidTokenError("invalid OIDC token claim type") from None
+
+
+def _subject_id(subject: object) -> str | None:
+    return (
+        subject
+        if isinstance(subject, str) and 0 < len(subject) <= 255 and subject.isascii() and subject.isprintable()
+        else None
+    )
+
+
+def _session_id(sid: object) -> str | None:
+    return sid if isinstance(sid, str) and sid and sid.isascii() and sid.isprintable() else None
+
+
+def _identity(token: str, keys: list[jwt.PyJWK], provider: OIDCProvider, nonce: str) -> Identity:
+    claims = _decode_token(
+        token, _signing_header(token), keys, provider, required=["iss", "sub", "aud", "exp", "iat", "nonce"]
+    )
     if (
         claims["aud"] not in (provider.client_id, [provider.client_id])
         or claims.get("azp", provider.client_id) != provider.client_id
@@ -355,13 +408,8 @@ def _identity(token: str, keys: list[jwt.PyJWK], provider: OIDCProvider, nonce: 
     received = claims["nonce"]
     if not isinstance(received, str) or not received.isascii() or not hmac.compare_digest(received, nonce):
         raise jwt.InvalidTokenError("ID token nonce does not match")
-    subject = claims["sub"]
-    if (
-        not isinstance(subject, str)
-        or not 0 < len(subject) <= 255
-        or not subject.isascii()
-        or not subject.isprintable()
-    ):
+    subject = _subject_id(claims["sub"])
+    if subject is None:
         raise jwt.InvalidTokenError("invalid ID token subject")
     email_claim = claims.get("email")
     email = email_claim.strip() if isinstance(email_claim, str) else ""
@@ -379,7 +427,9 @@ def _identity(token: str, keys: list[jwt.PyJWK], provider: OIDCProvider, nonce: 
         for rule in provider.role_rules
         if all(_match_claim(claim, values, claims) for claim, values in rule.match.items())
     )
-    return Identity(subject, (name or email or f"{provider.label} user")[:128], email, matched)
+    return Identity(
+        subject, (name or email or f"{provider.label} user")[:128], email, matched, _session_id(claims.get("sid"))
+    )
 
 
 async def exchange(provider: OIDCProvider, flow: Flow, *, redirect_uri: str, code: str) -> Identity:
@@ -408,6 +458,105 @@ async def exchange(provider: OIDCProvider, flow: Flow, *, redirect_uri: str, cod
                 keys = _parse_jwks(await http.get(flow.jwks_uri))
     with _upstream(Stage.ID_TOKEN):
         return _identity(tokens.id_token, keys, provider, flow.nonce)
+
+
+async def logout_redirect(provider: OIDCProvider, *, post_logout_redirect_uri: str) -> str | None:
+    try:
+        endpoint = (await _discover(provider)).end_session_endpoint
+        if endpoint is None:
+            return None
+        with _upstream(Stage.DISCOVERY):
+            return str(
+                _browser_endpoint(provider, endpoint).copy_merge_params(
+                    {
+                        "client_id": provider.client_id,
+                        "post_logout_redirect_uri": post_logout_redirect_uri,
+                    }
+                )
+            )
+    except Failure:
+        # Discovery is best-effort; the local session has already ended.
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class LogoutTarget:
+    subject: str | None
+    sid: str | None
+
+
+def _logout_target(claims: dict[str, object]) -> LogoutTarget:
+    issued, expires, current = claims["iat"], claims.get("exp"), time()
+    if (
+        not isinstance(issued, (int, float))
+        or isinstance(issued, bool)
+        or not current - _TOKEN_CLOCK_SKEW_SECONDS <= issued <= current + _TOKEN_CLOCK_SKEW_SECONDS
+    ):
+        raise jwt.InvalidTokenError("logout token outside the issued-at window")
+    if "exp" in claims and (
+        not isinstance(expires, (int, float)) or isinstance(expires, bool) or not expires > current
+    ):
+        raise jwt.InvalidTokenError("logout token expired or invalid")
+    events = claims.get("events")
+    if "nonce" in claims or not isinstance(events, dict) or not isinstance(events.get(_LOGOUT_EVENT), dict):
+        raise jwt.InvalidTokenError("invalid logout event or nonce")
+    subject, sid = _subject_id(claims.get("sub")), _session_id(claims.get("sid"))
+    if (
+        (subject is None and sid is None)
+        or ("sub" in claims and subject is None)
+        or ("sid" in claims and sid is None)
+        or not claims["jti"]
+    ):
+        raise jwt.InvalidTokenError("invalid logout token identifiers")
+    return LogoutTarget(subject, sid)
+
+
+async def verify_logout_token(provider: OIDCProvider, token: str) -> LogoutTarget:
+    with _upstream(Stage.LOGOUT_TOKEN):
+        header = _signing_header(token)
+    discovery = await _discover(provider)
+    with _upstream(Stage.JWKS):
+        async with open_http(oidc_endpoint_policy(provider.issuer), timeout=5, max_bytes=128 * 1024) as http:
+            keys = _parse_jwks(await http.get(discovery.jwks_uri))
+    with _upstream(Stage.LOGOUT_TOKEN):
+        claims = _decode_token(token, header, keys, provider, required=["iss", "aud", "iat", "jti"])
+        return _logout_target(claims)
+
+
+async def revoke_logout_sessions(storage: Storage, name: str, provider: OIDCProvider, target: LogoutTarget) -> None:
+    binding = oidc_session_data(name, provider)
+    if target.sid is not None:
+        binding["sid"] = target.sid
+        match = TokenRow.data.contains(binding)
+    else:
+        principal_id = (
+            select(PrincipalRow.id)
+            .where(PrincipalRow.oidc_issuer == provider.issuer, PrincipalRow.oidc_subject == target.subject)
+            .scalar_subquery()
+        )
+        match = TokenRow.data.contains(binding) & (TokenRow.principal_id == principal_id)
+    async with transaction(storage) as session:
+        revoked = await session.scalars(
+            update(TokenRow)
+            .where(
+                TokenRow.kind == "session",
+                TokenRow.revoked_at.is_(None),
+                TokenRow.expires_at > func.clock_timestamp(),
+                match,
+            )
+            .values(revoked_at=func.clock_timestamp())
+            .returning(TokenRow.id)
+        )
+        for session_id in revoked:
+            record(
+                session,
+                None,
+                actor_id=None,
+                action="login_session.revoke",
+                target_kind="login_session",
+                target_id=session_id,
+                details={"provider": name, "source": "oidc_backchannel"},
+            )
 
 
 async def _resolve_grants(
@@ -566,7 +715,8 @@ async def sign_in(
             row.oidc_email = identity.email
         await _sync_grants(session, row.id, name, current, desired if synchronized else {})
         principal = await principal_for(session, access, row.id)
-        secret = await open_session(
-            session, row.id, seconds=settings.auth.oidc.session_seconds, oidc=oidc_session_data(name, provider)
-        )
+        data = oidc_session_data(name, provider)
+        if identity.sid is not None:
+            data["sid"] = identity.sid
+        secret = await open_session(session, row.id, seconds=settings.auth.oidc.session_seconds, oidc=data)
     return Login(principal, secret, session_csrf(secret))

@@ -361,8 +361,31 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Logout */
+    /**
+     * Logout
+     * @description End the local session and, when available, return the provider's browser logout URL.
+     */
     post: operations["logout"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/auth/oidc/{provider_id}/backchannel-logout": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Oidc Backchannel Logout
+     * @description Revoke OIDC login sessions on receipt of a signed Logout Token from their provider.
+     */
+    post: operations["oidc_backchannel_logout"];
     delete?: never;
     options?: never;
     head?: never;
@@ -10147,6 +10170,11 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** LogoutRedirect */
+    LogoutRedirect: {
+      /** Logout Url */
+      logout_url: string;
+    };
     /** Logs */
     Logs: {
       /** Container */
@@ -16744,7 +16772,51 @@ export interface operations {
     requestBody?: never;
     responses: {
       /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["LogoutRedirect"];
+        };
+      };
+      /** @description Local logout */
       204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      default: components["responses"]["Error"];
+    };
+  };
+  oidc_backchannel_logout: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/x-www-form-urlencoded": {
+          logout_token: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      400: components["responses"]["Error"];
+      /** @description Rate limit exceeded */
+      429: {
         headers: {
           [name: string]: unknown;
         };

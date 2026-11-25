@@ -1,5 +1,7 @@
 """The public account flows and the caller's own account over HTTP."""
 
+from urllib.parse import parse_qs
+
 from fastapi import APIRouter, Request, Response
 from starlette.responses import RedirectResponse
 
@@ -21,7 +23,15 @@ from a13n_service.tenancy.authenticate import (
 )
 from a13n_service.tenancy.bootstrap import AlreadyBootstrapped, BootstrapInput, bootstrap, initialized
 from a13n_service.tenancy.invitations import accept_invitation
-from a13n_service.tenancy.requests import Actor, Credential, CurrentRuntime, ImageBody, limit_guessing, limit_oidc_start
+from a13n_service.tenancy.requests import (
+    Actor,
+    Credential,
+    CurrentRuntime,
+    ImageBody,
+    limit_guessing,
+    limit_oidc_backchannel,
+    limit_oidc_start,
+)
 from a13n_service.tenancy.schemas import (
     AccountDisable,
     ApiKey,
@@ -34,6 +44,7 @@ from a13n_service.tenancy.schemas import (
     LoginInput,
     LoginOutput,
     LoginSessionPage,
+    LogoutRedirect,
     OIDCSignIn,
     PasswordChange,
     PasswordReset,
@@ -116,9 +127,21 @@ async def bootstrap_administrator(
     return _signed_in(response, result, runtime.settings)
 
 
-@router.post("/auth/logout", status_code=204)
-async def logout(request: Request, response: Response, credential: Credential, runtime: CurrentRuntime) -> None:
+@router.post("/auth/logout", response_model=LogoutRedirect, responses={204: {"description": "Local logout"}})
+async def logout(
+    request: Request, response: Response, credential: Credential, runtime: CurrentRuntime
+) -> LogoutRedirect | Response:
+    """End the local session and, when available, return the provider's browser logout URL."""
     await runtime.access.authenticator.logout(request, response, credential)
+    response.headers["Cache-Control"] = "no-store"
+    settings = runtime.settings
+    provider_id = credential.oidc_provider_id
+    if provider_id is not None and (provider := settings.auth.oidc.providers.get(provider_id)) is not None:
+        url = await oidc.logout_redirect(provider, post_logout_redirect_uri=f"{settings.server.public_origin}/login")
+        if url is not None:
+            return LogoutRedirect(logout_url=url)
+    response.status_code = 204
+    return response
 
 
 @router.get("/auth/session", response_model=SessionProfile)
@@ -248,6 +271,50 @@ async def finish_oidc_sign_in(request: Request, provider_id: str, runtime: Curre
     if consumed and cookie is not None:
         response.delete_cookie(cookie, secure=settings.server.https, httponly=True, samesite="lax", path="/")
     return response
+
+
+@router.post(
+    "/auth/oidc/{provider_id}/backchannel-logout",
+    response_class=Response,
+    responses={400: {"description": "Invalid logout request"}, 429: {"description": "Rate limit exceeded"}},
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/x-www-form-urlencoded": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {"logout_token": {"type": "string"}},
+                        "required": ["logout_token"],
+                    }
+                }
+            },
+        }
+    },
+)
+async def oidc_backchannel_logout(request: Request, provider_id: str, runtime: CurrentRuntime) -> Response:
+    """Revoke OIDC login sessions on receipt of a signed Logout Token from their provider."""
+    headers = {"Cache-Control": "no-store"}
+    provider = runtime.settings.auth.oidc.providers.get(provider_id)
+    content_type = request.headers.get("content-type", "").partition(";")[0].strip().lower()
+    if provider is None or content_type != "application/x-www-form-urlencoded":
+        return Response(status_code=400, headers=headers)
+    body = bytearray()
+    async for chunk in request.stream():
+        if len(body) + len(chunk) > 64 * 1024:
+            return Response(status_code=400, headers=headers)
+        body.extend(chunk)
+    try:
+        tokens = parse_qs(body.decode("ascii"), keep_blank_values=True).get("logout_token", [])
+        if len(tokens) != 1 or not tokens[0]:
+            return Response(status_code=400, headers=headers)
+        # Apply the separate IdP budget after parsing the form, before fetching discovery or JWKS.
+        await limit_oidc_backchannel(request, runtime, provider_id)
+        target = await oidc.verify_logout_token(provider, tokens[0])
+    except (UnicodeDecodeError, oidc.Failure):
+        return Response(status_code=400, headers=headers)
+    await oidc.revoke_logout_sessions(runtime.storage, provider_id, provider, target)
+    return Response(status_code=200, headers=headers)
 
 
 @router.post("/auth/password-reset", status_code=204)

@@ -103,6 +103,12 @@ async def limit_oidc_start(request: Request, runtime: Runtime) -> None:
     )
 
 
+async def limit_oidc_backchannel(request: Request, runtime: Runtime, provider_id: str) -> None:
+    """Bound pre-verification upstream traffic without consuming the browser sign-in budget."""
+    peer = request.client.host if request.client else "unknown"
+    await rate_limit(runtime.redis, f"oidc_backchannel:{provider_id}:peer:{peer}", limit=600, window_seconds=60)
+
+
 async def limit_uploads(request: Request, principal_id: str) -> None:
     """One per-principal budget for workspace uploads and images, since stored bytes are never reclaimed."""
     runtime = await current_runtime(request)
