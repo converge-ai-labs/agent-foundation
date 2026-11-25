@@ -49,6 +49,7 @@ class MontyExecutor:
     global_sequential: bool = False
     max_concurrency: int = 1
     _pending: dict[int, PendingCall] = field(default_factory=dict, init=False)
+    _active_ordinals: set[int] = field(default_factory=set, init=False)
     _admission: asyncio.Semaphore = field(init=False, repr=False)
     _sequential_tail: asyncio.Task[Any] | None = field(default=None, init=False, repr=False)
 
@@ -56,6 +57,11 @@ class MontyExecutor:
         if self.max_concurrency <= 0:
             raise ValueError("max_concurrency must be greater than zero")
         self._admission = asyncio.Semaphore(self.max_concurrency)
+
+    async def _release_once(self, ordinal: int) -> None:
+        if ordinal in self._active_ordinals:
+            self._active_ordinals.remove(ordinal)
+            await self.release(ordinal)
 
     async def run(self, state: AsyncMontyState) -> MontyComplete:
         """Resume snapshots until the feed completes and drain owned calls."""
@@ -92,9 +98,8 @@ class MontyExecutor:
                     if not task.done():
                         task.cancel()
         await drain
-        for _, ordinal in calls:
-            if ordinal is not None:
-                await self.release(ordinal)
+        for ordinal in list(self._active_ordinals):
+            await self._release_once(ordinal)
         if interrupted:
             raise asyncio.CancelledError
 
@@ -113,16 +118,17 @@ class MontyExecutor:
 
         # Charge arguments before queueing so waiting calls cannot retain unbudgeted data.
         ordinal = await self.admit(name)
+        self._active_ordinals.add(ordinal)
         try:
             if snapshot.args:
                 raise TypeError(f"{name}() does not accept positional arguments; use keyword arguments")
             kwargs = snapshot.kwargs
             argument_bytes = await self.prepare_args(kwargs, ordinal)
         except Exception as exc:
-            await self.release(ordinal)
+            await self._release_once(ordinal)
             return await snapshot.resume({"exception": exc})
         except BaseException:
-            await self.release(ordinal)
+            await self._release_once(ordinal)
             raise
 
         barrier = name in self.sequential_names
@@ -144,21 +150,22 @@ class MontyExecutor:
         argument_bytes: int,
         predecessors: list[asyncio.Task[Any]],
     ) -> Any:
-        if predecessors:
-            await asyncio.shield(asyncio.gather(*predecessors, return_exceptions=True))
-        async with self._admission:
-            return await self.dispatch(name, kwargs, ordinal, argument_bytes)
+        try:
+            if predecessors:
+                await asyncio.shield(asyncio.gather(*predecessors, return_exceptions=True))
+            async with self._admission:
+                return await self.dispatch(name, kwargs, ordinal, argument_bytes)
+        finally:
+            await self._release_once(ordinal)
 
     async def _resolve_futures(self, snapshot: AsyncFutureSnapshot) -> AsyncMontyState:
         pending = {call_id: self._pending[call_id] for call_id in snapshot.pending_call_ids}
         await asyncio.wait([task for task, _ in pending.values()], return_when=asyncio.FIRST_COMPLETED)
         results: dict[int, ExternalSettledResult] = {}
-        for call_id, (task, ordinal) in pending.items():
+        for call_id, (task, _) in pending.items():
             if task.done():
                 results[call_id] = await _await_external(task)
                 del self._pending[call_id]
-                if ordinal is not None:
-                    await self.release(ordinal)
         return await snapshot.resume(results)
 
 

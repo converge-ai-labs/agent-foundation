@@ -333,8 +333,20 @@ async def test_monty_tasks_wait_for_first_host_result_with_ordering_limits(mode)
     first_result = asyncio.Event()
     first_started = asyncio.Event()
     second_started = asyncio.Event()
+    signal_admitted = asyncio.Event()
+    signal_started = asyncio.Event()
     marker = asyncio.Event()
     order = []
+    ordinals = iter((1, 2, 3))
+    released: list[int] = []
+
+    async def admit(name):
+        if name == "signal":
+            signal_admitted.set()
+        return next(ordinals)
+
+    async def release(ordinal):
+        released.append(ordinal)
 
     async def dispatch(name, kwargs, ordinal, argument_bytes):
         order.append(name)
@@ -345,6 +357,7 @@ async def test_monty_tasks_wait_for_first_host_result_with_ordering_limits(mode)
             second_started.set()
             await marker.wait()
         else:
+            signal_started.set()
             marker.set()
         return name
 
@@ -369,9 +382,9 @@ await asyncio.wait(pending)
             script_name="wait.codeact.py",
             inputs={},
             dispatch=dispatch,
-            admit=AsyncMock(return_value=1),
+            admit=admit,
             prepare_args=AsyncMock(return_value=0),
-            release=AsyncMock(),
+            release=release,
             valid_names={"first", "second", "signal"},
             sequential_names={"second"} if mode == "barrier" else set(),
             global_sequential=mode == "global",
@@ -381,19 +394,21 @@ await asyncio.wait(pending)
         await asyncio.wait_for(first_started.wait(), 5)
         if mode == "parallel":
             await asyncio.wait_for(second_started.wait(), 5)
+            first_result.set()
         else:
             assert not second_started.is_set()
-        if mode != "parallel":
-            # Sequential second calls must complete before signal can start.
+            first_result.set()
+            await asyncio.wait_for(second_started.wait(), 5)
+            await asyncio.wait_for(signal_admitted.wait(), 5)
+            # In limited, global, and barrier modes, signal must wait for second to finish.
+            assert not signal_started.is_set()
+            assert 1 in released
             marker.set()
-        first_result.set()
         result = await asyncio.wait_for(task, 5)
-        if mode == "parallel":
-            assert result.completed.output == [1, "first", "second"]
-        else:
-            assert result.completed.output in ([1, "first", "second"], [2, "first", "second"])
+        assert result.completed.output == [1, "first", "second"]
         assert result.printed == "first wait settled\n"
         assert order == ["first", "second", "signal"]
+        assert sorted(released) == [1, 2, 3]
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)

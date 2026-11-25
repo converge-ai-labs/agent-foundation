@@ -547,3 +547,72 @@ async def test_gpt62_static_instruction_prefix_and_tool_continuation(model_name,
     assert switched["input"][0]["content"] == "Agent B instructions"
     assert switched["input"][1] == initial["input"][1]
     assert all(item.get("content") != "Agent A instructions" for item in switched["input"])
+
+
+@pytest.mark.parametrize("model_name", ["gpt-6.2-sol", "gpt-6.2-astra"])
+async def test_gpt62_append_on_change_delta_continues_auto_chain(model_name):
+    from pydantic_ai import Agent
+
+    requests = []
+
+    def reply(request):
+        requests.append(request)
+        n = len(requests)
+        return httpx2.Response(
+            200,
+            json={
+                "id": f"resp-{n}",
+                "object": "response",
+                "created_at": 0,
+                "status": "completed",
+                "model": model_name,
+                "output": [
+                    {
+                        "type": "message",
+                        "id": f"msg-{n}",
+                        "role": "assistant",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": f"reply-{n}", "annotations": []}],
+                    }
+                ],
+                "parallel_tool_calls": True,
+                "tool_choice": "auto",
+                "tools": [],
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda req: reply(json.loads(req.content)))) as http:
+        client = AsyncOpenAI(api_key="test-key", http_client=http)
+        model = ResponsesModel(
+            model_name,
+            provider=OpenAIProvider(openai_client=client),
+            settings={"openai_previous_response_id": "auto", "openai_store": True},
+        )
+        catalog = "Catalog V1"
+        agent = Agent(model, instructions="Static A")
+
+        @agent.instructions(name="catalog", on_change="append")
+        def catalog_instructions():
+            return catalog
+
+        first = await agent.run("turn 1")
+        catalog = "Catalog V2"
+        second = await agent.run("turn 2", message_history=first.all_messages())
+        await agent.run("turn 3", message_history=second.all_messages())
+
+    req1, req2, req3 = requests
+    assert "previous_response_id" not in req1
+    assert "instructions" not in req1
+    assert req1["input"][0]["content"] == "Static A"
+    assert "Catalog V1" in req1["input"][1]["content"]
+
+    # An append-on-change update continues the stored chain and sends only the
+    # new user turn plus the incremental context delta, without resending Static A.
+    assert req2["previous_response_id"] == "resp-1"
+    assert "instructions" not in req2
+    assert any("Catalog V2" in item.get("content", "") for item in req2["input"])
+    assert all(item.get("content") != "Static A" for item in req2["input"])
+
+    assert req3["previous_response_id"] == "resp-2"
+    assert "instructions" not in req3
+    assert [item["content"] for item in req3["input"]] == ["turn 3"]
