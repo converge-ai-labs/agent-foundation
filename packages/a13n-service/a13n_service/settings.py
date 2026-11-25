@@ -379,6 +379,7 @@ class Encryption(Section):
 
 
 class Control(Section):
+    update_notices_enabled: bool = True
     scan_seconds: float = Field(default=1, gt=0, le=60)
     sweep_batch: int = Field(default=100, ge=1, le=10000)
     inbox_count: int = Field(default=128, ge=1, le=10000)

@@ -1,4 +1,11 @@
 {
+  "Service version": "Service version",
+  "Installed version": "Installed version",
+  "v{{version}} available": "v{{version}} available",
+  "Critical security advisory": "Critical security advisory",
+  "High-severity security advisory": "High-severity security advisory",
+  "View advisory on GitHub": "View advisory on GitHub",
+  "Hide on this browser": "Hide on this browser",
   "Password reset link ready": "Password reset link ready",
   "Password reset email queued": "Password reset email queued",
   "Agent default environment": "Agent default environment",

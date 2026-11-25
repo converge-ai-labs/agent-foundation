@@ -1,4 +1,11 @@
 {
+  "Service version": "Service 版本",
+  "Installed version": "已安装版本",
+  "v{{version}} available": "v{{version}} 已发布",
+  "Critical security advisory": "严重安全公告",
+  "High-severity security advisory": "高危安全公告",
+  "View advisory on GitHub": "在 GitHub 上查看公告",
+  "Hide on this browser": "在此浏览器中隐藏",
   "Password reset link ready": "密码重置链接已生成",
   "Password reset email queued": "重置邮件已加入发送队列",
   "Agent default environment": "Agent 默认环境",
