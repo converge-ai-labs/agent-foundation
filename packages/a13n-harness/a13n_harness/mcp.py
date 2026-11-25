@@ -15,6 +15,7 @@ import httpx2
 from a13n_logging import get_logger
 from anyio import BrokenResourceError, CancelScope, ClosedResourceError, EndOfStream, sleep
 from fastmcp import Client
+from fastmcp.client.roots import RootsHandler, RootsList
 from fastmcp.client.transports import ClientTransport
 from mcp import MCPError
 from mcp.types import CONNECTION_CLOSED
@@ -138,6 +139,7 @@ class _MCPRecipe:
     allowed_tools: tuple[str, ...] | None
     description: str | None
     defer_loading: bool
+    roots: RootsList | RootsHandler | None
 
 
 class ContextualMCP(NativeMCP[AgentContext]):
@@ -156,6 +158,7 @@ class ContextualMCP(NativeMCP[AgentContext]):
         allowed_tools: list[str] | tuple[str, ...] | None = None,
         description: str | None = None,
         defer_loading: bool = False,
+        roots: RootsList | RootsHandler | None = None,
     ) -> None:
         if not isinstance(url, str) or not url.strip():
             raise DefinitionError("Contextual MCP url must be a non-blank string.", code="mcp_definition_invalid")
@@ -192,6 +195,7 @@ class ContextualMCP(NativeMCP[AgentContext]):
             allowed_tools=tuple(allowed_tools) if allowed_tools is not None else None,
             description=description,
             defer_loading=defer_loading,
+            roots=roots.copy() if isinstance(roots, list) else roots,
         )
         self._recipe = recipe
         self._headers_factory = headers_factory
@@ -238,6 +242,7 @@ class ContextualMCP(NativeMCP[AgentContext]):
         merged_headers = {**static_headers, **validated_dynamic_headers}
 
         local: bool | MCPToolset[AgentContext] | None = self._recipe.local
+        client = None
         if ctx.deps.configuration.allowed_hosts is not None:
 
             async def authorize(request: httpx2.Request) -> None:
@@ -246,6 +251,8 @@ class ContextualMCP(NativeMCP[AgentContext]):
             client = httpx2.AsyncClient(
                 verify=outbound_tls_verify(), follow_redirects=False, event_hooks={"request": [authorize]}
             )
+            ctx.deps._register_run_cleanup(cache_id, client.aclose)
+        if client is not None or (self._recipe.roots is not None and local is not False):
             local_headers = dict(merged_headers)
             if self._recipe.authorization_token:
                 local_headers["Authorization"] = self._recipe.authorization_token
@@ -255,8 +262,8 @@ class ContextualMCP(NativeMCP[AgentContext]):
                 headers=local_headers or None,
                 http_client=client,
                 include_instructions=True,
+                roots=self._recipe.roots,
             )
-            ctx.deps._register_run_cleanup(cache_id, client.aclose)
 
         replacement = NativeMCP[AgentContext](
             self._recipe.url,

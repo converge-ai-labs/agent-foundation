@@ -190,29 +190,30 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 
 ### Authentication and account
 
-| Path                                 | Methods     | Owner                                           |
-| ------------------------------------ | ----------- | ----------------------------------------------- |
-| `/auth/configuration`                | GET         | [03](03-tenancy.md#identity-mail) (public)      |
-| `/auth/oidc/{provider_id}/start`     | GET         | [03](03-tenancy.md#openid-connect-sign-in)      |
-| `/auth/oidc/{provider_id}/callback`  | GET         | [03](03-tenancy.md#openid-connect-sign-in)      |
-| `/auth/login`                        | POST        | [03](03-tenancy.md#authentication) (public)     |
-| `/auth/bootstrap`                    | POST        | [03](03-tenancy.md#bootstrap) (public)          |
-| `/auth/logout`                       | POST        | [03](03-tenancy.md#authentication)              |
-| `/auth/session`                      | GET         | [03](03-tenancy.md#authentication)              |
-| `/auth/password-reset`               | POST        | [03](03-tenancy.md#account-management) (public) |
-| `/auth/password-reset/confirm`       | POST        | [03](03-tenancy.md#account-management) (public) |
-| `/auth/email-change/confirm`         | POST        | [03](03-tenancy.md#account-management) (public) |
-| `/invitations/{invitation}/accept`   | POST        | [03](03-tenancy.md#invitations) (public)        |
-| `/users/me`                          | GET, PATCH  | [03](03-tenancy.md#account-management)          |
-| `/users/me/password`                 | POST        | [03](03-tenancy.md#account-management)          |
-| `/users/me/disable`                  | POST        | [03](03-tenancy.md#disabling)                   |
-| `/users/me/login-sessions`           | GET         | [03](03-tenancy.md#account-management)          |
-| `/users/me/login-sessions/{session}` | DELETE      | [03](03-tenancy.md#account-management)          |
-| `/users/me/keys`                     | GET, POST   | [03](03-tenancy.md#api-keys)                    |
-| `/users/me/keys/{key}`               | DELETE      | [03](03-tenancy.md#api-keys)                    |
-| `/users/me/audit-events`             | GET         | [03](03-tenancy.md#audit)                       |
-| `/users/me/avatar`                   | PUT, DELETE | [03](03-tenancy.md#images)                      |
-| `/users/{user}/avatar`               | GET         | [03](03-tenancy.md#images)                      |
+| Path                                          | Methods     | Owner                                              |
+| --------------------------------------------- | ----------- | -------------------------------------------------- |
+| `/auth/configuration`                         | GET         | [03](03-tenancy.md#identity-mail) (public)         |
+| `/auth/oidc/{provider_id}/start`              | GET         | [03](03-tenancy.md#openid-connect-sign-in)         |
+| `/auth/oidc/{provider_id}/callback`           | GET         | [03](03-tenancy.md#openid-connect-sign-in)         |
+| `/auth/oidc/{provider_id}/backchannel-logout` | POST        | [03](03-tenancy.md#openid-connect-logout) (public) |
+| `/auth/login`                                 | POST        | [03](03-tenancy.md#authentication) (public)        |
+| `/auth/bootstrap`                             | POST        | [03](03-tenancy.md#bootstrap) (public)             |
+| `/auth/logout`                                | POST        | [03](03-tenancy.md#openid-connect-logout)          |
+| `/auth/session`                               | GET         | [03](03-tenancy.md#authentication)                 |
+| `/auth/password-reset`                        | POST        | [03](03-tenancy.md#account-management) (public)    |
+| `/auth/password-reset/confirm`                | POST        | [03](03-tenancy.md#account-management) (public)    |
+| `/auth/email-change/confirm`                  | POST        | [03](03-tenancy.md#account-management) (public)    |
+| `/invitations/{invitation}/accept`            | POST        | [03](03-tenancy.md#invitations) (public)           |
+| `/users/me`                                   | GET, PATCH  | [03](03-tenancy.md#account-management)             |
+| `/users/me/password`                          | POST        | [03](03-tenancy.md#account-management)             |
+| `/users/me/disable`                           | POST        | [03](03-tenancy.md#disabling)                      |
+| `/users/me/login-sessions`                    | GET         | [03](03-tenancy.md#account-management)             |
+| `/users/me/login-sessions/{session}`          | DELETE      | [03](03-tenancy.md#account-management)             |
+| `/users/me/keys`                              | GET, POST   | [03](03-tenancy.md#api-keys)                       |
+| `/users/me/keys/{key}`                        | DELETE      | [03](03-tenancy.md#api-keys)                       |
+| `/users/me/audit-events`                      | GET         | [03](03-tenancy.md#audit)                          |
+| `/users/me/avatar`                            | PUT, DELETE | [03](03-tenancy.md#images)                         |
+| `/users/{user}/avatar`                        | GET         | [03](03-tenancy.md#images)                         |
 
 ### Organizations, workspaces and members
 

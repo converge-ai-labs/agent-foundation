@@ -12564,6 +12564,19 @@
         "title": "LoginSessionPage",
         "type": "object"
       },
+      "LogoutRedirect": {
+        "properties": {
+          "logout_url": {
+            "title": "Logout Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "logout_url"
+        ],
+        "title": "LogoutRedirect",
+        "type": "object"
+      },
       "Logs": {
         "properties": {
           "container": {
@@ -32267,10 +32280,21 @@
     },
     "/api/v1/auth/logout": {
       "post": {
+        "description": "End the local session and, when available, return the provider's browser logout URL.",
         "operationId": "logout",
         "responses": {
-          "204": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutRedirect"
+                }
+              }
+            },
             "description": "Successful Response"
+          },
+          "204": {
+            "description": "Local logout"
           },
           "default": {
             "$ref": "#/components/responses/Error"
@@ -32286,6 +32310,59 @@
           }
         ],
         "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/oidc/{provider_id}/backchannel-logout": {
+      "post": {
+        "description": "Revoke OIDC login sessions on receipt of a signed Logout Token from their provider.",
+        "operationId": "oidc_backchannel_logout",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "properties": {
+                  "logout_token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "logout_token"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Oidc Backchannel Logout",
         "tags": [
           "auth"
         ]

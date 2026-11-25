@@ -3830,6 +3830,12 @@ export interface components {
              * @default false
              */
             input_prediction_enabled?: boolean;
+            /**
+             * Send Shortcut
+             * @default enter
+             * @enum {string}
+             */
+            send_shortcut?: "enter" | "mod-enter";
         };
         /** AppView */
         AppView: {
@@ -8261,6 +8267,12 @@ export interface components {
              * @default false
              */
             input_prediction_enabled?: boolean;
+            /**
+             * Send Shortcut
+             * @default enter
+             * @enum {string}
+             */
+            send_shortcut?: "enter" | "mod-enter";
             grant: components["schemas"]["ShareGrant"];
             /** Title */
             title: string;

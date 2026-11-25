@@ -68,6 +68,8 @@ curl "$A13N_URL/api/v1/workspaces/$WORKSPACE_ID" -H "Authorization: Bearer $A13N
 }
 ```
 
+- **从 Console 发起 IdP 退出：** 如果 IdP 发布了 `end_session_endpoint`，Console 会先结束 Service 会话，再跳转到该地址。在 IdP 中将 `{server.public_url}/login` 注册为允许的登出回跳地址。Service 发送客户端 ID，不发送 ID Token 提示；请确认 IdP 支持这种方式。
+- **从 IdP 通知 Service 退出：** 如果 IdP 支持 Back-Channel Logout，请为同一个 OIDC 客户端注册 `{server.public_url}/api/v1/auth/oidc/{provider_id}/backchannel-logout`。如需按设备退出，请在 IdP 的客户端设置中启用会话 ID（如果提供该选项）。按用户主体发出的通知也能吊销未记录会话 ID 的旧会话。API Key 和调度任务仍按各自的规则生效。
 - **内置登录图标（`brand`）：** Console 自动识别常见签发方 URL（Google、Microsoft Entra、Authentik、Keycloak）或提供方 ID/标签中的完整品牌词；也可通过 `brand` 显式指定 `google`、`microsoft`、`okta`、`auth0`、`github`、`gitlab`、`cloudflare`、`authentik`、`keycloak`、`authelia`、`zitadel`，或设为 `generic` 强制显示默认盾牌图标。
 - **显示邮箱（`require_email_verified`）：** Service 将 ID token 中的 `email` 存入仅用于界面显示的 `oidc_email`（不用于账号关联、邀请接受或权限授予）。默认 `require_email_verified = true`，仅当 `email_verified` 为布尔值 `true` 时保存邮箱；对于不签发 `email_verified` 的 Microsoft Entra ID 员工租户或默认返回 `False` 的 Authentik，**仅在用户无法自行设置未验证邮箱的前提下**，可在 `[auth.oidc.providers.<id>]` 中设置 `require_email_verified = false`。
 - **切换为仅 OIDC 登录：** 为 OIDC 管理员手动授予组织级 `admin` 角色并验证登录后，在 API 副本设置 `A13N_AUTH__PASSWORD_ENABLED=false` 重启生效。建议保留初始化密码管理员用于应急恢复（若需停用可执行 `a13n-service user disable --email <bootstrap-email>`，切勿直接在 PostgreSQL 中删除 `principals` 记录）。OIDC 会话默认在 `auth.oidc.session_seconds`（12 小时）后到期。

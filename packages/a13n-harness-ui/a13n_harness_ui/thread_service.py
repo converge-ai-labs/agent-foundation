@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
@@ -88,10 +89,12 @@ class ThreadService:
         store: LocalStore,
         configurations: CompositionAcceptanceService,
         configuration_root: Path | None = None,
+        local_roots_changed: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self._store = store
         self._configurations = configurations
         self._configuration_root = configuration_root
+        self._local_roots_changed = local_roots_changed
 
     async def create(
         self,
@@ -592,11 +595,17 @@ class ThreadService:
         thread = await self.get(thread_id)
         source = await self._required_configuration()
         replacement = apply_configuration_mutation(source, thread, mutation)
-        return await self._store.threads.update_configuration(
+        updated = await self._store.threads.update_configuration(
             thread_id=thread_id,
             expected_version=mutation.expected_version,
             replacement=replacement,
         )
+        if (
+            self._local_roots_changed is not None
+            and thread.configuration.local_roots != updated.configuration.local_roots
+        ):
+            await self._local_roots_changed(thread_id)
+        return updated
 
     async def _required_configuration(self) -> LoadedHarnessUiConfiguration:
         source = await self._configurations.current()

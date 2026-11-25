@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+import yaml
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.webui import create_webui
 
@@ -50,6 +51,39 @@ async def create_link(client, scope, target_id, permission="view"):
     assert response.status_code == 200, response.text
     created = response.json()
     return f"/api/shared/{created['grant']['share_id']}", {"Authorization": f"Bearer {created['key']}"}
+
+
+async def test_webui_send_shortcut_uses_accepted_root_configuration(tmp_path):
+    root = tmp_path / "a13n-harness-ui.yaml"
+    source_path = f"/api/configuration/sources/{root.name}"
+    owner = {"Authorization": "Bearer owner-test-key"}
+    async with shared_server(tmp_path) as (_, app, client):
+        thread = await app.create_thread(title="Shared composer")
+        prefix, guest = await create_link(client, "thread", thread.thread_id, permission="prompt")
+
+        async def shortcuts():
+            status = await client.get("/api/status", headers=owner)
+            access = await client.get(prefix + "/access", headers=guest)
+            assert status.status_code == access.status_code == 200
+            return status.json()["app"]["send_shortcut"], access.json()["send_shortcut"]
+
+        assert await shortcuts() == ("enter", "enter")
+        original = root.read_text()
+        body = {"content": original + "webui: {send_shortcut: mod-enter}\n"}
+        denied = await client.put(source_path, headers=guest, json=body)
+        assert denied.status_code == 401
+        saved = await client.put(source_path, headers=owner, json=body)
+        assert saved.status_code == 200, saved.text
+        assert yaml.safe_load(root.read_text())["webui"]["send_shortcut"] == "mod-enter"
+        assert await shortcuts() == ("mod-enter", "mod-enter")
+
+        rejected = await client.put(
+            source_path, headers=owner, json={"content": original + "webui: {send_shortcut: shift-enter}\n"}
+        )
+        assert rejected.status_code == 400
+        assert rejected.json()["error"]["code"] == "settings_invalid"
+        assert yaml.safe_load(root.read_text())["webui"]["send_shortcut"] == "mod-enter"
+        assert await shortcuts() == ("mod-enter", "mod-enter")
 
 
 async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):

@@ -11306,6 +11306,15 @@
             "type": "boolean",
             "title": "Input Prediction Enabled",
             "default": false
+          },
+          "send_shortcut": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "mod-enter"
+            ],
+            "title": "Send Shortcut",
+            "default": "enter"
           }
         },
         "additionalProperties": false,
@@ -23709,6 +23718,15 @@
             "type": "boolean",
             "title": "Input Prediction Enabled",
             "default": false
+          },
+          "send_shortcut": {
+            "type": "string",
+            "enum": [
+              "enter",
+              "mod-enter"
+            ],
+            "title": "Send Shortcut",
+            "default": "enter"
           },
           "grant": {
             "$ref": "#/components/schemas/ShareGrant"

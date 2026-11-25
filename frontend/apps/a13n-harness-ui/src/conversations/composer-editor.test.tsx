@@ -9,6 +9,7 @@ import {
   act,
 } from "@testing-library/react";
 import * as Y from "yjs";
+import { SendShortcutContext } from "./send-shortcut";
 import { ComposerEditor } from "./composer-editor";
 import { ThreadDraft, encode, values } from "./draft";
 import type { EditorView } from "@codemirror/view";
@@ -36,6 +37,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 it("mounts the actual CodeMirror binding and retains remote updates without replacing the editor", async () => {
   const draft = new ThreadDraft();
@@ -63,27 +65,124 @@ it("mounts the actual CodeMirror binding and retains remote updates without repl
   fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
   expect(submit).toHaveBeenCalledTimes(2);
 });
-it("does not submit Enter while an IME is composing", () => {
+it("updates the mounted editor when the accepted shortcut changes", () => {
+  const draft = new ThreadDraft();
+  const submit = vi.fn();
+  const surface = (shortcut: "enter" | "mod-enter") => (
+    <SendShortcutContext value={shortcut}>
+      <ComposerEditor
+        draft={draft}
+        profile={{ display_name: "Alice", color: "#2563eb" }}
+        presence={() => {}}
+        submit={submit}
+      />
+    </SendShortcutContext>
+  );
+  const { rerender } = render(surface("enter"));
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Enter Control+Enter");
+  rerender(surface("mod-enter"));
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(textbox);
+  expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Control+Enter");
+  expect(textbox.getAttribute("aria-description")).toContain(
+    "Ctrl + Enter to send, Enter for a new line.",
+  );
+  fireEvent.keyDown(textbox, { key: "Enter" });
+  fireEvent.keyDown(textbox, { key: "Enter", shiftKey: true });
+  expect(draft.doc.getText("text").toString()).toBe("\n\n");
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
+  expect(submit).toHaveBeenCalledOnce();
+});
+
+it.each(["enter", "mod-enter"] as const)(
+  "does not send while an IME is composing in %s mode",
+  (preference) => {
+    const submit = vi.fn();
+    render(
+      <SendShortcutContext value={preference}>
+        <ComposerEditor
+          draft={new ThreadDraft()}
+          profile={{ display_name: "Alice", color: "#2563eb" }}
+          presence={() => {}}
+          submit={submit}
+        />
+      </SendShortcutContext>,
+    );
+    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+    fireEvent.keyDown(textbox, {
+      key: "Enter",
+      isComposing: true,
+      ctrlKey: preference === "mod-enter",
+    });
+    fireEvent.keyDown(textbox, {
+      key: "Enter",
+      keyCode: 229,
+      ctrlKey: preference === "mod-enter",
+    });
+    fireEvent.compositionStart(textbox);
+    fireEvent.keyDown(textbox, {
+      key: "Enter",
+      ctrlKey: preference === "mod-enter",
+    });
+    expect(submit).not.toHaveBeenCalled();
+    fireEvent.compositionEnd(textbox);
+  },
+);
+
+it.each(["enter", "mod-enter"] as const)(
+  "inserts a new line on a coarse pointer in %s mode",
+  (preference) => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query === "(pointer: coarse)",
+      addEventListener() {},
+      removeEventListener() {},
+    }));
+    const draft = new ThreadDraft();
+    const submit = vi.fn();
+    render(
+      <SendShortcutContext value={preference}>
+        <ComposerEditor
+          draft={draft}
+          profile={{ display_name: "Alice", color: "#2563eb" }}
+          presence={() => {}}
+          submit={submit}
+        />
+      </SendShortcutContext>,
+    );
+    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+    expect(textbox.getAttribute("enterkeyhint")).toBe("enter");
+    expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Control+Enter");
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    expect(draft.doc.getText("text").toString()).toBe("\n");
+    expect(submit).not.toHaveBeenCalled();
+  },
+);
+
+it("uses the command key and Meta accessibility metadata on Apple platforms", () => {
+  vi.spyOn(window.navigator, "platform", "get").mockReturnValue("MacIntel");
   const submit = vi.fn();
   render(
-    <ComposerEditor
-      draft={new ThreadDraft()}
-      profile={{ display_name: "Alice", color: "#2563eb" }}
-      presence={() => {}}
-      submit={submit}
-    />,
+    <SendShortcutContext value="mod-enter">
+      <ComposerEditor
+        draft={new ThreadDraft()}
+        profile={{ display_name: "Alice", color: "#2563eb" }}
+        presence={() => {}}
+        submit={submit}
+      />
+    </SendShortcutContext>,
   );
   const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
-  fireEvent.compositionStart(textbox);
-  fireEvent.keyDown(textbox, { key: "Enter", isComposing: true, keyCode: 229 });
-  fireEvent.keyDown(textbox, {
-    key: "Enter",
-    ctrlKey: true,
-    isComposing: true,
-  });
+  expect(textbox.getAttribute("aria-keyshortcuts")).toBe("Meta+Enter");
+  expect(textbox.getAttribute("aria-description")).toContain(
+    "⌘ + Enter to send",
+  );
+  fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
   expect(submit).not.toHaveBeenCalled();
-  fireEvent.compositionEnd(textbox);
+  fireEvent.keyDown(textbox, { key: "Enter", metaKey: true });
+  expect(submit).toHaveBeenCalledOnce();
 });
+
 it.each(["", "Shared"])(
   "renders relative collaborator positions in %j without changing authored text",
   async (text) => {
@@ -545,81 +644,94 @@ it("keeps the placeholder out of authored input and preserves the editor across 
   expect(draft.doc.getText("text").toString()).toBe("Keep this objective");
 });
 
-it("completes dollar skills without sending, and retains the editor across catalog context changes", async () => {
-  const { startCompletion } = await import("@codemirror/autocomplete");
-  const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
-  const draft = new ThreadDraft();
-  const editor = { current: null as EditorView | null };
-  const submit = vi.fn();
-  const loadSkills = vi.fn(async () => ({
-    catalog_id: "a".repeat(64),
-    context_kind: "draft" as const,
-    items: [
-      {
-        item_id: "b".repeat(64),
-        name: "review",
-        description: "Review carefully",
-        source_id: "project",
-        logical_path: ".agents/skills/review",
-      },
-    ],
-  }));
-  const props = {
-    draft,
-    editor,
-    submit,
-    loadSkills,
-    profile: { display_name: "Alice", color: "#2563eb" },
-    presence: vi.fn(),
-  };
-  const view = render(<ComposerEditor {...props} skillContext="first" />);
-  const original = editor.current;
-  act(() => {
-    editor.current!.dispatch({
-      changes: { from: 0, insert: "Use $rev" },
-      selection: { anchor: 8 },
-    });
-    editor.current!.focus();
-    startCompletion(editor.current!);
-  });
-  await screen.findByRole("option", { name: /Review/ });
-  expect(screen.getByText("Review carefully")).toBeTruthy();
-  // CodeMirror compares Date.now against the completion's opening timestamp.
-  now.mockReturnValue(1_100);
-  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
-  fireEvent.keyDown(textbox, { key: "Enter" });
-  expect(submit).not.toHaveBeenCalled();
-  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
-  fireEvent.keyDown(textbox, { key: "Backspace" });
-  expect(draft.doc.getText("text").toString()).toBe("Use ");
-  act(() => draft.undo.undo());
-  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
-  fireEvent.keyDown(textbox, { key: "Enter" });
-  expect(submit).toHaveBeenCalledOnce();
-  view.rerender(<ComposerEditor {...props} skillContext="second" />);
-  expect(editor.current).toBe(original);
-  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
-  act(() => {
-    draft.replacement = {
-      draft_id: "replacement",
-      participant_id: "participant-one",
-      participants: {},
-      update_base64: encode(Y.encodeStateAsUpdate(new Y.Doc())),
+it.each([false, true])(
+  "keeps Enter with Skill completion and retains the editor across context changes (coarse pointer: %s)",
+  async (coarse) => {
+    if (coarse) {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: query === "(pointer: coarse)",
+        addEventListener() {},
+        removeEventListener() {},
+      }));
+    }
+    const { startCompletion } = await import("@codemirror/autocomplete");
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const draft = new ThreadDraft();
+    const editor = { current: null as EditorView | null };
+    const submit = vi.fn();
+    const loadSkills = vi.fn(async () => ({
+      catalog_id: "a".repeat(64),
+      context_kind: "draft" as const,
+      items: [
+        {
+          item_id: "b".repeat(64),
+          name: "review",
+          description: "Review carefully",
+          source_id: "project",
+          logical_path: ".agents/skills/review",
+        },
+      ],
+    }));
+    const props = {
+      draft,
+      editor,
+      submit,
+      loadSkills,
+      profile: { display_name: "Alice", color: "#2563eb" },
+      presence: vi.fn(),
     };
-    draft.joinReplacement(false);
-  });
-  view.rerender(<ComposerEditor {...props} skillContext="second" />);
-  expect(editor.current).not.toBe(original);
-  act(() => {
-    editor.current!.dispatch({
-      changes: { from: 0, insert: "$rev" },
-      selection: { anchor: 4 },
+    const view = render(<ComposerEditor {...props} skillContext="first" />);
+    const original = editor.current;
+    act(() => {
+      editor.current!.dispatch({
+        changes: { from: 0, insert: "Use $rev" },
+        selection: { anchor: 8 },
+      });
+      editor.current!.focus();
+      startCompletion(editor.current!);
     });
-    editor.current!.focus();
-    startCompletion(editor.current!);
-  });
-  await screen.findByRole("option", { name: /Review/ });
-});
+    await screen.findByRole("option", { name: /Review/ });
+    expect(screen.getByText("Review carefully")).toBeTruthy();
+    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    expect(draft.doc.getText("text").toString()).toBe("Use $rev");
+    expect(submit).not.toHaveBeenCalled();
+    // CodeMirror compares Date.now against the completion's opening timestamp.
+    now.mockReturnValue(1_100);
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    expect(submit).not.toHaveBeenCalled();
+    expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+    fireEvent.keyDown(textbox, { key: "Backspace" });
+    expect(draft.doc.getText("text").toString()).toBe("Use ");
+    act(() => draft.undo.undo());
+    expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+    fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: coarse });
+    expect(submit).toHaveBeenCalledOnce();
+    view.rerender(<ComposerEditor {...props} skillContext="second" />);
+    expect(editor.current).toBe(original);
+    expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+    act(() => {
+      draft.replacement = {
+        draft_id: "replacement",
+        participant_id: "participant-one",
+        participants: {},
+        update_base64: encode(Y.encodeStateAsUpdate(new Y.Doc())),
+      };
+      draft.joinReplacement(false);
+    });
+    view.rerender(<ComposerEditor {...props} skillContext="second" />);
+    expect(editor.current).not.toBe(original);
+    act(() => {
+      editor.current!.dispatch({
+        changes: { from: 0, insert: "$rev" },
+        selection: { anchor: 4 },
+      });
+      editor.current!.focus();
+      startCompletion(editor.current!);
+    });
+    await screen.findByRole("option", { name: /Review/ });
+  },
+);
 
 it("sends ordinary text without starting skill completion", async () => {
   const { completionStatus } = await import("@codemirror/autocomplete");

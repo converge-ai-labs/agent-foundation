@@ -17,7 +17,7 @@ Unless a section specifies otherwise, Console forms and mutations share these ru
 
 ## Navigation and Scope
 
-A signed-out visitor sees sign-in. While the Service is uninitialized, sign-in creates the first administrator through the public bootstrap route and signs them in ([bootstrap](../a13n-service/03-tenancy.md#bootstrap)). Password and OIDC sign-in return to the requested Console path, including its query and fragment; OIDC carries the destination in its one-use flow and falls back to Console home for non-local targets.
+A signed-out visitor sees sign-in. While the Service is uninitialized, sign-in creates the first administrator through the public bootstrap route and signs them in ([bootstrap](../a13n-service/03-tenancy.md#bootstrap)). Password and OIDC sign-in return to the requested Console path, including its query and fragment; OIDC carries the destination in its one-use flow and falls back to Console home for non-local targets. On sign-out, Console clears its session state and opens the [provider logout URL](../a13n-service/03-tenancy.md#openid-connect-logout) if Service returns one. For local-only logout it navigates to `/login`.
 
 ### URLs and Workspace Scope
 
