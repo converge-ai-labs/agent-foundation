@@ -141,8 +141,18 @@ async def test_harness_tool_reuses_method_schema_without_retaining_instances(mon
     assert "x-mutated" not in second_tool.function_schema.json_schema
     assert await second_tool.function_schema.call({"text": "b"}, None) == "two:b"  # type: ignore[arg-type]
 
+    unbound_ref = weakref.ref(SampleToolset.echo)
+    cls_ref = weakref.ref(SampleToolset)
+    del second_tool
+    del second_owner
+    del SampleToolset
+    gc.collect()
+    assert unbound_ref() is None
+    assert cls_ref() is None
 
-def test_harness_tool_method_schema_isolates_subclasses_returning_self() -> None:
+
+@pytest.mark.anyio
+async def test_harness_tool_method_schema_isolates_subclasses_returning_self() -> None:
     from a13n_harness.tools.metadata import HarnessTool
     from pydantic import BaseModel
 
@@ -151,6 +161,10 @@ def test_harness_tool_method_schema_isolates_subclasses_returning_self() -> None
 
         def clone(self) -> Self:
             return self
+
+        @classmethod
+        async def label(cls) -> str:
+            return cls.__name__
 
     class ChildPayload(BasePayload):
         extra: int = 1
@@ -166,3 +180,8 @@ def test_harness_tool_method_schema_isolates_subclasses_returning_self() -> None
     child_tool = HarnessTool(ChildPayload().clone, harness_metadata=metadata)
     assert "extra" not in base_tool.function_schema.return_schema.get("properties", {})
     assert "extra" in child_tool.function_schema.return_schema.get("properties", {})
+
+    base_cls_tool = HarnessTool(BasePayload.label, harness_metadata=metadata)
+    child_cls_tool = HarnessTool(ChildPayload.label, harness_metadata=metadata)
+    assert await base_cls_tool.function_schema.call({}, None) == "BasePayload"  # type: ignore[arg-type]
+    assert await child_cls_tool.function_schema.call({}, None) == "ChildPayload"  # type: ignore[arg-type]

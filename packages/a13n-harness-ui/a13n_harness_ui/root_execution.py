@@ -238,6 +238,7 @@ class RootRunExecutor:
             tuple[Thread, ObjectRef, HarnessState, Continuation, str, str, Sequence[ModelMessage] | None],
         ] = {}
         self._inspection_tasks: dict[str, asyncio.Task[None]] = {}
+        self._unindexed_base_sources: dict[str, str] = {}
 
     def replace_subscription_sources(self, sources: Mapping[str, SubscriptionSource]) -> None:
         """Apply account rediscovery to future Runs; existing resolvers retain their sources."""
@@ -1064,7 +1065,11 @@ class RootRunExecutor:
                         )
                 else:
                     continuation = RootContinuationSelection(status="not_available")
-                await self._drain_inspection(thread.thread_id)
+                try:
+                    await self._drain_inspection(thread.thread_id)
+                finally:
+                    self._pending_inspections.pop(thread.thread_id, None)
+                    self._unindexed_base_sources.pop(thread.thread_id, None)
                 if continuation.error is not None:
                     get_logger(__name__).error(
                         "Root continuation save failed: thread_id=%s exception_type=%s",
@@ -1302,11 +1307,12 @@ class RootRunExecutor:
                         )
         except Exception as exc:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
-        expected_source = (
+        step_expected_source = (
             thread.continuation.logical_digest
             if thread.continuation is not None
             else f"initial:{thread.initial_state.logical_digest}"
         )
+        expected_source = self._unindexed_base_sources.setdefault(thread.thread_id, step_expected_source)
         # Disposable derived indexes cannot change a successfully selected
         # execution checkpoint. Offload request-boundary indexing so model calls
         # start immediately; terminal settlement drains and publishes synchronously.
@@ -1329,9 +1335,10 @@ class RootRunExecutor:
             selected,
             continuation,
             published_ref.logical_digest,
-            expected_source,
+            self._unindexed_base_sources.get(thread.thread_id, step_expected_source),
             messages,
         )
+        self._unindexed_base_sources.pop(thread.thread_id, None)
         return RootContinuationSelection(status="selected", reference=published_ref)
 
     def _schedule_inspection(
@@ -1386,7 +1393,7 @@ class RootRunExecutor:
         if task is not None and not task.done():
             try:
                 await asyncio.shield(task)
-            except BaseException:
+            except Exception:
                 pass
 
     async def _publish_inspection(
@@ -1408,7 +1415,9 @@ class RootRunExecutor:
                 inspection,
                 expected_source=expected_source,
             )
-            if not indexed:
+            if indexed:
+                self._unindexed_base_sources.pop(thread_id, None)
+            else:
                 get_logger(__name__).info("Transcript index update skipped", extra={"thread_id": thread_id})
         except Exception as exc:
             get_logger("a13n_harness_ui.storage").warning(

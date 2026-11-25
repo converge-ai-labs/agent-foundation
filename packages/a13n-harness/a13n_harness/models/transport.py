@@ -18,9 +18,11 @@ from a13n_harness.http import outbound_tls_verify
 
 
 @lru_cache(maxsize=8)
-def _cached_ca_ssl_context(cafile: str | None, capath: str | None, mtime_ns: int | None) -> ssl.SSLContext:
+def _cached_cafile_ssl_context(cafile: str, mtime_ns: int) -> ssl.SSLContext:
     del mtime_ns
-    return ssl.create_default_context(cafile=cafile, capath=capath)
+    context = ssl.create_default_context(cafile=cafile)
+    context.set_alpn_protocols(["http/1.1"])
+    return context
 
 
 def _resolved_tls_verify() -> ssl.SSLContext | bool:
@@ -31,17 +33,10 @@ def _resolved_tls_verify() -> ssl.SSLContext | bool:
         try:
             mtime_ns = os.stat(cafile).st_mtime_ns
         except OSError:
-            return True
-        return _cached_ca_ssl_context(cafile, None, mtime_ns)
-    capath = os.environ.get("SSL_CERT_DIR")
-    if capath:
-        try:
-            mtime_ns = os.stat(capath).st_mtime_ns
-        except OSError:
-            return True
-        return _cached_ca_ssl_context(None, capath, mtime_ns)
-    # Keep per-client truststore contexts when using OS certificate stores so
-    # concurrent handshakes never mutate one shared truststore SSLContext.
+            return ssl.create_default_context(cafile=cafile)
+        return _cached_cafile_ssl_context(cafile, mtime_ns)
+    # SSL_CERT_DIR uses OpenSSL's lazy hash-directory lookup and OS stores use
+    # per-client truststore contexts, so keep httpx2's per-client construction.
     return True
 
 

@@ -247,3 +247,78 @@ async def test_suffix_publication_reads_only_suffix_and_requires_exact_base(data
         "corrected",
         "appended",
     )
+
+
+async def test_drain_inspection_propagates_cancellation_and_dropped_checkpoint_preserves_base_source(tmp_path):
+    import asyncio
+    from unittest.mock import MagicMock
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from a13n_harness_ui.root_execution import RootRunExecutor
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from pydantic_ai.models.function import FunctionModel
+
+    from .test_app import _settings
+    from .test_thread_collaboration import configuration
+
+    executor = RootRunExecutor(
+        store=MagicMock(),
+        threads=MagicMock(),
+        configurations=MagicMock(),
+        compositions=MagicMock(),
+        agent_reconstructor=MagicMock(),
+        environment_service=MagicMock(),
+    )
+    blocker = asyncio.Event()
+    bg_task = asyncio.create_task(blocker.wait())
+    executor._inspection_tasks["thread-cancel"] = bg_task
+    drain_task = asyncio.create_task(executor._drain_inspection("thread-cancel"))
+    await asyncio.sleep(0)
+    drain_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await drain_task
+    assert not bg_task.done()
+    blocker.set()
+    await bg_task
+
+    # End-to-end Turn 1 -> Turn 2 where Turn 2's request-boundary inspection is skipped:
+    # Turn 2 seals Turn 1's prefix (None -> S1) and terminal settlement must still index Turn 2.
+    async def resolve(self, context, model_id):
+        async def stream(messages, info):
+            yield f"reply-{len(messages)}"
+
+        return FunctionModel(stream_function=stream)
+
+    cfg_dir = tmp_path / "cfg"
+    cfg_dir.mkdir()
+    path = configuration(cfg_dir)
+    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
+    orig_schedule = RootRunExecutor._schedule_inspection
+    skip_background = False
+
+    def drop_background(self, *args, **kwargs):
+        if skip_background:
+            return
+        orig_schedule(self, *args, **kwargs)
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(HarnessUiModelResolver, "__call__", resolve)
+    mp.setattr(RootRunExecutor, "_schedule_inspection", drop_background)
+    try:
+        async with open_harness_ui_app(settings, configuration_path=path, instrumentation=None) as app:
+            root = await app.create_thread()
+            r1 = await app.submit_thread(thread_id=root.thread_id, prompt="Turn one")
+            assert (await app.wait_root_operation(r1.receipt_id)).status is RootOperationStatus.completed
+
+            skip_background = True
+            r2 = await app.submit_thread(thread_id=root.thread_id, prompt="Turn two")
+            assert (await app.wait_root_operation(r2.receipt_id)).status is RootOperationStatus.completed
+
+            detail = await app.get_thread(root.thread_id)
+            assert detail.continuation_id is not None
+            header = await app._store.inspections.header(root.thread_id, detail.continuation_id)
+            assert header is not None
+            assert header.turn_count == 2
+    finally:
+        mp.undo()

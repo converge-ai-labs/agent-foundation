@@ -1259,3 +1259,73 @@ async def test_coalesced_candidate_batch_does_not_propagate_leader_cancellation(
     assert publish_calls == 3
     assert len(published_batches) == 2
     assert {item.thread_id for item in published_batches[-1].items} == {"t3"}
+
+
+async def test_cancelled_follower_during_inflight_publish_rolls_back_its_boundary() -> None:
+    import asyncio
+    from unittest.mock import AsyncMock, Mock
+
+    from a13n_harness_ui.restart import GracefulRestart
+    from a13n_harness_ui.restart_models import RestartBatch, RestartItem
+    from a13n_harness_ui.storage.objects import ObjectKind, ObjectRef
+    from a13n_harness_ui.storage.restarts import RestartRepository
+
+    reference = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="f" * 64)
+    published_batches: list[RestartBatch] = []
+    first_entered, release_first = Event(), Event()
+    second_entered, release_second = Event(), Event()
+    publish_calls = 0
+
+    async def gated_publish(batch: RestartBatch) -> None:
+        nonlocal publish_calls
+        publish_calls += 1
+        if publish_calls == 1:
+            first_entered.set()
+            await release_first.wait()
+        elif publish_calls == 2:
+            second_entered.set()
+            await release_second.wait()
+        published_batches.append(batch)
+
+    repository = Mock(spec=RestartRepository)
+    repository.get = AsyncMock(return_value=None)
+    repository.publish = AsyncMock(side_effect=gated_publish)
+    coordinator = GracefulRestart(repository, enabled=True)
+    for tid in ("t0", "t1", "t2"):
+        coordinator.register(tid)
+
+    def make_item(tid: str) -> RestartItem:
+        return RestartItem(
+            thread_id=tid,
+            root_thread_id=tid,
+            run_id=f"run-{tid}",
+            cause="process_loss",
+            composition=reference,
+            checkpoint=reference,
+        )
+
+    t0_task = asyncio.create_task(coordinator.boundary(make_item("t0")))
+    with fail_after(2):
+        await first_entered.wait()
+
+    t1_task = asyncio.create_task(coordinator.boundary(make_item("t1")))
+    t2_task = asyncio.create_task(coordinator.boundary(make_item("t2")))
+    await asyncio.sleep(0)
+
+    # Let t1 acquire _candidate_lock and start publishing [t0, t1, t2].
+    release_first.set()
+    await t0_task
+    with fail_after(2):
+        await second_entered.wait()
+
+    # Cancel follower t2 while leader t1 is already awaiting _publish_candidates.
+    t2_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t2_task
+
+    release_second.set()
+    with fail_after(2):
+        await t1_task
+
+    assert {item.thread_id for item in published_batches[-1].items} == {"t0", "t1"}
+    assert "t2" not in coordinator._candidates

@@ -104,18 +104,23 @@ class GracefulRestart:
                 if self._next_batch is batch:
                     self._next_batch = None
                 active_ops = [pending for pending in batch.ops if not pending.cancelled]
-                rollbacks: list[Callable[[], None]] = []
+                applied: list[tuple[_CandidateOp, Callable[[], None]]] = []
                 for pending in active_ops:
                     rollback = pending.apply()
                     if rollback is not None:
-                        rollbacks.append(rollback)
-                if rollbacks:
+                        applied.append((pending, rollback))
+                if applied:
                     try:
                         await self._publish_candidates()
                     except BaseException:
-                        for rollback in reversed(rollbacks):
+                        for _, rollback in reversed(applied):
                             rollback()
                         raise
+                    cancelled_rollbacks = [rollback for pending, rollback in reversed(applied) if pending.cancelled]
+                    if cancelled_rollbacks:
+                        for rollback in cancelled_rollbacks:
+                            rollback()
+                        await self._publish_candidates()
                 batch.completed = True
         except BaseException:
             op.cancelled = True

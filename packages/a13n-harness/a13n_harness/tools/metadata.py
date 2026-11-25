@@ -127,12 +127,18 @@ _METHOD_FUNCTION_SCHEMAS: WeakKeyDictionary[
 ] = WeakKeyDictionary()
 
 
+def _placeholder_tool_function() -> None:
+    pass
+
+
 def _cached_method_function_schema(
     function: MethodType,
     kwargs: Mapping[str, Any],
 ) -> _function_schema.FunctionSchema:
     unbound = function.__func__
-    owner_ref = ref(type(function.__self__))
+    self_obj = function.__self__
+    owner_cls = self_obj if isinstance(self_obj, type) else type(self_obj)
+    owner_ref = ref(owner_cls)
     tool_name = kwargs.get("name") or function.__name__
     takes_ctx = kwargs.get("takes_ctx")
     docstring_format = kwargs.get("docstring_format", "auto")
@@ -153,7 +159,7 @@ def _cached_method_function_schema(
             docstring_format=docstring_format,
             require_parameter_descriptions=require_parameter_descriptions,
         )
-        template = replace(built, function=unbound)
+        template = replace(built, function=_placeholder_tool_function)
         by_key[key] = template
     return replace(
         template,

@@ -192,7 +192,9 @@ async def test_child_checkpoint_publication_skips_message_history_decoding_and_r
     )
     python_dump = child.model_dump()
     assert isinstance(python_dump["created_at"], datetime)
-    json_keys = list(child.model_dump(mode="json").keys())
+    json_dump = child.model_dump(mode="json")
+    assert set(json_dump) == set(StoredChildCheckpoint.model_fields)
+    json_keys = list(json_dump.keys())
     assert json_keys.index("memory_cursors") < json_keys.index("display")
     async with open_local_store(StorageSettings(data_root=tmp_path)) as store:
         decode_calls = 0
