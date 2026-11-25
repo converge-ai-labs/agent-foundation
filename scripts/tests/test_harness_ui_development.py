@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import os
@@ -12,7 +13,6 @@ from pathlib import Path
 import pytest
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyStore
 from a13n_harness_ui.settings_loader import load_harness_ui_settings
-from anyio import move_on_after
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 
 launcher = importlib.import_module("dev.harness-ui.cli")
@@ -90,10 +90,14 @@ async def test_design_review_specialist_stays_running_after_pause(role: str) -> 
         ModelRequest(parts=[UserPromptPart(f"Fixture role: {role}.")]),
         ModelRequest(parts=[ToolReturnPart("review_pause", "Next batch ready.")]),
     ]
-    with move_on_after(0.05) as wait:
-        async for chunk in review.model(messages, None):
-            assert isinstance(chunk, str), "An idle specialist must not request another tool call"
-    assert wait.cancelled_caught
+    preview_closing = asyncio.Event()
+    stream = review.model(messages, None, preview_closing=preview_closing)
+    assert isinstance(await anext(stream), str), "An idle specialist must not request another tool call"
+    next_chunk = asyncio.create_task(anext(stream, None))
+    await asyncio.sleep(0)
+    assert not next_chunk.done()
+    preview_closing.set()
+    assert await next_chunk is None
 
 
 @pytest.mark.anyio

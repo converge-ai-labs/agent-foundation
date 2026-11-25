@@ -10,6 +10,7 @@ import subprocess
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -29,7 +30,6 @@ from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.surfaces import NewThreadDefaults, SkillReference
 from a13n_harness_ui.webui import create_webui
-from anyio import sleep_forever
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
@@ -350,7 +350,9 @@ def seed_memory(configuration_root: Path) -> None:
         target.write_text(text)
 
 
-async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] | dict[int, DeltaThinkingPart]]:
+async def model(
+    messages, info, *, preview_closing: asyncio.Event
+) -> AsyncIterator[str | dict[int, DeltaToolCall] | dict[int, DeltaThinkingPart]]:
     authored = [
         text
         for message in messages
@@ -408,7 +410,7 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
         if any(part.tool_name == "review_pause" for part in returns):
             # Keep the specialist running without starting another tool/model cycle.
             yield "Waiting for the remaining checkout checks."
-            await sleep_forever()
+            await preview_closing.wait()
             return
         yield "Checking the checkout edge cases and collecting the results.\n\n"
         yield {0: DeltaToolCall(name="review_pause", json_args="{}")}
@@ -673,6 +675,7 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
 
 async def serve(root: Path, port: int):
     path = configuration(root)
+    preview_closing = asyncio.Event()
     fixture_runtime = {}
     original = AgentReconstructor.reconstruct
 
@@ -760,7 +763,7 @@ async def serve(root: Path, port: int):
         )
 
     async def resolve(self, model_id, *, thread_id):
-        return FunctionModel(function=dictation, stream_function=model)
+        return FunctionModel(function=dictation, stream_function=partial(model, preview_closing=preview_closing))
 
     async def directory():
         return model_catalog.bundled_models()
@@ -1005,7 +1008,10 @@ async def serve(root: Path, port: int):
                 "All responses and tool results are scripted. Try [slow], [long], [thought], [retry], [answer], [failure], or [question].",
                 flush=True,
             )
-            yield app
+            try:
+                yield app
+            finally:
+                preview_closing.set()
 
     server = create_webui(app_context, api_key="test-only-key")
     await uvicorn.Server(uvicorn.Config(server, host="127.0.0.1", port=port, log_level="warning")).serve()
