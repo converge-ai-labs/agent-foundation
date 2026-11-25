@@ -168,6 +168,7 @@ from a13n_service.runs.tables import (
 from a13n_service.runs.tool_executions.cleanup import prune as prune_tool_results
 from a13n_service.runs.tool_executions.cleanup import reconcile as reconcile_tool_executions
 from a13n_service.runs.tool_executions.delivery import tool_results
+from a13n_service.runs.tool_executions.mcp import poll_mcp_tasks
 from a13n_service.runs.tool_executions.routes import router as tool_executions_router
 from a13n_service.runs.trace_routes import router as traces_router
 from a13n_service.settings import Section
@@ -293,6 +294,15 @@ def _reconcile_tool_executions(runtime: Runtime) -> Sweep:
         every=runtime.settings.worker.authority_seconds,
         run=partial(reconcile_tool_executions, runtime, limit=runtime.settings.control.sweep_batch),
         timeout=max(30, runtime.settings.worker.lease_seconds),
+    )
+
+
+def _poll_mcp_tasks(runtime: Runtime) -> Sweep:
+    return Sweep(
+        name="poll_mcp_tasks",
+        every=runtime.settings.control.scan_seconds,
+        run=partial(poll_mcp_tasks, runtime, limit=runtime.settings.control.sweep_batch),
+        timeout=60,
     )
 
 
@@ -534,6 +544,7 @@ OSS = Distribution(
         _reconcile_compactions,
         _clean_thread_objects,
         _reconcile_tool_executions,
+        _poll_mcp_tasks,
         _prune_tool_results,
         desktop_control_sweep,
         browser_sweep,

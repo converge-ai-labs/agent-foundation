@@ -12715,6 +12715,11 @@
       "McpConfig": {
         "additionalProperties": false,
         "properties": {
+          "durable_tasks": {
+            "default": false,
+            "title": "Durable Tasks",
+            "type": "boolean"
+          },
           "forward_context_headers": {
             "title": "Forward Context Headers",
             "type": "boolean"

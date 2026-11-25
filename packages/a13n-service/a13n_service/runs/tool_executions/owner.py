@@ -60,7 +60,10 @@ class Executions(ToolExecutionRuntime):
 
     def __init__(self, runtime: Runtime):
         super().__init__(
-            store=Store(runtime), max_active=runtime.settings.tool_executions.max_active, on_completed=self._completed
+            store=Store(runtime),
+            max_active=runtime.settings.tool_executions.max_active,
+            on_completed=self._completed,
+            handoff_mcp_tasks=True,
         )
         self.reports_background_completions = True
         self.runtime = runtime

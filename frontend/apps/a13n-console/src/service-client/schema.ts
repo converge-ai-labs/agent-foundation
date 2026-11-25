@@ -10309,6 +10309,11 @@ export interface components {
     McpAuth: "none" | "bearer" | "headers" | "oauth";
     /** McpConfig */
     McpConfig: {
+      /**
+       * Durable Tasks
+       * @default false
+       */
+      durable_tasks?: boolean;
       /** Forward Context Headers */
       forward_context_headers?: boolean;
       /**

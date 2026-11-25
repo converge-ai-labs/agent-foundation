@@ -299,10 +299,10 @@ async def test_publication_retry_commits_result_and_notification_once(service, s
     )
     save, attempts = store._save, 0
 
-    async def uncertain(value):
+    async def uncertain(value, **kwargs):
         nonlocal attempts
         attempts += 1
-        await save(value)
+        await save(value, **kwargs)
         if attempts == 1:
             raise ConnectionError("Commit response lost")
 
@@ -972,3 +972,172 @@ async def test_original_ordering_intent_uses_durable_column_including_legacy_jso
     restored = await store.get(lease.thread_id, record.execution_id)
     assert restored.record.sequential is sequential
     assert (await store.list(lease.thread_id, offset=0, limit=20))[0].sequential is sequential
+
+
+async def test_mcp_task_sweep_parks_input_and_notifies_once(service, scripted_model, runs_kit, monkeypatch):
+    from a13n_harness.mcp_task_state import McpTaskExecutionState, McpTaskInputRequest
+    from a13n_service.runs.tool_executions import mcp
+
+    _, lease = await _origin(service, scripted_model, runs_kit)
+    runtime, record = service.runtime, _record(lease)
+    state = McpTaskExecutionState(
+        connection_id="connection",
+        server_id="binding",
+        mcp_task_id="task-42",
+        tool_name="slow_tool",
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        next_poll_at=datetime.now(UTC),
+    )
+    store = Store(runtime)
+    await _save(store, lease, StoredToolExecution(record))
+    await _save(store, lease, StoredToolExecution(record.model_copy(update={"status": "running"}), mcp_task=state))
+    await relinquish_shell(runtime, lease, record.execution_id)
+    polls = []
+
+    async def poll(host, owner, execution):
+        polls.append(execution.mcp_task.status)
+        async with transaction(host.storage) as session:
+            # The claim must already have committed, with no lock held around remote I/O.
+            row = await session.scalar(
+                select(ToolExecutionRow).where(ToolExecutionRow.id == record.execution_id).with_for_update(nowait=True)
+            )
+            assert row.worker_id == owner.worker_id
+        if len(polls) == 1:
+            parked = state.model_copy(
+                update={
+                    "status": "input_required",
+                    "next_poll_at": None,
+                    "input_required": {"question": McpTaskInputRequest(mode="form", message="Choose")},
+                }
+            )
+            return replace(execution, mcp_task=parked)
+        terminal = execution.record.model_copy(
+            update={"status": "succeeded", "completed_at": datetime.now(UTC), "result_available": True}
+        )
+        return StoredToolExecution(terminal, "remote output", mcp_task=state)
+
+    monkeypatch.setattr(mcp, "_poll", poll)
+    assert await mcp.poll_mcp_tasks(runtime, limit=2) == 1
+    saved = await store.get(record.thread_id, record.execution_id)
+    assert saved.mcp_task.input_required["question"].message == "Choose"
+    assert await mcp.poll_mcp_tasks(runtime, limit=2) == 0
+    async with transaction(runtime.storage) as session:
+        # Emulate the post-tasks/update state that a subsequent change will publish.
+        await session.execute(
+            update(ToolExecutionRow)
+            .where(ToolExecutionRow.id == record.execution_id)
+            .values(
+                mcp_task=state.model_dump(mode="json"),
+                mcp_poll_at=func.clock_timestamp(),
+            )
+        )
+    assert await mcp.poll_mcp_tasks(runtime, limit=2) == 1
+    assert (await store.get(record.thread_id, record.execution_id)).result == "remote output"
+    assert len(await _deliver(runtime)) == 1
+    assert await mcp.poll_mcp_tasks(runtime, limit=2) == 0
+
+
+async def test_durable_mcp_task_hands_off_to_control_over_http(service, scripted_model, runs_kit):
+    from typing import Any
+
+    from a13n_harness.mcp_tasks import TASKS_EXTENSION_ID
+    from a13n_service.runs.tool_executions.mcp import poll_mcp_tasks
+    from fastmcp import FastMCP
+    from fastmcp.server.extensions import MethodBinding, ServerExtension
+    from mcp.types import RequestParams
+    from pydantic import BaseModel, Field
+
+    from .test_connections import create, serve
+
+    calls = 0
+    allow_finish = False
+    created_at = datetime.now(UTC).isoformat()
+
+    class Params(RequestParams):
+        task_id: str = Field(alias="taskId")
+
+    class Result(BaseModel):
+        resultType: str
+        taskId: str = "task-original"
+        status: str
+        createdAt: str = created_at
+        ttlMs: int = 60000
+        pollIntervalMs: int = 250
+        result: dict[str, Any] | None = None
+
+    async def get_task(context, params):
+        assert params.task_id == "task-original"
+        assert context.request.headers["mcp-name"] == params.task_id
+        assert context.request.headers["x-origin-test"] == "frozen"
+        if allow_finish:
+            return Result(
+                resultType="complete",
+                status="completed",
+                result={
+                    "content": [{"type": "text", "text": "remote outcome"}],
+                },
+            )
+        return Result(resultType="complete", status="working")
+
+    class Tasks(ServerExtension):
+        identifier = TASKS_EXTENSION_ID
+
+        def methods(self):
+            return (MethodBinding("tasks/get", Params, get_task, frozenset({"2026-07-28"})),)
+
+        async def intercept_tool_call(self, params, context, call_next):
+            nonlocal calls
+            calls += 1
+            return Result(resultType="task", status="working")
+
+    await runs_kit.pause_sweeps(service)
+    server = FastMCP("Durable task")
+    server.add_extension(Tasks())
+
+    @server.tool
+    async def slow():
+        pytest.fail("The ordinary tool path must not run")
+
+    async with serve(server.http_app(path="/mcp")) as url:
+        connection = await create(
+            service,
+            {
+                "config": {"url": url + "/mcp", "durable_tasks": True, "headers": ["x-origin-test"]},
+                "auth": "headers",
+                "credential": {"headers": {"x-origin-test": "frozen"}},
+            },
+        )
+        agent = await runs_kit.create_agent(
+            service, scripted_model, connection_tools=[{"connection_id": connection["id"], "permission": "allow"}]
+        )
+        started = await runs_kit.start_thread(
+            service,
+            agent,
+            "Start slow work",
+            options={
+                "execution": {"tools": {"mode": "auto", "foreground_wait_seconds": 0.10}},
+            },
+        )
+        scripted_model.call("slow", {}, call_id="call-task")
+        scripted_model.say("The task will continue")
+        runtime = service.runtime
+        (lease,) = await claim(runtime, worker_id="worker-mcp", worker_build="test", limit=1)
+        await asyncio.wait_for(execute(runtime, lease, AttemptControl()), 10)
+        await asyncio.wait_for(runtime.executions.join(), 10)
+        assert (await runs_kit.get_run(service, started["run"]["id"]))["status"] == "completed"
+        (record,) = await runtime.executions.summarize(lease.thread_id)
+        saved = await Store(runtime).get(lease.thread_id, record.execution_id)
+        assert saved.record.foreground_released and saved.mcp_task.mcp_task_id == "task-original"
+        assert calls == 1
+        allow_finish = True
+        async with transaction(runtime.storage) as session:
+            await session.execute(
+                update(ToolExecutionRow)
+                .where(ToolExecutionRow.id == record.execution_id)
+                .values(mcp_poll_at=func.clock_timestamp())
+            )
+        assert await poll_mcp_tasks(replace(runtime), limit=1) == 1
+        completed = await Store(runtime).get(lease.thread_id, record.execution_id)
+        assert completed.record.status == "succeeded", completed.record.error
+        assert completed.result == "remote outcome" and calls == 1
+        assert len(await _deliver(runtime)) == 1

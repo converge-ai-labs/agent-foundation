@@ -99,7 +99,7 @@ async def relinquish_shell(
             and row.worker_id == lease.worker_id
             and hmac.compare_digest(row.lease_token_hash, secret_hash(lease.token))
             and row.completed_at is None
-            and row.shell is not None
+            and (row.shell is not None or row.mcp_task is not None)
         ):
             row.lease_expires_at = await now(session) + timedelta(seconds=retry_after_seconds)
             if retry_after_seconds == 0:
