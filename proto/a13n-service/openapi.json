@@ -23291,6 +23291,50 @@
         "title": "SecretReference",
         "type": "object"
       },
+      "SecurityAdvisory": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "high",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "summary",
+          "severity",
+          "url",
+          "updated_at"
+        ],
+        "title": "SecurityAdvisory",
+        "type": "object"
+      },
       "SelectedTrace": {
         "additionalProperties": false,
         "properties": {
@@ -25819,6 +25863,29 @@
           "error"
         ],
         "title": "SpanSummary",
+        "type": "object"
+      },
+      "StableRelease": {
+        "properties": {
+          "is_newer": {
+            "title": "Is Newer",
+            "type": "boolean"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "url",
+          "is_newer"
+        ],
+        "title": "StableRelease",
         "type": "object"
       },
       "StartupErrorPolicy": {
@@ -28616,6 +28683,38 @@
           "kind"
         ],
         "title": "UnlimitedMemoryLimit",
+        "type": "object"
+      },
+      "UpdateNotices": {
+        "properties": {
+          "advisories": {
+            "items": {
+              "$ref": "#/components/schemas/SecurityAdvisory"
+            },
+            "title": "Advisories",
+            "type": "array"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "string"
+          },
+          "latest_stable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StableRelease"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "current_version",
+          "latest_stable",
+          "advisories"
+        ],
+        "title": "UpdateNotices",
         "type": "object"
       },
       "Upload": {
@@ -49918,6 +50017,54 @@
         "tags": [
           "tenancy"
         ]
+      }
+    },
+    "/api/v1/organizations/{organization_id}/update-notices": {
+      "get": {
+        "description": "Read the Control process's cached release and security notices as an organization administrator.",
+        "operationId": "get_update_notices",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization_id",
+            "required": true,
+            "schema": {
+              "title": "Organization Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateNotices"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "default": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          },
+          {
+            "loginSession": []
+          }
+        ],
+        "summary": "Get Update Notices",
+        "tags": [
+          "tenancy"
+        ],
+        "x-a13n-mcp": false
       }
     },
     "/api/v1/organizations/{organization_id}/workspaces": {

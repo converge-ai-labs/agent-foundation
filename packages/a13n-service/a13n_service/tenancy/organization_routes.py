@@ -1,6 +1,6 @@
 """Organizations, workspaces, their icons and their audit events over HTTP."""
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 
 from a13n_service.infra import images
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
@@ -18,6 +18,7 @@ from a13n_service.tenancy.schemas import (
     WorkspacePage,
     WorkspaceUpdate,
 )
+from a13n_service.update_notices import UpdateChecker, UpdateNotices
 
 router = APIRouter(prefix="/api/v1", tags=["tenancy"])
 
@@ -34,6 +35,15 @@ async def get_organization(
     response: Response, organization_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Organization:
     return tagged(response, await organizations.get_organization(runtime.storage, actor, organization_id))
+
+
+@router.get("/organizations/{organization_id}/update-notices", openapi_extra={"x-a13n-mcp": False})
+async def get_update_notices(
+    request: Request, organization_id: str, actor: Actor, runtime: CurrentRuntime
+) -> UpdateNotices:
+    """Read the Control process's cached release and security notices as an organization administrator."""
+    checker: UpdateChecker = request.app.state.update_checker
+    return await checker.read(runtime, actor, organization_id)
 
 
 @router.patch("/organizations/{organization_id}", response_model=Organization)
