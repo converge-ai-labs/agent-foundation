@@ -113,6 +113,22 @@ curl -sS -X POST "$A13N_URL/api/v1/environments" \
 
 For an E2B template, select existing volumes in **Create environment** or pass `"recipe_overrides":{"volume_mounts":{"/data":"project-123"}}` in the request. Each key is an absolute path inside the sandbox. Omit the override to inherit template mounts, or pass an empty map to clear them. Automatic replacements keep your selection. To use the files after deleting an instance, mount the same volume on a new one. The E2B account must have Volumes enabled.
 
+For a Daytona template, select an existing volume in **Create environment** or supply this fragment in the create request. Use a ready Daytona volume ID and an absolute path inside the sandbox. The optional `subpath` mounts one folder from the volume. Omit `volumes` to inherit the template's mounts, or pass `[]` to clear them. Replacements retain the instance selection. After deleting the sandbox, mount the same volume and subpath on a new one to read the files again.
+
+```json
+{
+  "recipe_overrides": {
+    "volumes": [
+      {
+        "volume_id": "<daytona-volume-id>",
+        "mount_path": "/data",
+        "subpath": "projects/a"
+      }
+    ]
+  }
+}
+```
+
 ### Stop, rename and delete
 
 Send the environment's current ETag in `If-Match` (requires `write`):

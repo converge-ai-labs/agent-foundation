@@ -1,11 +1,11 @@
 """Daytona shared implementation."""
 
 import hashlib
-from typing import Literal
+from typing import Annotated, Literal
 from urllib.parse import quote, urlsplit
 
 import anyio
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from a13n_harness.environment.envd_settings import EnvdSettings
 from a13n_harness.environment.errors import EnvironmentProviderErrorCategory as Category
@@ -16,6 +16,7 @@ from a13n_harness.providers.environment.native.configuration import TargetState,
 from a13n_harness.providers.environment.native.environment import NativeReference, NativeRuntime
 from a13n_harness.providers.environment.native.errors import failure
 from a13n_harness.providers.environment.native.http import NativeHTTP, decode_response
+from a13n_harness.providers.environment.volume_mounts import validate_mount_paths
 
 
 class DaytonaConnectionConfiguration(BaseModel):
@@ -29,6 +30,48 @@ class DaytonaConnectionConfiguration(BaseModel):
         description="Optional account constraint. When omitted, resolve the organization from the current API key.",
     )
     target: str = Field(default="us", min_length=1, max_length=64, title="Target region")
+
+
+class DaytonaVolumeMount(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    volume_id: str = Field(min_length=1, title="Volume ID")
+    mount_path: str = Field(min_length=1, title="Mount path")
+    subpath: str | None = Field(default=None, min_length=1, title="Volume subpath")
+
+    def api_mount(self) -> dict[str, str]:
+        mount = {"volumeId": self.volume_id, "mountPath": self.mount_path}
+        if self.subpath is not None:
+            mount["subpath"] = self.subpath
+        return mount
+
+    @field_validator("subpath")
+    @classmethod
+    def relative_prefix(cls, value: str | None) -> str | None:
+        if value is not None and (value.startswith("/") or ".." in value or "//" in value or "\x00" in value):
+            raise ValueError("Volume subpath must be a relative prefix without traversal or repeated slashes")
+        return value
+
+
+def _volume_mounts(mounts: list[DaytonaVolumeMount]) -> list[DaytonaVolumeMount]:
+    validate_mount_paths(
+        [mount.mount_path for mount in mounts],
+        reserved=(
+            "/proc",
+            "/sys",
+            "/dev",
+            "/boot",
+            "/etc",
+            "/bin",
+            "/sbin",
+            "/lib",
+            "/lib64",
+            "/run/a13n-desktop-access",
+        ),
+    )
+    return sorted(mounts, key=lambda mount: mount.mount_path)
+
+
+DaytonaVolumes = Annotated[list[DaytonaVolumeMount], AfterValidator(_volume_mounts)]
 
 
 class DaytonaEnvironmentConfiguration(BaseModel):
@@ -47,6 +90,12 @@ class DaytonaEnvironmentConfiguration(BaseModel):
     )
     execution: Literal["envd_http", "envd_ws"] = Field(default="envd_http", title="Execution connection")
     environment: EnvironmentVariables = Field(default_factory=dict)
+    volumes: DaytonaVolumes = Field(
+        default_factory=list,
+        exclude_if=lambda value: not value,
+        title="Daytona volumes",
+        description="Mount existing Daytona volumes by ID. Files in mounted directories survive environment deletion.",
+    )
     request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
 
     @property

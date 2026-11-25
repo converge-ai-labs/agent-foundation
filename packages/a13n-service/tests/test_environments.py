@@ -55,16 +55,23 @@ async def env(service) -> SimpleNamespace:  # type: ignore[no-untyped-def]
     return await with_fake_providers(service)
 
 
-async def test_volume_overrides_require_an_e2b_template(env):
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"volume_mounts": {"/data": "project-a"}}, "Volume mounts require an E2B template"),
+        ({"volumes": []}, "Volumes require a Daytona template"),
+    ],
+)
+async def test_volume_overrides_require_matching_template(env, overrides, message):
     response = await env.client.post(
         f"{env.api}/environments",
         json={
             "template_id": env.template["id"],
-            "recipe_overrides": {"volume_mounts": {"/data": "project-a"}},
+            "recipe_overrides": overrides,
         },
     )
     assert response.status_code == 400, response.text
-    assert "Volume mounts require an E2B template" in response.text
+    assert message in response.text
 
 
 async def test_settled_candidate_query_matches_locked_rule(env):

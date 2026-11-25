@@ -84,3 +84,47 @@ async def test_cloud_files_execution_and_resume(key, tmp_path):
             raise
         finally:
             await provider.destroy(configuration, environment_id=environment_id, state=state, operation_id="op-delete")
+
+
+async def test_daytona_volume_survives_sandbox_deletion():
+    volume = os.getenv("A13N_TEST_DAYTONA_VOLUME_ID")
+    snapshot = os.getenv("A13N_TEST_DAYTONA_SNAPSHOT")
+    credential = os.getenv("A13N_TEST_DAYTONA_CREDENTIAL_JSON")
+    if not (volume and snapshot and credential):
+        pytest.skip("Requires a ready Daytona test volume, Envd snapshot and test credentials")
+    definition = ProviderCatalog(BUILT_IN_ENVIRONMENT_PROVIDERS)["daytona"]
+    backend = definition.configuration_model.model_validate_json(os.getenv("A13N_TEST_DAYTONA_BACKEND_JSON", "{}"))
+    key = definition.credential_model.model_validate_json(credential)
+    prefix = "a13n-test-" + secrets.token_hex(10)
+    recipe = definition.validate_environment(
+        {
+            "snapshot": snapshot,
+            "volumes": [{"volume_id": volume, "mount_path": "/data", "subpath": prefix}],
+        }
+    )
+    async with await definition.open_provider(configuration=backend, credential=key) as provider:
+        for phase in ("write", "read"):
+            env_id = f"env-{prefix}-{phase}"
+            state = None
+            try:
+                state = await provider.create(recipe, environment_id=env_id, operation_id="op-create")
+                connector = definition.execution.execution_connector(
+                    definition.execution_environment(recipe),
+                    configuration=backend,
+                    credential=key,
+                    environment_id=env_id,
+                    state=state,
+                )
+                async with await connector.open() as env:
+                    files = env.operations.files
+                    assert files is not None
+                    if phase == "write":
+                        await files.write_text("/data/check.txt", prefix, mode="create")
+                    else:
+                        assert (await files.read_text("/data/check.txt")).text == prefix
+                        await files.remove("/data/check.txt")
+            except EnvironmentProviderError as error:
+                state = error.state or state
+                raise
+            finally:
+                await provider.destroy(recipe, environment_id=env_id, state=state, operation_id="op-delete")
