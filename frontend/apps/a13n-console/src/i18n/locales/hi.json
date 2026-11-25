@@ -251,6 +251,7 @@
   "You control this browser. Return control when finished.": "यह ब्राउज़र आपके नियंत्रण में है। काम पूरा होने पर नियंत्रण लौटा दें।",
   "Control expires: {{time}}": "नियंत्रण की समाप्ति: {{time}}",
   "Viewer access expires: {{time}}": "व्यूअर एक्सेस की समाप्ति: {{time}}",
+  "Desktop control expires soon. Use the desktop or renew control to continue.": "डेस्कटॉप का नियंत्रण जल्द समाप्त होगा। जारी रखने के लिए डेस्कटॉप का उपयोग करें या नियंत्रण की अवधि बढ़ाएँ।",
   "Renew control": "नियंत्रण की अवधि बढ़ाएँ",
   "Connecting to browser…": "ब्राउज़र से कनेक्ट हो रहा है…",
   "Close viewer": "व्यूअर बंद करें",

@@ -73,7 +73,7 @@ Docker 需要配置 `desktop_viewer_url`，例如 `wss://desktop.example/{contai
 1. 在可交互会话中选择**浏览器**旁的**桌面**图标。右侧面板自动以只读方式显示所选环境挂载的桌面。
 2. 选择**接管**申请 Computer 输入控制。Service 阻止后续 Computer 调用，授权后自动连接输入。已放行的调用可以继续完成，包括发送输入。
 3. 直接操作桌面，文件、Shell、进程、脚本、其他桌面和 agent 的模型工作继续运行。
-4. 需要更多时间时选择**续期控制权**。默认租约为五分钟；运维者通过 `control.desktop_control_seconds`、`control.desktop_control_min_seconds` 和 `control.desktop_control_max_seconds` 配置默认值和请求范围。
+4. 在本轮租约内操作过桌面，Console 会在临近到期时自动续期一次。如果没有操作，Console 会提示即将到期。此时继续操作桌面或选择**续期控制权**即可延长租约。默认租约为五分钟；运维者通过 `control.desktop_control_seconds`、`control.desktop_control_min_seconds` 和 `control.desktop_control_max_seconds` 配置默认值和请求范围。
 5. 完成后选择**归还控制权**。Service 撤销输入并确认按键和鼠标按钮清理，再重新开放 Computer 通道。
 
 关闭查看器或页面只会断开该查看器，控制权保持到显式归还或租约过期。短期连接授权与人工租约独立续期。同一原生桌面同时只有一个主体控制，即使多个环境别名或 thread 共享它。只读查看器保持独立。Browser 控制有自己的生命周期。

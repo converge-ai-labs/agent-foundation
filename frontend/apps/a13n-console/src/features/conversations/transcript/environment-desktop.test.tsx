@@ -270,6 +270,47 @@ it("does not refresh a control grant capped by the human lease", async () => {
   expect(viewers).toHaveLength(2);
 });
 
+it("renews once for desktop input, warns through the next idle period and renews on resumed input", async () => {
+  const initial = {
+    ...human,
+    expires_at: new Date(Date.now() + 70_000).toISOString(),
+  };
+  start(initial);
+  await observing();
+  vi.useFakeTimers();
+  post.mockResolvedValueOnce(reply(grant("control", 1, 240_000)));
+  fireEvent.click(screen.getByRole("button", { name: "Take control" }));
+  await act(async () => {});
+  act(() => viewers[1].dispatchEvent(new Event("connect")));
+  const surface = screen.getByLabelText("Live desktop");
+  const renewals = () =>
+    post.mock.calls.filter(([path]) => path.endsWith("/renew"));
+  post.mockImplementation(async (_path, { body }) => {
+    expect(body).toEqual({ generation: 1, episode: 1 });
+    const updated = {
+      ...human,
+      expires_at: new Date(Date.now() + 120_000).toISOString(),
+    };
+    get.mockResolvedValue(reply(updated));
+    return reply(updated);
+  });
+  fireEvent.keyDown(surface, { key: "a" });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(41_000);
+  });
+  expect(renewals()).toHaveLength(1);
+  fireEvent.pointerMove(surface, { buttons: 0 });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(90_000);
+  });
+  expect(screen.getByText(/Desktop control expires soon/)).toBeTruthy();
+  expect(renewals()).toHaveLength(1);
+  fireEvent.wheel(surface, { deltaY: 1 });
+  await act(async () => {});
+  expect(renewals()).toHaveLength(2);
+  expect(screen.queryByText(/Desktop control expires soon/)).toBeNull();
+});
+
 it("takes control in one action, waits for authorization, renews and returns without Run commands", async () => {
   const { cache } = start(automated);
   await observing();

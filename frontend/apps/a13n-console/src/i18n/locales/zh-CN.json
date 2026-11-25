@@ -374,6 +374,7 @@
   "You control this browser. Return control when finished.": "你正在控制此浏览器。完成后请交还控制权。",
   "Control expires: {{time}}": "控制权到期时间：{{time}}",
   "Viewer access expires: {{time}}": "查看器访问到期时间：{{time}}",
+  "Desktop control expires soon. Use the desktop or renew control to continue.": "桌面控制权即将到期。操作桌面或点击「续期控制权」即可继续。",
   "Renew control": "续期控制权",
   "Connecting to browser…": "正在连接浏览器…",
   "Close viewer": "关闭查看器",
