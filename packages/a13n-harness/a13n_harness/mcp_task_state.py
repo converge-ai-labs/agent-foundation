@@ -8,6 +8,15 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from a13n_harness.mcp_inputs import McpTaskInputRequest as McpTaskInputRequest
 
 
+class McpInputDelivery(BaseModel):
+    """A dispatched answer whose outcome the Host has not yet confirmed."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    reconcile_until: AwareDatetime
+
+
 class McpTaskExecutionState(BaseModel):
     """A handle scoped to a Host connection, without credentials or executable state."""
 
@@ -23,6 +32,7 @@ class McpTaskExecutionState(BaseModel):
     next_poll_at: AwareDatetime | None = None
     expires_at: AwareDatetime
     answered_inputs: frozenset[str] = frozenset()
+    unconfirmed_input: McpInputDelivery | None = None
     input_required: dict[str, McpTaskInputRequest] | None = None
 
     @property

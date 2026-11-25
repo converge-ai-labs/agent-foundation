@@ -482,7 +482,9 @@ Thread-scoped list, detail and result queries require `read`; cancellation requi
 
 A retained MCP task can checkpoint `input_required` and release its foreground call. Interactive Runs expose pending requests through the originating Run's `/mcp-inputs` resource and through replaceable `interactions` frames in the Session stream. Each request identifies its exact execution, MCP connection and tool call. Scheduled Runs and service-account Runs automatically decline requests; unsupported prompts are also declined.
 
-Listing requires a human credential with workspace `read`; responding requires `run`. The response supplies `accept`, `decline` or `cancel` for one request. Only a Form acceptance carries validated content. Service claims the retained execution in a short transaction, then sends `tasks/update` outside it under the originating Run's authority. Acknowledgement wakes Sweep; a terminal response publishes through the retained-result path. If delivery is uncertain, Sweep reconciles with `tasks/get` without replaying the answer. Responding to an MCP task does not create a successor Run.
+Human workspace members with `read` can see the pending prompts, including URL destinations. Human members with `run` can respond with `accept`, `decline`, or `cancel`. Only a Form acceptance carries validated content. A response is valid for the prompt the user saw; a changed prompt requires a fresh decision.
+
+Service claims the retained execution in a short transaction, then sends `tasks/update` outside it under the originating Run's authority. Acknowledgement wakes Sweep; a terminal response publishes through the retained-result path. After an explicit rejection, a fresh `tasks/get` can restore a still-pending prompt. When delivery is uncertain, Sweep allows time for the server's state to converge before restoring a still-pending prompt for a fresh decision. Sweep does not replay the submitted content. Responding to an MCP task does not create a successor Run.
 
 ## Seal and successor scheduling
 

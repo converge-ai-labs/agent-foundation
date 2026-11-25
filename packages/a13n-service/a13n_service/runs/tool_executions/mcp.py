@@ -1,6 +1,7 @@
 """Control-plane polling of durable MCP handles on the retained tool execution lease."""
 
 import asyncio
+import json
 import secrets
 from collections.abc import Mapping
 from dataclasses import replace
@@ -11,12 +12,12 @@ from typing import Literal
 import httpx2
 from a13n_harness import RunConfiguration
 from a13n_harness.mcp_inputs import McpInputResponse, McpTaskInputRequest
-from a13n_harness.mcp_task_state import McpTaskExecutionState
+from a13n_harness.mcp_task_state import McpInputDelivery, McpTaskExecutionState
 from a13n_harness.mcp_tasks import cancel_mcp_task, get_mcp_task, has_tasks, task_server_id, task_value, update_mcp_task
 from a13n_harness.tool_execution import StoredToolExecution
 from a13n_stream_protocol.interactions import McpElicitation
 from mcp.shared.exceptions import MCPError
-from mcp.types import CONNECTION_CLOSED, REQUEST_TIMEOUT
+from mcp.types import CONNECTION_CLOSED, INVALID_PARAMS, METHOD_NOT_FOUND, REQUEST_TIMEOUT
 from pydantic import ValidationError
 from pydantic_ai.exceptions import ToolFailed
 from sqlalchemy import or_, select
@@ -142,7 +143,7 @@ async def _poll(
     lease: Lease,
     execution: StoredToolExecution,
     *,
-    answers: dict[str, McpInputResponse] | None = None,
+    answer: tuple[str, McpInputResponse] | None = None,
 ) -> StoredToolExecution:
     record, original = execution.record, execution.mcp_task
     assert original is not None
@@ -151,6 +152,7 @@ async def _poll(
     error: str | None = None
     result = None
     cancelled = record.cancel_requested
+    input_rejected = False
     try:
         if datetime.now(UTC) >= state.expires_at:
             raise ToolFailed("MCP task expired.")
@@ -166,7 +168,7 @@ async def _poll(
                 current, _, unattended_now = await _binding(session, runtime, run, original)
                 if current.config != connection.config or current.auth != connection.auth:
                     raise ToolFailed("The originating MCP task binding changed during polling.")
-                if answers is not None and unattended_now:
+                if answer is not None and unattended_now:
                     raise ToolFailed("This run does not accept human input.")
                 if runtime.admission is not None:
                     thread = await session.get(ThreadRow, lease.thread_id)
@@ -191,13 +193,15 @@ async def _poll(
                         ),
                     )
 
-                if answers is not None:
-                    # Fence possible delivery only after the connection and dispatch checks succeed.
-                    # A later GET can outlive the acknowledgement and must not reopen these keys.
+                if answer is not None:
+                    # Persist only the key, after dispatch admission and before sending the content.
                     reconciliation = McpTaskExecutionState.model_validate(row.mcp_task)
-                    row.mcp_task = reconciliation.model_copy(
-                        update={"answered_inputs": reconciliation.answered_inputs.union(answers)}
-                    ).model_dump(mode="json", by_alias=True)
+                    delivery = McpInputDelivery(
+                        key=answer[0], reconcile_until=await now(session) + timedelta(seconds=90)
+                    )
+                    row.mcp_task = reconciliation.model_copy(update={"unconfirmed_input": delivery}).model_dump(
+                        mode="json", by_alias=True
+                    )
 
         settings = runtime.settings.providers
         policy = runtime.endpoint_policy.for_run(options.configuration or RunConfiguration())
@@ -228,14 +232,27 @@ async def _poll(
                     if cancelled:
                         await cancel_mcp_task(client.session, state)
                     else:
-                        if answers is not None:
-                            state, snapshot = await update_mcp_task(client.session, state, answers)
+                        if answer is not None:
+                            key, response = answer
+                            try:
+                                state, snapshot = await update_mcp_task(client.session, state, {key: response})
+                            except MCPError as exc:
+                                if exc.error.code in {INVALID_PARAMS, METHOD_NOT_FOUND}:
+                                    # An explicit refusal permits another decision after a fresh GET.
+                                    ready = original.model_copy(update={"next_poll_at": datetime.now(UTC)})
+                                    await Store(runtime).save(replace(execution, mcp_task=ready), poll_cancelled=False)
+                                    input_rejected = True
+                                raise
                         else:
                             # A foreground handoff can already have captured a parked request.
                             snapshot = None
                             if state.status != "input_required" or state.next_poll_at is not None:
                                 snapshot = await get_mcp_task(client.session, state)
                                 state = snapshot.checkpoint(state)
+                                if state.unconfirmed_input is not None:
+                                    state = _reconcile_input(state)
+                                    if state.unconfirmed_input is not None:
+                                        return replace(execution, mcp_task=state)
                             if state.status == "input_required":
                                 declines = {
                                     key: McpInputResponse(action="decline")
@@ -266,7 +283,9 @@ async def _poll(
         TimeoutError,
         httpx2.TransportError,
     ) as exc:
-        if answers is not None and state.status in {"working", "input_required"}:
+        if answer is not None and state.status in {"working", "input_required"}:
+            if input_rejected:
+                raise ServiceError("unavailable", "The MCP server rejected the input response.") from exc
             if isinstance(exc, AuthorityRevoked):
                 raise ServiceError("forbidden", "The originating MCP execution is no longer authorized.") from exc
             raise ServiceError("unavailable", "The MCP server could not confirm the input response.") from exc
@@ -315,6 +334,22 @@ async def poll_mcp_tasks(runtime: Runtime, *, limit: int) -> int:
     return count
 
 
+def _reconcile_input(state: McpTaskExecutionState) -> McpTaskExecutionState:
+    delivery = state.unconfirmed_input
+    assert delivery is not None
+    if delivery.key not in (state.input_required or {}):
+        return state.model_copy(
+            update={"unconfirmed_input": None, "answered_inputs": state.answered_inputs | {delivery.key}}
+        )
+    current = datetime.now(UTC)
+    if current >= delivery.reconcile_until:
+        # Only a fresh GET can reopen the prompt. Never resend the previous content.
+        return state.model_copy(update={"unconfirmed_input": None})
+    return state.model_copy(
+        update={"next_poll_at": min(delivery.reconcile_until, current + timedelta(seconds=state.poll_interval_seconds))}
+    )
+
+
 def _expired(prompt: McpTaskInputRequest) -> bool:
     return prompt.expires_at is not None and datetime.now(UTC) >= prompt.expires_at
 
@@ -327,8 +362,9 @@ def _valid(prompt: McpTaskInputRequest) -> bool:
     return True
 
 
-def _request_id(execution_id: str, key: str) -> str:
-    return f"{execution_id}.{sha256(key.encode()).hexdigest()[:24]}"
+def _request_id(execution_id: str, key: str, prompt: McpTaskInputRequest) -> str:
+    fingerprint = json.dumps([key, prompt.model_dump(mode="json", exclude={"expires_at"})], sort_keys=True)
+    return f"{execution_id}.{sha256(fingerprint.encode()).hexdigest()[:24]}"
 
 
 async def pending(session: AsyncSession, *, thread_ids: list[str], run_id: str | None = None) -> list[McpElicitation]:
@@ -373,7 +409,7 @@ async def pending(session: AsyncSession, *, thread_ids: list[str], run_id: str |
                 requests.append(
                     McpElicitation.project(
                         prompt,
-                        request_id=_request_id(row.id, key),
+                        request_id=_request_id(row.id, key, prompt),
                         thread_id=row.thread_id,
                         run_id=row.run_id,
                         tool_call_id=record.tool_call_id,
@@ -431,10 +467,17 @@ async def respond(
             raise conflict("mcp_input", request_id, "not_pending")
         if row.lease_expires_at > current:
             raise conflict("mcp_input", request_id, "execution_busy")
-        key = next((key for key in (state.input_required or {}) if _request_id(row.id, key) == request_id), None)
-        if key is None or state.input_required is None:
+        selected = next(
+            (
+                (key, prompt)
+                for key, prompt in (state.input_required or {}).items()
+                if _request_id(row.id, key, prompt) == request_id
+            ),
+            None,
+        )
+        if selected is None:
             raise conflict("mcp_input", request_id, "not_pending")
-        prompt = state.input_required[key]
+        key, prompt = selected
         if prompt.expires_at is not None and prompt.expires_at <= current:
             raise conflict("mcp_input", request_id, "not_pending")
         try:
@@ -453,7 +496,7 @@ async def respond(
         row.mcp_poll_at = current
     token = ORIGIN.set(lease)
     try:
-        updated = await _poll(runtime, lease, execution, answers={key: response})
+        updated = await _poll(runtime, lease, execution, answer=(key, response))
         await Store(runtime).save(updated, poll_cancelled=False)
     except LeaseLost as exc:
         raise conflict("mcp_input", request_id, "execution_changed") from exc

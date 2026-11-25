@@ -6,6 +6,7 @@ import json
 from typing import Any, Literal
 from urllib.parse import urlsplit
 
+from httpx2 import URL, InvalidURL
 from jsonschema import Draft202012Validator, FormatChecker, SchemaError, ValidationError
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
@@ -81,7 +82,16 @@ def url_host(url: str) -> str:
         or "%" in host
     ):
         raise ValueError("MCP input URL must be an HTTP(S) browser destination without credentials.")
-    _ = parsed.port
+    port = parsed.port
+    if not host.isascii():
+        try:
+            host = URL(url).raw_host.decode("ascii")
+        except InvalidURL as exc:
+            raise ValueError("Invalid MCP input URL host.") from exc
+    if ":" in host:
+        host = f"[{host}]"
+    if port is not None and port != (443 if parsed.scheme == "https" else 80):
+        host = f"{host}:{port}"
     return host
 
 

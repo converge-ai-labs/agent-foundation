@@ -39,9 +39,18 @@ def test_mcp_rejects_unsafe_url_destinations(url):
         McpTaskInputRequest(mode="url", message="Confirm", url=url).validate_prompt()
 
 
-def test_mcp_url_confirmation_has_canonical_host_and_no_form_content():
-    url = McpTaskInputRequest(mode="url", message="Confirm", url="https://Example.Test:8443/")
-    assert url.validate_prompt() == "example.test"
+@pytest.mark.parametrize(
+    ("target", "host"),
+    [
+        ("https://Example.Test:443/", "example.test"),
+        ("https://Example.Test:8443/", "example.test:8443"),
+        ("https://straße.test/", "xn--strae-oqa.test"),
+        ("http://[::1]:8080/", "[::1]:8080"),
+    ],
+)
+def test_mcp_url_confirmation_has_canonical_host_and_no_form_content(target, host):
+    url = McpTaskInputRequest(mode="url", message="Confirm", url=target)
+    assert url.validate_prompt() == host
     url.validate_response(McpInputResponse(action="accept"))
     with pytest.raises(ValueError, match="cannot include form data"):
         url.validate_response(McpInputResponse(action="accept", content={}))
