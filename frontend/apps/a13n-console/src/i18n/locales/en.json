@@ -4609,5 +4609,6 @@
   "Find files in older runs": "Find files in older runs",
   "Select a file to preview it.": "Select a file to preview it.",
   "No files found": "No files found",
-  "Attachments and files published by the agent appear here.": "Attachments and files published by the agent appear here."
+  "Attachments and files published by the agent appear here.": "Attachments and files published by the agent appear here.",
+  "Some run content is unavailable, so this file list may be incomplete.": "Some run content is unavailable, so this file list may be incomplete."
 }

@@ -250,7 +250,7 @@ export function SessionHeader({
                 size="icon-sm"
                 aria-label={t("Files")}
                 aria-expanded={filesOpen}
-                aria-controls="session-files"
+                aria-controls={filesOpen ? "session-files" : undefined}
                 onClick={onToggleFiles}
               />
             }

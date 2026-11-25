@@ -96,6 +96,13 @@ export default function FilesPanel({
       )}
       <div className={`${styles.body} a13n-scrollbar`}>
         <ErrorNotice error={catalog.error} retry={catalog.retry} />
+        {catalog.incomplete && (
+          <p className={styles.notice} role="status">
+            {t(
+              "Some run content is unavailable, so this file list may be incomplete.",
+            )}
+          </p>
+        )}
         {current?.asset ? (
           <FilePreview key={current.id} asset={current.asset} />
         ) : current?.query.isError ? (
@@ -110,7 +117,8 @@ export default function FilesPanel({
         ) : files.length ? (
           <p className={styles.notice}>{t("Select a file to preview it.")}</p>
         ) : (
-          !catalog.error && (
+          !catalog.error &&
+          !catalog.incomplete && (
             <Empty
               icon={<FolderOpenIcon aria-hidden="true" />}
               title={t("No files found")}

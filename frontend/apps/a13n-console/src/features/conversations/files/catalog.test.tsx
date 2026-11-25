@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -7,6 +14,7 @@ import { createClient, type Client } from "../../../service-client";
 import { item } from "../display-fixture";
 import { SessionDisplays } from "../session-displays";
 import { useConversationFiles } from "./catalog";
+import FilesPanel from "./panel";
 
 let client: Client;
 let displays: SessionDisplays;
@@ -16,6 +24,9 @@ vi.mock("../../../layout/workspace", () => ({
 }));
 vi.mock("../session-stream", () => ({
   useSessionStream: () => ({ displays }),
+}));
+vi.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
 }));
 afterEach(() => {
   cleanup();
@@ -92,4 +103,32 @@ it("retains a streamed publication when a successor starts before the first run'
   expect(result.current.files).toContainEqual(publication);
   await waitFor(() => expect(result.current.loading).toBe(false));
   expect(result.current.files).toContainEqual(publication);
+});
+
+it("shows that the file list may be incomplete when a saved observation was omitted", async () => {
+  displays = new SessionDisplays();
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      const path = new URL(new Request(input, init).url).pathname;
+      if (path.endsWith("/lineage"))
+        return Response.json({ items: [{ id: "first" }], next_cursor: null });
+      return Response.json({
+        complete: true,
+        items: [item("omitted-observation", "observation", { omitted: true })],
+        run: { input: null },
+      });
+    },
+  });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <FilesPanel runId="first" onSelect={vi.fn()} onClose={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  const notice = await screen.findByText(
+    "Some run content is unavailable, so this file list may be incomplete.",
+  );
+  expect(notice.getAttribute("role")).toBe("status");
+  expect(screen.queryByText("No files found")).toBeNull();
 });

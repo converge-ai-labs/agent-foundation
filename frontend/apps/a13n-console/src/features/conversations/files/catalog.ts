@@ -8,7 +8,7 @@ import { useClient } from "../../../auth/context";
 import { useWorkspace } from "../../../layout/workspace";
 import { isRecord, type Client } from "../../../service-client";
 import { conversationQueries } from "../api";
-import { readDisplay, type DisplayItem } from "../display";
+import { isOmitted, readDisplay, type DisplayItem } from "../display";
 import { parseItemValue, presentItem, publishedAsset } from "../projection";
 import type { HeldDisplay } from "../session-displays";
 import { useSessionStream } from "../session-stream";
@@ -16,6 +16,13 @@ import { legacyPublication } from "../transcript/items";
 import type { FileReference } from "./assets";
 
 const BATCH = 5;
+
+function hasOmittedFileItems(items: readonly DisplayItem[]) {
+  return items.some(
+    ({ kind, content }) =>
+      (kind === "observation" || kind === "tool_call") && isOmitted(content),
+  );
+}
 
 export function attachedFiles(input: unknown): FileReference[] {
   return isRecord(input) && Array.isArray(input.content)
@@ -75,6 +82,7 @@ async function olderPublications(
 ) {
   const files: FileReference[] = [];
   let after = 0;
+  let incomplete = false;
   while (after < before - 1) {
     const page = await readDisplay(client, workspaceId, runId, signal, {
       after,
@@ -85,9 +93,10 @@ async function olderPublications(
     if (last === undefined || last <= after)
       throw new Error("Earlier run content could not be loaded.");
     files.push(...publishedFiles(runId, page.items));
+    incomplete ||= hasOmittedFileItems(page.items);
     after = last;
   }
-  return files;
+  return { files, incomplete };
 }
 
 const noop = () => () => {};
@@ -150,23 +159,30 @@ export function useConversationFiles(runId: string) {
       };
     }),
   });
+  let incomplete = false;
   const files = runs.flatMap(({ data }, index) => {
     const id = visible[index]!;
-    const liveItems = live[index]?.items ?? [];
+    const held = live[index];
+    const liveItems = held?.items ?? [];
     const savedItems = data?.items ?? [];
     const firstLive = liveItems[0]?.ordinal ?? Infinity;
+    const items = [
+      ...savedItems.filter((item) => item.ordinal < firstLive),
+      ...liveItems,
+    ];
+    const prefix = older[index]?.data;
+    incomplete ||=
+      !!held?.partial || hasOmittedFileItems(items) || !!prefix?.incomplete;
     return [
       ...attachedFiles(data?.run.input),
-      ...publishedFiles(id, [
-        ...savedItems.filter((item) => item.ordinal < firstLive),
-        ...liveItems,
-      ]),
-      ...(older[index]?.data ?? []),
+      ...publishedFiles(id, items),
+      ...(prefix?.files ?? []),
     ];
   });
   const failed = [...runs, ...older].find((query) => query.isError);
   return {
     files,
+    incomplete,
     loading:
       !!runId &&
       (lineage.isPending ||

@@ -4609,5 +4609,6 @@
   "Find files in older runs": "पुराने रन में फ़ाइलें खोजें",
   "Select a file to preview it.": "पूर्वावलोकन के लिए कोई फ़ाइल चुनें।",
   "No files found": "कोई फ़ाइल नहीं मिली",
-  "Attachments and files published by the agent appear here.": "अनुलग्नक और एजेंट की प्रकाशित फ़ाइलें यहाँ दिखती हैं।"
+  "Attachments and files published by the agent appear here.": "अनुलग्नक और एजेंट की प्रकाशित फ़ाइलें यहाँ दिखती हैं।",
+  "Some run content is unavailable, so this file list may be incomplete.": "कुछ रन की सामग्री उपलब्ध नहीं है, इसलिए फ़ाइलों की यह सूची अधूरी हो सकती है।"
 }

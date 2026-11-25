@@ -52,7 +52,6 @@ export function AttachmentChip({
           type="button"
           className={styles.attachmentPreview}
           aria-label={previewLabel}
-          aria-controls="session-files"
           onClick={onPreview}
         >
           {content}

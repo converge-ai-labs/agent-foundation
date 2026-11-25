@@ -203,9 +203,9 @@ Session UI uses the domain terms **Session**, **Thread**, and **Run** (会话、
 
 ### Conversation Files
 
-**Files** opens a resource panel for the current Thread alongside the transcript. It lists asset attachments and verified `publish_asset` results from the Thread's Run lineage. Older Runs are searched in batches on request. Selecting a transcript file chip opens its preview directly; Download remains a separate action. Switching to Browser or Desktop closes Files.
+**Files** opens a resource panel for the current Thread alongside the transcript. It lists asset attachments and verified `publish_asset` results from the Thread's Run lineage. Older Runs are searched in batches on request. The panel marks the file list as potentially incomplete when Run display content is missing. Selecting a transcript file chip opens its preview directly; Download remains a separate action. Switching to Browser or Desktop closes Files.
 
-Console uses the existing workspace-scoped asset reads and prepares previews in the client. Text and code are read-only, Markdown offers rendered and source views, JSON is formatted, and CSV opens as a bounded table. HTML and SVG appear only as source. Raster images render from local Blob URLs; PDF uses the browser's native viewer and offers a new-tab action. Unsupported or oversized files retain Download without loading preview content. Service [download protections](../a13n-service/10-api.md#representations) continue to apply to the content endpoint.
+Console uses the existing workspace-scoped asset reads and prepares previews in the client. Text and code are read-only, Markdown offers rendered and source views, JSON is formatted, and CSV opens as a bounded table. HTML and SVG appear only as source. Raster images render from local Blob URLs; PDF uses the browser's native viewer and offers a new-tab action. Unsupported or oversized files retain Download without loading preview content. Console restricts preview media types independently of the Service [download protections](../a13n-service/10-api.md#representations) on the content endpoint.
 
 ### Display Recovery
 
