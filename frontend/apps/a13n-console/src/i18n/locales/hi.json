@@ -1,4 +1,8 @@
 {
+  "Daytona volumes": "Daytona वॉल्यूम",
+  "Volume ID": "वॉल्यूम आईडी",
+  "Volume subpath": "वॉल्यूम का उपपथ",
+  "Mount existing Daytona volumes by ID. Files in mounted directories survive environment deletion.": "मौजूदा Daytona वॉल्यूम को आईडी से माउंट करें। एनवायरनमेंट हटाने पर भी माउंट की गई डायरेक्टरी की फ़ाइलें बनी रहती हैं।",
   "Service version": "Service का वर्शन",
   "Installed version": "इंस्टॉल किया गया वर्शन",
   "v{{version}} available": "v{{version}} उपलब्ध है",

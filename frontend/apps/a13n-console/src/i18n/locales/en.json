@@ -1,4 +1,8 @@
 {
+  "Daytona volumes": "Daytona volumes",
+  "Volume ID": "Volume ID",
+  "Volume subpath": "Volume subpath",
+  "Mount existing Daytona volumes by ID. Files in mounted directories survive environment deletion.": "Mount existing Daytona volumes by ID. Files in mounted directories survive environment deletion.",
   "Service version": "Service version",
   "Installed version": "Installed version",
   "v{{version}} available": "v{{version}} available",

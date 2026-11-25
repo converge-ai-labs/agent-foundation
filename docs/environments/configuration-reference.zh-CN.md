@@ -450,10 +450,19 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 | `desktop`                 | false | boolean                   | default=false                                                                               |
 | `execution`               | false | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
 | `environment`             | false | EnvironmentVariables      | —; 默认值由模型工厂计算                                                                     |
+| `volumes`                 | false | DaytonaVolumeMount 数组   | —; 默认值由模型工厂计算                                                                     |
 | `request_timeout_seconds` | false | number                    | maximum=600; exclusiveMinimum=0; default=120                                                |
 | `envd`                    | false | EnvdSettings              | —; 默认值由模型工厂计算                                                                     |
 | `base_image`              | false | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
 | `desktop_assistance`      | false | boolean                   | default=false                                                                               |
+
+## `DaytonaVolumeMount`
+
+| 字段         | 必填  | 类型 / 可选值  | 约束与默认值              |
+| ------------ | ----- | -------------- | ------------------------- |
+| `volume_id`  | true  | string         | minLength=1               |
+| `mount_path` | true  | string         | minLength=1               |
+| `subpath`    | false | string or null | minLength=1; default=null |
 
 ## `ModalRecipe`
 
@@ -517,14 +526,15 @@ Agent 命令的默认变量。它们是可读取的普通配置，不用于存�
 
 ## `DaytonaEnvironmentConfiguration`
 
-| 字段                      | 必填  | 类型 / 可选值          | 约束与默认值                                 |
-| ------------------------- | ----- | ---------------------- | -------------------------------------------- |
-| `snapshot`                | true  | string                 | minLength=1; maxLength=256                   |
-| `desktop`                 | false | boolean                | default=false                                |
-| `execution`               | false | "envd_http", "envd_ws" | default="envd_http"                          |
-| `environment`             | false | EnvironmentVariables   | —; 默认值由模型工厂计算                      |
-| `request_timeout_seconds` | false | number                 | maximum=600; exclusiveMinimum=0; default=120 |
-| `envd`                    | false | EnvdSettings           | —; 默认值由模型工厂计算                      |
+| 字段                      | 必填  | 类型 / 可选值           | 约束与默认值                                 |
+| ------------------------- | ----- | ----------------------- | -------------------------------------------- |
+| `snapshot`                | true  | string                  | minLength=1; maxLength=256                   |
+| `desktop`                 | false | boolean                 | default=false                                |
+| `execution`               | false | "envd_http", "envd_ws"  | default="envd_http"                          |
+| `environment`             | false | EnvironmentVariables    | —; 默认值由模型工厂计算                      |
+| `volumes`                 | false | DaytonaVolumeMount 数组 | —; 默认值由模型工厂计算                      |
+| `request_timeout_seconds` | false | number                  | maximum=600; exclusiveMinimum=0; default=120 |
+| `envd`                    | false | EnvdSettings            | —; 默认值由模型工厂计算                      |
 
 ## `ModalEnvironmentConfiguration`
 

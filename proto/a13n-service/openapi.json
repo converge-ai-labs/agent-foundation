@@ -7029,6 +7029,39 @@
         "title": "DataSourceUpdate",
         "type": "object"
       },
+      "DaytonaVolumeMount": {
+        "additionalProperties": false,
+        "properties": {
+          "mount_path": {
+            "minLength": 1,
+            "title": "Mount path",
+            "type": "string"
+          },
+          "subpath": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume subpath"
+          },
+          "volume_id": {
+            "minLength": 1,
+            "title": "Volume ID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "volume_id",
+          "mount_path"
+        ],
+        "title": "DaytonaVolumeMount",
+        "type": "object"
+      },
       "DebugHold": {
         "additionalProperties": false,
         "description": "Delay automatic retirement for at most one day; null clears the hold.",
@@ -20427,6 +20460,13 @@
             },
             "title": "Volume Mounts",
             "type": "object"
+          },
+          "volumes": {
+            "items": {
+              "$ref": "#/components/schemas/DaytonaVolumeMount"
+            },
+            "title": "Volumes",
+            "type": "array"
           }
         },
         "title": "RecipeOverrides",

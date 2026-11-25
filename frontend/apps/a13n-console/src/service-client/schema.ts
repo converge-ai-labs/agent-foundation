@@ -8018,6 +8018,15 @@ export interface components {
       name?: string | null;
       query_credentials?: components["schemas"]["Credentials"] | null;
     };
+    /** DaytonaVolumeMount */
+    DaytonaVolumeMount: {
+      /** Mount path */
+      mount_path: string;
+      /** Volume subpath */
+      subpath?: string | null;
+      /** Volume ID */
+      volume_id: string;
+    };
     /**
      * DebugHold
      * @description Delay automatic retirement for at most one day; null clears the hold.
@@ -12796,6 +12805,8 @@ export interface components {
       volume_mounts?: {
         [key: string]: string;
       };
+      /** Volumes */
+      volumes?: components["schemas"]["DaytonaVolumeMount"][];
     };
     /**
      * Reclamation

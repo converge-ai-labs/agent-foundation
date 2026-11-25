@@ -22,27 +22,13 @@ from a13n_harness.environment.envd_settings import EnvdSettings
 from a13n_harness.environment.models import EnvironmentTargetState
 from a13n_harness.environment.variables import EnvironmentVariables
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.volume_mounts import validate_mount_paths
 
 PROVIDER_KEY = "e2b"
 
 
 def _volume_mounts(mounts: dict[str, str]) -> dict[str, str]:
-    private = tuple(map(PurePosixPath, ("/var/lib/a13n-envd", "/run/a13n-envd-state", "/var/lib/a13n-e2b-install")))
-    paths = {PurePosixPath(path) for path in mounts}
-    for value in mounts:
-        path = PurePosixPath(value)
-        if (
-            not value.startswith("/")
-            or value.startswith("//")
-            or str(path) != value
-            or ".." in path.parts
-            or "\x00" in value
-        ):
-            raise ValueError("Volume mount paths must be normalized absolute paths")
-        if any(directory.is_relative_to(path) or path.is_relative_to(directory) for directory in private):
-            raise ValueError("Volume mounts cannot overlap platform-owned paths")
-        if any(parent in paths for parent in path.parents):
-            raise ValueError("Volume mount paths cannot overlap")
+    validate_mount_paths(mounts.keys(), reserved=("/var/lib/a13n-e2b-install",))
     return dict(sorted(mounts.items()))
 
 

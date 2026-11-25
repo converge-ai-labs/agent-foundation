@@ -113,6 +113,22 @@ curl -sS -X POST "$A13N_URL/api/v1/environments" \
 
 使用 E2B 模板时，可以在**创建环境**中指定已有卷，也可以在请求里传入 `"recipe_overrides":{"volume_mounts":{"/data":"project-123"}}`。键是 sandbox 内的绝对路径，值是卷名。省略此参数会沿用模板挂载，传入空映射会清空模板挂载。自动重建会保留实例指定的卷。删除实例后，在新实例挂载同一个卷即可继续使用文件。E2B 账号需要开通 Volumes。
 
+使用 Daytona 模板时，可以在**创建环境**中指定已有卷，也可以在创建请求中传入以下配置。填写状态为 `ready` 的 Daytona 卷 ID 和 sandbox 内的绝对路径。可选的 `subpath` 指定卷内的子目录。省略 `volumes` 会沿用模板挂载，传入 `[]` 会清空模板挂载。自动重建会保留实例指定的挂载。删除实例后，在新实例挂载同一个卷和子目录即可继续读取文件。
+
+```json
+{
+  "recipe_overrides": {
+    "volumes": [
+      {
+        "volume_id": "<daytona-volume-id>",
+        "mount_path": "/data",
+        "subpath": "projects/a"
+      }
+    ]
+  }
+}
+```
+
 ### 停止、重命名和删除
 
 操作时需在 `If-Match` 中携带环境当前的 ETag（需要 `write` 权限）：

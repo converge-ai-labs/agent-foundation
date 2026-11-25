@@ -34,7 +34,7 @@ import {
   Loading,
   Timestamp,
 } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
+import { FormActions, SchemaFields } from "../../shared/forms";
 import { object } from "../../shared/forms/schema-definition";
 import { ProviderIcon } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
@@ -47,6 +47,7 @@ import {
 } from "./api";
 import instanceStyles from "./environments.module.css";
 import { creationNotice } from "./creation-progress";
+import { useEnvironmentTypes } from "./providers";
 import { MapFields } from "./map-fields";
 import { EnvironmentPanel } from "./instance-details";
 import { EnvironmentStatus } from "./instance-status";
@@ -340,6 +341,8 @@ function EnvironmentForm({
       ),
   });
   const [volumeMounts, setVolumeMounts] = useState<Record<string, string>>();
+  const [daytonaVolumes, setDaytonaVolumes] =
+    useState<Schema["RecipeOverrides"]["volumes"]>();
   const [metricsSource, setMetricsSource] = useState("");
   const [kind, setKind] = useState("managed"),
     [name, setName] = useState(""),
@@ -362,6 +365,14 @@ function EnvironmentForm({
         .then(data),
   });
   const isE2B = selectedProvider.data?.type === "e2b";
+  const isDaytona =
+    kind === "managed" && selectedProvider.data?.type === "daytona";
+  const providerTypes = useEnvironmentTypes(isDaytona);
+  const daytonaSchema = providerTypes.data?.items.find(
+    (item) => item.type === "daytona",
+  )?.environment_schema;
+  const volumesField =
+    object(daytonaSchema?.properties) && daytonaSchema.properties.volumes;
   const templateMounts = selectedTemplate?.config?.recipe?.volume_mounts;
   const notice = creationNotice(
     selectedProvider.data?.type,
@@ -377,6 +388,10 @@ function EnvironmentForm({
           ...(isE2B &&
             volumeMounts && {
               recipe_overrides: { volume_mounts: volumeMounts },
+            }),
+          ...(isDaytona &&
+            daytonaVolumes && {
+              recipe_overrides: { volumes: daytonaVolumes },
             }),
           metrics_data_source_id: metricsSource || null,
           ...named,
@@ -469,6 +484,7 @@ function EnvironmentForm({
             onValueChange={(next) => {
               setTemplateId(next);
               setVolumeMounts(undefined);
+              setDaytonaVolumes(undefined);
             }}
             groups={[{ label: t("Templates"), options: templateOptions }]}
           />
@@ -516,6 +532,25 @@ function EnvironmentForm({
           requireValue
           value={volumeMounts ?? (object(templateMounts) ? templateMounts : {})}
           onChange={setVolumeMounts}
+        />
+      )}
+      {isDaytona && <ErrorNotice error={providerTypes.error} />}
+      {isDaytona && object(volumesField) && (
+        <SchemaFields
+          key={templateId}
+          schema={{
+            properties: { volumes: volumesField },
+            $defs: daytonaSchema?.$defs,
+          }}
+          value={{
+            volumes:
+              daytonaVolumes ?? selectedTemplate?.config?.recipe?.volumes,
+          }}
+          onChange={(next) =>
+            setDaytonaVolumes(
+              next.volumes as Schema["RecipeOverrides"]["volumes"],
+            )
+          }
         />
       )}
       {kind === "managed" && notice && <p role="note">{t(notice)}</p>}

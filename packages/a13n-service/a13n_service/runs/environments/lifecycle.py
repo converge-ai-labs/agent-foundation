@@ -275,7 +275,9 @@ async def reserve(
         recipe_overrides = replaces.recipe_overrides
         if recipe_overrides and replaces.provider_id != template.provider_id:
             raise conflict("environment", replaces.id, "environment_template_moved")
-    if recipe_overrides and provider.type != "e2b":
+    if recipe_overrides and "volumes" in recipe_overrides and provider.type != "daytona":
+        raise invalid("recipe_overrides.volumes", "Volumes require a Daytona template")
+    if recipe_overrides and "volume_mounts" in recipe_overrides and provider.type != "e2b":
         raise invalid("recipe_overrides.volume_mounts", "Volume mounts require an E2B template")
     await lock_reservations(session, scope.workspace_id)
     # A confirmed loss still holds a slot. Idle deletion has already returned its slot to the workspace.

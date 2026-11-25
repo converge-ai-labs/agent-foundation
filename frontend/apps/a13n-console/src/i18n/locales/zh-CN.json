@@ -1,4 +1,8 @@
 {
+  "Daytona volumes": "Daytona 持久化卷",
+  "Volume ID": "卷 ID",
+  "Volume subpath": "卷内子路径",
+  "Mount existing Daytona volumes by ID. Files in mounted directories survive environment deletion.": "按 ID 挂载已有的 Daytona 卷。删除环境后，挂载目录中的文件会保留。",
   "Service version": "Service 版本",
   "Installed version": "已安装版本",
   "v{{version}} available": "v{{version}} 已发布",

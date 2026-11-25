@@ -443,17 +443,26 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DaytonaRecipe`
 
-| Field                     | Required | Type / choices            | Constraints and default                                                                     |
-| ------------------------- | -------- | ------------------------- | ------------------------------------------------------------------------------------------- |
-| `envd_management`         | false    | "managed", "preinstalled" | default="preinstalled"                                                                      |
-| `snapshot`                | false    | string                    | minLength=1; maxLength=256; default="auto"                                                  |
-| `desktop`                 | false    | boolean                   | default=false                                                                               |
-| `execution`               | false    | "envd_http", "envd_ws"    | default="envd_http"                                                                         |
-| `environment`             | false    | EnvironmentVariables      | —; default from model factory                                                               |
-| `request_timeout_seconds` | false    | number                    | maximum=600; exclusiveMinimum=0; default=120                                                |
-| `envd`                    | false    | EnvdSettings              | —; default from model factory                                                               |
-| `base_image`              | false    | string or null            | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
-| `desktop_assistance`      | false    | boolean                   | default=false                                                                               |
+| Field                     | Required | Type / choices              | Constraints and default                                                                     |
+| ------------------------- | -------- | --------------------------- | ------------------------------------------------------------------------------------------- |
+| `envd_management`         | false    | "managed", "preinstalled"   | default="preinstalled"                                                                      |
+| `snapshot`                | false    | string                      | minLength=1; maxLength=256; default="auto"                                                  |
+| `desktop`                 | false    | boolean                     | default=false                                                                               |
+| `execution`               | false    | "envd_http", "envd_ws"      | default="envd_http"                                                                         |
+| `environment`             | false    | EnvironmentVariables        | —; default from model factory                                                               |
+| `volumes`                 | false    | array of DaytonaVolumeMount | —; default from model factory                                                               |
+| `request_timeout_seconds` | false    | number                      | maximum=600; exclusiveMinimum=0; default=120                                                |
+| `envd`                    | false    | EnvdSettings                | —; default from model factory                                                               |
+| `base_image`              | false    | string or null              | maxLength=512; `pattern="^[A-Za-z0-9][A-Za-z0-9._/:-]*@sha256:[a-f0-9]{64}$"`; default=null |
+| `desktop_assistance`      | false    | boolean                     | default=false                                                                               |
+
+## `DaytonaVolumeMount`
+
+| Field        | Required | Type / choices | Constraints and default   |
+| ------------ | -------- | -------------- | ------------------------- |
+| `volume_id`  | true     | string         | minLength=1               |
+| `mount_path` | true     | string         | minLength=1               |
+| `subpath`    | false    | string or null | minLength=1; default=null |
 
 ## `ModalRecipe`
 
@@ -517,14 +526,15 @@ Optional outer-daemon sampling; independent of Session execution policy.
 
 ## `DaytonaEnvironmentConfiguration`
 
-| Field                     | Required | Type / choices         | Constraints and default                      |
-| ------------------------- | -------- | ---------------------- | -------------------------------------------- |
-| `snapshot`                | true     | string                 | minLength=1; maxLength=256                   |
-| `desktop`                 | false    | boolean                | default=false                                |
-| `execution`               | false    | "envd_http", "envd_ws" | default="envd_http"                          |
-| `environment`             | false    | EnvironmentVariables   | —; default from model factory                |
-| `request_timeout_seconds` | false    | number                 | maximum=600; exclusiveMinimum=0; default=120 |
-| `envd`                    | false    | EnvdSettings           | —; default from model factory                |
+| Field                     | Required | Type / choices              | Constraints and default                      |
+| ------------------------- | -------- | --------------------------- | -------------------------------------------- |
+| `snapshot`                | true     | string                      | minLength=1; maxLength=256                   |
+| `desktop`                 | false    | boolean                     | default=false                                |
+| `execution`               | false    | "envd_http", "envd_ws"      | default="envd_http"                          |
+| `environment`             | false    | EnvironmentVariables        | —; default from model factory                |
+| `volumes`                 | false    | array of DaytonaVolumeMount | —; default from model factory                |
+| `request_timeout_seconds` | false    | number                      | maximum=600; exclusiveMinimum=0; default=120 |
+| `envd`                    | false    | EnvdSettings                | —; default from model factory                |
 
 ## `ModalEnvironmentConfiguration`
 
