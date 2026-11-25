@@ -3634,6 +3634,8 @@
   "Mark as unread": "अपठित चिह्नित करें",
   "Updates": "अपडेट",
   "Mark all as read": "सभी को पढ़ा हुआ चिह्नित करें",
+  "Mark all as done": "सभी को पूरा चिह्नित करें",
+  "Could not mark this section as done.": "इस अनुभाग के सभी आइटम पूरे चिह्नित नहीं किए जा सके।",
   "All read": "सभी पढ़े गए",
   "{{count, number}} unread": "{{count, number}} अपठित",
   "Could not mark this section as read.": "इस अनुभाग को पढ़ा हुआ चिह्नित नहीं किया जा सका।",
