@@ -236,7 +236,9 @@ it("completes streamed backslash math without swallowing later paragraphs", () =
 });
 
 it("preserves code and diagram source positions after backslash math", async () => {
-  vi.mocked(renderDiagram).mockResolvedValue("data:image/svg+xml,diagram");
+  vi.mocked(renderDiagram).mockResolvedValue({
+    src: "data:image/svg+xml,diagram",
+  });
   const source = String.raw`\(x\)
 
 \[
@@ -334,7 +336,9 @@ it("copies original code including newlines", async () => {
 });
 
 it("waits for a closing fence and does not rerender a complete diagram for later streamed prose", async () => {
-  vi.mocked(renderDiagram).mockResolvedValue("data:image/svg+xml,diagram");
+  vi.mocked(renderDiagram).mockResolvedValue({
+    src: "data:image/svg+xml,diagram",
+  });
   const start = "```mermaid\nflowchart LR\nA --> B\n";
   const view = render(<MessageText text={start} />);
   expect(renderDiagram).not.toHaveBeenCalled();
@@ -350,9 +354,9 @@ it("waits for a closing fence and does not rerender a complete diagram for later
 });
 
 it("retains a diagram during theme replacement and ignores stale asynchronous results", async () => {
-  let resolve!: (value: string) => void;
+  let resolve!: (value: { src: string }) => void;
   vi.mocked(renderDiagram)
-    .mockResolvedValueOnce("data:image/svg+xml,light")
+    .mockResolvedValueOnce({ src: "data:image/svg+xml,light" })
     .mockReturnValueOnce(
       new Promise((done) => {
         resolve = done;
@@ -365,16 +369,20 @@ it("retains a diagram during theme replacement and ignores stale asynchronous re
   act(() => document.documentElement.classList.add("dark"));
   await waitFor(() => expect(renderDiagram).toHaveBeenCalledTimes(2));
   expect(image.src).toBe("data:image/svg+xml,light");
-  await act(async () => resolve("data:image/svg+xml,dark"));
+  await act(async () => resolve({ src: "data:image/svg+xml,dark" }));
   expect(image.src).toBe("data:image/svg+xml,dark");
 });
 
 it("falls back to exact source for invalid diagrams without hiding the rest of the message", async () => {
-  vi.mocked(renderDiagram).mockRejectedValue(new Error("Invalid syntax"));
+  vi.mocked(renderDiagram).mockResolvedValue({
+    reason: "Mermaid could not render this diagram. Check its syntax.",
+  });
   render(
     <MessageText text={"```mermaid\ninvalid syntax\n```\n\nStill readable"} />,
   );
-  await screen.findByText(/Diagram preview unavailable/);
+  await screen.findByText(
+    "Mermaid could not render this diagram. Check its syntax.",
+  );
   expect(screen.getByText("invalid syntax")).toBeTruthy();
   expect(screen.getByText("Still readable")).toBeTruthy();
 });

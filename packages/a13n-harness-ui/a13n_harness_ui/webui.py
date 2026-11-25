@@ -2942,8 +2942,9 @@ def create_webui(
                     "https://e2b.dev https://modal.com https://framerusercontent.com "
                     f"https://docs.runloop.ai https://fly.io {model_logo_origins}; media-src 'self' blob:; "
                     "style-src 'self' 'unsafe-inline'; "
-                    "script-src 'self'; frame-ancestors 'none'; base-uri 'none'; frame-src "
-                    + (origin(sandbox_url.removesuffix("/sandbox.html")) if sandbox_url is not None else "'none'")
+                    # The bundled Mermaid renderer is loaded in an opaque sandboxed iframe.
+                    "script-src 'self'; frame-ancestors 'none'; base-uri 'none'; frame-src 'self'"
+                    + (f" {origin(sandbox_url.removesuffix('/sandbox.html'))}" if sandbox_url is not None else "")
                 ),
             },
         )

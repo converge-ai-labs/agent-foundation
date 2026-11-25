@@ -73,7 +73,7 @@ async def test_workbench_deep_links_and_api_not_found_remain_distinct(tmp_path: 
                 "script-src": {"'self'"},
                 "frame-ancestors": {"'none'"},
                 "base-uri": {"'none'"},
-                "frame-src": {"'none'"},
+                "frame-src": {"'self'"},
             }
         for path in (
             "/new/draft-demo",

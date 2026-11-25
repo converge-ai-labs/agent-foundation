@@ -43,3 +43,5 @@ export function cossLicense(): Plugin {
     },
   };
 }
+
+export { mermaidFrame } from "./mermaid-frame-vite.ts";

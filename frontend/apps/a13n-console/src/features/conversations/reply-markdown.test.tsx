@@ -52,7 +52,7 @@ it("treats paired dollars as math and honors escaped currency signs", () => {
 });
 
 it("translates mounted diagram controls and math regions without re-rendering the diagram", async () => {
-  vi.mocked(renderDiagram).mockResolvedValue(svg);
+  vi.mocked(renderDiagram).mockResolvedValue({ src: svg });
   render(
     <MarkdownContent
       agentReply
@@ -70,7 +70,7 @@ it("translates mounted diagram controls and math regions without re-rendering th
 
 it("keeps incomplete streamed fences as code, then shows a copyable diagram once the fence closes", async () => {
   const user = userEvent.setup();
-  vi.mocked(renderDiagram).mockResolvedValue(svg);
+  vi.mocked(renderDiagram).mockResolvedValue({ src: svg });
   const open = `\`\`\`\`mermaid\n${source}`;
   const view = render(<MarkdownContent agentReply text={open + "\n```"} />);
   expect(view.container.querySelector("pre")?.textContent).toBe(
@@ -96,12 +96,14 @@ it("keeps incomplete streamed fences as code, then shows a copyable diagram once
 });
 
 it("renders nested completed fences only in replies and leaves failed diagrams as copyable source", async () => {
-  vi.mocked(renderDiagram).mockRejectedValue(new Error("Unsupported diagram"));
+  vi.mocked(renderDiagram).mockResolvedValue({
+    reason: "This Mermaid diagram type is not recognized.",
+  });
   const text = `> ~~~mermaid\n> ${source.replaceAll("\n", "\n> ")}\n> ~~~`;
   const view = render(<MarkdownContent text={text} />);
   expect(renderDiagram).not.toHaveBeenCalled();
   view.rerender(<MarkdownContent agentReply text={text} />);
-  await screen.findByText(/Diagram preview unavailable/);
+  await screen.findByText("This Mermaid diagram type is not recognized.");
   expect(view.container.querySelector("blockquote pre")?.textContent).toBe(
     source + "\n",
   );
