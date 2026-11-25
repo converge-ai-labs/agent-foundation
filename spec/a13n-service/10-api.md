@@ -337,6 +337,7 @@ Paths are relative to `/api/v1` unless they start at the root. `{org}` is an org
 | `/assets`                 | GET, POST   | [04](04-resources.md#uploads-and-assets) |
 | `/assets/{asset}`         | GET, DELETE | [04](04-resources.md#uploads-and-assets) |
 | `/assets/{asset}/content` | GET         | [04](04-resources.md#uploads-and-assets) |
+| `/storage`                | GET         | [04](04-resources.md#uploads-and-assets) |
 
 ### Subscriptions
 

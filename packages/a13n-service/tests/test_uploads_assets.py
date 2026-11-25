@@ -8,10 +8,11 @@ from a13n_service.infra.db import short_session, transaction
 from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.assets.service import require_usable
+from a13n_service.resources.assets.usage import get_workspace_storage
 from a13n_service.resources.uploads import service as uploads
 from a13n_service.resources.uploads.schemas import Upload
 from a13n_service.tenancy.authorize import BUILT_IN_ROLES, Grant, Principal, WorkspaceScope
-from a13n_service.tenancy.tables import WorkspaceRow
+from a13n_service.tenancy.tables import PrincipalRow, WorkspaceRow
 from sqlalchemy import select
 
 pytestmark = pytest.mark.anyio
@@ -126,6 +127,106 @@ async def test_upload_bounds_and_workspace_binding(service) -> None:  # type: ig
         f"{service.api}/assets", json={"upload_id": elsewhere.json()["upload_id"], "name": "a.txt"}
     )
     assert borrowed.status_code == 404
+
+
+async def test_workspace_storage_counts_tracked_bytes_once_by_creator(service) -> None:  # type: ignore[no-untyped-def]
+    storage, objects = service.runtime.storage, service.runtime.objects
+    tenant = service.tenant
+    workspace = f"{service.api}/storage"
+    response = await service.client.get(workspace)
+    assert response.json() == dict(active_bytes=0, retired_bytes=0, staged_upload_bytes=0, total_bytes=0, by_creator=[])
+
+    first = await upload(service, b"abc", "active")
+    second = await upload(service, b"defgh", "retired")
+    creator = new_object_id("usr")
+    other = new_object_id("ws")
+    async with transaction(storage) as session:
+        session.add(PrincipalRow(id=creator, kind="user", name="Other creator", email="creator@example.test"))
+        session.add(WorkspaceRow(id=other, organization_id=tenant.organization_id, name="Other"))
+    await uploads.store(
+        storage,
+        objects,
+        WorkspaceScope(tenant.organization_id, tenant.workspace_id),
+        creator,
+        request_key="staged",
+        filename="unassigned.txt",
+        content_type="text/plain",
+        content=b"1234567",
+    )
+    await uploads.store(
+        storage,
+        objects,
+        WorkspaceScope(tenant.organization_id, other),
+        creator,
+        request_key="other",
+        filename="other.txt",
+        content_type="text/plain",
+        content=b"other",
+    )
+
+    before = (await service.client.get(workspace)).json()
+    assert before["staged_upload_bytes"] == before["total_bytes"] == 15
+    for staged, name in [(first, "active.txt"), (second, "retired.txt")]:
+        created = await service.client.post(
+            f"{service.api}/assets", json={"upload_id": staged["upload_id"], "name": name}
+        )
+        assert created.status_code == 201, created.text
+        if name == "retired.txt":
+            asset = created.json()
+            retired = await service.client.delete(
+                f"{service.api}/assets/{asset['id']}", headers={"if-match": etag(asset)}
+            )
+            assert retired.status_code == 200, retired.text
+    response = await service.client.get(workspace)
+    assert response.status_code == 200, response.text
+    report = response.json()
+    assert [report[key] for key in ("active_bytes", "retired_bytes", "staged_upload_bytes", "total_bytes")] == [
+        3,
+        5,
+        7,
+        15,
+    ]
+    by_creator = {row["created_by_id"]: row for row in report["by_creator"]}
+    assert by_creator[tenant.principal_id]["total_bytes"] == 8
+    assert by_creator[tenant.principal_id]["staged_upload_bytes"] == 0
+    assert by_creator[creator] == dict(
+        created_by_id=creator,
+        creator_name="Other creator",
+        active_bytes=0,
+        retired_bytes=0,
+        staged_upload_bytes=7,
+        total_bytes=7,
+    )
+
+    viewer = Principal(creator, "user", (Grant(tenant.organization_id, tenant.workspace_id, BUILT_IN_ROLES["viewer"]),))
+    assert (await get_workspace_storage(storage, viewer, tenant.workspace_id)).model_dump() == report
+    with pytest.raises(ServiceError):
+        await get_workspace_storage(storage, viewer, other)
+
+
+async def test_asset_filters_cover_the_full_collection(service) -> None:  # type: ignore[no-untyped-def]
+    assets = f"{service.api}/assets"
+    for i, name in enumerate(["report-100%.txt", "report-100x.txt", "readme.txt"]):
+        staged = await upload(service, str(i).encode(), f"upload-{i}", name)
+        response = await service.client.post(assets, json={"upload_id": staged["upload_id"], "name": name})
+        assert response.status_code == 201, response.text
+        if "%" in name:
+            asset = response.json()
+            retired = await service.client.delete(f"{assets}/{asset['id']}", headers={"if-match": etag(asset)})
+            assert retired.status_code == 200, retired.text
+    params = {"query": "REPORT", "source_kind": "user_upload", "created_by_id": service.tenant.principal_id, "limit": 1}
+    first = (await service.client.get(assets, params=params)).json()
+    second = (await service.client.get(assets, params={**params, "cursor": first["next_cursor"]})).json()
+    assert first["total_count"] == second["total_count"] == 2
+    assert second["next_cursor"] is None
+    changed = await service.client.get(assets, params={**params, "status": "active", "cursor": first["next_cursor"]})
+    assert changed.status_code == 400 and changed.json()["error"]["code"] == "invalid_cursor"
+    assert {first["items"][0]["name"], second["items"][0]["name"]} == {"report-100%.txt", "report-100x.txt"}
+    literal_match = (await service.client.get(assets, params={**params, "query": "%", "status": "retired"})).json()
+    assert [row["name"] for row in literal_match["items"]] == ["report-100%.txt"]
+    for extra in ({"status": "active"}, {"created_by_id": new_object_id("usr")}, {"source_kind": "agent_run"}):
+        result = (await service.client.get(assets, params={**params, "query": "%", **extra})).json()
+        assert result == {"items": [], "total_count": 0, "next_cursor": None}
 
 
 @pytest.mark.parametrize("other", [b"a", b"b"])

@@ -35,6 +35,12 @@ A signed-out visitor sees sign-in. While the Service is uninitialized, sign-in c
 - **Workspace settings:** Owns profile, grants, invitations, member-key administration, service accounts and their keys, Providers, Webhooks, and audit. Providers group Model, Web, Environment, Connector, Memory, and Browser categories (editing requires workspace `write`, [resources](../a13n-service/04-resources.md#provider-resources)); Connections expose MCP or Composio setup. All categories use the label **Provider** consistently, and empty Credentials/Configuration groups are omitted. Cloudflare Containers supports automatic deployment only (using Account ID and API token from workspace administrators); its gateway is internal, deployment progress stays on the Providers page, and a verified Provider can launch the template editor preselected.
 - **Organization settings:** Owns profile, grants, invitations, Workspaces, and audit. In both Organization and Workspace settings, **Members** contains member and invitation tabs with a direct Invite action.
 
+### Workspace Files
+
+**Workspace Settings → Files** is available with workspace `read`. The page lists conversation uploads and files published by agents, with the creator and a link to the source Thread when available. Search by filename and filter by source, status, or creator across the full collection; results use cursor pagination. Readers can download active and retired files. Writers can retire active files after confirmation, moving their bytes from active to retired storage and preventing new attachments.
+
+The usage strip shows workspace totals for active assets, retired assets, and staged uploads. A disclosure shows the same breakdown per creator. The list filters do not change usage totals.
+
 ### Members, Grants, and API Keys
 
 - **Members and SSO grants:** Organization and Workspace Members use the grants API to add, change, or remove roles at that scope. Organization administrators can select existing users from the organization directory; Workspace administrators without directory access can add an existing user by principal ID. Service account roles are managed in their home workspace. Member lists label synchronized grants **SSO** and overrides **Manual**; administrators can override a synchronized grant in **Change role** or restore it with **Restore SSO default**. **Invitations** shows history and allows revocation even when password sign-in is disabled; creating and resending require password sign-in.

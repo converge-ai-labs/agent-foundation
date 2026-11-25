@@ -4569,5 +4569,22 @@
   "Sign-in provider": "Sign-in provider",
   "This Service uses an identity provider. Go to sign in to continue.": "This Service uses an identity provider. Go to sign in to continue.",
   "Use SSO default": "Use SSO default",
-  "Your identity provider manages your sign-in details.": "Your identity provider manages your sign-in details."
+  "Your identity provider manages your sign-in details.": "Your identity provider manages your sign-in details.",
+  "Conversation uploads and files published by agents are visible to anyone with workspace read access.": "Conversation uploads and files published by agents are visible to anyone with workspace read access.",
+  "Storage usage": "Storage usage",
+  "Retired": "Retired",
+  "Staged uploads": "Staged uploads",
+  "Usage by creator": "Usage by creator",
+  "Search by filename": "Search by filename",
+  "User upload": "User upload",
+  "Agent run": "Agent run",
+  "Creator": "Creator",
+  "Source / Author": "Source / Author",
+  "Download {{name}}": "Download {{name}}",
+  "Retire": "Retire",
+  "No matching files": "No matching files",
+  "Files uploaded in conversations or published by agents appear here.": "Files uploaded in conversations or published by agents appear here.",
+  "{{shown}} of {{total}} files": "{{shown}} of {{total}} files",
+  "Retire file": "Retire file",
+  "Retired files remain downloadable and count toward storage, but cannot be attached to new messages.": "Retired files remain downloadable and count toward storage, but cannot be attached to new messages."
 }

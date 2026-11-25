@@ -34,6 +34,7 @@ from a13n_service.provisioning.tables import WorkspaceProvisioningRow
 from a13n_service.resources.agents.routes import router as agents_router
 from a13n_service.resources.agents.tables import AgentRevisionRow, AgentRow
 from a13n_service.resources.assets.routes import router as assets_router
+from a13n_service.resources.assets.routes import storage_router
 from a13n_service.resources.assets.tables import AssetRow
 from a13n_service.resources.connections.operations import recover_operations
 from a13n_service.resources.connections.routes import router as connections_router
@@ -494,6 +495,7 @@ OSS = Distribution(
         agents_router,
         uploads_router,
         assets_router,
+        storage_router,
         skills_router,
         subscriptions_router,
         metrics_data_sources_router,

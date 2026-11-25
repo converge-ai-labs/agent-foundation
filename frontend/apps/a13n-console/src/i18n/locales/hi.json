@@ -4569,5 +4569,22 @@
   "Sign-in provider": "साइन-इन प्रदाता",
   "This Service uses an identity provider. Go to sign in to continue.": "यह Service एक पहचान प्रदाता इस्तेमाल करती है। जारी रखने के लिए साइन-इन पेज पर जाएँ।",
   "Use SSO default": "एसएसओ की डिफ़ॉल्ट भूमिका इस्तेमाल करें",
-  "Your identity provider manages your sign-in details.": "आपकी साइन-इन जानकारी आपका पहचान प्रदाता प्रबंधित करता है।"
+  "Your identity provider manages your sign-in details.": "आपकी साइन-इन जानकारी आपका पहचान प्रदाता प्रबंधित करता है।",
+  "Conversation uploads and files published by agents are visible to anyone with workspace read access.": "कार्यक्षेत्र को पढ़ने की अनुमति वाले सभी लोग बातचीत में अपलोड की गई और एजेंटों द्वारा प्रकाशित फ़ाइलें देख सकते हैं।",
+  "Storage usage": "स्टोरेज का उपयोग",
+  "Retired": "सेवानिवृत्त",
+  "Staged uploads": "अस्थायी अपलोड",
+  "Usage by creator": "निर्माता के अनुसार उपयोग",
+  "Search by filename": "फ़ाइल के नाम से खोजें",
+  "User upload": "उपयोगकर्ता का अपलोड",
+  "Agent run": "एजेंट रन",
+  "Creator": "निर्माता",
+  "Source / Author": "स्रोत / लेखक",
+  "Download {{name}}": "{{name}} डाउनलोड करें",
+  "Retire": "सेवानिवृत्त करें",
+  "No matching files": "कोई मेल खाती फ़ाइल नहीं",
+  "Files uploaded in conversations or published by agents appear here.": "बातचीत में अपलोड की गई या एजेंटों द्वारा प्रकाशित फ़ाइलें यहाँ दिखती हैं।",
+  "{{shown}} of {{total}} files": "{{total}} में से {{shown}} फ़ाइलें",
+  "Retire file": "फ़ाइल सेवानिवृत्त करें",
+  "Retired files remain downloadable and count toward storage, but cannot be attached to new messages.": "सेवानिवृत्त फ़ाइलें डाउनलोड की जा सकती हैं और स्टोरेज में गिनी जाती हैं, लेकिन उन्हें नए संदेशों में संलग्न नहीं किया जा सकता।"
 }
