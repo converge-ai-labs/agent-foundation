@@ -4646,5 +4646,16 @@
   "No files found": "未找到文件",
   "Attachments and files published by the agent appear here.": "附件和智能体发布的文件会显示在此处。",
   "Some run content is unavailable, so this file list may be incomplete.": "部分运行内容不可用，文件列表可能不完整。",
-  "Back to files": "返回文件列表"
+  "Back to files": "返回文件列表",
+  "Accept": "接受",
+  "Decline": "拒绝",
+  "Cancel request": "取消请求",
+  "Input requested": "请求输入",
+  "MCP input request": "MCP 输入请求",
+  "External destination": "外部站点",
+  "Open external page": "打开外部页面",
+  "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "在浏览器中完成操作后选择“接受”。服务器凭据不会发送到该页面。",
+  "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.": "你的回复将发送给此 MCP 服务器。请勿包含密码、令牌或其他机密。",
+  "This field is required.": "此字段必填。",
+  "Enter a valid value for this field.": "请输入有效值。"
 }

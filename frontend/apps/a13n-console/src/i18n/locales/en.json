@@ -4646,5 +4646,16 @@
   "No files found": "No files found",
   "Attachments and files published by the agent appear here.": "Attachments and files published by the agent appear here.",
   "Some run content is unavailable, so this file list may be incomplete.": "Some run content is unavailable, so this file list may be incomplete.",
-  "Back to files": "Back to files"
+  "Back to files": "Back to files",
+  "Accept": "Accept",
+  "Decline": "Decline",
+  "Cancel request": "Cancel request",
+  "Input requested": "Input requested",
+  "MCP input request": "MCP input request",
+  "External destination": "External destination",
+  "Open external page": "Open external page",
+  "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.",
+  "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.": "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
+  "This field is required.": "This field is required.",
+  "Enter a valid value for this field.": "Enter a valid value for this field."
 }

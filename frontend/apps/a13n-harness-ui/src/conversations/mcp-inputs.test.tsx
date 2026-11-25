@@ -92,7 +92,7 @@ it("answers a child-owned form through its input endpoint without submitting ano
     true,
   );
   expect(screen.getByText("Confirm this operation")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "发送回复" }));
+  fireEvent.click(screen.getByRole("button", { name: "接受" }));
   await act(() => i18n.changeLanguage("en"));
   await waitFor(() => expect(client.POST).toHaveBeenCalledTimes(1));
   expect(client.POST).toHaveBeenCalledWith(
@@ -114,7 +114,7 @@ it("retains the exact answer after unknown delivery and retries only that respon
   mount();
   const input = (await screen.findByLabelText("Name")) as HTMLInputElement;
   fireEvent.change(input, { target: { value: "Ada" } });
-  fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+  fireEvent.click(screen.getByRole("button", { name: "Accept" }));
   await screen.findByText(/Couldn't confirm delivery/);
   expect(input.disabled).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "Retry response" }));
@@ -129,7 +129,7 @@ it("allows editing a rejected form and does not mislabel validation as unknown d
   mount();
   const input = (await screen.findByLabelText("Name")) as HTMLInputElement;
   fireEvent.change(input, { target: { value: "Ada" } });
-  fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+  fireEvent.click(screen.getByRole("button", { name: "Accept" }));
   await screen.findByText("Invalid form");
   await waitFor(() => expect(input.disabled).toBe(false));
   expect(screen.queryByText(/Couldn't confirm delivery/)).toBeNull();
@@ -145,7 +145,7 @@ it.each([502, 503, 504])(
     const input = (await screen.findByLabelText("Name")) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Ada" } });
     fireEvent.click(screen.getByLabelText("Alpha"));
-    fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
     await screen.findByText(/Couldn't confirm delivery/);
     expect(input.disabled).toBe(true);
     await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
@@ -172,7 +172,7 @@ it.each(["mcp_input_conflict", "mcp_input_stale"])(
     mount();
     const input = (await screen.findByLabelText("Name")) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Ada" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
     await screen.findByText("Request unavailable");
     expect(input.disabled).toBe(true);
     expect(screen.queryByText(/Couldn't confirm delivery/)).toBeNull();
@@ -190,10 +190,56 @@ it("removes a gateway-failed request when reconciliation finds it accepted", asy
   fireEvent.change(await screen.findByLabelText("Name"), {
     target: { value: "Ada" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+  fireEvent.click(screen.getByRole("button", { name: "Accept" }));
   await waitFor(() => expect(client.GET).toHaveBeenCalledTimes(2));
   await waitFor(() =>
     expect(screen.queryByLabelText("MCP input request")).toBeNull(),
   );
   expect(client.POST).toHaveBeenCalledTimes(1);
+});
+
+it("shows the URL destination and opens it only on explicit link activation", async () => {
+  client.GET.mockResolvedValue({
+    data: [
+      {
+        ...request,
+        mode: "url",
+        schema: null,
+        url: "https://calendar.example.org/continue",
+        url_host: "calendar.example.org",
+        server_name: "Calendar integration",
+      },
+    ],
+  });
+  client.POST.mockResolvedValue({ data: { ...request, state: "accepted" } });
+  mount();
+  const link = await screen.findByRole("link", { name: "Open external page" });
+  expect(screen.getByText("Calendar integration")).toBeTruthy();
+  expect(screen.getByText("calendar.example.org")).toBeTruthy();
+  expect(screen.queryByText(/Don.t include passwords/)).toBeNull();
+  expect(link.getAttribute("href")).toBe(
+    "https://calendar.example.org/continue",
+  );
+  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+  expect(client.POST).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+  await waitFor(() =>
+    expect(client.POST).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ body: { action: "accept" } }),
+    ),
+  );
+});
+
+it("shows missing required input beside the field before submitting", async () => {
+  mount();
+  await screen.findByLabelText("Name");
+  expect(screen.getByText(/Don.t include passwords/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+  expect(screen.getByText("This field is required.")).toBeTruthy();
+  expect(screen.getByLabelText("Name").getAttribute("aria-invalid")).toBe(
+    "true",
+  );
+  expect(client.POST).not.toHaveBeenCalled();
 });

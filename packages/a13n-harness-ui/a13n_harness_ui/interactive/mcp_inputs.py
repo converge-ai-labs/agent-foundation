@@ -6,7 +6,9 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView, McpInputResponse
+from a13n_harness.mcp_inputs import McpInputResponse, validate_field
+
+from a13n_harness_ui.mcp_runtime.inputs import McpInputRequestView
 
 
 @dataclass
@@ -29,7 +31,7 @@ class McpInteraction:
 
     def prompt(self) -> str:
         if self.request.mode == "url":
-            return f"Open in your browser: {self.request.url}\nAfter completing the action, type accept; or decline / cancel."
+            return f"External destination ({self.request.url_host}): {self.request.url}\nAfter completing the action, type accept; or decline / cancel."
         if self.position >= len(self.fields):
             return f"Confirm response: {json.dumps(self.content, ensure_ascii=False)}\nType accept, decline, or cancel."
         name, schema = self.fields[self.position]
@@ -61,12 +63,7 @@ class McpInteraction:
                     value = json.loads(text)
                 except ValueError as exc:
                     raise ValueError("Enter a JSON number, boolean, or enum array.") from exc
-            from jsonschema import Draft202012Validator, ValidationError
-
-            try:
-                Draft202012Validator(schema).validate(value)
-            except ValidationError as exc:
-                raise ValueError("The value does not match this field's schema.") from exc
+            validate_field(schema, value)
             self.content[name] = value
         self.position += 1
         return None

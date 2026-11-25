@@ -12,10 +12,12 @@ import { revalidateSession, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { applyThreadState, conversationKeys } from "./api";
 import { SessionDisplays } from "./session-displays";
+import type { Schema } from "../../shared/api";
 import type { SessionEvent } from "../../service-client";
 
 export interface SessionStream {
   displays: SessionDisplays;
+  interactions: ReadonlyMap<string, Schema["McpElicitation"][]>;
   /** `closed` after a refusal or an invalid frame; the stream reconnects from anything else. */
   state: "connecting" | "live" | "reconnecting" | "closed";
   /** Why the stream is reconnecting or closed. */
@@ -44,6 +46,9 @@ export function SessionStreamProvider({
   const client = useClient(),
     { workspace } = useWorkspace(),
     cache = useQueryClient();
+  const [interactions, setInteractions] = useState(
+    () => new Map<string, Schema["McpElicitation"][]>(),
+  );
   const [displays] = useState(() => new SessionDisplays());
   const [connection, setConnection] = useState<
     Pick<SessionStream, "state" | "error">
@@ -61,13 +66,24 @@ export function SessionStreamProvider({
         received(event);
         switch (event.type) {
           case "connection":
-            if (event.state === "live")
+            if (event.state === "live") {
+              setInteractions(new Map());
               for (const runId of displays.connected())
                 void cache.invalidateQueries({
                   queryKey: keys.items(runId),
                   exact: true,
                 });
+            }
             setConnection({ state: event.state, error: event.error });
+            break;
+          case "interactions":
+            setInteractions((previous) => {
+              const next = new Map(previous);
+              if (event.data.requests.length)
+                next.set(event.data.thread_id, event.data.requests);
+              else next.delete(event.data.thread_id);
+              return next;
+            });
             break;
           case "thread":
             applyThreadState(cache, workspace.id, event.data);
@@ -95,10 +111,11 @@ export function SessionStreamProvider({
   const value = useMemo(
     () => ({
       displays,
+      interactions,
       ...connection,
       reconnect: () => setGeneration((value) => value + 1),
     }),
-    [displays, connection],
+    [displays, interactions, connection],
   );
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }

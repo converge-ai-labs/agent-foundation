@@ -1,0 +1,49 @@
+.request {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.request + .request {
+  border-top: 1px solid var(--a13n-border-soft);
+  padding-top: 12px;
+}
+.heading,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.heading {
+  justify-content: space-between;
+}
+.heading h3,
+.destination strong {
+  font-weight: 500;
+}
+.hint {
+  color: var(--a13n-secondary);
+}
+.reason {
+  white-space: pre-wrap;
+}
+.destination {
+  display: grid;
+  gap: 4px;
+  border-inline-start: 2px solid var(--a13n-border-soft);
+  padding-inline-start: 12px;
+}
+.destination a {
+  color: var(--a13n-signal);
+  text-decoration: underline;
+  width: fit-content;
+}
+.selection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.error {
+  color: var(--a13n-danger);
+}

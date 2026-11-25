@@ -47,7 +47,7 @@ from a13n_harness_ui.mcp_apps.connections import AppMCP, AppToolset, Connections
 from a13n_harness_ui.mcp_oauth.models import OAuthError
 from a13n_harness_ui.mcp_oauth.service import McpOAuth
 from a13n_harness_ui.mcp_runtime.connections import Connections as HostConnections
-from a13n_harness_ui.mcp_runtime.connections import HostClient
+from a13n_harness_ui.mcp_runtime.connections import HostClient, Operation
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 
 
@@ -201,7 +201,12 @@ async def recover_mcp_task(
         await connection.start()
         if not has_tasks(connection.client.server_capabilities):
             raise ToolFailed("The originating MCP server no longer supports Tasks.")
-        return task_value(await supervise_mcp_task(connection.client.session, state))
+        async with connection.operation(
+            operation=Operation(run_id=execution.record.run_id, tool_call_id=execution.record.tool_call_id)
+        ):
+            return task_value(
+                await supervise_mcp_task(connection.client.session, state, input_handler=connection.task_inputs)
+            )
     finally:
         with CancelScope(shield=True):
             await connections.close_run_connection(connection)

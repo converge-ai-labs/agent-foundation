@@ -387,12 +387,16 @@ class Executions(ToolExecutionRuntime):
         )
 
     async def wait(
-        self, thread_id: str, execution_id: str, *, timeout_seconds: float | None = None
+        self, thread_id: str, execution_id: str, *, timeout_seconds: float | None = None, foreground: bool = False
     ) -> StoredToolExecution | None:
         deadline = None if timeout_seconds is None else asyncio.get_running_loop().time() + timeout_seconds
         while True:
             value = await super().wait(thread_id, execution_id, timeout_seconds=0)
-            if value is None or value.record.terminal:
+            if (
+                value is None
+                or value.record.terminal
+                or (foreground and value.mcp_task is not None and value.mcp_task.status == "input_required")
+            ):
                 return value
             remaining = None if deadline is None else deadline - asyncio.get_running_loop().time()
             if remaining is not None and remaining <= 0:

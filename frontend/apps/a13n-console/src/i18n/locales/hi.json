@@ -4646,5 +4646,16 @@
   "No files found": "कोई फ़ाइल नहीं मिली",
   "Attachments and files published by the agent appear here.": "अनुलग्नक और एजेंट की प्रकाशित फ़ाइलें यहाँ दिखती हैं।",
   "Some run content is unavailable, so this file list may be incomplete.": "कुछ रन की सामग्री उपलब्ध नहीं है, इसलिए फ़ाइलों की यह सूची अधूरी हो सकती है।",
-  "Back to files": "फ़ाइलों पर वापस जाएँ"
+  "Back to files": "फ़ाइलों पर वापस जाएँ",
+  "Accept": "स्वीकार करें",
+  "Decline": "अस्वीकार करें",
+  "Cancel request": "अनुरोध रद्द करें",
+  "Input requested": "इनपुट का अनुरोध",
+  "MCP input request": "MCP इनपुट अनुरोध",
+  "External destination": "बाहरी गंतव्य",
+  "Open external page": "बाहरी पेज खोलें",
+  "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "ब्राउज़र में कार्रवाई पूरी करें, फिर स्वीकार करें चुनें। सर्वर के क्रेडेंशियल उस पेज पर नहीं भेजे जाते।",
+  "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.": "आपका जवाब इस MCP सर्वर को जाएगा। पासवर्ड, टोकन या अन्य गोपनीय जानकारी शामिल न करें।",
+  "This field is required.": "यह फ़ील्ड आवश्यक है।",
+  "Enter a valid value for this field.": "इस फ़ील्ड के लिए मान्य मान दर्ज करें।"
 }

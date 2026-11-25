@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -12,13 +12,14 @@ from typing import Any, Literal
 from fastmcp.client.client import CallToolResult
 from mcp import ClientSession, types
 from mcp.client.extension import ClaimContext, ClientExtension, ResultClaim
-from pydantic import AwareDatetime, Field, JsonValue
+from pydantic import AwareDatetime, ConfigDict, Field, JsonValue
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.mcp import _map_mcp_call_tool_result
 from pydantic_ai.toolsets import ToolsetTool
 
 from a13n_harness._tool_execution import TOOL_EXECUTION_METADATA_KEY
-from a13n_harness.mcp_task_state import McpTaskExecutionState, McpTaskInputRequest
+from a13n_harness.mcp_inputs import McpInputResponse, McpTaskInputRequest
+from a13n_harness.mcp_task_state import McpTaskExecutionState
 from a13n_harness.tool_execution import current_execution, current_execution_runtime, execution_cleanup
 
 TASKS_EXTENSION_ID = "io.modelcontextprotocol/tasks"
@@ -115,8 +116,19 @@ class TaskSnapshot(types.Result):
                     }
                 )
                 for key, request in (self.input_requests or {}).items()
-                if isinstance(request, types.ElicitRequest)
+                if isinstance(request, types.ElicitRequest) and key not in previous.answered_inputs
             }
+            if not inputs:
+                if not set(self.input_requests or {}) & previous.answered_inputs:
+                    raise ToolFailed("MCP task did not provide a supported input request.")
+                # Acknowledged keys can remain observable while the server applies the update.
+                return previous.model_copy(
+                    update={
+                        "status": "working",
+                        "input_required": None,
+                        "next_poll_at": datetime.now(UTC) + timedelta(seconds=interval),
+                    }
+                )
         return previous.model_copy(
             update={
                 "status": self.status,
@@ -131,6 +143,14 @@ class TaskSnapshot(types.Result):
         if self.status == "completed" and self.result is not None:
             return types.CallToolResult.model_validate(self.result)
         raise ToolFailed("MCP task was cancelled by the server." if self.status == "cancelled" else "MCP task failed.")
+
+
+class TaskUpdateResult(types.Result):
+    """An acknowledgement, optionally carrying a complete task snapshot."""
+
+    model_config = ConfigDict(extra="allow")
+
+    status: Literal["working", "input_required", "completed", "failed", "cancelled"] | None = None
 
 
 class TaskParams(types.RequestParams):
@@ -173,20 +193,43 @@ async def cancel_mcp_task(session: ClientSession, state: McpTaskExecutionState) 
 
 
 async def update_mcp_task(
-    session: ClientSession, state: McpTaskExecutionState, responses: dict[str, JsonValue]
-) -> McpTaskExecutionState:
-    """Send authorized, validated HITL answers once; caller owns fencing and publication."""
+    session: ClientSession, state: McpTaskExecutionState, responses: dict[str, McpInputResponse]
+) -> tuple[McpTaskExecutionState, TaskSnapshot | None]:
+    """Send validated HITL answers once; caller owns fencing and publication."""
     if state.status != "input_required" or datetime.now(UTC) >= state.expires_at:
-        raise ValueError("MCP task is not awaiting input")
-    await session.send_request(
-        UpdateTask(params=TaskUpdateParams(task_id=state.mcp_task_id, input_responses=responses)),
-        types.Result,
+        raise ValueError("MCP task is not awaiting input.")
+    pending = dict(state.input_required or {})
+    if not responses or set(responses) - pending.keys():
+        raise ValueError("MCP input is no longer pending.")
+    wire: dict[str, JsonValue] = {}
+    for key, response in responses.items():
+        pending.pop(key).validate_response(response)
+        wire[key] = response.model_dump(mode="json", exclude_none=True)
+    result = await session.send_request(
+        UpdateTask(params=TaskUpdateParams(task_id=state.mcp_task_id, input_responses=wire)),
+        TaskUpdateResult,
         request_read_timeout_seconds=10,
     )
-    return state.model_copy(update={"status": "working", "input_required": None, "next_poll_at": datetime.now(UTC)})
+    state = state.model_copy(
+        update={
+            "status": "input_required" if pending else "working",
+            "input_required": pending or None,
+            "answered_inputs": state.answered_inputs.union(responses),
+            "next_poll_at": datetime.now(UTC),
+        }
+    )
+    if result.status is None:
+        return state, None
+    snapshot = TaskSnapshot.model_validate(result.model_dump(mode="json", by_alias=True))
+    return snapshot.checkpoint(state), snapshot
 
 
-async def supervise_mcp_task(session: ClientSession, state: McpTaskExecutionState) -> types.CallToolResult:
+type TaskInputHandler = Callable[[McpTaskExecutionState], Awaitable[dict[str, McpInputResponse]]]
+
+
+async def supervise_mcp_task(
+    session: ClientSession, state: McpTaskExecutionState, *, input_handler: TaskInputHandler | None = None
+) -> types.CallToolResult:
     runtime, record = current_execution_runtime(), current_execution()
     try:
         if runtime is not None:
@@ -194,15 +237,28 @@ async def supervise_mcp_task(session: ClientSession, state: McpTaskExecutionStat
         if runtime is not None and record is not None and runtime.cancellation_requested(record.execution_id):
             raise asyncio.CancelledError
         while (now := datetime.now(UTC)) < state.expires_at:
-            await asyncio.sleep(max(0, (state.due_at - now).total_seconds()))
-            if datetime.now(UTC) >= state.expires_at:
-                break
-            snapshot = await get_mcp_task(session, state)
-            state = snapshot.checkpoint(state)
+            if state.status == "input_required" and input_handler is not None:
+                responses = await input_handler(state)
+                if datetime.now(UTC) >= state.expires_at:
+                    break
+                state, snapshot = await update_mcp_task(session, state, responses)
+            else:
+                await asyncio.sleep(max(0, (state.due_at - now).total_seconds()))
+                if datetime.now(UTC) >= state.expires_at:
+                    break
+                snapshot = await get_mcp_task(session, state)
+                state = snapshot.checkpoint(state)
             if state.status not in {"working", "input_required"}:
+                assert snapshot is not None
                 return snapshot.outcome()
             if runtime is not None:
+                if state.status == "input_required" and input_handler is None:
+                    # The control owner must apply its input policy after the foreground handoff.
+                    state = state.model_copy(update={"next_poll_at": datetime.now(UTC)})
                 await runtime.checkpoint_mcp_task(state)
+                if state.status == "input_required" and input_handler is None:
+                    await asyncio.sleep(max(0, (state.expires_at - datetime.now(UTC)).total_seconds()))
+                    break
             elif state.status == "input_required":
                 raise ToolFailed("MCP task requires a Host-owned execution to receive input.")
         raise ToolFailed("MCP task expired.")
@@ -220,9 +276,12 @@ class DurableTasks(ClientExtension):
 
     identifier = TASKS_EXTENSION_ID
 
-    def __init__(self, connection_id: str, *, server_id: str | None = None) -> None:
+    def __init__(
+        self, connection_id: str, *, server_id: str | None = None, input_handler: TaskInputHandler | None = None
+    ) -> None:
         self.connection_id = connection_id
         self.server_id = server_id or connection_id
+        self.input_handler = input_handler
 
     def claims(self) -> Sequence[ResultClaim[Any]]:
         return (
@@ -236,5 +295,7 @@ class DurableTasks(ClientExtension):
 
     async def resolve(self, handle: TaskHandle, ctx: ClaimContext) -> types.CallToolResult:
         return await supervise_mcp_task(
-            ctx.session, handle.checkpoint(self.connection_id, self.server_id, ctx.tool_name)
+            ctx.session,
+            handle.checkpoint(self.connection_id, self.server_id, ctx.tool_name),
+            input_handler=self.input_handler,
         )
