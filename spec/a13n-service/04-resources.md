@@ -262,6 +262,10 @@ Finding submission is its only write. It enables no built-in toolset. Platform t
 
 New generic messages cannot launch the builtin Finding Agent or continue a managed Analysis Thread as chat. Clients start an analysis through `POST /finding-analyses`; custom duplicates remain independent conversational Agents. Previously accepted executions and internal continuations retain their frozen configuration.
 
+## Configuration copies
+
+Environment template, Model, [Schedule](13-schedules.md#management-api) and Skill copies are created in the source workspace. The caller needs `read` on the source, `write` in that workspace and the resource-specific creation permissions. An omitted name defaults to `<name> (copy)` (shortened to fit the name limit); omitted description and labels, where supported, are inherited. A duplicate request creates a new resource each time. Success returns the copy with `201` and its ETag, and records `<kind>.duplicate` against the copy with `source_id` and, for Skills, `source_revision_id`.
+
 ## Skills
 
 ```
@@ -279,6 +283,7 @@ The package contract: a zip archive with `SKILL.md` at its root or in its only t
 The model sees a skill by the `name` its pinned revision's `SKILL.md` declares; the head's `name` is display text. A declared name is a portable directory component of at most 255 UTF-8 bytes, excluding separators, `.` and `..`, reserved device names and reserved filename characters. Two skills of a workspace may declare the same name, and a new revision may declare another; only the skill revisions one agent pins must declare distinct names ([validation](#validation)).
 
 - `POST /skills` `{name?, description?, labels, source}` creates the head and revision 1. Name and description default to the manifest's.
+- `POST /skills/{skill}/duplicate` `{name?, description?, labels?, revision_id?}` creates an independent head and revision 1 from an unarchived Skill. It uses the source default unless a revision of that Skill is selected. Revision 1 references the same immutable package; publishing a new revision of either head leaves the other unchanged.
 - `POST /skills/validate` `{source}` needs `write`, checks a package exactly as creation does and returns the manifest, staging nothing.
 - `GET /skills` filters by `label`, `q`, `archived` and `source` (`upload` or `github`, the default revision's source). A skill's representation includes `default_revision {id, number, source}`.
 - `PATCH` changes `name`, `description` and `labels`.
@@ -380,6 +385,7 @@ A model is one upstream model served by one model provider of its workspace, add
 - `catalog_ref` `{provider, model}` optionally records the catalog model a model started from: a channel ID (`^[a-z0-9][a-z0-9_-]{0,127}$`) and a model ID of 1 to 256 characters. It is provenance for clients, checked for shape only and never resolved, so it may name a model the catalog no longer lists. `PATCH` replaces it when present and removes it with `null`.
 - `description` is optional (default empty), and a model may be created disabled.
 - A model spends its provider's credential: creating one or changing its `config` needs `write` on the provider, and a disabled provider refuses new models (`disabled`).
+- `POST /models/{key}/duplicate` `{key, name?, description?}` uses the ordinary creation checks and requires a new workspace-unique key. The copy retains the provider, configuration, pricing, catalog provenance and enabled state.
 - A model the caller cannot read is `not_found`. Using a model at execution needs it and its provider enabled and usable under the run's authority.
 
 Execution selects every model of an agent graph by its key, and every call keeps that selection: the agents' own requests and their compaction, the tool reviewer and media understanding alike. Each model call is therefore admitted as, attributed to and priced by the model that selected it, even when another model of the graph names the same upstream model or the provider answers under another model name; its usage record carries the model and a price snapshot ([07](07-facts-and-delivery.md#usage-records)) and keeps the reported names only as information. A call that names no model of the graph is refused, failing the run with `model_call_unknown`.
@@ -431,6 +437,8 @@ A template is the live configuration managed environments are created from ([06]
 - `stop_after_seconds` (default 1800, 60 to 2592000, null for never) and `delete_after_seconds` (default null, 60 to 31536000) are the idle policy; [06](06-environments.md#idle-policy) owns how it applies.
 
 A template is created enabled. `PATCH` (with `If-Match`) may change `provider_id`, `config`, `name`, `description`, `labels` and `enabled`; a disabled template refuses new environments. How template changes reach instances is [06](06-environments.md#templates-and-instances)'s.
+
+`POST /environment-templates/{template}/duplicate` `{name?, description?, labels?}` retains the provider, recipe, lifecycle configuration and enabled state. The caller needs `write` on the workspace and provider; creation revalidates the recipe against the current provider type.
 
 Automatically provisioned templates have null creator/updater until a user changes them ([09](09-runtime.md#workspace-provisioning)).
 

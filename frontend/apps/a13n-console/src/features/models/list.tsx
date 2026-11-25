@@ -6,14 +6,14 @@ import {
   TooltipPopup,
   TooltipTrigger,
 } from "a13n-ui";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CubeIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { type Schema } from "../../shared/api";
+import { data, type Schema } from "../../shared/api";
 import {
   CollectionFooter,
   Empty,
@@ -23,6 +23,7 @@ import {
   Toolbar,
   useCursor,
 } from "../../shared/collection";
+import { DuplicateAction } from "../../shared/dialogs/duplicate-action";
 import { useResourceRows } from "../../shared/dialogs";
 import {
   ErrorNotice,
@@ -94,6 +95,7 @@ export function ModelsPage() {
   const rows = useResourceRows<Schema["Model"]>();
   const { selected } = rows;
   const providerById = new Map(providers.data?.map((item) => [item.id, item]));
+  const cache = useQueryClient();
   const manage = can("write");
   const items = query.data?.items ?? [];
   const create = manage && (
@@ -196,6 +198,31 @@ export function ModelsPage() {
             items={items}
             canActivateRow={() => manage}
             onRowActivate={rows.activate}
+            rowMenu={
+              manage
+                ? (item) => (
+                    <DuplicateAction
+                      sourceName={item.name}
+                      title={t("Duplicate model")}
+                      requiresKey
+                      action={async (name, key) => {
+                        const result = await client
+                          .workspace(workspace.id)
+                          .POST("/api/v1/models/{key}/duplicate", {
+                            params: { path: { key: item.key } },
+                            body: { name, key },
+                          })
+                          .then(data);
+                        void cache.invalidateQueries({
+                          queryKey: ["models", workspace.id],
+                        });
+                        setSearch(result.key);
+                        updateFilters({ q: result.key });
+                      }}
+                    />
+                  )
+                : undefined
+            }
             columns={[
               {
                 label: t("Model"),

@@ -100,6 +100,14 @@ class SkillCreate(BaseModel):
     source: PackageSource
 
 
+class SkillDuplicate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: SkillName | None = None
+    description: Description | None = None
+    labels: Labels | None = None
+    revision_id: ObjectId | None = None
+
+
 class SkillUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: SkillName | None = None

@@ -15,6 +15,7 @@ from a13n_service.runs.schedules.schemas import (
     Schedule,
     ScheduleCommand,
     ScheduleCreate,
+    ScheduleDuplicate,
     SchedulePage,
     SchedulePreview,
     SchedulePreviewRequest,
@@ -65,6 +66,24 @@ async def get_schedule(
     response: Response, workspace_id: WorkspaceId, schedule_id: str, actor: Actor, runtime: CurrentRuntime
 ) -> Schedule:
     return context_response(tagged(response, await queries.get(runtime.storage, actor, workspace_id, schedule_id)))
+
+
+@router.post(
+    "/{schedule_id}/duplicate",
+    response_model=Schedule,
+    status_code=201,
+    openapi_extra=platform_operation("schedules", "write"),
+)
+async def duplicate_schedule(
+    response: Response,
+    workspace_id: WorkspaceId,
+    schedule_id: str,
+    body: ScheduleDuplicate,
+    actor: Actor,
+    runtime: CurrentRuntime,
+) -> Schedule:
+    result = await service.duplicate(runtime, actor, workspace_id, schedule_id, body)
+    return context_response(tagged(response, result))
 
 
 @router.patch("/{schedule_id}", response_model=Schedule, openapi_extra=platform_operation("schedules", "write"))

@@ -22,6 +22,7 @@ from a13n_service.resources.models.schemas import (
     ModelConfig,
     ModelConfigurationChanges,
     ModelCreate,
+    ModelDuplicate,
     ModelPage,
     ModelUpdate,
 )
@@ -46,6 +47,13 @@ class ModelEdit(ModelConfigurationChanges):
     pricing: ModelPricingEntry | None = None
     catalog_ref: CatalogRef | None = None
     enabled: bool | MISSING = MISSING
+
+
+async def duplicate_model(ctx: ToolContext, *, source_key: str, body: ModelDuplicate) -> Model:
+    """Duplicate a Model under a new workspace key."""
+    return await service.duplicate_model(
+        ctx.runtime.storage, ctx.actor, ctx.workspace_id, source_key, body, registry=ctx.runtime.registry
+    )
 
 
 async def create_model(ctx: ToolContext, *, body: ModelCreation) -> Model:
@@ -150,6 +158,7 @@ async def get_media_defaults(ctx: ToolContext) -> MediaDefaults:
 
 
 TOOLS = (
+    definition(duplicate_model, group="models", effect="write"),
     definition(create_model, group="models", effect="write"),
     definition(list_models, group="models", effect="read"),
     definition(get_model, group="models", effect="read"),
