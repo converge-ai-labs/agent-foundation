@@ -74,6 +74,7 @@ export interface ActionEntry extends EntryBase {
   kind: ActionKind;
   name: string | null;
   toolCallId?: string;
+  progress?: PresentedItem["progress"];
   arguments: unknown;
   result: unknown;
   resultParts?: ContentPart[];
@@ -397,6 +398,7 @@ function actionEntry(
     subagentRunId: step.subagentRunId,
     name: step.name ?? null,
     toolCallId: item?.toolCallId,
+    progress: item?.progress,
     arguments: item
       ? parseItemValue(item.arguments, item.incomplete)
       : parseItemValue(detail.arguments),
@@ -436,6 +438,7 @@ function retainedAction(item: PresentedItem): ActionEntry {
     subagentRunId: item.subagentRunId,
     name: item.toolName || null,
     toolCallId: item.toolCallId,
+    progress: item.progress,
     arguments: parseItemValue(item.arguments, item.incomplete),
     result: parseItemValue(item.result, item.incomplete),
     resultParts: item.resultParts,

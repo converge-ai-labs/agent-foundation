@@ -1,0 +1,46 @@
+.progress {
+  min-width: 0;
+  max-width: 100%;
+  padding-block: 2px 4px;
+  font-size: 0.875em;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.message {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+}
+
+.count {
+  flex: none;
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--a13n-tertiary);
+}
+
+.track {
+  height: 2px;
+  margin-block-start: 4px;
+  overflow: hidden;
+  background: var(--a13n-border-soft);
+}
+
+.fill {
+  height: 100%;
+  background: var(--a13n-signal);
+  transition: width 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    transition: none;
+  }
+}

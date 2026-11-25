@@ -13,6 +13,7 @@ from uuid import uuid4
 from a13n_harness.usage import ModelUsageRecord
 from a13n_stream_protocol.display import DisplayContinuation, Item, ItemRef, StreamPosition
 from a13n_stream_protocol.fragments import fragment_custom_event
+from a13n_stream_protocol.observer import TOOL_PROGRESS_EVENT
 from ag_ui.core import CustomEvent
 from ag_ui.core import Event as AguiEvent
 from anyio import (
@@ -415,7 +416,7 @@ class HarnessUiLiveHub:
         if display is not None:
             if run_kind != "root":
                 raise ValueError("Compact baseline publication requires a root Run")
-            frames = [
+            frames: list[tuple[AguiEvent, StreamPosition | None, ItemRef | None]] = [
                 (
                     _AGUI_ADAPTER.validate_python(observation.event),
                     StreamPosition(attempt=display.continuation.position.attempt, sequence=observation.sequence),
@@ -425,6 +426,11 @@ class HarnessUiLiveHub:
             ]
             if display.reset:
                 frames = [(CustomEvent(name="a13n.display.reset", value={}), None, None)]
+            else:
+                frames.extend(
+                    (_AGUI_ADAPTER.validate_python(observation.event), None, observation.item)
+                    for observation in display.progress
+                )
             batches = [frames]
         else:
             batches = [[(source, None, None)] for source in (*events, *supplements)]
@@ -473,26 +479,34 @@ class HarnessUiLiveHub:
                         display_position=position,
                         item=reference,
                     )
-                    self._ring.append(event)
-                    ring = self._root_rings.get(root_thread_id)
-                    if ring is None:
-                        ring = deque(maxlen=self._ring_size)
-                        self._root_rings[root_thread_id] = ring
-                        self._root_floors[root_thread_id] = self._evicted_root_floor
-                    if len(ring) == self._ring_size:
-                        self._root_floors[root_thread_id] = ring[0].sequence
-                    ring.append(event)
-                    self._root_rings.move_to_end(root_thread_id)
-                    self._trim_root_rings()
+                    is_progress = isinstance(source, CustomEvent) and source.name == TOOL_PROGRESS_EVENT
+                    if not is_progress:
+                        self._ring.append(event)
+                        ring = self._root_rings.get(root_thread_id)
+                        if ring is None:
+                            ring = deque(maxlen=self._ring_size)
+                            self._root_rings[root_thread_id] = ring
+                            self._root_floors[root_thread_id] = self._evicted_root_floor
+                        if len(ring) == self._ring_size:
+                            self._root_floors[root_thread_id] = ring[0].sequence
+                        ring.append(event)
+                        self._root_rings.move_to_end(root_thread_id)
+                        self._trim_root_rings()
                     for subscriber in self._subscribers:
                         if not subscriber.accepts(event):
                             continue
+                        if is_progress:
+                            stats = subscriber.send.statistics()
+                            if subscriber.gap or stats.current_buffer_used >= stats.max_buffer_size // 2:
+                                continue
                         if not subscriber.gap:
                             try:
                                 # Queues share the hub-owned event; receive/drain detach it.
                                 subscriber.send.send_nowait(event)
                                 continue
                             except WouldBlock:
+                                if is_progress:
+                                    continue
                                 subscriber.gap = True
                             except (BrokenResourceError, ClosedResourceError):
                                 stale.append(subscriber)

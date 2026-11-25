@@ -9,11 +9,18 @@ from dataclasses import dataclass
 
 import pytest
 import uvicorn
-from a13n_harness import AgentSpec, HarnessBuilder, ModelRecoveryPolicy, RunBindings
+from a13n_harness import (
+    AgentSpec,
+    HarnessBuilder,
+    HarnessEvent,
+    HarnessExtensionEvent,
+    ModelRecoveryPolicy,
+    RunBindings,
+)
 from a13n_harness.capabilities import CodeActCapability, ToolSearchCapability, ToolSearchGroup
 from a13n_harness.mcp import ContextualMCP
 from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
-from fastmcp import FastMCP
+from fastmcp import Context, FastMCP
 from fastmcp.server.dependencies import get_http_headers
 from fastmcp.server.middleware import Middleware
 from pydantic_ai.capabilities import WrapperCapability
@@ -24,12 +31,12 @@ pytestmark = pytest.mark.anyio
 
 
 @asynccontextmanager
-async def _http_mcp(server: FastMCP):
+async def _http_mcp(server: FastMCP, *, json_response: bool = True):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         listener.listen()
         port = listener.getsockname()[1]
-        app = server.http_app(path="/mcp", stateless_http=True, json_response=True)
+        app = server.http_app(path="/mcp", stateless_http=True, json_response=json_response)
         http = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
         task = asyncio.create_task(http.serve(sockets=[listener]))
         try:
@@ -199,3 +206,49 @@ async def test_contextual_mcp_native_path_is_rejected_by_proxy() -> None:
     )
     with pytest.raises(ValueError, match="provider-native"):
         await _run((ToolSearchCapability(groups={"native": ToolSearchGroup(contextual, "Native MCP")}),), [])
+
+
+async def test_contextual_mcp_reports_progress_over_http_with_run_headers() -> None:
+    server = FastMCP("progress", instructions="Progress fixture instructions.")
+    requests: list[tuple[str, str, str]] = []
+
+    @server.tool()
+    async def scan(ctx: Context) -> str:
+        headers = get_http_headers(include={"authorization"})
+        requests.append((headers["x-run"], headers["x-static"], headers["authorization"]))
+        await ctx.report_progress(1, 4, "Indexing")
+        return "scanned"
+
+    async def model(messages, info):
+        if len(messages) == 1:
+            assert any(tool.name == "scan" for tool in info.function_tools)
+            assert (
+                "Progress fixture instructions." in (info.model_request_parameters.instruction_parts or ())[0].content
+            )
+            yield {0: DeltaToolCall(name="scan", json_args="{}", tool_call_id="scan-call")}
+        else:
+            yield "done"
+
+    async with _http_mcp(server, json_response=False) as url:
+        capability = ContextualMCP(
+            url,
+            id="context-progress",
+            headers_factory=lambda ctx: {"X-Run": ctx.run_id},
+            headers={"X-Static": "static"},
+            authorization_token="Bearer test-token",
+        )
+        executable = HarnessBuilder().build(
+            AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=(capability,)
+        )
+        async with executable.stream("Scan", bindings=RunBindings.embedded()) as stream:
+            reports = [
+                (event.run_id, event.event.payload)
+                async for event in stream
+                if isinstance(event, HarnessEvent)
+                and isinstance(event.event, HarnessExtensionEvent)
+                and event.event.kind == "tool_progress"
+            ]
+    assert len(reports) == 1
+    run_id, progress = reports[0]
+    assert requests == [(run_id, "static", "Bearer test-token")]
+    assert progress == {"tool_call_id": "scan-call", "progress": 1.0, "total": 4.0, "message": "Indexing"}

@@ -40,6 +40,7 @@ type HarnessExtensionKind = Literal[
     "usage",
     "lifecycle",
     "tool",
+    "tool_progress",
     "diagnostic",
 ]
 
@@ -408,6 +409,15 @@ class ToolExtraEventPayload(_FirstPartyPayload):
     value: JsonValue
 
 
+class ToolProgressPayload(_FirstPartyPayload):
+    """Live telemetry correlated with one tool call."""
+
+    tool_call_id: str = Field(min_length=1)
+    progress: float | None = Field(default=None, allow_inf_nan=False)
+    total: float | None = Field(default=None, allow_inf_nan=False)
+    message: str | None = Field(default=None, max_length=512)
+
+
 type FirstPartyEventPayload = (
     EnvironmentChangedPayload
     | ModelRetryScheduledPayload
@@ -430,6 +440,7 @@ type FirstPartyEventPayload = (
     | CodeActToolCallCompletedPayload
     | CodeActExecutionCompletedPayload
     | ToolExtraEventPayload
+    | ToolProgressPayload
 )
 
 

@@ -2409,3 +2409,61 @@ it("retries an expired focus cursor immediately once with a snapshot bootstrap, 
     close();
   }
 });
+
+it("re-folds transient progress without advancing the suffix and clears it at scope end", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  display.accept(
+    rawFrame(
+      101,
+      1,
+      {
+        type: "TOOL_CALL_START",
+        toolCallId: "call",
+        toolCallName: "scan",
+        subagentRunId: "child",
+      },
+      "tool",
+      "tool_call",
+    ),
+  );
+  function progress(sequence: number) {
+    const frame = rawFrame(
+      sequence,
+      1,
+      {
+        type: "CUSTOM",
+        name: "a13n.harness.tool_progress",
+        subagentRunId: "child",
+        value: {
+          event: { payload: { tool_call_id: "call", progress: 2, total: 4 } },
+        },
+      },
+      "tool",
+      "tool_call",
+    );
+    if (frame.kind !== "event") throw new Error("event fixture");
+    return { ...frame, event: { ...frame.event, display_position: null } };
+  }
+  display.accept(progress(102));
+  expect(display.blocks.get("tool")?.progress).toEqual({
+    progress: 2,
+    total: 4,
+    message: null,
+  });
+  display.accept(
+    rawFrame(
+      103,
+      2,
+      { type: "SUBAGENT_FINISHED", subagentRunId: "child" },
+      "terminal",
+      "observation",
+      "completed",
+    ),
+  );
+  display.accept(progress(104));
+  expect(display.blocks.get("tool")).toMatchObject({ stopped: true });
+  expect(display.blocks.get("tool")?.progress).toBeUndefined();
+  expect(display.gap).toBe(false);
+});

@@ -5,12 +5,15 @@ import sys
 from pathlib import Path
 
 import pytest
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessEvent, HarnessExtensionEvent, RunBindings
+from a13n_harness.mcp import InitializationRetryClient, MCPServer, ProgressMCPToolset
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_apps.connections import Connections as AppConnections
 from a13n_harness_ui.mcp_runtime.connections import Connections, HostClient, Operation, operation_context
 from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputResponse
 from a13n_harness_ui.mcp_runtime.projection import HostToolset
 from fastmcp.client.transports import StdioTransport
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 pytestmark = pytest.mark.anyio
 
@@ -49,6 +52,10 @@ def counter() -> int:
     global count
     count += 1
     return count
+@server.tool
+async def scan(ctx: Context) -> str:
+    await ctx.report_progress(2, 4, "Scanning")
+    return "scanned"
 @server.resource("data://confirmation")
 async def confirmation_resource(ctx: Context) -> str:
     answer = await ctx.elicit("Confirm resource", str)
@@ -504,5 +511,47 @@ async def test_run_caches_tools_but_next_run_lists_again(monkeypatch: pytest.Mon
                 original = connection
             else:
                 assert connection is original
+    finally:
+        await connections.close()
+
+
+@pytest.mark.parametrize("retained", [False, True])
+async def test_harness_ui_mcp_progress_correlates_model_call(tmp_path, retained):
+    connections = Connections()
+
+    async def prepare(ctx):
+        async def create():
+            if retained:
+                connection = await connections.acquire(ctx.deps.thread_id, "scan", "recipe", _transport(tmp_path))
+                return HostToolset(connection)
+            return ProgressMCPToolset(InitializationRetryClient(_transport(tmp_path)), id="scan")
+
+        return create
+
+    def project(toolset):
+        from pydantic_ai.capabilities import MCP
+
+        return MCP(id="scan", local=toolset)
+
+    async def model(messages, info):
+        if len(messages) == 1:
+            yield {0: DeltaToolCall(name="scan", json_args="{}", tool_call_id="scan-call")}
+        else:
+            yield "done"
+
+    capability = MCPServer(id="scan", prepare=prepare, project=project)
+    agent = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=(capability,)
+    )
+    try:
+        async with agent.stream("Scan", bindings=RunBindings.embedded()) as stream:
+            updates = [
+                item.event.payload
+                async for item in stream
+                if isinstance(item, HarnessEvent)
+                and isinstance(item.event, HarnessExtensionEvent)
+                and item.event.kind == "tool_progress"
+            ]
+        assert updates == [{"tool_call_id": "scan-call", "progress": 2.0, "total": 4.0, "message": "Scanning"}]
     finally:
         await connections.close()

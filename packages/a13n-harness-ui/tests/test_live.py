@@ -645,3 +645,34 @@ async def test_taken_bootstrap_releases_replay_but_preserves_refresh_and_new_run
         assert subscription.capture_root_stream("first") is None
         assert subscription.capture_root_stream("second").summary.run_id == "second"
     await hub.close()
+
+
+async def test_live_hub_drops_progress_under_pressure_without_evicting_real_events() -> None:
+    from a13n_stream_protocol.observer import TOOL_PROGRESS_EVENT
+    from ag_ui.core.events import CustomEvent
+    from anyio import fail_after
+
+    hub = HarnessUiLiveHub(epoch="live-test", ring_size=2, subscriber_buffer_size=2)
+
+    async def publish(*events) -> None:
+        await hub.publish(
+            run_kind="root",
+            root_thread_id="thread",
+            parent_thread_id=None,
+            thread_id="thread",
+            run_id="run",
+            events=events,
+        )
+
+    await publish(_text_event("before"))
+    async with hub.subscribe(root_thread_id="thread") as subscription:
+        await publish(*(CustomEvent(name=TOOL_PROGRESS_EVENT, value={"progress": n}) for n in range(20)))
+        await publish(_text_event("after"))
+        with fail_after(2):
+            progress = await subscription.receive()
+            after = await subscription.receive()
+        assert progress.payload is not None and progress.payload["name"] == TOOL_PROGRESS_EVENT
+        assert after.payload is not None and after.payload["delta"] == "after"
+    snapshot = await hub.snapshot(root_thread_id="thread")
+    assert [item.payload["delta"] for item in snapshot if item.payload is not None] == ["before", "after"]
+    await hub.close()
