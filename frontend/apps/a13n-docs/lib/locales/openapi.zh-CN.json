@@ -1,4 +1,9 @@
 {
+  "End the local session and, when available, return the provider's browser logout URL.": "结束本地会话；如果身份提供方支持浏览器登出，则返回其登出地址。",
+  "Local logout": "仅结束本地会话",
+  "Revoke OIDC login sessions on receipt of a signed Logout Token from their provider.": "收到身份提供方签发的 Logout Token 后，吊销匹配的 OIDC 登录会话。",
+  "Rate limit exceeded": "请求频率超过限制",
+  "Oidc Backchannel Logout": "OIDC 后通道登出",
   "Inclusive lower bound on trace duration in seconds, applied before ranking.": "Trace 耗时下限，单位为秒，包含边界值。先筛选，再排序。",
   "List App Plugins": "列出 App 插件",
   "Pair each trace with its owning Run. In an analysis, first read every cited trace with get_trace, get_trace_span or a list_trace_spans call that returns spans.": "将每条 Trace 与所属 Run 配对。分析时先读取每条要引用的 Trace：调用 get_trace、get_trace_span，或通过 list_trace_spans 读到其中的 span。",
