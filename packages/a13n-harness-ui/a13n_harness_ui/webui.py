@@ -116,7 +116,14 @@ from a13n_harness_ui.host_git import (
     GitStatus,
 )
 from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
-from a13n_harness_ui.inbox_models import InboxItem, InboxItemMutation, InboxLocation, InboxMarkReadRequest, InboxPage
+from a13n_harness_ui.inbox_models import (
+    InboxItem,
+    InboxItemMutation,
+    InboxLocation,
+    InboxMarkDoneRequest,
+    InboxMarkReadRequest,
+    InboxPage,
+)
 from a13n_harness_ui.input_prediction import InputPredictionRequest, InputPredictionResponse
 from a13n_harness_ui.interactive_transport import (
     InteractiveAuthentication,
@@ -697,6 +704,12 @@ def create_webui(
     async def inbox_mark_read(request: Request) -> Response:
         document = await _document(request, InboxMarkReadRequest)
         await app().inbox().mark_group_read(document.group)
+        return Response(status_code=204)
+
+    @server.post("/api/inbox/mark-done", status_code=204, openapi_extra=_body(InboxMarkDoneRequest))
+    async def inbox_mark_done(request: Request) -> Response:
+        document = await _document(request, InboxMarkDoneRequest)
+        await app().inbox().mark_group_done(document.group)
         return Response(status_code=204)
 
     @server.patch("/api/inbox/{item_id}", response_model=InboxItem, openapi_extra=_body(InboxItemMutation))
@@ -2910,6 +2923,7 @@ def create_webui(
             "settings/runtime",
             "settings/connections",
             "archived",
+            "inbox",
             "memory",
             "usage",
         } or (len(segments) == 2 and segments[0] in {"threads", "projects"} and bool(segments[1]))

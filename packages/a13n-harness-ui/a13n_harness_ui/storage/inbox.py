@@ -131,6 +131,15 @@ class InboxRepository:
                 .values(read_at=datetime.now(UTC))
             )
 
+    async def mark_group_done(self, group: InboxGroup) -> None:
+        now = datetime.now(UTC)
+        async with transaction(self._sessions) as session:
+            await session.execute(
+                update(InboxItemRecord)
+                .where(InboxItemRecord.done_at.is_(None), _NEEDS_YOU if group == "needs_you" else ~_NEEDS_YOU)
+                .values(done_at=now, read_at=func.coalesce(InboxItemRecord.read_at, now))
+            )
+
     async def update(self, item_id: str, *, read: bool | None = None, done: bool | None = None) -> InboxItem:
         now = datetime.now(UTC)
         # Reading keeps the first observation time; Done implies read.
