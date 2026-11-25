@@ -221,8 +221,8 @@ def reconstruct(
         space = remaining - len(wrapper)
         if cap is not None:
             space = min(space, cap)
-        # Require room for a useful excerpt only when the full fragment will not fit.
-        if space <= 0 or space < min(64, len(text)):
+        # Skip empty fragments; only truncated excerpts need at least 64 characters.
+        if not text or space < min(64, len(text)):
             omitted += 1
             return
         excerpt = _clip(text, space)

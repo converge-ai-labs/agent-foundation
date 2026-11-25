@@ -70,6 +70,19 @@ def test_reconstruction_total_budget_and_huge_inputs(budget: int) -> None:
     assert "Immediate root-cause investigation" in first.prompt
 
 
+def test_reconstruction_keeps_correction_after_empty_task() -> None:
+    correction = "Do not publish the draft."
+    messages = [
+        input_request(mark_input(content_items([""]), kind="task", run_id="run")),
+        input_request(mark_input(content_items(correction + " Additional details." * 10), kind="steer", run_id="run")),
+    ]
+
+    rebuilt = reconstruct(messages, max_chars=2048, retained_reference="/" + "x" * 1023)
+
+    assert correction in rebuilt.prompt
+    assert len(rebuilt.prompt) <= 2048
+
+
 @pytest.mark.parametrize(
     "budget,reference_chars,kept",
     [(2048, 1021, True), (2048, 1022, False), (2048, 1024, False), (4096, 1024, True), (2048, 1025, False)],
