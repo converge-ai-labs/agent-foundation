@@ -24,28 +24,6 @@ import type { AgentConfig, EnvironmentPreparation } from "./configuration";
 import styles from "./agents.module.css";
 import { AgentSessionConfiguration } from "./session-configuration";
 
-const preparationOptions = [
-  {
-    value: "on_demand",
-    icon: CursorClickIcon,
-    title: "On demand",
-    description: "Prepare when a tool first uses the environment.",
-  },
-  {
-    value: "warmup",
-    icon: LightningIcon,
-    title: "Warm up in parallel",
-    description: "Prepare the environment while inference runs.",
-  },
-  {
-    value: "eager",
-    icon: HourglassMediumIcon,
-    title: "Wait before inference",
-    description:
-      "Wait until the environment is ready before starting inference.",
-  },
-] as const;
-
 export function AgentEnvironment({
   value,
   onChange,
@@ -78,6 +56,28 @@ export function AgentEnvironment({
   sessionInvalid?: boolean;
 }) {
   const { t } = useTranslation();
+  const preparationOptions = [
+    {
+      value: "on_demand",
+      icon: CursorClickIcon,
+      title: t("On demand"),
+      description: t("Prepare when a tool first uses the environment."),
+    },
+    {
+      value: "warmup",
+      icon: LightningIcon,
+      title: t("Warm up in parallel"),
+      description: t("Prepare the environment while inference runs."),
+    },
+    {
+      value: "eager",
+      icon: HourglassMediumIcon,
+      title: t("Wait before inference"),
+      description: t(
+        "Wait until the environment is ready before starting inference.",
+      ),
+    },
+  ] as const;
   const client = useClient();
   const { workspace, basePath } = useWorkspace();
   const types = useEnvironmentTypes();
@@ -210,7 +210,7 @@ export function AgentEnvironment({
                       type="button"
                       disabled={disabled || readOnly || preparationReadOnly}
                       className={styles.toolsetPermission}
-                      aria-label={t(title)}
+                      aria-label={title}
                       aria-pressed={preparation === value}
                       onClick={() => onPreparationChange(value)}
                     />
@@ -220,8 +220,8 @@ export function AgentEnvironment({
                 </TooltipTrigger>
                 <TooltipPopup>
                   <span className={styles.toolsetPermissionTip}>
-                    <strong>{t(title)}</strong>
-                    {t(description)}
+                    <strong>{title}</strong>
+                    {description}
                   </span>
                 </TooltipPopup>
               </Tooltip>

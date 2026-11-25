@@ -47,8 +47,8 @@ async def save(
         )
         if len(merged.model_dump_json().encode()) <= MAX_BYTES:
             snapshot = merged
-    if len(snapshot.model_dump_json().encode()) > MAX_BYTES:
-        # Advance the fence with an unknown observation rather than serving stale data.
+    if len(snapshot.model_dump_json().encode()) > MAX_BYTES or any("\x00" in item.text for item in snapshot.files):
+        # An oversized capture or text PostgreSQL JSONB cannot represent still advances the fence.
         snapshot = EnvironmentBootstrapSnapshot()
     stmt = insert(SnapshotRow).values(
         environment_id=environment_id,

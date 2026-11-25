@@ -2272,7 +2272,8 @@ def test_legacy_environment_preparation_preserves_stored_digests(legacy):
     assert reopened.digest() == old_digest
 
 
-async def test_bootstrap_storage_fences_writes_and_caps_directories(env):
+@pytest.mark.parametrize("invalid_text", ["x" * (256 * 1024), "prefix\x00suffix"], ids=["oversized", "embedded-nul"])
+async def test_bootstrap_storage_fences_writes_and_caps_directories(env, invalid_text):
     from datetime import UTC, datetime
 
     from a13n_harness.environment.bootstrap import (
@@ -2307,8 +2308,8 @@ async def test_bootstrap_storage_fences_writes_and_caps_directories(env):
         now + timedelta(seconds=11),
         EnvironmentBootstrapSnapshot(project_guidance=ProjectGuidanceObservation(agents_md=("src/AGENTS.md",))),
     )
-    oversized = FileBootstrapObservation(path="AGENTS.md", limits=(512, 10, 80), status="present", text="x" * 262144)
-    await record("/repo9", now + timedelta(seconds=12), EnvironmentBootstrapSnapshot(files=(oversized,)))
+    invalid = FileBootstrapObservation(path="AGENTS.md", limits=(512, 10, 80), status="present", text=invalid_text)
+    await record("/repo9", now + timedelta(seconds=12), EnvironmentBootstrapSnapshot(files=(invalid,)))
     await record("/repo9", now + timedelta(seconds=10))
     await record("/other", now + timedelta(seconds=20), observed_generation=generation - 1)
     async with transaction(env.runtime.storage) as session:
