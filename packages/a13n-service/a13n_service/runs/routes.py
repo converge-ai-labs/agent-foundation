@@ -2,12 +2,14 @@
 
 from typing import Annotated, Literal
 
+from a13n_harness.mcp_inputs import McpInputResponse
 from a13n_stream_protocol.display import ItemKind, ItemState
+from a13n_stream_protocol.interactions import McpElicitation
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from a13n_service.infra import reads
-from a13n_service.infra.errors import invalid
+from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.infra.http import IdempotencyKey, IfMatch, PageLimit, tagged
 from a13n_service.infra.platform import platform_operation
 from a13n_service.resources.agents import read_views as agent_reads
@@ -64,6 +66,7 @@ from a13n_service.runs.schemas import (
     ThreadView,
     context_response,
 )
+from a13n_service.runs.tool_executions import mcp as mcp_inputs
 from a13n_service.tenancy.requests import Actor, Credential, WorkspaceId
 
 router = APIRouter(prefix="/api/v1", tags=["runs"])
@@ -581,6 +584,34 @@ async def resume_run(
     successor, created = await resume.resume(runtime, actor, workspace_id, run_id, body, request_key=key)
     response.status_code = 201 if created else 200
     return tagged(response, successor)
+
+
+@router.get("/runs/{run_id}/mcp-inputs", response_model=list[McpElicitation])
+async def list_mcp_inputs(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    credential: Credential,
+) -> list[McpElicitation]:
+    """List pending human input for this run's retained MCP tool executions."""
+    if credential.platform is not None or credential.principal.kind != "user":
+        raise ServiceError("forbidden", "MCP input requires a human credential.")
+    return await mcp_inputs.list_inputs(runtime, credential.principal, workspace_id, run_id)
+
+
+@router.post("/runs/{run_id}/mcp-inputs/{request_id}/response", status_code=204)
+async def respond_to_mcp_input(
+    runtime: CurrentRuntime,
+    workspace_id: WorkspaceId,
+    run_id: str,
+    request_id: str,
+    body: McpInputResponse,
+    credential: Credential,
+) -> None:
+    """Send one answer to the originating MCP task, without resuming the run."""
+    if credential.platform is not None or credential.principal.kind != "user":
+        raise ServiceError("forbidden", "MCP input requires a human credential.")
+    await mcp_inputs.respond(runtime, credential.principal, workspace_id, run_id, request_id, body)
 
 
 @router.get(

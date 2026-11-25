@@ -6626,12 +6626,16 @@ export interface components {
         };
         /** McpInputRequestView */
         McpInputRequestView: {
+            /**
+             * Kind
+             * @default mcp_elicitation
+             * @constant
+             */
+            kind?: "mcp_elicitation";
             /** Request Id */
             request_id: string;
             /** Thread Id */
             thread_id: string;
-            /** Server Id */
-            server_id: string;
             /**
              * Run Id
              * @default null
@@ -6642,11 +6646,13 @@ export interface components {
              * @default null
              */
             tool_call_id?: string | null;
+            /** Server Id */
+            server_id: string;
             /**
-             * View Id
+             * Server Name
              * @default null
              */
-            view_id?: string | null;
+            server_name?: string | null;
             /**
              * Mode
              * @enum {string}
@@ -6667,16 +6673,26 @@ export interface components {
              */
             url?: string | null;
             /**
-             * State
-             * @default pending
-             * @enum {string}
+             * Url Host
+             * @default null
              */
-            state?: "pending" | "accepted" | "declined" | "cancelled" | "expired" | "unavailable";
+            url_host?: string | null;
             /**
              * Expires At
              * Format: date-time
              */
             expires_at: string;
+            /**
+             * View Id
+             * @default null
+             */
+            view_id?: string | null;
+            /**
+             * State
+             * @default pending
+             * @enum {string}
+             */
+            state?: "pending" | "accepted" | "declined" | "cancelled" | "expired" | "unavailable";
         };
         /** McpIntegrationView */
         McpIntegrationView: {

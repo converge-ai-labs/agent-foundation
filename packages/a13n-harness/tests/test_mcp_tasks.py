@@ -2,6 +2,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from a13n_harness.mcp_inputs import McpInputResponse, McpTaskInputRequest
 from a13n_harness.mcp_tasks import TaskHandle, TaskSnapshot, supervise_mcp_task, task_value, update_mcp_task
 from a13n_harness.tool_execution import ToolExecutionRuntime
 
@@ -80,7 +81,8 @@ async def test_mcp_parked_input_and_update_wire_shape():
             }
             return result_type()
 
-    resumed = await update_mcp_task(Session(), parked, responses)
+    resumed, snapshot = await update_mcp_task(Session(), parked, {"ask": McpInputResponse(action="accept", content={})})
+    assert snapshot is None
     assert resumed.status == "working" and resumed.input_required is None
     assert resumed.due_at < datetime.now(UTC) + timedelta(seconds=1)
     result = TaskSnapshot.model_validate(
@@ -92,3 +94,28 @@ async def test_mcp_parked_input_and_update_wire_shape():
         }
     )
     assert task_value(result.outcome()) == "done"
+
+
+@pytest.mark.anyio
+async def test_mcp_update_can_return_the_terminal_snapshot():
+    state = handle().model_copy(
+        update={
+            "status": "input_required",
+            "input_required": {"url": McpTaskInputRequest(mode="url", message="Connect", url="https://example.test/")},
+        }
+    )
+
+    class Session:
+        async def send_request(self, request, result_type, **kwargs):
+            return result_type.model_validate(
+                {
+                    "resultType": "complete",
+                    "taskId": state.mcp_task_id,
+                    "status": "completed",
+                    "result": {"content": [{"type": "text", "text": "done"}]},
+                }
+            )
+
+    terminal, snapshot = await update_mcp_task(Session(), state, {"url": McpInputResponse(action="accept")})
+    assert terminal.status == "completed" and terminal.input_required is None
+    assert snapshot is not None and task_value(snapshot.outcome()) == "done"

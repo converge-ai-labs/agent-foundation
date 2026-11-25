@@ -19152,18 +19152,19 @@
         "title": "MarkdownSubagentSource"
       },
       "McpInputRequestView": {
-        "additionalProperties": false,
         "properties": {
+          "kind": {
+            "const": "mcp_elicitation",
+            "default": "mcp_elicitation",
+            "title": "Kind",
+            "type": "string"
+          },
           "request_id": {
             "title": "Request Id",
             "type": "string"
           },
           "thread_id": {
             "title": "Thread Id",
-            "type": "string"
-          },
-          "server_id": {
-            "title": "Server Id",
             "type": "string"
           },
           "run_id": {
@@ -19190,7 +19191,11 @@
             "default": null,
             "title": "Tool Call Id"
           },
-          "view_id": {
+          "server_id": {
+            "title": "Server Id",
+            "type": "string"
+          },
+          "server_name": {
             "anyOf": [
               {
                 "type": "string"
@@ -19200,7 +19205,7 @@
               }
             ],
             "default": null,
-            "title": "View Id"
+            "title": "Server Name"
           },
           "mode": {
             "enum": [
@@ -19211,7 +19216,6 @@
             "type": "string"
           },
           "message": {
-            "maxLength": 8192,
             "title": "Message",
             "type": "string"
           },
@@ -19242,6 +19246,35 @@
             "default": null,
             "title": "Url"
           },
+          "url_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Url Host"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "View Id"
+          },
           "state": {
             "default": "pending",
             "enum": [
@@ -19253,11 +19286,6 @@
               "unavailable"
             ],
             "title": "State",
-            "type": "string"
-          },
-          "expires_at": {
-            "format": "date-time",
-            "title": "Expires At",
             "type": "string"
           }
         },

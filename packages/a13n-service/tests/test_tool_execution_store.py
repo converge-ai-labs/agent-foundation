@@ -1037,10 +1037,14 @@ async def test_mcp_task_sweep_parks_input_and_notifies_once(service, scripted_mo
     assert await mcp.poll_mcp_tasks(runtime, limit=2) == 0
 
 
-async def test_durable_mcp_task_hands_off_to_control_over_http(service, scripted_model, runs_kit):
+@pytest.mark.parametrize("scheduled", [False, True])
+async def test_durable_mcp_task_hands_off_to_control_over_http(
+    service, scripted_model, runs_kit, scheduled, monkeypatch
+):
     from typing import Any
 
     from a13n_harness.mcp_tasks import TASKS_EXTENSION_ID
+    from a13n_service.runs.tool_executions import mcp as mcp_runtime
     from a13n_service.runs.tool_executions.mcp import poll_mcp_tasks
     from fastmcp import FastMCP
     from fastmcp.server.extensions import MethodBinding, ServerExtension
@@ -1051,10 +1055,16 @@ async def test_durable_mcp_task_hands_off_to_control_over_http(service, scripted
 
     calls = 0
     allow_finish = False
+    waiting = False
+    updates = []
+    execution_id = None
     created_at = datetime.now(UTC).isoformat()
 
     class Params(RequestParams):
         task_id: str = Field(alias="taskId")
+
+    class UpdateParams(Params):
+        input_responses: dict[str, Any] = Field(alias="inputResponses")
 
     class Result(BaseModel):
         resultType: str
@@ -1064,6 +1074,7 @@ async def test_durable_mcp_task_hands_off_to_control_over_http(service, scripted
         ttlMs: int = 60000
         pollIntervalMs: int = 250
         result: dict[str, Any] | None = None
+        inputRequests: dict[str, Any] | None = None
 
     async def get_task(context, params):
         assert params.task_id == "task-original"
@@ -1077,13 +1088,48 @@ async def test_durable_mcp_task_hands_off_to_control_over_http(service, scripted
                     "content": [{"type": "text", "text": "remote outcome"}],
                 },
             )
+        if waiting:
+            return Result(
+                resultType="complete",
+                status="input_required",
+                inputRequests={
+                    "name": {
+                        "method": "elicitation/create",
+                        "params": {
+                            "mode": "form",
+                            "message": "Choose",
+                            "requestedSchema": {
+                                "type": "object",
+                                "properties": {"name": {"type": "string"}},
+                                "required": ["name"],
+                            },
+                        },
+                    }
+                },
+            )
         return Result(resultType="complete", status="working")
+
+    async def update_task(context, params):
+        nonlocal allow_finish
+        assert context.request.headers["mcp-name"] == params.task_id
+        assert context.request.headers["x-origin-test"] == "frozen"
+        async with transaction(service.runtime.storage) as session:
+            claimed = await session.scalar(
+                select(ToolExecutionRow).where(ToolExecutionRow.id == execution_id).with_for_update(nowait=True)
+            )
+            assert claimed.worker_id.startswith("control:mcp-")
+        updates.append(params.input_responses)
+        allow_finish = True
+        return {}
 
     class Tasks(ServerExtension):
         identifier = TASKS_EXTENSION_ID
 
         def methods(self):
-            return (MethodBinding("tasks/get", Params, get_task, frozenset({"2026-07-28"})),)
+            return (
+                MethodBinding("tasks/get", Params, get_task, frozenset({"2026-07-28"})),
+                MethodBinding("tasks/update", UpdateParams, update_task, frozenset({"2026-07-28"})),
+            )
 
         async def intercept_tool_call(self, params, context, call_next):
             nonlocal calls
@@ -1129,13 +1175,44 @@ async def test_durable_mcp_task_hands_off_to_control_over_http(service, scripted
         saved = await Store(runtime).get(lease.thread_id, record.execution_id)
         assert saved.record.foreground_released and saved.mcp_task.mcp_task_id == "task-original"
         assert calls == 1
-        allow_finish = True
+        waiting = True
+        execution_id = record.execution_id
         async with transaction(runtime.storage) as session:
             await session.execute(
                 update(ToolExecutionRow)
                 .where(ToolExecutionRow.id == record.execution_id)
                 .values(mcp_poll_at=func.clock_timestamp())
             )
+        if scheduled:
+            original_binding = mcp_runtime._binding
+
+            async def unattended(*args):
+                connection, headers, _ = await original_binding(*args)
+                return connection, headers, True
+
+            monkeypatch.setattr(mcp_runtime, "_binding", unattended)
+        assert await poll_mcp_tasks(replace(runtime), limit=1) == 1
+        run_id = started["run"]["id"]
+        if not scheduled:
+            inputs = await service.client.get(f"{service.api}/runs/{run_id}/mcp-inputs")
+            assert inputs.status_code == 200, inputs.text
+            (request,) = inputs.json()
+            assert request["tool_call_id"] == "call-task" and request["server_id"] == connection["id"]
+            assert request["schema"]["required"] == ["name"]
+            endpoint = f"{service.api}/runs/{run_id}/mcp-inputs/{request['request_id']}/response"
+            invalid_response = await service.client.post(endpoint, json={"action": "accept", "content": {}})
+            assert invalid_response.status_code == 422 or invalid_response.status_code == 400
+            replies = await asyncio.gather(
+                *(
+                    service.client.post(endpoint, json={"action": "accept", "content": {"name": "Ada"}})
+                    for _ in range(2)
+                )
+            )
+            assert sorted(reply.status_code for reply in replies) == [204, 409], [reply.text for reply in replies]
+            assert updates == [{"name": {"action": "accept", "content": {"name": "Ada"}}}]
+        else:
+            assert updates == [{"name": {"action": "decline"}}]
+        assert (await service.client.get(f"{service.api}/runs/{run_id}/mcp-inputs")).json() == []
         assert await poll_mcp_tasks(replace(runtime), limit=1) == 1
         completed = await Store(runtime).get(lease.thread_id, record.execution_id)
         assert completed.record.status == "succeeded", completed.record.error

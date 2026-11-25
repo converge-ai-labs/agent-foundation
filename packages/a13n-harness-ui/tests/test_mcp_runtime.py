@@ -157,7 +157,7 @@ async def test_host_validation_rejects_bad_response_then_allows_correct_answer(t
         connection = await connections.acquire("thread-one", "input", "recipe", _transport(tmp_path))
         task = asyncio.create_task(connection.client.call_tool_mcp("confirm", {}))
         request = await _pending(inputs)
-        with pytest.raises(HarnessUiError, match="requested form"):
+        with pytest.raises(HarnessUiError, match="Invalid value for name"):
             await inputs.respond(
                 {"thread-one"}, request.request_id, McpInputResponse(action="accept", content={"name": 1})
             )
@@ -342,7 +342,7 @@ async def test_response_after_expiry_cannot_win_the_timer_race(tmp_path: Path) -
 
 
 def test_form_schema_allows_titled_selections_but_not_remote_or_sensitive_inputs():
-    from a13n_harness_ui.mcp_runtime.inputs import validate_schema
+    from a13n_harness.mcp_inputs import validate_schema
 
     options = [{"const": "a", "title": "Alpha"}, {"const": "b", "title": "Beta"}]
     validate_schema(

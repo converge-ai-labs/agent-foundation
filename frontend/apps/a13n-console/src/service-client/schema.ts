@@ -3675,6 +3675,46 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/runs/{run_id}/mcp-inputs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List Mcp Inputs
+     * @description List pending human input for this run's retained MCP tool executions.
+     */
+    get: operations["list_mcp_inputs"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/runs/{run_id}/mcp-inputs/{request_id}/response": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Respond To Mcp Input
+     * @description Send one answer to the originating MCP task, without resuming the run.
+     */
+    post: operations["respond_to_mcp_input"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}/resume": {
     parameters: {
       query?: never;
@@ -10336,10 +10376,63 @@ export interface components {
       /** Url */
       url: string;
     };
+    /** McpElicitation */
+    McpElicitation: {
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /**
+       * Kind
+       * @default mcp_elicitation
+       * @constant
+       */
+      kind?: "mcp_elicitation";
+      /** Message */
+      message: string;
+      /**
+       * Mode
+       * @enum {string}
+       */
+      mode: "form" | "url";
+      /** Request Id */
+      request_id: string;
+      /** Run Id */
+      run_id?: string | null;
+      /** Schema */
+      schema?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+      /** Server Id */
+      server_id: string;
+      /** Server Name */
+      server_name?: string | null;
+      /** Thread Id */
+      thread_id: string;
+      /** Tool Call Id */
+      tool_call_id?: string | null;
+      /** Url */
+      url?: string | null;
+      /** Url Host */
+      url_host?: string | null;
+    };
     McpHeaders: {
       [key: string]: {
         [key: string]: string;
       };
+    };
+    /** McpInputResponse */
+    McpInputResponse: {
+      /**
+       * Action
+       * @enum {string}
+       */
+      action: "accept" | "decline" | "cancel";
+      /** Content */
+      content?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
     };
     /** McpServer */
     McpServer: {
@@ -24246,6 +24339,63 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["RunPage"];
         };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  list_mcp_inputs: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["McpElicitation"][];
+        };
+      };
+      400: components["responses"]["Error"];
+      default: components["responses"]["Error"];
+    };
+  };
+  respond_to_mcp_input: {
+    parameters: {
+      query?: never;
+      header?: {
+        /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
+        "X-Workspace-ID"?: string | null;
+      };
+      path: {
+        run_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["McpInputResponse"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       400: components["responses"]["Error"];
       default: components["responses"]["Error"];

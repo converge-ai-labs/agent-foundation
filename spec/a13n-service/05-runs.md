@@ -478,6 +478,12 @@ thread_codeact
 
 Thread-scoped list, detail and result queries require `read`; cancellation requires `run`. Lists use newest-first `(created_at, id)` pagination with optional originating Service `run_id` and `active` filters. Views retain Harness execution identity and expose Service Run, Attempt and worker correlation, never lease secrets. Result reads use bounded versioned text fragments. Cancellation returns 202 with the current observation, not proof of termination. The Console inspects these records within existing Thread and Run views. Completion-triggered Runs render as system tool notifications with tool name, status and execution ID, without user attribution or raw envelope JSON.
 
+### Durable MCP input
+
+A retained MCP task can checkpoint `input_required` and release its foreground call. Interactive Runs expose pending requests through the originating Run's `/mcp-inputs` resource and through replaceable `interactions` frames in the Session stream. Each request identifies its exact execution, MCP connection and tool call. Scheduled Runs and service-account Runs automatically decline requests; unsupported prompts are also declined.
+
+Listing requires a human credential with workspace `read`; responding requires `run`. The response supplies `accept`, `decline` or `cancel` for one request. Only a Form acceptance carries validated content. Service claims the retained execution in a short transaction, then sends `tasks/update` outside it under the originating Run's authority. Acknowledgement wakes Sweep; a terminal response publishes through the retained-result path. If delivery is uncertain, Sweep reconciles with `tasks/get` without replaying the answer. Responding to an MCP task does not create a successor Run.
+
 ## Seal and successor scheduling
 
 Seal changes one thread. Cross-thread delivery goes through the outbox after commit.

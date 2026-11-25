@@ -79,7 +79,11 @@ export type SessionFrame =
   | { type: "delta"; data: SessionDelta }
   | { type: "gap"; data: SessionGap }
   | { type: "schedule"; data: ScheduleEvent }
-  | { type: "occurrence"; data: OccurrenceEvent };
+  | { type: "occurrence"; data: OccurrenceEvent }
+  | {
+      type: "interactions";
+      data: { thread_id: string; requests: Schemas["McpElicitation"][] };
+    };
 
 /**
  * The connection's state, in order with its frames: `live` precedes the
@@ -121,12 +125,47 @@ function json(text: string): Record<string, unknown> {
 /** A frame, or undefined for an event this client does not know. */
 function parseFrame(event: string, text: string): SessionFrame | undefined {
   if (
-    !["thread", "items", "delta", "gap", "schedule", "occurrence"].includes(
-      event,
-    )
+    ![
+      "thread",
+      "items",
+      "delta",
+      "gap",
+      "schedule",
+      "occurrence",
+      "interactions",
+    ].includes(event)
   )
     return undefined;
   const data = json(text);
+  if (event === "interactions") {
+    if (
+      !isId(data.thread_id) ||
+      !Array.isArray(data.requests) ||
+      !data.requests.every(
+        (item) =>
+          isRecord(item) &&
+          item.kind === "mcp_elicitation" &&
+          item.thread_id === data.thread_id &&
+          isId(item.request_id) &&
+          isId(item.run_id) &&
+          isId(item.server_id) &&
+          typeof item.message === "string" &&
+          (item.mode === "form"
+            ? isRecord(item.schema)
+            : item.mode === "url" &&
+              typeof item.url === "string" &&
+              typeof item.url_host === "string"),
+      )
+    )
+      throw new ProtocolError("Invalid session stream interactions frame.");
+    return {
+      type: "interactions",
+      data: {
+        thread_id: data.thread_id,
+        requests: data.requests as Schemas["McpElicitation"][],
+      },
+    };
+  }
   if (event === "schedule" || event === "occurrence") {
     if (!isId(data.session_id) || !isId(data.schedule_id))
       throw new ProtocolError(`Invalid session stream ${event} frame.`);

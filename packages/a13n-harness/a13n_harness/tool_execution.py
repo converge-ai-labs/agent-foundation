@@ -296,6 +296,7 @@ class _LiveExecution:
     mcp_handoff_requested: bool = False
     yield_requested: bool = False
     published: StoredToolExecution | None = None
+    mcp_input_ready: asyncio.Event = field(default_factory=asyncio.Event)
     admitted: asyncio.Event = field(default_factory=asyncio.Event)
     store_context: contextvars.Context = field(default_factory=contextvars.copy_context)
 
@@ -589,6 +590,8 @@ class ToolExecutionRuntime:
         await self.store.save(StoredToolExecution(live.record, mcp_task=state))
         live.mcp_task = state
         live.recovering = False
+        if self._handoff_mcp_tasks and state.status == "input_required":
+            live.mcp_input_ready.set()
         if live.mcp_handoff_requested:
             self._park_mcp_task(live)
 
@@ -818,12 +821,22 @@ class ToolExecutionRuntime:
         return await self._rejected.get(thread_id, execution_id) or await self.store.get(thread_id, execution_id)
 
     async def wait(
-        self, thread_id: str, execution_id: str, *, timeout_seconds: float | None = None
+        self, thread_id: str, execution_id: str, *, timeout_seconds: float | None = None, foreground: bool = False
     ) -> StoredToolExecution | None:
         live = self._live.get(execution_id)
         if live is not None and live.record.thread_id == thread_id and live.task is not None:
             # asyncio.wait does not cancel the owned task on expiry or caller cancellation.
-            await asyncio.wait({live.task}, timeout=timeout_seconds)
+            if foreground and self._handoff_mcp_tasks:
+                input_ready = asyncio.create_task(live.mcp_input_ready.wait())
+                try:
+                    await asyncio.wait(
+                        {live.task, input_ready}, timeout=timeout_seconds, return_when=asyncio.FIRST_COMPLETED
+                    )
+                finally:
+                    input_ready.cancel()
+                    await asyncio.gather(input_ready, return_exceptions=True)
+            else:
+                await asyncio.wait({live.task}, timeout=timeout_seconds)
             if not live.task.done():
                 return StoredToolExecution(live.record, shell=live.shell, mcp_task=live.mcp_task)
             live.task.result()

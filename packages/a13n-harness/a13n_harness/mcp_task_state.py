@@ -3,20 +3,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-
-class McpTaskInputRequest(BaseModel):
-    """A pending input request. Its contents are untrusted server data."""
-
-    model_config = ConfigDict(frozen=True, populate_by_name=True)
-
-    mode: Literal["form", "url"]
-    message: str
-    schema_: dict[str, JsonValue] | None = Field(default=None, alias="schema")
-    url: str | None = None
-    expires_at: AwareDatetime | None = None
-    elicitation_id: str | None = None
+from a13n_harness.mcp_inputs import McpTaskInputRequest as McpTaskInputRequest
 
 
 class McpTaskExecutionState(BaseModel):
@@ -33,11 +22,12 @@ class McpTaskExecutionState(BaseModel):
     poll_interval_seconds: float = Field(default=1, gt=0, allow_inf_nan=False)
     next_poll_at: AwareDatetime | None = None
     expires_at: AwareDatetime
+    answered_inputs: frozenset[str] = frozenset()
     input_required: dict[str, McpTaskInputRequest] | None = None
 
     @property
     def due_at(self) -> datetime:
         """Wake parked tasks only for expiry; cancellation is scheduled separately."""
-        if self.status == "input_required" or self.next_poll_at is None:
+        if self.next_poll_at is None:
             return self.expires_at
         return min(self.next_poll_at, self.expires_at)

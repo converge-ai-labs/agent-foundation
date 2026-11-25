@@ -3656,5 +3656,10 @@
   "Receive notifications from": "接收范围",
   "My runs are those started from this browser.": "“我的运行”指从此浏览器发起的运行。",
   "Entire workspace": "整个工作区",
-  "My runs only": "仅我的运行"
+  "My runs only": "仅我的运行",
+  "Accept": "接受",
+  "External destination": "外部站点",
+  "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "在浏览器中完成操作后选择“接受”。服务器凭据不会发送到该页面。",
+  "This field is required.": "此字段必填。",
+  "Enter a valid value for this field.": "请输入有效值。"
 }
