@@ -24,8 +24,6 @@ if TYPE_CHECKING:
 
     from a13n_harness.mcp import MCPServer
 
-MCP_SKILL_READ_TOOL = "read_mcp_skill"
-DEFAULT_MCP_SKILL_FILE_BYTES = 256 * 1024
 _MAX_SKILL_RESOURCES = 512
 MAX_MCP_SKILL_BYTES = 16 * 1024 * 1024
 _MAX_PAGES = 250
@@ -54,7 +52,7 @@ class _MCPSkill:
     frontmatter: dict[str, JsonValue]
 
 
-def _safe_relative_path(path: str) -> bool:
+def is_skill_relative_path(path: str) -> bool:
     return all(
         segment not in {"", ".", ".."}
         and not any(char in "\\%:?#" or ord(char) < 32 or ord(char) == 127 for char in segment)
@@ -69,10 +67,10 @@ def _resource_path(uri: str, root: str) -> str:
     if not uri.startswith(root) or parsed.username is not None or "?" in uri or "#" in uri or str(AnyUrl(uri)) != uri:
         raise ValueError("Skill resource URI is outside its canonical directory")
     decoded = [unquote(segment, errors="strict") for segment in parsed.path.split("/")[1:]]
-    if not parsed.path.startswith("/") or any("/" in part or not _safe_relative_path(part) for part in decoded):
+    if not parsed.path.startswith("/") or any("/" in part or not is_skill_relative_path(part) for part in decoded):
         raise ValueError("Skill resource URI has an ambiguous path segment")
     relative = unquote(uri[len(root) :], errors="strict")
-    if not _safe_relative_path(relative):
+    if not is_skill_relative_path(relative):
         raise ValueError("Skill resource URI has an invalid relative path")
     return relative
 
@@ -179,10 +177,10 @@ def same_frontmatter(value: object, expected: JsonValue) -> bool:
 
 
 async def read_mcp_skill_text(skill: _MCPSkill, path: str, *, max_bytes: int) -> str:
-    file = skill.files.get(path) if _safe_relative_path(path) else None
+    file = skill.files.get(path)
     if file is None:
-        raise _MCPSkillReadError("Use a relative file path listed by the selected MCP skill.")
-    limit_error = "MCP skill file exceeds the configured byte limit."
+        raise _MCPSkillReadError("Use a relative file path listed by the selected skill.")
+    limit_error = "Skill file exceeds the configured byte limit."
     if file.size > max_bytes:
         raise _MCPSkillReadError(limit_error)
     try:
@@ -191,9 +189,9 @@ async def read_mcp_skill_text(skill: _MCPSkill, path: str, *, max_bytes: int) ->
         result = await skill.client._await_with_session_monitoring(skill.client.session.read_resource(file.uri))
         contents = result.contents
     except Exception:
-        raise _MCPSkillReadError("The selected MCP skill file is unavailable.") from None
+        raise _MCPSkillReadError("The selected skill file is unavailable.") from None
     if len(contents) != 1 or str(contents[0].uri) != file.uri:
-        raise _MCPSkillReadError("The MCP server did not return the requested skill file.")
+        raise _MCPSkillReadError("The skill source did not return the requested skill file.")
     content = contents[0]
     try:
         if isinstance(content, TextResourceContents):
@@ -205,11 +203,11 @@ async def read_mcp_skill_text(skill: _MCPSkill, path: str, *, max_bytes: int) ->
                 raise _MCPSkillReadError(limit_error)
             raw = b64decode(content.blob, validate=True)
         else:
-            raise _MCPSkillReadError("The MCP server did not return file content.")
+            raise _MCPSkillReadError("The skill source did not return file content.")
         if len(raw) > max_bytes:
             raise _MCPSkillReadError(limit_error)
         if len(raw) != file.size or f"sha256:{sha256(raw).hexdigest()}" != file.digest:
-            raise _MCPSkillReadError("MCP skill file differs from the frozen manifest.")
+            raise _MCPSkillReadError("Skill file differs from the frozen manifest.")
         return raw.decode("utf-8")
     except (Base64Error, UnicodeError):
-        raise _MCPSkillReadError("The selected MCP skill file is not valid UTF-8 text.") from None
+        raise _MCPSkillReadError("The selected skill file is not valid UTF-8 text.") from None

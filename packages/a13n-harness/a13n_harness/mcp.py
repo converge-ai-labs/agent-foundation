@@ -23,7 +23,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP as NativeMCP
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.mcp import MCPToolset
-from pydantic_ai.toolsets import FunctionToolset
+from pydantic_ai.toolsets import AbstractToolset, FunctionToolset, WrapperToolset
 
 from a13n_harness._json import dump_json_text
 from a13n_harness.context import AgentContext
@@ -557,7 +557,11 @@ class MCPServer(NativeMCP[AgentContext]):
                     allowed_tools=list(self._selected_tools) if self._selected_tools is not None else None,
                 )
             )
-            return _StartedMCPServer(replacement, toolset.client)
+            # Inspect the entered transport without unwrapping the tool projection.
+            source: AbstractToolset[AgentContext] = toolset
+            while isinstance(source, WrapperToolset):
+                source = source.wrapped
+            return _StartedMCPServer(replacement, source.client if isinstance(source, MCPToolset) else None)
 
 
 __all__ = [

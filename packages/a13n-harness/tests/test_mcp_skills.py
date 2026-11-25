@@ -35,13 +35,13 @@ _GUIDE = "Supporting instructions."
 _ROOT = "skill://remote/"
 
 
-def _binding(root):
+def _binding(root, *, deny=()):
     mount = EnvironmentMount(
         source=DirectLocalSource(
             DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=root)),
             environment_id="mcp-skills",
         ),
-        permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
+        permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction) - set(deny)),
         working_directory="/",
     )
     return create_environment_runtime(mounts={"local": mount}, default_mount="local")
@@ -95,6 +95,7 @@ async def _server(
     fail_list=False,
     wrong_uri=False,
     input_required=False,
+    wrap_toolset=False,
 ):
     server = FastMCP("skills fixture")
     calls = []
@@ -157,7 +158,8 @@ async def _server(
                 extensions=[SkillsClientExtension()],
             )
             openings.append(client)
-            return MCPToolset(client, id="fixture")
+            toolset = MCPToolset(client, id="fixture")
+            return toolset.filtered(lambda ctx, definition: True) if wrap_toolset else toolset
 
         return create_toolset
 
@@ -191,10 +193,13 @@ def _parts(messages, kind):
     ]
 
 
-async def test_mcp_skills_freeze_metadata_and_read_only_on_demand(tmp_path):
+@pytest.mark.parametrize("wrap_toolset", [False, True])
+async def test_mcp_skills_freeze_metadata_and_read_only_on_demand(tmp_path, wrap_toolset):
     observed = []
     turn = 0
-    async with _server(pages=[[_entry()], [_entry(name="unused", root="skill://unused/")]]) as (server, calls, clients):
+    async with _server(
+        pages=[[_entry()], [_entry(name="unused", root="skill://unused/")]], wrap_toolset=wrap_toolset
+    ) as (server, calls, clients):
 
         async def model(messages, info):
             nonlocal turn
@@ -215,26 +220,31 @@ async def test_mcp_skills_freeze_metadata_and_read_only_on_demand(tmp_path):
                     ("unused", "mcp:fixture", "skill://unused/SKILL.md"),
                 ]
                 assert not catalog.items
-                assert "mcp:fixture" in info.instructions
+                assert "mcp:fixture" not in info.instructions
                 assert "Remote workflow" in info.instructions
                 assert _DOC not in info.instructions
-                yield _delta("read_mcp_skill", source_id="mcp:fixture", uri=_ROOT + "SKILL.md")
+                assert _ROOT not in info.instructions
+                assert (
+                    '<skill name="remote">\n  <description>Remote workflow</description>\n</skill>' in info.instructions
+                )
+                tool = next(tool for tool in info.function_tools if tool.name == "read_skill")
+                assert set(tool.parameters_json_schema["properties"]) == {"name", "path"}
+                yield _delta("read_skill", name="remote")
             elif turn == 2:
                 assert reads == [_ROOT + "SKILL.md"]
                 assert _parts(messages, ToolReturnPart)[-1].content == {
                     "source_id": "mcp:fixture",
-                    "uri": _ROOT + "SKILL.md",
+                    "name": "remote",
                     "path": "SKILL.md",
                     "content": _DOC,
+                    "files": ["SKILL.md", "references/guide.md"],
                 }
-                yield _delta(
-                    "read_mcp_skill", source_id="mcp:fixture", uri=_ROOT + "SKILL.md", path="references/guide.md"
-                )
+                yield _delta("read_skill", name="remote", path="references/guide.md")
             elif turn == 3:
                 assert reads == [_ROOT + "SKILL.md", _ROOT + "references/guide.md"]
                 assert _parts(messages, ToolReturnPart)[-1].content == {
                     "source_id": "mcp:fixture",
-                    "uri": _ROOT + "SKILL.md",
+                    "name": "remote",
                     "path": "references/guide.md",
                     "content": _GUIDE,
                 }
@@ -256,6 +266,8 @@ async def test_mcp_skills_freeze_metadata_and_read_only_on_demand(tmp_path):
         if isinstance(event.event, HarnessExtensionEvent) and event.event.payload.get("type") == "skill_accessed"
     ]
     assert access["source_id"] == "mcp:fixture"
+    assert access["path"] == _ROOT + "SKILL.md"
+    assert access["tool_id"] == "read_skill"
 
 
 @pytest.mark.parametrize(
@@ -301,7 +313,7 @@ async def test_mcp_skills_skip_unavailable_server_without_retrying_startup():
     async with _server() as (server, calls, _):
 
         async def model(messages, info):
-            assert "mcp:fixture" in info.instructions
+            assert "Remote workflow" in info.instructions
             assert "mcp:unavailable" not in info.instructions
             yield "done"
 
@@ -321,8 +333,16 @@ async def test_mcp_skills_follow_workspace_conflict_policy(tmp_path, conflict):
             assert conflict != "error"
             assert ("Local workflow" in info.instructions) == (conflict == "prefer_earlier")
             assert ("Remote workflow" in info.instructions) == (conflict == "prefer_later")
-            assert ("read_mcp_skill" in {tool.name for tool in info.function_tools}) == (conflict == "prefer_later")
-            yield "done"
+            assert "read_skill" in {tool.name for tool in info.function_tools}
+            returns = _parts(messages, ToolReturnPart)
+            if not returns:
+                yield _delta("read_skill", name="remote")
+            else:
+                read = returns[-1].content
+                winner = "workspace" if conflict == "prefer_earlier" else "mcp:fixture"
+                assert read["source_id"] == winner
+                assert ("files" in read) == (conflict == "prefer_later")
+                yield "done"
 
         async def run():
             return await _run(
@@ -340,7 +360,7 @@ async def test_mcp_skills_follow_workspace_conflict_policy(tmp_path, conflict):
             assert exc.value.code == "skill_catalog_ambiguous"
         else:
             await run()
-        assert not any(method == "resources/read" for method, _ in calls)
+        assert sum(method == "resources/read" for method, _ in calls) == int(conflict == "prefer_later")
 
 
 @pytest.mark.parametrize("workspace_skill", [False, True])
@@ -375,7 +395,7 @@ async def test_mcp_skills_reject_unlisted_or_unsafe_paths_before_rpc(path):
 
         async def model(messages, info):
             if not _parts(messages, ToolReturnPart):
-                yield _delta("read_mcp_skill", source_id="mcp:fixture", uri=_ROOT + "SKILL.md", path=path)
+                yield _delta("read_skill", name="remote", path=path)
             else:
                 assert "relative file path" in _parts(messages, ToolReturnPart)[-1].content["error"]
                 yield "done"
@@ -411,12 +431,12 @@ async def test_mcp_skill_read_rejects_unverified_contents(case):
 
         async def model(messages, info):
             if not _parts(messages, ToolReturnPart):
-                yield _delta("read_mcp_skill", source_id="mcp:fixture", uri=_ROOT + "SKILL.md", path=path)
+                yield _delta("read_skill", name="remote", path=path)
             else:
                 assert expected in _parts(messages, ToolReturnPart)[-1].content["error"]
                 yield "done"
 
-        await _run(model, server, manager=SkillManager.default(policy=SkillsPolicy(max_mcp_file_bytes=128)))
+        await _run(model, server, manager=SkillManager.default(policy=SkillsPolicy(max_file_bytes=128)))
     assert sum(method == "resources/read" for method, _ in calls) == int(case != "declared size")
 
 
@@ -435,20 +455,114 @@ async def test_mcp_skills_reject_manifest_uri_aliases(uri):
     assert not any(method == "resources/read" for method, _ in calls)
 
 
-async def test_host_selection_and_source_pair_fence_remote_reads():
+async def test_host_selection_fences_remote_reads_by_name():
     async with _server(pages=[[_entry(), _entry(name="unused", root="skill://unused/")]]) as (server, calls, _):
 
         async def model(messages, info):
-            assert "skill://unused/" not in info.instructions
+            assert '<skill name="unused">' not in info.instructions
             returns = _parts(messages, ToolReturnPart)
-            if len(returns) == 0:
-                yield _delta("read_mcp_skill", source_id="mcp:other", uri=_ROOT + "SKILL.md")
-            elif len(returns) == 1:
-                assert "selected MCP skill" in returns[-1].content["error"]
-                yield _delta("read_mcp_skill", source_id="mcp:fixture", uri="skill://unused/SKILL.md")
+            if not returns:
+                yield _delta("read_skill", name="unused")
             else:
-                assert "selected MCP skill" in returns[-1].content["error"]
+                assert "selected skill" in returns[-1].content["error"]
                 yield "done"
 
         await _run(model, server, bindings=RunBindings.embedded(skill_selection=frozenset({"remote"})))
     assert not any(method == "resources/read" for method, _ in calls)
+
+
+async def test_read_skill_local_only_reads_bounded_files_without_a_file_toolset(tmp_path):
+    skill = tmp_path / ".agents" / "skills" / "remote"
+    (skill / "references").mkdir(parents=True)
+    (skill / "SKILL.md").write_bytes(_DOC.encode())
+    (skill / "references" / "guide.md").write_bytes(_GUIDE.encode())
+    (skill / "large.md").write_bytes(("é" * 65).encode())
+    (tmp_path / "outside.md").write_text("outside the skill")
+    requests = [
+        ({}, {"source_id": "workspace", "name": "remote", "path": "SKILL.md", "content": _DOC}),
+        (
+            {"path": "references/guide.md"},
+            {"source_id": "workspace", "name": "remote", "path": "references/guide.md", "content": _GUIDE},
+        ),
+        ({"path": "../../../outside.md"}, "relative file path"),
+        ({"path": "large.md"}, "environment_too_large"),
+    ]
+    observed = []
+
+    async def model(messages, info):
+        assert {tool.name for tool in info.function_tools} == {"read_skill"}
+        assert "<path>/workspace/.agents/skills/remote</path>" in info.instructions
+        returns = _parts(messages, ToolReturnPart)
+        if returns:
+            expected = requests[len(returns) - 1][1]
+            actual = returns[-1].content
+            if isinstance(expected, str):
+                assert expected in actual["error"]
+            else:
+                assert actual == expected
+        if len(returns) < len(requests):
+            yield _delta("read_skill", name="remote", **requests[len(returns)][0])
+        else:
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        output_type=str,
+        capabilities=(SkillsCapability(SkillManager.default(policy=SkillsPolicy(max_file_bytes=128))),),
+    )
+    result = await executable.run(
+        "Use skills", bindings=RunBindings.embedded(environment=_binding(tmp_path), producer_observer=observed.append)
+    )
+    assert result.output_or_raise() == "done"
+    (access,) = [
+        event.event.payload
+        for event in observed
+        if isinstance(event.event, HarnessExtensionEvent) and event.event.payload.get("type") == "skill_accessed"
+    ]
+    assert access == {
+        "type": "skill_accessed",
+        "skill_name": "remote",
+        "source_id": "workspace",
+        "path": "/workspace/.agents/skills/remote",
+        "tool_id": "read_skill",
+    }
+
+
+@pytest.mark.parametrize("restriction", ["symlink", "read permission"])
+async def test_read_skill_local_respects_provider_path_and_read_authority(tmp_path, restriction):
+    skill = tmp_path / ".agents" / "skills" / "remote"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_bytes(_DOC.encode())
+    if restriction == "symlink":
+        other = tmp_path / "other"
+        other.mkdir()
+        (other / "reference.md").write_text("outside the skill")
+        try:
+            (skill / "references").symlink_to(other, target_is_directory=True)
+        except OSError:
+            pytest.skip("This host cannot create symlinks")
+        path, deny = "references/reference.md", ()
+    else:
+        path, deny = "SKILL.md", (EnvironmentAction.FILE_READ_BYTES,)
+
+    async def model(messages, info):
+        assert 'name="remote"' in info.instructions
+        returns = _parts(messages, ToolReturnPart)
+        if not returns:
+            yield _delta("read_skill", name="remote", path=path)
+        else:
+            assert "environment_denied" in returns[-1].content["error"]
+            assert "content" not in returns[-1].content
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        output_type=str,
+        capabilities=(SkillsCapability(),),
+    )
+    result = await executable.run(
+        "Use skills", bindings=RunBindings.embedded(environment=_binding(tmp_path, deny=deny))
+    )
+    assert result.output_or_raise() == "done"

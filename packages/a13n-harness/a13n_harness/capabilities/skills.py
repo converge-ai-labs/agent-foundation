@@ -20,13 +20,12 @@ from pydantic_ai.tools import ToolDefinition
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness.capabilities._mcp_skills import (
-    DEFAULT_MCP_SKILL_FILE_BYTES,
     MAX_MCP_SKILL_BYTES,
-    MCP_SKILL_READ_TOOL,
     MCPSkillCatalogItem,
     _MCPSkill,
     _MCPSkillReadError,
     discover_mcp_skills,
+    is_skill_relative_path,
     read_mcp_skill_text,
     same_frontmatter,
 )
@@ -78,6 +77,7 @@ if TYPE_CHECKING:
 
 SKILLS_CAPABILITY_ID = "a13n.skills"
 _SKILL_FILE_NAME = "SKILL.md"
+_READ_SKILL_TOOL = "read_skill"
 _DEFAULT_ENVIRONMENT_SKILL_ROOT = "/workspace/.agents/skills"
 _OPTIONAL_SOURCE_UNAVAILABLE_CODES = frozenset(
     {"environment_not_found", "environment_selection_invalid", "environment_unsupported"}
@@ -85,9 +85,9 @@ _OPTIONAL_SOURCE_UNAVAILABLE_CODES = frozenset(
 _MAX_SKILL_SELECTION = 10_000
 _LOGGER = get_logger(__name__)
 _SKILL_ROUTING_POLICY = """At the start of a task or when its scope changes materially, consider the available
-skill descriptions. When a skill directly applies, use the ordinary Environment file tools to read the listed
-path's SKILL.md in full before following the workflow. If the result is incomplete, continue from the returned
-line boundary.
+skill descriptions. When a skill directly applies, use read_skill with its name to read SKILL.md in full before
+following the workflow. Pass a skill-relative path to read a supporting file. If the skill has a listed
+Environment path, you can also use ordinary file tools there and continue from the returned line boundary.
 
 Read supporting files as needed for the current step; there is no need to load the entire skill directory.
 Reuse a complete read while its contents remain available in context. After compaction or handoff, re-read
@@ -512,7 +512,7 @@ class SkillsPolicy(BaseModel):
 
     conflict: Literal["error", "prefer_earlier", "prefer_later"] = "prefer_later"
     max_skills: int = Field(default=512, gt=0, le=_MAX_SKILL_SELECTION)
-    max_mcp_file_bytes: int = Field(default=DEFAULT_MCP_SKILL_FILE_BYTES, gt=0, le=MAX_MCP_SKILL_BYTES)
+    max_file_bytes: int = Field(default=256 * 1024, gt=0, le=MAX_MCP_SKILL_BYTES)
 
 
 def _merge_skill[T](selected: dict[str, T], name: str, entry: T, policy: SkillsPolicy) -> None:
@@ -886,8 +886,9 @@ class _SkillsRunCapability(SkillsCapability):
         self.manager = manager
         self._catalog = catalog.model_copy(deep=True)
         self._context = context
-        self._remote_skills = {(skill.item.source_id, skill.item.uri): skill for skill in remote_skills.values()}
-        self._max_mcp_file_bytes = manager.policy.max_mcp_file_bytes
+        self._remote_skills = remote_skills
+        self._local_skills = {item.name: item for item in self._catalog.items}
+        self._max_file_bytes = manager.policy.max_file_bytes
         self.catalog_measurement = self._render_catalog()
         keys: dict[tuple[str, str], BoundSkillCatalogItem] = {}
         skill_paths: list[SkillPath] = []
@@ -912,71 +913,65 @@ class _SkillsRunCapability(SkillsCapability):
         return self.catalog_measurement.text if self.catalog_measurement else None
 
     def get_toolset(self) -> FunctionToolset[AgentContext] | None:
-        if not self._remote_skills:
+        if not self._local_skills and not self._remote_skills:
             return None
-        return FunctionToolset(tools=[self.read_mcp_skill], id="a13n-mcp-skills")
+        return FunctionToolset(tools=[self.read_skill], id="a13n-skills")
 
-    async def read_mcp_skill(
-        self, ctx: RunContext[AgentContext], source_id: str, uri: str, path: str = _SKILL_FILE_NAME
-    ) -> dict[str, str]:
-        """Read untrusted text from a catalog MCP source and SKILL.md URI at a skill-relative file path."""
+    async def read_skill(
+        self, ctx: RunContext[AgentContext], name: str, path: str = _SKILL_FILE_NAME
+    ) -> dict[str, str | list[str]]:
+        """Read untrusted UTF-8 text from a selected skill by name and skill-relative file path."""
         self._require_current(ctx)
-        skill = self._remote_skills.get((source_id, uri))
-        if skill is None:
-            return {"error": "Use the source ID and SKILL.md URI of a selected MCP skill."}
+        if not is_skill_relative_path(path):
+            return {"error": "Use a relative file path within the selected skill."}
+        remote = self._remote_skills.get(name)
+        local = self._local_skills.get(name)
         try:
-            text = await read_mcp_skill_text(skill, path, max_bytes=self._max_mcp_file_bytes)
+            if remote is not None:
+                text = await read_mcp_skill_text(remote, path, max_bytes=self._max_file_bytes)
+                item = remote.item
+                location = item.uri
+                if path == _SKILL_FILE_NAME:
+                    try:
+                        frontmatter = _load_skill_frontmatter(text, path=path)
+                        matches = same_frontmatter(frontmatter, remote.frontmatter)
+                    except (DefinitionError, RecursionError, ValueError):
+                        matches = False
+                    if not matches:
+                        return {"error": "Skill SKILL.md frontmatter differs from the frozen manifest."}
+            elif local is not None:
+                text = await _read_environment_skill_text(ctx.deps.environment, local, path, self._max_file_bytes)
+                item = local
+                location = local.path
+            else:
+                return {"error": "Use the name of a selected skill."}
         except _MCPSkillReadError as exc:
             return {"error": str(exc)}
+        except EnvironmentError as exc:
+            return {"error": f"The selected skill file is unavailable ({exc.code})."}
+        except UnicodeError:
+            return {"error": "The selected skill file is not valid UTF-8 text."}
+        self._require_current(ctx)
         if path == _SKILL_FILE_NAME:
-            try:
-                frontmatter = _load_skill_frontmatter(text, path=path)
-                matches = same_frontmatter(frontmatter, skill.frontmatter)
-            except (DefinitionError, RecursionError, ValueError):
-                matches = False
-            if not matches:
-                return {"error": "MCP SKILL.md frontmatter differs from the frozen manifest."}
-            observe_skill_access(skill.item.name, source_id=source_id, tool_id=MCP_SKILL_READ_TOOL)
-            await ctx.deps.events.emit(
-                HarnessExtensionEvent(
-                    kind="context",
-                    payload={
-                        "type": "skill_accessed",
-                        "skill_name": skill.item.name,
-                        "source_id": source_id,
-                        "path": uri,
-                        "tool_id": MCP_SKILL_READ_TOOL,
-                    },
-                )
-            )
-        return {"source_id": source_id, "uri": uri, "path": path, "content": text}
+            await self._record_access(ctx, item.name, item.source_id, location, _READ_SKILL_TOOL)
+        result: dict[str, str | list[str]] = {"source_id": item.source_id, "name": name, "path": path, "content": text}
+        if remote is not None and path == _SKILL_FILE_NAME:
+            result["files"] = sorted(remote.files)
+        return result
 
     def _render_catalog(self) -> InstructionCatalog | None:
         if not self._catalog.items and not self._catalog.mcp_items:
             return None
-        lines = [_SKILL_ROUTING_POLICY]
-        if self._catalog.mcp_items:
-            lines.append(
-                "For skills marked with an MCP source, use read_mcp_skill with the listed source ID and URI. "
-                "Use the same tool with a skill-relative path for supporting text files."
-            )
-        lines.extend(("", "<available-skills>"))
+        lines = [_SKILL_ROUTING_POLICY, "", "<available-skills>"]
         sizes: dict[str, ContextItemUsage] = {}
         for item in sorted((*self._catalog.items, *self._catalog.mcp_items), key=lambda item: item.name):
-            location = (
-                f"  <mcp-source>{escape(item.source_id, quote=True)}</mcp-source>\n"
-                f"  <uri>{escape(item.uri, quote=True)}</uri>"
-                if isinstance(item, MCPSkillCatalogItem)
-                else f"  <path>{escape(item.path, quote=True)}</path>"
-            )
-            entry = "\n".join(
-                (
-                    f'<skill name="{escape(item.name, quote=True)}">',
-                    f"  <description>{escape(item.description, quote=True)}</description>",
-                    location,
-                    "</skill>",
-                )
-            )
+            fields = [
+                f'<skill name="{escape(item.name, quote=True)}">',
+                f"  <description>{escape(item.description, quote=True)}</description>",
+            ]
+            if isinstance(item, BoundSkillCatalogItem):
+                fields.append(f"  <path>{escape(item.path, quote=True)}</path>")
+            entry = "\n".join((*fields, "</skill>"))
             lines.append(entry)
             sizes[item.name] = ContextItemUsage(characters=len(entry))
         lines.append("</available-skills>")
@@ -1037,25 +1032,64 @@ class _SkillsRunCapability(SkillsCapability):
         item = self._access_keys.get((selected.mount_id, selected.path))
         if item is None:
             return result
-        observe_skill_access(item.name, source_id=item.source_id, tool_id=harness_metadata.tool_id)
+        await self._record_access(ctx, item.name, item.source_id, item.path, harness_metadata.tool_id)
+        return result
+
+    @staticmethod
+    async def _record_access(
+        ctx: RunContext[AgentContext], name: str, source_id: str, location: str, tool_id: str
+    ) -> None:
+        observe_skill_access(name, source_id=source_id, tool_id=tool_id)
         await ctx.deps.events.emit(
             HarnessExtensionEvent(
                 kind="context",
                 payload={
                     "type": "skill_accessed",
-                    "skill_name": item.name,
-                    "source_id": item.source_id,
-                    "path": item.path,
-                    "tool_id": harness_metadata.tool_id,
+                    "skill_name": name,
+                    "source_id": source_id,
+                    "path": location,
+                    "tool_id": tool_id,
                 },
             )
         )
-        return result
 
     def _require_current(self, ctx: RunContext[AgentContext]) -> None:
         if ctx.deps is not self._context:
             raise DefinitionError("A frozen skill catalog cannot cross logical runs.", code="capability_scope_invalid")
         self._catalog.require_current(ctx.deps.environment)
+
+
+async def _read_environment_skill_text(
+    environment: BoundEnvironment, item: BoundSkillCatalogItem, path: str, max_bytes: int
+) -> str:
+    selection = environment.select_files(item.path)
+    if selection.resolved_path != item.directory or selection.observed_generation != item.observed_generation:
+        raise DefinitionError("The selected skill directory changed.", code="skill_catalog_stale")
+    # Pin the existing mount and reject overlays and symlinks along the selected
+    # path. The provider remains responsible for confinement during actual I/O.
+    parts = path.split("/")
+    async with environment.open_files(selection) as files:
+        current = item.path
+        if (await files.stat(current)).kind != "directory":
+            raise EnvironmentError("The skill directory is unavailable.", code="environment_denied")
+        for index, part in enumerate(parts, 1):
+            current = _join_logical_path(current, part)
+            resolved = environment.resolve_path(current)
+            expected = _join_logical_path(item.directory.path, "/".join(parts[:index]))
+            if not _is_within_root(resolved, item.directory) or resolved.path != expected:
+                raise EnvironmentError("The skill file selects another route.", code="environment_denied")
+            info = await files.stat(current)
+            if info.kind != ("file" if index == len(parts) else "directory"):
+                raise EnvironmentError("The skill path is not a regular file path.", code="environment_denied")
+            if index == len(parts) and info.size is not None and info.size > max_bytes:
+                raise EnvironmentError("Skill file exceeds the byte limit.", code="environment_too_large")
+        data = bytearray()
+        async with closing_stream(files.read_bytes_stream(current, chunk_size=min(65_536, max_bytes))) as stream:
+            async for chunk in stream:
+                if len(data) + len(chunk) > max_bytes:
+                    raise EnvironmentError("Skill file exceeds the byte limit.", code="environment_too_large")
+                data.extend(chunk)
+    return data.decode("utf-8")
 
 
 def _resolve_skill_selection(ctx: RunContext[AgentContext]) -> frozenset[str] | None:
