@@ -222,8 +222,8 @@ def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path
     releases = (
         ("a13n-envd", "0.8.3"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-harness", "0.42.1"),
-        ("a13n-harness-ui", "0.42.1"),
+        ("a13n-harness", "0.42.2"),
+        ("a13n-harness-ui", "0.42.2"),
         ("a13n-service", "0.5.2"),
     )
     for component, version in releases:
@@ -560,8 +560,8 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
 @pytest.mark.parametrize(
     ("component", "version", "requirement"),
     [
-        ("a13n-service", "0.5.2", "==0.42.1"),
-        ("a13n-harness-ui", "0.42.1", "==0.42.1"),
+        ("a13n-service", "0.5.2", "==0.42.2"),
+        ("a13n-harness-ui", "0.42.2", "==0.42.2"),
     ],
 )
 def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):
