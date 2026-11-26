@@ -55,7 +55,13 @@ from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.acp_inputs import AcpInputs
-from a13n_harness_ui.acp_sessions import AcpSessions, AcpSessionState, acp_commands, acp_options_scope
+from a13n_harness_ui.acp_sessions import (
+    MODEL_OPTION_GRACE_SECONDS,
+    AcpSessions,
+    AcpSessionState,
+    acp_commands,
+    acp_options_scope,
+)
 from a13n_harness_ui.configuration.models import AcpAgentResource
 from a13n_harness_ui.conversation import input_excerpt
 from a13n_harness_ui.errors import HarnessUiError
@@ -344,7 +350,8 @@ class AcpTurn(AbstractHarnessPlugin):
             saved_session_id=saved_id,
             channel=self.channel,
             interactive=self.inputs is not None and not context.unattended,
-        ) as (runtime, bridge):
+        ) as resident:
+            runtime, bridge = resident.runtime, resident.host_tools
             blocks: list[PromptBlock] = []
             authored: list[ContentItem] = []
             prompt_capabilities = runtime.capabilities.prompt_capabilities or schema.PromptCapabilities()
@@ -438,13 +445,28 @@ class AcpTurn(AbstractHarnessPlugin):
                         saved_session_id=recovering,
                         discovery=scope,
                     )
+                    if self.prewarm or (saved is not None and saved.options):
+                        await runtime.wait_for_model_option(MODEL_OPTION_GRACE_SECONDS)
                     if saved is not None:
                         await runtime.restore_options(
                             saved.options, strict=saved.explicit_options if not self.prewarm else frozenset()
                         )
+                elif not self.prewarm and saved is not None:
+                    # Replay choices that prewarm could not apply, plus explicit first-turn selections.
+                    keys = resident.unrestored_options | saved.explicit_options
+                    if keys:
+                        await runtime.restore_options(
+                            {key: value for key, value in saved.options.items() if key in keys},
+                            strict=saved.explicit_options,
+                        )
+                    resident.unrestored_options = frozenset()
                 session_id = runtime.session_id
                 assert session_id is not None
                 commands = acp_commands(runtime)
+                options = {option.id: option.current_value for option in runtime.config_options}
+                if self.prewarm and saved is not None:
+                    resident.unrestored_options = frozenset(saved.options.keys() - options.keys())
+                    options = saved.options | options
                 active = AcpSessionState(
                     digest=self.digest,
                     thread_id=context.thread_id,
@@ -452,16 +474,16 @@ class AcpTurn(AbstractHarnessPlugin):
                     prompted=saved is not None and saved.prompted,
                     commands=commands if commands is not None else (saved.commands if saved else ()),
                     explicit_options=frozenset(
-                        option.id
-                        for option in runtime.config_options
-                        if saved
-                        and option.id in saved.explicit_options
-                        and saved.options.get(option.id) == option.current_value
-                    ),
+                        key
+                        for key in saved.explicit_options
+                        if key in saved.options and options.get(key) == saved.options[key]
+                    )
+                    if saved is not None
+                    else frozenset(),
                     synced_messages=saved.synced_messages if saved and saved.prompted else 0,
                     synced_message_key=saved.synced_message_key if saved and saved.prompted else None,
                     context_window=runtime.client.context_window or (saved.context_window if saved else None),
-                    options={option.id: option.current_value for option in runtime.config_options},
+                    options=options,
                 )
                 if self.persist is not None and active != saved:
                     await self.persist(active)
@@ -480,18 +502,10 @@ class AcpTurn(AbstractHarnessPlugin):
                 binding.host_tools = scope
                 compacted = False
 
-                async def mark_prompted() -> None:
-                    nonlocal active
-                    if not active.prompted:
-                        active = active.model_copy(update={"prompted": True, "explicit_options": frozenset()})
-                        if self.persist is not None:
-                            await self.persist(active)
-
                 async def observe(update: AcpUpdate) -> None:
                     nonlocal compacted, active
                     compacted |= isinstance(update, schema.SessionUpdateCompactionUpdate)
                     transcript.update(update)
-                    await mark_prompted()
                     if (
                         isinstance(update, schema.SessionInfoUpdate)
                         and runtime.client.session_title
@@ -524,8 +538,21 @@ class AcpTurn(AbstractHarnessPlugin):
                             hidden = (*hidden, guidance)
                         if self._stop_requested:
                             return schema.PromptResponse(stop_reason="cancelled")
-                        response = await runtime.prompt(prompt, binding=binding, context=hidden)
-                        await mark_prompted()
+                        first = not active.prompted
+                        explicit = active.explicit_options
+                        if first:
+                            # Persist before dispatch so an interruption with unknown outcome still recovers.
+                            active = active.model_copy(update={"prompted": True, "explicit_options": frozenset()})
+                            if self.persist is not None:
+                                await self.persist(active)
+                        try:
+                            response = await runtime.prompt(prompt, binding=binding, context=hidden)
+                        except Exception:
+                            if first and runtime.prompt_rejected_before_progress:
+                                active = active.model_copy(update={"prompted": False, "explicit_options": explicit})
+                                if self.persist is not None:
+                                    await self.persist(active)
+                            raise
                         prompted_this_turn = True
                         prior_conversation = ()
                         if response.usage is not None:

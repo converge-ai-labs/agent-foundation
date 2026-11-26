@@ -3687,6 +3687,8 @@
   "New in Inbox": "收件箱新消息",
   "Inbox only": "只收件箱",
   "Bot messages, Inbox items, task results and requests for your input on this browser.": "在当前浏览器接收 Bot 消息、收件箱消息、任务结果和需要你回应的通知。",
+  "Coordinate agents by default": "默认协调智能体",
+  "Preselect Coordinate agents for new project chats. You can turn it off before sending the first message.": "在新的项目聊天中预先开启「协调智能体」。发送首条消息前仍可关闭。",
   "Automatically generate chat titles": "自动生成聊天标题",
   "Use an extra model request to name new chats. You can still generate a title manually when this is off.": "为新聊天命名会额外请求一次模型。关闭后仍可手动生成标题。",
   "Input predictions": "输入预测",

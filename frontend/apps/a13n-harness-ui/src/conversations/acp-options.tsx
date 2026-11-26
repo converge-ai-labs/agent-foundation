@@ -45,7 +45,17 @@ export function useAcpOptions(
   });
 }
 
-export function acpOptionLabel(option?: Schema<"AcpOption">) {
+export function acpModelOption(options?: Schema<"AcpOption">[]) {
+  return options?.find(
+    (option) => option.category === "model" || option.id === "model",
+  );
+}
+
+export function acpOptionLabel(
+  option?: Schema<"AcpOption">,
+  emptyLabel?: string,
+) {
+  if (option?.value === "") return emptyLabel;
   return option
     ? (option.choices?.find((choice) => choice.value === option.value)?.name ??
         String(option.value))
@@ -85,7 +95,8 @@ export function AcpOptions({
           body,
         }),
       ),
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
+      await queries.cancelQueries({ queryKey: key, exact: true });
       queries.setQueryData(key, updated);
     },
   });
@@ -127,16 +138,18 @@ export function AcpOptionFields({
         { label: t("Disabled"), value: "false" },
       ];
     const model = isModelOption(option);
-    return (option.choices ?? []).map(({ name, value }) => ({
-      label: name,
-      value,
-      icon: model ? (
-        <ModelIcon
-          name={name}
-          modelIdentity={acpModelIdentity(name, value, preset)}
-        />
-      ) : undefined,
-    }));
+    return (option.choices ?? [])
+      .filter(({ value }) => value !== "")
+      .map(({ name, value }) => ({
+        label: name,
+        value,
+        icon: model ? (
+          <ModelIcon
+            name={name}
+            modelIdentity={acpModelIdentity(name, value, preset)}
+          />
+        ) : undefined,
+      }));
   };
   const onSubpage = Boolean(settings?.page.startsWith("acp:"));
   const activeOption = onSubpage
@@ -183,12 +196,14 @@ export function AcpOptionFields({
   const controlOptions =
     options?.filter((option) => !isModelOption(option)) ?? [];
   const renderRow = (option: Schema<"AcpOption">) => {
+    const boolean = typeof option.value === "boolean";
     const choices = optionChoices(option);
     const disabled = locked || !choices.length;
-    const selectedLabel =
-      choices.find(({ value }) => value === String(option.value))?.label ??
-      String(option.value);
+    const selectedLabel = boolean
+      ? choices.find(({ value }) => value === String(option.value))?.label
+      : acpOptionLabel(option, t("Not selected"));
     const model = isModelOption(option);
+    const hasModelValue = model && option.value !== "";
     return (
       <SettingsRow
         key={option.id}
@@ -198,8 +213,8 @@ export function AcpOptionFields({
             <ModelIdentity
               name={selectedLabel}
               modelIdentity={acpModelIdentity(
-                selectedLabel,
-                String(option.value),
+                hasModelValue ? selectedLabel : undefined,
+                hasModelValue ? String(option.value) : undefined,
                 preset,
               )}
             />

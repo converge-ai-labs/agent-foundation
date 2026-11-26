@@ -112,6 +112,7 @@ class AcpHostToolScope:
             raise RequestError.invalid_params()
         if not any(tool.name == name and tool.kind == "function" for tool in manager.tool_defs):
             raise RequestError.invalid_params({"code": "acp_tool_unavailable"})
+        self._bridge._tool_call_started = True
         try:
             # The fallback ID identifies the turn, not a fabricated tool card.
             result = await manager.handle_call(
@@ -147,6 +148,7 @@ class AcpHostToolBridge:
         self._toolsets = tuple(toolsets)
         self._scope: AcpHostToolScope | None = None
         self._turn_id: str | None = None
+        self._tool_call_started = False
         self._calls: set[asyncio.Task[dict[str, Any]]] = set()
         self._active_names: dict[str, str | None] = {}
         self._tool_catalog: list[dict[str, Any]] = []
@@ -206,6 +208,7 @@ class AcpHostToolBridge:
         self._require_scope(scope)
         if self._turn_id is not None:
             raise AcpError("acp_mcp_busy", "The host tool bridge already has an active turn.")
+        self._tool_call_started = False
         self._scope, self._turn_id = scope, turn_id
 
     def _revoke(self) -> None:

@@ -50,7 +50,12 @@ import {
 import { ComposerStatus } from "./composer-status";
 import { currentGoal } from "./goal-status";
 import { RunActivity } from "./run-activity";
-import { AcpOptions, acpOptionLabel, useAcpOptions } from "./acp-options";
+import {
+  AcpOptions,
+  acpModelOption,
+  acpOptionLabel,
+  useAcpOptions,
+} from "./acp-options";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
 import { McpInputs, useMcpInputRequests } from "./mcp-inputs";
@@ -742,9 +747,11 @@ function ConversationContent({
       ? thread.configuration.agent_source.id
       : undefined;
   const acpActive = thread?.root_activity.state !== "inactive";
+  const acpOptionsEnabled =
+    !!acpAgent && !guest && !readOnly && !thread?.archived;
   const acpOptions = useAcpOptions(
     threadId,
-    !!acpAgent && !guest && !readOnly && !thread?.archived,
+    acpOptionsEnabled,
     acpActive,
     acpAgent,
     detail.data?.continuation_id,
@@ -1389,10 +1396,7 @@ function ConversationContent({
                 : thread?.configuration.agent_source.kind === "live"
                   ? null
                   : (() => {
-                      const acpModelOption = acpOptions.data?.find(
-                        (item) =>
-                          item.category === "model" || item.id === "model",
-                      );
+                      const modelOption = acpModelOption(acpOptions.data);
                       return (
                         <ThreadRunChoices
                           catalog={selectors.data}
@@ -1409,10 +1413,17 @@ function ConversationContent({
                             draft.submission.kind === "pending" ||
                             draft.submission.kind === "unknown"
                           }
-                          externalModel={acpOptionLabel(acpModelOption)}
+                          onExternalOptionsOpen={() => {
+                            if (acpOptionsEnabled && !acpActive)
+                              void acpOptions.refetch({ cancelRefetch: false });
+                          }}
+                          externalModel={acpOptionLabel(
+                            modelOption,
+                            t("No model selected"),
+                          )}
                           externalModelId={
-                            acpModelOption
-                              ? String(acpModelOption.value)
+                            modelOption && modelOption.value !== ""
+                              ? String(modelOption.value)
                               : undefined
                           }
                           externalThinking={acpOptionLabel(

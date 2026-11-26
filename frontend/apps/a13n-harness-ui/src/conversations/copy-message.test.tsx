@@ -121,7 +121,7 @@ it("does not announce success before the clipboard write resolves", async () => 
   expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy();
 });
 
-it("preserves authored whitespace and repeated attachment positions without expanded or hidden content", () => {
+it("preserves authored text around repeated attachments and excludes their expansions", () => {
   const attachment: Schema<"ThreadAttachment"> = {
     attachment_id: "attachment-one",
     name: "notes.txt",
@@ -134,7 +134,7 @@ it("preserves authored whitespace and repeated attachment positions without expa
     [
       "  Before\n",
       { attachment_id: attachment.attachment_id },
-      " and ",
+      " and [notes.txt]",
       { attachment_id: attachment.attachment_id },
       "\nafter  ",
     ],
@@ -150,10 +150,8 @@ it("preserves authored whitespace and repeated attachment positions without expa
     { kind: "user", text: "Injected context", metadata: { display: false } },
     { kind: "system", text: "System context" },
   ];
-  expect(inputCopyText(expanded)).toBe(
-    "  Before\n[notes.txt] and [notes.txt]\nafter  ",
-  );
-  expect(inputCopyText([parts[1]])).toBe("[notes.txt]");
+  expect(inputCopyText(expanded)).toBe("  Before\n and [notes.txt]\nafter  ");
+  expect(inputCopyText([parts[1]])).toBe("");
   expect(
     inputCopyText([
       { kind: "user", text: "First" },
@@ -162,18 +160,44 @@ it("preserves authored whitespace and repeated attachment positions without expa
   ).toBe("First\n\nSecond");
 });
 
-it("offers one copy control for submitted input, but none for empty or hidden input", async () => {
+it("copies text without the image name and keeps the timestamp for image-only input", async () => {
   const write = clipboard();
+  const image: Schema<"ThreadAttachment"> = {
+    attachment_id: "attachment-one",
+    name: "image.png",
+    media_type: "image/png",
+    size: 12,
+    source: null,
+  };
+  const parts = previewInput(
+    "one",
+    [{ attachment_id: image.attachment_id }, "  Prompt\nbody  "],
+    new Map([[image.attachment_id, image]]),
+  );
   const view = render(
-    <InputContent
-      parts={previewInput("one", ["  Prompt\nbody  "])}
-      renderText={(text) => text}
-    />,
+    <InputContent parts={parts} renderText={(text) => text} />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Copy message" }));
   await screen.findByRole("button", { name: "Copied" });
   expect(write).toHaveBeenCalledWith("  Prompt\nbody  ");
+  const timestamp = "2026-11-17T12:00:00Z";
   view.rerender(
+    <InputContent
+      parts={[parts[0]]}
+      renderText={(text) => text}
+      timestamp={timestamp}
+    />,
+  );
+  expect(
+    screen.queryByRole("button", { name: /Copy message|Copied/ }),
+  ).toBeNull();
+  expect(view.container.querySelector("time")?.dateTime).toBe(
+    "2026-11-17T12:00:00.000Z",
+  );
+});
+
+it("does not offer copy for empty or hidden input", () => {
+  render(
     <InputContent
       parts={[
         { kind: "user", text: " ", metadata: {} },

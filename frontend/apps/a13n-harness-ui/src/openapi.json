@@ -12138,6 +12138,11 @@
             ],
             "title": "Send Shortcut",
             "default": "enter"
+          },
+          "coordinator_by_default": {
+            "type": "boolean",
+            "title": "Coordinator By Default",
+            "default": false
           }
         },
         "additionalProperties": false,

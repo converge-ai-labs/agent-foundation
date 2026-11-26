@@ -167,6 +167,7 @@ type RunChoiceProps = ModelControlProps & {
   externalModel?: string;
   externalModelId?: string;
   externalThinking?: string;
+  onExternalOptionsOpen?: () => void;
 };
 
 export function ThreadRunChoices(props: RunChoiceProps) {
@@ -206,6 +207,7 @@ export function ThreadRunChoices(props: RunChoiceProps) {
       title={`${agent?.name ?? t("Default agent")} - ${modelName}`}
     >
       <ComposerSettings
+        onOpen={isAcp ? props.onExternalOptionsOpen : undefined}
         triggerDescription={speedDescription}
         label={
           <span className={panelStyles.modelSummary}>

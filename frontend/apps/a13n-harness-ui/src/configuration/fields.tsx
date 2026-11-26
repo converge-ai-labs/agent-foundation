@@ -665,6 +665,24 @@ export function ResourceFields({
                   )}
 
                   <SettingsRow
+                    label={t("Coordinate agents by default")}
+                    controlId="coordinator-by-default"
+                    stackOnNarrow={false}
+                    description={t(
+                      "Preselect Coordinate agents for new project chats. You can turn it off before sending the first message.",
+                    )}
+                  >
+                    <Switch
+                      id="coordinator-by-default"
+                      checked={
+                        get(["webui", "coordinator_by_default"]) === true
+                      }
+                      onCheckedChange={(enabled) =>
+                        set(["webui", "coordinator_by_default"], enabled)
+                      }
+                    />
+                  </SettingsRow>
+                  <SettingsRow
                     label={t("Automatically generate chat titles")}
                     controlId="auto-chat-title"
                     stackOnNarrow={false}

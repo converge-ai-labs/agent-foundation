@@ -4093,6 +4093,11 @@ export interface components {
              * @enum {string}
              */
             send_shortcut?: "enter" | "mod-enter";
+            /**
+             * Coordinator By Default
+             * @default false
+             */
+            coordinator_by_default?: boolean;
         };
         /** AppView */
         AppView: {

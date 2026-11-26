@@ -19,6 +19,9 @@ from a13n_harness_ui.configuration.models import ACP_AGENT_PRESETS, AcpAgentPres
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.surfaces import SurfaceModel
 
+# A short grace period for peers that publish their model selector after session setup.
+MODEL_OPTION_GRACE_SECONDS = 0.5
+
 
 class AcpCommand(SurfaceModel):
     name: str
@@ -64,6 +67,10 @@ class AcpOption(SurfaceModel):
     category: str | None = None
     value: str | bool
     choices: tuple[AcpOptionValue, ...] = ()
+
+    @property
+    def is_model(self) -> bool:
+        return self.category == "model" or self.id == "model"
 
 
 class AcpOptionChange(SurfaceModel):
@@ -205,6 +212,7 @@ class _Resident:
     runtime: AcpSessionRuntime
     host_tools: AcpHostToolBridge
     resources: AsyncExitStack
+    unrestored_options: frozenset[str] = frozenset()
 
 
 @dataclass(slots=True)
@@ -236,7 +244,7 @@ class AcpSessions:
         saved_session_id: str | None,
         channel: AcpChannel | None = None,
         interactive: bool = False,
-    ) -> AsyncIterator[tuple[AcpSessionRuntime, AcpHostToolBridge]]:
+    ) -> AsyncIterator[_Resident]:
         if self._closed:
             raise AcpError("acp_sessions_closed", "The ACP session owner is closed.")
         entry = self._threads.setdefault(thread_id, _ThreadSession())
@@ -244,7 +252,11 @@ class AcpSessions:
             if self._closed or self._threads.get(thread_id) is not entry:
                 raise AcpError("acp_session_retired", "The ACP session was retired before admission.")
             resident = entry.resident
-            if resident is not None and (resident.digest != digest or resident.runtime.session_id != saved_session_id):
+            if resident is not None and (
+                resident.digest != digest
+                or resident.runtime.session_id != saved_session_id
+                or not resident.runtime.connected
+            ):
                 await entry.retire()
                 resident = None
             if resident is None:
@@ -269,7 +281,7 @@ class AcpSessions:
                     )
                     resident = entry.resident = _Resident(digest, runtime, bridge, resources.pop_all())
             try:
-                yield resident.runtime, resident.host_tools
+                yield resident
             except BaseException as exc:
                 # A rejected attachment never reaches the peer. Other failures
                 # may have changed the external session, so retire the connection.
@@ -284,6 +296,7 @@ class AcpSessions:
             session_id is not None
             and resident is not None
             and resident.digest == digest
+            and resident.runtime.connected
             and resident.runtime.session_id == session_id
         )
 
@@ -297,28 +310,33 @@ class AcpSessions:
         entry = self._threads.get(thread_id)
         return acp_commands(entry.resident.runtime) if entry is not None and entry.resident is not None else None
 
-    async def set_option(self, thread_id: str, change: AcpOptionChange) -> tuple[AcpOption, ...]:
+    async def set_option(self, thread_id: str, change: AcpOptionChange) -> tuple[tuple[AcpOption, ...], frozenset[str]]:
         entry = self._threads.get(thread_id)
         if entry is None or entry.resident is None:
             raise ThreadError("Start a session with this ACP Agent first.", code="acp_session_missing")
         async with entry.lock:
-            if entry.resident is None:
+            resident = entry.resident
+            if resident is None:
                 raise ThreadError("The ACP session has retired.", code="acp_session_missing")
             option = next((item for item in self.options(thread_id) if item.id == change.id), None)
             if option is None or (
                 not isinstance(change.value, bool)
                 if isinstance(option.value, bool)
-                else change.value not in {choice.value for choice in option.choices}
+                else change.value == "" or change.value not in {choice.value for choice in option.choices}
             ):
                 raise ThreadError("The ACP Agent did not offer that option value.", code="acp_option_invalid")
             try:
                 async with asyncio.timeout(15):
-                    await entry.resident.runtime.set_config_option(change.id, change.value)
+                    await resident.runtime.set_config_option(change.id, change.value)
             except (AcpError, RequestError, ConnectionError, TimeoutError) as error:
                 raise ThreadError(
                     "The ACP Agent did not confirm the option change.", code="acp_option_failed"
                 ) from error
-            return self.options(thread_id)
+            options = self.options(thread_id)
+            if not any(item.id == change.id and item.value == change.value for item in options):
+                raise ThreadError("The ACP Agent did not confirm the option change.", code="acp_option_failed")
+            resident.unrestored_options = frozenset() if option.is_model else resident.unrestored_options - {change.id}
+            return options, resident.unrestored_options
 
     async def retire(self, thread_id: str) -> None:
         entry = self._threads.get(thread_id)

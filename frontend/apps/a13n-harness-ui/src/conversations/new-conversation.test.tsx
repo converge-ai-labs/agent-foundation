@@ -422,7 +422,7 @@ function Location() {
     </>
   );
 }
-function mount(initial = path, sidebar = false) {
+function mount(initial = path, sidebar = false, coordinatorByDefault = false) {
   return render(
     <QueryClientProvider client={queries}>
       <TransportContext value={createTransport("test", () => {})}>
@@ -448,6 +448,7 @@ function mount(initial = path, sidebar = false) {
                     path="/new"
                     element={
                       <NewConversationPage
+                        coordinatorByDefault={coordinatorByDefault}
                         profile={{ display_name: "Test", color: "#000000" }}
                         unauthorized={() => {}}
                       />
@@ -457,6 +458,7 @@ function mount(initial = path, sidebar = false) {
                     path="/"
                     element={
                       <NewConversationPage
+                        coordinatorByDefault={coordinatorByDefault}
                         profile={{ display_name: "Test", color: "#000000" }}
                         unauthorized={() => {}}
                       />
@@ -481,7 +483,7 @@ function mount(initial = path, sidebar = false) {
     </QueryClientProvider>,
   );
 }
-async function fill() {
+async function fill(projectName = "Example project") {
   await screen.findByRole("heading", {
     name: "What can I help with?",
   });
@@ -494,7 +496,7 @@ async function fill() {
   );
   expect(
     screen.getByRole("combobox", { name: "Project" }).textContent,
-  ).toContain("Example project");
+  ).toContain(projectName);
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Build this"));
 }
 
@@ -2564,8 +2566,44 @@ it("retains Coordinator intent across Project changes without falling back to or
   expect(writes).toHaveLength(0);
 });
 
+it.each([true, false])(
+  "creates a new project chat with its visible Coordinator choice (%s)",
+  async (enabled) => {
+    failure = "submit-reject";
+    mount(path, false, true);
+    await fill();
+    await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+    const toggle = screen.getByRole("switch", { name: "Coordinate agents" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    if (!enabled) await userEvent.click(toggle);
+    const restored = new NewDraftStore();
+    const retained = restored.get(new Map(), false);
+    expect(
+      retained.composer.coordinator ?? retained.retainedCoordinatorDefault,
+    ).toBe(enabled);
+    restored.dispose();
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Chat busy");
+    expect((await writes[0].clone().json()).coordinator).toBe(
+      enabled ? true : undefined,
+    );
+  },
+);
+
+it("does not preselect Coordinator for a projectless draft", async () => {
+  failure = "submit-reject";
+  mount(newConversationPath(), false, true);
+  await fill("Without a project");
+  await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  const toggle = screen.getByRole("switch", { name: "Coordinate agents" });
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  await userEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Chat busy");
+  expect(await writes[0].clone().json()).not.toHaveProperty("coordinator");
+});
+
 it("restores worker assignment and removes only ownership without losing the authored draft", async () => {
-  mount(newConversationPath("project-one", ownerId));
+  mount(newConversationPath("project-one", ownerId), false, true);
   await fill();
   await screen.findByText("Managed by - Project manager");
   expect(

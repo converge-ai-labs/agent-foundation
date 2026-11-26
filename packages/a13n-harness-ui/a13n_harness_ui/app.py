@@ -445,6 +445,7 @@ class AppStatus(BaseModel):
     memory_organization: MemoryOrganizationStatus | None = None
     input_prediction_enabled: bool = False
     send_shortcut: ComposerSendShortcut = "enter"
+    coordinator_by_default: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -978,6 +979,8 @@ class HarnessUiApp:
                 memory_organization=self._memory_organizer.status(configuration),
                 input_prediction_enabled=configuration is not None and configuration.document.input_prediction.enabled,
                 send_shortcut=configuration.document.webui.send_shortcut if configuration is not None else "enter",
+                coordinator_by_default=configuration is not None
+                and configuration.document.webui.coordinator_by_default,
                 state=self._state,
                 object_count=await self._store.object_count(),
                 accepted_generation_digest=current_digest,
@@ -1908,7 +1911,7 @@ class HarnessUiApp:
                     return cached[1]
                 self._acp_options_cache.pop(scope, None)
             result = await preview_acp_options(resource, cwd, request)
-            if request is None:
+            if request is None and any(option.is_model for option in result.options):
                 if len(self._acp_options_cache) >= 32:
                     self._acp_options_cache.pop(next(iter(self._acp_options_cache)))
                 self._acp_options_cache[scope] = (time.monotonic(), result)

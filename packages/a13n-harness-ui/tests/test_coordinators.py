@@ -217,8 +217,15 @@ async def test_http_promotion_and_followup_are_authenticated_thread_operations(t
     ):
         assert (await client.post("/api/threads/unknown/coordinator")).status_code == 401
         client.headers["Authorization"] = "Bearer coordinator-test-key"
+        assert (await client.get("/api/status")).json()["app"]["coordinator_by_default"] is False
+        document = yaml.safe_load(root.read_text())
+        document["webui"]["coordinator_by_default"] = True
+        saved = await client.put(f"/api/configuration/sources/{root.name}", json={"content": yaml.safe_dump(document)})
+        assert saved.status_code == 200, saved.text
+        assert (await client.get("/api/status")).json()["app"]["coordinator_by_default"] is True
         created = await client.post("/api/threads", json={})
         assert created.status_code == 200, created.text
+        assert created.json()["role"] == "ordinary"
         thread_id = created.json()["thread_id"]
         path = f"/api/threads/{thread_id}/coordinator"
         first = await client.post(path)

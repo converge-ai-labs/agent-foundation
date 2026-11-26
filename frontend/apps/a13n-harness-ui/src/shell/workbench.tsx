@@ -472,6 +472,7 @@ function WorkbenchContent({
                     <Navigate to="/setup" replace />
                   ) : (
                     <NewConversationPage
+                      coordinatorByDefault={status.app?.coordinator_by_default}
                       profile={profile}
                       unauthorized={unauthorized}
                     />
@@ -482,6 +483,7 @@ function WorkbenchContent({
                 path="/new"
                 element={
                   <NewConversationPage
+                    coordinatorByDefault={status.app?.coordinator_by_default}
                     profile={profile}
                     unauthorized={unauthorized}
                   />

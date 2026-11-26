@@ -60,11 +60,13 @@ export function ComposerSettings({
   className,
   label,
   triggerDescription,
+  onOpen,
 }: {
   children: ReactNode;
   className?: string;
   label?: ReactNode;
   triggerDescription?: string;
+  onOpen?: () => void;
 }) {
   const { t } = useTranslation();
   const titles: Partial<Record<Page, string>> = {
@@ -94,7 +96,10 @@ export function ComposerSettings({
     return () => query.removeEventListener("change", update);
   }, []);
   const changeOpen = (next: boolean) => {
-    if (next) navigate("root");
+    if (next) {
+      navigate("root");
+      onOpen?.();
+    }
     setOpen(next);
   };
   const content = (

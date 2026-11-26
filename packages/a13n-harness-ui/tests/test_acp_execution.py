@@ -40,6 +40,16 @@ def _resource(*peer_flags: str) -> AcpAgentResource:
     )
 
 
+def _ui_peer_config(tmp_path: Path, *flags: str) -> Path:
+    config = tmp_path / "a13n-harness-ui.yaml"
+    config.write_text('schema_version: "1"\ndefaults:\n  agent: acp-fixture\n')
+    resources = tmp_path / "acp_agents"
+    resources.mkdir()
+    resource = _resource().model_copy(update={"args": (str(_PEER), "ui", "use-http", *flags)})
+    (resources / "fixture.yaml").write_text(resource.model_dump_json(exclude_none=True))
+    return config
+
+
 def test_native_launch_inherits_local_cli_environment(tmp_path: Path) -> None:
     user_bin = tmp_path / ".local" / "bin"
     user_bin.mkdir(parents=True)
@@ -443,6 +453,134 @@ async def test_acp_prewarm_replays_options_after_host_restart(tmp_path: Path, pe
         assert (await app.get_thread(thread.thread_id)).continuation_id is None
 
 
+async def test_acp_preview_retries_incomplete_catalog(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    gate = tmp_path / "model-ready"
+    config = _ui_peer_config(tmp_path, f"model-gate={gate}")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        preview = await app.acp_agent_options("acp-fixture", None)
+        assert [option.id for option in preview.options] == ["mode"]
+        gate.touch()
+        preview = await app.acp_agent_options("acp-fixture", None)
+        assert [(option.id, option.value) for option in preview.options] == [("mode", "chat"), ("model", "")]
+        gate.unlink()
+        assert await app.acp_agent_options("acp-fixture", None) == preview
+
+
+async def test_acp_preview_waits_for_delayed_model(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    config = _ui_peer_config(tmp_path, "delayed-model", "null-model")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        assert [(option.id, option.value) for option in (await app.acp_agent_options("acp-fixture", None)).options] == [
+            ("mode", "chat"),
+            ("model", ""),
+        ]
+
+
+@pytest.mark.parametrize("prompted", [False, True])
+async def test_acp_prewarm_preserves_and_restores_a_model_advertised_late(tmp_path: Path, prompted: bool) -> None:
+    from a13n_harness_ui.acp_sessions import AcpSessionState
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    gate = tmp_path / "model-ready"
+    gate.touch()
+    config = _ui_peer_config(tmp_path, f"model-gate={gate}", "late-model-on-mode-change")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        thread_id = (await app.create_thread()).thread_id
+        assert (await app.acp_options(thread_id))[-1].value == ""
+        with pytest.raises(HarnessUiError, match="did not offer"):
+            await app.acp_options(thread_id, AcpOptionChange(id="model", value=""))
+        assert (await app.acp_options(thread_id, AcpOptionChange(id="model", value="b")))[-1].value == "b"
+        if prompted:
+            receipt = await app.submit_thread(thread_id=thread_id, prompt="verify-restored-model")
+            assert (await app.wait_root_operation(receipt.receipt_id)).status == "completed"
+    gate.unlink()
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        assert [option.id for option in await app.acp_options(thread_id)] == ["mode"]
+        gate.touch()
+        await app.acp_options(thread_id, AcpOptionChange(id="mode", value="plan"))
+        stored = await app._store.threads.acp_state(thread_id)
+        assert stored is not None
+        saved = AcpSessionState.model_validate_json(stored)
+        assert saved.options["model"] == "b"
+        assert saved.explicit_options == (set() if prompted else {"model", "mode"})
+        async with asyncio.timeout(5):
+            while not any(option.is_model for option in await app.acp_options(thread_id)):
+                await asyncio.sleep(0.01)
+        receipt = await app.submit_thread(thread_id=thread_id, prompt="verify-restored-model")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status == "completed"
+        assert (await app.get_thread(thread_id)).thread.excerpt.latest_reply == "Model B restored"
+
+
+async def test_acp_does_not_persist_an_unconfirmed_model_change(tmp_path: Path) -> None:
+    from a13n_harness_ui.acp_sessions import AcpSessionState
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    config = _ui_peer_config(tmp_path, "null-model", "unconfirmed-model-change")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        thread_id = (await app.create_thread()).thread_id
+        await app.acp_options(thread_id, AcpOptionChange(id="model", value="a"))
+        with pytest.raises(HarnessUiError, match="did not confirm"):
+            await app.acp_options(thread_id, AcpOptionChange(id="model", value="b"))
+        stored = await app._store.threads.acp_state(thread_id)
+        assert stored is not None
+        saved = AcpSessionState.model_validate_json(stored)
+        assert saved.options["model"] == "a"
+        assert saved.explicit_options == {"model"}
+
+
+@pytest.mark.parametrize(
+    ("message", "resumable"),
+    [
+        ("reject-prompt", False),
+        ("fail-after-progress", True),
+        ("fail-after-accept", True),
+        ("fail-after-tool", True),
+        ("disconnect-prompt", True),
+    ],
+)
+async def test_acp_first_prompt_recovery_distinguishes_rejection_from_progress_or_unknown_outcome(
+    tmp_path: Path, message: str, resumable: bool
+) -> None:
+    from a13n_harness_ui.acp_sessions import AcpSessionState
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+
+    config = _ui_peer_config(tmp_path, "unique-session", "null-model")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        thread_id = (await app.create_thread()).thread_id
+        changed = await app.acp_options(thread_id, AcpOptionChange(id="model", value="b"))
+        assert changed[-1].value == "b"
+        receipt = await app.submit_thread(thread_id=thread_id, prompt=message)
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.failed
+        stored = await app._store.threads.acp_state(thread_id)
+        assert stored is not None
+        failed = AcpSessionState.model_validate_json(stored)
+        assert failed.prompted is resumable
+        assert failed.explicit_options == (set() if resumable else {"model"})
+        assert failed.options["model"] == "b"
+
+        assert (await app.acp_options(thread_id))[-1].value == "b"
+        stored = await app._store.threads.acp_state(thread_id)
+        assert stored is not None
+        recovered = AcpSessionState.model_validate_json(stored)
+        assert (recovered.session_id == failed.session_id) is resumable
+        receipt = await app.submit_thread(thread_id=thread_id, prompt="try again")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+
+
 async def test_acp_shell_review_on_app_callbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import json
 
@@ -597,7 +735,7 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
     (acp_dir / "fixture.yaml").write_text(
         json.dumps(
             _resource()
-            .model_copy(update={"args": (str(_PEER), "ui", "unique-session")})
+            .model_copy(update={"args": (str(_PEER), "ui", "unique-session", "null-model")})
             .model_dump(mode="json", exclude_none=True)
         )
     )
@@ -718,17 +856,19 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
 
 
 @pytest.mark.anyio
-async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_resolve_npx_adapters(
+async def test_acp_presets_resolve_npx_adapters_and_options_cache_ttl_expires(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import asyncio
     import json
 
-    from a13n_harness_ui.acp_execution import AcpSessionState
+    from a13n_harness.acp import AcpSessionRuntime
     from a13n_harness_ui.acp_sessions import acp_presets, resolve_acp_argv
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.configuration.models import AcpAgentResource
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from a13n_harness_ui.surfaces import RootOperationStatus
+    from acp import schema
 
     # 1. Built-in presets cover mainstream ACP CLIs and fall back to npx for adapter packages.
     fake_bin = tmp_path / "bin"
@@ -773,7 +913,7 @@ async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_re
             path=str(fake_bin),
         ) == ("codex-acp",)
 
-    # 2. If the very first runtime.prompt fails before emitting updates, prompted stays False.
+    # 2. Options preview cache honors TTL expiry, and concurrent updates preserve arrival order across async persistence.
     root = tmp_path / "a13n-harness-ui.yaml"
     root.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: acp-fixture\n')
     projects = tmp_path / "projects"
@@ -788,13 +928,12 @@ async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_re
     (acp_dir / "fixture.yaml").write_text(
         json.dumps(
             _resource()
-            .model_copy(update={"args": (str(_PEER), "ui", "unique-session")})
+            .model_copy(update={"args": (str(_PEER), "ui", "unique-session", "null-model")})
             .model_dump(mode="json", exclude_none=True)
         )
     )
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
     async with open_harness_ui_app(settings, configuration_path=root, instrumentation=None) as app:
-        # Options preview cache honors TTL expiry.
         first_preview = await app.acp_agent_options("acp-fixture", "project-main")
         assert len(app._acp_options_cache) == 1
         scope = next(iter(app._acp_options_cache))
@@ -802,54 +941,27 @@ async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_re
         refreshed_preview = await app.acp_agent_options("acp-fixture", "project-main")
         assert refreshed_preview.options == first_preview.options
 
-        thread = await app.create_thread()
-        await app.acp_options(thread.thread_id, AcpOptionChange(id="mode", value="plan"))
-
-        from a13n_harness.acp import AcpSessionRuntime
-
-        original_prompt = AcpSessionRuntime.prompt
-        fail_once = True
-
-        async def flaky_prompt(self, prompt, **kwargs):
-            nonlocal fail_once
-            if fail_once:
-                fail_once = False
-                raise RuntimeError("transient startup failure before session prompt")
-            return await original_prompt(self, prompt, **kwargs)
-
-        monkeypatch.setattr(AcpSessionRuntime, "prompt", flaky_prompt)
-        failed = await app.submit_thread(thread_id=thread.thread_id, prompt="hello")
-        assert (await app.wait_root_operation(failed.receipt_id)).status is RootOperationStatus.failed
-        saved_raw = await app._store.threads.acp_state(thread.thread_id)
-        assert saved_raw is not None
-        saved_state = AcpSessionState.model_validate_json(saved_raw)
-        assert saved_state.prompted is False
-        assert "mode" in saved_state.explicit_options
-
-        # Retrying after retiring the broken resident opens a clean session/new instead of failing resume.
-        await app._acp_sessions.retire(thread.thread_id)
-        recovered = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-prior:recovered")
-        assert (await app.wait_root_operation(recovered.receipt_id)).status is RootOperationStatus.completed
-        reply = (await app.get_thread(thread.thread_id)).thread.excerpt.latest_reply
-        assert reply is not None and ";mode=plan;" in reply
-
-        # 3. Concurrent initial updates preserve arrival order even if persisting prompted=True suspends.
-        import asyncio
-
-        from acp import schema
-
         ordered_thread = await app.create_thread()
-        first_persist_entered = asyncio.Event()
-        release_persist = asyncio.Event()
+        commands_entered = asyncio.Event()
+        release_commands = asyncio.Event()
         original_save_acp = app._store.threads.save_acp_state
 
-        async def slow_first_prompted_save(tid: str, payload: str) -> None:
-            if tid == ordered_thread.thread_id and '"prompted":true' in payload and not first_persist_entered.is_set():
-                first_persist_entered.set()
-                await release_persist.wait()
+        async def slow_commands_save(tid: str, payload: str) -> None:
+            if tid == ordered_thread.thread_id and "cmd-slow" in payload and not commands_entered.is_set():
+                commands_entered.set()
+                await release_commands.wait()
             await original_save_acp(tid, payload)
 
         async def two_chunk_prompt(self, prompt, *, binding, context=()):
+            self.client.available_commands = [schema.AvailableCommand(name="cmd-slow", description="slow")]
+            t0 = asyncio.create_task(
+                binding.on_update(
+                    schema.AvailableCommandsUpdate(
+                        session_update="available_commands_update",
+                        available_commands=self.client.available_commands,
+                    )
+                )
+            )
             t1 = asyncio.create_task(
                 binding.on_update(
                     schema.AgentMessageChunk(
@@ -857,7 +969,7 @@ async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_re
                     )
                 )
             )
-            await first_persist_entered.wait()
+            await commands_entered.wait()
             t2 = asyncio.create_task(
                 binding.on_update(
                     schema.AgentMessageChunk(
@@ -866,11 +978,11 @@ async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_re
                 )
             )
             await asyncio.sleep(0)
-            release_persist.set()
-            await asyncio.gather(t1, t2)
+            release_commands.set()
+            await asyncio.gather(t0, t1, t2)
             return schema.PromptResponse(stop_reason="end_turn")
 
-        monkeypatch.setattr(app._store.threads, "save_acp_state", slow_first_prompted_save)
+        monkeypatch.setattr(app._store.threads, "save_acp_state", slow_commands_save)
         monkeypatch.setattr(AcpSessionRuntime, "prompt", two_chunk_prompt)
         ordered = await app.submit_thread(thread_id=ordered_thread.thread_id, prompt="order check")
         assert (await app.wait_root_operation(ordered.receipt_id)).status is RootOperationStatus.completed

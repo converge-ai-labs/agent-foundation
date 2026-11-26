@@ -3719,6 +3719,8 @@
   "New in Inbox": "New in Inbox",
   "Inbox only": "Inbox only",
   "Bot messages, Inbox items, task results and requests for your input on this browser.": "Bot messages, Inbox items, task results and requests for your input on this browser.",
+  "Coordinate agents by default": "Coordinate agents by default",
+  "Preselect Coordinate agents for new project chats. You can turn it off before sending the first message.": "Preselect Coordinate agents for new project chats. You can turn it off before sending the first message.",
   "Automatically generate chat titles": "Automatically generate chat titles",
   "Use an extra model request to name new chats. You can still generate a title manually when this is off.": "Use an extra model request to name new chats. You can still generate a title manually when this is off.",
   "Input predictions": "Input predictions",
