@@ -38,6 +38,7 @@ import { ImagePreview } from "../shell/image-preview";
 import { RetainedImagePreview } from "./image-preview";
 import {
   AttachmentPreviewSheet,
+  attachmentTargetIdentity,
   type AttachmentPreviewTarget,
 } from "./attachment-preview";
 import { isRasterImageAttachment } from "./attachment-preview-policy";
@@ -1771,6 +1772,53 @@ export function Composer({
       )}
       <AttachmentPreviewSheet
         target={drawerPreview}
+        items={(() => {
+          const seen = new Set<string>();
+          const items: AttachmentPreviewTarget[] = [];
+          const metadataById = new Map(
+            attachments.flatMap((item) =>
+              item.data ? [[item.data.attachment_id, item.data] as const] : [],
+            ),
+          );
+          for (const { key, id } of selections) {
+            if (isReadyAttachment(id)) {
+              const meta = metadataById.get(id);
+              if (meta && isRasterImageAttachment(meta.media_type)) continue;
+              const entry: AttachmentPreviewTarget = {
+                kind: "retained",
+                threadId,
+                attachmentId: id,
+                name: meta?.name ?? id,
+                mediaType: meta?.media_type,
+                size: meta?.size,
+                source: meta?.source,
+                snapshotNotice: true,
+              };
+              const identity = attachmentTargetIdentity(entry);
+              if (seen.has(identity)) continue;
+              seen.add(identity);
+              items.push(entry);
+            } else {
+              const upload = draft.uploads.get(key);
+              if (
+                !upload ||
+                upload.status === "failed" ||
+                isRasterImageAttachment(upload.file.type)
+              )
+                continue;
+              const entry: AttachmentPreviewTarget = {
+                kind: "local",
+                file: upload.file,
+              };
+              const identity = attachmentTargetIdentity(entry);
+              if (seen.has(identity)) continue;
+              seen.add(identity);
+              items.push(entry);
+            }
+          }
+          return items;
+        })()}
+        onSelect={setDrawerPreview}
         onClose={() => setDrawerPreview(null)}
       />
     </section>

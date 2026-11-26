@@ -12,6 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { InputContent } from "./input-content";
 import {
   AttachmentPreviewSheet,
+  DOWNLOAD_URL_REVOKE_DELAY_MS,
   type AttachmentPreviewTarget,
 } from "./attachment-preview";
 import { TransportContext } from "../transport/context";
@@ -38,6 +39,7 @@ vi.mock("../configuration/editor", () => ({
     ref?: React.Ref<{
       focus: () => void;
       find: () => void;
+      closeFind: () => boolean;
       goToLine: () => void;
     }>;
   }) => {
@@ -45,6 +47,7 @@ vi.mock("../configuration/editor", () => ({
       (ref as { current: unknown }).current = {
         focus: vi.fn(),
         find: findMock,
+        closeFind: () => false,
         goToLine: vi.fn(),
       };
     }
@@ -211,13 +214,23 @@ it("opens a small text attachment in the right-side drawer, supports copy, wrap,
   ).toBeTruthy();
 
   // One-click download reuses the already-fetched Blob (no second network request)
+  // and keeps the Object URL alive across immediate drawer close.
+  const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
   await user.click(within(dialog).getByRole("button", { name: "Download" }));
   expect(fetch).toHaveBeenCalledTimes(1);
   expect(urls.createObjectURL).toHaveBeenCalledTimes(1);
   expect(clickSpy).toHaveBeenCalledTimes(1);
-  await waitFor(() =>
-    expect(urls.revokeObjectURL).toHaveBeenCalledWith("blob:attachment-1"),
-  );
+  expect(urls.revokeObjectURL).not.toHaveBeenCalled();
+  expect(
+    setTimeoutSpy.mock.calls.some(
+      ([, delay]) => delay === DOWNLOAD_URL_REVOKE_DELAY_MS,
+    ),
+  ).toBe(true);
+
+  // Single-attachment message hides Prev/Next switcher.
+  expect(
+    within(dialog).queryByRole("button", { name: "Next attachment" }),
+  ).toBeNull();
 });
 
 it("defaults Markdown attachments to rendered preview and toggles to raw source", async () => {
@@ -488,4 +501,170 @@ it("previews audio attachments with native controls and revokes the object URL o
 
   view.unmount();
   expect(urls.revokeObjectURL).toHaveBeenCalledWith("blob:attachment-1");
+});
+
+it("prefetches on hover and reopens cached attachments immediately without refetching", async () => {
+  const user = userEvent.setup();
+  const text = "prefetched body";
+  const fetch = vi.fn().mockResolvedValue(makeBlobResponse(text, "text/plain"));
+  const transport = { fetch } as unknown as Transport;
+  const attachment: Schema<"ThreadAttachment"> = {
+    attachment_id: "att-prefetch",
+    name: "quick.txt",
+    media_type: "text/plain",
+    size: text.length,
+  };
+
+  render(
+    <TransportContext value={transport}>
+      <InputContent
+        threadId="thread-cache"
+        renderText={(value) => value}
+        parts={[
+          {
+            kind: "user",
+            text: "summary",
+            metadata: { harness_ui: { attachment } },
+          },
+        ]}
+      />
+    </TransportContext>,
+  );
+
+  const chip = screen.getByRole("button", { name: "quick.txt" });
+  fireEvent.pointerEnter(chip);
+  await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+  // Click opens immediately with prefetched text and zero additional fetch.
+  await user.click(chip);
+  const dialog = await screen.findByRole("dialog", { name: "quick.txt" });
+  const editor = within(dialog).getByRole("textbox", {
+    name: "File text: quick.txt",
+  });
+  expect((editor as HTMLTextAreaElement).value).toBe(text);
+  expect(within(dialog).queryByText("Loading…")).toBeNull();
+  expect(fetch).toHaveBeenCalledTimes(1);
+
+  // Close and reopen: still instant from cache.
+  await user.click(within(dialog).getByRole("button", { name: "Close" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await user.click(chip);
+  const reopened = await screen.findByRole("dialog", { name: "quick.txt" });
+  expect(
+    (
+      within(reopened).getByRole("textbox", {
+        name: "File text: quick.txt",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe(text);
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it("switches seamlessly between sibling non-image attachments with Prev/Next and Alt+Arrow keys", async () => {
+  const user = userEvent.setup();
+  const fetch = vi.fn(async (url: string) =>
+    url.includes("att-1")
+      ? makeBlobResponse("first file body", "text/plain")
+      : makeBlobResponse("# Second Markdown", "text/markdown"),
+  );
+  const first: Schema<"ThreadAttachment"> = {
+    attachment_id: "att-1",
+    name: "first.txt",
+    media_type: "text/plain",
+    size: 15,
+  };
+  const second: Schema<"ThreadAttachment"> = {
+    attachment_id: "att-2",
+    name: "second.md",
+    media_type: "text/markdown",
+    size: 17,
+  };
+
+  render(
+    <TransportContext value={{ fetch } as unknown as Transport}>
+      <InputContent
+        threadId="thread-siblings"
+        renderText={(value) => value}
+        parts={[
+          {
+            kind: "user",
+            text: "part 1",
+            metadata: { harness_ui: { attachment: first } },
+          },
+          {
+            kind: "user",
+            text: "part 2",
+            metadata: { harness_ui: { attachment: second } },
+          },
+        ]}
+      />
+    </TransportContext>,
+  );
+
+  await user.click(screen.getByRole("button", { name: "first.txt" }));
+  const dialog = await screen.findByRole("dialog", { name: "first.txt" });
+  expect(within(dialog).getByText("1 / 2")).toBeTruthy();
+  expect(
+    (
+      within(dialog).getByRole("button", {
+        name: "Previous attachment",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+
+  await user.click(
+    within(dialog).getByRole("button", { name: "Next attachment" }),
+  );
+  await screen.findByRole("dialog", { name: "second.md" });
+  expect(within(dialog).getByText("2 / 2")).toBeTruthy();
+  await within(dialog).findByRole("article", { name: "Markdown preview" });
+
+  // Alt+ArrowLeft switches back without closing the drawer.
+  fireEvent.keyDown(dialog, { key: "ArrowLeft", altKey: true });
+  await screen.findByRole("dialog", { name: "first.txt" });
+  expect(within(dialog).getByText("1 / 2")).toBeTruthy();
+});
+
+it("retains drawer content during close transition until animations finish", async () => {
+  let finishAnimation!: () => void;
+  const fakeAnimation = {
+    finished: new Promise<void>((resolve) => {
+      finishAnimation = resolve;
+    }),
+    cancel: vi.fn(),
+  } as unknown as Animation;
+  Object.defineProperty(Element.prototype, "getAnimations", {
+    configurable: true,
+    value: () => [fakeAnimation],
+  });
+
+  const fetch = vi
+    .fn()
+    .mockResolvedValue(makeBlobResponse("smooth close", "text/plain"));
+  const target: AttachmentPreviewTarget = {
+    kind: "retained",
+    threadId: "thread-anim",
+    attachmentId: "att-anim",
+    name: "smooth.txt",
+    mediaType: "text/plain",
+    size: 12,
+  };
+
+  const view = render(
+    <TransportContext value={{ fetch } as unknown as Transport}>
+      <AttachmentPreviewSheet target={target} onClose={vi.fn()} />
+    </TransportContext>,
+  );
+
+  await screen.findByRole("dialog", { name: "smooth.txt" });
+  // Closing sets target to null, but content remains mounted for slide-out animation.
+  view.rerender(
+    <TransportContext value={{ fetch } as unknown as Transport}>
+      <AttachmentPreviewSheet target={null} onClose={vi.fn()} />
+    </TransportContext>,
+  );
+  expect(screen.getByText("smooth.txt")).toBeTruthy();
+
+  finishAnimation();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 });

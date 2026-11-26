@@ -13,6 +13,8 @@ import {
 } from "a13n-ui";
 import {
   ArrowBendDownLeft,
+  CaretLeft,
+  CaretRight,
   Check,
   Copy,
   DownloadSimple,
@@ -33,8 +35,13 @@ import {
 import { copyText, modifierLabel } from "../platform";
 import { isFindShortcut } from "../platform/find-shortcut";
 import { ErrorNotice } from "../shell/ui";
-import { attachmentPath } from "./attachment-thumbnail";
+import { useSwipeDismiss } from "../shell/swipe-dismiss";
 import { MessageText } from "./message-text";
+import {
+  getCachedAttachment,
+  loadRetainedAttachment,
+  prefetchRetainedAttachment,
+} from "./attachment-cache";
 import {
   classifyAttachmentPreview,
   decodeUtf8Text,
@@ -42,6 +49,8 @@ import {
   TEXT_PREVIEW_LIMIT,
 } from "./attachment-preview-policy";
 import styles from "./attachment-preview.module.css";
+
+export const DOWNLOAD_URL_REVOKE_DELAY_MS = 10_000;
 
 export type AttachmentRelatedPart = {
   kind: string;
@@ -66,11 +75,7 @@ export type AttachmentPreviewTarget =
       file: File;
     };
 
-export function triggerBlobDownload(
-  blob: Blob,
-  filename: string,
-  onPendingUrl?: (revoke: () => void) => void,
-) {
+export function triggerBlobDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -80,17 +85,9 @@ export function triggerBlobDownload(
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-  let revoked = false;
-  const revoke = () => {
-    if (revoked) return;
-    revoked = true;
-    URL.revokeObjectURL(url);
-  };
-  const timer = setTimeout(revoke, 0);
-  onPendingUrl?.(() => {
-    clearTimeout(timer);
-    revoke();
-  });
+  // Keep the temporary Object URL alive long enough for the browser to initiate
+  // saving the file even if the user immediately closes the drawer.
+  setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_REVOKE_DELAY_MS);
 }
 
 type PreviewState =
@@ -106,7 +103,9 @@ type PreviewState =
     }
   | { status: "error"; error: unknown };
 
-function targetIdentity(target: AttachmentPreviewTarget): string {
+export function attachmentTargetIdentity(
+  target: AttachmentPreviewTarget,
+): string {
   return target.kind === "retained"
     ? `retained:${target.threadId}:${target.attachmentId}`
     : `local:${target.file.name}:${target.file.size}:${target.file.lastModified}`;
@@ -114,33 +113,204 @@ function targetIdentity(target: AttachmentPreviewTarget): string {
 
 export function AttachmentPreviewSheet({
   target,
+  items,
+  onSelect,
   onClose,
 }: {
   target: AttachmentPreviewTarget | null;
+  items?: readonly AttachmentPreviewTarget[];
+  onSelect?: (next: AttachmentPreviewTarget) => void;
   onClose: () => void;
 }) {
+  // Retain the last non-null target while the Sheet plays its close slide-out animation.
+  const [renderedTarget, setRenderedTarget] =
+    useState<AttachmentPreviewTarget | null>(target);
+  if (target && target !== renderedTarget) {
+    setRenderedTarget(target);
+  }
+  const activeTarget = target ?? renderedTarget;
+  const editorActionsRef = useRef<{
+    find: () => boolean;
+    closeFind: () => boolean;
+  } | null>(null);
+  const swipeDismiss = useSwipeDismiss(onClose, "right");
+
+  const activeIdentity = activeTarget
+    ? attachmentTargetIdentity(activeTarget)
+    : undefined;
+  const activeIndex =
+    items && activeIdentity
+      ? items.findIndex(
+          (item) => attachmentTargetIdentity(item) === activeIdentity,
+        )
+      : -1;
+  const navigation =
+    items && items.length > 1 && activeIndex >= 0 && onSelect
+      ? {
+          index: activeIndex,
+          total: items.length,
+          previous:
+            activeIndex > 0
+              ? () => onSelect(items[activeIndex - 1]!)
+              : undefined,
+          next:
+            activeIndex < items.length - 1
+              ? () => onSelect(items[activeIndex + 1]!)
+              : undefined,
+          neighbors: [items[activeIndex - 1], items[activeIndex + 1]].filter(
+            (item): item is AttachmentPreviewTarget => !!item,
+          ),
+        }
+      : undefined;
+
   return (
     <Sheet
       open={!!target}
-      onOpenChange={(open) => {
-        if (!open) onClose();
+      onOpenChange={(open, eventDetails) => {
+        if (!open) {
+          if (
+            eventDetails.reason === "escape-key" &&
+            !(
+              eventDetails.event?.target instanceof Element &&
+              eventDetails.event.target.closest('[role="menu"]')
+            ) &&
+            editorActionsRef.current?.closeFind()
+          ) {
+            eventDetails.cancel();
+            return;
+          }
+          onClose();
+        }
+      }}
+      onOpenChangeComplete={(open) => {
+        if (!open) setRenderedTarget(null);
       }}
     >
-      {target && (
-        <AttachmentPreviewBody key={targetIdentity(target)} target={target} />
+      {activeTarget && (
+        <SheetPopup
+          ref={swipeDismiss}
+          side="right"
+          showCloseButton={false}
+          className={styles.drawer}
+          onKeyDownCapture={(event) => {
+            if (event.nativeEvent.isComposing) return;
+            if (
+              event.key === "Escape" &&
+              !(
+                event.target instanceof Element &&
+                event.target.closest('[role="menu"]')
+              ) &&
+              editorActionsRef.current?.closeFind()
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              event.nativeEvent.stopImmediatePropagation?.();
+              return;
+            }
+            if (
+              navigation &&
+              event.altKey &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.shiftKey
+            ) {
+              if (event.key === "ArrowLeft" && navigation.previous) {
+                event.preventDefault();
+                event.stopPropagation();
+                navigation.previous();
+                return;
+              }
+              if (event.key === "ArrowRight" && navigation.next) {
+                event.preventDefault();
+                event.stopPropagation();
+                navigation.next();
+                return;
+              }
+            }
+            if (
+              !isFindShortcut(event.nativeEvent) ||
+              (event.target instanceof Element &&
+                event.target.closest(".cm-editor"))
+            )
+              return;
+            if (editorActionsRef.current?.find()) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+        >
+          <AttachmentPreviewBody
+            key={attachmentTargetIdentity(activeTarget)}
+            target={activeTarget}
+            open={!!target}
+            editorActionsRef={editorActionsRef}
+            navigation={navigation}
+          />
+        </SheetPopup>
       )}
     </Sheet>
   );
 }
 
+type SiblingNavigation = {
+  index: number;
+  total: number;
+  previous?: () => void;
+  next?: () => void;
+  neighbors: AttachmentPreviewTarget[];
+};
+
+function resolveInitialState(
+  name: string,
+  mediaType: string | undefined,
+  size: number | undefined,
+  cached: ReturnType<typeof getCachedAttachment>,
+): PreviewState {
+  const effectiveSize = size ?? cached?.size;
+  const effectiveMediaType = mediaType || cached?.blob.type || undefined;
+  const plan = classifyAttachmentPreview({
+    name,
+    mediaType: effectiveMediaType,
+    size: effectiveSize,
+  });
+  if (plan.kind === "unsupported") return { status: "unsupported" };
+  if (plan.kind === "too-large")
+    return { status: "too-large", category: plan.category };
+  if (plan.kind === "document")
+    return { status: "document", documentKind: plan.documentKind };
+  if (plan.kind === "text" && cached) {
+    if (cached.size > TEXT_PREVIEW_LIMIT)
+      return { status: "too-large", category: "text" };
+    if (cached.text === null) return { status: "binary" };
+    if (typeof cached.text === "string") {
+      return {
+        status: "text",
+        text: cached.text,
+        markdown: plan.markdown,
+        svg: plan.svg || cached.blob.type === "image/svg+xml",
+      };
+    }
+  }
+  return { status: "loading" };
+}
+
 function AttachmentPreviewBody({
   target,
+  open,
+  editorActionsRef,
+  navigation,
 }: {
   target: AttachmentPreviewTarget;
+  open: boolean;
+  editorActionsRef: React.MutableRefObject<{
+    find: () => boolean;
+    closeFind: () => boolean;
+  } | null>;
+  navigation?: SiblingNavigation;
 }) {
   const { t, i18n } = useTranslation();
   const transport = useTransport();
-  const key = targetIdentity(target);
+  const key = attachmentTargetIdentity(target);
   const name = target.kind === "retained" ? target.name : target.file.name;
   const initialMediaType =
     target.kind === "retained"
@@ -153,26 +323,21 @@ function AttachmentPreviewBody({
   const snapshotNotice =
     target.kind === "retained" ? !!target.snapshotNotice : false;
 
+  const initialCached =
+    target.kind === "retained"
+      ? getCachedAttachment(transport, target.threadId, target.attachmentId)
+      : undefined;
+
   const [resolvedSize, setResolvedSize] = useState<number | undefined>(
-    initialSize,
+    initialSize ?? initialCached?.size,
   );
   const [resolvedMediaType, setResolvedMediaType] = useState<
     string | undefined
-  >(initialMediaType);
+  >(initialMediaType || initialCached?.blob.type || undefined);
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<PreviewState>(() => {
-    const plan = classifyAttachmentPreview({
-      name,
-      mediaType: initialMediaType,
-      size: initialSize,
-    });
-    if (plan.kind === "unsupported") return { status: "unsupported" };
-    if (plan.kind === "too-large")
-      return { status: "too-large", category: plan.category };
-    if (plan.kind === "document")
-      return { status: "document", documentKind: plan.documentKind };
-    return { status: "loading" };
-  });
+  const [state, setState] = useState<PreviewState>(() =>
+    resolveInitialState(name, initialMediaType, initialSize, initialCached),
+  );
 
   const [wrap, setWrap] = useState(() =>
     /\.(?:md|markdown|txt|log|csv)$/i.test(name),
@@ -188,18 +353,28 @@ function AttachmentPreviewBody({
 
   const editor = useRef<SourceEditorHandle>(null);
   const player = useRef<HTMLMediaElement | null>(null);
-  const blobCache = useRef<{ key: string; blob: Blob } | null>(null);
   const downloadController = useRef<AbortController | null>(null);
-  const pendingRevokes = useRef(new Set<() => void>());
+
+  const isText = state.status === "text";
+  const hasRichPreview = isText && (state.markdown || state.svg);
+  const mode = chosenMode ?? (hasRichPreview ? "preview" : "text");
+  const showSourceToolbar = isText && mode === "text";
 
   useEffect(() => {
-    const revokes = pendingRevokes.current;
-    return () => {
-      downloadController.current?.abort();
-      for (const revoke of revokes) revoke();
-      revokes.clear();
+    editorActionsRef.current = {
+      find: () => {
+        if (!showSourceToolbar || !editor.current) return false;
+        editor.current.find();
+        return true;
+      },
+      closeFind: () => editor.current?.closeFind() ?? false,
     };
-  }, []);
+    return () => {
+      editorActionsRef.current = null;
+    };
+  }, [editorActionsRef, showSourceToolbar]);
+
+  useEffect(() => () => downloadController.current?.abort(), []);
 
   useEffect(() => {
     if (copyState !== "copied") return;
@@ -207,27 +382,47 @@ function AttachmentPreviewBody({
     return () => clearTimeout(timer);
   }, [copyState]);
 
+  // Quietly warm immediate sibling text attachments so Prev/Next feels instant.
+  useEffect(() => {
+    if (!open || !navigation?.neighbors.length) return;
+    for (const neighbor of navigation.neighbors) {
+      if (neighbor.kind === "retained") {
+        prefetchRetainedAttachment(transport, neighbor.threadId, {
+          attachment_id: neighbor.attachmentId,
+          name: neighbor.name,
+          media_type: neighbor.mediaType,
+          size: neighbor.size,
+        });
+      }
+    }
+  }, [open, transport, key, navigation?.neighbors]);
+
   const loadBlob = async (signal?: AbortSignal): Promise<Blob> => {
     if (target.kind === "local") return target.file;
-    if (blobCache.current?.key === key) return blobCache.current.blob;
-    const response = await transport.fetch(
-      attachmentPath(target.threadId, target.attachmentId),
+    const entry = await loadRetainedAttachment(
+      transport,
+      target.threadId,
+      target.attachmentId,
       { signal },
     );
-    const blob = await response.blob();
     if (!signal?.aborted) {
-      blobCache.current = { key, blob };
-      if (initialSize === undefined) setResolvedSize(blob.size);
-      if (!initialMediaType && blob.type) setResolvedMediaType(blob.type);
+      if (initialSize === undefined) setResolvedSize(entry.size);
+      if (!initialMediaType && entry.blob.type)
+        setResolvedMediaType(entry.blob.type);
     }
-    return blob;
+    return entry.blob;
   };
 
   useEffect(() => {
+    if (!open) return;
+    const cached =
+      target.kind === "retained"
+        ? getCachedAttachment(transport, target.threadId, target.attachmentId)
+        : undefined;
     const plan = classifyAttachmentPreview({
       name,
-      mediaType: initialMediaType,
-      size: initialSize,
+      mediaType: initialMediaType || cached?.blob.type || undefined,
+      size: initialSize ?? cached?.size,
     });
     if (plan.kind === "unsupported") {
       setState({ status: "unsupported" });
@@ -241,15 +436,91 @@ function AttachmentPreviewBody({
       setState({ status: "document", documentKind: plan.documentKind });
       return;
     }
+    if (plan.kind === "text" && cached) {
+      if (cached.size > TEXT_PREVIEW_LIMIT) {
+        setState({ status: "too-large", category: "text" });
+        return;
+      }
+      if (cached.text === null) {
+        setState({ status: "binary" });
+        return;
+      }
+      if (typeof cached.text === "string") {
+        setState({
+          status: "text",
+          text: cached.text,
+          markdown: plan.markdown,
+          svg: plan.svg || cached.blob.type === "image/svg+xml",
+        });
+        return;
+      }
+    }
+
     const controller = new AbortController();
     let mediaUrl: string | undefined;
     setState({ status: "loading" });
     setMediaDecodeError(false);
 
     (async () => {
-      const blob = await loadBlob(controller.signal);
-      if (controller.signal.aborted) return;
+      if (target.kind === "retained") {
+        const entry = await loadRetainedAttachment(
+          transport,
+          target.threadId,
+          target.attachmentId,
+          {
+            decodeText: plan.kind === "text",
+            signal: controller.signal,
+          },
+        );
+        if (controller.signal.aborted) return;
+        if (initialSize === undefined) setResolvedSize(entry.size);
+        if (!initialMediaType && entry.blob.type)
+          setResolvedMediaType(entry.blob.type);
 
+        const effectiveMedia =
+          plan.kind === "media"
+            ? plan.mediaKind
+            : !initialMediaType && !/\.ts$/i.test(name)
+              ? mediaKind(entry.blob.type)
+              : null;
+        if (effectiveMedia) {
+          if (entry.size > MAX_MEDIA_BYTES) {
+            setState({ status: "too-large", category: effectiveMedia });
+            return;
+          }
+          mediaUrl = URL.createObjectURL(entry.blob);
+          setState({
+            status: "media",
+            mediaKind: effectiveMedia,
+            url: mediaUrl,
+          });
+          return;
+        }
+        if (entry.size > TEXT_PREVIEW_LIMIT) {
+          setState({ status: "too-large", category: "text" });
+          return;
+        }
+        const decoded =
+          entry.text !== undefined
+            ? entry.text
+            : decodeUtf8Text(await entry.blob.arrayBuffer());
+        if (controller.signal.aborted) return;
+        if (decoded === null) {
+          setState({ status: "binary" });
+          return;
+        }
+        setState({
+          status: "text",
+          text: decoded,
+          markdown: plan.kind === "text" && plan.markdown,
+          svg:
+            (plan.kind === "text" && plan.svg) ||
+            entry.blob.type === "image/svg+xml",
+        });
+        return;
+      }
+
+      const blob = target.file;
       const effectiveMedia =
         plan.kind === "media"
           ? plan.mediaKind
@@ -269,7 +540,6 @@ function AttachmentPreviewBody({
         });
         return;
       }
-
       if (blob.size > TEXT_PREVIEW_LIMIT) {
         setState({ status: "too-large", category: "text" });
         return;
@@ -297,7 +567,7 @@ function AttachmentPreviewBody({
       controller.abort();
       if (mediaUrl) URL.revokeObjectURL(mediaUrl);
     };
-  }, [transport, key, name, initialMediaType, initialSize, attempt]);
+  }, [open, transport, key, name, initialMediaType, initialSize, attempt]);
 
   useEffect(() => {
     const element = player.current;
@@ -319,20 +589,13 @@ function AttachmentPreviewBody({
     try {
       const blob = await loadBlob(controller.signal);
       if (controller.signal.aborted) return;
-      triggerBlobDownload(blob, name, (revoke) => {
-        pendingRevokes.current.add(revoke);
-      });
+      triggerBlobDownload(blob, name);
     } catch (failure) {
       if (!controller.signal.aborted) setDownloadError(failure);
     } finally {
       if (!controller.signal.aborted) setDownloading(false);
     }
   };
-
-  const isText = state.status === "text";
-  const hasRichPreview = isText && (state.markdown || state.svg);
-  const mode = chosenMode ?? (hasRichPreview ? "preview" : "text");
-  const showSourceToolbar = isText && mode === "text";
 
   const copyLabel = copyState === "copied" ? t("Copied") : t("Copy");
   const formattedSize =
@@ -370,24 +633,7 @@ function AttachmentPreviewBody({
       : "";
 
   return (
-    <SheetPopup
-      side="right"
-      showCloseButton={false}
-      className={styles.drawer}
-      onKeyDownCapture={(event) => {
-        if (
-          !showSourceToolbar ||
-          !editor.current ||
-          !isFindShortcut(event.nativeEvent) ||
-          (event.target instanceof Element &&
-            event.target.closest(".cm-editor"))
-        )
-          return;
-        event.preventDefault();
-        event.stopPropagation();
-        editor.current.find();
-      }}
-    >
+    <>
       <header className={styles.header}>
         <div className={styles.identity}>
           <span className={styles.fileIcon} aria-hidden="true">
@@ -402,13 +648,48 @@ function AttachmentPreviewBody({
             </SheetDescription>
           </div>
         </div>
-        <SheetClose
-          aria-label={t("Close")}
-          className={styles.closeButton}
-          render={<Button size="icon-sm" variant="ghost" />}
-        >
-          <X />
-        </SheetClose>
+        <div className={styles.headerControls}>
+          {navigation && (
+            <div className={styles.navSwitcher}>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t("Previous attachment")}
+                title={t("Previous attachment (Alt+Left)")}
+                disabled={!navigation.previous}
+                onClick={navigation.previous}
+              >
+                <CaretLeft />
+              </Button>
+              <span
+                className={styles.navCount}
+                aria-label={t("Attachment {{index}} of {{total}}", {
+                  index: navigation.index + 1,
+                  total: navigation.total,
+                })}
+              >
+                {navigation.index + 1} / {navigation.total}
+              </span>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t("Next attachment")}
+                title={t("Next attachment (Alt+Right)")}
+                disabled={!navigation.next}
+                onClick={navigation.next}
+              >
+                <CaretRight />
+              </Button>
+            </div>
+          )}
+          <SheetClose
+            aria-label={t("Close")}
+            className={styles.closeButton}
+            render={<Button size="icon-sm" variant="ghost" />}
+          >
+            <X />
+          </SheetClose>
+        </div>
       </header>
 
       <div className={styles.toolbar}>
@@ -754,6 +1035,6 @@ function AttachmentPreviewBody({
           </div>
         )}
       </div>
-    </SheetPopup>
+    </>
   );
 }

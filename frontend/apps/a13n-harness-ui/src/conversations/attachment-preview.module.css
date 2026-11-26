@@ -5,10 +5,13 @@
   color: var(--a13n-text);
   border-inline-start: 1px solid var(--a13n-border);
   box-shadow: var(--a13n-shadow-floating);
-  transition-property: opacity, translate;
+  transition:
+    translate 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease-out;
   overflow: hidden;
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
+  touch-action: pan-y;
 }
 .drawer:is([data-starting-style], [data-ending-style]) {
   translate: 100% 0;
@@ -21,6 +24,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .drawer {
+    transition: none;
+  }
   .drawer:is([data-starting-style], [data-ending-style]) {
     translate: none;
   }
@@ -70,6 +76,27 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.headerControls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.navSwitcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding-inline-end: 6px;
+  margin-inline-end: 2px;
+  border-inline-end: 1px solid var(--a13n-border-soft);
+}
+.navCount {
+  min-width: 34px;
+  text-align: center;
+  font-size: calc(var(--a13n-text-body) * 12 / 14);
+  font-variant-numeric: tabular-nums;
+  color: var(--a13n-secondary);
 }
 .closeButton {
   flex-shrink: 0;
@@ -138,6 +165,15 @@
   gap: 10px;
   color: var(--a13n-secondary);
   font-size: calc(var(--a13n-text-body) * 13 / 14);
+  animation: revealLoading 0s 180ms both;
+}
+@keyframes revealLoading {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .loadingMark {
   display: grid;

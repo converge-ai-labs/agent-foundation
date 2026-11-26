@@ -16,6 +16,7 @@ import type { Schema, Transport } from "../transport/client";
 import type { ThreadDraft } from "./draft";
 import { inlinePattern, isReadyAttachment } from "./inline-attachments";
 import { retainedImage } from "./attachment-thumbnail";
+import { prefetchRetainedAttachment } from "./attachment-cache";
 import { isRasterImageAttachment } from "./attachment-preview-policy";
 import styles from "./conversation.module.css";
 import chipRemove from "./chip-remove.module.css";
@@ -127,6 +128,20 @@ class AttachmentWidget extends WidgetType {
       }
     }
     open.append(document.createElement("span"));
+    if (
+      isReadyAttachment(this.id) &&
+      attachment &&
+      !isRasterImageAttachment(attachment.media_type)
+    ) {
+      const prefetch = () =>
+        prefetchRetainedAttachment(
+          this.context.transport,
+          this.context.threadId,
+          attachment,
+        );
+      open.onpointerenter = prefetch;
+      open.onfocus = prefetch;
+    }
     open.onclick = () => {
       if (isReadyAttachment(this.id)) this.context.preview(this.id, attachment);
       else {
