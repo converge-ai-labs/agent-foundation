@@ -419,6 +419,7 @@ it("enables Goal intent from its option label, keeps it visible and disables it 
                 ? { state: "running", receipt_id: "receipt-layout" }
                 : { state: "inactive" }
             }
+            coordinator={{ active: false, available: true }}
             leadingControls={<span>Full Control</span>}
             controls={() => <span>Agent and model summary</span>}
             profile={{ display_name: "Test", color: "#2563eb" }}
@@ -431,10 +432,35 @@ it("enables Goal intent from its option label, keeps it visible and disables it 
   );
   const view = render(renderComposer());
   const editor = screen.getByRole("textbox", { name: "Message" });
-  fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  const options = screen.getByRole("button", { name: "Chat options" });
+  fireEvent.click(options);
   const goal = screen.getByRole("switch", { name: "Goal" });
   await userEvent.click(screen.getByText("Goal"));
   expect(goal.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(screen.getByRole("switch", { name: "Coordinate agents" }));
+  fireEvent.click(options);
+  const coordinate = screen.getByRole("button", {
+    name: "Turn off agent coordination",
+  });
+  const goalMode = screen.getByRole("button", {
+    name: "Turn off keep working",
+  });
+  expect(coordinate.textContent).toBe("Coordinator");
+  expect(options.parentElement).toBe(coordinate.parentElement);
+  expect(
+    options.compareDocumentPosition(coordinate) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(coordinate.nextElementSibling).toBe(goalMode);
+  expect(
+    goalMode.nextElementSibling?.contains(
+      screen.getByText("Agent and model summary"),
+    ),
+  ).toBe(true);
+  await userEvent.click(coordinate);
+  expect(document.activeElement).toBe(options);
+  expect(draft.coordinator).toBe(false);
+  expect(draft.mode).toBe("goal");
   expect(draft.doc.getText("text").toString()).toBe("");
   act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));
   expect(
@@ -453,7 +479,7 @@ it("enables Goal intent from its option label, keeps it visible and disables it 
     "Verify the full objective",
   );
   view.rerender(renderComposer(true));
-  expect(goal.getAttribute("aria-disabled")).toBe("true");
+  expect((goalMode as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   view.unmount();
   query.clear();
@@ -1103,9 +1129,10 @@ it("explains unavailable send conditions without consuming the authored draft", 
       </TransportContext>
     </QueryClientProvider>,
   );
-  expect(
-    screen.getByText("Waiting for the shared draft connection…"),
-  ).toBeTruthy();
+  const send = screen.getByRole<HTMLButtonElement>("button", { name: "Send" });
+  expect(send.disabled).toBe(true);
+  expect(send.title).toBe("Waiting for the shared draft connection…");
+  expect(screen.queryByRole("status")).toBeNull();
   const editor = screen.getByRole("textbox", { name: "Shared prompt" });
   fireEvent.keyDown(editor, { key: "Enter" });
   act(() =>
@@ -1116,7 +1143,9 @@ it("explains unavailable send conditions without consuming the authored draft", 
       update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
     }),
   );
-  expect(screen.getByText("Updating chat settings…")).toBeTruthy();
+  expect(send.disabled).toBe(true);
+  expect(send.title).toBe("Updating chat settings…");
+  expect(screen.queryByRole("status")).toBeNull();
   fireEvent.keyDown(editor, { key: "Enter" });
   expect(post).not.toHaveBeenCalled();
   expect(values(draft.doc).prompt).toBe("Keep my input");
@@ -1300,9 +1329,7 @@ it("keeps unsent input and blocks Send while clearing context", async () => {
   )!;
   expect(send.disabled).toBe(true);
   expect(send.title).toBe("Clearing context…");
-  expect(view.container.querySelector('[role="status"]')?.textContent).toBe(
-    "Clearing context…",
-  );
+  expect(screen.queryByRole("status")).toBeNull();
   fireEvent.click(send);
   fireEvent.keyDown(view.container.querySelector('[role="textbox"]')!, {
     key: "Enter",
@@ -1365,9 +1392,9 @@ it.each(["accepted", "promotion-unknown", "submit-rejected"] as const)(
               threadId="thread-one"
               activity={{ state: "inactive" }}
               coordinator={{ active: false, available: true }}
-              renderHeader={(modes) => (
+              renderHeader={(identity) => (
                 <div role="group" aria-label="Composer status">
-                  {modes}
+                  {identity}
                 </div>
               )}
               profile={{ display_name: "Test", color: "#000000" }}
@@ -1385,7 +1412,7 @@ it.each(["accepted", "promotion-unknown", "submit-rejected"] as const)(
       header.contains(
         screen.getByRole("button", { name: "Turn off agent coordination" }),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(calls).toEqual([]);
     expect(screen.queryByRole("dialog", { name: /Make this/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1433,6 +1460,9 @@ it.each(["accepted", "promotion-unknown", "submit-rejected"] as const)(
         screen.queryByRole("switch", { name: "Coordinate agents" }),
       ).toBeNull();
       expect(header.contains(screen.getByText("Coordinator"))).toBe(true);
+      expect(
+        screen.queryByRole("button", { name: "Turn off agent coordination" }),
+      ).toBeNull();
       if (outcome === "submit-rejected") {
         expect(values(draft.doc).prompt).toBe("Coordinate this work");
         rejectSubmission = false;
@@ -1847,7 +1877,7 @@ it.each([false, true])(
   },
 );
 
-it("keeps loading runBlocks quiet when empty, shows spinner status with input, and renders actionable error blocks", async () => {
+it("blocks sending without a loading banner and renders actionable error blocks", async () => {
   const { MemoryRouter } = await import("react-router");
   const draft = new ThreadDraft();
   const post = vi.fn();
@@ -1893,11 +1923,10 @@ it("keeps loading runBlocks quiet when empty, shows spinner status with input, a
   expect(send.disabled).toBe(true);
   expect(send.title).toBe("Loading Antigravity options…");
 
-  // Once input is present, show single quiet status row with spinner and block Enter.
   act(() => draft.doc.getText("text").insert(0, "Run tests"));
-  const status = screen.getByRole("status");
-  expect(status.textContent).toBe("Loading Antigravity options…");
-  expect(status.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+  expect(screen.queryByRole("status")).toBeNull();
+  expect(send.disabled).toBe(true);
+  expect(send.title).toBe("Loading Antigravity options…");
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), {
     key: "Enter",
   });
@@ -1987,7 +2016,14 @@ it("enforces blocking precedence across reconnect, runBlock, coordinator reasons
   });
   draft.status = "Disconnected";
   const view = render(renderComposer({}));
-  expect(screen.getByRole("status").textContent).toBe(
+  const expectBlockedWithoutBanner = (name: string, reason: string) => {
+    const button = screen.getByRole<HTMLButtonElement>("button", { name });
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe(reason);
+    expect(screen.queryByRole("status")).toBeNull();
+  };
+  expectBlockedWithoutBanner(
+    "Send",
     "Waiting for the shared draft to reconnect…",
   );
 
@@ -2007,9 +2043,7 @@ it("enforces blocking precedence across reconnect, runBlock, coordinator reasons
       },
     }),
   );
-  expect(screen.getByRole("status").textContent).toBe(
-    "Updating chat settings…",
-  );
+  expectBlockedWithoutBanner("Send", "Updating chat settings…");
   expect(
     screen.queryByText("Choose a project to coordinate agents."),
   ).toBeNull();
@@ -2056,7 +2090,7 @@ it("enforces blocking precedence across reconnect, runBlock, coordinator reasons
 
   // Busy non-steerable distinctions + queuedInput.locked exclusion.
   view.rerender(renderComposer({ activity: { state: "preparing" } }));
-  expect(screen.getByRole("status").textContent).toBe("Starting operation…");
+  expectBlockedWithoutBanner("Steer", "Starting operation…");
 
   view.rerender(
     renderComposer({
@@ -2064,7 +2098,8 @@ it("enforces blocking precedence across reconnect, runBlock, coordinator reasons
       externalAgent: true,
     }),
   );
-  expect(screen.getByRole("status").textContent).toBe(
+  expectBlockedWithoutBanner(
+    "Steer",
     "Waiting for the current response to finish…",
   );
 
@@ -2074,7 +2109,8 @@ it("enforces blocking precedence across reconnect, runBlock, coordinator reasons
       externalAgent: false,
     }),
   );
-  expect(screen.getByRole("status").textContent).toBe(
+  expectBlockedWithoutBanner(
+    "Steer",
     "This operation cannot accept another message yet.",
   );
 

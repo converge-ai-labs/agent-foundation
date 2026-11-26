@@ -1074,9 +1074,9 @@ function ConversationContent({
   const showComposer = canCompose && !thread?.archived;
   const renderWorkInspector =
     !readOnly && detail.data
-      ? (modes?: ReactNode) => (
+      ? (identity?: ReactNode) => (
           <WorkInspector
-            composerModes={modes}
+            composerIdentity={identity}
             className={showComposer ? styles.composerWorkInspector : undefined}
             showDetails={!isBot || debug.enabled}
             threadId={threadId}
@@ -1499,11 +1499,7 @@ function ConversationContent({
                             if (acpOptionsEnabled && !acpActive)
                               void acpOptions.refetch({ cancelRefetch: false });
                           }}
-                          externalLoading={
-                            acpOptionsEnabled &&
-                            !acpActive &&
-                            (acpChange.isPending || acpOptions.isFetching)
-                          }
+                          externalLoading={acpBlock?.kind === "loading"}
                           externalModel={acpOptionLabel(
                             modelOption,
                             t("No model selected"),

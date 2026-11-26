@@ -6,7 +6,6 @@ import type { DictationTarget } from "./dictation-context";
 import { useTranslation } from "../i18n";
 import { composerMessage, stopMessage } from "./composer-messages";
 import {
-  cloneElement,
   createContext,
   useContext,
   useEffect,
@@ -511,7 +510,7 @@ export function Composer({
   onReviewOutcome?: () => void;
   controls?: () => ReactNode;
   leadingControls?: ReactNode;
-  renderHeader?: (modes: ReactNode) => ReactNode;
+  renderHeader?: (identity: ReactNode) => ReactNode;
 }) {
   const canRun = !runBlock;
   const { t } = useTranslation();
@@ -548,6 +547,7 @@ export function Composer({
     coordinatorStatus.data?.thread.role === "coordinator";
   const coordinatorRequested =
     draft.coordinator ?? coordinator?.defaultEnabled ?? false;
+  const taskOptionsTrigger = useRef<HTMLButtonElement>(null);
   const coordinatorBlocked =
     draft.coordinatorUncertain ||
     (!owner &&
@@ -880,17 +880,14 @@ export function Composer({
                             : t(
                                 "This operation cannot accept another message yet.",
                               ),
-                      showWhenEmpty: false,
-                      coveredByFeedback:
-                        activity.state === "preparing" && !!feedback,
                     }
                   : null
       : null;
   const showActiveBlock =
     !!activeBlock &&
+    activeBlock.kind !== "loading" &&
     !activeBlock.coveredByFeedback &&
-    (hasInput ||
-      (activeBlock.showWhenEmpty ?? activeBlock.kind !== "loading")) &&
+    (hasInput || activeBlock.showWhenEmpty !== false) &&
     !error &&
     draft.submission.kind !== "rejected";
   const renderBlockAction = (
@@ -1243,25 +1240,11 @@ export function Composer({
       snapshotNotice: true,
     });
   }
-  const goalToggle = (
-    <Button
-      variant={draft.mode === "goal" ? "secondary" : "ghost"}
-      size="sm"
-      className={styles.goalButton}
-      aria-pressed={draft.mode === "goal"}
-      title={t(
-        "Keep working until the goal is done or the follow-up limit is reached.",
-      )}
-      disabled={!canRun || busy || preparing || pending || unknown}
-      onClick={() => {
-        draft.mode = draft.mode === "goal" ? "normal" : "goal";
-        draft.notify();
-      }}
-    >
-      <Target aria-hidden weight={draft.mode === "goal" ? "fill" : "regular"} />
-      {t("Goal")}
-    </Button>
-  );
+  const goalDisabled = !canRun || busy || preparing || pending || unknown;
+  const setGoalMode = (enabled: boolean) => {
+    draft.mode = enabled ? "goal" : "normal";
+    draft.notify();
+  };
   const coordinatorDisabled =
     draft.coordinatorUncertain ||
     !!coordinator?.locked ||
@@ -1270,11 +1253,12 @@ export function Composer({
     pending ||
     unknown ||
     (!coordinatorRequested && (!canRun || !coordinator?.available));
-  const toggleCoordinator = () => {
-    draft.coordinator = !coordinatorRequested;
+  const setCoordinatorMode = (enabled: boolean) => {
+    draft.coordinator = enabled;
     draft.notify();
   };
-  const ownerControl = owner && (
+  const canChooseCoordinator = !owner && !coordinatorActive && coordinator;
+  const identity = owner ? (
     <span
       className={styles.workerIdentity}
       title={t("Managed by {{name}}", { name: owner.title })}
@@ -1294,58 +1278,14 @@ export function Composer({
         </Button>
       )}
     </span>
-  );
-  const coordinatorControl =
-    !owner &&
-    coordinator &&
-    (coordinatorActive ? (
-      <span
-        className={styles.coordinatorIdentity}
-        title={t("This chat is a coordinator. This can't be undone.")}
-      >
-        <CoordinatorIcon size={16} /> <span>{t("Coordinator")}</span>
-      </span>
-    ) : (
-      <Button
-        variant={coordinatorRequested ? "secondary" : "ghost"}
-        size="sm"
-        className={styles.goalButton}
-        aria-pressed={coordinatorRequested}
-        title={
-          coordinator.available
-            ? t(
-                "Plan and delegate work to agents. Stays on after your first message.",
-              )
-            : t(
-                "Choose a project, finish active work and answer pending requests first.",
-              )
-        }
-        disabled={coordinatorDisabled}
-        onClick={toggleCoordinator}
-      >
-        <CoordinatorIcon size={16} /> {t("Coordinate agents")}
-      </Button>
-    ));
-  const modes = (draft.mode === "goal" ||
-    ownerControl ||
-    coordinatorActive ||
-    coordinatorRequested) && (
-    <div className={styles.composerModes}>
-      {!transport.shareId &&
-        draft.mode === "goal" &&
-        cloneElement(goalToggle, {
-          "aria-label": t("Turn off keep working"),
-        })}
-      {ownerControl ||
-        (coordinatorActive
-          ? coordinatorControl
-          : coordinatorRequested && coordinatorControl
-            ? cloneElement(coordinatorControl, {
-                "aria-label": t("Turn off agent coordination"),
-              })
-            : null)}
-    </div>
-  );
+  ) : coordinatorActive ? (
+    <span
+      className={styles.coordinatorIdentity}
+      title={t("This chat is a coordinator. This can't be undone.")}
+    >
+      <CoordinatorIcon size={16} /> <span>{t("Coordinator")}</span>
+    </span>
+  ) : null;
   return (
     <section
       className={styles.composer}
@@ -1404,36 +1344,26 @@ export function Composer({
             </Button>
           </div>
         )}
-        {showActiveBlock &&
-          activeBlock &&
-          (activeBlock.kind === "loading" ? (
-            <p role="status" className={styles.composerLoading}>
-              <CircleNotch
-                className={styles.threadRunning}
-                aria-hidden="true"
-              />
-              <span>{activeBlock.message}</span>
-            </p>
-          ) : (
-            <div role="alert" className={styles.composerBlock}>
-              <div className={styles.composerBlockText}>
-                <p>{activeBlock.message}</p>
-                {activeBlock.detail && (
-                  <small className={styles.composerBlockDetail}>
-                    {activeBlock.detail}
-                  </small>
-                )}
-              </div>
-              {(activeBlock.action || activeBlock.secondaryAction) && (
-                <div className={styles.composerBlockActions}>
-                  {activeBlock.action &&
-                    renderBlockAction(activeBlock.action, "outline")}
-                  {activeBlock.secondaryAction &&
-                    renderBlockAction(activeBlock.secondaryAction, "ghost")}
-                </div>
+        {showActiveBlock && (
+          <div role="alert" className={styles.composerBlock}>
+            <div className={styles.composerBlockText}>
+              <p>{activeBlock.message}</p>
+              {activeBlock.detail && (
+                <small className={styles.composerBlockDetail}>
+                  {activeBlock.detail}
+                </small>
               )}
             </div>
-          ))}
+            {(activeBlock.action || activeBlock.secondaryAction) && (
+              <div className={styles.composerBlockActions}>
+                {activeBlock.action &&
+                  renderBlockAction(activeBlock.action, "outline")}
+                {activeBlock.secondaryAction &&
+                  renderBlockAction(activeBlock.secondaryAction, "ghost")}
+              </div>
+            )}
+          </div>
+        )}
         {interrupt && (
           <div className={styles.composerStatus}>
             <p role="status">{t("Interrupting to send…")}</p>
@@ -1542,8 +1472,8 @@ export function Composer({
       </div>
       <div className={styles.composerBody}>
         {renderHeader
-          ? renderHeader(modes)
-          : modes && <div className={styles.composerHeader}>{modes}</div>}
+          ? renderHeader(identity)
+          : identity && <div className={styles.composerHeader}>{identity}</div>}
         <div
           className={styles.composerInput}
           data-dictating={dictating || undefined}
@@ -1668,36 +1598,35 @@ export function Composer({
             </span>
             {!transport.shareId && !queuedInput && (
               <TaskOptions
+                triggerRef={taskOptionsTrigger}
                 coordinatorEnabled={coordinatorRequested}
                 goal={
                   <Switch
                     aria-label={t("Goal")}
-                    title={goalToggle.props.title}
+                    title={t(
+                      "Keep working until the goal is done or the follow-up limit is reached.",
+                    )}
                     checked={draft.mode === "goal"}
-                    disabled={
-                      !canRun || busy || preparing || pending || unknown
-                    }
-                    onCheckedChange={(enabled) => {
-                      draft.mode = enabled ? "goal" : "normal";
-                      draft.notify();
-                    }}
+                    disabled={goalDisabled}
+                    onCheckedChange={setGoalMode}
                   />
                 }
                 coordinator={
-                  !owner && !coordinatorActive && coordinator ? (
+                  canChooseCoordinator ? (
                     <Switch
                       aria-label={t("Coordinate agents")}
                       title={
-                        coordinatorControl
-                          ? coordinatorControl.props.title
-                          : undefined
+                        canChooseCoordinator.available
+                          ? t(
+                              "Plan and delegate work to agents. Stays on after your first message.",
+                            )
+                          : t(
+                              "Choose a project, finish active work and answer pending requests first.",
+                            )
                       }
                       checked={coordinatorRequested}
                       disabled={coordinatorDisabled}
-                      onCheckedChange={(enabled) => {
-                        draft.coordinator = enabled;
-                        draft.notify();
-                      }}
+                      onCheckedChange={setCoordinatorMode}
                     />
                   ) : undefined
                 }
@@ -1721,6 +1650,44 @@ export function Composer({
                   )
                 }
               />
+            )}
+            {!transport.shareId &&
+              canChooseCoordinator &&
+              coordinatorRequested && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={styles.composerMode}
+                  aria-pressed={true}
+                  aria-label={t("Turn off agent coordination")}
+                  title={t("Turn off agent coordination")}
+                  disabled={coordinatorDisabled}
+                  onClick={() => {
+                    setCoordinatorMode(false);
+                    taskOptionsTrigger.current?.focus();
+                  }}
+                >
+                  <CoordinatorIcon size={14} />
+                  <span>{t("Coordinator")}</span>
+                </Button>
+              )}
+            {!transport.shareId && draft.mode === "goal" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={styles.composerMode}
+                aria-pressed={true}
+                aria-label={t("Turn off keep working")}
+                title={t("Turn off keep working")}
+                disabled={goalDisabled}
+                onClick={() => {
+                  setGoalMode(false);
+                  taskOptionsTrigger.current?.focus();
+                }}
+              >
+                <Target aria-hidden weight="fill" />
+                <span>{t("Goal")}</span>
+              </Button>
             )}
             <div className={styles.composerChoices}>{controls?.()}</div>
             {dictation && !transport.shareId && (

@@ -294,6 +294,10 @@ it("classifies ACP loading, refreshing, missing-agent, auth, and generic errors 
     kind: "loading",
     message: "Refreshing Antigravity options…",
   });
+  expect(acpRunBlock({ ...base, hasData: true, updating: true })).toEqual({
+    kind: "loading",
+    message: "Updating Antigravity options…",
+  });
 
   // TanStack Query v5 retry: isFetching takes precedence over retained isError.
   expect(
@@ -314,6 +318,7 @@ it("classifies ACP loading, refreshing, missing-agent, auth, and generic errors 
     error: new ApiError("Not found", 404, "acp_agent_missing"),
   });
   expect(missing?.kind).toBe("error");
+  expect(missing?.coveredByFeedback).toBeUndefined();
   expect(missing?.message).toBe(
     "The selected ACP agent is no longer available. Choose another agent or check Settings.",
   );
@@ -325,6 +330,7 @@ it("classifies ACP loading, refreshing, missing-agent, auth, and generic errors 
     error: new ApiError("ACP daemon closed", 503, "acp_session_unavailable"),
   });
   expect(generic?.kind).toBe("error");
+  expect(generic?.coveredByFeedback).toBeUndefined();
   expect(generic?.message).toBe("Could not load Antigravity options.");
   expect(generic?.detail).toBe("ACP daemon closed");
   expect(generic?.action?.label).toBe("Retry");
@@ -335,6 +341,7 @@ it("classifies ACP loading, refreshing, missing-agent, auth, and generic errors 
     error: new ApiError("Auth needed", 401, "acp_auth_required"),
   });
   expect(authWithoutPath?.kind).toBe("action_required");
+  expect(authWithoutPath?.coveredByFeedback).toBeUndefined();
   expect(authWithoutPath?.action?.label).toBe("Retry");
   expect(authWithoutPath?.secondaryAction).toBeUndefined();
 

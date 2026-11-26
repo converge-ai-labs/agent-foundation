@@ -1747,7 +1747,7 @@ it("retains older pages and the reading position across overlapping and disconne
   expect(screen.getAllByText("Publication 0")).toHaveLength(1);
 });
 
-it("shows explicit Bot loading status while /api/bot is pending and keeps empty composer quiet", async () => {
+it("blocks sending without a composer banner while /api/bot is loading", async () => {
   let releaseBot!: () => void;
   botReadGate = new Promise<void>((resolve) => {
     releaseBot = resolve;
@@ -1762,9 +1762,9 @@ it("shows explicit Bot loading status while /api/bot is pending and keeps empty 
   expect(send().title).toBe("Loading Bot status…");
   expect(composer().querySelector('[role="status"]')).toBeNull();
   typeMessage("Check inbox");
-  expect(composer().querySelector('[role="status"]')?.textContent).toBe(
-    "Loading Bot status…",
-  );
+  expect(send().disabled).toBe(true);
+  expect(send().title).toBe("Loading Bot status…");
+  expect(composer().querySelector('[role="status"]')).toBeNull();
   await act(async () => {
     releaseBot();
   });
