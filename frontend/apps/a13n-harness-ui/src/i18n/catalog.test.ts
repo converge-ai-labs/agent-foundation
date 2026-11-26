@@ -78,7 +78,6 @@ const untranslatedExceptions: Record<string, string[]> = {
   "i18n/language.tsx": ["English"],
   "shell/debug.tsx": ["undefined"],
   "configuration/project-folders.tsx": ["/path/to/project"],
-  "conversations/composer.tsx": ["- HEAD"],
   "conversations/markdown-block.tsx": ["mermaid", "text"],
   "mcp-apps/app-card.tsx": ["- MCP App"],
   "setup/subscriptions.tsx": ["Codex", "Grok"],

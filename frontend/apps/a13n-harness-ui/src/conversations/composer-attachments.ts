@@ -16,6 +16,7 @@ import type { Schema, Transport } from "../transport/client";
 import type { ThreadDraft } from "./draft";
 import { inlinePattern, isReadyAttachment } from "./inline-attachments";
 import { retainedImage } from "./attachment-thumbnail";
+import { isRasterImageAttachment } from "./attachment-preview-policy";
 import styles from "./conversation.module.css";
 import chipRemove from "./chip-remove.module.css";
 import type { TFunction } from "i18next";
@@ -96,7 +97,7 @@ class AttachmentWidget extends WidgetType {
     open.type = "button";
     open.className = styles.inlineAttachmentOpen;
     const attachment = this.id ? this.context.metadata.get(this.id) : undefined;
-    if (attachment?.media_type.startsWith("image/")) {
+    if (isRasterImageAttachment(attachment?.media_type)) {
       const image = document.createElement("img");
       image.draggable = false;
       imageDisposers.set(
@@ -105,16 +106,16 @@ class AttachmentWidget extends WidgetType {
           image,
           this.context.transport,
           this.context.threadId,
-          attachment,
+          attachment!,
         ),
       );
       open.append(image);
     } else {
       const file = this.draft.uploads.get(this.key)?.file;
-      if (file?.type.startsWith("image/")) {
+      if (isRasterImageAttachment(file?.type)) {
         const image = document.createElement("img");
         image.draggable = false;
-        const url = URL.createObjectURL(file);
+        const url = URL.createObjectURL(file!);
         image.onerror = () => {
           image.dataset.failed = "";
           image.hidden = true;
@@ -130,10 +131,7 @@ class AttachmentWidget extends WidgetType {
       if (isReadyAttachment(this.id)) this.context.preview(this.id, attachment);
       else {
         const upload = this.draft.uploads.get(this.key);
-        if (
-          upload?.file.type.startsWith("image/") &&
-          upload.status !== "failed"
-        )
+        if (upload && upload.status !== "failed")
           this.context.previewLocal(upload.file);
         else this.context.retry(this.key);
       }

@@ -412,15 +412,12 @@ it("keeps previewed file bytes verbatim even when they equal a translated applic
   await userEvent.click(
     await screen.findByRole("button", { name: "source.txt" }),
   );
-  await screen.findByRole("dialog");
-  // The modal traps focus; switch the same runtime while it remains open.
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() => expect(dialog.textContent).toContain(source));
+  // The drawer traps focus; switch the same runtime while it remains open.
   await act(() => i18n.changeLanguage("zh-CN"));
-  expect(screen.getByRole("dialog").querySelector("pre")?.textContent).toBe(
-    source,
-  );
-  expect(
-    screen.getByRole("link", { name: "下载原文件" }).getAttribute("download"),
-  ).toBe("source.txt");
+  expect(dialog.textContent).toContain(source);
+  expect(screen.getByRole("button", { name: "下载" })).toBeTruthy();
   expect(transport.fetch).toHaveBeenCalledOnce();
   expect(post).not.toHaveBeenCalled();
 });
