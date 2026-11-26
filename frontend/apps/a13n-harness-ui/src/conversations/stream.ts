@@ -23,7 +23,12 @@ import {
 // Generated transcript chrome stays structured here so the display layer can
 // translate it; backend diagnostics travel beside it and stay verbatim.
 export type ContextState =
-  "summary-ready" | "prepared" | "completed" | "failed" | "in-progress";
+  | "summary-ready"
+  | "prepared"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "in-progress";
 export type ExecutionOutcome = "cancelled" | "interrupt" | "failed";
 export type ChildState = "running" | "suspended" | "completed";
 
@@ -160,7 +165,7 @@ export class FocusDisplay {
   terminalFailure?: string;
   terminalFailureCode?: string;
   contextUsage?: { tokens: number; ordinal: number; recordId?: string };
-  acpContext?: { used: number; size: number };
+  acpContext?: { used: number; size: number } | null;
   readonly checkpoints = new Map<string, number>();
   private readonly savedBlocks = new Map<string, number>();
   blocksAfter(continuation: string | null | undefined) {
@@ -914,6 +919,34 @@ export class FocusDisplay {
         value.size > 0
       )
         this.acpContext = { used: value.used, size: value.size };
+      return;
+    }
+    if (name === "a13n.acp.compaction") {
+      const compactionId = string(value.compactionId);
+      if (!compactionId) return;
+      const key = `${subagentRunId ? `${scope}:` : ""}context:${compactionId}`;
+      const rawStatus = string(value.status);
+      const contextState: ContextState =
+        rawStatus === "completed"
+          ? "completed"
+          : rawStatus === "failed"
+            ? "failed"
+            : rawStatus === "cancelled"
+              ? "cancelled"
+              : "in-progress";
+      const error = string(value.error);
+      if (!subagentRunId && contextState === "completed")
+        this.acpContext = null;
+      setBlock(key, {
+        id: key,
+        kind: "activity",
+        context: "compaction",
+        name: "Compact Summary",
+        text: "",
+        contextState,
+        contextDiagnostics: error ? [error] : undefined,
+        result: string(value.summary),
+      });
       return;
     }
     if (name === "a13n.acp.plan") {

@@ -2595,3 +2595,75 @@ it("re-folds transient progress without advancing the suffix and clears it at sc
   expect(display.blocks.get("tool")?.progress).toBeUndefined();
   expect(display.gap).toBe(false);
 });
+
+it("folds a13n.acp.compaction states into context activity and tri-state clears acpContext on completion", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let seq = 100;
+  let disp = 0;
+  const emit = (name: string, value: Record<string, unknown>, itemId: string) =>
+    display.accept(
+      rawFrame(
+        ++seq,
+        ++disp,
+        { type: "CUSTOM", name, value },
+        itemId,
+        "observation",
+        "completed",
+      ),
+    );
+
+  emit("a13n.acp.usage", { used: 800, size: 1000 }, "usage");
+  expect(display.acpContext).toEqual({ used: 800, size: 1000 });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c1", status: "in_progress", summary: "Working..." },
+    "cmp-c1",
+  );
+  expect(display.acpContext).toEqual({ used: 800, size: 1000 });
+  expect(display.blocks.get("context:c1")).toMatchObject({
+    kind: "activity",
+    context: "compaction",
+    contextState: "in-progress",
+    result: "Working...",
+  });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c1", status: "completed", summary: "Final summary." },
+    "cmp-c1",
+  );
+  expect(display.acpContext).toBeNull();
+  expect(display.blocks.get("context:c1")).toMatchObject({
+    contextState: "completed",
+    result: "Final summary.",
+  });
+
+  emit("a13n.acp.usage", { used: 120, size: 1000 }, "usage");
+  expect(display.acpContext).toEqual({ used: 120, size: 1000 });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c2", status: "failed", error: "provider_error" },
+    "cmp-c2",
+  );
+  expect(display.acpContext).toEqual({ used: 120, size: 1000 });
+  expect(display.blocks.get("context:c2")).toMatchObject({
+    contextState: "failed",
+    contextDiagnostics: ["provider_error"],
+    result: "",
+  });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c3", status: "cancelled" },
+    "cmp-c3",
+  );
+  expect(display.acpContext).toEqual({ used: 120, size: 1000 });
+  expect(display.blocks.get("context:c3")).toMatchObject({
+    contextState: "cancelled",
+    result: "",
+  });
+});

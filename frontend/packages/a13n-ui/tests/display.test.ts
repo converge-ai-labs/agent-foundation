@@ -140,3 +140,26 @@ it("clears progress in the terminal scope and ignores progress on a completed to
   apply({ type: "RUN_ERROR", message: "Stopped" });
   expect(items.get("b")?.content.progress).toBeUndefined();
 });
+
+it.each([false, true])(
+  "retains large a13n.acp.compaction observations only when full_content is enabled (%s)",
+  (full) => {
+    const normalizer = new DisplayNormalizer({ full_content: full });
+    const items = new Map<string, DisplayItem>();
+    const payload = {
+      compactionId: "cmp-1",
+      status: "completed",
+      summary: "x".repeat(40_000),
+    };
+    normalizer.apply(items, {
+      run_id: "run",
+      attempt: 1,
+      sequence: 1,
+      event: { type: "CUSTOM", name: "a13n.acp.compaction", value: payload },
+      item: { id: "cmp-item", kind: "observation", state: "completed" },
+    });
+    expect(items.get("cmp-item")?.content.value).toEqual(
+      full ? payload : { omitted: true },
+    );
+  },
+);

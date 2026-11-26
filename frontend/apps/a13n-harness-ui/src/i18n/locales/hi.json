@@ -3750,5 +3750,7 @@
   "Detected": "उपलब्ध",
   "Skip permission prompts": "अनुमति प्रॉम्प्ट छोड़ें",
   "Allow unattended tool execution without interactive CLI prompts.": "इंटरैक्टिव CLI प्रॉम्प्ट के बिना स्वचालित टूल निष्पादन की अनुमति दें।",
-  "Customize command": "कमांड कस्टमाइज़ करें"
+  "Customize command": "कमांड कस्टमाइज़ करें",
+  "Context occupancy reported by the external ACP Agent. Chat totals are in Usage.": "बाहरी ACP Agent द्वारा रिपोर्ट की गई संदर्भ उपयोग स्थिति। चैट का कुल योग \"उपयोग\" में है।",
+  "This external ACP Agent has not reported its current context window, so occupancy is unavailable.": "इस बाहरी ACP Agent ने अपनी वर्तमान संदर्भ सीमा रिपोर्ट नहीं की है, इसलिए उपयोग स्थिति उपलब्ध नहीं है।"
 }

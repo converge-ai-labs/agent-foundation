@@ -188,3 +188,89 @@ it("ticks the exact current receipt and paints live context and speed without wa
   view.unmount();
   queries.clear();
 });
+
+it("handles external ACP tri-state context occupancy, honest hiding, and accurate HelpTip copy", () => {
+  const queries = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  queries.setQueryData(["thread", "acp-one", "context-usage"], {
+    thread_id: "acp-one",
+    context_window: 1000,
+    latest_request_tokens: 500,
+  });
+  queries.setQueryData(["thread", "acp-one", "usage"], {
+    first_observed_at: "2026-01-01T00:00:00Z",
+    root: { model_requests: 1, tokens: [] },
+    models: [],
+    other_models: { model_requests: 0 },
+    combined: {
+      provider_receipts: 0,
+      model_requests: 1,
+      unknown_model_costs: 0,
+      model_cost_usd: "0.01",
+      tokens: [["input_tokens", 500]],
+    },
+  });
+  queries.setQueryData(["thread", "acp-one", "configuration"], {
+    capture_source: "selected_continuation",
+  });
+  const transport = {
+    client: {
+      GET: vi.fn(async () => ({ data: {} })),
+    },
+  } as unknown as Transport;
+  const renderStatus = (acpContext?: { used: number; size: number } | null) => (
+    <QueryClientProvider client={queries}>
+      <TransportContext value={transport}>
+        <DebugProvider>
+          <ComposerStatus threadId="acp-one" external acpContext={acpContext} />
+        </DebugProvider>
+      </TransportContext>
+    </QueryClientProvider>
+  );
+
+  // undefined falls back to persisted context.data and shows percentage for external ACP.
+  const view = render(renderStatus(undefined));
+  expect(
+    screen.getByRole("button", { name: "Context details" }).textContent,
+  ).toContain("50%");
+
+  // null explicitly clears stale persisted context.data -> hidden in non-debug mode.
+  view.rerender(renderStatus(null));
+  expect(screen.queryByRole("button", { name: "Context details" })).toBeNull();
+
+  // In debug mode, Context metric stays visible for diagnostics with ACP unavailable HelpTip.
+  fireEvent.keyDown(window, { code: "KeyD", ctrlKey: true, altKey: true });
+  const debugTrigger = screen.getByRole("button", { name: "Context details" });
+  expect(debugTrigger.textContent).toContain("—");
+  fireEvent.click(debugTrigger);
+  fireEvent.click(screen.getByRole("button", { name: "About context" }));
+  expect(
+    screen.getByText(
+      /Context occupancy reported by the external ACP Agent\..*has not reported its current context window/,
+    ),
+  ).toBeTruthy();
+
+  // Live acpContext overrides even when persisted context.data lacks context_window,
+  // and HelpTip does not falsely claim the window is missing.
+  act(() =>
+    queries.setQueryData(["thread", "acp-one", "context-usage"], {
+      thread_id: "acp-one",
+      context_window: null,
+      latest_request_tokens: null,
+    }),
+  );
+  view.rerender(renderStatus({ used: 250, size: 1000 }));
+  expect(
+    screen.getByRole("button", { name: "Context details" }).textContent,
+  ).toContain("25%");
+  expect(
+    screen.queryByText(/has not reported its current context window/),
+  ).toBeNull();
+  expect(
+    screen.getByText(/Context occupancy reported by the external ACP Agent\./),
+  ).toBeTruthy();
+
+  view.unmount();
+  queries.clear();
+});

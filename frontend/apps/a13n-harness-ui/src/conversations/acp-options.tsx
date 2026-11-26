@@ -98,6 +98,9 @@ export function AcpOptions({
     onSuccess: async (updated) => {
       await queries.cancelQueries({ queryKey: key, exact: true });
       queries.setQueryData(key, updated);
+      void queries.invalidateQueries({
+        queryKey: ["thread", threadId, "context-usage"],
+      });
     },
   });
   return (

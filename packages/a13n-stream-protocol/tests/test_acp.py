@@ -59,3 +59,84 @@ def test_acp_thought_is_closed_and_timed_at_tool_start_or_turn_settlement(monkey
     assert reasoning[2]["timestamp"] - reasoning[0]["timestamp"] == 2000
     assert reasoning[5]["timestamp"] > reasoning[3]["timestamp"]
     assert events.index(reasoning[2]) < next(i for i, event in enumerate(events) if event["type"] == "TOOL_CALL_START")
+
+
+def test_acp_compaction_aggregates_chunks_replaces_summary_bounds_size_and_upserts_in_display():
+    events = []
+    stream = AcpRunStream("thread-test", "run-test", events.append)
+    stream.update(schema.AgentMessageChunk(content=schema.TextContentBlock(text="before")))
+    # Chunk arriving before any CompactionUpdate defaults to in_progress and closes active text.
+    stream.update(
+        schema.SessionUpdateCompactionSummaryChunk(
+            compaction_id="cmp-1",
+            content=schema.TextContentBlock(text="First "),
+        )
+    )
+    stream.update(
+        schema.SessionUpdateCompactionSummaryChunk(
+            compaction_id="cmp-1",
+            content=schema.TextContentBlock(text="second."),
+        )
+    )
+    stream.update(schema.SessionUpdateCompactionUpdate(compaction_id="cmp-1", status="completed"))
+    # Complete replacement summary overwrites accumulated chunks.
+    large_summary = "A" * (70 * 1024)
+    stream.update(
+        schema.SessionUpdateCompactionUpdate(
+            compaction_id="cmp-1",
+            status="completed",
+            summary=[schema.TextContentBlock(text=large_summary)],
+        )
+    )
+    stream.update(
+        schema.SessionUpdateCompactionUpdate(
+            compaction_id="cmp-2",
+            status="failed",
+            error="rate_limited",
+        )
+    )
+    stream.update(schema.SessionUpdateCompactionUpdate(compaction_id="cmp-3", status="cancelled"))
+    stream.update(schema.AgentMessageChunk(content=schema.TextContentBlock(text="after")))
+    stream.finish()
+
+    compaction_events = [
+        event["value"] for event in events if event["type"] == "CUSTOM" and event.get("name") == "a13n.acp.compaction"
+    ]
+    assert compaction_events[0] == {"compactionId": "cmp-1", "status": "in_progress", "summary": "First "}
+    assert compaction_events[1] == {"compactionId": "cmp-1", "status": "in_progress", "summary": "First second."}
+    assert compaction_events[2] == {"compactionId": "cmp-1", "status": "completed", "summary": "First second."}
+    assert compaction_events[3]["status"] == "completed"
+    assert len(compaction_events[3]["summary"].encode("utf-8")) == 64 * 1024
+    assert compaction_events[4] == {"compactionId": "cmp-2", "status": "failed", "error": "rate_limited"}
+    assert compaction_events[5] == {"compactionId": "cmp-3", "status": "cancelled"}
+    # Active assistant message was closed before compaction began and never included compaction text.
+    assert stream.final_text == "beforeafter"
+    assert stream.last_text == "after"
+    end_idx = next(i for i, event in enumerate(events) if event["type"] == "TEXT_MESSAGE_END")
+    first_cmp_idx = next(i for i, event in enumerate(events) if event.get("name") == "a13n.acp.compaction")
+    assert end_idx < first_cmp_idx
+
+    # DisplayFold upserts by per-compaction identity and retains >32 KiB summary under full_content=True.
+    full_fold = DisplayFold("run-test", full_content=True)
+    full_fold.fold(events)
+    compaction_items = [
+        item
+        for item in full_fold.export().items
+        if item.kind == "observation" and item.content.get("name") == "a13n.acp.compaction"
+    ]
+    assert len(compaction_items) == 3
+    by_id = {item.content["value"]["compactionId"]: item.content["value"] for item in compaction_items}
+    assert by_id["cmp-1"]["status"] == "completed"
+    assert len(by_id["cmp-1"]["summary"].encode("utf-8")) == 64 * 1024
+    assert by_id["cmp-2"] == {"compactionId": "cmp-2", "status": "failed", "error": "rate_limited"}
+    assert by_id["cmp-3"] == {"compactionId": "cmp-3", "status": "cancelled"}
+
+    compact_fold = DisplayFold("run-test", full_content=False)
+    compact_fold.fold(events)
+    compact_items = [
+        item
+        for item in compact_fold.export().items
+        if item.kind == "observation" and item.content.get("name") == "a13n.acp.compaction"
+    ]
+    assert len(compact_items) == 3
+    assert any(item.content["value"] == {"omitted": True} for item in compact_items)
