@@ -20,7 +20,7 @@ from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments import external
+from a13n_service.runs.environments import bootstrap_snapshots, external
 from a13n_service.runs.environments.access import audit, find, require_manager, writable
 from a13n_service.runs.environments.adapters import (
     Target,
@@ -324,6 +324,7 @@ async def delete_environment(
             # Nothing to destroy: an external target keeps running outside the Service, which drops its token,
             # and an unclaimed reservation never reached its provider.
             environment.status = "deleted"
+            await bootstrap_snapshots.discard(session, environment.id)
             environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
             environment.handle = environment.failure = environment.token = None
             environment.operation_progress = None

@@ -46,6 +46,8 @@ class EnvironmentMount:
 
 `ensure_ready()` completes Host-authorized preparation and required state publication, then returns an inert fixed-target connector. The Host implementation may call management and its own persistence in the same process; no Service RPC or database dependency enters Harness. An already prepared source validates current authority and returns its connector. Sources own no Run execution; Harness opens and closes executions. Hosts coordinate shared management across sources and Runs.
 
+An Environment source may expose a detached `EnvironmentBootstrapSnapshot` and accept close-time observation requests. Snapshots are immutable, contain no provider configuration or credentials, and distinguish a missing observation from an observed absent file. The bound Environment admits observations through the ordinary file route and permission ceiling; the Host owns storage and the lifetime of its observations.
+
 Every mount supplies an `EnvironmentSource`, including mounts whose targets are already ready. Harness does not accept a bare `EnvironmentConnector` or automatically wrap one. An already prepared Host implements the same `ensure_ready()` contract and returns its connector. There is no Harness `lazy` switch; the caller decides when to prepare the target and may call its source before Run entry. Harness always uses the same readiness boundary on first use.
 
 `EnvironmentMount.operation_guard` and its typed Computer-only `computer_guard` are optional trusted Host admission hooks spanning native dispatch; see [Host operation admission](08a-environment-execution.md#host-operation-admission). It can narrow but never broaden the frozen ceiling.

@@ -19,6 +19,7 @@ from a13n_harness.environment.models import (
 )
 
 from ._mount_path import parse_mount_path, validate_working_directory
+from .bootstrap import BootstrapCapture, EnvironmentBootstrapSnapshot
 from .providers import EnvironmentRuntime
 
 _DEFAULT_ACTIONS = EnvironmentPermissionSet(operations=FILE_EXECUTION_ACTIONS)
@@ -41,6 +42,19 @@ class EnvironmentSource(Protocol):
     def state(self) -> EnvironmentState | None: ...
 
     async def ensure_ready(self) -> EnvironmentConnector: ...
+
+
+@runtime_checkable
+class BootstrapEnvironmentSource(EnvironmentSource, Protocol):
+    """Optional host contract for non-activating context and close-time capture."""
+
+    @property
+    def bootstrap_snapshot(self) -> EnvironmentBootstrapSnapshot | None: ...
+
+    @property
+    def defer_bootstrap(self) -> bool: ...
+
+    def observe_bootstrap(self, key: tuple[str, ...], capture: BootstrapCapture) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)

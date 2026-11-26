@@ -51,7 +51,9 @@ from ._mount_path import (
     parse_mount_path,
     provider_path_from_suffix,
 )
+from .bootstrap import BootstrapContext, Observation, ObservationReader
 from .changes import EnvironmentChangeJournal
+from .execution import EnvironmentExecution
 from .extensions import EnvironmentRunExtension, EnvironmentRunExtensionContext
 from .providers import (
     BoundComputerOperations,
@@ -63,7 +65,7 @@ from .providers import (
     EnvironmentRuntime,
     FileScopeSelection,
 )
-from .sources import EnvironmentEntry, EnvironmentMount, EnvironmentScope, _normalize_entry
+from .sources import BootstrapEnvironmentSource, EnvironmentEntry, EnvironmentMount, EnvironmentScope, _normalize_entry
 from .virtual_files import VirtualFileOperator, _PreparedFile
 
 if TYPE_CHECKING:
@@ -245,6 +247,63 @@ class CompositeBoundEnvironment(BoundEnvironment):
         if request.history.matches_latest(block):
             return ModelContextProjection()
         return ModelContextProjection(blocks=(block,))
+
+    def bootstrap_context(self, path: str, actions: frozenset[EnvironmentAction]) -> BootstrapContext | None:
+        route = self._resolve_path(path)
+        entered, mount_path = route.entered, route.mount_path
+        source = entered.provider.source
+        if not isinstance(source, BootstrapEnvironmentSource):
+            return None
+        if not actions <= entered.public.permission_ceiling.operations:
+            raise EnvironmentInvocationError("File observation is not permitted.", code="environment_permission_denied")
+        root = entered.public.provider_root
+        suffix = parse_mount_path(route.provider_path).suffix_below(parse_mount_path(root))
+        if suffix is None:
+            raise EnvironmentInvocationError(
+                "File observation is outside the mount root.", code="environment_selection_invalid"
+            )
+
+        def observe(key: tuple[str, ...], read: ObservationReader) -> None:
+            async def capture(execution: EnvironmentExecution) -> Observation | None:
+                backend = execution.operations.files
+                if backend is None or not actions <= execution.descriptor.permissions.operations:
+                    return None
+
+                def select(path: str) -> FileScopeSelection:
+                    return FileScopeSelection(
+                        path,
+                        self._resolve_scoped_file_path(path, entered, mount_path),
+                        execution.descriptor.generation,
+                        mount_path,
+                    )
+
+                @asynccontextmanager
+                async def prepare(
+                    selection: FileScopeSelection, action: EnvironmentAction
+                ) -> AsyncGenerator[_PreparedFile]:
+                    if action not in actions:
+                        raise EnvironmentInvocationError(
+                            "File observation is not permitted.", code="environment_permission_denied"
+                        )
+                    async with entered.provider.admit(action):
+                        yield _PreparedFile(
+                            selection.resolved_path,
+                            backend,
+                            lambda value: _validate_provider_artifacts(entered, value),
+                            lambda value: mount_path_from_provider_path(mount_path, value, root),
+                        )
+
+                return await read(VirtualFileOperator(select, prepare))
+
+            source.observe_bootstrap(key, capture)
+
+        return BootstrapContext(
+            "/".join(suffix) or ".",
+            mount_path_from_provider_path(mount_path, route.provider_path, root),
+            source.defer_bootstrap and entered.provider.execution_id == "unprepared",
+            source.bootstrap_snapshot,
+            observe,
+        )
 
     def select_files(self, path: str, *, alias: str | None = None) -> FileScopeSelection:
         route = self._resolve_path(path, alias=alias)

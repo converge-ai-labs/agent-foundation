@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterable, AsyncIterator, Sequence
+from collections.abc import AsyncIterable, AsyncIterator, Callable, Sequence
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from html import escape
@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, Literal, Protocol, cast, runtime_checkabl
 
 import yaml
 from a13n_logging import get_logger
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, PrivateAttr, field_validator, model_validator
 from pydantic_ai import RunContext, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapToolExecuteHandler
 from pydantic_ai.messages import CapabilityEvent, ToolCallPart
@@ -138,6 +138,7 @@ class BoundSkillCatalog(BaseModel):
 
     items: tuple[BoundSkillCatalogItem, ...]
     mcp_items: tuple[MCPSkillCatalogItem, ...] = Field(default=(), exclude_if=lambda items: not items)
+    _activated: dict[str, tuple[str, str]] = PrivateAttr(default_factory=dict)
 
     @model_validator(mode="after")
     def _unique_names(self) -> BoundSkillCatalog:
@@ -170,10 +171,23 @@ class BoundSkillCatalog(BaseModel):
                     details={"skill": item.name, "environment_code": exc.code},
                 ) from exc
             if (
-                current.resolved_path != item.directory
-                or current.observed_generation != item.observed_generation
-                or document != item.document
+                current.resolved_path.model_copy(update={"execution_id": item.directory.execution_id}) != item.directory
+                or document.model_copy(update={"execution_id": item.document.execution_id}) != item.document
+                or document.execution_id != current.resolved_path.execution_id
             ):
+                raise DefinitionError(
+                    "A bound skill catalog no longer matches the current Environment route.",
+                    code="skill_catalog_stale",
+                    details={"skill": item.name, "mount_id": item.document.mount_id},
+                )
+            generation = (current.observed_generation, current.resolved_path.execution_id)
+            expected = (item.observed_generation, item.directory.execution_id)
+            if item.observed_generation == "unprepared":
+                if current.observed_generation != "unprepared":
+                    expected = self._activated.setdefault(item.directory.mount_id, generation)
+                else:
+                    expected = self._activated.get(item.directory.mount_id, expected)
+            if generation != expected:
                 raise DefinitionError(
                     "A bound skill catalog no longer matches the current Environment mount incarnation.",
                     code="skill_catalog_stale",
@@ -205,6 +219,18 @@ class SkillSource(Protocol):
     def roots(self) -> tuple[str, ...]: ...
 
     async def catalog(self, *, files: FileOperator) -> Sequence[SkillCatalogItem]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ManifestSkillSource:
+    """Host-validated catalog whose documents are published by the owning mount at activation."""
+
+    source_id: str
+    roots: tuple[str, ...]
+    items: tuple[SkillCatalogItem, ...]
+
+    async def catalog(self, *, files: FileOperator) -> tuple[SkillCatalogItem, ...]:
+        return self.items
 
 
 @runtime_checkable
@@ -566,6 +592,9 @@ class SkillManager:
             raise ValueError("skill materializers must target an explicitly selected root")
         self._sources = resolved_sources
         self._source_roots = MappingProxyType(source_roots)
+        self._manifest_ids = frozenset(
+            source.source_id for source in resolved_sources if isinstance(source, ManifestSkillSource)
+        )
         self._materializers = resolved_materializers
         self._policy = (policy or SkillsPolicy()).model_copy(deep=True)
         self._roots = tuple(
@@ -676,7 +705,7 @@ class SkillManager:
                 _merge_skill(selected, entry.name, entry, self._policy)
         _require_catalog_size(len(selected), self._policy)
         access_paths: dict[str, str] = {}
-        items = tuple(selected.values())
+        items = tuple(item for item in selected.values() if item.source_id not in self._manifest_ids)
 
         async def document_metadata(item: SkillCatalogItem) -> FileMetadata:
             metadata = observed.get((item.source_id or "", item.path))
@@ -719,7 +748,13 @@ class SkillManager:
         unavailable: dict[str, str] = {}
         initially_unresolved: dict[str, str] = {}
         selections: list[tuple[str, FileScopeSelection]] = []
-        for root in self._roots:
+        live_roots = dict.fromkeys(
+            root
+            for source in self._sources
+            if source.source_id not in self._manifest_ids
+            for root in self._source_roots[source.source_id]
+        )
+        for root in live_roots:
             try:
                 selections.append((root, await environment.resolve_files(root)))
             except EnvironmentError as exc:
@@ -743,7 +778,19 @@ class SkillManager:
                 routes.append(_SkillFileRoute(root=root, selection=selection, files=files))
             pinned_files = _PinnedSkillFileOperator(routes, unavailable)
             catalog = await self._scan_files(pinned_files)
-            bound = _bind_skill_catalog(catalog, files=pinned_files)
+
+            def resolve(item: SkillCatalogItem) -> tuple[EnvironmentPath, EnvironmentPath, str]:
+                document = _join_logical_path(item.path, _SKILL_FILE_NAME)
+                if item.source_id in self._manifest_ids:
+                    selected = environment.select_files(item.path)
+                    return selected.resolved_path, environment.resolve_path(document), selected.observed_generation
+                return (
+                    pinned_files.resolve_path(item.path),
+                    pinned_files.resolve_path(document),
+                    pinned_files.observed_generation(item.path),
+                )
+
+            bound = _bind_skill_catalog(catalog, resolve=resolve)
         _require_skill_scan_roots_current(
             environment,
             selections=selections,
@@ -1069,7 +1116,9 @@ async def _read_environment_skill_text(
     environment: BoundEnvironment, item: BoundSkillCatalogItem, path: str, max_bytes: int
 ) -> str:
     selection = environment.select_files(item.path)
-    if selection.resolved_path != item.directory or selection.observed_generation != item.observed_generation:
+    if selection.resolved_path.model_copy(
+        update={"execution_id": item.directory.execution_id}
+    ) != item.directory or item.observed_generation not in {"unprepared", selection.observed_generation}:
         raise DefinitionError("The selected skill directory changed.", code="skill_catalog_stale")
     # Pin the existing mount and reject overlays and symlinks along the selected
     # path. The provider remains responsible for confinement during actual I/O.
@@ -1190,15 +1239,13 @@ def _require_skill_scan_roots_current(
 def _bind_skill_catalog(
     catalog: Sequence[SkillCatalogItem],
     *,
-    files: _PinnedSkillFileOperator,
+    resolve: Callable[[SkillCatalogItem], tuple[EnvironmentPath, EnvironmentPath, str]],
 ) -> BoundSkillCatalog:
     resolved_documents: dict[tuple[str, str], str] = {}
     bound: list[BoundSkillCatalogItem] = []
     for item in catalog:
-        skill_file = _join_logical_path(item.path, _SKILL_FILE_NAME)
         try:
-            directory = files.resolve_path(item.path)
-            document = files.resolve_path(skill_file)
+            directory, document, generation = resolve(item)
         except EnvironmentError as exc:
             raise DefinitionError(
                 "A discovered skill path is not authorized by the scanned Environment scopes.",
@@ -1229,7 +1276,7 @@ def _bind_skill_catalog(
                 source_id=item.source_id,
                 directory=directory,
                 document=document,
-                observed_generation=files.observed_generation(item.path),
+                observed_generation=generation,
             )
         )
     return BoundSkillCatalog(items=tuple(bound))

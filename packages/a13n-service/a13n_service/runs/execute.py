@@ -590,7 +590,18 @@ class _Attempt:
                     outcome=Outcome(status="completed"),
                 )
                 return
-            if not self.plan.agent.config.lazy_environment and not await self._prepare_environments():
+            mode = self.plan.agent.config.lazy_environment
+            if mode == "warmup" and any(
+                node.config.toolsets[key].enabled
+                for node in self.plan.agent.agents()
+                for key in ("files", "shell", "computer")
+            ):
+                for mount in self.plan.mounts:
+                    self.runtime.tasks.start(
+                        prepare(self.runtime, self.lease, self.plan.principal, self.plan.authority, mount, warmup=True),
+                        name=f"warmup-environment-{self.lease.attempt_id}-{mount.name}",
+                    )
+            if (mode is False or mode == "eager") and not await self._prepare_environments():
                 if self.control.stopped.is_set():
                     await self._seal_interrupted(self.control.outcome)
                 else:
@@ -663,6 +674,7 @@ class _Attempt:
                     self.plan.mounts,
                     configuration=self.plan.configuration,
                     skill_cache=skill_cache,
+                    defer_bootstrap=self.plan.agent.config.lazy_environment not in (False, "eager"),
                 )
             )
             host = await stack.enter_async_context(

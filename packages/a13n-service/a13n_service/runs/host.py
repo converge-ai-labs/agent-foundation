@@ -56,6 +56,7 @@ from a13n_service.runs.environments.desktop.freshness import Freshness
 from a13n_service.runs.environments.desktop.notify import HandbackNotifications
 from a13n_service.runs.environments.egress.instructions import CredentialInstructionsCapability
 from a13n_service.runs.environments.egress.instructions import render as credential_instructions
+from a13n_service.runs.environments.execution import Source
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.memories.execution import (
@@ -187,6 +188,7 @@ class Host:
     webs: Mapping[str, WebBinding]
     browsers: Mapping[str, BrowserBackend]
     environment: EnvironmentRuntime
+    primary_source: Source | None
 
     def capabilities(
         self, agent: ResolvedAgent, *, retain_tools: bool = False
@@ -218,6 +220,11 @@ class Host:
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
                     prove_lease=partial(prove, self.runtime, self.lease),
+                    defer_materialization=(
+                        self.primary_source.defer_skills
+                        if self.primary_source is not None and agent.definition_id == self.plan.root_definition_id
+                        else None
+                    ),
                 )
             )
         return features
@@ -346,6 +353,8 @@ async def open_host(
             )
         if memory:
             tools[plan.root_definition_id]["memory"] = CombinedCapability(memory)
+        primary = environments.get(PRIMARY)
+        source = primary.source if primary is not None else None
         yield Host(
             runtime,
             lease,
@@ -363,6 +372,7 @@ async def open_host(
                 command_environment=plan.execution.environment,
                 extensions=run_extensions(runtime, app_activation, owner_app_id),
             ),
+            source if isinstance(source, Source) else None,
         )
 
 

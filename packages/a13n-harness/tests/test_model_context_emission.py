@@ -456,19 +456,36 @@ def test_context_breakdown_counts_retained_snapshots_not_hashes_or_suppressed_co
 
 
 @pytest.mark.anyio
-async def test_independent_file_snapshots_compare_latest_and_reemit_restored_bodies():
+async def test_independent_file_snapshots_compare_latest_and_reemit_restored_bodies(tmp_path):
+    from types import SimpleNamespace
+
+    from a13n_harness import AgentIdentityRef, AgentInstanceContext
     from a13n_harness.capabilities.context import FileContextConfiguration, _FileContextRunCapability
 
     async def handler(request):
         return ModelContextProjection()
 
-    configuration = FileContextConfiguration()
+    from .test_context_capabilities import _local_binding
+
+    configuration = FileContextConfiguration(paths=("AGENTS.md", "guide.md"))
     history = []
     emitted = []
+    (tmp_path / "guide.md").write_text("fixed")
+    instance = AgentInstanceContext(
+        identity=AgentIdentityRef(issuer="test", subject="agent"), agent_instance_id="agent-test"
+    )
+
+    async def project(request):
+        runtime = _local_binding(tmp_path)
+        async with runtime.bind(thread_id="thread", run_id="run", instance=instance, host_refs={}) as environment:
+            await runtime._activate()
+            return await _FileContextRunCapability(configuration).wrap_model_context(
+                SimpleNamespace(deps=SimpleNamespace(environment=environment)), request, handler
+            )
+
     for body in ("A", "A", "B", "A"):
-        capability = _FileContextRunCapability(configuration, (("AGENTS.md", body), ("guide.md", "fixed")), None)
-        request = replace(INPUT, history=ModelContextHistory.from_messages(history))
-        projection = await capability.wrap_model_context(None, request, handler)
+        (tmp_path / "AGENTS.md").write_text(body)
+        projection = await project(replace(INPUT, history=ModelContextHistory.from_messages(history)))
         emitted.append(projection.blocks)
         history = append(history, *projection.blocks)
     assert [item.key for item in emitted[0]] == ["files", "file:AGENTS.md", "file:guide.md", "project-guidance"]
@@ -480,18 +497,13 @@ async def test_independent_file_snapshots_compare_latest_and_reemit_restored_bod
     assert "sha256" not in emitted[0][0].content
     # Compaction may retain the selection while discarding an independent body.
     retained_selection = append([], emitted[0][0], emitted[0][2], emitted[0][3])
-    request = replace(INPUT, history=ModelContextHistory.from_messages(retained_selection))
-    missing = await capability.wrap_model_context(None, request, handler)
+    missing = await project(replace(INPUT, history=ModelContextHistory.from_messages(retained_selection)))
     assert [item.key for item in missing.blocks] == ["file:AGENTS.md"]
-    # A new history window needs missing bodies even when selection is identical.
-    replacement = _FileContextRunCapability(configuration, (("AGENTS.md", "A"),), None)
-    fresh = await replacement.wrap_model_context(None, INPUT, handler)
-    assert "file:AGENTS.md" in {item.key for item in fresh.blocks}
-    cleared = _FileContextRunCapability(configuration, (), None)
-    projection = await cleared.wrap_model_context(
-        None, replace(INPUT, history=ModelContextHistory.from_messages(history)), handler
-    )
-    assert [item.key for item in projection.blocks] == ["files"]
+    assert "file:AGENTS.md" in {item.key for item in (await project(INPUT)).blocks}
+    (tmp_path / "AGENTS.md").unlink()
+    (tmp_path / "guide.md").unlink()
+    projection = await project(replace(INPUT, history=ModelContextHistory.from_messages(history)))
+    assert [item.key for item in projection.blocks] == ["files", "file:AGENTS.md", "file:guide.md"]
     assert "No file context is loaded" in projection.blocks[0].content
 
 

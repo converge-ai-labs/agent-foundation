@@ -280,7 +280,7 @@ async def test_lost_primary_uses_ordinary_reservation_and_preparation(env, scrip
 
     template = env.template["id"]
     sandbox = (await reserve(env, template))["id"]
-    agent = await runs_kit.create_agent(env, scripted_model)
+    agent = await runs_kit.create_agent(env, scripted_model, lazy_environment="eager")
     first = await runs_kit.start_thread(
         env, agent, "first", environments=[{"name": "workspace", "environment_id": sandbox}]
     )
@@ -329,8 +329,7 @@ async def test_lost_primary_uses_ordinary_reservation_and_preparation(env, scrip
             {"name": "workspace", "previous_environment_id": sandbox, "environment_id": replacement}
         ]
 
-    # Project guidance can touch the primary during Harness execution, even on a text-only turn.
-    # Observe before opening the Host's mount sources to distinguish eager preparation from that first use.
+    # The per-run override controls whether a text-only Run prepares the replacement.
     open_mounts = execute.open_mounts
     prepared_before_open = []
 
@@ -343,7 +342,7 @@ async def test_lost_primary_uses_ordinary_reservation_and_preparation(env, scrip
     await (await runs_kit.attempt(env))
     assert (await runs_kit.get_run(env, run["id"]))["status"] == "completed"
     assert prepared_before_open == [not lazy]
-    assert set(BACKEND.instances) == {replacement}
+    assert set(BACKEND.instances) == (set() if lazy else {replacement})
 
 
 async def test_lost_instance_is_only_replaced_for_the_desired_primary(env, runs_kit):

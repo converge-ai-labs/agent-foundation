@@ -156,7 +156,7 @@ sequenceDiagram
     Note over Service,Driver: Renewal and target retirement remain Service-owned
 ```
 
-The Agent's `lazy_environment` option keeps its [existing readiness semantics](06-environments.md#execution): default true defers managed preparation until first dependent use; false prepares selected managed instances before Harness execution. Connection and Session acquisition remain lazy in either mode. Source metadata is inert. Host sources may perform database reads and lifecycle coordination internally, but every transaction ends before vendor I/O, readiness waits, Harness execution, or cleanup; no live session is retained by a source between calls.
+The Agent's [`lazy_environment` option](06-environments.md#execution) selects on-demand, warmup, or eager preparation. Connection and Session acquisition remain lazy across preparation modes. Source metadata is inert. Host sources may perform database reads and lifecycle coordination internally, but every transaction ends before vendor I/O, readiness waits, Harness execution, or cleanup; no live session is retained by a source between calls.
 
 Harness never claims a lifecycle operation, writes current state, extends a target lease, or decides to replace a target. Source failure and cancellation keep Service's classification and durable operation identity. A cancelled wait does not undo a dispatched vendor operation or erase published state. Service reconciles uncertain effects under the same operation, while Harness releases only its acquired execution resources. Current mount authorization, active-use protection, publication fencing, and lazy/eager failure handling remain owned by [Environments](06-environments.md).
 

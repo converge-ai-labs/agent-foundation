@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any
 
 from a13n_harness.environment.archives import FileArchive
+from a13n_harness.environment.bootstrap import EnvironmentBootstrapSnapshot
 from a13n_harness.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
@@ -149,6 +150,7 @@ __all__ = [
     "EnvironmentAction",
     "EnvironmentActionDispatch",
     "EnvironmentAvailability",
+    "EnvironmentBootstrapSnapshot",
     "EnvironmentChange",
     "EnvironmentConnector",
     "EnvironmentDescriptor",

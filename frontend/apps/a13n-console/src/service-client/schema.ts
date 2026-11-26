@@ -5693,7 +5693,7 @@ export interface components {
        * Lazy Environment
        * @default true
        */
-      lazy_environment?: boolean;
+      lazy_environment?: ("on_demand" | "warmup" | "eager") | boolean;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
       memory?: components["schemas"]["SessionMemorySettings"];
       /**
@@ -5785,7 +5785,7 @@ export interface components {
        * Lazy Environment
        * @default true
        */
-      lazy_environment?: boolean;
+      lazy_environment?: ("on_demand" | "warmup" | "eager") | boolean;
       media_understanding?: components["schemas"]["MediaUnderstandingSelection"];
       memory?: components["schemas"]["SessionMemorySettings"];
       /**
@@ -5912,7 +5912,7 @@ export interface components {
       /** Instructions */
       instructions?: string | null;
       /** Lazy Environment */
-      lazy_environment?: boolean | null;
+      lazy_environment?: ("on_demand" | "warmup" | "eager") | boolean | null;
       media_understanding?:
         components["schemas"]["MediaUnderstandingSelection"] | null;
       /** Model */
@@ -5965,7 +5965,7 @@ export interface components {
       /** Instructions */
       instructions?: string | null;
       /** Lazy Environment */
-      lazy_environment?: boolean | null;
+      lazy_environment?: ("on_demand" | "warmup" | "eager") | boolean | null;
       media_understanding?:
         components["schemas"]["MediaUnderstandingSelection"] | null;
       /** Model */

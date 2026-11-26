@@ -62,6 +62,7 @@ if TYPE_CHECKING:
     from a13n_harness.identity import AgentInstanceContext
     from a13n_harness.model_context import ModelContextProjection, ModelContextProjectionRequest
 
+    from .bootstrap import BootstrapContext
     from .sources import EnvironmentEntry
 
 
@@ -255,6 +256,10 @@ class BoundEnvironment(ABC):
     @property
     @abstractmethod
     def files(self) -> FileOperator: ...
+
+    def bootstrap_context(self, path: str, actions: frozenset[EnvironmentAction]) -> BootstrapContext | None:
+        """Return bootstrap context for a Host that supports deferred observation."""
+        return None
 
     @abstractmethod
     def select_files(self, path: str, *, alias: str | None = None) -> FileScopeSelection:
