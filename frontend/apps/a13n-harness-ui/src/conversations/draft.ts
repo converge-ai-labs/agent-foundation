@@ -227,7 +227,7 @@ export class ThreadDraft {
     else options.set(key, value);
   }
   // Private intent: establish the durable Coordinator role before the next Send.
-  coordinator = false;
+  coordinator?: boolean;
   coordinatorUncertain = false;
   replacement: Schema<"DraftFrame"> | undefined;
   private accepted: Y.Snapshot | undefined;

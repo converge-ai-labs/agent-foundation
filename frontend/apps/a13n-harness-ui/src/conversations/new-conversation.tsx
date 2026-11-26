@@ -81,6 +81,7 @@ export async function ensureConversation(
   transport: Transport,
   threadId: string,
   draft: NewDraft,
+  coordinator: boolean,
 ) {
   if (draft.pending) return draft.pending;
   if (draft.created) return;
@@ -94,6 +95,7 @@ export async function ensureConversation(
       );
     }
     draft.attempted = true;
+    draft.composer.coordinator = !draft.coordinatorThreadId && coordinator;
     draft.save();
     try {
       const created = await result(
@@ -104,7 +106,7 @@ export async function ensureConversation(
             ...(draft.acp ? { acp_options: draft.acp.selection } : {}),
             ...(draft.coordinatorThreadId
               ? { coordinator_thread_id: draft.coordinatorThreadId }
-              : draft.composer.coordinator
+              : coordinator
                 ? { coordinator: true }
                 : {}),
           },
@@ -138,13 +140,17 @@ export async function ensureConversation(
 export function NewConversationPage(props: {
   profile: Profile;
   unauthorized: () => void;
+  coordinatorByDefault?: boolean;
 }) {
   const drafts = useContext(NewConversationDrafts);
   const composers = useContext(ComposerDrafts);
   const { key } = useLocation();
   // A new navigation can leave a retired composer behind after a successful
   // Send whose saved-page read failed; ordinary rerenders must not replace it.
-  const draft = useMemo(() => drafts.get(composers), [drafts, composers, key]);
+  const draft = useMemo(
+    () => drafts.get(composers, props.coordinatorByDefault),
+    [drafts, composers, key, props.coordinatorByDefault],
+  );
   return <NewConversation key={draft.threadId} draft={draft} {...props} />;
 }
 
@@ -152,8 +158,10 @@ function NewConversation({
   draft,
   profile,
   unauthorized,
+  coordinatorByDefault = false,
 }: {
   draft: NewDraft;
+  coordinatorByDefault?: boolean;
   profile: Profile;
   unauthorized: () => void;
 }) {
@@ -201,7 +209,8 @@ function NewConversation({
       ),
   });
   const create = useMutation({
-    mutationFn: () => ensureConversation(transport, threadId, draft),
+    mutationFn: (coordinator: boolean) =>
+      ensureConversation(transport, threadId, draft, coordinator),
     onSettled: (_data, error) => {
       if (draft.created) void refreshThreadLists(queries);
       if (draft.created && error && active.current) openConversation();
@@ -302,6 +311,7 @@ function NewConversation({
     (item) => item.project_id === defaults.project_id,
   );
   const effective = preview.data?.configuration;
+  const canCoordinate = !!effective?.project_id && !preview.error;
   const effectiveAgent = selectors.data?.agents.find(
     (item) => item.agent_id === effective?.agent_source.id,
   );
@@ -572,8 +582,12 @@ function NewConversation({
               ownerId
                 ? undefined
                 : {
-                    active: draft.created && composerDraft.coordinator,
-                    available: !!effective?.project_id && !preview.error,
+                    active: draft.created && composerDraft.coordinator === true,
+                    available: canCoordinate,
+                    defaultEnabled:
+                      canCoordinate &&
+                      (draft.retainedCoordinatorDefault ??
+                        coordinatorByDefault),
                     locked: draft.attempted,
                   }
             }
@@ -607,7 +621,7 @@ function NewConversation({
             acpCommands={acpAgent ? acp.data?.commands : undefined}
             externalAgent={!!acpAgent}
             skillDefaults={defaults}
-            prepareThread={() => {
+            prepareThread={(coordinator) => {
               if (
                 !draft.created &&
                 (!acpAgent ||
@@ -616,7 +630,7 @@ function NewConversation({
               ) {
                 draft.acp = undefined;
               }
-              return create.mutateAsync();
+              return create.mutateAsync(coordinator);
             }}
             onPreparing={setPreparing}
             onSubmitted={openConversation}

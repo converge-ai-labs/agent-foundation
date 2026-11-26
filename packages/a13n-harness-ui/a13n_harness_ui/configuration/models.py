@@ -296,6 +296,7 @@ ComposerSendShortcut = Literal["enter", "mod-enter"]
 
 class WebUiConfiguration(ConfigurationModel):
     send_shortcut: ComposerSendShortcut = Field(default="enter", exclude_if=lambda value: value == "enter")
+    coordinator_by_default: bool = Field(default=False, exclude_if=lambda value: not value)
     allowed_origins: tuple[str, ...] = ()
     bot: BotConfiguration = Field(default_factory=BotConfiguration)
 

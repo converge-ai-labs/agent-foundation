@@ -3719,6 +3719,8 @@
   "New in Inbox": "Inbox में नया",
   "Inbox only": "केवल Inbox",
   "Bot messages, Inbox items, task results and requests for your input on this browser.": "इस ब्राउज़र पर Bot संदेश, Inbox आइटम, कार्य परिणाम और आपके इनपुट के अनुरोध।",
+  "Coordinate agents by default": "डिफ़ॉल्ट रूप से Agents को कोऑर्डिनेट करें",
+  "Preselect Coordinate agents for new project chats. You can turn it off before sending the first message.": "नई प्रोजेक्ट चैट में Agents को कोऑर्डिनेट करने का विकल्प पहले से चालू रखें। पहला संदेश भेजने से पहले इसे बंद कर सकते हैं।",
   "Automatically generate chat titles": "चैट के शीर्षक अपने आप बनाएँ",
   "Use an extra model request to name new chats. You can still generate a title manually when this is off.": "नई चैट का नाम रखने के लिए मॉडल को एक अतिरिक्त अनुरोध भेजें। इसे बंद करने पर भी आप खुद शीर्षक बनवा सकते हैं।",
   "Input predictions": "इनपुट सुझाव",
