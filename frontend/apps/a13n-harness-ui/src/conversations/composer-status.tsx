@@ -46,7 +46,7 @@ export function ComposerStatus({
   busy?: boolean;
   liveTokens?: number;
   liveRecordId?: string;
-  acpContext?: { used: number; size: number };
+  acpContext?: { used: number; size: number } | null;
   external?: boolean;
 }) {
   const { t, i18n } = useTranslation();
@@ -98,17 +98,30 @@ export function ComposerStatus({
     if (detail === "Context" && liveRecordId) void refreshContext();
   }, [detail, liveRecordId, liveTokens, refreshContext]);
   const tokens =
-    acpContext?.used ??
-    (external ? undefined : liveTokens) ??
-    context.data?.latest_request_tokens;
-  const contextData = acpContext
-    ? {
-        ...context.data,
-        thread_id: threadId,
-        latest_request_tokens: acpContext.used,
-        context_window: acpContext.size,
-      }
-    : context.data;
+    acpContext === null
+      ? undefined
+      : (acpContext?.used ??
+        (external ? undefined : liveTokens) ??
+        context.data?.latest_request_tokens);
+  const contextData =
+    acpContext === null
+      ? context.data
+        ? {
+            ...context.data,
+            latest_request_tokens: null,
+            context_window: null,
+          }
+        : undefined
+      : acpContext
+        ? {
+            ...context.data,
+            thread_id: threadId,
+            latest_request_tokens: acpContext.used,
+            context_window: acpContext.size,
+          }
+        : context.data;
+  const hideExternalContext =
+    external && !debug && tokens == null && contextData?.context_window == null;
   const summary = usageSummary(
     usage.data,
     contextData ? { ...contextData, latest_request_tokens: tokens } : undefined,
@@ -141,7 +154,11 @@ export function ComposerStatus({
             ["Cost", summary.cost, t("Chat usage"), t("Cost")],
           ] as const
         )
-          .filter(([label]) => debug || label !== "Tokens")
+          .filter(
+            ([label]) =>
+              (debug || label !== "Tokens") &&
+              (!hideExternalContext || label !== "Context"),
+          )
           .map(([label, value, title, name]) => (
             <Popover
               key={label}
@@ -213,13 +230,26 @@ export function ComposerStatus({
                   <PopoverTitle>{title}</PopoverTitle>
                   {label === "Context" && (
                     <HelpTip label={t("About context")}>
-                      {t(
-                        "Tokens in the latest main model request with reported usage. Chat totals are in Usage. The context limit depends on the model.",
-                      )}
-                      {context.data?.context_breakdown &&
+                      {external
+                        ? t(
+                            "Context occupancy reported by the external ACP Agent. Chat totals are in Usage.",
+                          )
+                        : t(
+                            "Tokens in the latest main model request with reported usage. Chat totals are in Usage. The context limit depends on the model.",
+                          )}
+                      {!external &&
+                        context.data?.context_breakdown &&
                         ` ${t("Prompt estimates divide input tokens in proportion to the measured characters in each category.")}`}
-                      {!context.data?.context_window &&
-                        ` ${t("This model has not provided a context limit, so its used percentage is unavailable.")}`}
+                      {!contextData?.context_window &&
+                        ` ${
+                          external
+                            ? t(
+                                "This external ACP Agent has not reported its current context window, so occupancy is unavailable.",
+                              )
+                            : t(
+                                "This model has not provided a context limit, so its used percentage is unavailable.",
+                              )
+                        }`}
                     </HelpTip>
                   )}
                   <Button
@@ -249,13 +279,15 @@ export function ComposerStatus({
                       <div className={styles.contextStats}>
                         <ContextDetails
                           request={
-                            liveTokens == null ||
-                            (liveRecordId != null &&
-                              liveRecordId === context.data?.record_id &&
-                              liveTokens ===
-                                context.data?.latest_request_tokens)
-                              ? context.data
-                              : undefined
+                            acpContext === null || external
+                              ? undefined
+                              : liveTokens == null ||
+                                  (liveRecordId != null &&
+                                    liveRecordId === context.data?.record_id &&
+                                    liveTokens ===
+                                      context.data?.latest_request_tokens)
+                                ? context.data
+                                : undefined
                           }
                           used={tokens}
                           capacity={contextData?.context_window}

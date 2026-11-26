@@ -3740,5 +3740,7 @@
   "Detected": "已检测到",
   "Skip permission prompts": "跳过权限确认",
   "Allow unattended tool execution without interactive CLI prompts.": "允许无人值守执行工具调用，不在命令行中弹出交互确认。",
-  "Customize command": "自定义启动命令"
+  "Customize command": "自定义启动命令",
+  "Context occupancy reported by the external ACP Agent. Chat totals are in Usage.": "外部 ACP Agent 上报的上下文占用情况。聊天总量见「用量」。",
+  "This external ACP Agent has not reported its current context window, so occupancy is unavailable.": "该外部 ACP Agent 尚未上报当前上下文窗口，因此暂无法显示占用率。"
 }

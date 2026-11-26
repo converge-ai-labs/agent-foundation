@@ -458,6 +458,7 @@ export class DisplayNormalizer {
         const summary = [
           "a13n.context.handoff_summary",
           "a13n.context.compaction_summary",
+          "a13n.acp.compaction",
         ].includes(name);
         if (!(this.full && summary) && jsonSize(observed) > observationLimit)
           observed = { omitted: true };

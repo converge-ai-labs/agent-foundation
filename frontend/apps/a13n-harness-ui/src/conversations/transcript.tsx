@@ -307,11 +307,29 @@ function savedRows(
       const context = part.metadata?.["a13n.context"];
       if (context === "handoff" || context === "compaction") {
         const operation = part.metadata?.operation_id;
+        const rawState = part.metadata?.["a13n.context.state"];
+        const state: ContextState | undefined =
+          rawState === "summary-ready" ||
+          rawState === "prepared" ||
+          rawState === "completed" ||
+          rawState === "failed" ||
+          rawState === "cancelled" ||
+          rawState === "in-progress"
+            ? rawState
+            : undefined;
+        const rawDiagnostics = part.metadata?.["a13n.context.diagnostics"];
+        const diagnostics = Array.isArray(rawDiagnostics)
+          ? rawDiagnostics.filter(
+              (item): item is string => typeof item === "string" && !!item,
+            )
+          : undefined;
         rows.push({
           id: typeof operation === "string" ? `context:${operation}` : id,
           kind: "context",
           context,
           text: part.text ?? "",
+          state,
+          diagnostics: diagnostics?.length ? diagnostics : undefined,
         });
       } else if (systemNotice(part.metadata)) {
         splitExecutionNotices(

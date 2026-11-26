@@ -13,12 +13,14 @@ from typing import Any
 from a13n_harness.context import AgentContext
 from a13n_harness.events import TaskChangedPayload, UsageReportPayload
 from a13n_harness.models.codex import CodexRequestModel
+from a13n_stream_protocol import CustomEventAssembler
 from acp import Client, RequestError
 from acp.schema import (
     AgentCapabilities,
     AgentMessageChunk,
     AgentPlanUpdate,
     AgentThoughtChunk,
+    ClientCapabilities,
     Implementation,
     InitializeResponse,
     NewSessionResponse,
@@ -31,6 +33,7 @@ from acp.schema import (
     SessionConfigOptionSelect,
     SessionConfigSelectOption,
     SessionResumeCapabilities,
+    SessionUpdateCompactionUpdate,
     SetSessionConfigOptionResponse,
     TextContentBlock,
     ToolCallProgress,
@@ -86,6 +89,8 @@ class _Turn:
     stopping: asyncio.Task[None] | None = None
     notifications: asyncio.Queue[AgentThoughtChunk | str | _Approval] = field(default_factory=asyncio.Queue)
     plan: dict[str, PlanEntry] = field(default_factory=dict)
+    compactions: dict[str, str] = field(default_factory=dict)
+    custom_events: CustomEventAssembler = field(default_factory=CustomEventAssembler)
     run_id: str | None = None
     tool_calls: dict[str, str] = field(default_factory=dict)
     open_calls: set[str] = field(default_factory=set)
@@ -98,12 +103,22 @@ class _Turn:
                 answer.set_result(ToolDenied())
 
 
+def _client_supports_compaction(capabilities: object) -> bool:
+    if isinstance(capabilities, ClientCapabilities):
+        return capabilities.session is not None and capabilities.session.compaction is not None
+    if isinstance(capabilities, dict):
+        session = capabilities.get("session")
+        return isinstance(session, dict) and session.get("compaction") is not None
+    return False
+
+
 class AcpAgent:
     def __init__(self, app: HarnessUiApp, *, unattended: bool = False) -> None:
         self.app = app
         self.unattended = unattended
         self.client: Client
         self.initialized = False
+        self.client_supports_compaction = False
         self.disconnected = False
         self.resuming: set[str] = set()
         self.sessions: dict[str, tuple[SessionMcpServer, ...]] = {}
@@ -124,8 +139,14 @@ class AcpAgent:
             if turn.stopping is not None:
                 turn.stopping.cancel()
 
-    async def initialize(self, protocol_version: int, **kwargs: Any) -> InitializeResponse:
+    async def initialize(
+        self,
+        protocol_version: int,
+        client_capabilities: ClientCapabilities | dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> InitializeResponse:
         self.initialized = True
+        self.client_supports_compaction = _client_supports_compaction(client_capabilities)
         return InitializeResponse(
             field_meta={PROFILE: {"version": 1, "unattended": self.unattended}},
             protocol_version=1,
@@ -617,18 +638,72 @@ class AcpAgent:
             )
 
     async def _custom_update(self, session_id: str, turn: _Turn, payload: dict[str, Any]) -> None:
-        value = payload.get("value")
+        assembled = turn.custom_events.accept(payload)
+        if assembled is None:
+            return
+        name = assembled.get("name")
+        value = assembled.get("value")
         event = value.get("event") if isinstance(value, dict) else None
+        if name == "a13n.context.compaction_summary" and isinstance(event, dict):
+            if not self.client_supports_compaction:
+                return
+            operation_id = event.get("operation_id")
+            summary = event.get("summary")
+            if isinstance(operation_id, str) and operation_id and isinstance(summary, str):
+                status = turn.compactions.get(operation_id, "in_progress")
+                await self.client.session_update(
+                    session_id,
+                    SessionUpdateCompactionUpdate(
+                        compaction_id=operation_id,
+                        status=status,
+                        summary=[TextContentBlock(type="text", text=summary)],
+                    ),
+                )
+            return
         native = event.get("payload") if isinstance(event, dict) else None
         if not isinstance(native, dict):
             return
-        if native.get("type") == "task_changed" and payload.get("name") == "a13n.harness.state":
+        if name == "a13n.harness.context":
+            if not self.client_supports_compaction:
+                return
+            event_type = native.get("type")
+            operation_id = native.get("operation_id")
+            if isinstance(operation_id, str) and operation_id:
+                if event_type == "compaction_started":
+                    turn.compactions[operation_id] = "in_progress"
+                    await self.client.session_update(
+                        session_id,
+                        SessionUpdateCompactionUpdate(compaction_id=operation_id, status="in_progress"),
+                    )
+                elif event_type == "compaction_completed":
+                    turn.compactions[operation_id] = "completed"
+                    await self.client.session_update(
+                        session_id,
+                        SessionUpdateCompactionUpdate(compaction_id=operation_id, status="completed"),
+                    )
+                elif event_type == "compaction_failed":
+                    turn.compactions[operation_id] = "failed"
+                    parts = [
+                        part
+                        for part in (native.get("error_code"), native.get("reason"))
+                        if isinstance(part, str) and part
+                    ]
+                    await self.client.session_update(
+                        session_id,
+                        SessionUpdateCompactionUpdate(
+                            compaction_id=operation_id,
+                            status="failed",
+                            error=": ".join(parts) if parts else None,
+                        ),
+                    )
+            return
+        if native.get("type") == "task_changed" and name == "a13n.harness.state":
             task = TaskChangedPayload.model_validate(native).task
             turn.plan[task.id] = PlanEntry(
                 content=task.subject, priority="medium", status=task.status, field_meta={PROFILE: {"taskId": task.id}}
             )
             await self.client.session_update(session_id, AgentPlanUpdate(entries=list(turn.plan.values())))
-        elif native.get("type") == "usage_report" and payload.get("name") == "a13n.harness.usage":
+        elif native.get("type") == "usage_report" and name == "a13n.harness.usage":
             usage = UsageReportPayload.model_validate(native)
             context = await self.app.context_usage(session_id)
             report = usage.model_dump(mode="json")

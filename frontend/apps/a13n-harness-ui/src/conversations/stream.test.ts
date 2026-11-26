@@ -2595,3 +2595,135 @@ it("re-folds transient progress without advancing the suffix and clears it at sc
   expect(display.blocks.get("tool")?.progress).toBeUndefined();
   expect(display.gap).toBe(false);
 });
+
+it("folds a13n.acp.compaction states into context activity and tri-state clears acpContext on completion", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let seq = 100;
+  let disp = 0;
+  const emit = (name: string, value: Record<string, unknown>, itemId: string) =>
+    display.accept(
+      rawFrame(
+        ++seq,
+        ++disp,
+        { type: "CUSTOM", name, value },
+        itemId,
+        "observation",
+        "completed",
+      ),
+    );
+
+  emit("a13n.acp.usage", { used: 800, size: 1000 }, "usage");
+  expect(display.acpContext).toEqual({ used: 800, size: 1000 });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c1", status: "in_progress", summary: "Working..." },
+    "cmp-c1",
+  );
+  expect(display.acpContext).toEqual({ used: 800, size: 1000 });
+  expect(display.blocks.get("context:c1")).toMatchObject({
+    kind: "activity",
+    context: "compaction",
+    contextState: "in-progress",
+    result: "Working...",
+  });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c1", status: "completed", summary: "Final summary." },
+    "cmp-c1",
+  );
+  emit("a13n.acp.usage", { cleared: true }, "usage");
+  expect(display.acpContext).toBeNull();
+  expect(display.blocks.get("context:c1")).toMatchObject({
+    contextState: "completed",
+    result: "Final summary.",
+  });
+
+  emit("a13n.acp.usage", { used: 120, size: 1000 }, "usage");
+  expect(display.acpContext).toEqual({ used: 120, size: 1000 });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c2", status: "failed", error: "provider_error" },
+    "cmp-c2",
+  );
+  expect(display.acpContext).toEqual({ used: 120, size: 1000 });
+  expect(display.blocks.get("context:c2")).toMatchObject({
+    contextState: "failed",
+    contextDiagnostics: ["provider_error"],
+    result: "",
+  });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c3", status: "cancelled" },
+    "cmp-c3",
+  );
+  expect(display.acpContext).toEqual({ used: 120, size: 1000 });
+  expect(display.blocks.get("context:c3")).toMatchObject({
+    contextState: "cancelled",
+    result: "",
+  });
+});
+
+it("preserves post-compaction acpContext across compact display snapshot replay", () => {
+  const replayed = new FocusDisplay();
+  replayed.accept(snapshot(0));
+  replayed.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  replayed.accept(
+    compactFrame(101, [
+      compactItem(
+        "usage-slot",
+        1,
+        { name: "a13n.acp.usage", value: { used: 150, size: 1000 } },
+        "observation",
+      ),
+      compactItem(
+        "compaction-slot",
+        2,
+        {
+          name: "a13n.acp.compaction",
+          value: {
+            compactionId: "c1",
+            status: "completed",
+            summary: "Compacted.",
+          },
+        },
+        "observation",
+      ),
+    ]),
+  );
+  expect(replayed.acpContext).toEqual({ used: 150, size: 1000 });
+  expect(replayed.blocks.get("context:c1")).toMatchObject({
+    context: "compaction",
+    contextState: "completed",
+    result: "Compacted.",
+  });
+
+  const cleared = new FocusDisplay();
+  cleared.accept(snapshot(0));
+  cleared.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  cleared.accept(
+    compactFrame(101, [
+      compactItem(
+        "usage-slot",
+        1,
+        { name: "a13n.acp.usage", value: { cleared: true } },
+        "observation",
+      ),
+      compactItem(
+        "compaction-slot",
+        2,
+        {
+          name: "a13n.acp.compaction",
+          value: { compactionId: "c1", status: "completed" },
+        },
+        "observation",
+      ),
+    ]),
+  );
+  expect(cleared.acpContext).toBeNull();
+});

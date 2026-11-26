@@ -3772,5 +3772,7 @@
   "Detected": "Detected",
   "Skip permission prompts": "Skip permission prompts",
   "Allow unattended tool execution without interactive CLI prompts.": "Allow unattended tool execution without interactive CLI prompts.",
-  "Customize command": "Customize command"
+  "Customize command": "Customize command",
+  "Context occupancy reported by the external ACP Agent. Chat totals are in Usage.": "Context occupancy reported by the external ACP Agent. Chat totals are in Usage.",
+  "This external ACP Agent has not reported its current context window, so occupancy is unavailable.": "This external ACP Agent has not reported its current context window, so occupancy is unavailable."
 }

@@ -266,6 +266,7 @@ class AcpSessions:
                     capabilities = schema.ClientCapabilities(
                         fs=schema.FileSystemCapabilities(read_text_file=True, write_text_file=True),
                         terminal=True,
+                        session=schema.ClientSessionCapabilities(compaction=schema.CompactionCapabilities()),
                         elicitation=(
                             schema.ElicitationCapabilities(
                                 form=schema.ElicitationFormCapabilities(), url=schema.ElicitationUrlCapabilities()
@@ -310,6 +311,17 @@ class AcpSessions:
         entry = self._threads.get(thread_id)
         return acp_commands(entry.resident.runtime) if entry is not None and entry.resident is not None else None
 
+    def live_context_window(self, thread_id: str) -> tuple[bool, tuple[int, int] | None]:
+        """Return (authoritative, context_window) from a connected live resident."""
+        entry = self._threads.get(thread_id)
+        resident = entry.resident if entry is not None else None
+        if resident is None or not resident.runtime.connected:
+            return False, None
+        client = resident.runtime.client
+        if client.context_window_version == 0 and client.context_window is None:
+            return False, None
+        return True, client.context_window
+
     async def set_option(self, thread_id: str, change: AcpOptionChange) -> tuple[tuple[AcpOption, ...], frozenset[str]]:
         entry = self._threads.get(thread_id)
         if entry is None or entry.resident is None:
@@ -325,6 +337,8 @@ class AcpSessions:
                 else change.value == "" or change.value not in {choice.value for choice in option.choices}
             ):
                 raise ThreadError("The ACP Agent did not offer that option value.", code="acp_option_invalid")
+            model_changed = option.is_model and change.value != option.value
+            usage_version = resident.runtime.client.context_window_version
             try:
                 async with asyncio.timeout(15):
                     await resident.runtime.set_config_option(change.id, change.value)
@@ -335,6 +349,8 @@ class AcpSessions:
             options = self.options(thread_id)
             if not any(item.id == change.id and item.value == change.value for item in options):
                 raise ThreadError("The ACP Agent did not confirm the option change.", code="acp_option_failed")
+            if model_changed and resident.runtime.client.context_window_version == usage_version:
+                resident.runtime.client.clear_context_window()
             resident.unrestored_options = frozenset() if option.is_model else resident.unrestored_options - {change.id}
             return options, resident.unrestored_options
 

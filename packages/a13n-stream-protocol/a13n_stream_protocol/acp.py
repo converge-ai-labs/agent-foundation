@@ -10,12 +10,40 @@ from a13n_harness.acp import AcpUpdate, acp_host_tool_name
 from a13n_harness.tools.diagnostics import SYSTEM_FAILURE_METADATA_KEY
 from acp import schema
 
+MAX_COMPACTION_SUMMARY_BYTES = 64 * 1024
+
+
+def _bound_utf8(text: str, limit: int = MAX_COMPACTION_SUMMARY_BYTES) -> str:
+    if len(text) <= limit // 4:
+        return text
+    encoded = text.encode("utf-8")
+    if len(encoded) <= limit:
+        return text
+    return encoded[:limit].decode("utf-8", errors="ignore")
+
+
+def _content_block_text(block: object) -> str:
+    if isinstance(block, schema.TextContentBlock):
+        return block.text
+    if isinstance(block, schema.EmbeddedResourceContentBlock) and isinstance(
+        block.resource, schema.TextResourceContents
+    ):
+        return block.resource.text
+    return ""
+
 
 @dataclass
 class _Tool:
     metadata: dict[str, Any] = field(default_factory=dict)
     arguments_sent: bool = False
     result: Any = None
+
+
+@dataclass
+class _Compaction:
+    status: str = "in_progress"
+    summary: str = ""
+    error: str | None = None
 
 
 class AcpRunStream:
@@ -31,6 +59,7 @@ class AcpRunStream:
         self._sequence = 0
         self._tools: dict[str, _Tool] = {}
         self._completed: set[str] = set()
+        self._compactions: dict[str, _Compaction] = {}
         self._started = self._finished = False
 
     def _event(self, event_type: str, **fields: Any) -> None:
@@ -86,7 +115,42 @@ class AcpRunStream:
             )
         elif isinstance(update, schema.UsageUpdate):
             self._event("CUSTOM", name="a13n.acp.usage", value={"used": update.used, "size": update.size})
+        elif isinstance(update, schema.SessionUpdateCompactionUpdate):
+            self._compaction_update(update)
+        elif isinstance(update, schema.SessionUpdateCompactionSummaryChunk):
+            self._compaction_chunk(update)
         # Authored input comes from the host. ACP user chunks may echo hidden context.
+
+    def _emit_compaction(self, compaction_id: str, state: _Compaction) -> None:
+        payload: dict[str, Any] = {"compactionId": compaction_id, "status": state.status}
+        if state.summary:
+            payload["summary"] = state.summary
+        if state.error:
+            payload["error"] = state.error
+        self._event("CUSTOM", name="a13n.acp.compaction", value=payload)
+
+    def _compaction_update(self, update: schema.SessionUpdateCompactionUpdate) -> None:
+        self._close_message()
+        state = self._compactions.setdefault(update.compaction_id, _Compaction())
+        state.status = update.status
+        if update.summary is not None:
+            parts = [text for block in update.summary if (text := _content_block_text(block))]
+            state.summary = _bound_utf8("\n".join(parts))
+        if update.error is not None:
+            state.error = update.error
+        elif update.status == "completed":
+            state.error = None
+        self._emit_compaction(update.compaction_id, state)
+        if update.status == "completed":
+            self._event("CUSTOM", name="a13n.acp.usage", value={"cleared": True})
+
+    def _compaction_chunk(self, update: schema.SessionUpdateCompactionSummaryChunk) -> None:
+        self._close_message()
+        state = self._compactions.setdefault(update.compaction_id, _Compaction())
+        text = _content_block_text(update.content)
+        if text:
+            state.summary = _bound_utf8(state.summary + text)
+        self._emit_compaction(update.compaction_id, state)
 
     def _tool(self, update: schema.ToolCallStart | schema.ToolCallProgress) -> None:
         self._close_message()

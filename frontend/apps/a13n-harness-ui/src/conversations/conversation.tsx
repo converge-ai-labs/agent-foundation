@@ -789,7 +789,12 @@ function ConversationContent({
       ),
   });
   useEffect(() => {
-    if (acpOptions.isSuccess) void acpCommands.refetch();
+    if (acpOptions.isSuccess) {
+      void acpCommands.refetch();
+      void queries.invalidateQueries({
+        queryKey: ["thread", threadId, "context-usage"],
+      });
+    }
   }, [acpOptions.dataUpdatedAt]);
   const sources = useSources(!!acpAgent);
   const acpSource =

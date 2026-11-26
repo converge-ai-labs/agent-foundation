@@ -598,6 +598,8 @@ class SessionBackend:
                 }
             )
         self._refresh_status(configuration, thread)
+        if usage.context_window is not None:
+            self.status.context_window = usage.context_window
         self.resumed_transcript = page
         return f"Resumed {selected}."
 
@@ -1076,6 +1078,10 @@ class SessionBackend:
                 self.status.restore_usage(totals.combined)
         usage = await self.app.context_usage(thread_id)
         self.status.context_tokens = usage.latest_request_tokens
+        if usage.context_window is not None:
+            self.status.context_window = usage.context_window
+        elif self._uses_acp:
+            self.status.context_window = None
         outcome = operation.outcome
         if operation.goal is not None and not operation.goal.active:
             goal = operation.goal
