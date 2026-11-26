@@ -822,6 +822,7 @@ class AgentSummary(SurfaceModel):
     agent_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    preset: str | None = Field(default=None, min_length=1, max_length=64, exclude_if=lambda value: value is None)
     source_path: str = Field(min_length=1, max_length=4096)
     tool_search_mcp_servers: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)
 

@@ -1417,6 +1417,11 @@ function ConversationContent({
                       threadId={threadId}
                       active={acpActive}
                       agentId={acpAgent}
+                      preset={
+                        selectors.data?.agents.find(
+                          (item) => item.agent_id === acpAgent,
+                        )?.preset
+                      }
                       options={acpOptions}
                       continuation={detail.data?.continuation_id}
                     />

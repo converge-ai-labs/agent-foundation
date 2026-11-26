@@ -19,23 +19,48 @@ const get = vi.hoisted(() =>
     data:
       path === "/api/auth/keys"
         ? [{ credential_ref: "key-work" }]
-        : path === "/api/models/choices"
-          ? {
-              connections: [
-                {
-                  id: "openai-responses",
-                  label: "OpenAI",
-                  provider: "openai-responses",
-                  authentication: "api_key",
-                  models: [],
-                  default_model: "gpt-5.4",
-                  supports_base_url: true,
-                },
-              ],
-            }
-          : path === "/api/models/catalog"
-            ? { items: [], status: "unavailable" }
-            : [],
+        : path === "/api/acp-agents/presets"
+          ? [
+              {
+                id: "antigravity",
+                name: "Antigravity",
+                executable: "agy",
+                detected_path: "/usr/local/bin/agy",
+                args: [
+                  "acp",
+                  "--dangerously-skip-permissions",
+                  "--process-per-session",
+                ],
+                install_url: "https://antigravity.google/docs",
+              },
+              {
+                id: "claude_code",
+                name: "Claude Code",
+                executable: "npx",
+                detected_path: "/usr/local/bin/npx",
+                args: ["-y", "@zed-industries/claude-agent-acp"],
+                install_url:
+                  "https://github.com/zed-industries/claude-agent-acp",
+              },
+              { id: "custom", name: "Custom ACP Agent" },
+            ]
+          : path === "/api/models/choices"
+            ? {
+                connections: [
+                  {
+                    id: "openai-responses",
+                    label: "OpenAI",
+                    provider: "openai-responses",
+                    authentication: "api_key",
+                    models: [],
+                    default_model: "gpt-5.4",
+                    supports_base_url: true,
+                  },
+                ],
+              }
+            : path === "/api/models/catalog"
+              ? { items: [], status: "unavailable" }
+              : [],
   })),
 );
 vi.mock("../transport/context", () => ({
@@ -555,7 +580,7 @@ it("edits shared creation models and subagent controls through the root document
   renderFields('schema_version: "1"\n');
   const user = userEvent.setup();
   const emptyNotice =
-    "With no models selected, agents cannot create chats or workers, or delegate to subagents.";
+    "With no models selected, agents can still create chats and workers with configured Agents, without overriding models or delegating to subagents.";
   expect(screen.getByText(emptyNotice)).toBeTruthy();
   await user.click(
     screen.getByRole("switch", { name: "Let the agent create subagents" }),
@@ -699,4 +724,31 @@ it("keeps Inbox posting enabled by default and writes the opt-out", () => {
     inbox: { enabled: false },
   });
   expect(inbox.getAttribute("aria-checked")).toBe("false");
+});
+
+it("auto-fills ACP preset defaults and toggles Antigravity unattended permissions without manual command edits", async () => {
+  renderFields(
+    'schema_version: "1"\nkind: acp_agent\nid: acp-one\nname: Antigravity\npreset: antigravity\nargs:\n  - acp\n  - --dangerously-skip-permissions\n  - --process-per-session\n',
+  );
+  const user = userEvent.setup();
+  const skip = await screen.findByRole("switch", {
+    name: "Skip permission prompts",
+  });
+  expect(skip.getAttribute("aria-checked")).toBe("true");
+  await user.click(skip);
+  expect(parse(screen.getByTestId("source").textContent!)).toMatchObject({
+    name: "Antigravity",
+    preset: "antigravity",
+    args: ["acp", "--process-per-session"],
+  });
+  await user.click(screen.getByRole("combobox", { name: "ACP preset" }));
+  await user.click(await screen.findByRole("option", { name: /Claude Code/ }));
+  const updated = parse(screen.getByTestId("source").textContent!);
+  expect(updated).toEqual({
+    schema_version: "1",
+    kind: "acp_agent",
+    id: "acp-one",
+    name: "Claude Code",
+    preset: "claude_code",
+  });
 });

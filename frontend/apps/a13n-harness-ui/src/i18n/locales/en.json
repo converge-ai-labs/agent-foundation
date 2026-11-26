@@ -3640,7 +3640,7 @@
   "Let the agent create subagents": "Let the agent create subagents",
   "Choose at least one allowed model and a default model in Agent creation above.": "Choose at least one allowed model and a default model in Agent creation above.",
   "Agents can use these models for new chats, workers, and declared or dynamic subagents.": "Agents can use these models for new chats, workers, and declared or dynamic subagents.",
-  "With no models selected, agents cannot create chats or workers, or delegate to subagents.": "With no models selected, agents cannot create chats or workers, or delegate to subagents.",
+  "With no models selected, agents can still create chats and workers with configured Agents, without overriding models or delegating to subagents.": "With no models selected, agents can still create chats and workers with configured Agents, without overriding models or delegating to subagents.",
   "Used when the agent does not choose a model.": "Used when the agent does not choose a model.",
   "Maximum running subagents": "Maximum running subagents",
   "Shared by all subagents of one chat.": "Shared by all subagents of one chat.",
@@ -3744,5 +3744,10 @@
   "External destination": "External destination",
   "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.",
   "This field is required.": "This field is required.",
-  "Enter a valid value for this field.": "Enter a valid value for this field."
+  "Enter a valid value for this field.": "Enter a valid value for this field.",
+  "Detected": "Detected",
+  "Not installed": "Not installed",
+  "Skip permission prompts": "Skip permission prompts",
+  "Allow unattended tool execution without interactive CLI prompts.": "Allow unattended tool execution without interactive CLI prompts.",
+  "Customize command": "Customize command"
 }

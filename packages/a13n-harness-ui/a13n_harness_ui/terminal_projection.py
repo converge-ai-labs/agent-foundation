@@ -530,6 +530,7 @@ class TerminalProjectionService:
                                 kind="acp_agent",
                                 agent_id=item.id,
                                 name=item.name,
+                                preset=item.preset,
                                 source_path=paths[item.id],
                             )
                             for item in source.acp_agents.values()

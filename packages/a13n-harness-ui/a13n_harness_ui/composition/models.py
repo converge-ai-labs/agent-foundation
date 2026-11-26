@@ -254,6 +254,8 @@ class ResolvedRunComposition(CompositionModel):
     memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     # Missing in old captures keeps the Inbox tool those Runs already had.
     inbox_enabled: bool = Field(default=True, exclude_if=lambda value: value)
+    # Missing in old captures keeps root creation tools when an Agent or creation Model exists.
+    can_create_threads: bool = Field(default=True, exclude_if=lambda value: value)
     run_configuration: RunConfiguration = Field(
         default_factory=RunConfiguration, exclude_if=lambda value: value == RunConfiguration()
     )

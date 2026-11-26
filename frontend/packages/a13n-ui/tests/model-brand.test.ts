@@ -21,6 +21,12 @@ it.each([
   ["bytedance-seed/seed-2-1-turbo", "openrouter", "doubao"],
   ["llama3.2", "ollama", "meta"],
   ["meta-llama/Llama-3.3-70B-Instruct", "together", "meta"],
+  ["Claude Opus 4.6 (Thinking)", undefined, "claude"],
+  ["Gemini 2.5 Pro (High)", undefined, "gemini"],
+  ["GPT-OSS 120B (Medium)", undefined, "openai"],
+  ["OpenAI: GPT-5.4", undefined, "openai"],
+  ["DeepSeek R1", undefined, "deepseek"],
+  ["Kimi K2.5", undefined, "kimi"],
   ["fictional-model", "typesafe", "typesafe"],
 ])("resolves %s with provider %s as %s", (upstream, provider, expected) => {
   expect(modelBrand(upstream, provider)).toBe(expected);

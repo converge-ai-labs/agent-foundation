@@ -49,7 +49,7 @@ async def test_creation_owns_only_new_lead_workers_and_retains_failed_admission(
         assert worker.thread_id == managed["thread_id"]
         assert worker.coordinator_thread_id == lead.thread_id and worker.parent_thread_id is None
         assert worker.configuration.agent_source.id == "agent-assistant"
-        assert worker.configuration.default_model_id == "model-secondary"
+        assert worker.configuration.default_model_id is None
         assert observed[1].coordinator_thread_id is None
         assert (await app.get_thread(ordinary.thread_id)).thread.coordinator_thread_id is None
         assert (await app.list_threads()).total == 4
@@ -293,3 +293,71 @@ async def test_native_coordinator_creates_and_runs_an_acp_worker(tmp_path: Path)
         outcome = await app.wait_root_operation(created["receipt"]["receipt_id"])
         assert outcome.status == "completed", outcome.failure
         assert (await app.get_thread(worker.thread_id)).thread.excerpt.latest_reply == "done:worker task"
+
+
+async def test_agent_and_self_creation_work_without_allowed_models_while_model_override_requires_allowlist(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    import yaml
+
+    from .test_acp_execution import _PEER, _resource
+
+    root = coordinator_configuration(tmp_path)
+    document = yaml.safe_load(root.read_text())
+    document["subagents"] = {"dynamic": {"allowed_models": []}}
+    root.write_text(yaml.safe_dump(document))
+    resources = tmp_path / "acp_agents"
+    resources.mkdir()
+    acp = _resource().model_copy(update={"args": (str(_PEER), "ui")})
+    (resources / "fixture.yaml").write_text(json.dumps(acp.model_dump(mode="json", exclude_none=True)))
+
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        lead = await create_coordinator(app)
+        compose = (await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Plan")).published.value
+        tools = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=lead.thread_id, composition=compose
+        )
+        assert "create_worker" in tools.get_toolset().tools
+        ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=lead.thread_id))
+
+        # 1. Self Agent inheritance without model override works with empty allowed_models.
+        self_worker = await tools.create_worker(ctx, prompt="self worker")
+        assert self_worker["ok"], self_worker
+        await app.wait_root_operation(self_worker["receipt"]["receipt_id"])
+        saved_self = (await app.get_thread(self_worker["thread_id"])).thread
+        assert saved_self.configuration.agent_source.id == "agent-assistant"
+        assert saved_self.configuration.default_model_id is None
+
+        # 2. Explicit configured native Agent uses its own configured model without allowed_models.
+        named_worker = await tools.create_worker(ctx, prompt="named worker", agent_id="agent-worker")
+        assert named_worker["ok"], named_worker
+        await app.wait_root_operation(named_worker["receipt"]["receipt_id"])
+        saved_named = (await app.get_thread(named_worker["thread_id"])).thread
+        assert saved_named.configuration.agent_source.id == "agent-worker"
+        assert saved_named.configuration.default_model_id is None
+
+        # 3. Explicit configured ACP Agent works with empty allowed_models.
+        acp_worker = await tools.create_worker(ctx, prompt="acp worker", agent_id=acp.id)
+        assert acp_worker["ok"], acp_worker
+        await app.wait_root_operation(acp_worker["receipt"]["receipt_id"])
+
+        # 4. Explicit model override ("self agent change model") requires allowed_models.
+        denied = await tools.create_worker(ctx, prompt="override", model="model-secondary")
+        assert not denied["ok"] and denied["error"]["code"] == "creation_model_not_allowed"
+
+        document["subagents"] = {"dynamic": {"allowed_models": ["model-secondary"]}}
+        root.write_text(yaml.safe_dump(document))
+        await app.reload_configuration()
+        reloaded = (await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Plan 2")).published.value
+        allowed_tools = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=lead.thread_id, composition=reloaded
+        )
+        overridden = await allowed_tools.create_worker(ctx, prompt="override ok", model="model-secondary")
+        assert overridden["ok"], overridden
+        await app.wait_root_operation(overridden["receipt"]["receipt_id"])
+        saved_overridden = (await app.get_thread(overridden["thread_id"])).thread
+        assert saved_overridden.configuration.agent_source.id == "agent-assistant"
+        assert saved_overridden.configuration.default_model_id == "model-secondary"

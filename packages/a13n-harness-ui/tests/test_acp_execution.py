@@ -715,3 +715,110 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
         assert (await app.wait_root_operation(back_to_acp.receipt_id)).status is RootOperationStatus.completed
         back_reply = (await app.get_thread(native_to_acp.thread_id)).thread.excerpt.latest_reply
         assert back_reply is not None and "native reply on fork" in back_reply
+
+
+@pytest.mark.anyio
+async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_resolve_npx_adapters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from a13n_harness_ui.acp_execution import AcpSessionState
+    from a13n_harness_ui.acp_sessions import acp_presets, resolve_acp_argv
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.configuration.models import AcpAgentResource
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+
+    # 1. Built-in presets cover mainstream ACP CLIs and fall back to npx for adapter packages.
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for name in ("claude", "npx", "copilot", "goose", "kimi"):
+        exe = fake_bin / name
+        exe.write_text("#!/bin/sh\nexit 0\n")
+        exe.chmod(0o755)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("PATH", str(fake_bin))
+        mp.setattr("a13n_harness_ui.acp_sessions.local_environment", lambda _env=None: {"PATH": str(fake_bin)})
+        presets = {item.id: item for item in acp_presets()}
+        assert {
+            "antigravity",
+            "claude_code",
+            "codex",
+            "gemini_cli",
+            "github_copilot",
+            "opencode",
+            "goose",
+            "kimi_cli",
+        } <= presets.keys()
+        assert presets["claude_code"].detected_path == str(fake_bin / "npx")
+        assert presets["claude_code"].executable == "npx"
+        assert presets["claude_code"].args == ("-y", "@zed-industries/claude-agent-acp")
+        assert presets["codex"].detected_path is None  # codex CLI itself is not installed in fake_bin
+        assert presets["github_copilot"].detected_path == str(fake_bin / "copilot")
+        assert resolve_acp_argv(
+            AcpAgentResource(
+                schema_version="1", kind="acp_agent", id="acp-claude", name="Claude Code", preset="claude_code"
+            ),
+            path=str(fake_bin),
+        ) == ("npx", "-y", "@zed-industries/claude-agent-acp")
+
+    # 2. If the very first runtime.prompt fails before emitting updates, prompted stays False.
+    root = tmp_path / "a13n-harness-ui.yaml"
+    root.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: acp-fixture\n')
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (projects / "main.yaml").write_text(
+        f'schema_version: "1"\nkind: project\nid: project-main\nname: Main\nroots:\n  - path: {workspace}\n'
+    )
+    acp_dir = tmp_path / "acp_agents"
+    acp_dir.mkdir()
+    (acp_dir / "fixture.yaml").write_text(
+        json.dumps(
+            _resource()
+            .model_copy(update={"args": (str(_PEER), "ui", "unique-session")})
+            .model_dump(mode="json", exclude_none=True)
+        )
+    )
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=root, instrumentation=None) as app:
+        # Options preview cache honors TTL expiry.
+        first_preview = await app.acp_agent_options("acp-fixture", "project-main")
+        assert len(app._acp_options_cache) == 1
+        scope = next(iter(app._acp_options_cache))
+        app._acp_options_cache[scope] = (app._acp_options_cache[scope][0] - 120.0, first_preview)
+        refreshed_preview = await app.acp_agent_options("acp-fixture", "project-main")
+        assert refreshed_preview.options == first_preview.options
+
+        thread = await app.create_thread()
+        await app.acp_options(thread.thread_id, AcpOptionChange(id="mode", value="plan"))
+
+        from a13n_harness.acp import AcpSessionRuntime
+
+        original_prompt = AcpSessionRuntime.prompt
+        fail_once = True
+
+        async def flaky_prompt(self, prompt, **kwargs):
+            nonlocal fail_once
+            if fail_once:
+                fail_once = False
+                raise RuntimeError("transient startup failure before session prompt")
+            return await original_prompt(self, prompt, **kwargs)
+
+        monkeypatch.setattr(AcpSessionRuntime, "prompt", flaky_prompt)
+        failed = await app.submit_thread(thread_id=thread.thread_id, prompt="hello")
+        assert (await app.wait_root_operation(failed.receipt_id)).status is RootOperationStatus.failed
+        saved_raw = await app._store.threads.acp_state(thread.thread_id)
+        assert saved_raw is not None
+        saved_state = AcpSessionState.model_validate_json(saved_raw)
+        assert saved_state.prompted is False
+        assert "mode" in saved_state.explicit_options
+
+        # Retrying after retiring the broken resident opens a clean session/new instead of failing resume.
+        await app._acp_sessions.retire(thread.thread_id)
+        recovered = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-prior:recovered")
+        assert (await app.wait_root_operation(recovered.receipt_id)).status is RootOperationStatus.completed
+        reply = (await app.get_thread(thread.thread_id)).thread.excerpt.latest_reply
+        assert reply is not None and ";mode=plan;" in reply

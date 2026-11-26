@@ -3608,7 +3608,7 @@
   "Let the agent create subagents": "允许智能体创建子智能体",
   "Choose at least one allowed model and a default model in Agent creation above.": "请先在上方「创建智能体」中至少选择一个可用模型并设置默认模型。",
   "Agents can use these models for new chats, workers, and declared or dynamic subagents.": "智能体可使用这些模型创建会话、Worker，以及调用已声明或动态子智能体。",
-  "With no models selected, agents cannot create chats or workers, or delegate to subagents.": "未选择模型时，智能体无法创建会话或 Worker，也无法将任务委派给子智能体。",
+  "With no models selected, agents can still create chats and workers with configured Agents, without overriding models or delegating to subagents.": "未选择模型时，智能体仍可使用已配置的智能体创建会话或 Worker，但无法覆盖模型或将任务委派给子智能体。",
   "Used when the agent does not choose a model.": "智能体未指定模型时使用。",
   "Maximum running subagents": "最多同时运行的子智能体",
   "Shared by all subagents of one chat.": "同一对话的所有子智能体共享此上限。",
@@ -3712,5 +3712,10 @@
   "External destination": "外部站点",
   "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "在浏览器中完成操作后选择“接受”。服务器凭据不会发送到该页面。",
   "This field is required.": "此字段必填。",
-  "Enter a valid value for this field.": "请输入有效值。"
+  "Enter a valid value for this field.": "请输入有效值。",
+  "Detected": "已检测到",
+  "Not installed": "未安装",
+  "Skip permission prompts": "跳过权限确认",
+  "Allow unattended tool execution without interactive CLI prompts.": "允许无人值守执行工具调用，不在命令行中弹出交互确认。",
+  "Customize command": "自定义启动命令"
 }

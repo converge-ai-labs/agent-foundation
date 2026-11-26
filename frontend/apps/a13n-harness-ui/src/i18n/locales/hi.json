@@ -3640,7 +3640,7 @@
   "Let the agent create subagents": "Agent को Subagents बनाने दें",
   "Choose at least one allowed model and a default model in Agent creation above.": "ऊपर एजेंट बनाना में कम से कम एक अनुमत मॉडल और एक डिफ़ॉल्ट मॉडल चुनें।",
   "Agents can use these models for new chats, workers, and declared or dynamic subagents.": "एजेंट नई चैट, वर्कर और घोषित या डायनेमिक सबएजेंट के लिए इन मॉडलों का उपयोग कर सकते हैं।",
-  "With no models selected, agents cannot create chats or workers, or delegate to subagents.": "कोई मॉडल न चुनने पर एजेंट चैट या वर्कर नहीं बना सकते और सबएजेंट को काम नहीं सौंप सकते।",
+  "With no models selected, agents can still create chats and workers with configured Agents, without overriding models or delegating to subagents.": "कोई मॉडल न चुनने पर भी एजेंट कॉन्फ़िगर किए गए एजेंटों के साथ चैट और वर्कर बना सकते हैं, पर मॉडल बदल नहीं सकते और सबएजेंट को काम नहीं सौंप सकते।",
   "Used when the agent does not choose a model.": "जब Agent कोई मॉडल नहीं चुनता, तब उपयोग होता है।",
   "Maximum running subagents": "एक साथ चलने वाले अधिकतम Subagents",
   "Shared by all subagents of one chat.": "एक चैट के सभी Subagents द्वारा साझा।",
@@ -3744,5 +3744,10 @@
   "External destination": "बाहरी गंतव्य",
   "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "ब्राउज़र में कार्रवाई पूरी करें, फिर स्वीकार करें चुनें। सर्वर के क्रेडेंशियल उस पेज पर नहीं भेजे जाते।",
   "This field is required.": "यह फ़ील्ड आवश्यक है।",
-  "Enter a valid value for this field.": "इस फ़ील्ड के लिए मान्य मान दर्ज करें।"
+  "Enter a valid value for this field.": "इस फ़ील्ड के लिए मान्य मान दर्ज करें।",
+  "Detected": "उपलब्ध",
+  "Not installed": "इंस्टॉल नहीं है",
+  "Skip permission prompts": "अनुमति प्रॉम्प्ट छोड़ें",
+  "Allow unattended tool execution without interactive CLI prompts.": "इंटरैक्टिव CLI प्रॉम्प्ट के बिना स्वचालित टूल निष्पादन की अनुमति दें।",
+  "Customize command": "कमांड कस्टमाइज़ करें"
 }

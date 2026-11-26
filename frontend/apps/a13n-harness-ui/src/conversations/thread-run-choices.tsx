@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "../i18n";
-import { ModelIdentity } from "../shell/model-identity";
+import {
+  acpModelIdentity,
+  acpPresetBrand,
+  ModelIcon,
+  ModelIdentity,
+} from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
 import { CaretRight, Desktop } from "@phosphor-icons/react";
 import { useState } from "react";
@@ -204,11 +209,18 @@ export function ThreadRunChoices(props: RunChoiceProps) {
         label={
           <span className={panelStyles.modelSummary}>
             {isAcp ? (
-              props.externalModel ? (
-                `${agent.name} · ${props.externalModel}`
-              ) : (
-                agent.name
-              )
+              <ModelIdentity
+                name={
+                  props.externalModel
+                    ? `${agent.name} · ${props.externalModel}`
+                    : agent.name
+                }
+                modelIdentity={acpModelIdentity(
+                  props.externalModel,
+                  undefined,
+                  agent.preset,
+                )}
+              />
             ) : (
               <ModelIdentity model={model} name={modelName} />
             )}
@@ -263,12 +275,26 @@ function AgentModelChoices({
               },
             ]
           : []),
-        ...(catalog?.agents ?? []).map((item) => ({
-          value: item.agent_id,
-          label: item.name,
-          description: item.agent_id,
-          badge: item.kind === "acp_agent" ? t("ACP agent") : undefined,
-        })),
+        ...(catalog?.agents ?? []).map((item) => {
+          const itemModel = catalog?.models?.find(
+            (candidate) => candidate.model_id === item.model_id,
+          );
+          const presetBrand = acpPresetBrand(item.preset);
+          return {
+            value: item.agent_id,
+            label: item.name,
+            description: item.agent_id,
+            badge: item.kind === "acp_agent" ? t("ACP agent") : undefined,
+            icon:
+              item.kind === "acp_agent" ? (
+                presetBrand ? (
+                  <ModelIcon modelIdentity={presetBrand} />
+                ) : undefined
+              ) : itemModel ? (
+                <ModelIcon model={itemModel} />
+              ) : undefined,
+          };
+        }),
         ...(agentId && !agent
           ? [
               {
@@ -313,6 +339,7 @@ function AgentModelChoices({
         }}
       />
     );
+  if (isAcp && settings.page.startsWith("acp:")) return <>{externalOptions}</>;
   return (
     <>
       {settings.page === "root" && (

@@ -664,6 +664,7 @@ function NewConversation({
                     <AcpOptionFields
                       key={acpKey}
                       options={acp.data?.options}
+                      preset={effectiveAgent?.preset}
                       loading={acp.isFetching}
                       disabled={choicesDisabled || acpChange.isPending}
                       error={acpChange.error ?? acp.error}

@@ -325,8 +325,9 @@ async def test_creation_model_settings_save_applies_to_future_webui_runs_and_sur
             first = (await api.post(prefix + "/submit", json={"parts": ["Inspect settings"]})).json()["receipt_id"]
             with fail_after(10):
                 await started.wait()
-            assert "No models are allowed for new agents" in seen[0]
-            assert {"create_thread", "create_worker", "spawn_subagent", "delegate"}.isdisjoint(toolsets[0])
+            assert "No model overrides are allowed for new chats or workers" in seen[0]
+            assert "create_thread" in toolsets[0]
+            assert {"create_worker", "spawn_subagent", "delegate"}.isdisjoint(toolsets[0])
             captured = (await api.get(prefix + "/configuration")).json()["captured"]
             assert "webui_sidekick" not in captured
             invalid = {**document, "subagents": {"dynamic": {"allowed_models": ["model-missing"]}}}
@@ -344,12 +345,12 @@ async def test_creation_model_settings_save_applies_to_future_webui_runs_and_sur
             release.set()
             assert (await settled(api, first))["status"] == "completed"
             assert (
-                "No models are allowed for new agents" in seen[1]
+                "No model overrides are allowed for new chats or workers" in seen[1]
             )  # Later requests in the same Run retain captured instructions.
             second = (await api.post(prefix + "/submit", json={"parts": ["Inspect again"]})).json()["receipt_id"]
             assert (await settled(api, second))["status"] == "completed"
             assert "Agent creation models: model-primary" in seen[2]
-            assert "create_thread" not in toolsets[1] and "create_thread" in toolsets[2]
+            assert "create_thread" in toolsets[1] and "create_thread" in toolsets[2]
             assert (await api.get("/api/threads")).json()["total"] == 1  # Settings never create work.
     async with listener_with_app(tmp_path, configuration_path=root) as (http, _, _app):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
