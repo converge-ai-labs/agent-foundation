@@ -29,6 +29,7 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -974,6 +975,10 @@ class _MissingModelReferenceError(ValueError):
         super().__init__(f"{path}: {field} references unavailable Model {model_id!r}.")
 
 
+class _BotAgentKindError(ValueError):
+    """An unsupported explicit Bot Agent selection."""
+
+
 class _ToolSearchConfigurationError(ValueError):
     """Authored source/group diagnostic safe to expose without resource inputs."""
 
@@ -1281,7 +1286,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_graph(self) -> Self:
+    def _validate_graph(self, info: ValidationInfo) -> Self:
         defaults = self.document.defaults
         creation = self.document.agent_creation
         if creation.allowed_agents is not None:
@@ -1314,9 +1319,20 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
         for item in self.document.mcp.protocol_overrides:
             _require_reference(item, self.mcp_servers, "mcp.protocol_overrides")
         _require_reference(self.document.memory.auto_organize.model, self.models, "memory.auto_organize.model")
-        _require_reference(self.document.webui.bot.agent, self.agents | self.acp_agents, "webui.bot.agent")
-        if self.bot_acp_agent is not None and self.document.webui.bot.model is not None:
-            raise ValueError("An ACP Bot Agent owns its model selection")
+        bot_agent = self.document.webui.bot.agent
+        if bot_agent in self.acp_agents:
+            # Old generations remain readable while the YAML is repaired and
+            # while ordinary Threads recover against an earlier generation.
+            if not (
+                isinstance(info.context, dict)
+                and info.context.get("stored_generation") is True
+                and self.document.webui.bot.model is None
+            ):
+                raise _BotAgentKindError(
+                    "webui.bot.agent requires a native Agent; ACP Agents are not supported for Bot"
+                )
+        else:
+            _require_reference(bot_agent, self.agents, "webui.bot.agent")
         _require_reference(self.document.webui.bot.model, self.models, "webui.bot.model")
         live = self.document.live
         if live is not None and live.model is not None:
@@ -1455,14 +1471,8 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     @property
     def bot_agent_id(self) -> ResourceId | None:
         """Resolve Bot's execution-policy base within this accepted generation."""
-        return self.document.webui.bot.agent or (
-            self.document.defaults.agent if self.document.defaults.agent in self.agents else None
-        )
-
-    @property
-    def bot_acp_agent(self) -> AcpAgentResource | None:
-        agent_id = self.document.webui.bot.agent
-        return self.acp_agents.get(agent_id) if agent_id is not None else None
+        agent_id = self.document.webui.bot.agent or self.document.defaults.agent
+        return agent_id if agent_id in self.agents else None
 
     @property
     def bot_model_id(self) -> ResourceId | None:

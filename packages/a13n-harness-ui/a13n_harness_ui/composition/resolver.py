@@ -383,11 +383,10 @@ class AgentCompositionResolver:
                 root=self._live_node(source),
                 environment_profile=self.environment_profile(source, FULL_CONTROL_PROFILE_ID),
             )
-        acp_bot = source.bot_acp_agent if selection.agent_source_kind == "bot" else None
-        if selection.agent_source_kind == "acp_agent" or acp_bot is not None:
+        if selection.agent_source_kind == "acp_agent":
             self._validate_selection(source, selection)
             model_overrides = None
-            resource = acp_bot if acp_bot is not None else source.acp_agents[selection.agent_source_id]
+            resource = source.acp_agents[selection.agent_source_id]
             shell_review = None
             if selections := self._shell_review_selections(source, ()):
                 reviewer_id = source.document.security.shell_review.model
@@ -405,18 +404,9 @@ class AgentCompositionResolver:
                 source_id=resource.id,
                 roster_name=resource.name[:128],
                 resource=resource,
-                global_guidance=(
-                    (*source.global_guidance, BOT_INSTRUCTIONS, source.document.webui.bot.instructions)
-                    if acp_bot is not None
-                    else source.global_guidance
-                ),
+                global_guidance=source.global_guidance,
                 capabilities=(ResolvedCapabilityRecipe(capability="skills"),),
-                mcp_servers=self._mcp_recipes(
-                    source,
-                    selection.mcp_server_ids
-                    if acp_bot is None
-                    else (source.document.defaults.mcp_servers if acp_bot.mcp_servers is None else acp_bot.mcp_servers),
-                ),
+                mcp_servers=self._mcp_recipes(source, selection.mcp_server_ids),
                 shell_review=shell_review,
             )
         else:

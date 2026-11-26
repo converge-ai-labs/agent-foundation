@@ -363,7 +363,6 @@ class AcpTurn(AbstractHarnessPlugin):
     channel: AcpChannel | None = None
     bind_environment: Callable[[AgentContext], AcpRunBinding] = lambda _: AcpRunBinding()
     goal: GoalCapability | None = None
-    bot: bool = False
     skill_manager: SkillManager | None = None
     initial_skill_catalog: BoundSkillCatalog | None = None
     on_skill_catalog: Callable[[BoundSkillCatalog], None] | None = None
@@ -650,7 +649,7 @@ class AcpTurn(AbstractHarnessPlugin):
         self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]
     ) -> HarnessRunResult[str | None]:
         context = exchange.context
-        restart = self.restart if not self.prewarm and not self.bot else None
+        restart = self.restart if not self.prewarm else None
         resuming = self.resume_from_restart and exchange.input.value is None
         if exchange.input.value is None and not self.prewarm and not resuming:
             raise AcpError("acp_input_required", "An external ACP turn requires a prompt.")
@@ -781,15 +780,6 @@ class AcpTurn(AbstractHarnessPlugin):
                         return {"action": result.action}
 
                     toolsets = (*toolsets, questions_toolset)
-            if self.bot:
-                bot_tools: FunctionToolset[AgentContext] = FunctionToolset()
-
-                @bot_tools.tool_plain
-                def finish_silently() -> None:
-                    """Finish without sending a direct Bot reply."""
-                    transcript.reset_reply()
-
-                toolsets = (*toolsets, bot_tools)
             async with bridge.prepare(run_context, capabilities=capabilities, toolsets=toolsets) as scope:
                 if self.shell_review is not None and not self.prewarm:
                     _bind_shell_review(binding, scope.context, interactions)

@@ -1,15 +1,25 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 import yaml
+from a13n_harness import HarnessState
 from a13n_harness.environment.configuration import DynamicEnvironmentConfiguration
 from a13n_harness.toolsets.computer import ComputerToolset
+from a13n_harness_ui.acp_sessions import AcpSessionState
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BOT_THREAD_ID, BotSubmit
 from a13n_harness_ui.composition import ThreadCompositionSelection
+from a13n_harness_ui.composition.models import ResolvedAcpNode
+from a13n_harness_ui.configuration import load_harness_ui_configuration
+from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+from a13n_harness_ui.storage.continuations import publish_continuation
+from a13n_harness_ui.storage.contracts import Continuation
+from a13n_harness_ui.storage.objects import ObjectKind
+from a13n_harness_ui.storage.read_models import project_continuation
 from anyio import Event, fail_after, sleep
 from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import FunctionModel
@@ -380,6 +390,110 @@ async def test_explicit_bot_model_does_not_require_a_default_agent_model(tmp_pat
         assert restored.base_agent_id is None
         assert restored.model_dump(mode="json") == legacy
         assert "user_interaction" not in {item.capability for item in node.capabilities}
+
+
+@pytest.fixture
+def bot_config_with_acp_agent(tmp_path: Path) -> Path:
+    root = _write_configuration(tmp_path)
+    acp_agents = tmp_path / "acp_agents"
+    acp_agents.mkdir()
+    (acp_agents / "external.yaml").write_text(
+        'schema_version: "1"\nkind: acp_agent\nid: acp-external\nname: External\ncommand: unused-acp\n'
+    )
+    return root
+
+
+async def test_bot_rejects_explicit_acp_agent(bot_config_with_acp_agent: Path) -> None:
+    root = bot_config_with_acp_agent
+    document = yaml.safe_load(root.read_text())
+    document["webui"]["bot"]["agent"] = "acp-external"
+    root.write_text(yaml.safe_dump(document))
+    with pytest.raises(ConfigurationError, match=r"webui\.bot\.agent requires a native Agent"):
+        await load_harness_ui_configuration(root)
+
+
+@pytest.mark.parametrize("model_id", [None, "model-primary"])
+async def test_bot_ignores_global_acp_agent(bot_config_with_acp_agent: Path, model_id: str | None) -> None:
+    root = bot_config_with_acp_agent
+    document = yaml.safe_load(root.read_text())
+    document["defaults"]["agent"] = "acp-external"
+    document["webui"]["bot"]["model"] = model_id
+    root.write_text(yaml.safe_dump(document))
+    async with open_harness_ui_app(_settings(root.parent / "state"), configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        source = await app.current_configuration()
+        assert source.document.defaults.agent == "acp-external"
+        assert source.bot_agent_id is None
+        assert source.bot_model_id == model_id
+        assert (await bot.snapshot()).available is (model_id is not None)
+        if model_id is not None:
+            thread = await app._threads.bot_thread()
+            composition = app._mcp_app_owners.resolver.resolve_run(
+                source, ThreadCompositionSelection.from_thread(thread)
+            )
+            assert composition.root.source_kind == "bot"
+            assert composition.root.base_agent_id is None
+            assert composition.root.model.model_id == model_id
+
+
+async def test_legacy_acp_bot_generation_and_continuation_remain_readable(bot_config_with_acp_agent: Path) -> None:
+    root = bot_config_with_acp_agent
+    settings = _settings(root.parent / "state")
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        source = await app.current_configuration()
+        thread = await app._threads.bot_thread()
+        composition = app._mcp_app_owners.resolver.resolve_run(source, ThreadCompositionSelection.from_thread(thread))
+        resource = source.acp_agents["acp-external"]
+        captured = await app._store.objects.publish_model(
+            object_kind=ObjectKind.run_composition,
+            value=composition.model_copy(
+                update={"root": ResolvedAcpNode(source_id=resource.id, roster_name=resource.name, resource=resource)}
+            ),
+        )
+        continuation = Continuation(
+            harness_release="test",
+            run_composition=captured.ref,
+            harness_state=HarnessState.new(thread_id=BOT_THREAD_ID),
+            created_at=datetime.now(UTC),
+        )
+        replacement = await publish_continuation(app._store.objects, continuation)
+        await app._store.threads.select_continuation(
+            thread_id=BOT_THREAD_ID,
+            expected=None,
+            replacement=replacement,
+            read_model=project_continuation(continuation),
+        )
+        await app._store.threads.save_acp_state(
+            BOT_THREAD_ID, AcpSessionState(digest="legacy", context_window=(4096, 32768)).model_dump_json()
+        )
+        # Store the accepted shape written by releases that allowed ACP Bot.
+        payload = source.model_dump(mode="json")
+        payload["document"]["webui"]["bot"]["agent"] = "acp-external"
+        legacy = await app._store.objects.publish(
+            object_kind=ObjectKind.configuration_generation, object_schema_version="1", payload=payload
+        )
+        await app._store.configurations.accept(
+            generation_digest=source.source_digest,
+            generation=legacy.ref,
+            sources=(),
+            resources=(),
+            expected_current_digest=source.source_digest,
+        )
+    document = yaml.safe_load(root.read_text())
+    document["webui"]["bot"]["agent"] = "acp-external"
+    root.write_text(yaml.safe_dump(document))
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        bot = await ready(app)
+        assert "webui.bot.agent requires a native Agent" in (await app.status()).candidate_error_message
+        assert (await app.current_configuration()).document.webui.bot.agent == "acp-external"
+        assert not (await bot.snapshot()).available
+        usage = await app.context_usage(BOT_THREAD_ID)
+        assert (usage.latest_request_tokens, usage.context_window) == (4096, 32768)
+        document["webui"]["bot"].pop("agent")
+        root.write_text(yaml.safe_dump(document))
+        assert (await app.reload_configuration()).bot_agent_id == "agent-assistant"
+        assert (await bot.snapshot()).available
+        assert (await app.context_usage(BOT_THREAD_ID)).context_window == 32768
 
 
 @pytest.mark.parametrize("agent_id", [None, "agent-coordinator"])

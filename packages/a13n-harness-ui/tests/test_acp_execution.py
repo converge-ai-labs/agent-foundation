@@ -198,7 +198,7 @@ async def test_acp_turn_runs_in_harness_and_reuses_session(tmp_path: Path) -> No
         await sessions.close()
 
 
-async def test_acp_goal_audit_silent_reply_and_first_turn_stop(tmp_path: Path) -> None:
+async def test_acp_goal_audit_and_first_turn_stop(tmp_path: Path) -> None:
     from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal
 
     sessions = AcpSessions()
@@ -226,9 +226,6 @@ async def test_acp_goal_audit_silent_reply_and_first_turn_stop(tmp_path: Path) -
         goal = saved_goal(result.state)
         assert goal is not None and goal.status == "verified" and goal.iteration == 1
         assert "acp_compaction" not in str(result.all_messages())
-
-        result = await executable(turn(bot=True)).run("silence")
-        assert result.status == "completed" and result.output is None
 
         plugin = turn()
         async with asyncio.TaskGroup() as group:

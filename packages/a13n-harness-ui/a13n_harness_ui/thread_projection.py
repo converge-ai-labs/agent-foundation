@@ -690,9 +690,11 @@ class ThreadProjectionService:
             # A newly seeded context may contain instructions but no measured response.
             if not inspection.context_empty and (active_composition is None or latest is not None):
                 observed = await self._store.usage.latest_root_request(thread_id=thread_id)
+        # Older Bot continuations can still refer to an ACP composition.
         acp_agent = thread.configuration.agent_source.kind == "acp_agent" or (
             thread.configuration.agent_source.kind == "bot"
-            and (isinstance(composition.root, ResolvedAcpNode) if composition is not None else acp_live_context[0])
+            and composition is not None
+            and isinstance(composition.root, ResolvedAcpNode)
         )
         if acp_agent:
             live_authoritative, live_window = acp_live_context

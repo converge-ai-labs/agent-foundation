@@ -42,8 +42,9 @@ function useBotSetup() {
   const document = readDocument(source)?.toJS();
   const agent = selectors.data?.agents.find(
     (agent) =>
+      agent.kind !== "acp_agent" &&
       agent.agent_id ===
-      (document?.webui?.bot?.agent ?? document?.defaults?.agent),
+        (document?.webui?.bot?.agent ?? document?.defaults?.agent),
   );
   const modelId = document?.webui?.bot?.model ?? agent?.model_id;
   const canEnable =

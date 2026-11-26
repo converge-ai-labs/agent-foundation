@@ -345,6 +345,12 @@ beforeEach(() => {
               model_id: "model-alternate",
             },
             { agent_id: "agent-no-model", name: "No model", model_id: null },
+            {
+              agent_id: "acp-external",
+              kind: "acp_agent",
+              name: "External Agent",
+              model_id: null,
+            },
           ],
           models: [
             {
@@ -1424,23 +1430,55 @@ it("requires a usable selected Agent Model or explicit override and preserves th
   });
 });
 
-it("does not enable an unavailable explicit Bot Agent even with a valid explicit Model", async () => {
+it("offers only native Bot Agents and requires a Model when the global default is ACP", async () => {
   snapshot.enabled = false;
   rootSource = rootSource.replace(
-    "bot: {enabled: false}",
-    "bot: {enabled: false, agent: agent-missing, model: model-primary}",
+    "agent: agent-assistant",
+    "agent: acp-external",
   );
   mount();
-  expect(
-    (await screen.findByRole("combobox", { name: "Bot agent" })).textContent,
-  ).toContain("agent-missing (unavailable)");
-  expect(
-    screen
-      .getByRole("button", { name: "Turn on Bot" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
-  expect(configurationWrites).toHaveLength(0);
+  const user = userEvent.setup();
+  const enable = await screen.findByRole("button", { name: "Turn on Bot" });
+  const agent = await screen.findByRole("combobox", { name: "Bot agent" });
+  const model = screen.getByRole("combobox", { name: "Bot model" });
+  expect(agent.textContent).toContain("Default (built-in settings)");
+  expect(model.textContent).toContain("Default (no model)");
+  expect(enable.hasAttribute("disabled")).toBe(true);
+
+  await user.click(agent);
+  await screen.findByRole("option", { name: "Assistant" });
+  expect(screen.queryByRole("option", { name: "External Agent" })).toBeNull();
+  await user.keyboard("{Escape}");
+  await user.click(model);
+  await user.click(await screen.findByRole("option", { name: "Primary" }));
+  expect(enable.hasAttribute("disabled")).toBe(false);
+  await user.click(enable);
+  await screen.findByRole("button", { name: "Send" });
+  const document = readDocument(configurationWrites[0])!.toJS();
+  expect(document.defaults.agent).toBe("acp-external");
+  expect(document.webui.bot).toEqual({ enabled: true, model: "model-primary" });
 });
+
+it.each(["agent-missing", "acp-external"])(
+  "does not enable an unavailable explicit Bot Agent (%s) even with a valid explicit Model",
+  async (agentId) => {
+    snapshot.enabled = false;
+    rootSource = rootSource.replace(
+      "bot: {enabled: false}",
+      `bot: {enabled: false, agent: ${agentId}, model: model-primary}`,
+    );
+    mount();
+    expect(
+      (await screen.findByRole("combobox", { name: "Bot agent" })).textContent,
+    ).toContain(`${agentId} (unavailable)`);
+    expect(
+      screen
+        .getByRole("button", { name: "Turn on Bot" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(configurationWrites).toHaveLength(0);
+  },
+);
 
 function unloadPrevented() {
   const event = new Event("beforeunload", { cancelable: true });

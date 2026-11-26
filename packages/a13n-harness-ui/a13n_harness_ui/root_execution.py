@@ -297,7 +297,6 @@ class RootRunExecutor:
         node = composition.root
         assert isinstance(node, ResolvedAcpNode)
         thread_id = composition.thread_id
-        is_bot = thread_id == BOT_THREAD_ID
         if composition.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID or composition.environment_bindings:
             raise RunCoordinationError(
                 "Launching a local ACP executable requires Full Control without Device bindings.",
@@ -305,9 +304,7 @@ class RootRunExecutor:
             )
         workspaces = composition.project_roots
         cwd = workspaces[0] if workspaces else str(self._store.settings.data_root)
-        thread_files = (
-            self._thread_files.directory(thread_id) if not is_bot and self._thread_files is not None else None
-        )
+        thread_files = self._thread_files.directory(thread_id) if self._thread_files is not None else None
         return AcpTurn(
             sessions=self.acp_sessions,
             resource=node.resource,
@@ -330,19 +327,14 @@ class RootRunExecutor:
             thread_files=thread_files,
             inputs=self._acp_inputs,
             interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
-            ask_user_enabled=not is_bot and source.document.tools.enable_ask_user_question,
+            ask_user_enabled=source.document.tools.enable_ask_user_question,
             goal=goal,
             restart=restart,
             resume_from_restart=resume_from_restart,
             saved=saved,
             persist=partial(self._save_acp_state, thread_id),
-            update_title=partial(self._set_acp_title, thread_id) if not is_bot else None,
-            bot=is_bot,
-            bind_environment=lambda context: AcpRunBinding(
-                environment=context.environment,
-                files_enabled=not is_bot or source.document.webui.bot.files_enabled is True,
-                terminals_enabled=not is_bot or source.document.webui.bot.shell_enabled is True,
-            ),
+            update_title=partial(self._set_acp_title, thread_id),
+            bind_environment=lambda context: AcpRunBinding(environment=context.environment),
         )
 
     async def _set_acp_title(self, thread_id: str, title: str) -> None:
@@ -391,7 +383,7 @@ class RootRunExecutor:
         thread = await self._threads.require_interactive(thread_id)
         if thread.archived or thread.parent_thread_id is not None:
             return ()
-        if thread.configuration.agent_source.kind not in {"acp_agent", "bot"}:
+        if thread.configuration.agent_source.kind != "acp_agent":
             return ()
         source = await self._required_configuration()
         owner = (await self._store.threads.worker_owners((thread_id,))).get(thread_id)
