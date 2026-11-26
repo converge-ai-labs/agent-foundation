@@ -46,7 +46,7 @@ from a13n_harness.tool_execution import current_execution, execution_cleanup_act
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, select, update
 
-from a13n_service.infra.db import lock, now, transaction
+from a13n_service.infra.db import lock, now, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.providers.environment import envd_policy
 from a13n_service.resources.environment_instances.tables import EnvironmentBootstrapSnapshotRow
@@ -676,11 +676,13 @@ async def _mark_used(runtime: Runtime, sources: list[Source]) -> None:
                 )
             if source.observation is not None:
                 try:
+                    observation = (source.environment_id, source.working_directory, *source.observation)
+                    async with short_session(runtime.storage) as session:
+                        if await bootstrap_snapshots.is_fresh(session, *observation):
+                            continue
                     async with transaction(runtime.storage) as session:
                         await lock_owner(session, runtime, source.lease)
-                        await bootstrap_snapshots.save(
-                            session, source.environment_id, source.working_directory, *source.observation
-                        )
+                        await bootstrap_snapshots.save(session, *observation)
                 except (LeaseLost, AuthorityRevoked):
                     continue
                 except Exception as error:

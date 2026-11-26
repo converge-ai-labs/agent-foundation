@@ -2272,6 +2272,158 @@ def test_legacy_environment_preparation_preserves_stored_digests(legacy):
     assert reopened.digest() == old_digest
 
 
+async def test_bootstrap_storage_skips_equal_content_and_refreshes_only_directory_recency(env, monkeypatch):
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
+
+    from a13n_harness.environment.bootstrap import (
+        EnvironmentBootstrapSnapshot,
+        FileBootstrapObservation,
+        WorkspaceOutlineObservation,
+    )
+    from a13n_service.infra.db import short_session
+    from a13n_service.resources.environment_instances.tables import EnvironmentBootstrapSnapshotRow as SnapshotRow
+    from a13n_service.runs.environments import bootstrap_snapshots, execution
+    from sqlalchemy import event
+
+    identity = (await reserve(env, env.template["id"]))["id"]
+    await advance(env.runtime, identity, owner="test")
+    storage = env.runtime.storage
+    async with short_session(storage) as session:
+        row = await session.get(EnvironmentRow, identity)
+        assert row is not None
+        generation, last_used_at = row.generation, row.last_used_at
+
+    start_at = datetime.now(UTC)
+    cwd = "/active"
+    absent = FileBootstrapObservation(path="AGENTS.md", limits=(512, 10, 80), status="absent")
+    present = FileBootstrapObservation(path="README.md", limits=(512, 10, 80), status="present", text="old")
+    outlines = (
+        WorkspaceOutlineObservation(profile="a", content="first"),
+        WorkspaceOutlineObservation(profile="z", content="last"),
+    )
+    initial = EnvironmentBootstrapSnapshot(files=(present, absent), workspace_outline=outlines[::-1])
+    # Reapplying only the absence also moves it behind README in the merge's insertion order.
+    unchanged = EnvironmentBootstrapSnapshot(files=(absent,))
+    changed = EnvironmentBootstrapSnapshot(files=(present.model_copy(update={"text": "new"}),))
+
+    async def record(at, snapshot, *, directory=cwd):
+        async with transaction(storage) as session:
+            await bootstrap_snapshots.save(session, identity, directory, generation, at, snapshot)
+
+    async def fresh(at, snapshot, *, observed_generation=generation):
+        async with short_session(storage) as session:
+            return await bootstrap_snapshots.is_fresh(session, identity, cwd, observed_generation, at, snapshot)
+
+    assert not await fresh(start_at, initial)
+    await record(start_at, initial)
+    async with short_session(storage) as session:
+        saved = await session.get(SnapshotRow, (identity, cwd))
+        assert saved is not None
+        assert EnvironmentBootstrapSnapshot.model_validate(saved.snapshot) == EnvironmentBootstrapSnapshot(
+            files=(absent, present), workspace_outline=outlines
+        )
+
+    sql = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+        if "environment_bootstrap_snapshots" in statement:
+            sql.append(statement)
+
+    engine = storage.engine.sync_engine
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        early = start_at + timedelta(milliseconds=100)
+        assert await fresh(early, unchanged)
+        assert await fresh(early, initial)
+        assert await fresh(early, changed, observed_generation=generation - 1)
+        assert not await fresh(early, unchanged, observed_generation=generation + 1)
+        assert len(sql) == 4
+        assert all(stmt.startswith("SELECT") and "FOR UPDATE" not in stmt for stmt in sql)
+
+        sql.clear()
+        lock_owner = AsyncMock()
+        with monkeypatch.context() as patch:
+            patch.setattr(execution, "lock_owner", lock_owner)
+            source = SimpleNamespace(
+                environment_id=identity, working_directory=cwd, observation=(generation, early, unchanged), lease=None
+            )
+            await execution._mark_used(env.runtime, [source])
+        lock_owner.assert_not_awaited()
+        assert len(sql) == 1 and sql[0].startswith("SELECT")
+        async with short_session(storage) as session:
+            row = await session.get(EnvironmentRow, identity)
+            assert row is not None and row.last_used_at != last_used_at
+
+        # A writer that passed the fast screen before another commit rechecks under the parent lock.
+        sql.clear()
+        await record(early, unchanged)
+        await record(start_at - timedelta(milliseconds=1), changed)
+        assert len(sql) == 2 and all(stmt.startswith("SELECT") for stmt in sql)
+
+        assert not await fresh(early, changed)
+        sql.clear()
+        await record(early, changed)
+        assert [stmt.split()[0] for stmt in sql] == ["SELECT", "INSERT"]
+        assert await fresh(early, changed)
+        assert await fresh(start_at, initial)
+
+        for i in range(1, 8):
+            await record(start_at + timedelta(seconds=i / 2), initial, directory=f"/other-{i}")
+        refresh_at = early + bootstrap_snapshots.REFRESH_INTERVAL
+        assert await fresh(refresh_at - timedelta(microseconds=1), changed)
+        assert not await fresh(refresh_at, changed)
+        sql.clear()
+        await record(refresh_at, changed)
+        assert [stmt.split()[0] for stmt in sql] == ["SELECT", "UPDATE"]
+        assert sql[-1].split(" WHERE ")[0].startswith("UPDATE environment_bootstrap_snapshots SET observed_at=")
+
+        await record(refresh_at + timedelta(seconds=1), initial, directory="/ninth")
+        async with short_session(storage) as session:
+            saved = await session.get(SnapshotRow, (identity, cwd))
+            assert saved is not None and saved.observed_at == refresh_at
+            final = EnvironmentBootstrapSnapshot.model_validate(saved.snapshot)
+            assert final.files == (absent, *changed.files) and final.workspace_outline == outlines
+            assert await session.get(SnapshotRow, (identity, "/other-1")) is None
+            assert await session.get(SnapshotRow, (identity, "/ninth")) is not None
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+
+async def test_bootstrap_storage_replaces_malformed_historical_payload(env):
+    from datetime import UTC, datetime
+
+    from a13n_harness.environment.bootstrap import EnvironmentBootstrapSnapshot
+    from a13n_service.infra.db import short_session
+    from a13n_service.resources.environment_instances.tables import EnvironmentBootstrapSnapshotRow as SnapshotRow
+    from a13n_service.runs.environments.bootstrap_snapshots import is_fresh, save
+
+    identity = (await reserve(env, env.template["id"]))["id"]
+    await advance(env.runtime, identity, owner="test")
+    storage = env.runtime.storage
+    cwd = "/legacy"
+    at = datetime.now(UTC)
+    snapshot = EnvironmentBootstrapSnapshot()
+    async with transaction(storage) as session:
+        row = await session.get(EnvironmentRow, identity)
+        assert row is not None
+        generation = row.generation
+        await save(session, identity, cwd, generation, at, snapshot)
+        previous = await session.get(SnapshotRow, (identity, cwd))
+        assert previous is not None
+        previous.snapshot = {"files": "malformed"}
+
+    at += timedelta(milliseconds=100)
+    async with short_session(storage) as session:
+        assert not await is_fresh(session, identity, cwd, generation, at, snapshot)
+    async with transaction(storage) as session:
+        await save(session, identity, cwd, generation, at, snapshot)
+    async with short_session(storage) as session:
+        previous = await session.get(SnapshotRow, (identity, cwd))
+        assert previous is not None and previous.observed_at == at
+        assert EnvironmentBootstrapSnapshot.model_validate(previous.snapshot) == snapshot
+
+
 @pytest.mark.parametrize("invalid_text", ["x" * (256 * 1024), "prefix\x00suffix"], ids=["oversized", "embedded-nul"])
 async def test_bootstrap_storage_fences_writes_and_caps_directories(env, invalid_text):
     from datetime import UTC, datetime
