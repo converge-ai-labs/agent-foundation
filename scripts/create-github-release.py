@@ -8,6 +8,7 @@ from pathlib import Path
 from release_notes import (
     TAG_PREFIXES,
     build_release_command,
+    collect_dependency_changes,
     collect_release_changes,
     load_pull_request_metadata,
     previous_release_tag,
@@ -95,6 +96,11 @@ def main() -> None:
             if previous_tag is not None
             else []
         )
+        dependencies = (
+            collect_dependency_changes(Path.cwd(), args.component, previous_tag, expected_tag)
+            if previous_tag is not None
+            else []
+        )
         changes = load_pull_request_metadata(changes, repository)
         notes = render_release_notes(
             component=args.component,
@@ -102,6 +108,7 @@ def main() -> None:
             repository=repository,
             previous_tag=previous_tag,
             changes=changes,
+            dependencies=dependencies,
             manual_notes=manual_notes,
             releaser=os.environ.get("GITHUB_ACTOR"),
         )
