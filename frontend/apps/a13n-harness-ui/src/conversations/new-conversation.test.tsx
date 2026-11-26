@@ -1494,7 +1494,10 @@ it("keeps the new draft sendable during background preview refresh and explains 
       .disabled,
   ).toBe(false);
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
-  await screen.findByText("Updating chat settings…");
+  const send = screen.getByRole<HTMLButtonElement>("button", { name: "Send" });
+  await waitFor(() => expect(send.title).toBe("Updating chat settings…"));
+  expect(send.disabled).toBe(true);
+  expect(screen.queryByText("Updating chat settings…")).toBeNull();
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   expect(screen.queryByText("Preparing your chat…")).toBeNull();
   fireEvent.keyDown(editor, { key: "Enter" });
@@ -2382,7 +2385,9 @@ it("acknowledges Agent changes without waiting for background detail or refetchi
     );
     await waitFor(() => expect(agent().textContent).toContain("Reviewer"));
     await waitFor(() =>
-      expect(screen.queryByText("Updating chat settings…")).toBeNull(),
+      expect(screen.getByRole("button", { name: "Send" }).title).not.toBe(
+        "Updating chat settings…",
+      ),
     );
     expect((agent() as HTMLButtonElement).disabled).toBe(false);
     expect(queries.getQueryState(["thread", id, "detail"])?.fetchStatus).toBe(
@@ -2904,11 +2909,10 @@ it("blocks sending while ACP options load, authenticate, update, or fail on New 
   expect(send.disabled).toBe(true);
   expect(send.title).toBe("Loading Antigravity options…");
 
-  // Typing input reveals the quiet loading status and keeps Enter blocked.
+  // Typing keeps Send and Enter blocked without adding a banner.
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Hello ACP"));
-  expect(within(composerRegion).getByRole("status").textContent).toBe(
-    "Loading Antigravity options…",
-  );
+  expect(within(composerRegion).queryByRole("status")).toBeNull();
+  expect(send.title).toBe("Loading Antigravity options…");
   expect(screen.queryByText("Refresh chat status before sending.")).toBeNull();
   fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), {
     key: "Enter",
@@ -2929,20 +2933,22 @@ it("blocks sending while ACP options load, authenticate, update, or fail on New 
       ),
     );
   });
-  await screen.findByText("Sign in to Antigravity before sending.");
+  const authNotice = await within(composerRegion).findByRole("alert");
+  expect(authNotice.textContent).toContain(
+    "Sign in to Antigravity before sending.",
+  );
   expect(
-    screen
+    within(authNotice)
       .getByRole("link", { name: "Open Agent authentication" })
       .getAttribute("href"),
   ).toBe("/settings/source?path=acp_agents%2Fagy.yaml");
   expect(send.disabled).toBe(true);
 
-  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await waitFor(() =>
-    expect(within(composerRegion).getByRole("status").textContent).toBe(
-      "Loading Antigravity options…",
-    ),
-  );
+  fireEvent.click(within(authNotice).getByRole("button", { name: "Retry" }));
+  await waitFor(() => expect(send.title).toBe("Loading Antigravity options…"));
+  expect(within(composerRegion).queryByRole("status")).toBeNull();
+  expect(within(composerRegion).queryByRole("alert")).toBeNull();
+  expect(trigger.querySelector("[data-acp-loading]")).toBeTruthy();
 
   // Resolve options -> Send unblocks and trigger spinner clears.
   await act(async () => {
@@ -2977,17 +2983,18 @@ it("blocks sending while ACP options load, authenticate, update, or fail on New 
   await user.click(trigger);
   await user.click(await screen.findByRole("button", { name: "Model" }));
   await user.click(await screen.findByRole("button", { name: "Model 2" }));
-  await waitFor(() => expect(send.disabled).toBe(true));
-  expect(within(composerRegion).getByRole("status").textContent).toBe(
-    "Updating Antigravity options…",
-  );
+  await waitFor(() => expect(send.title).toBe("Updating Antigravity options…"));
+  expect(send.disabled).toBe(true);
+  expect(within(composerRegion).queryByRole("status")).toBeNull();
+  expect(trigger.querySelector("[data-acp-loading]")).toBeTruthy();
   await act(async () => {
     resolveUpdate(json({ error: { message: "Model quota exhausted" } }, 400));
   });
-  await screen.findByText("Could not update Antigravity options.");
-  expect(
-    within(composerRegion).getByText("Model quota exhausted"),
-  ).toBeTruthy();
+  const updateNotice = await within(composerRegion).findByRole("alert");
+  expect(updateNotice.textContent).toContain(
+    "Could not update Antigravity options.",
+  );
+  expect(within(updateNotice).getByText("Model quota exhausted")).toBeTruthy();
   expect(send.disabled).toBe(true);
 
   // Switching to another ACP agent does not inherit the failed option update.
@@ -3059,11 +3066,12 @@ it("prioritizes preview loading over coordinator warnings when coordinatorByDefa
   const composerRegion = screen.getByRole("region", {
     name: "Message composer",
   });
-  await waitFor(() =>
-    expect(within(composerRegion).getByRole("status").textContent).toBe(
-      "Updating chat settings…",
-    ),
-  );
+  const send = within(composerRegion).getByRole<HTMLButtonElement>("button", {
+    name: "Send",
+  });
+  await waitFor(() => expect(send.title).toBe("Updating chat settings…"));
+  expect(send.disabled).toBe(true);
+  expect(within(composerRegion).queryByRole("status")).toBeNull();
   expect(screen.queryByText(/Choose a project.*coordinate agents/)).toBeNull();
   await act(async () => {
     resolveSecondPreview(
@@ -3169,9 +3177,13 @@ it("blocks saved ACP chat during option loading/updates, keeps active Interrupt 
   expect(send.title).toBe("Loading Antigravity options…");
 
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Continue"));
-  expect(within(composerRegion).getByRole("status").textContent).toBe(
-    "Loading Antigravity options…",
-  );
+  const trigger = within(composerRegion).getByRole("button", {
+    name: "Agent & Model settings",
+  });
+  expect(trigger.querySelector("[data-acp-loading]")).toBeTruthy();
+  expect(within(composerRegion).queryByRole("status")).toBeNull();
+  expect(send.disabled).toBe(true);
+  expect(send.title).toBe("Loading Antigravity options…");
 
   await act(async () => {
     resolveOptions(json(loadedOptions));
@@ -3185,9 +3197,14 @@ it("blocks saved ACP chat during option loading/updates, keeps active Interrupt 
   );
   await user.click(await screen.findByRole("button", { name: "Model" }));
   await user.click(await screen.findByRole("button", { name: "Model 2" }));
-  await screen.findByText("Could not update Antigravity options.");
+  const updateNotice = await within(composerRegion).findByRole("alert");
+  expect(updateNotice.textContent).toContain(
+    "Could not update Antigravity options.",
+  );
   expect(send.disabled).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "Keep current" }));
+  fireEvent.click(
+    within(updateNotice).getByRole("button", { name: "Keep current" }),
+  );
   await waitFor(() => expect(send.disabled).toBe(false));
 
   // Active ACP run is never blocked by ACP options so Interrupt & send stays enabled.

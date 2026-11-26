@@ -73,7 +73,9 @@ Input, output, commands, changes and errors remain inspectable in ordinary mode;
 
 Keep the editor above a single action row: attachment, Chat options, active draft modes, then the right-aligned Model, microphone when available, and Send. Reserve one line for input even when the draft is empty. Avoid accumulated editor gutters, oversized action backgrounds and a disproportionately large Send button.
 
-Active draft **Coordinate agents** and **Goal** modes use compact, flat buttons with a quiet selected tint. Select a button to turn off its mode. Narrow composers keep only the icons, with accessible names and help, so the Model can truncate without crowding the microphone and Send. Touch retains 44px targets. Dictation temporarily replaces the action controls without changing the selected modes.
+Active draft modes appear as **Coordinator** and **Goal** buttons with regular-weight labels and a quiet, neutral selected tint. Select a button to turn off its mode. Narrow composers show icons with accessible names and help, leaving room for the Model, microphone and Send. Touch retains 44px targets without enlarging the visible buttons. Dictation temporarily replaces the action controls without changing the selected modes.
+
+While Send waits on a readiness check, its disabled control explains why and loading indicators stay inline. For ACP option loading, refresh and updates, the spinner belongs in Agent & Model. Errors and action-required notices appear above the editor with their recovery actions.
 
 Fast uses a lightning icon and Ultrafast uses a rocket icon. The collapsed Agent & Model button places it after the Thinking label and identifies the speed in its accessible description. The expanded panel's Speed row places the same icon after the speed value. Standard speed has no icon.
 

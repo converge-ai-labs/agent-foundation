@@ -12,3 +12,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+@container composer-choices (max-width: 112px) {
+  /* Reserve the space for the model name when draft modes crowd the row. */
+  .identity > :not(:last-child) {
+    display: none;
+  }
+}

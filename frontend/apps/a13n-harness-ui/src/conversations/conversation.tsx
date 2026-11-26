@@ -1499,11 +1499,7 @@ function ConversationContent({
                             if (acpOptionsEnabled && !acpActive)
                               void acpOptions.refetch({ cancelRefetch: false });
                           }}
-                          externalLoading={
-                            acpOptionsEnabled &&
-                            !acpActive &&
-                            (acpChange.isPending || acpOptions.isFetching)
-                          }
+                          externalLoading={acpBlock?.kind === "loading"}
                           externalModel={acpOptionLabel(
                             modelOption,
                             t("No model selected"),

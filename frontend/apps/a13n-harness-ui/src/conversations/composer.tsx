@@ -880,17 +880,14 @@ export function Composer({
                             : t(
                                 "This operation cannot accept another message yet.",
                               ),
-                      showWhenEmpty: false,
-                      coveredByFeedback:
-                        activity.state === "preparing" && !!feedback,
                     }
                   : null
       : null;
   const showActiveBlock =
     !!activeBlock &&
+    activeBlock.kind !== "loading" &&
     !activeBlock.coveredByFeedback &&
-    (hasInput ||
-      (activeBlock.showWhenEmpty ?? activeBlock.kind !== "loading")) &&
+    (hasInput || activeBlock.showWhenEmpty !== false) &&
     !error &&
     draft.submission.kind !== "rejected";
   const renderBlockAction = (
@@ -1347,36 +1344,26 @@ export function Composer({
             </Button>
           </div>
         )}
-        {showActiveBlock &&
-          activeBlock &&
-          (activeBlock.kind === "loading" ? (
-            <p role="status" className={styles.composerLoading}>
-              <CircleNotch
-                className={styles.threadRunning}
-                aria-hidden="true"
-              />
-              <span>{activeBlock.message}</span>
-            </p>
-          ) : (
-            <div role="alert" className={styles.composerBlock}>
-              <div className={styles.composerBlockText}>
-                <p>{activeBlock.message}</p>
-                {activeBlock.detail && (
-                  <small className={styles.composerBlockDetail}>
-                    {activeBlock.detail}
-                  </small>
-                )}
-              </div>
-              {(activeBlock.action || activeBlock.secondaryAction) && (
-                <div className={styles.composerBlockActions}>
-                  {activeBlock.action &&
-                    renderBlockAction(activeBlock.action, "outline")}
-                  {activeBlock.secondaryAction &&
-                    renderBlockAction(activeBlock.secondaryAction, "ghost")}
-                </div>
+        {showActiveBlock && (
+          <div role="alert" className={styles.composerBlock}>
+            <div className={styles.composerBlockText}>
+              <p>{activeBlock.message}</p>
+              {activeBlock.detail && (
+                <small className={styles.composerBlockDetail}>
+                  {activeBlock.detail}
+                </small>
               )}
             </div>
-          ))}
+            {(activeBlock.action || activeBlock.secondaryAction) && (
+              <div className={styles.composerBlockActions}>
+                {activeBlock.action &&
+                  renderBlockAction(activeBlock.action, "outline")}
+                {activeBlock.secondaryAction &&
+                  renderBlockAction(activeBlock.secondaryAction, "ghost")}
+              </div>
+            )}
+          </div>
+        )}
         {interrupt && (
           <div className={styles.composerStatus}>
             <p role="status">{t("Interrupting to send…")}</p>
@@ -1680,8 +1667,8 @@ export function Composer({
                     taskOptionsTrigger.current?.focus();
                   }}
                 >
-                  <CoordinatorIcon size={16} />
-                  <span>{t("Coordinate agents")}</span>
+                  <CoordinatorIcon size={14} />
+                  <span>{t("Coordinator")}</span>
                 </Button>
               )}
             {!transport.shareId && draft.mode === "goal" && (

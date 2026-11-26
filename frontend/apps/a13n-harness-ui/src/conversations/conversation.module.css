@@ -1201,21 +1201,32 @@ summary:is(:hover, :focus-visible) > .logCaret {
   width: 32px;
   height: 32px;
 }
-.composerActions > .composerMode {
+.composerActions > button.composerMode {
   flex: none;
-  color: var(--a13n-signal);
-  background-color: var(--a13n-signal-soft);
-  font-size: var(--a13n-text-body);
+  height: 28px;
+  border-radius: 8px;
+  padding-inline: 8px;
+  gap: 5px;
+  color: var(--a13n-text);
+  background-color: var(--a13n-selected);
+  font-size: var(--a13n-text-sm);
+  font-weight: 400;
 }
 .composerActions > .composerMode:enabled:hover {
-  background-color: color-mix(in srgb, var(--a13n-signal) 16%, transparent);
+  background-color: color-mix(in srgb, var(--a13n-text) 8%, transparent);
 }
 .composerInput > button svg,
 .composerActions > button svg {
   width: 16px;
   height: 16px;
 }
+.composerActions > button.composerMode svg {
+  width: 14px;
+  height: 14px;
+  margin-inline: 0;
+}
 .composerChoices {
+  container: composer-choices / inline-size;
   display: flex;
   flex: 1;
   justify-content: flex-end;
@@ -1227,9 +1238,15 @@ summary:is(:hover, :focus-visible) > .logCaret {
   .composerBody {
     --composer-content-height: 32px;
   }
-  .composerMode {
+  .composerActions > button.composerMode {
     width: 28px;
     padding-inline: 0;
+  }
+  @media (pointer: coarse) {
+    .composerMode {
+      /* Give Button's 44px hit area room on each side of the 28px icon. */
+      margin-inline: 8px;
+    }
   }
   .composerMode > span {
     display: none;
@@ -1246,16 +1263,9 @@ summary:is(:hover, :focus-visible) > .logCaret {
 @media (pointer: coarse) {
   .composerInput > button,
   .composerActions > button[data-size^="icon"],
-  .composerMode,
   .workerIdentity > button {
     min-width: 44px;
     min-height: 44px;
-  }
-  .composerMode {
-    /* Keep the tint compact inside the touch target. */
-    border-width: 6px;
-    border-radius: 14px;
-    background-clip: padding-box;
   }
 }
 .composerStatus {
@@ -2287,7 +2297,6 @@ div:has(+ .execution) > .assistantMessage {
 .composerFeedback .warning,
 .composerFeedback .composerStatus,
 .composerFeedback .composerConnection,
-.composerFeedback .composerLoading,
 .composerFeedback .composerBlock {
   margin: 0;
   padding: 0;
@@ -2299,18 +2308,6 @@ div:has(+ .execution) > .assistantMessage {
 .composerFeedback .composerStatus p,
 .composerFeedback .composerBlock p {
   margin: 0;
-}
-.composerLoading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--a13n-text-body);
-  color: var(--harness-log-text);
-}
-.composerLoading > svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
 }
 .composerBlock {
   display: flex;

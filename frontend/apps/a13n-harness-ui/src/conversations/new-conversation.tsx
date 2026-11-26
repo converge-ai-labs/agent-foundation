@@ -777,9 +777,7 @@ function NewConversation({
                     )
                       void acp.refetch({ cancelRefetch: false });
                   }}
-                  externalLoading={
-                    acpEnabled && (acpUpdating || acp.isFetching)
-                  }
+                  externalLoading={acpBlock?.kind === "loading"}
                   externalModel={acpOptionLabel(
                     modelOption,
                     t("No model selected"),
