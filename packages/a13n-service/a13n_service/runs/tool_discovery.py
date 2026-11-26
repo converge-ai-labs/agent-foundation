@@ -9,7 +9,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering, CombinedCapability, ToolSearch
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
-from a13n_service.resources.agents import toolsets
+from a13n_service.resources.agents import definition, toolsets
 from a13n_service.resources.agents.schemas import AgentConfig, NativeToolSearch
 
 
@@ -19,10 +19,11 @@ def native_discovery(
     if not isinstance(config.tool_search, NativeToolSearch):
         return None
     selected = config.tool_search.sources
+    discovered = definition.discovered_connections(config)
     prefixes = tuple(
         source_tool_prefix(item.connection_id, kind="mcp" if connections[item.connection_id].type == "mcp" else "tool")
         for item in config.connection_tools
-        if selected.connections and item.connection_id not in selected.exclude_connections and item.tools != ()
+        if item.connection_id in discovered
     )
     return CombinedCapability(
         [

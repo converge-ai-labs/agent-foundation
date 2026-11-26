@@ -950,6 +950,282 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(
         assert (await saved(db, shared_id)).configuration == operator.model_dump(mode="json")
 
 
+async def test_is_app_enabled_checks_organization_and_workspace_policy(service, app_runtime):
+    from a13n_service.app_sdk import is_app_enabled
+    from a13n_service.app_sdk import short_session as sdk_short_session
+    from a13n_service.infra.ids import new_object_id
+
+    runtime, tenant = app_runtime, service.tenant
+    org_id, ws_id = tenant.organization_id, tenant.workspace_id
+    async with sdk_short_session(runtime.storage) as session:
+        assert await is_app_enabled(session, runtime, "claw", organization_id=org_id) is True
+        assert await is_app_enabled(session, runtime, "claw", workspace_id=ws_id) is True
+        assert await is_app_enabled(session, runtime, "claw", organization_id=org_id, workspace_id=ws_id) is True
+        assert await is_app_enabled(session, runtime, "disabled", organization_id=org_id) is False
+        assert await is_app_enabled(session, runtime, "disabled", workspace_id=ws_id) is False
+        assert await is_app_enabled(session, runtime, "claw", organization_id=new_object_id("org")) is False
+        assert await is_app_enabled(session, runtime, "claw", workspace_id=new_object_id("ws")) is False
+        assert (
+            await is_app_enabled(session, runtime, "claw", organization_id=new_object_id("org"), workspace_id=ws_id)
+            is False
+        )
+        with pytest.raises(ServiceError) as missing:
+            await is_app_enabled(session, runtime, "uninstalled", organization_id=org_id)
+        assert missing.value.code == "not_found"
+        with pytest.raises(ValueError, match="organization_id or workspace_id"):
+            await is_app_enabled(session, runtime, "claw")
+
+
+async def test_get_run_output_reads_sealed_outputs_failures_assets_and_respects_scope(
+    service, app_runtime, runner, scripted_model, runs_kit
+):
+    from a13n_service.app_sdk import short_session as sdk_short_session
+    from a13n_service.infra.ids import new_object_id
+    from a13n_service.resources.assets.schemas import AssetCreate
+    from a13n_service.resources.assets.service import create_asset
+    from a13n_service.resources.uploads import service as uploads
+    from a13n_service.runs.attempts import AttemptControl
+    from a13n_service.runs.claim import claim
+    from a13n_service.runs.execute import execute
+    from a13n_service.runs.schemas import Failure, Outcome
+    from a13n_service.runs.seal import seal
+    from a13n_service.runs.tables import RunRow
+    from a13n_service.tenancy.authorize import WorkspaceScope
+
+    await runs_kit.pause_sweeps(service)
+    runtime, tenant = app_runtime, service.tenant
+    ws = tenant.workspace_id
+    other_ws = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Other WS"})).json()["id"]
+    model_key = await runs_kit.create_model(service, scripted_model)
+    agent = await runs_kit.add_agent(service, "text", model_key)
+    structured_agent = await runs_kit.add_agent(
+        service,
+        "structured",
+        model_key,
+        output_spec={"schema": {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"]}},
+    )
+    waiting_agent = await runs_kit.add_agent(service, "waiting", model_key, user_questions=True)
+
+    # 1. Non-sealed accepted run returns status with sealed=False and empty output/assets.
+    started = await runs_kit.start_thread(service, agent, "hello")
+    text_run_id = started["run"]["id"]
+    async with sdk_short_session(runtime.storage) as session:
+        pending = await threads.get_run_output(session, ws, text_run_id)
+        assert pending.run_id == text_run_id
+        assert pending.status == "accepted"
+        assert pending.sealed is False
+        assert pending.sealed_at is None
+        assert pending.output is None and pending.output_text is None
+        assert pending.failure is None and pending.wait_reason is None
+        assert pending.assets == ()
+
+    # Execute to completion with text output and attach one asset sourced from this run plus one unrelated upload.
+    scripted_model.say("final assistant reply")
+    (lease,) = await claim(runtime, worker_id="sdk-out-text", worker_build="test", limit=1)
+    assert lease.run_id == text_run_id
+    await execute(runtime, lease, AttemptControl())
+
+    scope = WorkspaceScope(tenant.organization_id, ws)
+    from .test_connections import admin
+
+    actor = admin(service)
+    published_upload = await uploads.store(
+        runtime.storage,
+        runtime.objects,
+        scope,
+        tenant.principal_id,
+        request_key="sdk-run-asset",
+        filename="report.txt",
+        content_type="text/plain",
+        content=b"hello report",
+    )
+    published_asset, _ = await create_asset(
+        runtime.storage,
+        actor,
+        ws,
+        AssetCreate(upload_id=published_upload.upload_id, name="report.txt"),
+        source={"run_id": text_run_id, "run_attempt_id": lease.attempt_id, "tool_call_id": "call_1"},
+    )
+    unrelated_upload = await uploads.store(
+        runtime.storage,
+        runtime.objects,
+        scope,
+        tenant.principal_id,
+        request_key="sdk-unrelated-asset",
+        filename="other.txt",
+        content_type="text/plain",
+        content=b"unrelated",
+    )
+    await create_asset(runtime.storage, actor, ws, AssetCreate(upload_id=unrelated_upload.upload_id, name="other.txt"))
+
+    async with sdk_short_session(runtime.storage) as session:
+        completed = await threads.get_run_output(session, ws, text_run_id)
+        assert completed.sealed is True
+        assert completed.status == "completed"
+        assert completed.output == "final assistant reply"
+        assert completed.output_text == "final assistant reply"
+        assert completed.failure is None
+        assert completed.wait_reason is None
+        assert len(completed.assets) == 1
+        assert completed.assets[0].id == published_asset.id
+        assert completed.assets[0].name == "report.txt"
+        assert completed.assets[0].content_type == "text/plain"
+        assert completed.assets[0].size == len(b"hello report")
+        assert completed.assets[0].digest == published_asset.digest
+
+        # Wrong workspace and missing run ID both raise not_found.
+        for target_ws, target_run in ((other_ws, text_run_id), (ws, new_object_id("run"))):
+            with pytest.raises(ServiceError) as missing:
+                await threads.get_run_output(session, target_ws, target_run)
+            assert missing.value.code == "not_found"
+
+    # 2. Structured output preserves raw JSON in `output` and leaves `output_text=None`.
+    structured_start = await runs_kit.start_thread(service, structured_agent, "structured")
+    structured_run_id = structured_start["run"]["id"]
+    scripted_model.call("final_result", {"ok": True}, call_id="call_struct")
+    (struct_lease,) = await claim(runtime, worker_id="sdk-out-struct", worker_build="test", limit=1)
+    assert struct_lease.run_id == structured_run_id
+    await execute(runtime, struct_lease, AttemptControl())
+    async with sdk_short_session(runtime.storage) as session:
+        structured = await threads.get_run_output(session, ws, structured_run_id)
+        assert structured.sealed is True and structured.status == "completed"
+        assert structured.output == {"ok": True}
+        assert structured.output_text is None
+        assert structured.assets == ()
+
+    # 3. Failed run exposes Failure details and empty output.
+    failed_start = await runs_kit.start_thread(service, agent, "fail")
+    failed_run_id = failed_start["run"]["id"]
+    async with transaction(runtime.storage) as session:
+        thread_row = await session.get_one(ThreadRow, failed_start["thread"]["id"])
+        run_row = await session.get_one(RunRow, failed_run_id)
+        await seal(
+            session,
+            runtime,
+            thread_row,
+            run_row,
+            None,
+            Outcome(status="failed", failure=Failure(code="provider_error", message="upstream failed")),
+            at=datetime.now(UTC),
+        )
+    async with sdk_short_session(runtime.storage) as session:
+        failed = await threads.get_run_output(session, ws, failed_run_id)
+        assert failed.sealed is True and failed.status == "failed"
+        assert failed.output is None and failed.output_text is None
+        assert failed.failure == Failure(code="provider_error", message="upstream failed")
+
+    # 4. Waiting run reports status="waiting" and wait_reason.
+    waiting_start = await runs_kit.start_thread(service, waiting_agent, "ask")
+    waiting_run_id = waiting_start["run"]["id"]
+    scripted_model.call("ask_user_question", {"questions": [runs_kit.QUESTION]}, call_id="call_wait")
+    (wait_lease,) = await claim(runtime, worker_id="sdk-out-wait", worker_build="test", limit=1)
+    assert wait_lease.run_id == waiting_run_id
+    await execute(runtime, wait_lease, AttemptControl())
+    async with sdk_short_session(runtime.storage) as session:
+        waiting = await threads.get_run_output(session, ws, waiting_run_id)
+        assert waiting.sealed is True and waiting.status == "waiting"
+        assert waiting.wait_reason == "call"
+        assert waiting.output is None and waiting.failure is None
+
+
+async def test_read_asset_content_returns_verified_bytes_respects_scope_retirement_and_bounds(
+    service, app_runtime, monkeypatch
+):
+    from a13n_service.infra.ids import new_object_id
+    from a13n_service.resources.assets.schemas import AssetCreate
+    from a13n_service.resources.assets.service import create_asset, retire_asset
+    from a13n_service.resources.uploads import service as uploads
+    from a13n_service.tenancy.authorize import WorkspaceScope
+
+    from .test_connections import admin
+
+    runtime, tenant = app_runtime, service.tenant
+    ws = tenant.workspace_id
+    other_ws = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Other Assets"})).json()[
+        "id"
+    ]
+    payload = b"hello asset bytes"
+    upload = await uploads.store(
+        runtime.storage,
+        runtime.objects,
+        WorkspaceScope(tenant.organization_id, ws),
+        tenant.principal_id,
+        request_key="sdk-read-asset",
+        filename="diagram.bin",
+        content_type="application/octet-stream",
+        content=payload,
+    )
+    created, _ = await create_asset(
+        runtime.storage,
+        admin(service),
+        ws,
+        AssetCreate(upload_id=upload.upload_id, name="diagram.bin"),
+    )
+
+    # Active asset reads back matching metadata and bytes (both unbounded and at exact max_bytes).
+    for limit in (None, len(payload)):
+        meta, data = await threads.read_asset_content(runtime, ws, created.id, max_bytes=limit)
+        assert meta == threads.RunAsset(
+            id=created.id,
+            name="diagram.bin",
+            content_type="application/octet-stream",
+            size=len(payload),
+            digest=created.digest,
+            retired_at=None,
+            created_at=created.created_at,
+        )
+        assert data == payload
+
+    # Wrong workspace and unknown asset ID both raise not_found.
+    for target_ws, target_asset in ((other_ws, created.id), (ws, new_object_id("ast"))):
+        with pytest.raises(ServiceError) as missing:
+            await threads.read_asset_content(runtime, target_ws, target_asset)
+        assert missing.value.code == "not_found"
+
+    # Invalid max_bytes and over-limit reads fail before touching object storage.
+    object_reads = 0
+    original_get = runtime.objects.get
+
+    async def counting_get(key: str) -> bytes | None:
+        nonlocal object_reads
+        object_reads += 1
+        return await original_get(key)
+
+    monkeypatch.setattr(runtime.objects, "get", counting_get)
+    for bad_limit in (0, -1, False, True):
+        with pytest.raises(ServiceError) as invalid_limit:
+            await threads.read_asset_content(runtime, ws, created.id, max_bytes=bad_limit)
+        assert invalid_limit.value.code == "invalid_argument"
+        assert invalid_limit.value.details["field"] == "max_bytes"
+
+    with pytest.raises(ServiceError) as too_large:
+        await threads.read_asset_content(runtime, ws, created.id, max_bytes=len(payload) - 1)
+    assert too_large.value.code == "payload_too_large"
+    assert too_large.value.details["limit"] == len(payload) - 1
+    assert object_reads == 0
+
+    # Digest mismatch in object storage fails with unavailable.
+    async def tampered_get(key: str) -> bytes | None:
+        return b"X" * len(payload)
+
+    monkeypatch.setattr(runtime.objects, "get", tampered_get)
+    with pytest.raises(ServiceError) as corrupted:
+        await threads.read_asset_content(runtime, ws, created.id)
+    assert corrupted.value.code == "unavailable"
+
+    # Restore object store, retire the asset, and confirm retired assets remain readable.
+    monkeypatch.setattr(runtime.objects, "get", original_get)
+    fetched = await service.client.get(f"{service.api}/assets/{created.id}")
+    assert fetched.status_code == 200, fetched.text
+    retired = await retire_asset(runtime.storage, admin(service), ws, created.id, if_match=fetched.headers["etag"])
+    assert retired.retired_at is not None
+
+    retired_meta, retired_data = await threads.read_asset_content(runtime, ws, created.id)
+    assert retired_meta.id == created.id
+    assert retired_meta.retired_at == retired.retired_at
+    assert retired_data == payload
+
+
 async def test_app_objects_namespace_authority_and_references(service, app_runtime):
     from a13n_service.app_sdk.objects import AppObjects
 

@@ -463,6 +463,9 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
 }
+.connectionLimitNotice {
+  padding: 4px 16px 12px;
+}
 .connectionOptions {
   padding: 4px 16px 12px 44px;
   border-bottom: 1px solid var(--a13n-border);
@@ -543,6 +546,9 @@
   }
   .connectionCatalogStatus {
     padding: 12px 14px;
+  }
+  .connectionLimitNotice {
+    padding: 4px 14px 12px;
   }
   .toolsetToolMain {
     grid-template-columns: minmax(0, 1fr) auto;

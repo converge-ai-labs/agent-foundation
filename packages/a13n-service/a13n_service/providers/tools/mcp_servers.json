@@ -1332,6 +1332,16 @@
     "requirements": "Public tools are available without sign-in. Provider usage limits and feature requirements may apply."
   },
   {
+    "key": "photon",
+    "name": "Photon",
+    "description": "Projects, messaging channels, messages, and billing across iMessage, WhatsApp, Telegram, SMS, and email",
+    "url": "https://mcp.photon.codes/mcp",
+    "auth": "oauth",
+    "documentation_url": "https://photon.codes/docs/beta/ai-tools/mcp",
+    "logo_url": "https://mintcdn.com/photon-6d78d87b/3zs1WCtLT_oibNcX/favicon-128x128.png",
+    "requirements": "Sign in with a Photon account. Photon exposes 140+ tools, so enable Tool Search on your Agent or select specific tools, and review permissions for messaging, write, and billing tools."
+  },
+  {
     "key": "pitchbook",
     "name": "PitchBook",
     "description": "Private market intelligence",

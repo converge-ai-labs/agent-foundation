@@ -26,7 +26,7 @@ from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset
 
 from a13n_service.infra.outbound import open_http
-from a13n_service.providers.tools import CheckedToolset, DispatchCheck, ToolInfo
+from a13n_service.providers.tools import MAX_TOOLS, CheckedToolset, DispatchCheck, ToolInfo
 
 _UNKNOWN_OUTCOME = "The action's outcome is unknown; check the external state before calling it again."
 
@@ -80,6 +80,7 @@ def connector_toolset(
     *,
     check: DispatchCheck,
     timeout: float,
+    max_tools: int = MAX_TOOLS,
 ) -> AbstractToolset[AgentContext]:
     functions = [_tool(connection_id, account, tool) for tool in tools]
     return CheckedToolset(
@@ -87,6 +88,7 @@ def connector_toolset(
         connection_id,
         provider_id,
         check,
+        max_tools=max_tools,
     )
 
 

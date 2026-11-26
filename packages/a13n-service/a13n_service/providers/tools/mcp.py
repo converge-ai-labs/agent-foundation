@@ -124,7 +124,7 @@ class McpConfig(BaseModel):
 
     url: str = Field(min_length=1, max_length=2048)
     durable_tasks: bool = False
-    # None exposes every tool the server lists, so a run refuses a server listing more than `MAX_TOOLS`.
+    # None exposes every tool the server lists (up to `MAX_TOOLS` directly, or `DISCOVERY_MAX_TOOLS` under Tool Search).
     tools: Annotated[tuple[ToolName, ...], Field(min_length=1, max_length=MAX_TOOLS), AfterValidator(unique)] | None = (
         None
     )
@@ -302,6 +302,7 @@ def mcp_capability(
     object_ref_tools: dict[str, bool] | None = None,
     on_error: StartupErrorPolicy = "raise",
     durable_tasks: bool = False,
+    max_tools: int = MAX_TOOLS,
 ) -> MCPServer:
     """Fresh native projections borrow one entered client from the worker attempt.
 
@@ -342,7 +343,7 @@ def mcp_capability(
         references = ObjectRefToolset(listed, object_ref_tools=object_ref_tools or {})
         return AppMCP(
             id=connection_id,
-            local=DispatchToolset(references, connection_id, None, check),  # pyright: ignore[reportArgumentType]
+            local=DispatchToolset(references, connection_id, None, check, max_tools=max_tools),  # pyright: ignore[reportArgumentType]
             defer_loading=False,
         )
 

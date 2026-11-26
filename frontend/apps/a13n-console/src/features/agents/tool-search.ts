@@ -1,6 +1,9 @@
 import type { AgentConfig } from "./configuration";
 import type { Schema } from "../../shared/api";
 
+/** Maximum tools a single connection can expose directly without Tool Search. */
+export const DIRECT_CONNECTION_TOOL_LIMIT = 128;
+
 type ToolSearch = Exclude<
   NonNullable<AgentConfig["tool_search"]>,
   { mode: "native" }
@@ -407,5 +410,91 @@ export function remapToolSearchConnection(
           ),
         }
       : {}),
+  };
+}
+
+function customConnectionGroupName(
+  connectionName: string | undefined,
+  existing: readonly SearchGroup[],
+): string {
+  const normalized = (connectionName ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const base = /^[a-z]/.test(normalized)
+    ? normalized.slice(0, 32)
+    : `mcp-${normalized || "tools"}`.slice(0, 32);
+  let candidate = base;
+  for (
+    let index = 2;
+    existing.some((item) => item.name === candidate);
+    index++
+  ) {
+    const suffix = `-${index}`;
+    candidate = `${base.slice(0, 32 - suffix.length)}${suffix}`;
+  }
+  return candidate;
+}
+
+/**
+ * Ensure a connection is covered by Tool Search without discarding unrelated
+ * discovery preferences or custom proxy groups.
+ */
+export function enableConnectionDiscovery(
+  search: ToolSearchDraft,
+  connectionId: string,
+  connectionName?: string,
+): ToolSearchDraft {
+  if (search.mode === "direct") {
+    const excluded = search.nativeSources?.exclude_connections;
+    return {
+      ...search,
+      mode: "native",
+      nativeSources: {
+        ...search.nativeSources,
+        connections: true,
+        ...(excluded
+          ? {
+              exclude_connections: excluded.filter((id) => id !== connectionId),
+            }
+          : {}),
+      },
+    };
+  }
+  const policy = discoveryPolicy(search);
+  if (policy != null) {
+    const field = search.mode === "native" ? "nativeSources" : "automatic";
+    const excluded = policy.exclude_connections;
+    return {
+      ...search,
+      [field]: {
+        ...policy,
+        connections: true,
+        ...(excluded
+          ? {
+              exclude_connections: excluded.filter((id) => id !== connectionId),
+            }
+          : {}),
+      },
+    };
+  }
+  if (
+    search.groups.some((group) => group.connections?.includes(connectionId)) ||
+    search.groups.length >= 128
+  )
+    return search;
+  return {
+    ...search,
+    groups: [
+      ...search.groups,
+      {
+        name: customConnectionGroupName(connectionName, search.groups),
+        description: connectionName?.trim()
+          ? `Tools from ${connectionName.trim()}.`
+          : "Connection tools.",
+        connections: [connectionId],
+      },
+    ],
   };
 }

@@ -73,3 +73,17 @@ def test_deployment_entries_have_unique_keys() -> None:
     entry = {"key": "custom", "name": "Custom", "description": "A server", "url": "https://c.example", "auth": "none"}
     with pytest.raises(ValidationError, match="unique"):
         TypeAdapter(McpServers).validate_python([entry, entry])
+
+
+async def test_photon_is_packaged_and_searchable(service) -> None:  # type: ignore[no-untyped-def]
+    photon = next(server for server in PACKAGED if server.key == "photon")
+    assert photon.name == "Photon"
+    assert photon.url == "https://mcp.photon.codes/mcp"
+    assert photon.auth == "oauth"
+    assert photon.documentation_url == "https://photon.codes/docs/beta/ai-tools/mcp"
+    assert photon.logo_url is not None and photon.logo_url.startswith("https://")
+    assert "Tool Search" in photon.requirements
+    response = await service.client.get("/api/v1/mcp-servers", params={"query": "photon"})
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert any(item["key"] == "photon" and item["url"] == "https://mcp.photon.codes/mcp" for item in items)
