@@ -1419,7 +1419,11 @@ export function focusRefresh(frame: FocusFrame): ThreadRefresh | undefined {
   }
   const source = object(value.event) ? value.event : {};
   const payload = object(source.payload) ? source.payload : {};
-  if (content.name === "a13n.harness_ui.root_settled") return "lifecycle";
+  if (
+    content.name === "a13n.harness_ui.root_ready" ||
+    content.name === "a13n.harness_ui.root_settled"
+  )
+    return "lifecycle";
   if (content.name === "a13n.harness_ui.checkpoint") return "checkpoint";
   if (payload.type === "usage_report") return "usage";
 }

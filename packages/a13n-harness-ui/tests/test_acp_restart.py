@@ -98,8 +98,12 @@ async def test_acp_shutdown_reopens_session_without_repeating_user_input(tmp_pat
     monkeypatch.setattr(AcpSessionRuntime, "prompt", require_release)
     async with open_harness_ui_app(settings, configuration_path=config, host_mode="webui") as app:
         thread = await new_acp_thread(app)
-        await app.submit_thread(thread_id=thread.thread_id, prompt=_PROMPT)
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt=_PROMPT)
         await wait_for_prompt(journal)
+        offered = await app.steer_root_operation(
+            receipt_id=receipt.receipt_id, message="Undispatched restart steering", allow_acp_interrupt=False
+        )
+        assert offered.accepted
         assert await app._store.restarts.get() is None  # No process-loss candidate while ACP is active.
     async with open_local_store(settings.storage) as store:
         batch = await store.restarts.get()
@@ -112,6 +116,8 @@ async def test_acp_shutdown_reopens_session_without_repeating_user_input(tmp_pat
         assert session.data["session_id"] == "restart-fixture" and session.data["prompted"] is True
         assert session.data["context_window"] == [34, 100] and session.data["synced_messages"] == 2
         assert session.data["options"] == {"mode": "plan"}
+        assert session.data["pending_prompt"] is None
+        assert "Undispatched restart steering" not in str(saved.harness_state.message_history)
         assert "Partial reply 1." in str(saved.harness_state.message_history)
         assert await store.threads.acp_state(thread.thread_id) is not None
     cancels = protocol(journal, "session/cancel")
@@ -140,6 +146,7 @@ async def test_acp_shutdown_reopens_session_without_repeating_user_input(tmp_pat
     _, resumed = protocol(journal, "session/prompt")
     text = str(resumed["params"]["prompt"])
     assert "The host application restarted" in text and "retained outputs" in text and _PROMPT not in text
+    assert "Undispatched restart steering" not in text
 
 
 async def test_acp_natural_completion_during_drain_is_not_replayed(tmp_path):

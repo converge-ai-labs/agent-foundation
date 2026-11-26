@@ -21,7 +21,7 @@ from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.mcp_runtime.inputs import Inputs, McpInputResponse
 from pydantic_ai import RunContext
 from pydantic_ai.agent.spec import AgentSpec
-from pydantic_ai.messages import BinaryContent
+from pydantic_ai.messages import BinaryContent, TextContent
 from pydantic_ai.toolsets import FunctionToolset
 
 pytestmark = pytest.mark.anyio
@@ -170,7 +170,8 @@ async def test_acp_turn_runs_in_harness_and_reuses_session(tmp_path: Path) -> No
             )
         second = running.result()
         assert second.status == "completed" and second.output == "allowed"
-        assert len(second.all_messages()) == 4
+        assert len(second.all_messages()) == 5
+        assert "Keep going" in str(second.all_messages()[-2])
 
         changed.clear()
         async with asyncio.TaskGroup() as group:
@@ -295,8 +296,12 @@ async def test_acp_thread_without_native_model_runs_and_saves_display(tmp_path: 
                     event = await live.receive()
                     if "partial reply" in str(event.payload):
                         break
-            # The fixture does not negotiate steering: never enter the native queue.
-            assert not (await app.steer_root_operation(receipt_id=receipt.receipt_id, message="steer")).accepted
+            # Queued steering on this peer leaves the active prompt running until explicit Stop.
+            assert (
+                await app.steer_root_operation(
+                    receipt_id=receipt.receipt_id, message="steer", allow_acp_interrupt=False
+                )
+            ).accepted
             assert (await app.cancel_root_operation(receipt.receipt_id)).accepted
         stopped = await app.wait_root_operation(receipt.receipt_id)
         assert stopped.status is RootOperationStatus.cancelled
@@ -395,9 +400,10 @@ async def test_acp_host_inputs_and_inbox_links(tmp_path: Path, flow: str, monkey
                 assert steer.accepted
                 outcome = await app.wait_root_operation(receipt.receipt_id)
                 assert outcome.status is RootOperationStatus.completed, outcome.failure
-            assert (
-                await app.get_thread(thread.thread_id)
-            ).thread.excerpt.latest_reply == "Files readSteering file read"
+            assert (await app.get_thread(thread.thread_id)).thread.excerpt.latest_reply == "Steering file read"
+            transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+            replies = [part.text for entry in transcript.entries for part in entry.parts if part.kind == "assistant"]
+            assert replies == ["Files read", "Steering file read"]
         else:
             options = await app.acp_options(thread.thread_id)
             assert [(item.id, item.value) for item in options] == [("mode", "chat")]
@@ -1567,3 +1573,181 @@ async def test_acp_attachments_embedded_context_image_fallback_and_multimodal_st
         reply = await _latest_reply_text(app, thread.thread_id)
         steer_blocks = json.loads(reply.removeprefix("waiting"))
         assert any(block.get("type") == "image" and block.get("mimeType") == "image/png" for block in steer_blocks)
+
+
+@pytest.mark.parametrize(
+    "case",
+    (
+        "cancelled",
+        "end_turn",
+        "request_cancelled",
+        "queued",
+        "stop",
+        "ignored",
+        "prompt_required",
+        "method_missing",
+        "unknown",
+        "injected",
+        "late_injected",
+        "followup_failed",
+    ),
+)
+async def test_acp_active_steer_uses_one_resident_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from a13n_harness_ui.thread_files import ComposerInput
+
+    journal = tmp_path / "wire.jsonl"
+    gate = tmp_path / "settle"
+    native = case in {"prompt_required", "method_missing", "unknown", "injected", "late_injected"}
+    flags = [f"steer-journal={journal}", "steer-open-tool", "standard-steer" if native else "no-steering"]
+    if case in {"queued", "unknown"}:
+        flags.append(f"steer-gate={gate}")
+    if case in {"end_turn", "request_cancelled"}:
+        flags.append(f"steer-stop-reason={case}")
+    if case in {"prompt_required", "method_missing", "unknown", "late_injected"}:
+        flags.append("steer-" + case.replace("_", "-"))
+    if case == "ignored":
+        flags.append("ignore-steer-cancel")
+        monkeypatch.setattr("a13n_harness_ui.acp_execution._STEER_CANCEL_GRACE_SECONDS", 0.1)
+    config = _ui_peer_config(tmp_path, *flags)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    source_id = "input_" + "1" * 32
+    async with (
+        asyncio.timeout(20),
+        open_harness_ui_app(settings, configuration_path=config, host_mode="webui") as app,
+    ):
+        thread = await app.create_thread()
+        async with app.live_events(root_thread_id=thread.thread_id) as live:
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="wait-steer")
+            ready = waiting = False
+            while not (ready and waiting):
+                event = (await live.receive()).payload or {}
+                ready |= event.get("name") == "a13n.harness_ui.root_ready"
+                waiting |= event.get("delta") == "waiting"
+            activity = (await app.get_thread(thread.thread_id)).thread.root_activity
+            running = await app.get_root_operation(receipt.receipt_id)
+            assert activity.available_actions == running.available_actions == ("wait", "steer", "cancel")
+            result = await app.steer_root_operation(
+                receipt_id=receipt.receipt_id,
+                message=ComposerInput(
+                    parts=("fail-steering-prompt" if case == "followup_failed" else "echo-prompt first",),
+                    source_id=source_id,
+                ),
+                allow_acp_interrupt=case not in {"queued", "stop"},
+            )
+            assert result.accepted is (case != "unknown")
+            if case == "queued":
+                result = await app.steer_root_operation(
+                    receipt_id=receipt.receipt_id,
+                    message=(TextContent("wire-only hint", metadata={"display": False}), "second instruction"),
+                    allow_acp_interrupt=False,
+                )
+                assert result.accepted
+            if case in {"queued", "unknown"}:
+                frames = [json.loads(line) for line in journal.read_text().splitlines()]
+                assert all(frame["kind"] not in {"session/cancel", "response"} for frame in frames)
+                gate.touch()
+            if case == "stop":
+                assert (await app.cancel_root_operation(receipt.receipt_id)).accepted
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+            assert outcome.receipt.receipt_id == receipt.receipt_id
+            frames = [json.loads(line) for line in journal.read_text().splitlines()]
+            assert sum(frame["kind"] == "initialize" for frame in frames) == 1
+            assert sum(frame["kind"] == "session/new" for frame in frames) == 1
+            prompts = [frame for frame in frames if frame["kind"] == "session/prompt"]
+            assert {frame["sessionId"] for frame in prompts} == {"fixture-session"}
+            wire = [
+                frame["kind"] for frame in frames if frame["kind"] in {"session/prompt", "session/cancel", "response"}
+            ]
+            if case == "ignored":
+                assert outcome.status is RootOperationStatus.failed
+                assert outcome.failure is not None and outcome.failure.code == "acp_steer_cancel_timeout"
+                assert wire == ["session/prompt", "session/cancel"]
+                return
+            if case == "stop":
+                assert outcome.status is RootOperationStatus.cancelled
+                assert wire == ["session/prompt", "session/cancel", "response"]
+                return
+            if case == "followup_failed":
+                assert outcome.status is RootOperationStatus.failed
+                stored = await app._store.threads.get(thread.thread_id)
+                assert stored is not None and stored.continuation is not None
+                saved = await app._store.read_continuation(thread.thread_id, stored.continuation)
+                messages = str(saved.harness_state.message_history)
+                assert "wait-steer" in messages and "waiting" in messages and "fail-steering-prompt" in messages
+                assert wire == ["session/prompt", "session/cancel", "response", "session/prompt"]
+                return
+            assert outcome.status is RootOperationStatus.completed, outcome.failure
+            if case == "unknown":
+                assert wire == ["session/prompt", "response"]
+                return
+            if case in {"injected", "late_injected"}:
+                assert wire == ["session/prompt"]
+            elif case == "queued":
+                assert wire == ["session/prompt", "response", "session/prompt"]
+                assert [block["text"].strip() for block in prompts[-1]["prompt"]][-3:] == [
+                    "echo-prompt first",
+                    "wire-only hint",
+                    "second instruction",
+                ]
+            else:
+                assert wire == ["session/prompt", "session/cancel", "response", "session/prompt"]
+            display_events = []
+            while True:
+                event = (await live.receive()).payload or {}
+                display_events.append(event)
+                if event.get("name") == "a13n.harness_ui.root_settled":
+                    break
+            steering = next(item for item in display_events if item.get("name") == "a13n.input.steering")
+            assert steering["metadata"]["source_id"] == source_id
+            if case not in {"injected", "late_injected"}:
+                names = [item.get("type") for item in display_events]
+                assert names.index("TOOL_CALL_END") < display_events.index(steering) < names.index("TEXT_MESSAGE_START")
+            transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+            retained = [part for entry in transcript.entries for part in entry.parts]
+            assert sum(part.metadata.source_id == source_id for part in retained) == 1
+            if case == "queued":
+                hidden = next(part for part in retained if part.text == "wire-only hint")
+                assert hidden.kind == "user" and not hidden.metadata.display
+            if case not in {"injected", "late_injected"}:
+                text = [part.text for part in retained if part.text]
+                assert text.index("waiting") < text.index("echo-prompt first")
+
+
+async def test_acp_steering_during_goal_decision_supersedes_the_generated_prompt(tmp_path, monkeypatch):
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.goal import GoalCapability
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+
+    entered, release = asyncio.Event(), asyncio.Event()
+    after_reply = GoalCapability.after_reply
+
+    async def pause_decision(self, ctx, output, continue_with):
+        await after_reply(self, ctx, output, continue_with)
+        if not entered.is_set():
+            entered.set()
+            await release.wait()
+
+    monkeypatch.setattr(GoalCapability, "after_reply", pause_decision)
+    journal = tmp_path / "wire.jsonl"
+    config = _ui_peer_config(tmp_path, "no-steering", f"steer-journal={journal}")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with asyncio.timeout(20), open_harness_ui_app(settings, configuration_path=config, host_mode="webui") as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="hello", mode="goal")
+        await entered.wait()
+        offer = await app.steer_root_operation(receipt_id=receipt.receipt_id, message="finish-steering-goal")
+        assert offer.accepted
+        release.set()
+        outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status is RootOperationStatus.completed, outcome.failure
+        assert outcome.goal is not None and outcome.goal.status == "verified"
+    frames = [json.loads(line) for line in journal.read_text().splitlines()]
+    prompts = [frame for frame in frames if frame["kind"] == "session/prompt"]
+    assert len(prompts) == 2 and "finish-steering-goal" in str(prompts[-1])
+    assert not any(frame["kind"] == "session/cancel" for frame in frames)

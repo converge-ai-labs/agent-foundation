@@ -34,6 +34,9 @@ it("does not refresh HTTP queries for presentation events, and routes usage and 
   expect(
     focusRefresh(event("CUSTOM", { name: "a13n.harness_ui.root_settled" })),
   ).toBe("lifecycle");
+  expect(
+    focusRefresh(event("CUSTOM", { name: "a13n.harness_ui.root_ready" })),
+  ).toBe("lifecycle");
   expect(focusRefresh(event("RUN_FINISHED"))).toBe("lifecycle");
   expect(focusRefresh({ kind: "reset" } as FocusFrame)).toBe("reconcile");
 });

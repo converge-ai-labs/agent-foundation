@@ -808,6 +808,57 @@ async def test_root_steering_rechecks_cancellation_after_enqueue_wait(monkeypatc
         await coordinator.close(timeout_seconds=1)
 
 
+async def test_acp_ready_actions_match_and_stop_fences_before_restart_io(monkeypatch):
+    executor = _RunningExecutor()
+    focus = []
+    turn = SimpleNamespace(accepting_steer=False)
+
+    async def execute(admission, *, on_stream, **kwargs):
+        await on_stream(executor.stream, acp_turn=turn)
+        executor.started.set()
+        await sleep_forever()
+
+    async def publish(**kwargs):
+        focus.extend(kwargs["events"])
+
+    async def invalidate(thread_id, *, suppress):
+        assert thread_id == "thread-1" and suppress
+        assert not turn.accepting_steer
+        await sleep(0)
+
+    async def stop():
+        return False
+
+    turn.request_stop = lambda: setattr(turn, "accepting_steer", False)
+    turn.stop = stop
+    monkeypatch.setattr(executor, "execute", execute)
+    coordinator = RootRunCoordinator(cast(Any, executor), live_hub=cast(Any, SimpleNamespace(publish=publish)))
+    await coordinator.start()
+    try:
+        receipt = await coordinator.submit_prompt(thread_id="thread-1", prompt="run")
+        await executor.started.wait()
+
+        async def actions():
+            view = await coordinator.get(receipt.receipt_id)
+            activity = (await coordinator.activities(("thread-1",)))["thread-1"]
+            assert view.available_actions == activity.available_actions
+            return view.available_actions
+
+        assert await actions() == ("wait", "cancel")
+        turn.accepting_steer = True
+        await turn.on_ready()
+        assert [event.name for event in focus] == ["a13n.harness_ui.root_ready"]
+        assert await actions() == ("wait", "steer", "cancel")
+        coordinator._restart = cast(
+            Any, SimpleNamespace(enabled=False, active={}, invalidate=invalidate, signal=lambda: None)
+        )
+        assert (await coordinator.cancel(receipt.receipt_id)).accepted
+        assert (await coordinator.wait(receipt.receipt_id)).status is RootOperationStatus.cancelled
+    finally:
+        coordinator._restart = None
+        await coordinator.close(timeout_seconds=1)
+
+
 async def test_frozen_skill_catalog_follows_operation_retention() -> None:
     from a13n_harness.capabilities import BoundSkillCatalog
 

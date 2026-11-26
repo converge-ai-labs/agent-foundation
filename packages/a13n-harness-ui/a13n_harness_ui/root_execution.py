@@ -1247,7 +1247,9 @@ class RootRunExecutor:
                     )
                 elif stream is not None and stream_entry_attempted:
                     try:
-                        state = await stream.export_state()
+                        state = acp_turn.failed_state if acp_turn is not None else None
+                        if state is None:
+                            state = await stream.export_state()
                     except Exception as exc:
                         continuation = RootContinuationSelection(status="failed", error=exc)
                     else:
