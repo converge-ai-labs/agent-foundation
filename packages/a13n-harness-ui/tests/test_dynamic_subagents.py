@@ -8,7 +8,12 @@ from a13n_harness.content import request_input_content
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.bot_models import BotSubmit
 from a13n_harness_ui.configuration import load_harness_ui_configuration
-from a13n_harness_ui.configuration.models import SubagentsConfiguration
+from a13n_harness_ui.configuration.models import (
+    AgentCreationConfiguration,
+    DynamicSubagentsConfiguration,
+    HarnessUiDocument,
+    SubagentsConfiguration,
+)
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
@@ -31,30 +36,68 @@ pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
 def test_defaults_and_invalid_subagent_configuration():
     config = SubagentsConfiguration()
     assert config.max_concurrent == 8
-    assert not config.dynamic.enabled and config.dynamic.allowed_models == ()
+    assert not config.dynamic.enabled
+    creation = AgentCreationConfiguration()
+    assert creation.allowed_agents is None and creation.default_agent is None
+    assert creation.allowed_models == () and creation.default_model is None
     for bad in (
         {"max_concurrent": 0},
         {"max_concurrent": True},
-        {"dynamic": {"allowed_models": ["model-a", "model-a"]}},
+        {"dynamic": {"allowed_models": ["model-a"]}},
         {"dynamic": {"default_model": "model-a"}},
-        {"dynamic": {"allowed_models": ["model-a"], "default_model": "model-b"}},
-        {"dynamic": {"enabled": True}},
-        {"dynamic": {"enabled": True, "allowed_models": ["model-a"]}},
     ):
         with pytest.raises(ValidationError):
             SubagentsConfiguration.model_validate(bad)
-    config = SubagentsConfiguration.model_validate(
-        {"dynamic": {"enabled": True, "allowed_models": ["model-a", "model-b"], "default_model": "model-b"}}
+    with pytest.raises(ValidationError, match="agent_creation"):
+        DynamicSubagentsConfiguration.model_validate({"allowed_models": ["model-a"]})
+    with pytest.raises(ValidationError, match="agent_creation"):
+        DynamicSubagentsConfiguration.model_validate({"default_model": "model-a"})
+    for bad_creation in (
+        {"allowed_agents": ["agent-a", "agent-a"]},
+        {"allowed_agents": ["agent-a"], "default_agent": "agent-b"},
+        {"allowed_agents": [], "default_agent": "agent-a"},
+        {"allowed_models": ["model-a", "model-a"]},
+        {"default_model": "model-a"},
+        {"allowed_models": ["model-a"], "default_model": "model-b"},
+    ):
+        with pytest.raises(ValidationError):
+            AgentCreationConfiguration.model_validate(bad_creation)
+    for bad_doc in (
+        {"subagents": {"dynamic": {"enabled": True}}},
+        {"subagents": {"dynamic": {"enabled": True}}, "agent_creation": {"allowed_models": ["model-a"]}},
+    ):
+        with pytest.raises(ValidationError):
+            HarnessUiDocument.model_validate(bad_doc)
+    doc = HarnessUiDocument.model_validate(
+        {
+            "subagents": {"dynamic": {"enabled": True}},
+            "agent_creation": {
+                "allowed_agents": ["agent-a", "acp-b"],
+                "default_agent": "acp-b",
+                "allowed_models": ["model-a", "model-b"],
+                "default_model": "model-b",
+            },
+        }
     )
-    assert config.dynamic.default_model == "model-b"
+    assert doc.agent_creation.default_agent == "acp-b"
+    assert doc.agent_creation.default_model == "model-b"
 
 
 async def test_dynamic_model_references_are_validated(tmp_path):
     path = _source(tmp_path, ())
-    path.write_text('schema_version: "1"\nsubagents: {dynamic: {allowed_models: [model-missing]}}\n')
+    path.write_text('schema_version: "1"\nagent_creation: {allowed_models: [model-missing]}\n')
     with pytest.raises(ConfigurationError) as error:
         await load_harness_ui_configuration(path)
-    assert "subagents.dynamic.allowed_models" in str(error.value)
+    assert "agent_creation.allowed_models" in str(error.value)
+    path.write_text('schema_version: "1"\nagent_creation: {allowed_agents: [agent-missing]}\n')
+    with pytest.raises(ConfigurationError):
+        await load_harness_ui_configuration(path)
+    path.write_text('schema_version: "1"\nagent_creation: {default_agent: agent-missing}\n')
+    with pytest.raises(ConfigurationError):
+        await load_harness_ui_configuration(path)
+    path.write_text('schema_version: "1"\nsubagents: {dynamic: {allowed_models: [model-main]}}\n')
+    with pytest.raises(ConfigurationError):
+        await load_harness_ui_configuration(path)
 
 
 async def open_app(
@@ -66,20 +109,31 @@ async def open_app(
     limit=8,
     include=("explorer",),
     dynamic=None,
+    agent_creation=None,
     steering_mode="immediate",
 ):
     path = _source(tmp_path, include)
     (tmp_path / "AGENTS.md").write_text("GLOBAL_GUIDANCE")
+    if dynamic is not None:
+        dynamic_enabled = dynamic.get("enabled", False)
+        creation = {k: v for k, v in dynamic.items() if k in {"allowed_models", "default_model"}}
+    else:
+        dynamic_enabled = enabled
+        creation = (
+            agent_creation
+            if agent_creation is not None
+            else {"allowed_models": ["model-main"], "default_model": "model-main"}
+        )
     path.write_text(
         yaml.safe_dump(
             {
                 "schema_version": "1",
                 "input": {"steering_mode": steering_mode},
+                "agent_creation": creation,
                 "subagents": {
                     "include": list(include),
                     "max_concurrent": limit,
-                    "dynamic": dynamic
-                    or {"enabled": enabled, "allowed_models": ["model-main"], "default_model": "model-main"},
+                    "dynamic": {"enabled": dynamic_enabled},
                 },
             }
         )
@@ -500,9 +554,8 @@ async def test_repeated_resume_returns_tool_error_without_failing_parent(
 async def test_dynamic_child_of_bot_or_live_gets_the_package_prompt(tmp_path, monkeypatch, surface, role):
     root = bot_configuration(tmp_path) if surface == "bot" else live_configuration(tmp_path)
     value = yaml.safe_load(root.read_text())
-    value["subagents"] = {
-        "dynamic": {"enabled": True, "allowed_models": ["model-primary"], "default_model": "model-primary"}
-    }
+    value["agent_creation"] = {"allowed_models": ["model-primary"], "default_model": "model-primary"}
+    value["subagents"] = {"dynamic": {"enabled": True}}
     root.write_text(yaml.safe_dump(value))
     parent_instructions, child_instructions, child_seen = [], [], Event()
 

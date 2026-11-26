@@ -48,13 +48,16 @@ tools:
   interaction_timeout_seconds: 120
 input:
   steering_mode: immediate # or queued
+agent_creation:
+  allowed_agents: null # omit/null for all agents, [] to disable, or list IDs
+  default_agent: null
+  allowed_models: [model-primary]
+  default_model: model-primary
 subagents:
   include: [explorer, code-reviewer, executor]
   max_concurrent: 8
   dynamic:
     enabled: true
-    allowed_models: [model-primary]
-    default_model: model-primary
 ```
 
 - `tools.enable_ask_user_question` / `enable_codeact`: Global switches that gate both automatic and explicit Agent selections.

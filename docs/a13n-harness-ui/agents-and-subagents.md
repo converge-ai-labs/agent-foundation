@@ -73,15 +73,16 @@ Built-in helpers inherit the parent's Model, Capabilities, and visible tools. In
 Enable `spawn_subagent` so root conversations can create task-specific leaf helpers on demand:
 
 ```yaml title="a13n-harness-ui.yaml"
+agent_creation:
+  allowed_models: [model-primary]
+  default_model: model-primary
 subagents:
   max_concurrent: 8
   dynamic:
     enabled: true
-    allowed_models: [model-primary]
-    default_model: model-primary
 ```
 
-- `allowed_models` and `default_model` also govern model selection for `create_thread`, `create_worker`, and `delegate`.
+- `agent_creation.allowed_agents` and `default_agent` govern which Agents `create_thread` and `create_worker` may use (and default to when `agent_id` is omitted); `agent_creation.allowed_models` and `default_model` govern model selection for `create_thread`, `create_worker`, `delegate`, and `spawn_subagent`.
 - Dynamic helpers inherit the parent's tools and Environment, start with a clean history, and report final results back automatically.
 - Agents manage running children with `subagent_info`, `wait_subagent`, `steer_subagent`, and `resume_subagent`.
 

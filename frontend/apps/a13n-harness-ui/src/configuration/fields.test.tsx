@@ -86,6 +86,12 @@ vi.mock("../transport/context", () => ({
           name: "Coordinator",
           model_id: "model-alternate",
         },
+        {
+          agent_id: "acp-claude",
+          name: "Claude Code",
+          kind: "acp_agent",
+          preset: "claude_code",
+        },
       ],
       models: [
         { model_id: "model-primary", name: "Primary", route: "openai:primary" },
@@ -107,12 +113,15 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
-function renderFields(initial: string) {
+function renderFields(
+  initial: string,
+  group?: "chats" | "agents" | "bot" | "memory",
+) {
   function Fields() {
     const [source, setSource] = useState(initial);
     return (
       <>
-        <ResourceFields source={source} onChange={setSource} />
+        <ResourceFields source={source} onChange={setSource} group={group} />
         <output data-testid="source">{source}</output>
       </>
     );
@@ -622,11 +631,13 @@ it("edits shared creation models and subagent controls through the root document
   fireEvent.change(limit, { target: { value: "4" } });
   expect(parse(screen.getByTestId("source").textContent!)).toEqual({
     schema_version: "1",
+    agent_creation: {
+      allowed_models: ["model-alternate"],
+      default_model: "model-alternate",
+    },
     subagents: {
       dynamic: {
         enabled: true,
-        allowed_models: ["model-alternate"],
-        default_model: "model-alternate",
       },
       max_concurrent: 4,
     },
@@ -634,29 +645,127 @@ it("edits shared creation models and subagent controls through the root document
   fireEvent.change(limit, { target: { value: "8" } });
   await user.click(screen.getByRole("checkbox", { name: "Primary" }));
   await user.click(screen.getByRole("checkbox", { name: "Alternate" }));
-  expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
-    dynamic: { enabled: true, allowed_models: ["model-primary"] },
+  expect(parse(screen.getByTestId("source").textContent!)).toEqual({
+    schema_version: "1",
+    agent_creation: { allowed_models: ["model-primary"] },
+    subagents: { dynamic: { enabled: true } },
   });
   await user.click(
     screen.getByRole("switch", { name: "Let the agent create subagents" }),
   );
-  expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
-    dynamic: { allowed_models: ["model-primary"] },
+  expect(parse(screen.getByTestId("source").textContent!)).toEqual({
+    schema_version: "1",
+    agent_creation: { allowed_models: ["model-primary"] },
+    subagents: { dynamic: {} },
   });
   // When dynamic subagents are disabled, Default model can be set and cleared back to None.
   await user.click(screen.getByRole("combobox", { name: "Default model" }));
   await user.click(await screen.findByRole("option", { name: "Primary" }));
-  expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
-    dynamic: {
-      allowed_models: ["model-primary"],
-      default_model: "model-primary",
-    },
+  expect(
+    parse(screen.getByTestId("source").textContent!).agent_creation,
+  ).toEqual({
+    allowed_models: ["model-primary"],
+    default_model: "model-primary",
   });
   await user.click(screen.getByRole("combobox", { name: "Default model" }));
   await user.click(await screen.findByRole("option", { name: "None" }));
-  expect(parse(screen.getByTestId("source").textContent!).subagents).toEqual({
-    dynamic: { allowed_models: ["model-primary"] },
+  expect(
+    parse(screen.getByTestId("source").textContent!).agent_creation,
+  ).toEqual({
+    allowed_models: ["model-primary"],
   });
+});
+
+it("edits allowed agents and default agent under Agent creation", async () => {
+  renderFields('schema_version: "1"\n', "agents");
+  const user = userEvent.setup();
+  expect(
+    screen.getByText(
+      "With no agents selected, all configured agents are allowed for new chats and workers.",
+    ),
+  ).toBeTruthy();
+  const defaultAgent = screen.getByRole("combobox", { name: "Default agent" });
+  expect(defaultAgent.textContent).toContain("Same as current agent");
+
+  // With allowed_agents omitted, Default agent lists all configured native and ACP agents.
+  await user.click(defaultAgent);
+  expect(
+    (await screen.findAllByRole("option")).map((option) => option.textContent),
+  ).toEqual([
+    "Same as current agent",
+    "Default assistant",
+    "Coordinator",
+    "Claude CodeACP agent",
+  ]);
+  await user.click(screen.getByRole("option", { name: /Claude Code/ }));
+  expect(
+    parse(screen.getByTestId("source").textContent!).agent_creation,
+  ).toEqual({
+    default_agent: "acp-claude",
+  });
+
+  // Checking Allowed agents restricts the Default agent dropdown and clears a disallowed default.
+  await user.click(screen.getByRole("checkbox", { name: "Default assistant" }));
+  expect(
+    parse(screen.getByTestId("source").textContent!).agent_creation,
+  ).toEqual({
+    allowed_agents: ["agent-default"],
+  });
+  await user.click(screen.getByRole("checkbox", { name: /Claude Code/ }));
+  await user.click(screen.getByRole("combobox", { name: "Default agent" }));
+  expect(
+    (await screen.findAllByRole("option")).map((option) => option.textContent),
+  ).toEqual([
+    "Same as current agent",
+    "Default assistant",
+    "Claude CodeACP agent",
+  ]);
+  await user.click(screen.getByRole("option", { name: "Default assistant" }));
+  expect(
+    parse(screen.getByTestId("source").textContent!).agent_creation,
+  ).toEqual({
+    allowed_agents: ["agent-default", "acp-claude"],
+    default_agent: "agent-default",
+  });
+
+  // Unchecking the selected default from a multi-agent allowlist clears default_agent.
+  await user.click(screen.getByRole("checkbox", { name: "Default assistant" }));
+  expect(
+    parse(screen.getByTestId("source").textContent!).agent_creation,
+  ).toEqual({
+    allowed_agents: ["acp-claude"],
+  });
+  // Unchecking the last allowed agent omits allowed_agents (all allowed) while preserving default_agent.
+  await user.click(screen.getByRole("combobox", { name: "Default agent" }));
+  await user.click(await screen.findByRole("option", { name: /Claude Code/ }));
+  expect(
+    parse(screen.getByTestId("source").textContent!).agent_creation,
+  ).toEqual({
+    allowed_agents: ["acp-claude"],
+    default_agent: "acp-claude",
+  });
+  await user.click(screen.getByRole("checkbox", { name: /Claude Code/ }));
+  expect(
+    parse(screen.getByTestId("source").textContent!).agent_creation,
+  ).toEqual({
+    default_agent: "acp-claude",
+  });
+});
+
+it("preserves unavailable allowed_agents entries so they can be cleared", async () => {
+  renderFields(
+    'schema_version: "1"\nagent_creation:\n  allowed_agents:\n    - agent-missing\n',
+    "agents",
+  );
+  const user = userEvent.setup();
+  const unavailable = screen.getByRole("checkbox", {
+    name: "agent-missing (unavailable)",
+  });
+  expect(unavailable.getAttribute("aria-checked")).toBe("true");
+  await user.click(unavailable);
+  expect(
+    parse(screen.getByTestId("source").textContent!).agent_creation,
+  ).toEqual({});
 });
 
 it("persists independent Bot selections and updates the inherited Model without clearing an override", async () => {

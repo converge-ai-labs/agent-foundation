@@ -1697,6 +1697,9 @@ it("configures shared creation models in Agents without changing chat defaults o
   );
   render(<BrowserApp />);
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("checkbox", { name: "Worker" }));
+  await user.click(screen.getByRole("combobox", { name: "Default agent" }));
+  await user.click(await screen.findByRole("option", { name: "Worker" }));
   await user.click(
     await screen.findByRole("checkbox", { name: "Worker model" }),
   );
@@ -1705,7 +1708,9 @@ it("configures shared creation models in Agents without changing chat defaults o
   expect(writes).toBe(0);
   await user.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(writes).toBe(1));
-  expect(parse(content).subagents.dynamic).toEqual({
+  expect(parse(content).agent_creation).toEqual({
+    allowed_agents: ["agent-worker"],
+    default_agent: "agent-worker",
     allowed_models: ["model-worker"],
     default_model: "model-worker",
   });

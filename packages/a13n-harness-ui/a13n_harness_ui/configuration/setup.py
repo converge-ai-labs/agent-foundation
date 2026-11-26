@@ -413,7 +413,7 @@ async def preview_setup(
             "environment_profile": selection.environment_profile,
         }
         if path.name not in baseline and selected_model_id is not None:
-            root.setdefault("subagents", {})["dynamic"] = {
+            root["agent_creation"] = {
                 "allowed_models": [selected_model_id],
                 "default_model": selected_model_id,
             }

@@ -1176,9 +1176,8 @@ codex.CodexRequestModel = lambda *a, **kw: WrapperModel(WrapperModel(FunctionMod
 async def test_default_unattended_surface_and_shell_review(tmp_path, monkeypatch, acp):
     path = await _seed(tmp_path, monkeypatch, shell_review=True)
     root = yaml.safe_load(path.read_text())
-    root["subagents"] = {
-        "dynamic": {"enabled": True, "allowed_models": ["model-codex"], "default_model": "model-codex"}
-    }
+    root["agent_creation"] = {"allowed_models": ["model-codex"], "default_model": "model-codex"}
+    root["subagents"] = {"dynamic": {"enabled": True}}
     path.write_text(yaml.safe_dump(root))
     if acp:
         async with _agent(path, tmp_path, unattended=True) as rpc:

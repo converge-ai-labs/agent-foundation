@@ -14,6 +14,7 @@ import environments from "./environments.module.css";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
+import { AgentSelectionField } from "./agent-selection";
 import { ModelSelectionField } from "./model-selection";
 import { Button, FormField, Input, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
@@ -163,11 +164,40 @@ export function ResourceFields({
       ? selected.filter((value): value is string => typeof value === "string")
       : null;
   };
-  const allowedModels =
-    strings(["subagents", "dynamic", "allowed_models"]) ?? [];
-  const defaultModelPath = ["subagents", "dynamic", "default_model"];
+  const allowedAgentsPath = ["agent_creation", "allowed_agents"];
+  const defaultAgentPath = ["agent_creation", "default_agent"];
+  const allowedModelsPath = ["agent_creation", "allowed_models"];
+  const defaultModelPath = ["agent_creation", "default_model"];
+  const allowedAgentsRaw = strings(allowedAgentsPath);
+  const allowedAgents = allowedAgentsRaw ?? [];
+  const allowedModels = strings(allowedModelsPath) ?? [];
   const dynamicSubagentsEnabled =
     get(["subagents", "dynamic", "enabled"]) === true;
+  const creationAgentOptions = (selectors.data?.agents ?? [])
+    .filter(
+      (agent) =>
+        allowedAgentsRaw === null || allowedAgentsRaw.includes(agent.agent_id),
+    )
+    .map((agent) => {
+      const presetBrand =
+        agent.kind === "acp_agent" ? acpPresetBrand(agent.preset) : undefined;
+      const model =
+        agent.kind === "acp_agent"
+          ? undefined
+          : (selectors.data?.models ?? []).find(
+              (item) => item.model_id === agent.model_id,
+            );
+      return {
+        value: agent.agent_id,
+        label: agent.name,
+        badge: agent.kind === "acp_agent" ? t("ACP agent") : undefined,
+        icon: presetBrand ? (
+          <ModelIcon modelIdentity={presetBrand} />
+        ) : model ? (
+          <ModelIcon model={model} />
+        ) : undefined,
+      };
+    });
   const list = (
     label: string,
     path: string[],
@@ -908,6 +938,60 @@ export function ResourceFields({
             {(!group || group === "agents") && (
               <>
                 <SettingsSection title={t("Agent creation")}>
+                  <AgentSelectionField
+                    label={t("Allowed agents")}
+                    description={
+                      allowedAgentsRaw === null
+                        ? t(
+                            "With no agents selected, all configured agents are allowed for new chats and workers.",
+                          )
+                        : allowedAgents.length
+                          ? t(
+                              "Agents can only use these configured agents for new chats and workers.",
+                            )
+                          : t(
+                              "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.",
+                            )
+                    }
+                    agents={selectors.data?.agents ?? []}
+                    models={selectors.data?.models ?? []}
+                    value={allowedAgents}
+                    onChange={(value) => {
+                      let updated = updateDocument(
+                        source,
+                        allowedAgentsPath,
+                        value,
+                      );
+                      // Clear the default agent when it is excluded by a non-empty allowlist.
+                      const fallback = text(defaultAgentPath);
+                      if (
+                        fallback &&
+                        value !== undefined &&
+                        !value.includes(fallback)
+                      )
+                        updated = updateDocument(
+                          updated,
+                          defaultAgentPath,
+                          undefined,
+                        );
+                      onChange(updated);
+                    }}
+                  />
+                  <ResourceChoice
+                    label={t("Default agent")}
+                    description={t(
+                      "Used when creating a new chat or worker without specifying an agent.",
+                    )}
+                    value={text(defaultAgentPath)}
+                    loading={selectors.isPending || sources.isPending}
+                    onValueChange={(value) =>
+                      set(defaultAgentPath, value || undefined)
+                    }
+                    options={[
+                      { value: "", label: t("Same as current agent") },
+                      ...creationAgentOptions,
+                    ]}
+                  />
                   <ModelSelectionField
                     label={t("Allowed models")}
                     description={
@@ -924,7 +1008,7 @@ export function ResourceFields({
                     onChange={(value) => {
                       let updated = updateDocument(
                         source,
-                        ["subagents", "dynamic", "allowed_models"],
+                        allowedModelsPath,
                         value,
                       );
                       // The default must stay one of the allowed models.

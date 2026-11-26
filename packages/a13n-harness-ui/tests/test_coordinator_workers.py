@@ -306,7 +306,7 @@ async def test_agent_and_self_creation_work_without_allowed_models_while_model_o
 
     root = coordinator_configuration(tmp_path)
     document = yaml.safe_load(root.read_text())
-    document["subagents"] = {"dynamic": {"allowed_models": []}}
+    document["agent_creation"] = {"allowed_models": []}
     root.write_text(yaml.safe_dump(document))
     resources = tmp_path / "acp_agents"
     resources.mkdir()
@@ -349,7 +349,7 @@ async def test_agent_and_self_creation_work_without_allowed_models_while_model_o
         denied = await tools.create_worker(ctx, prompt="override", model="model-secondary")
         assert not denied["ok"] and denied["error"]["code"] == "creation_model_not_allowed"
 
-        document["subagents"] = {"dynamic": {"allowed_models": ["model-secondary"]}}
+        document["agent_creation"] = {"allowed_models": ["model-secondary"]}
         root.write_text(yaml.safe_dump(document))
         await app.reload_configuration()
         reloaded = (await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Plan 2")).published.value
@@ -367,3 +367,124 @@ async def test_agent_and_self_creation_work_without_allowed_models_while_model_o
         saved_overridden = (await app.get_thread(overridden["thread_id"])).thread
         assert saved_overridden.configuration.agent_source.id == "agent-assistant"
         assert saved_overridden.configuration.default_model_id == "model-secondary"
+
+
+async def test_acp_coordinator_with_native_default_agent_and_allowlist_enforcement(tmp_path: Path) -> None:
+    import json
+
+    import yaml
+
+    from .test_acp_execution import _PEER, _resource
+
+    root = coordinator_configuration(tmp_path)
+    resources = tmp_path / "acp_agents"
+    resources.mkdir()
+    acp = _resource().model_copy(update={"args": (str(_PEER), "ui")})
+    (resources / "fixture.yaml").write_text(json.dumps(acp.model_dump(mode="json", exclude_none=True)))
+    document = yaml.safe_load(root.read_text())
+    document["agent_creation"] = {
+        "allowed_agents": ["agent-worker"],
+        "default_agent": "agent-worker",
+        "allowed_models": ["model-primary"],
+        "default_model": "model-primary",
+    }
+    root.write_text(yaml.safe_dump(document))
+
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        # ACP Coordinator delegates without agent_id -> resolves native default_agent cleanly (not inheriting_self).
+        lead = await app.create_thread(defaults=NewThreadDefaults(project_id="project-main", agent_id=acp.id))
+        lead = await app.promote_coordinator(lead.thread_id)
+        await app.set_auto_followup(lead.thread_id, False)
+        compose = (await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Plan")).published.value
+        tools = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=lead.thread_id, composition=compose
+        )
+        ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=lead.thread_id))
+
+        instructions = tools.get_instructions()
+        assert "Agent creation agents: agent-worker. Default agent: agent-worker." in instructions
+        assert "Agent creation models: model-primary. Default: model-primary." in instructions
+
+        # list_agents is filtered to allowed_agents; human selectors remain unfiltered.
+        listed = await tools.list_agents(ctx, limit=20)
+        assert listed["ok"] and listed["total"] == 1
+        assert [item["id"] for item in listed["agents"]] == ["agent-worker"]
+        human_selectors = await app.thread_selectors()
+        assert {item.agent_id for item in human_selectors.agents} == {"agent-assistant", "agent-worker", acp.id}
+
+        # Omitting agent_id uses agent-worker with its own defaults (not ACP self-inheritance).
+        created = await tools.create_worker(ctx, prompt="native worker task")
+        assert created["ok"], created
+        await app.wait_root_operation(created["receipt"]["receipt_id"])
+        worker = (await app.get_thread(created["thread_id"])).thread
+        assert worker.configuration.agent_source.kind == "agent"
+        assert worker.configuration.agent_source.id == "agent-worker"
+        assert worker.configuration.default_model_id is None
+        assert worker.configuration.mcp_server_ids == ()
+
+        # Explicit disallowed agent_id (both native and ACP) fails with creation_agent_not_allowed.
+        for disallowed in ("agent-assistant", acp.id):
+            denied = await tools.create_worker(ctx, prompt="denied", agent_id=disallowed)
+            assert not denied["ok"] and denied["error"]["code"] == "creation_agent_not_allowed"
+            assert "agent-worker" in denied["error"]["message"]
+
+
+async def test_native_coordinator_with_acp_default_agent_and_empty_allowed_agents_disables_creation(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    import yaml
+
+    from .test_acp_execution import _PEER, _resource
+
+    root = coordinator_configuration(tmp_path)
+    resources = tmp_path / "acp_agents"
+    resources.mkdir()
+    acp = _resource().model_copy(update={"args": (str(_PEER), "ui")})
+    (resources / "fixture.yaml").write_text(json.dumps(acp.model_dump(mode="json", exclude_none=True)))
+    document = yaml.safe_load(root.read_text())
+    document["agent_creation"] = {
+        "allowed_agents": [acp.id],
+        "default_agent": acp.id,
+        "allowed_models": ["model-primary"],
+    }
+    root.write_text(yaml.safe_dump(document))
+
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        lead = await create_coordinator(app)
+        await app.set_auto_followup(lead.thread_id, False)
+        compose = (await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Plan")).published.value
+        assert compose.can_create_threads is True
+        tools = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=lead.thread_id, composition=compose
+        )
+        ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=lead.thread_id))
+
+        # Native Coordinator omitting agent_id resolves ACP default_agent and rejects Harness model overrides.
+        denied_model = await tools.create_worker(ctx, prompt="bad model", model="model-primary")
+        assert not denied_model["ok"] and denied_model["error"]["code"] == "thread_model_invalid"
+        created = await tools.create_worker(ctx, prompt="acp default task")
+        assert created["ok"], created
+        worker = (await app.get_thread(created["thread_id"])).thread
+        assert worker.configuration.agent_source.kind == "acp_agent"
+        assert worker.configuration.agent_source.id == acp.id
+        outcome = await app.wait_root_operation(created["receipt"]["receipt_id"])
+        assert outcome.status == "completed", outcome.failure
+
+        # Explicit allowed_agents: [] hides create_worker and disables creation.
+        document["agent_creation"] = {"allowed_agents": [], "allowed_models": ["model-primary"]}
+        root.write_text(yaml.safe_dump(document))
+        await app.reload_configuration()
+        disabled = (await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Plan 2")).published.value
+        assert disabled.can_create_threads is False
+        disabled_tools = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=lead.thread_id, composition=disabled
+        )
+        assert "create_worker" not in disabled_tools.get_toolset().tools
+        assert "Agent creation is disabled" in disabled_tools.get_instructions()
+        empty_agents = await disabled_tools.list_agents(ctx, limit=20)
+        assert empty_agents["ok"] and empty_agents["total"] == 0 and empty_agents["agents"] == []
+        blocked = await disabled_tools.create_worker(ctx, prompt="blocked")
+        assert not blocked["ok"] and blocked["error"]["code"] == "creation_agent_not_allowed"

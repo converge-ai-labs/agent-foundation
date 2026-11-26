@@ -192,12 +192,20 @@ class ThreadToolController:
         return await self.inbox.post_from_mcp(thread_id=thread_id, kind=kind, title=title, message=message)
 
     async def resources(
-        self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
+        self,
+        *,
+        kind: ResourceKind,
+        query: str | None,
+        cursor: str | None,
+        limit: int,
+        allowed_agent_ids: tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
         source = await self._configurations.current()
         if source is None:
             raise ConfigurationError("No configuration has been accepted.", code="configuration_missing")
-        return resource_page(source, kind=kind, query=query, cursor=cursor, limit=limit)
+        return resource_page(
+            source, kind=kind, query=query, cursor=cursor, limit=limit, allowed_agent_ids=allowed_agent_ids
+        )
 
     async def get_project(self, project_id: str) -> dict[str, Any]:
         source = await self._configurations.current()
@@ -307,9 +315,16 @@ class ThreadToolController:
         current = await self._configurations.current()
         if current is None:
             raise ConfigurationError("No configuration has been accepted.", code="configuration_missing")
+        policy = current.document.agent_creation if source_composition is None else source_composition.agent_creation
+        if policy.allowed_agents == ():
+            raise ThreadError(
+                "Agent creation is disabled because no agents are allowed in Settings > Agents.",
+                code="creation_agent_not_allowed",
+            )
+        selected_agent_id = agent_id if agent_id is not None else policy.default_agent
         inheriting_self = (
             project_id == "current"
-            and agent_id is None
+            and selected_agent_id is None
             and (
                 (source_composition is not None and source_composition.root.source_kind in {"agent", "acp_agent"})
                 or (source_composition is None and configuration.agent_source.kind in {"agent", "acp_agent"})
@@ -342,12 +357,20 @@ class ThreadToolController:
                 mcp_server_ids=configuration.mcp_server_ids,
             )
         else:
-            # Explicit selections use normal Project/Agent defaults, not the source's MCP or tool selection.
+            # Explicit selections (including agent_creation.default_agent) use normal Project/Agent defaults,
+            # not the source's MCP or tool selection.
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id if project_id == "current" else project_id,
-                agent_id=agent_id,
+                agent_id=selected_agent_id,
             )
         target = resolve_thread_configuration(current, RootThreadDefaults(**defaults.model_dump(exclude_unset=True)))
+        if not policy.allows_agent(target.agent_source.id):
+            allowed = ", ".join(policy.allowed_agents or ())
+            raise ThreadError(
+                f"Agent {target.agent_source.id!r} is not allowed for agent creation. "
+                f"Choose from the allowed agents ({allowed}) in Settings > Agents.",
+                code="creation_agent_not_allowed",
+            )
         if target.agent_source.kind == "acp_agent":
             if model_id is not None or thinking is not None:
                 raise ThreadError("This Agent source does not accept a Harness Model.", code="thread_model_invalid")
@@ -700,31 +723,44 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 + self._guidance("worker")
             )
         if self.composition is not None and self.composition.coordinator_thread_id is None:
-            policy = self.composition.subagents.dynamic
-            if policy.allowed_models:
-                instructions += f"\nAgent creation models: {', '.join(policy.allowed_models)}. "
-                instructions += (
-                    f"Default: {policy.default_model}. "
-                    if policy.default_model
-                    else "Omit model to use the selected or inherited Agent's model, or pass an allowed model. "
-                )
-                if not is_coordinator:
+            policy = self.composition.agent_creation
+            if not self.composition.can_create_threads:
+                if policy.allowed_agents == ():
                     instructions += (
-                        "Open an independent chat only for work that needs a separate conversation."
-                        " When carrying out another chat's task, finish it and report back."
+                        "\nAgent creation is disabled (no agents are allowed). Use existing chats for collaboration."
                     )
-            elif self.composition.can_create_threads:
-                instructions += (
-                    "\nNo model overrides are allowed for new chats or workers; omit model to use a configured Agent "
-                    "or inherit your own Agent."
-                )
+                else:
+                    instructions += "\nNo models are allowed for new agents. Use existing chats for collaboration."
+            else:
+                if policy.allowed_agents is not None:
+                    instructions += f"\nAgent creation agents: {', '.join(policy.allowed_agents)}. "
+                    instructions += (
+                        f"Default agent: {policy.default_agent}."
+                        if policy.default_agent is not None
+                        else "Omit agent_id to use the default or inherited Agent, or pass an allowed agent_id."
+                    )
+                elif policy.default_agent is not None:
+                    instructions += (
+                        f"\nDefault creation agent: {policy.default_agent}. "
+                        "Omit agent_id to use it, or pass any configured agent_id."
+                    )
+                if policy.allowed_models:
+                    instructions += f"\nAgent creation models: {', '.join(policy.allowed_models)}. "
+                    instructions += (
+                        f"Default: {policy.default_model}."
+                        if policy.default_model
+                        else "Omit model to use the selected or inherited Agent's model, or pass an allowed model."
+                    )
+                else:
+                    instructions += (
+                        "\nNo model overrides are allowed for new chats or workers; omit model to use a configured Agent "
+                        "or inherit your own Agent."
+                    )
                 if not is_coordinator:
                     instructions += (
                         " Open an independent chat only for work that needs a separate conversation."
                         " When carrying out another chat's task, finish it and report back."
                     )
-            else:
-                instructions += "\nNo models are allowed for new agents. Use existing chats for collaboration."
         if self._inbox_available:
             instructions += (
                 "\nThe user reads important outcomes in one Inbox instead of opening every chat. Before you end a turn "
@@ -1165,7 +1201,8 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
     ) -> dict[str, Any]:
         """Start an independent chat. Use project_id="current" for this Project, null for no Project, or a Project ID.
 
-        Omit agent_id on "current" to inherit this chat's Agent, or pass a configured agent_id (native or ACP).
+        Omit agent_id to use the configured default creation agent when set (otherwise inherit this chat's Agent on
+        "current" or use Project/global defaults), or pass an allowed agent_id (native or ACP).
         Omit model to use that Agent's model; pass an allowed model only to override a native Agent's model.
         If prompt admission fails with a thread_id, inspect or message that chat instead of creating another.
         """
@@ -1182,7 +1219,8 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
     ) -> dict[str, Any]:
         """Start an owned worker in this Coordinator's Project and submit its first prompt.
 
-        Omit agent_id to inherit this Coordinator's Agent, or pass a configured agent_id (native or ACP).
+        Omit agent_id to use the configured default creation agent when set (otherwise inherit this Coordinator's
+        Agent), or pass an allowed agent_id (native or ACP).
         Omit model to use that Agent's model; pass an allowed model only to override a native Agent's model.
         If prompt admission fails with a thread_id, inspect or message that worker instead of creating another.
         """
@@ -1246,7 +1284,10 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
     ) -> dict[str, Any]:
         """Discover configured root Agents, their Model IDs and selected Capability IDs, not child roster names."""
         self._require_context(ctx)
-        return await self._resources(kind="agents", query=query, cursor=cursor, limit=limit)
+        allowed_agent_ids = self.composition.agent_creation.allowed_agents if self.composition is not None else None
+        return await self._resources(
+            kind="agents", query=query, cursor=cursor, limit=limit, allowed_agent_ids=allowed_agent_ids
+        )
 
     async def list_models(
         self,
@@ -1260,10 +1301,25 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         return await self._resources(kind="models", query=query, cursor=cursor, limit=limit)
 
     async def _resources(
-        self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
+        self,
+        *,
+        kind: ResourceKind,
+        query: str | None,
+        cursor: str | None,
+        limit: int,
+        allowed_agent_ids: tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
         try:
-            return {"ok": True, **await self.controller.resources(kind=kind, query=query, cursor=cursor, limit=limit)}
+            return {
+                "ok": True,
+                **await self.controller.resources(
+                    kind=kind,
+                    query=query,
+                    cursor=cursor,
+                    limit=limit,
+                    allowed_agent_ids=allowed_agent_ids,
+                ),
+            }
         except HarnessUiError as exc:
             return thread_tool_failure(exc, "resource_list_failed")
 

@@ -103,8 +103,7 @@ def _write_source(tmp_path: Path, *, allowed_models: tuple[str, ...] = ("model-p
         "  agent: agent-assistant\n"
         "  harness_plugins: [plugin-memory]\n"
         "  mcp_servers: [mcp-docs]\n"
-        "subagents:\n"
-        f"  dynamic: {{allowed_models: [{', '.join(allowed_models)}]}}\n"
+        f"agent_creation: {{allowed_models: [{', '.join(allowed_models)}]}}\n"
     )
     files = {
         "models/primary.yaml": """

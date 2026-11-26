@@ -222,9 +222,55 @@ async def test_old_setup_warns_without_selecting_creation_models(tmp_path, caplo
     path = _write_configuration(tmp_path)
     path.write_text(yaml.safe_dump({"schema_version": "1", "webui": {"sidekick": sidekick}}))
     config = await load_harness_ui_configuration(path)
-    assert config.document.subagents.dynamic.allowed_models == ()
-    assert config.document.subagents.dynamic.default_model is None
+    assert config.document.agent_creation.allowed_models == ()
+    assert config.document.agent_creation.default_model is None
     assert "configuration.document.webui are preserved but not applied: 'sidekick'" in caplog.text
+
+
+async def test_legacy_subagents_dynamic_models_lift_into_agent_creation_for_stored_snapshots(tmp_path):
+    from a13n_harness_ui.composition import AgentCompositionResolver, ResolvedRunComposition
+
+    from .test_composition import _catalog, _write_source
+    from .test_composition import _selection as composition_selection
+
+    root = _write_source(tmp_path)
+    source = await load_harness_ui_configuration(root)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, composition_selection())
+
+    # Simulate a historical ResolvedRunComposition storing allowed_models/default_model under subagents.dynamic.
+    comp_payload = composition.model_dump(mode="json")
+    comp_payload.pop("agent_creation", None)
+    comp_payload["subagents"] = {
+        "include": [],
+        "max_concurrent": 8,
+        "dynamic": {"enabled": True, "allowed_models": ["model-primary"], "default_model": "model-primary"},
+    }
+    store, _ = _object_store(tmp_path / "state")
+    comp_env = await store.publish(
+        object_kind=ObjectKind.run_composition, object_schema_version="1", payload=comp_payload
+    )
+    restored_comp = await store.read_model(comp_env.ref, ResolvedRunComposition)
+    assert restored_comp.subagents.dynamic.enabled is True
+    assert restored_comp.agent_creation.allowed_models == ("model-primary",)
+    assert restored_comp.agent_creation.default_model == "model-primary"
+    assert restored_comp.agent_creation.allowed_agents is None
+    assert restored_comp.agent_creation.default_agent is None
+
+    # Simulate a historical LoadedHarnessUiConfiguration generation in SQLite object store.
+    gen_payload = source.model_dump(mode="json")
+    gen_payload["document"].pop("agent_creation", None)
+    gen_payload["document"]["subagents"] = {
+        "include": [],
+        "max_concurrent": 8,
+        "dynamic": {"enabled": True, "allowed_models": ["model-primary"], "default_model": "model-primary"},
+    }
+    gen_env = await store.publish(
+        object_kind=ObjectKind.configuration_generation, object_schema_version="1", payload=gen_payload
+    )
+    restored_gen = await store.read_model(gen_env.ref, LoadedHarnessUiConfiguration)
+    assert restored_gen.document.subagents.dynamic.enabled is True
+    assert restored_gen.document.agent_creation.allowed_models == ("model-primary",)
+    assert restored_gen.document.agent_creation.default_model == "model-primary"
 
 
 async def test_additive_configuration_fields_survive_nested_snapshot_round_trip(tmp_path, caplog):

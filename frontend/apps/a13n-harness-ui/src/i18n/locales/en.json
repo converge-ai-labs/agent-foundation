@@ -3772,5 +3772,11 @@
   "Detected": "Detected",
   "Skip permission prompts": "Skip permission prompts",
   "Allow unattended tool execution without interactive CLI prompts.": "Allow unattended tool execution without interactive CLI prompts.",
-  "Customize command": "Customize command"
+  "Customize command": "Customize command",
+  "Allowed agents": "Allowed agents",
+  "Agents can only use these configured agents for new chats and workers.": "Agents can only use these configured agents for new chats and workers.",
+  "With no agents selected, all configured agents are allowed for new chats and workers.": "With no agents selected, all configured agents are allowed for new chats and workers.",
+  "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.": "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.",
+  "Same as current agent": "Same as current agent",
+  "Used when creating a new chat or worker without specifying an agent.": "Used when creating a new chat or worker without specifying an agent."
 }

@@ -61,7 +61,7 @@ class CompositionAcceptanceService:
         )
         if source is None:
             raise CompositionError("No configuration has been accepted.", code="configuration_missing")
-        policy = source.document.subagents.dynamic if composition is None else composition.subagents.dynamic
+        policy = source.document.agent_creation if composition is None else composition.agent_creation
         selected = policy.select_model(model)
         if selected not in source.models:
             raise ConfigurationError(
@@ -257,6 +257,7 @@ class RunCompositionService:
             environment_run_extensions=parent.environment_run_extensions,
             dependencies=tuple(item for item in parent.dependencies if (item.kind, item.key) in used),
             run_configuration=parent.run_configuration,
+            agent_creation=parent.agent_creation,
             subagents=parent.subagents,
             tool_execution=parent.tool_execution,
             memory_enabled=parent.memory_enabled,

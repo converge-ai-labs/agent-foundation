@@ -496,7 +496,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         del tool_call
         scope = await self._require_parent(plan.parent)
         edge = _require_edge(scope.composition.require_native_root(), request.subagent_name)
-        policy = scope.composition.subagents.dynamic
+        policy = scope.composition.agent_creation
         try:
             policy.select_model(edge.definition.model.model_id)
         except ConfigurationError as exc:
