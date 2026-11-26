@@ -6,20 +6,20 @@ import { ErrorNotice } from "../shell/ui";
 import { useThreads } from "./queries";
 import { ThreadRow } from "./thread-row";
 import { useResults } from "./results";
+import type { NavigationRow } from "./navigation-observations";
 import styles from "./coordinator.module.css";
-
-type Row = Pick<Schema<"ThreadActivityView">, "thread"> &
-  Partial<Schema<"ThreadActivityView">>;
 
 export function CoordinatorEntry({
   row,
   activeWorkerCount,
+  hasObservedWorker,
   enabled,
   selected,
   selectedUpdatedAt,
 }: {
-  row: Row;
+  row: NavigationRow;
   activeWorkerCount: number;
+  hasObservedWorker: boolean;
   enabled: boolean;
   selected?: Schema<"ThreadSummary">;
   selectedUpdatedAt: number;
@@ -27,19 +27,23 @@ export function CoordinatorEntry({
   const { t } = useTranslation();
   const results = useResults();
   const [expanded, setExpanded] = useState(false);
+  const hasWorkers =
+    (row.thread.unarchived_worker_count ?? 0) > 0 || hasObservedWorker;
+  const open = hasWorkers && expanded;
+  if (!hasWorkers && expanded) setExpanded(false);
   const owner = row.thread.thread_id;
   const workers = useThreads(
     "",
     row.thread.configuration.project_id ?? undefined,
     false,
     {
-      enabled: enabled && expanded,
+      enabled: enabled && open,
       coordinatorThreadId: owner,
       limit: 5,
       includeActive: true,
     },
   );
-  const rows = new Map<string, Row>(
+  const rows = new Map<string, NavigationRow>(
     [
       ...(workers.data?.pages.flatMap((page) => page.rows) ?? []),
       ...(workers.data?.pages[0]?.active_rows ?? []),
@@ -48,11 +52,13 @@ export function CoordinatorEntry({
       .map((item) => [item.thread.thread_id, item]),
   );
   const pageObservedAt = (id: string) =>
+    rows.get(id)?.observedAt ??
     workers.data?.pages.find((page, index) =>
       [...page.rows, ...(index === 0 ? (page.active_rows ?? []) : [])].some(
         (item) => item.thread.thread_id === id,
       ),
-    )?.observedAt ?? 0;
+    )?.observedAt ??
+    0;
   for (const { thread, observedAt } of results.threads.values()) {
     if (observedAt <= pageObservedAt(thread.thread_id)) continue;
     if (thread.coordinator_thread_id === owner && rows.has(thread.thread_id))
@@ -92,9 +98,13 @@ export function CoordinatorEntry({
         row={row}
         activeWorkerCount={activeWorkerCount}
         showRestore="compact"
-        disclosure={{ expanded, onToggle: () => setExpanded(!expanded) }}
+        disclosure={
+          hasWorkers
+            ? { expanded: open, onToggle: () => setExpanded(!open) }
+            : undefined
+        }
       />
-      {expanded && (
+      {open && (
         <div
           className={styles.workers}
           aria-label={t("Workers for {{title}}", {
@@ -106,9 +116,6 @@ export function CoordinatorEntry({
           ))}
           {workers.isPending && !workers.data && (
             <small role="status">{t("Loading workers…")}</small>
-          )}
-          {workers.isSuccess && !visibleRows.length && (
-            <small>{t("No workers yet")}</small>
           )}
           <ErrorNotice
             error={workers.error}

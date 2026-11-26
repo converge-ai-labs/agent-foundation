@@ -392,14 +392,20 @@ function ProjectGroup({
     includeActive: true,
     includeStarred: true,
   });
-  const { observed, ownerIds, activeWorkerCounts, results, owners } =
-    useNavigationObservations({
-      list,
-      enabled: enabled && expanded,
-      belongs,
-      selected,
-      selectedUpdatedAt,
-    });
+  const {
+    observed,
+    ownerIds,
+    activeWorkerCounts,
+    ownersWithObservedWorkers,
+    results,
+    owners,
+  } = useNavigationObservations({
+    list,
+    enabled: enabled && expanded,
+    belongs,
+    selected,
+    selectedUpdatedAt,
+  });
   const activeRows: NavigationRow[] = [];
   const unreadRows: NavigationRow[] = [];
   const recentRows: NavigationRow[] = [];
@@ -718,6 +724,9 @@ function ProjectGroup({
                     activeWorkerCount={
                       activeWorkerCounts.get(row.thread.thread_id) ?? 0
                     }
+                    hasObservedWorker={ownersWithObservedWorkers.has(
+                      row.thread.thread_id,
+                    )}
                     enabled={enabled && expanded && isVisible(row, index)}
                     selected={selected}
                     selectedUpdatedAt={selectedUpdatedAt}

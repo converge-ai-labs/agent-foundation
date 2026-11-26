@@ -26963,6 +26963,19 @@
             "default": null,
             "title": "Auto Followup"
           },
+          "unarchived_worker_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Unarchived Worker Count"
+          },
           "thread_id": {
             "maxLength": 80,
             "minLength": 1,

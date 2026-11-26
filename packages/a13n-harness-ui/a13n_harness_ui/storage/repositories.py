@@ -464,22 +464,26 @@ class ThreadRepository:
                 for record in records
             }
 
-    async def roles(self, thread_ids: tuple[str, ...]) -> tuple[dict[str, str], dict[str, Coordinator]]:
+    async def roles(self, thread_ids: tuple[str, ...]) -> tuple[dict[str, str], dict[str, Coordinator], dict[str, int]]:
         if not thread_ids:
-            return {}, {}
+            return {}, {}, {}
         async with short_session(self._sessions) as session:
             owner_rows = await session.scalars(
                 select(CoordinatorWorkerRecord).where(CoordinatorWorkerRecord.worker_thread_id.in_(thread_ids))
             )
             owners = {row.worker_thread_id: row.coordinator_thread_id for row in owner_rows}
-            coordinator_rows = await session.scalars(
-                select(CoordinatorRecord).where(CoordinatorRecord.thread_id.in_(thread_ids))
-            )
+            coordinator_rows = (
+                await session.execute(
+                    select(CoordinatorRecord, _unarchived_worker_count()).where(
+                        CoordinatorRecord.thread_id.in_(thread_ids)
+                    )
+                )
+            ).all()
             coordinators = {
                 record.thread_id: Coordinator(thread_id=record.thread_id, auto_followup=record.auto_followup)
-                for record in coordinator_rows
+                for record, _ in coordinator_rows
             }
-            return owners, coordinators
+            return owners, coordinators, {record.thread_id: count for record, count in coordinator_rows}
 
     async def set_auto_followup(self, thread_id: str, auto_followup: bool) -> None:
         async with transaction(self._sessions) as session:
@@ -585,7 +589,7 @@ class ThreadRepository:
                 raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
             return _thread_value(record, _configuration_value(configuration))
 
-    async def get_with_roles(self, thread_id: str) -> tuple[Thread, dict[str, str], dict[str, Coordinator]] | None:
+    async def get_with_roles(self, thread_id: str) -> tuple[Thread, str | None, Coordinator | None, int] | None:
         async with short_session(self._sessions) as session:
             row = (
                 await session.execute(
@@ -594,6 +598,7 @@ class ThreadRepository:
                         ThreadConfigurationRecord,
                         CoordinatorWorkerRecord.coordinator_thread_id,
                         CoordinatorRecord,
+                        _unarchived_worker_count(),
                     )
                     .outerjoin(
                         ThreadConfigurationRecord,
@@ -612,22 +617,16 @@ class ThreadRepository:
             ).one_or_none()
             if row is None:
                 return None
-            record, configuration, owner_id, coordinator_record = row
+            record, configuration, owner_id, coordinator_record, worker_count = row
             if configuration is None:
                 raise StoreIntegrityError("Thread configuration is missing.", code="thread_configuration_missing")
             thread = _thread_value(record, _configuration_value(configuration))
-            owners = {thread_id: owner_id} if owner_id is not None else {}
-            coordinators = (
-                {
-                    thread_id: Coordinator(
-                        thread_id=coordinator_record.thread_id,
-                        auto_followup=coordinator_record.auto_followup,
-                    )
-                }
+            coordinator = (
+                Coordinator(thread_id=coordinator_record.thread_id, auto_followup=coordinator_record.auto_followup)
                 if coordinator_record is not None
-                else {}
+                else None
             )
-            return thread, owners, coordinators
+            return thread, owner_id, coordinator, worker_count
 
     async def delete(
         self,
@@ -1622,6 +1621,20 @@ def latest_child_checkpoint_query(child_thread_id: str) -> Select[tuple[ChildExe
         )
         .order_by(ChildExecutionRecord.segment_index.desc())
         .limit(1)
+    )
+
+
+def _unarchived_worker_count():
+    return (
+        select(func.count())
+        .select_from(CoordinatorWorkerRecord)
+        .join(ThreadRecord, ThreadRecord.thread_id == CoordinatorWorkerRecord.worker_thread_id)
+        .where(
+            CoordinatorWorkerRecord.coordinator_thread_id == CoordinatorRecord.thread_id,
+            ThreadRecord.archived.is_(False),
+        )
+        .correlate(CoordinatorRecord)
+        .scalar_subquery()
     )
 
 

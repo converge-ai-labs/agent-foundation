@@ -26,14 +26,19 @@ export function RecentNavigation({
     enabled,
     includeActive: true,
   });
-  const { observed, ownerIds, activeWorkerCounts, owners } =
-    useNavigationObservations({
-      list,
-      enabled,
-      belongs: () => true,
-      selected,
-      selectedUpdatedAt,
-    });
+  const {
+    observed,
+    ownerIds,
+    activeWorkerCounts,
+    ownersWithObservedWorkers,
+    owners,
+  } = useNavigationObservations({
+    list,
+    enabled,
+    belongs: () => true,
+    selected,
+    selectedUpdatedAt,
+  });
   const rows = [...observed.values()]
     .filter(
       ({ thread }) =>
@@ -54,6 +59,7 @@ export function RecentNavigation({
         key={row.thread.thread_id}
         row={row}
         activeWorkerCount={activeWorkerCounts.get(row.thread.thread_id) ?? 0}
+        hasObservedWorker={ownersWithObservedWorkers.has(row.thread.thread_id)}
         enabled={enabled}
         selected={selected}
         selectedUpdatedAt={selectedUpdatedAt}

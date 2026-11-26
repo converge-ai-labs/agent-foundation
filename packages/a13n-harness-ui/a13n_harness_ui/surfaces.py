@@ -151,6 +151,7 @@ class ThreadSummary(SurfaceModel):
     memory_scope: str | None = None
     role: Literal["ordinary", "coordinator", "worker"] = "ordinary"
     auto_followup: bool | None = None
+    unarchived_worker_count: int | None = Field(default=None, ge=0)
     thread_id: str = Field(min_length=1, max_length=80)
     coordinator_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     parent_thread_id: str | None = Field(default=None, min_length=1, max_length=80)

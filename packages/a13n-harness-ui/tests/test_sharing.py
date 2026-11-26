@@ -12,8 +12,24 @@ from a13n_harness_ui.storage.models import ShareGrantRecord
 from a13n_harness_ui.surfaces import NewThreadDefaults
 
 from .test_app import _settings, _write_configuration
+from .test_coordinators import coordinator_configuration
 
 pytestmark = pytest.mark.anyio
+
+
+async def test_thread_share_hides_owned_worker_count(tmp_path):
+    path = coordinator_configuration(tmp_path)
+    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
+    defaults = NewThreadDefaults(project_id="project-main")
+    async with open_harness_ui_app(settings, configuration_path=path, host_mode="webui", instrumentation=None) as app:
+        lead = await app.create_thread(defaults=defaults, coordinator=True)
+        worker = await app.create_thread(defaults=defaults, coordinator_thread_id=lead.thread_id)
+        chat = await app.sharing.create(ShareCreate(scope="thread", target_id=lead.thread_id))
+        project = await app.sharing.create(ShareCreate(scope="project", target_id="project-main"))
+        assert (await app.sharing.thread(chat.grant.share_id, lead.thread_id)).thread.unarchived_worker_count is None
+        assert (await app.sharing.thread(project.grant.share_id, lead.thread_id)).thread.unarchived_worker_count == 1
+        with pytest.raises(HarnessUiError):
+            await app.sharing.thread(chat.grant.share_id, worker.thread_id)
 
 
 async def test_share_survives_restart_without_storing_secret_and_revoke_is_terminal(tmp_path):

@@ -3,7 +3,13 @@ import { result, type Schema, type Transport } from "../transport/client";
 import { scheduleRefresh } from "./refresh";
 import { retainThreadSelections } from "./thread-updates";
 
-type Page = Schema<"ThreadActivityPage"> & { observedAt: number };
+type ObservedRow = Row & { observedAt?: number };
+type Page = Schema<"ThreadActivityPage"> & {
+  observedAt: number;
+  rows: ObservedRow[];
+  active_rows?: ObservedRow[];
+  starred_rows?: ObservedRow[];
+};
 type Row = Schema<"ThreadActivityView">;
 type Pending = {
   ids: Set<string>;
@@ -40,11 +46,13 @@ export function applyActivityUpdates(
   ids: string[],
   observed?: ReadonlyMap<Query, unknown>,
 ) {
+  const observedAt = Date.now();
   const updates = new Map(
     rows.map((row) => [
       row.thread.thread_id,
       {
         ...row,
+        observedAt,
         thread: retainThreadSelections(client, row.thread),
       },
     ]),
@@ -52,6 +60,12 @@ export function applyActivityUpdates(
   for (const query of client
     .getQueryCache()
     .findAll({ queryKey: ["threads"] })) {
+    if (query.queryKey.length === 3 && query.queryKey[1] === "owners") {
+      const owners = query.queryKey[2] as string[];
+      if (ids.some((id) => owners.includes(id)))
+        scheduleRefresh(client, (candidate) => candidate === query);
+      continue;
+    }
     const data = query.state.data as InfiniteData<Page> | undefined;
     if (!data?.pages) {
       // An initial read can also predate the hint. It has no rows with which to

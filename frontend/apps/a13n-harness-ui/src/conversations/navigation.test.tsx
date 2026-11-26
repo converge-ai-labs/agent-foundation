@@ -17,6 +17,7 @@ import { parse } from "yaml";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
 import { ConversationNavigation } from "./navigation";
+import { applyActivityUpdates } from "./activity-updates";
 import { ChatSearchProvider } from "./chat-search";
 import { useLiveWorkbench } from "../shell/presence";
 import { watchSummary } from "../transport/events";
@@ -50,6 +51,25 @@ function thread(id: string, project: string | null = "project-one") {
     role: "ordinary" as Schema<"ThreadSummary">["role"],
     coordinator_thread_id: null as string | null,
     auto_followup: null as boolean | null,
+    unarchived_worker_count: undefined as number | undefined,
+  };
+}
+function withWorkerCount(
+  item: ReturnType<typeof thread>,
+): ReturnType<typeof thread> {
+  return {
+    ...item,
+    unarchived_worker_count:
+      item.unarchived_worker_count ??
+      new Set(
+        [...workerThreads, ...activeThreads]
+          .filter(
+            (worker) =>
+              !worker.archived &&
+              worker.coordinator_thread_id === item.thread_id,
+          )
+          .map((worker) => worker.thread_id),
+      ).size,
   };
 }
 function page(
@@ -65,10 +85,16 @@ function page(
           item.starred &&
           !item.archived,
       )
-      .map((item) => ({ thread: item, project_name: project ?? "No project" })),
+      .map((item) => ({
+        thread: withWorkerCount(item),
+        project_name: project ?? "No project",
+      })),
     active_rows: activeThreads
       .filter((item) => item.configuration.project_id === project)
-      .map((item) => ({ thread: item, project_name: project ?? "No project" })),
+      .map((item) => ({
+        thread: withWorkerCount(item),
+        project_name: project ?? "No project",
+      })),
     rows: ids.map((id) => ({
       thread: thread(id, project),
       project_name: project ?? "No project",
@@ -149,14 +175,17 @@ beforeEach(async () => {
         return json(
           unsentThreads
             .filter((item) => body.thread_ids.includes(item.thread_id))
-            .map((item) => ({ thread: item, project_name: "One" })),
+            .map((item) => ({
+              thread: withWorkerCount(item),
+              project_name: "One",
+            })),
         );
       }
       if (request.method === "GET") {
         const unsent = unsentThreads.find(
           (item) => url.pathname === `/api/threads/${item.thread_id}`,
         );
-        if (unsent) return json({ thread: unsent });
+        if (unsent) return json({ thread: withWorkerCount(unsent) });
       }
       if (url.pathname === "/api/threads/read") {
         const body = await request.json();
@@ -175,9 +204,9 @@ beforeEach(async () => {
       if (url.pathname === "/api/threads/lookup") {
         const body = await request.json();
         return json({
-          threads: coordinators.filter((item) =>
-            body.thread_ids.includes(item.thread_id),
-          ),
+          threads: coordinators
+            .filter((item) => body.thread_ids.includes(item.thread_id))
+            .map(withWorkerCount),
         });
       }
       if (request.method !== "GET") {
@@ -232,7 +261,8 @@ beforeEach(async () => {
         (item) =>
           url.pathname === `/api/threads/${encodeURIComponent(item.thread_id)}`,
       );
-      if (owner) return json({ thread: owner, deferred_requests: [] });
+      if (owner)
+        return json({ thread: withWorkerCount(owner), deferred_requests: [] });
       if (url.pathname === "/api/setup")
         return json({ suggested_project_path: cwd });
       if (url.pathname === "/api/status")
@@ -279,12 +309,14 @@ beforeEach(async () => {
           );
           return json({
             rows: rows.slice(offset, offset + 1).map((item) => ({
-              thread: item,
+              thread: withWorkerCount(item),
               project_name: projects.find(
                 (p) => p.project_id === item.configuration.project_id,
               )?.name,
             })),
-            active_rows: offset ? [] : active.map((item) => ({ thread: item })),
+            active_rows: offset
+              ? []
+              : active.map((item) => ({ thread: withWorkerCount(item) })),
             next_cursor:
               offset + 1 < rows.length ? `recent-${offset + 1}` : null,
             total: rows.length + active.length,
@@ -357,7 +389,10 @@ beforeEach(async () => {
             ...coordinators.filter((item) => !item.archived),
             ...workerThreads.slice(0, 1),
           ]
-            .map((item) => ({ thread: item, project_name: "One" }))
+            .map((item) => ({
+              thread: withWorkerCount(item),
+              project_name: "One",
+            }))
             .concat(
               result.rows.filter(
                 (row) =>
@@ -1543,9 +1578,133 @@ it("keeps an off-page owner in Running while its worker is active without loadin
   ).toBe(false);
 });
 
+it.each(["projects", "recent"])(
+  "only discloses unarchived workers in %s navigation and resets after the last one is archived",
+  async (mode) => {
+    localStorage.setItem("a13n-harness-ui.navigation-view", mode);
+    const lead = { ...thread("Lead"), role: "coordinator" as const };
+    const worker = {
+      ...thread("Worker"),
+      role: "worker" as const,
+      coordinator_thread_id: "Lead",
+      archived: true,
+    };
+    coordinators = [lead];
+    recentThreads = [lead];
+    workerThreads = [worker];
+    unsentThreads = [lead, worker];
+    mount("/", true);
+    if (mode === "projects")
+      fireEvent.click(await screen.findByRole("button", { name: "One" }));
+    await screen.findByRole("link", { name: /Lead/ });
+    const disclosure = () =>
+      screen.queryByRole("button", { name: /workers for Lead/ });
+    expect(disclosure()).toBeNull();
+
+    let sequence = 0;
+    const notify = () =>
+      act(() => {
+        for (const id of [worker.thread_id, lead.thread_id])
+          vi.mocked(watchSummary).mock.calls.at(-1)![1]({
+            kind: "thread",
+            thread_id: id,
+            epoch: "test",
+            sequence: ++sequence,
+          });
+      });
+    worker.archived = false;
+    notify();
+    const expand = await screen.findByRole("button", {
+      name: "Expand workers for Lead",
+    });
+    expect(expand.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      activity.some((url) => url.searchParams.has("coordinator_thread_id")),
+    ).toBe(false);
+    fireEvent.click(expand);
+    const workers = screen.getByLabelText("Workers for Lead");
+    await within(workers).findByRole("link", { name: "Worker" });
+
+    worker.archived = true;
+    notify();
+    await waitFor(() => expect(disclosure()).toBeNull());
+    expect(screen.queryByLabelText("Workers for Lead")).toBeNull();
+
+    worker.archived = false;
+    await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+    expect(
+      (
+        await screen.findByRole("button", { name: "Expand workers for Lead" })
+      ).getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(screen.queryByLabelText("Workers for Lead")).toBeNull();
+  },
+);
+
+it("reveals workers from a newer selected detail and honors a subsequent zero count", async () => {
+  localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
+  const lead = {
+    ...thread("Lead"),
+    role: "coordinator" as const,
+    unarchived_worker_count: 0,
+  };
+  const worker = {
+    ...thread("Worker"),
+    role: "worker" as const,
+    coordinator_thread_id: "Lead",
+  };
+  recentThreads = [lead];
+  unsentThreads = [{ ...worker, archived: true }];
+  mount("/threads/Worker");
+  await screen.findByRole("link", { name: /Lead/ });
+  const detail = ["thread", "Worker", "detail"];
+  await waitFor(() => expect(queryClient.getQueryData(detail)).toBeDefined());
+  expect(
+    screen.queryByRole("button", { name: "Expand workers for Lead" }),
+  ).toBeNull();
+
+  const selectedUpdatedAt = Date.now() + 1;
+  act(() => {
+    queryClient.setQueryData(
+      detail,
+      { thread: worker },
+      { updatedAt: selectedUpdatedAt },
+    );
+  });
+  await screen.findByRole("button", { name: "Expand workers for Lead" });
+  expect(
+    activity.some((url) => url.searchParams.has("coordinator_thread_id")),
+  ).toBe(false);
+
+  const now = vi.spyOn(Date, "now").mockReturnValue(selectedUpdatedAt + 1);
+  try {
+    act(() =>
+      applyActivityUpdates(
+        queryClient,
+        [{ thread: lead, project_name: "One" } as Schema<"ThreadActivityView">],
+        [lead.thread_id],
+      ),
+    );
+  } finally {
+    now.mockRestore();
+  }
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Expand workers for Lead" }),
+    ).toBeNull(),
+  );
+});
+
 it("shows worker fetch failures without claiming empty and retries inside the disclosure", async () => {
   coordinators = [
     { ...thread("coordinator-one"), role: "coordinator", auto_followup: true },
+  ];
+  workerThreads = [
+    {
+      ...thread("worker"),
+      role: "worker",
+      coordinator_thread_id: "coordinator-one",
+    },
   ];
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
@@ -1554,15 +1713,17 @@ it("shows worker fetch failures without claiming empty and retries inside the di
       name: "Expand workers for coordinator-one",
     }),
   );
-  await screen.findByText("No workers yet");
+  const workers = screen.getByLabelText("Workers for coordinator-one");
+  await within(workers).findByRole("link", { name: "worker" });
   failMore = true;
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
   await screen.findByText("Workers unavailable");
-  expect(screen.queryByText("No workers yet")).toBeNull();
   failMore = false;
-  const workers = screen.getByLabelText("Workers for coordinator-one");
   fireEvent.click(within(workers).getByRole("button", { name: "Retry" }));
-  await screen.findByText("No workers yet");
+  await waitFor(() =>
+    expect(within(workers).queryByText("Workers unavailable")).toBeNull(),
+  );
+  expect(within(workers).getByRole("link", { name: "worker" })).toBeTruthy();
 });
 
 it("finds workers through ordinary global search without expanding the Coordinator", async () => {
