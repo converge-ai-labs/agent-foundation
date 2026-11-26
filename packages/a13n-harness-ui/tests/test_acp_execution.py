@@ -735,7 +735,7 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
     (acp_dir / "fixture.yaml").write_text(
         json.dumps(
             _resource()
-            .model_copy(update={"args": (str(_PEER), "ui", "unique-session")})
+            .model_copy(update={"args": (str(_PEER), "ui", "unique-session", "null-model")})
             .model_dump(mode="json", exclude_none=True)
         )
     )
@@ -853,3 +853,137 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
         assert (await app.wait_root_operation(back_to_acp.receipt_id)).status is RootOperationStatus.completed
         back_reply = (await app.get_thread(native_to_acp.thread_id)).thread.excerpt.latest_reply
         assert back_reply is not None and "native reply on fork" in back_reply
+
+
+@pytest.mark.anyio
+async def test_acp_presets_resolve_npx_adapters_and_options_cache_ttl_expires(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+    import json
+
+    from a13n_harness.acp import AcpSessionRuntime
+    from a13n_harness_ui.acp_sessions import acp_presets, resolve_acp_argv
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.configuration.models import AcpAgentResource
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from acp import schema
+
+    # 1. Built-in presets cover mainstream ACP CLIs and fall back to npx for adapter packages.
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for name in ("claude", "npx", "copilot", "goose", "kimi"):
+        exe = fake_bin / name
+        exe.write_text("#!/bin/sh\nexit 0\n")
+        exe.chmod(0o755)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("PATH", str(fake_bin))
+        mp.setattr("a13n_harness_ui.acp_sessions.local_environment", lambda _env=None: {"PATH": str(fake_bin)})
+        presets = {item.id: item for item in acp_presets()}
+        assert {
+            "antigravity",
+            "claude_code",
+            "codex",
+            "gemini_cli",
+            "github_copilot",
+            "opencode",
+            "goose",
+            "kimi_cli",
+        } <= presets.keys()
+        assert presets["antigravity"].args == ("acp", "--process-per-session")
+        assert presets["claude_code"].detected_path == str(fake_bin / "npx")
+        assert presets["claude_code"].executable == "npx"
+        assert presets["claude_code"].args == ("-y", "@zed-industries/claude-agent-acp")
+        assert presets["codex"].detected_path is None  # codex CLI itself is not installed in fake_bin
+        assert presets["github_copilot"].detected_path == str(fake_bin / "copilot")
+        assert resolve_acp_argv(
+            AcpAgentResource(
+                schema_version="1",
+                kind="acp_agent",
+                id="acp-claude",
+                name="Claude Code",
+                preset="claude_code",
+                args=("--verbose",),
+            ),
+            path=str(fake_bin),
+        ) == ("npx", "-y", "@zed-industries/claude-agent-acp", "--verbose")
+        assert resolve_acp_argv(
+            AcpAgentResource(schema_version="1", kind="acp_agent", id="acp-codex", name="Codex", preset="codex"),
+            path=str(fake_bin),
+        ) == ("codex-acp",)
+
+    # 2. Options preview cache honors TTL expiry, and concurrent updates preserve arrival order across async persistence.
+    root = tmp_path / "a13n-harness-ui.yaml"
+    root.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: acp-fixture\n')
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (projects / "main.yaml").write_text(
+        f'schema_version: "1"\nkind: project\nid: project-main\nname: Main\nroots:\n  - path: {workspace}\n'
+    )
+    acp_dir = tmp_path / "acp_agents"
+    acp_dir.mkdir()
+    (acp_dir / "fixture.yaml").write_text(
+        json.dumps(
+            _resource()
+            .model_copy(update={"args": (str(_PEER), "ui", "unique-session", "null-model")})
+            .model_dump(mode="json", exclude_none=True)
+        )
+    )
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=root, instrumentation=None) as app:
+        first_preview = await app.acp_agent_options("acp-fixture", "project-main")
+        assert len(app._acp_options_cache) == 1
+        scope = next(iter(app._acp_options_cache))
+        app._acp_options_cache[scope] = (app._acp_options_cache[scope][0] - 120.0, first_preview)
+        refreshed_preview = await app.acp_agent_options("acp-fixture", "project-main")
+        assert refreshed_preview.options == first_preview.options
+
+        ordered_thread = await app.create_thread()
+        commands_entered = asyncio.Event()
+        release_commands = asyncio.Event()
+        original_save_acp = app._store.threads.save_acp_state
+
+        async def slow_commands_save(tid: str, payload: str) -> None:
+            if tid == ordered_thread.thread_id and "cmd-slow" in payload and not commands_entered.is_set():
+                commands_entered.set()
+                await release_commands.wait()
+            await original_save_acp(tid, payload)
+
+        async def two_chunk_prompt(self, prompt, *, binding, context=()):
+            self.client.available_commands = [schema.AvailableCommand(name="cmd-slow", description="slow")]
+            t0 = asyncio.create_task(
+                binding.on_update(
+                    schema.AvailableCommandsUpdate(
+                        session_update="available_commands_update",
+                        available_commands=self.client.available_commands,
+                    )
+                )
+            )
+            t1 = asyncio.create_task(
+                binding.on_update(
+                    schema.AgentMessageChunk(
+                        session_update="agent_message_chunk", content=schema.TextContentBlock(text="A")
+                    )
+                )
+            )
+            await commands_entered.wait()
+            t2 = asyncio.create_task(
+                binding.on_update(
+                    schema.AgentMessageChunk(
+                        session_update="agent_message_chunk", content=schema.TextContentBlock(text="B")
+                    )
+                )
+            )
+            await asyncio.sleep(0)
+            release_commands.set()
+            await asyncio.gather(t0, t1, t2)
+            return schema.PromptResponse(stop_reason="end_turn")
+
+        monkeypatch.setattr(app._store.threads, "save_acp_state", slow_commands_save)
+        monkeypatch.setattr(AcpSessionRuntime, "prompt", two_chunk_prompt)
+        ordered = await app.submit_thread(thread_id=ordered_thread.thread_id, prompt="order check")
+        assert (await app.wait_root_operation(ordered.receipt_id)).status is RootOperationStatus.completed
+        assert (await app.get_thread(ordered_thread.thread_id)).thread.excerpt.latest_reply == "AB"

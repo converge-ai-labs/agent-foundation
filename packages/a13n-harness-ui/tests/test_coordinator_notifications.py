@@ -334,3 +334,145 @@ async def test_direct_human_work_notifies_owner_without_changing_admission(
             await observed.wait()
             await app.wait_root_operation(receipt.receipt_id)
         assert len([notice for notice in notices if "directly started work" in notice[1]]) == len(started)
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_busy_non_steering_coordinator_receives_one_consolidated_followup_after_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancelled: bool
+) -> None:
+    from a13n_harness_ui.surfaces import RootControlResult
+
+    root = coordinator_configuration(tmp_path)
+    lead_id = ""
+    started, release, followup_done = Event(), Event(), Event()
+    seen_notices: list[str] = []
+
+    async def resolve(self, context, model_id):
+        async def model(messages, info):
+            if context.deps.thread_id == lead_id:
+                text = str(messages)
+                if "Host notification:" in text:
+                    seen_notices.append(text)
+                    followup_done.set()
+                    yield "Reconciled workers."
+                else:
+                    started.set()
+                    await release.wait()
+                    yield "Finished initial turn."
+            else:
+                yield "Worker done."
+
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
+        lead = await create_coordinator(app, "project-main")
+        lead_id = lead.thread_id
+        first_worker = await app.create_thread(
+            defaults=NewThreadDefaults(project_id="project-main"), coordinator_thread_id=lead_id
+        )
+        second_worker = await app.create_thread(
+            defaults=NewThreadDefaults(project_id="project-main"), coordinator_thread_id=lead_id
+        )
+
+        async def reject_steer(*, receipt_id: str, message):
+            return RootControlResult(receipt_id=receipt_id, accepted=False)
+
+        monkeypatch.setattr(app._root_runs, "steer", reject_steer)
+        lead_settled = Event()
+        original_settled = app._root_runs._on_settled
+        assert original_settled is not None
+
+        async def observe_settled(project_id, operation):
+            await original_settled(project_id, operation)
+            if operation.receipt.thread_id == lead_id and operation.receipt.receipt_id == initial.receipt_id:
+                lead_settled.set()
+
+        app._root_runs._on_settled = observe_settled
+        with fail_after(15):
+            initial = await app.submit_thread(thread_id=lead_id, prompt="Coordinate non-steering")
+            await started.wait()
+            w1 = await app._root_runs.submit_prompt(thread_id=first_worker.thread_id, prompt="Task 1")
+            w2 = await app._root_runs.submit_prompt(thread_id=second_worker.thread_id, prompt="Task 2")
+            assert (await app.wait_root_operation(w1.receipt_id)).status is RootOperationStatus.completed
+            assert (await app.wait_root_operation(w2.receipt_id)).status is RootOperationStatus.completed
+            while (
+                "Multiple managed worker operations updated"
+                not in app._thread_tools._deferred_coordinator_notices.get(lead_id, ("", ""))[1]
+            ):
+                from anyio import sleep
+
+                await sleep(0.01)
+            assert app._thread_tools._deferred_coordinator_notices[lead_id][0] == initial.receipt_id
+            assert len(app._thread_tools._deferred_coordinator_notices) == 1
+            if cancelled:
+                await app.cancel_root_operation(initial.receipt_id)
+                assert (await app.wait_root_operation(initial.receipt_id)).status is RootOperationStatus.cancelled
+                await lead_settled.wait()
+                assert lead_id not in app._thread_tools._deferred_coordinator_notices
+                assert await app._root_runs.active(lead_id) is None
+                assert seen_notices == []
+            else:
+                release.set()
+                assert (await app.wait_root_operation(initial.receipt_id)).status is RootOperationStatus.completed
+                await followup_done.wait()
+                followup = await app._root_runs.active(lead_id) or await app._root_runs.latest(lead_id)
+                assert followup is not None
+                await app.wait_root_operation(followup.receipt.receipt_id)
+                assert len(seen_notices) == 1
+                assert "Multiple managed worker operations updated" in seen_notices[0]
+
+
+async def test_deferred_coordinator_notice_binds_exact_receipt_across_interleaved_turns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from a13n_harness_ui.surfaces import RootOperationView, RootRunReceipt
+
+    from .test_app import _CompletedReconstructor
+
+    root = coordinator_configuration(tmp_path)
+    settings = _settings(tmp_path / "data").model_copy(update={"pricing_auto_update": False})
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui", instrumentation=None) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        lead = await create_coordinator(app, "project-main")
+        worker = await app.create_thread(
+            defaults=NewThreadDefaults(project_id="project-main"), coordinator_thread_id=lead.thread_id
+        )
+
+        # 1. Old cancelled receipt settling after a successor receipt took over must not clear the successor's notice.
+        app._thread_tools._deferred_coordinator_notices[lead.thread_id] = ("receipt-new", "Successor notice")
+        stale_cancelled = RootOperationView(
+            receipt=RootRunReceipt(
+                receipt_id="receipt-old",
+                thread_id=lead.thread_id,
+                submitted_at=lead.created_at,
+            ),
+            status=RootOperationStatus.cancelled,
+        )
+        await app._thread_tools._flush_coordinator_followup(stale_cancelled)
+        assert app._thread_tools._deferred_coordinator_notices.get(lead.thread_id) == (
+            "receipt-new",
+            "Successor notice",
+        )
+        app._thread_tools._deferred_coordinator_notices.clear()
+
+        # 2. A rejected steer returning after its target receipt already cancelled must not resurrect a notice.
+        cancelled_run = await app.submit_thread(thread_id=lead.thread_id, prompt="Quick run")
+        await app.wait_root_operation(cancelled_run.receipt_id)
+        app._root_runs._operations[cancelled_run.receipt_id].status = RootOperationStatus.cancelled
+
+        async def late_rejected_steer(*, thread_id: str, prompt, retain_run: bool = False):
+            return {"ok": False, "mode": "steer", "receipt_id": cancelled_run.receipt_id, "accepted": False}
+
+        monkeypatch.setattr(app._thread_tools, "_run_or_steer", late_rejected_steer)
+        worker_done = RootOperationView(
+            receipt=RootRunReceipt(
+                receipt_id="receipt-worker",
+                thread_id=worker.thread_id,
+                submitted_at=worker.created_at,
+            ),
+            status=RootOperationStatus.completed,
+        )
+        await app._thread_tools.notify_coordinator("project-main", worker_done)
+        assert lead.thread_id not in app._thread_tools._deferred_coordinator_notices

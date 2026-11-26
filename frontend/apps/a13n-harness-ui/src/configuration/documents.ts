@@ -77,7 +77,11 @@ export function template(kind: ResourceKind, id: string): string {
       authentication: { kind: "api_key", env: "A13N_DEVICE_TOKEN" },
     },
     agent: { model: null, instructions: "", capabilities: [], subagents: [] },
-    acp_agent: { preset: "custom", command: null, instructions: "" },
+    acp_agent: {
+      preset: "antigravity",
+      args: ["acp", "--dangerously-skip-permissions", "--process-per-session"],
+      instructions: "",
+    },
     project: { roots: [{ path: "" }], defaults: {} },
     harness_plugin: { plugin_key: "", configuration: {} },
     environment_profile: {
@@ -93,7 +97,7 @@ export function template(kind: ResourceKind, id: string): string {
     schema_version: kind === "mcp_server" ? "2" : "1",
     kind,
     id,
-    name: "Untitled",
+    name: kind === "acp_agent" ? "Antigravity" : "Untitled",
     ...fields[kind],
   });
 }

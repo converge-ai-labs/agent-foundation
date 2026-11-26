@@ -10716,8 +10716,11 @@
           "antigravity",
           "claude_code",
           "codex",
-          "opencode",
           "gemini_cli",
+          "github_copilot",
+          "opencode",
+          "goose",
+          "kimi_cli",
           "custom"
         ]
       },
@@ -11312,6 +11315,19 @@
               }
             ],
             "title": "Model Id"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
           },
           "source_path": {
             "type": "string",

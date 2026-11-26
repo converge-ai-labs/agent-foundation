@@ -587,3 +587,116 @@ it.each([false, true])(
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   },
 );
+
+it("keeps saved ACP option mutations mounted across subpage navigation and resolves model ID icons on the trigger", async () => {
+  const { AcpOptions, useAcpOptions } = await import("./acp-options");
+  let rejectPut!: (reason?: unknown) => void;
+  const put = vi.fn(
+    () =>
+      new Promise<never>((_resolve, reject) => {
+        rejectPut = reject;
+      }),
+  );
+  const acpCatalog: Schema<"ThreadSelectorCatalog"> = {
+    ...catalog,
+    agents: [
+      ...catalog.agents,
+      {
+        kind: "acp_agent",
+        agent_id: "acp-agy",
+        name: "Antigravity",
+        preset: "antigravity",
+        source_path: "acp_agents/agy.yaml",
+      },
+    ],
+  };
+  const acpTransport = {
+    client: {
+      GET: vi.fn(async () => ({
+        data: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            value: "gemini-pro-orchestrator-neon",
+            choices: [
+              {
+                name: "Orchestrator (Neon)",
+                value: "gemini-pro-orchestrator-neon",
+              },
+              { name: "Claude Sonnet 5.5", value: "claude-sonnet-5-5" },
+            ],
+          },
+        ],
+      })),
+      PUT: put,
+      POST: post,
+    },
+  } as unknown as Transport;
+
+  function Harness() {
+    const options = useAcpOptions("thread-acp", true, false, "acp-agy", "c1");
+    const modelOpt = options.data?.find((item) => item.id === "model");
+    return (
+      <ThreadRunChoices
+        catalog={acpCatalog}
+        agentId="acp-agy"
+        controls={{}}
+        onControlsChange={() => {}}
+        disabled={false}
+        onAgentChange={() => {}}
+        onModelChange={() => {}}
+        externalModel={
+          modelOpt?.choices?.find((c) => c.value === modelOpt.value)?.name
+        }
+        externalModelId={modelOpt ? String(modelOpt.value) : undefined}
+        externalOptions={
+          <AcpOptions
+            threadId="thread-acp"
+            active={false}
+            agentId="acp-agy"
+            preset="antigravity"
+            continuation="c1"
+            options={options}
+          />
+        }
+      />
+    );
+  }
+
+  const user = userEvent.setup();
+  render(
+    <LanguageProvider>
+      <MemoryRouter>
+        <QueryClientProvider client={query}>
+          <TransportContext value={acpTransport}>
+            <Harness />
+          </TransportContext>
+        </QueryClientProvider>
+      </MemoryRouter>
+    </LanguageProvider>,
+  );
+  const trigger = await screen.findByRole("button", {
+    name: "Agent & Model settings",
+  });
+  await waitFor(() =>
+    expect(trigger.textContent).toContain("Orchestrator (Neon)"),
+  );
+  expect(trigger.querySelector("img")?.getAttribute("src")).toContain(
+    "gemini-color.svg",
+  );
+  await user.click(trigger);
+  await user.click(await screen.findByRole("button", { name: "Model" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Claude Sonnet 5.5" }),
+  );
+  // Returned to root while PUT is still pending: Model row remains disabled!
+  const modelRow = (await screen.findByRole("button", {
+    name: "Model",
+  })) as HTMLButtonElement;
+  expect(modelRow.disabled).toBe(true);
+  await act(async () => {
+    rejectPut(new Error("ACP option rejected"));
+  });
+  expect(await screen.findByText(/ACP option rejected/)).toBeTruthy();
+});

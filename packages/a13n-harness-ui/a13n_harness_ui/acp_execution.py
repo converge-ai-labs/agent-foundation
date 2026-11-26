@@ -505,6 +505,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 async def observe(update: AcpUpdate) -> None:
                     nonlocal compacted, active
                     compacted |= isinstance(update, schema.SessionUpdateCompactionUpdate)
+                    transcript.update(update)
                     if (
                         isinstance(update, schema.SessionInfoUpdate)
                         and runtime.client.session_title
@@ -515,7 +516,6 @@ class AcpTurn(AbstractHarnessPlugin):
                         active = active.model_copy(update={"commands": acp_commands(runtime)})
                         if self.persist is not None:
                             await self.persist(active)
-                    transcript.update(update)
                     await publish()
 
                 binding.on_update = observe

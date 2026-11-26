@@ -54,13 +54,16 @@
   grid-row: 1;
   min-width: 0;
   max-width: 100%;
+  gap: 8px;
   color: var(--a13n-secondary);
 }
 .row [data-slot="select-trigger"],
 .row button[role="combobox"] {
   width: auto;
+  min-width: 0;
   max-width: 100%;
   min-height: var(--harness-control-height);
+  padding-inline: 8px 0;
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -74,10 +77,11 @@
   font-size: var(--a13n-text-body);
 }
 .row [data-slot="select-value"] {
+  flex: 0 1 auto;
   text-align: right;
 }
 .row [data-slot="select-trigger"] > span:first-child {
-  flex: 1;
+  flex: 0 1 auto;
   justify-content: flex-end;
 }
 .row [data-slot="select-trigger"]:hover,

@@ -3,6 +3,33 @@ import { BrandIcon, modelBrand } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import styles from "./model-identity.module.css";
 
+const acpPresetBrands: Record<string, string> = {
+  antigravity: "antigravity",
+  claude_code: "claudecode",
+  codex: "codex",
+  gemini_cli: "geminicli",
+  github_copilot: "githubcopilot",
+  opencode: "opencode",
+  goose: "goose",
+  kimi_cli: "kimi",
+};
+
+export function acpPresetBrand(preset?: string | null) {
+  return preset ? acpPresetBrands[preset] : undefined;
+}
+
+export function acpModelIdentity(
+  name?: string,
+  value?: string,
+  preset?: string | null,
+) {
+  return (
+    (name ? modelBrand(name) : undefined) ??
+    (value ? modelBrand(value) : undefined) ??
+    acpPresetBrand(preset)
+  );
+}
+
 export function ModelIcon({
   model,
   name,

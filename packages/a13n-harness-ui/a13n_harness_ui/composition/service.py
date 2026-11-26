@@ -73,6 +73,18 @@ class CompositionAcceptanceService:
         settings = apply_thinking(recipe.route, recipe.settings, thinking)
         return recipe.model_copy(update={"settings": settings, "thinking_override": thinking})
 
+    async def validate_model_thinking(self, model_id: str, thinking: ThinkingSelection) -> ResolvedModelRecipe:
+        source = await self.current()
+        if source is None:
+            raise CompositionError("No configuration has been accepted.", code="configuration_missing")
+        if model_id not in source.models:
+            raise ConfigurationError(
+                f"The selected model {model_id!r} is no longer configured.", code="creation_model_missing"
+            )
+        recipe = self._resolver.model_recipe(source.models[model_id], source)
+        settings = apply_thinking(recipe.route, recipe.settings, thinking)
+        return recipe.model_copy(update={"settings": settings, "thinking_override": thinking})
+
     def validate(self, source: LoadedHarnessUiConfiguration) -> None:
         """Validate one complete candidate without publishing or selecting it."""
 

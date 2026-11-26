@@ -1,5 +1,5 @@
 import { useTranslation } from "../i18n";
-import { ModelIdentity } from "../shell/model-identity";
+import { acpPresetBrand, ModelIdentity } from "../shell/model-identity";
 import { useContext, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
@@ -203,11 +203,11 @@ export function SourcesPage({
       .includes(search.toLowerCase()),
   );
   const addAction = kinds ? (
-    kinds.map((kind) => (
+    kinds.map((kind, index) => (
       <NewResourceButton
         key={kind}
         kind={kind}
-        variant={headingLevel === 2 ? "outline" : "default"}
+        variant={headingLevel === 2 || index > 0 ? "outline" : "default"}
       />
     ))
   ) : (
@@ -276,7 +276,20 @@ export function SourcesPage({
                 </strong>
                 <small>
                   {source.resource_kind === "acp_agent" ? (
-                    t("ACP agent")
+                    (() => {
+                      const preset = selectors.data?.agents.find((agent) =>
+                        source.resource_ids.includes(agent.agent_id),
+                      )?.preset;
+                      const brand = acpPresetBrand(preset);
+                      return brand ? (
+                        <ModelIdentity
+                          name={t("ACP agent")}
+                          modelIdentity={brand}
+                        />
+                      ) : (
+                        t("ACP agent")
+                      );
+                    })()
                   ) : kinds?.includes("agent") &&
                     source.resource_kind === "agent" ? (
                     source.resource_ids.map((id) => {
@@ -315,7 +328,8 @@ export function SourcesPage({
                   )}
                 </small>
               </div>
-              {source.resource_kind === "agent" &&
+              {(source.resource_kind === "agent" ||
+                source.resource_kind === "acp_agent") &&
                 source.resource_ids.includes(
                   root.configuration?.defaults?.agent,
                 ) && <span className={styles.tag}>{t("Default")}</span>}
@@ -696,7 +710,8 @@ export function SourceDocument({
           </Button>
         </div>
       )}
-      {source.data?.resource_kind === "acp_agent" &&
+      {!canEdit &&
+        source.data?.resource_kind === "acp_agent" &&
         !dirty &&
         source.data.resource_ids.map((id) => (
           <AcpAuth key={`${id}:${source.data?.source_digest}`} agentId={id} />
@@ -736,6 +751,14 @@ export function SourceDocument({
       )}
       {canEdit && (
         <div className={styles.configurationForm}>
+          {source.data?.resource_kind === "acp_agent" &&
+            !dirty &&
+            source.data.resource_ids.map((id) => (
+              <AcpAuth
+                key={`${id}:${source.data?.source_digest}`}
+                agentId={id}
+              />
+            ))}
           {section === "browser" ? (
             <BrowserConfigurationFields
               source={draft!.content}

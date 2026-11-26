@@ -356,6 +356,11 @@ class AgentCompositionResolver:
         run_configuration: RunConfiguration | None = None,
     ) -> ResolvedRunComposition:
         """Resolve one exact Thread head against one accepted source generation."""
+        can_create_threads = bool(
+            source.acp_agents
+            or source.document.subagents.dynamic.allowed_models
+            or any(agent.model is not None for agent in source.agents.values())
+        )
         if selection.agent_source_kind == "live":
             if model_overrides is not None:
                 raise CompositionError("Select the Live executor Model in Live settings.", code="live_model_override")
@@ -366,6 +371,7 @@ class AgentCompositionResolver:
                 thread_configuration_version=selection.version,
                 project_roots=selection.local_roots,
                 memory_enabled=source.document.memory.enabled,
+                can_create_threads=can_create_threads,
                 run_configuration=source.document.run_configuration,
                 tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
                 subagents=source.document.subagents,
@@ -443,6 +449,7 @@ class AgentCompositionResolver:
             project_id=selection.project_id,
             memory_enabled=source.document.memory.enabled,
             inbox_enabled=source.document.inbox.enabled,
+            can_create_threads=can_create_threads,
             background_compaction=source.document.background_compaction.model_copy(update={"enabled": False})
             if isinstance(root, ResolvedAcpNode)
             else source.document.background_compaction,

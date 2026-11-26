@@ -1391,49 +1391,69 @@ function ConversationContent({
               )
             }
             controls={() =>
-              guest ? null : thread?.configuration.agent_source.kind ===
-                "live" ? null : (
-                <ThreadRunChoices
-                  catalog={selectors.data}
-                  agentId={thread?.configuration.agent_source.id ?? ""}
-                  defaultModelId={thread?.configuration.default_model_id}
-                  modelId={draft.modelId}
-                  controls={draft.controls}
-                  onControlsChange={runChoices.onControlsChange}
-                  disabled={
-                    !thread ||
-                    agentSelection.isPending ||
-                    draft.submission.kind === "pending" ||
-                    draft.submission.kind === "unknown"
-                  }
-                  onExternalOptionsOpen={() => {
-                    if (acpOptionsEnabled && !acpActive)
-                      void acpOptions.refetch({ cancelRefetch: false });
-                  }}
-                  externalModel={acpOptionLabel(
-                    acpModelOption(acpOptions.data),
-                    t("No model selected"),
-                  )}
-                  externalThinking={acpOptionLabel(
-                    acpOptions.data?.find(
-                      (item) =>
-                        item.category === "thought_level" ||
-                        item.id === "thought_level",
-                    ),
-                  )}
-                  externalOptions={
-                    <AcpOptions
-                      threadId={threadId}
-                      active={acpActive}
-                      agentId={acpAgent}
-                      options={acpOptions}
-                      continuation={detail.data?.continuation_id}
-                    />
-                  }
-                  onAgentChange={(value) => agentSelection.mutate(value)}
-                  onModelChange={runChoices.onModelChange}
-                />
-              )
+              guest
+                ? null
+                : thread?.configuration.agent_source.kind === "live"
+                  ? null
+                  : (() => {
+                      const modelOption = acpModelOption(acpOptions.data);
+                      return (
+                        <ThreadRunChoices
+                          catalog={selectors.data}
+                          agentId={thread?.configuration.agent_source.id ?? ""}
+                          defaultModelId={
+                            thread?.configuration.default_model_id
+                          }
+                          modelId={draft.modelId}
+                          controls={draft.controls}
+                          onControlsChange={runChoices.onControlsChange}
+                          disabled={
+                            !thread ||
+                            agentSelection.isPending ||
+                            draft.submission.kind === "pending" ||
+                            draft.submission.kind === "unknown"
+                          }
+                          onExternalOptionsOpen={() => {
+                            if (acpOptionsEnabled && !acpActive)
+                              void acpOptions.refetch({ cancelRefetch: false });
+                          }}
+                          externalModel={acpOptionLabel(
+                            modelOption,
+                            t("No model selected"),
+                          )}
+                          externalModelId={
+                            modelOption && modelOption.value !== ""
+                              ? String(modelOption.value)
+                              : undefined
+                          }
+                          externalThinking={acpOptionLabel(
+                            acpOptions.data?.find(
+                              (item) =>
+                                item.category === "thought_level" ||
+                                item.id === "thought_level",
+                            ),
+                          )}
+                          externalOptions={
+                            <AcpOptions
+                              threadId={threadId}
+                              active={acpActive}
+                              agentId={acpAgent}
+                              preset={
+                                selectors.data?.agents.find(
+                                  (item) => item.agent_id === acpAgent,
+                                )?.preset
+                              }
+                              options={acpOptions}
+                              continuation={detail.data?.continuation_id}
+                            />
+                          }
+                          onAgentChange={(value) =>
+                            agentSelection.mutate(value)
+                          }
+                          onModelChange={runChoices.onModelChange}
+                        />
+                      );
+                    })()
             }
             profile={profile}
             unauthorized={unauthorized}

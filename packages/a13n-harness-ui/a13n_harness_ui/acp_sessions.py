@@ -114,6 +114,12 @@ def local_environment(environ: Mapping[str, str] | None = None) -> dict[str, str
     return environment
 
 
+_ACP_NPX_ADAPTERS: dict[AcpAgentPreset, tuple[str, str]] = {
+    "claude_code": ("claude", "@zed-industries/claude-agent-acp"),
+    "codex": ("codex", "@zed-industries/codex-acp"),
+}
+
+
 class AcpPresetView(SurfaceModel):
     id: AcpAgentPreset
     name: str
@@ -123,38 +129,61 @@ class AcpPresetView(SurfaceModel):
     install_url: str | None = None
 
 
+def _resolve_preset_command(preset: AcpAgentPreset, *, path: str) -> tuple[str, tuple[str, ...], str | None]:
+    command, default_args = ACP_AGENT_PRESETS[preset]
+    detected = shutil.which(command, path=path)
+    if detected is None and (adapter := _ACP_NPX_ADAPTERS.get(preset)) is not None:
+        npx = shutil.which("npx", path=path)
+        if npx is not None and shutil.which(adapter[0], path=path) is not None:
+            return "npx", ("-y", adapter[1]), npx
+    return command, default_args, detected
+
+
+def resolve_acp_argv(resource: AcpAgentResource, *, path: str | None = None) -> tuple[str, ...]:
+    if resource.command is not None or resource.preset == "custom":
+        return resource.argv()
+    search_path = local_environment().get("PATH", os.defpath) if path is None else path
+    executable, preset_args, _ = _resolve_preset_command(resource.preset, path=search_path)
+    if executable == "npx":
+        return (executable, *preset_args, *(resource.args or ()))
+    return (executable, *(preset_args if resource.args is None else resource.args))
+
+
 def acp_presets() -> tuple[AcpPresetView, ...]:
     path = local_environment().get("PATH", os.defpath)
-    metadata = {
+    metadata: dict[AcpAgentPreset, tuple[str, str]] = {
         "antigravity": ("Antigravity", "https://antigravity.google/docs/getting-started?tab=cli"),
-        "claude_code": ("Claude Code", "https://github.com/agentclientprotocol/claude-agent-acp"),
-        "codex": ("Codex", "https://github.com/agentclientprotocol/codex-acp"),
-        "opencode": ("OpenCode", "https://opencode.ai/docs/"),
+        "claude_code": ("Claude Code", "https://github.com/zed-industries/claude-agent-acp"),
+        "codex": ("Codex", "https://github.com/zed-industries/codex-acp"),
         "gemini_cli": ("Gemini CLI", "https://github.com/google-gemini/gemini-cli"),
+        "github_copilot": ("GitHub Copilot", "https://docs.github.com/en/copilot/how-tos/copilot-cli"),
+        "opencode": ("OpenCode", "https://opencode.ai/docs/"),
+        "goose": ("Goose", "https://block.github.io/goose/"),
+        "kimi_cli": ("Kimi CLI", "https://github.com/MoonshotAI/kimi-cli"),
     }
-    return (
-        *(
+    views: list[AcpPresetView] = []
+    for key in ACP_AGENT_PRESETS:
+        executable, preset_args, detected = _resolve_preset_command(key, path=path)
+        views.append(
             AcpPresetView(
                 id=key,
                 name=metadata[key][0],
-                executable=command,
-                detected_path=shutil.which(command, path=path),
-                args=("acp", "--dangerously-skip-permissions", "--process-per-session")
-                if key == "antigravity"
-                else args,
+                executable=executable,
+                detected_path=detected,
+                args=preset_args,
                 install_url=metadata[key][1],
             )
-            for key, (command, args) in ACP_AGENT_PRESETS.items()
-        ),
-        AcpPresetView(id="custom", name="Custom ACP Agent"),
-    )
+        )
+    views.append(AcpPresetView(id="custom", name="Custom ACP Agent"))
+    return tuple(views)
 
 
 def local_transport(
     resource: AcpAgentResource, cwd: str, *, environ: Mapping[str, str] | None = None
 ) -> LocalStdioTransport:
-    executable, *arguments = resource.argv()
-    return LocalStdioTransport(executable, cwd, tuple(arguments), environment=local_environment(environ))
+    environment = local_environment(environ)
+    executable, *arguments = resolve_acp_argv(resource, path=environment.get("PATH", os.defpath))
+    return LocalStdioTransport(executable, cwd, tuple(arguments), environment=environment)
 
 
 def acp_options(runtime: AcpSessionRuntime) -> tuple[AcpOption, ...]:

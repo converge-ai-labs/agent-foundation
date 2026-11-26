@@ -940,14 +940,27 @@ class AgentToolSearch(ToolSearchConfiguration, ConfigurationModel):
         )
 
 
-type AcpAgentPreset = Literal["antigravity", "claude_code", "codex", "opencode", "gemini_cli", "custom"]
+type AcpAgentPreset = Literal[
+    "antigravity",
+    "claude_code",
+    "codex",
+    "gemini_cli",
+    "github_copilot",
+    "opencode",
+    "goose",
+    "kimi_cli",
+    "custom",
+]
 
 ACP_AGENT_PRESETS: dict[AcpAgentPreset, tuple[str, tuple[str, ...]]] = {
     "antigravity": ("agy", ("acp", "--process-per-session")),
     "claude_code": ("claude-agent-acp", ()),
     "codex": ("codex-acp", ()),
+    "gemini_cli": ("gemini", ("--acp",)),
+    "github_copilot": ("copilot", ("--acp",)),
     "opencode": ("opencode", ("acp",)),
-    "gemini_cli": ("gemini", ("--experimental-acp",)),
+    "goose": ("goose", ("acp",)),
+    "kimi_cli": ("kimi", ("acp",)),
 }
 
 

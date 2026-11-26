@@ -113,6 +113,7 @@
   composes: details from "../shell/workbench.module.css";
 }
 .groupDisclosure > summary {
+  grid-template-columns: minmax(0, 1fr) 16px;
   min-height: var(--harness-control-height, 32px);
   padding-block: 4px;
   font-size: var(--a13n-text-body);

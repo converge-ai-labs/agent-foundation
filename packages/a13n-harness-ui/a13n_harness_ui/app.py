@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from copy import deepcopy
@@ -531,7 +532,7 @@ class HarnessUiApp:
         self._mcp_connections = mcp_connections or (mcp_apps.connections if mcp_apps else None)
         self._mcp_inputs = mcp_inputs
         self._acp_auth_active: set[str] = set()
-        self._acp_options_cache: dict[str, AcpOptionsPreview] = {}
+        self._acp_options_cache: dict[str, tuple[float, AcpOptionsPreview]] = {}
         self._mcp_operations = mcp_operations
         self._mcp_app_owners = (
             mcp_operations.owners
@@ -1904,13 +1905,16 @@ class HarnessUiApp:
             )
             cwd = self._threads.acp_workspace(configuration)
             scope = acp_options_scope(resource, cwd)
+            now = time.monotonic()
             if request is None and (cached := self._acp_options_cache.get(scope)) is not None:
-                return cached
+                if now - cached[0] < 60.0:
+                    return cached[1]
+                self._acp_options_cache.pop(scope, None)
             result = await preview_acp_options(resource, cwd, request)
             if request is None and any(option.is_model for option in result.options):
                 if len(self._acp_options_cache) >= 32:
                     self._acp_options_cache.pop(next(iter(self._acp_options_cache)))
-                self._acp_options_cache[scope] = result
+                self._acp_options_cache[scope] = (time.monotonic(), result)
             return result
 
     async def acp_auth(self, agent_id: str, request: AcpAuthRequest) -> AcpAuthStatus:
@@ -4752,7 +4756,7 @@ async def open_harness_ui_app(
             )
 
             async def notify_settled(project_id: str | None, operation: RootOperationView) -> None:
-                await thread_tools.notify_coordinator(project_id, operation)
+                await thread_tools.on_operation_settled(project_id, operation)
                 if app is not None and app._voice is not None:
                     await app._voice.executor_settled(operation)
 

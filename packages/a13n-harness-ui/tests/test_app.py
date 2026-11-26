@@ -2184,9 +2184,7 @@ async def test_webui_create_thread_preserves_project_and_returns_before_completi
             )
         assert result["ok"] is True
         created = await app.get_thread(result["thread_id"])
-        assert created.thread.configuration == source.configuration.model_copy(
-            update={"default_model_id": "model-primary"}
-        )
+        assert created.thread.configuration == source.configuration
         assert result["receipt"]["thread_id"] == created.thread.thread_id
         assert created.thread.thread_id != source.thread_id
         assert (await app.list_threads()).total == 2

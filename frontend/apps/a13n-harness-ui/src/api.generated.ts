@@ -3584,7 +3584,7 @@ export interface components {
             account_id: string;
         };
         /** @enum {string} */
-        AcpAgentPreset: "antigravity" | "claude_code" | "codex" | "opencode" | "gemini_cli" | "custom";
+        AcpAgentPreset: "antigravity" | "claude_code" | "codex" | "gemini_cli" | "github_copilot" | "opencode" | "goose" | "kimi_cli" | "custom";
         /** AcpAgentSource */
         AcpAgentSource: {
             /**
@@ -3784,6 +3784,8 @@ export interface components {
             name: string;
             /** Model Id */
             model_id?: string | null;
+            /** Preset */
+            preset?: string | null;
             /** Source Path */
             source_path: string;
             /**
