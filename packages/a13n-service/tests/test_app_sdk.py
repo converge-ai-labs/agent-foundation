@@ -1108,3 +1108,101 @@ async def test_get_run_output_reads_sealed_outputs_failures_assets_and_respects_
         assert waiting.sealed is True and waiting.status == "waiting"
         assert waiting.wait_reason == "call"
         assert waiting.output is None and waiting.failure is None
+
+
+async def test_read_asset_content_returns_verified_bytes_respects_scope_retirement_and_bounds(
+    service, app_runtime, monkeypatch
+):
+    from a13n_service.infra.ids import new_object_id
+    from a13n_service.resources.assets.schemas import AssetCreate
+    from a13n_service.resources.assets.service import create_asset, retire_asset
+    from a13n_service.resources.uploads import service as uploads
+    from a13n_service.tenancy.authorize import WorkspaceScope
+
+    from .test_connections import admin
+
+    runtime, tenant = app_runtime, service.tenant
+    ws = tenant.workspace_id
+    other_ws = (await service.client.post(f"{service.organization}/workspaces", json={"name": "Other Assets"})).json()[
+        "id"
+    ]
+    payload = b"hello asset bytes"
+    upload = await uploads.store(
+        runtime.storage,
+        runtime.objects,
+        WorkspaceScope(tenant.organization_id, ws),
+        tenant.principal_id,
+        request_key="sdk-read-asset",
+        filename="diagram.bin",
+        content_type="application/octet-stream",
+        content=payload,
+    )
+    created, _ = await create_asset(
+        runtime.storage,
+        admin(service),
+        ws,
+        AssetCreate(upload_id=upload.upload_id, name="diagram.bin"),
+    )
+
+    # Active asset reads back matching metadata and bytes (both unbounded and at exact max_bytes).
+    for limit in (None, len(payload)):
+        meta, data = await threads.read_asset_content(runtime, ws, created.id, max_bytes=limit)
+        assert meta == threads.RunAsset(
+            id=created.id,
+            name="diagram.bin",
+            content_type="application/octet-stream",
+            size=len(payload),
+            digest=created.digest,
+            retired_at=None,
+            created_at=created.created_at,
+        )
+        assert data == payload
+
+    # Wrong workspace and unknown asset ID both raise not_found.
+    for target_ws, target_asset in ((other_ws, created.id), (ws, new_object_id("ast"))):
+        with pytest.raises(ServiceError) as missing:
+            await threads.read_asset_content(runtime, target_ws, target_asset)
+        assert missing.value.code == "not_found"
+
+    # Invalid max_bytes and over-limit reads fail before touching object storage.
+    object_reads = 0
+    original_get = runtime.objects.get
+
+    async def counting_get(key: str) -> bytes | None:
+        nonlocal object_reads
+        object_reads += 1
+        return await original_get(key)
+
+    monkeypatch.setattr(runtime.objects, "get", counting_get)
+    for bad_limit in (0, -1, False, True):
+        with pytest.raises(ServiceError) as invalid_limit:
+            await threads.read_asset_content(runtime, ws, created.id, max_bytes=bad_limit)
+        assert invalid_limit.value.code == "invalid_argument"
+        assert invalid_limit.value.details["field"] == "max_bytes"
+
+    with pytest.raises(ServiceError) as too_large:
+        await threads.read_asset_content(runtime, ws, created.id, max_bytes=len(payload) - 1)
+    assert too_large.value.code == "payload_too_large"
+    assert too_large.value.details["limit"] == len(payload) - 1
+    assert object_reads == 0
+
+    # Digest mismatch in object storage fails with unavailable.
+    async def tampered_get(key: str) -> bytes | None:
+        return b"X" * len(payload)
+
+    monkeypatch.setattr(runtime.objects, "get", tampered_get)
+    with pytest.raises(ServiceError) as corrupted:
+        await threads.read_asset_content(runtime, ws, created.id)
+    assert corrupted.value.code == "unavailable"
+
+    # Restore object store, retire the asset, and confirm retired assets remain readable.
+    monkeypatch.setattr(runtime.objects, "get", original_get)
+    fetched = await service.client.get(f"{service.api}/assets/{created.id}")
+    assert fetched.status_code == 200, fetched.text
+    retired = await retire_asset(runtime.storage, admin(service), ws, created.id, if_match=fetched.headers["etag"])
+    assert retired.retired_at is not None
+
+    retired_meta, retired_data = await threads.read_asset_content(runtime, ws, created.id)
+    assert retired_meta.id == created.id
+    assert retired_meta.retired_at == retired.retired_at
+    assert retired_data == payload

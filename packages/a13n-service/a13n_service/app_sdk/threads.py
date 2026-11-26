@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from a13n_service.infra import cursors
-from a13n_service.infra.errors import invalid, not_found
+from a13n_service.infra.db import short_session
+from a13n_service.infra.errors import ServiceError, invalid, not_found
+from a13n_service.infra.objects import interface as objects
 from a13n_service.resources.assets.tables import AssetRow
 from a13n_service.runs import submit
 from a13n_service.runs.accept import eligible, paused
@@ -343,3 +345,37 @@ async def get_run_output(session: AsyncSession, workspace_id: str, run_id: str) 
             for item in asset_rows
         ),
     )
+
+
+async def read_asset_content(
+    runtime: Runtime,
+    workspace_id: str,
+    asset_id: str,
+    *,
+    max_bytes: int | None = None,
+) -> tuple[RunAsset, bytes]:
+    """Read verified bytes for a workspace asset already authorized by the App.
+
+    Retired assets remain readable. The SQL session closes before reading object storage.
+    """
+    if max_bytes is not None and (isinstance(max_bytes, bool) or max_bytes < 1):
+        raise invalid("max_bytes", "must_be_positive")
+    async with short_session(runtime.storage) as session:
+        row = await session.scalar(
+            select(AssetRow).where(AssetRow.workspace_id == workspace_id, AssetRow.id == asset_id)
+        )
+        if row is None:
+            raise not_found("asset", asset_id)
+        if max_bytes is not None and row.size > max_bytes:
+            raise ServiceError("payload_too_large", "Asset exceeds its byte limit", {"limit": max_bytes})
+        reference = objects.ObjectRef(row.content_ref, row.digest, row.size, row.content_type)
+        asset = RunAsset(
+            id=row.id,
+            name=row.name,
+            content_type=row.content_type,
+            size=row.size,
+            digest=row.digest,
+            retired_at=row.retired_at,
+            created_at=row.created_at,
+        )
+    return asset, await objects.read(runtime.objects, reference)
