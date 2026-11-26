@@ -11300,6 +11300,16 @@
             "minLength": 1,
             "title": "Name"
           },
+          "preset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AcpAgentPreset"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model_id": {
             "anyOf": [
               {

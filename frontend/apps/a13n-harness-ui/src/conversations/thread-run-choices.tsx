@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "../i18n";
-import { ModelIdentity } from "../shell/model-identity";
+import { AcpAgentIdentity, ModelIdentity } from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
 import { CaretRight, Desktop } from "@phosphor-icons/react";
 import { useState } from "react";
@@ -204,11 +204,14 @@ export function ThreadRunChoices(props: RunChoiceProps) {
         label={
           <span className={panelStyles.modelSummary}>
             {isAcp ? (
-              props.externalModel ? (
-                `${agent.name} · ${props.externalModel}`
-              ) : (
-                agent.name
-              )
+              <AcpAgentIdentity
+                preset={agent.preset}
+                label={
+                  props.externalModel
+                    ? `${agent.name} · ${props.externalModel}`
+                    : agent.name
+                }
+              />
             ) : (
               <ModelIdentity model={model} name={modelName} />
             )}

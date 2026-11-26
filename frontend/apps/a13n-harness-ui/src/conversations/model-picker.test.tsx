@@ -78,7 +78,15 @@ const catalog: Schema<"ThreadSelectorCatalog"> = {
   mcp_servers: [],
 };
 
-function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
+function Choices({
+  defaultModelId,
+  choiceCatalog = catalog,
+  defaultAgentId = "agent",
+}: {
+  defaultModelId?: string;
+  choiceCatalog?: Schema<"ThreadSelectorCatalog">;
+  defaultAgentId?: string;
+} = {}) {
   const [draft] = useState(() => new ThreadDraft());
   useSyncExternalStore(draft.subscribe, draft.getSnapshot);
   const choices = useComposerRunChoices(
@@ -88,9 +96,9 @@ function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
   );
   return (
     <ThreadRunChoices
-      catalog={catalog}
+      catalog={choiceCatalog}
       agentId=""
-      defaultAgentId="agent"
+      defaultAgentId={defaultAgentId}
       defaultModelId={defaultModelId}
       modelId={draft.modelId}
       controls={draft.controls}
@@ -134,6 +142,40 @@ it("uses the selected model as the settings entry, retaining Agent context and e
   await user.keyboard("[Escape]");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(document.activeElement).toBe(trigger);
+});
+
+it("marks an external ACP agent with its preset brand and a custom one with the placeholder", () => {
+  const acp = (
+    agent_id: string,
+    preset?: Schema<"AgentSummary">["preset"],
+  ): Schema<"AgentSummary"> => ({
+    kind: "acp_agent",
+    agent_id,
+    name: "Google Antigravity",
+    ...(preset && { preset }),
+    source_path: `acp_agents/${agent_id}.yaml`,
+  });
+  const withAgent = (agent: Schema<"AgentSummary">) => ({
+    ...catalog,
+    agents: [agent],
+  });
+  const { container, rerender } = render(
+    <Choices
+      choiceCatalog={withAgent(acp("acp-agy", "antigravity"))}
+      defaultAgentId="acp-agy"
+    />,
+  );
+  const trigger = button("Agent & Model settings");
+  expect(trigger.textContent).toBe("Google Antigravity");
+  expect(trigger.querySelector('img[src*="antigravity"]')).toBeTruthy();
+  rerender(
+    <Choices
+      choiceCatalog={withAgent(acp("acp-custom", "custom"))}
+      defaultAgentId="acp-custom"
+    />,
+  );
+  expect(container.querySelector("img")).toBeNull();
+  expect(trigger.querySelector("svg")).toBeTruthy();
 });
 
 it("searches models in one panel and resets overrides on model changes", async () => {

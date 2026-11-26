@@ -37,3 +37,21 @@ export function ModelIdentity({
     </span>
   );
 }
+
+/** An external ACP agent, marked by the product its preset names. */
+export function AcpAgentIdentity({
+  preset,
+  label,
+}: {
+  preset?: Schema<"AgentSummary">["preset"];
+  label: string;
+}) {
+  // A custom or unknown agent resolves no brand and keeps the generic mark.
+  const identity = preset && preset !== "custom" ? preset : undefined;
+  return (
+    <span className={styles.identity}>
+      <BrandIcon identity={identity} alias={identity} size={16} />
+      <span>{label}</span>
+    </span>
+  );
+}

@@ -11,7 +11,7 @@ from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from a13n_stream_protocol import ContentMetadata
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
-from a13n_harness_ui.configuration.models import DictationConfiguration, ProjectDefaults
+from a13n_harness_ui.configuration.models import AcpAgentPreset, DictationConfiguration, ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
@@ -821,6 +821,8 @@ class AgentSummary(SurfaceModel):
     kind: Literal["agent", "acp_agent"] = "agent"
     agent_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
+    # An ACP Agent's data-only preset names the product behind it for display.
+    preset: AcpAgentPreset | None = Field(default=None, exclude_if=lambda value: value is None)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     source_path: str = Field(min_length=1, max_length=4096)
     tool_search_mcp_servers: tuple[str, ...] = Field(default=(), exclude_if=lambda value: not value)

@@ -3782,6 +3782,7 @@ export interface components {
             agent_id: string;
             /** Name */
             name: string;
+            preset?: components["schemas"]["AcpAgentPreset"] | null;
             /** Model Id */
             model_id?: string | null;
             /** Source Path */

@@ -443,6 +443,33 @@ async def test_acp_prewarm_replays_options_after_host_restart(tmp_path: Path, pe
         assert (await app.get_thread(thread.thread_id)).continuation_id is None
 
 
+async def test_thread_selectors_report_the_acp_preset_for_display(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    config = tmp_path / "a13n-harness-ui.yaml"
+    config.write_text('schema_version: "1"\n')
+    resources = tmp_path / "acp_agents"
+    resources.mkdir()
+    (resources / "agy.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "kind": "acp_agent",
+                "id": "acp-agy",
+                "name": "Antigravity",
+                "preset": "antigravity",
+            }
+        )
+    )
+    (resources / "custom.yaml").write_text(_resource().model_dump_json(exclude_none=True))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=config, instrumentation=None) as app:
+        agents = {agent.agent_id: agent for agent in (await app.thread_selectors()).agents}
+    assert agents["acp-agy"].preset == "antigravity"
+    assert agents["acp-fixture"].preset == "custom"
+
+
 async def test_acp_shell_review_on_app_callbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import json
 
