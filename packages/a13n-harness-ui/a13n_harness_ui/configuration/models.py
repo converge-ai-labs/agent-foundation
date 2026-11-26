@@ -175,10 +175,16 @@ class ToolsConfiguration(ConfigurationModel):
         return value
 
 
-class DynamicSubagentsConfiguration(ConfigurationModel):
-    enabled: bool = False
+class AgentCreationConfiguration(ConfigurationModel):
+    """Unified policy governing Agents and Models for agent-initiated creation."""
+
+    allowed_agents: tuple[ResourceId, ...] | None = None
+    default_agent: ResourceId | None = None
     allowed_models: tuple[ResourceId, ...] = ()
     default_model: ResourceId | None = None
+
+    def allows_agent(self, agent_id: str) -> bool:
+        return self.allowed_agents is None or agent_id in self.allowed_agents
 
     def select_model(self, model: str | None) -> str:
         selected = self.default_model if model is None else model
@@ -188,24 +194,85 @@ class DynamicSubagentsConfiguration(ConfigurationModel):
             )
         return selected
 
+    @field_validator("allowed_agents")
+    @classmethod
+    def _unique_agents(cls, value: tuple[ResourceId, ...] | None) -> tuple[ResourceId, ...] | None:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("agent_creation.allowed_agents must contain unique configured Agent IDs")
+        return value
+
     @field_validator("allowed_models")
     @classmethod
     def _unique_models(cls, value: tuple[ResourceId, ...]) -> tuple[ResourceId, ...]:
         if len(value) != len(set(value)):
-            raise ValueError("subagents.dynamic.allowed_models must contain unique configured Model IDs")
+            raise ValueError("agent_creation.allowed_models must contain unique configured Model IDs")
         return value
 
     @model_validator(mode="after")
-    def _default_is_allowed(self) -> Self:
-        if self.default_model is None:
-            if self.enabled:
-                raise ValueError(
-                    "Enabled dynamic subagents require subagents.dynamic.default_model "
-                    "and subagents.dynamic.allowed_models that include it"
-                )
-        elif self.default_model not in self.allowed_models:
-            raise ValueError("subagents.dynamic.default_model must be one of subagents.dynamic.allowed_models")
+    def _defaults_are_allowed(self) -> Self:
+        if (
+            self.default_agent is not None
+            and self.allowed_agents is not None
+            and self.default_agent not in self.allowed_agents
+        ):
+            raise ValueError("agent_creation.default_agent must be one of agent_creation.allowed_agents")
+        if self.default_model is not None and self.default_model not in self.allowed_models:
+            raise ValueError("agent_creation.default_model must be one of agent_creation.allowed_models")
         return self
+
+
+class DynamicSubagentsConfiguration(ConfigurationModel):
+    enabled: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_obsolete_model_policy(cls, value: object) -> object:
+        if isinstance(value, dict) and {"allowed_models", "default_model"} & value.keys():
+            raise ValueError(
+                "Obsolete subagents.dynamic model settings (allowed_models, default_model) "
+                "must be moved to top-level agent_creation"
+            )
+        return value
+
+
+def _agent_creation_values_agree(key: str, legacy: object, canonical: object) -> bool:
+    if key == "allowed_models" and isinstance(legacy, (list, tuple)) and isinstance(canonical, (list, tuple)):
+        return len(legacy) == len(canonical) and all(
+            type(left) is type(right) and left == right for left, right in zip(legacy, canonical, strict=True)
+        )
+    return type(legacy) is type(canonical) and legacy == canonical
+
+
+def lift_legacy_agent_creation(data: dict[str, object], *, check_conflicts: bool = True) -> dict[str, object]:
+    """Lift historical subagents.dynamic model policy into top-level agent_creation."""
+    subagents = data.get("subagents")
+    if not isinstance(subagents, dict):
+        return data
+    dynamic = subagents.get("dynamic")
+    if not isinstance(dynamic, dict):
+        return data
+    if "allowed_models" not in dynamic and "default_model" not in dynamic:
+        return data
+    cleaned_dynamic = {key: item for key, item in dynamic.items() if key not in {"allowed_models", "default_model"}}
+    updated: dict[str, object] = {**data, "subagents": {**subagents, "dynamic": cleaned_dynamic}}
+    if "agent_creation" not in data:
+        updated["agent_creation"] = {key: dynamic[key] for key in ("allowed_models", "default_model") if key in dynamic}
+        return updated
+    existing = data["agent_creation"]
+    if not isinstance(existing, dict):
+        return updated
+    merged = dict(existing)
+    for key in ("allowed_models", "default_model"):
+        if key not in dynamic:
+            continue
+        legacy = dynamic[key]
+        if key in merged:
+            if check_conflicts and not _agent_creation_values_agree(key, legacy, merged[key]):
+                raise ValueError(f"subagents.dynamic.{key} and agent_creation.{key} must agree")
+        else:
+            merged[key] = legacy
+    updated["agent_creation"] = merged
+    return updated
 
 
 class SubagentsConfiguration(ConfigurationModel):
@@ -468,6 +535,10 @@ class HarnessUiDocument(ConfigurationModel):
     tools: ToolsConfiguration = Field(default_factory=ToolsConfiguration)
     security: SecurityConfiguration = Field(default_factory=SecurityConfiguration)
     run_configuration: RunConfiguration = Field(default_factory=RunConfiguration)
+    agent_creation: AgentCreationConfiguration = Field(
+        default_factory=AgentCreationConfiguration,
+        exclude_if=lambda value: value == AgentCreationConfiguration(),
+    )
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
     webui: WebUiConfiguration = Field(default_factory=WebUiConfiguration)
     mcp: McpConfiguration = Field(
@@ -490,6 +561,22 @@ class HarnessUiDocument(ConfigurationModel):
     live: LiveConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     max_goal_iterations: int = 10
     background_compaction: BackgroundCompactionConfiguration = Field(default_factory=BackgroundCompactionConfiguration)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_legacy_agent_creation(cls, value: object) -> object:
+        if isinstance(value, dict):
+            return lift_legacy_agent_creation(value, check_conflicts=True)
+        return value
+
+    @model_validator(mode="after")
+    def _valid_dynamic_subagent_policy(self) -> Self:
+        if self.subagents.dynamic.enabled and self.agent_creation.default_model is None:
+            raise ValueError(
+                "Enabled dynamic subagents require agent_creation.default_model "
+                "and agent_creation.allowed_models that include it"
+            )
+        return self
 
 
 class EnvironmentVariableSource(StrictModel):
@@ -1184,13 +1271,27 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     projects: dict[ResourceId, ProjectResource] = Field(default_factory=dict)
     devices: dict[ResourceId, DeviceResource] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _read_previous_generation(cls, value: object) -> object:
+        if isinstance(value, dict) and isinstance(value.get("document"), dict):
+            document = lift_legacy_agent_creation(value["document"], check_conflicts=False)
+            if document is not value["document"]:
+                return {**value, "document": document}
+        return value
+
     @model_validator(mode="after")
     def _validate_graph(self) -> Self:
         defaults = self.document.defaults
-        for model_id in self.document.subagents.dynamic.allowed_models:
+        creation = self.document.agent_creation
+        if creation.allowed_agents is not None:
+            for agent_id in creation.allowed_agents:
+                _require_reference(agent_id, self.agents | self.acp_agents, "agent_creation.allowed_agents")
+        _require_reference(creation.default_agent, self.agents | self.acp_agents, "agent_creation.default_agent")
+        for model_id in creation.allowed_models:
             if model_id not in self.models:
                 raise _MissingModelReferenceError(
-                    path=self.sources[0].relative_path, field="subagents.dynamic.allowed_models", model_id=model_id
+                    path=self.sources[0].relative_path, field="agent_creation.allowed_models", model_id=model_id
                 )
         for model in self.models.values():
             auth = model.authentication
@@ -1442,6 +1543,7 @@ def _reject_agent_cycles(agents: dict[str, AgentResource]) -> None:
 
 
 __all__ = [
+    "AgentCreationConfiguration",
     "AgentResource",
     "AgentSubagentSelection",
     "ApiKeyAuthentication",

@@ -48,17 +48,21 @@ tools:
   interaction_timeout_seconds: 120
 input:
   steering_mode: immediate # or queued
+agent_creation:
+  allowed_agents: null # omit/null for all agents, [] to disable, or list IDs
+  default_agent: null
+  allowed_models: [model-primary]
+  default_model: model-primary
 subagents:
   include: [explorer, code-reviewer, executor]
   max_concurrent: 8
   dynamic:
     enabled: true
-    allowed_models: [model-primary]
-    default_model: model-primary
 ```
 
 - `tools.enable_ask_user_question` / `enable_codeact`: Global switches that gate both automatic and explicit Agent selections.
 - `input.steering_mode`: `immediate` (default) interrupts model generation or releases supported tool waits; `queued` delivers at the next safe boundary.
+- `agent_creation`: Governs allowed/default Agents and Models for agent-initiated creation; legacy `subagents.dynamic.{allowed_models, default_model}` keys continue to lift into `agent_creation` at load time (with conflict checking) and migrate automatically when saved in WebUI.
 
 ## Shell review shortcut
 

@@ -102,7 +102,7 @@ def _write_configuration(
     root.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: agent-assistant\n')
     if allow_agent_creation:
         with root.open("a") as config:
-            config.write("subagents: {dynamic: {allowed_models: [model-primary], default_model: model-primary}}\n")
+            config.write("agent_creation: {allowed_models: [model-primary], default_model: model-primary}\n")
     resources = {
         "models/primary.yaml": """
 schema_version: "1"

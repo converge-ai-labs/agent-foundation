@@ -3774,5 +3774,11 @@
   "Allow unattended tool execution without interactive CLI prompts.": "इंटरैक्टिव CLI प्रॉम्प्ट के बिना स्वचालित टूल निष्पादन की अनुमति दें।",
   "Customize command": "कमांड कस्टमाइज़ करें",
   "Context occupancy reported by the external ACP Agent. Chat totals are in Usage.": "बाहरी ACP Agent द्वारा रिपोर्ट की गई संदर्भ उपयोग स्थिति। चैट का कुल योग \"उपयोग\" में है।",
-  "This external ACP Agent has not reported its current context window, so occupancy is unavailable.": "इस बाहरी ACP Agent ने अपनी वर्तमान संदर्भ सीमा रिपोर्ट नहीं की है, इसलिए उपयोग स्थिति उपलब्ध नहीं है।"
+  "This external ACP Agent has not reported its current context window, so occupancy is unavailable.": "इस बाहरी ACP Agent ने अपनी वर्तमान संदर्भ सीमा रिपोर्ट नहीं की है, इसलिए उपयोग स्थिति उपलब्ध नहीं है।",
+  "Allowed agents": "अनुमत एजेंट",
+  "Agents can only use these configured agents for new chats and workers.": "एजेंट नई चैट और वर्कर के लिए केवल इन्हीं कॉन्फ़िगर किए गए एजेंटों का उपयोग कर सकते हैं।",
+  "With no agents selected, all configured agents are allowed for new chats and workers.": "कोई एजेंट न चुनने पर, नई चैट और वर्कर के लिए सभी कॉन्फ़िगर किए गए एजेंट अनुमत होते हैं।",
+  "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.": "कॉन्फ़िगरेशन में allowed_agents खाली होने के कारण एजेंट बनाना बंद है। उन्हें अनुमति देने के लिए एजेंट चुनें।",
+  "Same as current agent": "वर्तमान एजेंट जैसा ही",
+  "Used when creating a new chat or worker without specifying an agent.": "बिना एजेंट बताए नई चैट या वर्कर बनाते समय उपयोग होता है।"
 }

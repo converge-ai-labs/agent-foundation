@@ -14,6 +14,7 @@ from .external_subagents import (
 )
 from .loader import configuration_tree_fingerprint, empty_harness_ui_configuration, load_harness_ui_configuration
 from .models import (
+    AgentCreationConfiguration,
     AgentResource,
     AgentSubagentSelection,
     ApiKeyAuthentication,
@@ -56,6 +57,7 @@ from .mutation import (
 )
 
 __all__ = [
+    "AgentCreationConfiguration",
     "AgentResource",
     "AgentSubagentSelection",
     "ApiKeyAuthentication",

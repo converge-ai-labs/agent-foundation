@@ -48,17 +48,21 @@ tools:
   interaction_timeout_seconds: 120
 input:
   steering_mode: immediate # 或 queued
+agent_creation:
+  allowed_agents: null # 省略/null 表示允许全部智能体，[] 表示禁用，或列出智能体 ID
+  default_agent: null
+  allowed_models: [model-primary]
+  default_model: model-primary
 subagents:
   include: [explorer, code-reviewer, executor]
   max_concurrent: 8
   dynamic:
     enabled: true
-    allowed_models: [model-primary]
-    default_model: model-primary
 ```
 
 - `tools.enable_ask_user_question` / `enable_codeact`：全局开关，同时约束自动启用与智能体显式声明。
 - `input.steering_mode`：`immediate`（默认）立即中断模型生成或释放受支持的工具等待；`queued` 在下一个安全边界送达。
+- `agent_creation`：统一控制智能体创建新对话、Worker 与子智能体时允许及默认使用的智能体和模型；旧版 `subagents.dynamic.{allowed_models, default_model}` 加载时会自动提升到 `agent_creation`（若与新字段冲突则报错），在 WebUI 保存时自动迁移。
 
 ## Shell 审查快捷开关
 

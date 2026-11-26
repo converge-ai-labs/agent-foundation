@@ -358,7 +358,7 @@ class AgentReconstructor:
         from a13n_harness_ui.subagent_tools import SubagentTools, guidance
 
         dynamic = not subagent and composition.subagents.dynamic.enabled
-        allowed_child_models = composition.subagents.dynamic.allowed_models
+        allowed_child_models = composition.agent_creation.allowed_models
         eligible_children = tuple(
             item for item in composition.root.children if item.definition.model.model_id in allowed_child_models
         )
@@ -416,7 +416,7 @@ class AgentReconstructor:
                 subagent_capability=subagent_capability,
                 root_capabilities=(*root_capabilities, ToolExecutionCapability(composition.tool_execution)),
                 root=True,
-                allowed_child_models=composition.subagents.dynamic.allowed_models,
+                allowed_child_models=composition.agent_creation.allowed_models,
                 path_layout=path_layout,
                 model_recipes=model_recipes,
                 native_default_tools=(

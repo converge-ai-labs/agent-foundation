@@ -39,7 +39,8 @@ async def test_setup_previews_without_publication_and_seeds_selected_connection(
     root = yaml.safe_load(preview.files[path.name])
     assert root["schema_version"] == "1"
     assert root["background_compaction"] == {"enabled": True, "blocking_threshold": 0.95}
-    assert root["subagents"]["dynamic"] == {"allowed_models": ["model-codex"], "default_model": "model-codex"}
+    assert root["agent_creation"] == {"allowed_models": ["model-codex"], "default_model": "model-codex"}
+    assert "dynamic" not in root.get("subagents", {})
     assert root["tools"] == {
         "enable_ask_user_question": True,
         "interaction_timeout_seconds": 120,
