@@ -27,6 +27,11 @@ DISTRIBUTION_STEM = "a13n_harness_ui"
 MANIFEST_NAME = "asset-manifest.json"
 PACKAGE_PREFIX = PurePosixPath("a13n_harness_ui/static")
 SKILL_PREFIX = PurePosixPath("a13n_harness_ui/assets/builtin_skills/harness-ui-configuration")
+COORDINATOR_SKILLS = (
+    "coordinate-pair-design",
+    "coordinate-worktree-pr",
+    "coordinate-parallel",
+)
 TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_harness_ui/__init__.py"),
     PurePosixPath("a13n_harness_ui/__main__.py"),
@@ -189,6 +194,11 @@ def _validate_builtin_skill(read: Callable[[str], bytes], names: set[str], prefi
             source = prefix.parent.parent / "guidance" / reference.removeprefix("ui/")
             if str(source) not in names or read(str(source)) != read(str(operations / reference)):
                 raise DistributionError(f"Harness UI operation guidance differs from its runtime source: {reference}")
+    coordinator_skills = prefix.parent.parent / "coordinator_skills"
+    for name in COORDINATOR_SKILLS:
+        artifact_path = str(coordinator_skills / name / "SKILL.md")
+        if artifact_path not in names:
+            raise DistributionError(f"Harness UI artifact is missing coordinator Skill: {artifact_path}")
 
 
 def _validate_terminal_package(names: set[str], prefix: PurePosixPath | None = None) -> None:

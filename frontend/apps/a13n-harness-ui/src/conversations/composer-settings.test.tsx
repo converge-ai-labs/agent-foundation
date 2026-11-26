@@ -809,3 +809,61 @@ it("shows a loading indicator on the ACP trigger while externalLoading is active
     '{"pending":false,"error":null}',
   );
 });
+
+it("refreshes draft skill preview with coordinator=true when enabling Coordinate agents", async () => {
+  const user = userEvent.setup();
+  post.mockImplementation(
+    async (
+      path: string,
+      init?: { params?: { query?: { coordinator?: boolean } } },
+    ) => {
+      if (path !== "/api/threads/skills-preview") return { data: {} };
+      const coordinator = init?.params?.query?.coordinator === true;
+      return {
+        data: {
+          catalog_id: coordinator ? "c".repeat(64) : "a".repeat(64),
+          context_kind: "draft",
+          items: coordinator
+            ? [
+                {
+                  item_id: "b".repeat(64),
+                  name: "coordinate-worktree-pr",
+                  description: "Guide worker PR",
+                  source_id: "a13n-harness-ui:builtin-coordinator-skills",
+                  logical_path:
+                    "/environment/builtin-coordinator-skills/coordinate-worktree-pr",
+                },
+              ]
+            : [],
+        },
+      };
+    },
+  );
+  draft.doc.getText("text").insert(0, "$coordinate-worktree-pr");
+  mount();
+
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      "/api/threads/skills-preview",
+      expect.not.objectContaining({ params: expect.anything() }),
+    ),
+  );
+  expect(
+    document.querySelector('[data-skill="coordinate-worktree-pr"]'),
+  ).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "Chat options" }));
+  await user.click(screen.getByRole("switch", { name: "Coordinate agents" }));
+
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      "/api/threads/skills-preview",
+      expect.objectContaining({ params: { query: { coordinator: true } } }),
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      document.querySelector('[data-skill="coordinate-worktree-pr"]'),
+    ).toBeTruthy(),
+  );
+});

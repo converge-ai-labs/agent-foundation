@@ -13,7 +13,16 @@ from a13n_harness.environment.envd_policy import EnvdBoundaryRequirement, EnvdSe
 from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS, EnvironmentPermissionSet
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
-_HOST_ALIASES = frozenset({"workspace", "thread-files", "configuration", "builtin-skills", "user-skills"})
+_HOST_ALIASES = frozenset(
+    {
+        "workspace",
+        "thread-files",
+        "configuration",
+        "builtin-skills",
+        "builtin-coordinator-skills",
+        "user-skills",
+    }
+)
 
 
 def validate_local_roots(roots: tuple[str, ...]) -> tuple[str, ...]:
