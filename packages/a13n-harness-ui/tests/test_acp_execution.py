@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 from a13n_harness import HarnessBuilder
-from a13n_harness.acp import AcpSessionSetup
+from a13n_harness.acp import AcpSessionRuntime, AcpSessionSetup
 from a13n_harness.context import AgentContext
 from a13n_harness_ui.acp_auth import AcpAuthRequest, acp_auth, auth_input_scope
 from a13n_harness_ui.acp_execution import AcpTurn
@@ -310,7 +310,12 @@ async def test_acp_thread_without_native_model_runs_and_saves_display(tmp_path: 
 
 
 @pytest.mark.parametrize("input_tokens,output_tokens", [(8, 2), (13, 5)])
-async def test_acp_usage_includes_cache_and_thinking_without_double_counting(input_tokens, output_tokens):
+@pytest.mark.parametrize(
+    "current_value,model_name", [(" model-a ", "model-a"), ("", None), (" \t", None), (True, None)]
+)
+async def test_acp_usage_includes_cache_and_thinking_without_double_counting(
+    input_tokens, output_tokens, current_value, model_name
+):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock, Mock
 
@@ -328,7 +333,7 @@ async def test_acp_usage_includes_cache_and_thinking_without_double_counting(inp
     )
     await turn._record_usage(
         SimpleNamespace(usage_attribution=ledger),
-        SimpleNamespace(config_options=()),
+        SimpleNamespace(config_options=(SimpleNamespace(id="model", category=None, current_value=current_value),)),
         schema.PromptResponse(
             stop_reason="end_turn",
             usage=schema.Usage(
@@ -340,7 +345,9 @@ async def test_acp_usage_includes_cache_and_thinking_without_double_counting(inp
             ),
         ),
     )
-    usage = ledger.finish.call_args.args[1].request_usage
+    record = ledger.finish.call_args.args[1]
+    assert record.model_name == model_name
+    usage = record.request_usage
     assert (usage.input_tokens, usage.output_tokens, usage.cache_read_tokens) == (13, 5, 5)
     assert usage.details == {"thoughts_tokens": 3}
     ledger._flush.assert_awaited_once()
@@ -1198,13 +1205,64 @@ async def _latest_reply_text(app: Any, thread_id: str) -> str:
     return "".join(part.text or "" for part in entry.parts if part.kind == "assistant")
 
 
+@pytest.mark.parametrize(
+    "peer_mode, model_id",
+    [
+        ("standard", "fixture-model"),
+        ("legacy", "fixture-model"),
+        ("delayed", "fixture-model"),
+        ("absent", None),
+        ("unselected", None),
+    ],
+)
+async def test_acp_projects_peer_model_on_first_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, peer_mode: str, model_id: str | None
+) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+
+    waits: list[float] = []
+    wait_for_model_option = AcpSessionRuntime.wait_for_model_option
+
+    async def observe_model_wait(runtime: AcpSessionRuntime, timeout: float) -> None:
+        waits.append(timeout)
+        await wait_for_model_option(runtime, timeout)
+
+    monkeypatch.setattr(AcpSessionRuntime, "wait_for_model_option", observe_model_wait)
+    config = _ui_peer_config(tmp_path)
+    peer = Path(__file__).with_name("fixtures") / "acp_model_peer.py"
+    resource = _resource().model_copy(
+        update={"args": (str(peer), peer_mode), "preset": "antigravity" if peer_mode == "delayed" else "custom"}
+    )
+    (tmp_path / "acp_agents/fixture.yaml").write_text(resource.model_dump_json(exclude_none=True))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        thread = await app.create_thread()
+        assert await app._store.threads.acp_state(thread.thread_id) is None
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="echo first prompt")
+        outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status is RootOperationStatus.completed, outcome.failure
+        reply = await _latest_reply_text(app, thread.thread_id)
+        model_lines = (
+            f"Current Model: {model_id}\nUse the current Model name when attributing work to a model.\n"
+            if model_id is not None
+            else ""
+        )
+        assert (
+            '<agent-context source="a13n-harness-ui">\n'
+            f"Current Thread: {thread.thread_id}\n{model_lines}</agent-context>"
+        ) in reply
+        assert len(waits) == (1 if peer_mode == "delayed" else 0)
+
+
 async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp_path: Path) -> None:
     from a13n_harness_ui.acp_sessions import AcpSessionState
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from a13n_harness_ui.surfaces import RootOperationStatus
 
-    config = _ui_peer_config(tmp_path)
+    config = _ui_peer_config(tmp_path, "null-model")
     (tmp_path / "AGENTS.md").write_text("Global Harness UI guidance.\n", encoding="utf-8")
     config.write_text(
         'schema_version: "1"\ndefaults:\n  agent: acp-fixture\ntools:\n  enable_ask_user_question: false\n'
@@ -1213,43 +1271,53 @@ async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp
     async with open_harness_ui_app(settings, configuration_path=config, host_mode="webui") as app:
         thread = await app.create_thread()
 
-        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-instructions", input_surface="webui")
-        outcome = await app.wait_root_operation(receipt.receipt_id)
-        assert outcome.status is RootOperationStatus.completed, outcome.failure
-        instructions_reply = await _latest_reply_text(app, thread.thread_id)
-        system_prompt = json.loads(instructions_reply)
-        joined_instructions = "\n".join(block["text"] for block in system_prompt["content"])
-        assert "Global Harness UI guidance." in joined_instructions
-        assert "Use harness-host post_to_inbox to report results or blockers." in joined_instructions
-        assert "Use harness-host ask_user_question" not in joined_instructions
+        async def reply(prompt: str) -> str:
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt=prompt, input_surface="webui")
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+            assert outcome.status is RootOperationStatus.completed, outcome.failure
+            return await _latest_reply_text(app, thread.thread_id)
 
-        # Turn 2: unchanged dynamic context (<agent-context>, <surface-context>, <inbox-reminder>) is deduplicated.
-        second = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-prompt", input_surface="webui")
-        assert (await app.wait_root_operation(second.receipt_id)).status is RootOperationStatus.completed
-        turn2_blocks = json.loads(await _latest_reply_text(app, thread.thread_id) or "[]")
-        turn2_text = "\n".join(item["text"] for item in turn2_blocks if item.get("type") == "text")
-        assert "Current Environment mounts" not in turn2_text
-        assert "This input was submitted through Harness UI WebUI." not in turn2_text
-        assert "<agent-context" not in turn2_text
-        assert "<surface-context" not in turn2_text
-        assert "<inbox-reminder>" not in turn2_text
+        async def echoed_prompt(prompt: str = "echo-prompt") -> str:
+            blocks = json.loads(await reply(prompt))
+            return "\n".join(item["text"] for item in blocks if item.get("type") == "text")
 
-        # Turn 3: compaction update resets delivered_context so Turn 4 re-delivers dynamic context.
-        third = await app.submit_thread(thread_id=thread.thread_id, prompt="compact-and-echo", input_surface="webui")
-        assert (await app.wait_root_operation(third.receipt_id)).status is RootOperationStatus.completed
+        await app.acp_options(thread.thread_id, AcpOptionChange(id="model", value="a"))
+        first_text = await echoed_prompt()
+        assert '<agent-context source="a13n-harness-ui">' in first_text
+        assert "Current Model: a\nUse the current Model name when attributing work to a model.\n" in first_text
+
+        unchanged_text = await echoed_prompt()
+        assert "Current Environment mounts" not in unchanged_text
+        assert "This input was submitted through Harness UI WebUI." not in unchanged_text
+        assert "<agent-context" not in unchanged_text
+        assert "<surface-context" not in unchanged_text
+        assert "<inbox-reminder>" not in unchanged_text
+
+        await app.acp_options(thread.thread_id, AcpOptionChange(id="model", value="b"))
+        changed_text = await echoed_prompt()
+        assert '<agent-context source="a13n-harness-ui">' in changed_text
+        assert "Current Model: b\n" in changed_text
+        assert "Current Model: a\n" not in changed_text
+        assert "<surface-context" not in changed_text
+
+        await echoed_prompt("compact-and-echo")
         stored = await app._store.threads.acp_state(thread.thread_id)
         assert stored is not None
         assert AcpSessionState.model_validate_json(stored).delivered_context == ()
 
-        fourth = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-prompt", input_surface="webui")
-        assert (await app.wait_root_operation(fourth.receipt_id)).status is RootOperationStatus.completed
-        turn4_blocks = json.loads(await _latest_reply_text(app, thread.thread_id) or "[]")
-        turn4_text = "\n".join(item["text"] for item in turn4_blocks if item.get("type") == "text")
-        assert "<agent-context" in turn4_text
-        assert "<surface-context" in turn4_text
-        assert "<inbox-reminder>" in turn4_text
-        assert "Current Environment mounts" not in turn4_text
-        assert "This input was submitted through Harness UI WebUI." not in turn4_text
+        refreshed_text = await echoed_prompt()
+        assert '<agent-context source="a13n-harness-ui">' in refreshed_text
+        assert "Current Model: b\n" in refreshed_text
+        assert "<surface-context" in refreshed_text
+        assert "<inbox-reminder>" in refreshed_text
+        assert "Current Environment mounts" not in refreshed_text
+        assert "This input was submitted through Harness UI WebUI." not in refreshed_text
+
+        system_prompt = json.loads(await reply("echo-instructions"))
+        joined_instructions = "\n".join(block["text"] for block in system_prompt["content"])
+        assert "Global Harness UI guidance." in joined_instructions
+        assert "Use harness-host post_to_inbox to report results or blockers." in joined_instructions
+        assert "Use harness-host ask_user_question" not in joined_instructions
 
 
 async def test_acp_skills_discovery_index_direct_slash_and_host_paths(tmp_path: Path) -> None:

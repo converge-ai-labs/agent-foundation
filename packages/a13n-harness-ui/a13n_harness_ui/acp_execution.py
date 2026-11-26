@@ -66,6 +66,7 @@ from a13n_harness_ui.acp_sessions import (
     AcpSessions,
     AcpSessionState,
     acp_commands,
+    acp_current_model_id,
     acp_options_scope,
 )
 from a13n_harness_ui.configuration.models import AcpAgentPreset, AcpAgentResource
@@ -379,6 +380,10 @@ class AcpTurn(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return _NAMESPACE
 
+    @property
+    def current_model_id(self) -> str | None:
+        return acp_current_model_id(self.runtime) if self.runtime is not None else None
+
     def _retained_host_path(self, metadata: dict[str, Any] | None) -> Path | None:
         if (
             self.thread_files is None
@@ -608,10 +613,6 @@ class AcpTurn(AbstractHarnessPlugin):
         usage = response.usage
         assert usage is not None
         ledger = context.usage_attribution
-        model = next(
-            (item.current_value for item in runtime.config_options if item.category == "model" or item.id == "model"),
-            None,
-        )
         thought = usage.thought_tokens or 0
         output_tokens = usage.output_tokens
         if usage.input_tokens + output_tokens + thought <= usage.total_tokens:
@@ -627,7 +628,7 @@ class AcpTurn(AbstractHarnessPlugin):
             parent_agent_instance_id=ledger.instance.parent_agent_instance_id,
             delegation_id=ledger.instance.delegation_id,
             source="acp",
-            model_name=model if isinstance(model, str) else None,
+            model_name=acp_current_model_id(runtime),
             provider_name=self.resource.name,
             response_state="incomplete" if response.stop_reason == "cancelled" else "complete",
             outcome="cancelled" if response.stop_reason == "cancelled" else "completed",
@@ -826,7 +827,13 @@ class AcpTurn(AbstractHarnessPlugin):
                         saved_session_id=recovering,
                         discovery=scope,
                     )
-                    if self.prewarm or (saved is not None and saved.options):
+                    # Antigravity can announce its model after session/new. Other fresh peers need
+                    # not advertise one, so only wait for them on prewarm or option restoration.
+                    if (
+                        self.prewarm
+                        or (saved is not None and saved.options)
+                        or (opened_fresh_session and self.resource.preset == "antigravity")
+                    ):
                         await runtime.wait_for_model_option(MODEL_OPTION_GRACE_SECONDS)
                     if saved is not None:
                         strict = saved.explicit_options if not self.prewarm else frozenset()

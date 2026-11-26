@@ -187,6 +187,15 @@ def local_transport(
     return LocalStdioTransport(executable, cwd, tuple(arguments), environment=environment)
 
 
+def acp_current_model_id(runtime: AcpSessionRuntime) -> str | None:
+    # The runtime normalizes the legacy models state into config_options as a fallback.
+    for option in runtime.config_options:
+        if option.category == "model" or option.id == "model":
+            value = option.current_value
+            return (value.strip() or None) if isinstance(value, str) else None
+    return None
+
+
 def acp_options(runtime: AcpSessionRuntime) -> tuple[AcpOption, ...]:
     return tuple(
         AcpOption(
