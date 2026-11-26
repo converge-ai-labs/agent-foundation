@@ -203,14 +203,18 @@ it.each([false, true])("saves preset edits (Composer %s)", async (composer) => {
   ).toBe(true);
   expect(screen.getByRole("combobox", { name: "Model" })).toBeTruthy();
   if (composer) {
-    await user.click(screen.getByRole("combobox", { name: "Environment" }));
+    await user.click(
+      screen.getByRole("combobox", { name: "Default environment" }),
+    );
     const shared = await screen.findByRole("option", {
       name: "Team project",
     });
     expect(screen.queryByRole("option", { name: "Private target" })).toBeNull();
     await user.click(shared);
   } else {
-    expect(screen.queryByRole("combobox", { name: "Environment" })).toBeNull();
+    expect(
+      screen.queryByRole("combobox", { name: "Default environment" }),
+    ).toBeNull();
   }
   await user.clear(instructions);
   await user.type(instructions, "New supplement.");

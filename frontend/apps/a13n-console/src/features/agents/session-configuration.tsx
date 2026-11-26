@@ -5,6 +5,7 @@ import { SessionPolicyFields } from "../credentials/session-policy-fields";
 import type { AgentConfig } from "./configuration";
 import shared from "../../shared/shared.module.css";
 import styles from "../credentials/credentials.module.css";
+import agentStyles from "./agents.module.css";
 
 export function AgentSessionConfiguration({
   value,
@@ -21,12 +22,14 @@ export function AgentSessionConfiguration({
   const [open, setOpen] = useState(!!value);
   return (
     <DisclosureSection
+      className={agentStyles.environmentSession}
       title={t("Default Session configuration")}
+      summary={value ? t("Configured") : t("Defaults")}
       open={open || invalid}
       onOpenChange={setOpen}
     >
       <div className={shared.stack}>
-        <p>
+        <p className={agentStyles.environmentSessionHint}>
           {t(
             "Used only when creating a new primary environment binding. Existing conversation bindings keep their own configuration.",
           )}
@@ -52,7 +55,9 @@ export function AgentSessionConfiguration({
           </>
         ) : (
           <>
-            <p>{t("No Session defaults configured.")}</p>
+            <p className={agentStyles.environmentSessionHint}>
+              {t("No Session defaults configured.")}
+            </p>
             {!readOnly && (
               <Button
                 type="button"

@@ -11,6 +11,7 @@ import {
   TooltipPopup,
   TooltipTrigger,
 } from "a13n-ui";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -38,6 +39,7 @@ export function AgentEnvironment({
   sessionConfiguration,
   onSessionConfigurationChange,
   sessionInvalid = false,
+  mark,
 }: {
   value: string | null;
   environmentId: string | null;
@@ -54,22 +56,23 @@ export function AgentEnvironment({
     value: AgentConfig["default_session_configuration"],
   ) => void;
   sessionInvalid?: boolean;
+  mark?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const preparationOptions = [
-    {
+  const preparationOptions = {
+    on_demand: {
       value: "on_demand",
       icon: CursorClickIcon,
       title: t("On demand"),
       description: t("Prepare when a tool first uses the environment."),
     },
-    {
+    warmup: {
       value: "warmup",
       icon: LightningIcon,
       title: t("Warm up in parallel"),
       description: t("Prepare the environment while inference runs."),
     },
-    {
+    eager: {
       value: "eager",
       icon: HourglassMediumIcon,
       title: t("Wait before inference"),
@@ -77,7 +80,8 @@ export function AgentEnvironment({
         "Wait until the environment is ready before starting inference.",
       ),
     },
-  ] as const;
+  } as const;
+  const selectedOption = preparationOptions[preparation];
   const client = useClient();
   const { workspace, basePath } = useWorkspace();
   const types = useEnvironmentTypes();
@@ -134,6 +138,7 @@ export function AgentEnvironment({
   return (
     <Section
       title={t("Environment")}
+      actions={mark}
       titleActions={
         <OptionsRefresh
           onRefresh={() =>
@@ -157,78 +162,94 @@ export function AgentEnvironment({
             )
       }
     >
-      <ChoiceField
-        label={t("Environment")}
-        hideLabel
-        disabled={disabled}
-        readOnly={readOnly}
-        value={environmentId ? `instance:${environmentId}` : (value ?? "none")}
-        onValueChange={(selected) => {
-          if (selected.startsWith("instance:"))
-            onEnvironmentChange(selected.slice("instance:".length));
-          else onChange(selected === "none" ? null : selected);
-        }}
-        options={[
-          {
-            value: "none",
-            label: t("None"),
-          },
-          ...instances.map((item) => ({
-            value: `instance:${item.id}`,
-            label: item.name,
-            group: t("Existing environment instances"),
-          })),
-          ...(environmentId &&
-          !instances.some((item) => item.id === environmentId)
-            ? [{ value: `instance:${environmentId}`, label: environmentId }]
-            : []),
-          ...choices.map((item) => ({
-            ...item,
-            group: t("Environment templates"),
-          })),
-          ...(value && !templates.data?.some((item) => item.id === value)
-            ? [{ value, label: value }]
-            : []),
-        ]}
-      />
-      <SettingsRow
-        label={t("Environment preparation")}
-        stackOnNarrow={false}
-        className="py-0"
-      >
-        <div
-          className={styles.toolsetPermissions}
-          role="group"
-          aria-label={t("Environment preparation")}
+      <div className={styles.environmentCard}>
+        <ChoiceField
+          label={t("Default environment")}
+          description={
+            composer
+              ? t("Workspace default when a thread has no primary environment.")
+              : t("Used when a session has no primary environment.")
+          }
+          data-field-layout="setting"
+          disabled={disabled}
+          readOnly={readOnly}
+          value={
+            environmentId ? `instance:${environmentId}` : (value ?? "none")
+          }
+          onValueChange={(selected) => {
+            if (selected.startsWith("instance:"))
+              onEnvironmentChange(selected.slice("instance:".length));
+            else onChange(selected === "none" ? null : selected);
+          }}
+          options={[
+            {
+              value: "none",
+              label: t("None"),
+            },
+            ...instances.map((item) => ({
+              value: `instance:${item.id}`,
+              label: item.name,
+              group: t("Existing environment instances"),
+            })),
+            ...(environmentId &&
+            !instances.some((item) => item.id === environmentId)
+              ? [{ value: `instance:${environmentId}`, label: environmentId }]
+              : []),
+            ...choices.map((item) => ({
+              ...item,
+              group: t("Environment templates"),
+            })),
+            ...(value && !templates.data?.some((item) => item.id === value)
+              ? [{ value, label: value }]
+              : []),
+          ]}
+        />
+        <SettingsRow
+          label={t("Environment preparation")}
+          description={`${selectedOption.title} · ${selectedOption.description}`}
+          stackOnNarrow={false}
+          className={styles.environmentPreparation}
         >
-          {preparationOptions.map(
-            ({ value, icon: Icon, title, description }) => (
-              <Tooltip key={value}>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      disabled={disabled || readOnly || preparationReadOnly}
-                      className={styles.toolsetPermission}
-                      aria-label={title}
-                      aria-pressed={preparation === value}
-                      onClick={() => onPreparationChange(value)}
-                    />
-                  }
-                >
-                  <Icon size={15} aria-hidden="true" />
-                </TooltipTrigger>
-                <TooltipPopup>
-                  <span className={styles.toolsetPermissionTip}>
-                    <strong>{title}</strong>
-                    {description}
-                  </span>
-                </TooltipPopup>
-              </Tooltip>
-            ),
-          )}
-        </div>
-      </SettingsRow>
+          <div
+            className={styles.toolsetPermissions}
+            role="group"
+            aria-label={t("Environment preparation")}
+          >
+            {Object.values(preparationOptions).map(
+              ({ value, icon: Icon, title, description }) => (
+                <Tooltip key={value}>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        disabled={disabled || readOnly || preparationReadOnly}
+                        className={styles.toolsetPermission}
+                        aria-label={title}
+                        aria-pressed={preparation === value}
+                        onClick={() => onPreparationChange(value)}
+                      />
+                    }
+                  >
+                    <Icon size={15} aria-hidden="true" />
+                  </TooltipTrigger>
+                  <TooltipPopup side="bottom" align="end">
+                    <span className={styles.toolsetPermissionTip}>
+                      <strong>{title}</strong>
+                      {description}
+                    </span>
+                  </TooltipPopup>
+                </Tooltip>
+              ),
+            )}
+          </div>
+        </SettingsRow>
+        <AgentSessionConfiguration
+          value={sessionConfiguration}
+          onChange={onSessionConfigurationChange}
+          readOnly={composer || readOnly || disabled}
+          invalid={sessionInvalid}
+        />
+      </div>
       <ErrorNotice
         error={environments.error}
         retry={() => void environments.refetch()}
@@ -242,12 +263,6 @@ export function AgentEnvironment({
         retry={() => void providers.refetch()}
       />
       <ErrorNotice error={types.error} retry={() => void types.refetch()} />
-      <AgentSessionConfiguration
-        value={sessionConfiguration}
-        onChange={onSessionConfigurationChange}
-        readOnly={composer || readOnly || disabled}
-        invalid={sessionInvalid}
-      />
     </Section>
   );
 }

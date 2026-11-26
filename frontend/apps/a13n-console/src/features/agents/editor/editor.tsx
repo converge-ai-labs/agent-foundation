@@ -344,6 +344,7 @@ export function AgentEditor({
               }
             />
             <AgentEnvironment
+              mark={mark("environment")}
               preparation={draft.environmentPreparation}
               onPreparationChange={draft.setEnvironmentPreparation}
               preparationReadOnly={!!preset}
