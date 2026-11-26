@@ -24,6 +24,8 @@ class FailureSummary(BaseModel):
 
 
 class RunSummary(BaseModel):
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
+    trigger_app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     schedule_origin: ScheduleOrigin | None = None
     view: Literal["compact"] = "compact"
     id: str
@@ -91,6 +93,7 @@ def run_summary(value: RunView, agent_name: str | None = None) -> RunSummary:
 
 
 class EntrySummary(BaseModel):
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     view: Literal["compact"] = "compact"
     id: str
     thread_id: str

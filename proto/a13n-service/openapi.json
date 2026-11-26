@@ -8315,6 +8315,18 @@
             ],
             "title": "Agent Revision Id"
           },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "assigned_run_id": {
             "anyOf": [
               {
@@ -21852,7 +21864,6 @@
         "type": "object"
       },
       "RunListItem": {
-        "description": "Run discovery metadata. Full input, results and execution settings belong to the Run detail read.",
         "properties": {
           "agent_id": {
             "title": "Agent Id",
@@ -21868,6 +21879,18 @@
               }
             ],
             "title": "Agent Revision Id"
+          },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
           },
           "attempts": {
             "title": "Attempts",
@@ -21966,6 +21989,18 @@
           },
           "trigger": {
             "$ref": "#/components/schemas/Trigger"
+          },
+          "trigger_app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "Trigger App Id"
           },
           "updated_at": {
             "format": "date-time",
@@ -22322,6 +22357,18 @@
             ],
             "title": "Agent Revision Id"
           },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "attempts": {
             "title": "Attempts",
             "type": "integer"
@@ -22476,6 +22523,18 @@
           },
           "trigger": {
             "$ref": "#/components/schemas/Trigger"
+          },
+          "trigger_app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "Trigger App Id"
           },
           "updated_at": {
             "format": "date-time",
@@ -28036,6 +28095,18 @@
             ],
             "title": "Agent Revision Id"
           },
+          "app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "App Id"
+          },
           "attempts": {
             "title": "Attempts",
             "type": "integer"
@@ -28153,6 +28224,18 @@
           },
           "trigger": {
             "$ref": "#/components/schemas/Trigger"
+          },
+          "trigger_app_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "readOnly": true,
+            "title": "Trigger App Id"
           },
           "unpriced_requests": {
             "title": "Unpriced Requests",

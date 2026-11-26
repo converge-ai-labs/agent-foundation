@@ -144,7 +144,7 @@ async def resolve_target(
     if target.thread_id is not None:
         thread = await get_thread(session, scope.workspace_id, target.thread_id)
         require_open(thread)
-        if provenance and (thread.app_id, thread.app_context) != (provenance.app_id, provenance.app_context):
+        if provenance and not provenance.matches_owner(thread):
             raise conflict("thread", thread.id, "app_owner_mismatch")
         if target.session_id is not None and target.session_id != thread.session_id:
             raise invalid("target.session_id", "thread_session_mismatch")
@@ -152,9 +152,7 @@ async def resolve_target(
     if target.session_id is not None:
         owner = await find_session(session, scope.workspace_id, target.session_id)
         require_conversation(owner)
-        if (owner.app_id, owner.app_context) != (
-            (provenance.app_id, provenance.app_context) if provenance else (None, None)
-        ):
+        if not (provenance.matches_owner(owner) if provenance else owner.app_id is None):
             raise conflict("session", owner.id, "app_managed_session" if provenance is None else "app_owner_mismatch")
     else:
         owner = new_session(scope.organization_id, scope.workspace_id, actor.id, provenance=provenance)

@@ -187,12 +187,7 @@ class EnvironmentRow(AppOwned, Stamped, Base):
     operation_id: Mapped[str | None]
     operation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Hook progress is scoped to the current operation ID, not the current claimant.
-    operation_hooks_completed: Mapped[list[str] | None] = mapped_column(JSONB(none_as_null=True))
-    operation_provider_completed: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
-    operation_live_delete: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
-    operation_hook_blocked: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
-    operation_delete_reason: Mapped[str | None]
-    operation_hook_active: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
+    operation_progress: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     # The bound of the provider and hook work currently claimed.
     operation_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Pending operations yield their claim and pace both Worker and Control continuation.

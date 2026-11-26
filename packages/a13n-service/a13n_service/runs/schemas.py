@@ -738,6 +738,8 @@ class RunInputPreview(BaseModel):
 
 
 class RunListItem(BaseModel):
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
+    trigger_app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     """Run discovery metadata. Full input, results and execution settings belong to the Run detail read."""
 
     model_config = ConfigDict(from_attributes=True)

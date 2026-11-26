@@ -275,7 +275,7 @@ async def stop_environment(
             raise conflict("environment", environment.id, "stop_unsupported")
         if await session.scalar(select(in_use(environment.id))):
             raise conflict("environment", environment.id, "in_use")
-        await begin(session, environment, "stopping")
+        await begin(session, environment, "stopping", environment_hooks=runtime.environment_hooks)
         await session.flush()
         audit(session, actor, environment, "stop")
         return environment_view(environment)
@@ -326,9 +326,7 @@ async def delete_environment(
             environment.status = "deleted"
             environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
             environment.handle = environment.failure = environment.token = None
-            environment.operation_hooks_completed = environment.operation_delete_reason = None
-            environment.operation_provider_completed = environment.operation_live_delete = False
-            environment.operation_hook_active = environment.operation_hook_blocked = False
+            environment.operation_progress = None
             publish_event(session, runtime, environment, "deleted", reason="explicit")
             if environment.kind == "managed":
                 await retire_environment(session, environment.id)
@@ -340,7 +338,7 @@ async def delete_environment(
         elif not supports(runtime.registry.get("environment", environment.provider_identity["type"]), "deleting"):
             raise conflict("environment", environment.id, "destroy_unsupported")
         else:
-            await begin(session, environment, "deleting")
+            await begin(session, environment, "deleting", environment_hooks=runtime.environment_hooks)
         await session.flush()
         audit(session, actor, environment, "delete")
         return environment_view(environment)

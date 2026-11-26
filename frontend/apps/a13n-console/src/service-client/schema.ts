@@ -8493,6 +8493,8 @@ export interface components {
       agent_id: string | null;
       /** Agent Revision Id */
       agent_revision_id: string | null;
+      /** App Id */
+      readonly app_id?: string | null;
       /** Assigned Run Id */
       assigned_run_id: string | null;
       /** Child Run Id */
@@ -13405,15 +13407,14 @@ export interface components {
         [key: string]: string;
       };
     };
-    /**
-     * RunListItem
-     * @description Run discovery metadata. Full input, results and execution settings belong to the Run detail read.
-     */
+    /** RunListItem */
     RunListItem: {
       /** Agent Id */
       agent_id: string;
       /** Agent Revision Id */
       agent_revision_id: string | null;
+      /** App Id */
+      readonly app_id?: string | null;
       /** Attempts */
       attempts: number;
       /**
@@ -13445,6 +13446,8 @@ export interface components {
       /** Thread Id */
       thread_id: string;
       trigger: components["schemas"]["Trigger"];
+      /** Trigger App Id */
+      readonly trigger_app_id?: string | null;
       /**
        * Updated At
        * Format: date-time
@@ -13536,6 +13539,8 @@ export interface components {
       agent_name: string | null;
       /** Agent Revision Id */
       agent_revision_id: string | null;
+      /** App Id */
+      readonly app_id?: string | null;
       /** Attempts */
       attempts: number;
       /**
@@ -13594,6 +13599,8 @@ export interface components {
       /** Thread Id */
       thread_id: string;
       trigger: components["schemas"]["Trigger"];
+      /** Trigger App Id */
+      readonly trigger_app_id?: string | null;
       /**
        * Updated At
        * Format: date-time
@@ -15328,6 +15335,8 @@ export interface components {
       agent_id: string;
       /** Agent Revision Id */
       agent_revision_id: string | null;
+      /** App Id */
+      readonly app_id?: string | null;
       /** Attempts */
       attempts: number;
       /** Cost */
@@ -15365,6 +15374,8 @@ export interface components {
       /** Thread Id */
       thread_id: string;
       trigger: components["schemas"]["Trigger"];
+      /** Trigger App Id */
+      readonly trigger_app_id?: string | null;
       /** Unpriced Requests */
       unpriced_requests: number;
       /**

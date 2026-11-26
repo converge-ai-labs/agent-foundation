@@ -1,5 +1,7 @@
 """App ownership carried by native Service rows."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from sqlalchemy import CheckConstraint, String
@@ -36,6 +38,12 @@ class AppProvenance:
         ):
             raise invalid("app_context", "must contain at most 16 bounded string pairs")
         object.__setattr__(self, "app_context", dict(context))
+
+    def matches_owner(self, owner: AppOwned) -> bool:
+        """An omitted context leaves the existing attribution in place."""
+        return owner.app_id == self.app_id and (
+            self.app_context is None or self.app_context == (owner.app_context or {})
+        )
 
 
 class AppOwned:

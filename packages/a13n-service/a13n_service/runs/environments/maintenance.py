@@ -57,7 +57,7 @@ async def maintain_environments(runtime: Runtime, *, owner: str) -> None:
     due = select(EnvironmentRow.id).where(
         # Literal, so the partial index on unfinished operations applies.
         text(f"environments.status IN {OPERATIONS}"),
-        EnvironmentRow.operation_hook_blocked.is_(False),
+        EnvironmentRow.operation_progress["hook_blocked"].as_boolean().is_not(True),
         # Keep historical outcomes, but this provider cannot dispatch or reconcile them anymore.
         EnvironmentRow.failure["code"].astext.is_distinct_from(MANUAL_CLOUDFLARE_UNSUPPORTED),
         # Settled preparation failures wait for retirement, not another dispatch.
@@ -193,12 +193,12 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
                 environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
                 environment.next_operation_at = None
                 environment.operation_unsettled = False
-                environment.operation_hooks_completed = environment.operation_delete_reason = None
-                environment.operation_provider_completed = environment.operation_live_delete = False
-                environment.operation_hook_active = environment.operation_hook_blocked = False
+                environment.operation_progress = None
                 publish_event(session, runtime, environment, "deleted", reason=reason)
             else:
-                await begin(session, environment, phase, delete_reason=reason)
+                await begin(
+                    session, environment, phase, environment_hooks=runtime.environment_hooks, delete_reason=reason
+                )
             record(
                 session,
                 WorkspaceScope(environment.organization_id, environment.workspace_id),

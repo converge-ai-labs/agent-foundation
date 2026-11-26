@@ -38,7 +38,7 @@ async def ensure_schedule_session(
     if existing_session_id is not None:
         row = await find_session(session, workspace_id, existing_session_id)
         require_conversation(row)
-        if (row.app_id, row.app_context) != (app_id, app_context):
+        if not provenance.matches_owner(row):
             raise conflict("session", row.id, "app_owner_mismatch")
         return row.id
     body = session_create

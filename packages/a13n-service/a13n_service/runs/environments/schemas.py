@@ -94,6 +94,19 @@ class Handle(BaseModel):
         return bool(self.recipe.get("desktop") and self.recipe.get("desktop_assistance"))
 
 
+type DeleteReason = Literal["explicit", "idle", "preparation_failed", "replaced"]
+
+
+class OperationProgress(BaseModel):
+    """Durable hook and provider progress for the current Environment operation."""
+
+    hooks_completed: tuple[str, ...] = ()
+    provider_completed: bool = False
+    hook_blocked: bool = False
+    hook_active: bool = False
+    delete_reason: DeleteReason | None = None
+
+
 class EnvironmentFailure(BaseModel):
     """The last error of the outstanding operation or, on a ready instance, of its last renewal.
 

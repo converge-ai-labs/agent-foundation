@@ -4,7 +4,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from a13n_envd_client.eip.v1 import ProcessInfo, SessionDescriptor
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
+from a13n_harness.environment.models import (
+    ENVIRONMENT_ACTION_DISPATCH,
+    EnvironmentAction,
+    EnvironmentError,
+    EnvironmentPermissionSet,
+)
 from a13n_harness.environment.process_recovery import ShellExecutionState
 from sqlalchemy import select
 
@@ -98,17 +103,10 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
                         environment.kind != "managed"
                         or request.mount_name != "lifecycle"
                         or any(
-                            not action.value.startswith(
-                                (
-                                    "environment.file.",
-                                    "environment.shell.",
-                                    "environment.process.",
-                                    "environment.output.",
-                                )
-                            )
+                            ENVIRONMENT_ACTION_DISPATCH[action].family not in {"files", "shell", "processes", "outputs"}
                             for action in actions
                         )
-                        or request.method == "computer.close_observation"
+                        or request.method.startswith("computer.")
                     ):
                         raise LeaseLost()
                     workspace_id = environment.workspace_id

@@ -397,9 +397,7 @@ async def prepare_thread(
     if body.session_id is not None:
         owner = await find_session(session, scope.workspace_id, body.session_id)
         require_conversation(owner)
-        if (owner.app_id, owner.app_context) != (
-            (provenance.app_id, provenance.app_context) if provenance else (None, None)
-        ):
+        if not (provenance.matches_owner(owner) if provenance else owner.app_id is None):
             raise conflict("session", owner.id, "app_managed_session" if provenance is None else "app_owner_mismatch")
     else:
         owner = new_session(scope.organization_id, scope.workspace_id, actor.id, body.session, provenance=provenance)

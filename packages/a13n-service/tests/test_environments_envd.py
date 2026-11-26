@@ -1717,7 +1717,7 @@ async def test_managed_outbound_uses_existing_identity_and_executes_without_http
             assert context.phase == "after_create" and context.owner_app_id is None
             async with short_session(service.runtime.storage) as session:
                 row = await session.get_one(EnvironmentRow, context.environment_id)
-                assert row.status == "creating" and row.operation_hook_active
+                assert row.status == "creating" and row.operation_progress["hook_active"]
                 assert await session.scalar(select(func.count()).select_from(RunRow)) == 0
 
             async def content():

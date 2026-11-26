@@ -16,6 +16,7 @@ import hmac
 import secrets
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
+from time import monotonic
 from typing import Literal
 
 import anyio
@@ -79,10 +80,16 @@ from a13n_service.runs.environments.app_hooks import invoke
 from a13n_service.runs.environments.clients.routing import LifecycleCaller
 from a13n_service.runs.environments.clients.worker import Target as RoutedTarget
 from a13n_service.runs.environments.egress.storage import retire_environment
-from a13n_service.runs.environments.events import DeleteReason
 from a13n_service.runs.environments.events import publish_after_commit as publish_event
 from a13n_service.runs.environments.monitoring import launch
-from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
+from a13n_service.runs.environments.schemas import (
+    Certainty,
+    DeleteReason,
+    EnvironmentFailure,
+    Handle,
+    MetricsApplication,
+    OperationProgress,
+)
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ToolExecutionRow
@@ -218,6 +225,7 @@ async def begin(
     environment: EnvironmentRow,
     phase: Phase,
     *,
+    environment_hooks: tuple[tuple[str, EnvironmentLifecycleHook], ...] = (),
     delete_reason: DeleteReason = "explicit",
 ) -> None:
     """Start a new operation. The caller holds the row lock and has proved the previous one can no longer act."""
@@ -230,12 +238,18 @@ async def begin(
                     or envd_policy.selected_version(handle.envd_version)
                 }
             ).model_dump(mode="json")
-    environment.operation_delete_reason = delete_reason if phase == "deleting" else None
-    environment.operation_live_delete = phase == "deleting" and environment.status == "ready"
-    environment.operation_hooks_completed = None
-    environment.operation_provider_completed = environment.operation_hook_blocked = (
-        environment.operation_hook_active
-    ) = False
+    hook_active = (
+        phase in {"stopping", "deleting"}
+        and environment.status == "ready"
+        and any(_matches_hook(environment, phase, app_id, hook) for app_id, hook in environment_hooks)
+    )
+    environment.operation_progress = (
+        OperationProgress(
+            hook_active=hook_active, delete_reason=delete_reason if phase == "deleting" else None
+        ).model_dump(mode="json", exclude_defaults=True)
+        if hook_active or phase == "deleting"
+        else None
+    )
     environment.status = phase
     environment.generation += 1
     environment.operation_id = new_object_id("envoper")
@@ -397,6 +411,7 @@ class Operation:
     # An earlier dispatch may have taken effect, so failing before this one dispatches settles nothing.
     unresolved: bool
     seconds: float
+    dispatch_before: float
     # The provider credential's version now, and whether it changed since that credential last reached the instance.
     credential_version: str | None
     credential_changed: bool
@@ -438,10 +453,11 @@ UNSEEN = Fault(
 
 def confirmed_loss(environment: EnvironmentRow) -> bool:
     failure = environment.failure
+    progress = environment.operation_progress or {}
     return (
         settled(environment)
-        and not environment.operation_provider_completed
-        and not environment.operation_hook_blocked
+        and not progress.get("provider_completed")
+        and not progress.get("hook_blocked")
         and environment.template_id is not None
         and environment.owner_principal_id is None
         and environment.status not in {"deleting", "deleted"}
@@ -608,6 +624,10 @@ async def _refusal(
     return None
 
 
+def _matches_hook(environment: EnvironmentRow, phase: Phase, app_id: str, hook: EnvironmentLifecycleHook) -> bool:
+    return hook.phase == _HOOK_PHASES[phase] and (hook.scope == "organization" or app_id == environment.app_id)
+
+
 async def _plan_hooks(
     runtime: Runtime,
     session: AsyncSession,
@@ -615,21 +635,16 @@ async def _plan_hooks(
     phase: Phase,
     provider: ResolvedProvider,
     handle: Handle,
-    *,
-    unresolved: bool,
+    progress: OperationProgress,
 ) -> HookPlan | None:
-    if not runtime.environment_hooks or not provider.enabled:
+    if not provider.enabled:
         return None
-    if phase in {"stopping", "deleting"} and (unresolved or handle.state is None):
-        return None
-    if phase == "deleting" and not environment.operation_live_delete:
+    if phase in {"stopping", "deleting"} and (not progress.hook_active or handle.state is None):
         return None
     callbacks = tuple(
         (app_id, hook)
         for app_id, hook in runtime.environment_hooks
-        if app_id not in (environment.operation_hooks_completed or ())
-        and hook.phase == _HOOK_PHASES[phase]
-        and (hook.scope == "organization" or app_id == environment.app_id)
+        if app_id not in progress.hooks_completed and _matches_hook(environment, phase, app_id, hook)
     )
     if not callbacks:
         return None
@@ -679,8 +694,11 @@ async def claim_locked(
     phase = None if environment is None else _PHASES.get(environment.status)
     if environment is None or phase is None or environment.operation_id is None:
         return None
-    if environment.operation_hook_blocked:
+    progress = OperationProgress.model_validate(environment.operation_progress or {})
+    if progress.hook_blocked:
         return None
+    # Anchor before sampling database time so the local budget cannot outlast the durable lease.
+    claimed_at = monotonic()
     current = await now(session)
     if environment.next_operation_at is not None and environment.next_operation_at > current:
         return None
@@ -699,7 +717,8 @@ async def claim_locked(
     failure = environment.failure or {}
     if failure.get("code") == MANUAL_CLOUDFLARE_UNSUPPORTED:
         return None
-    pre_hook_only = environment.operation_hook_active and phase in {"stopping", "deleting"}
+    pre_hook = phase in {"stopping", "deleting"}
+    pre_hook_only = progress.hook_active and pre_hook
     unresolved = not settled(environment) and not pre_hook_only
     if (
         phase in {"creating", "starting"}
@@ -770,9 +789,12 @@ async def claim_locked(
     assert provider is not None
     token = secrets.token_urlsafe(32)
     handle = Handle.model_validate(environment.handle)
-    hooks = await _plan_hooks(runtime, session, environment, phase, provider, handle, unresolved=unresolved)
+    hooks = await _plan_hooks(runtime, session, environment, phase, provider, handle, progress)
     budget = sum(hook.timeout + HOOK_CLEANUP_SECONDS for _, hook in hooks.callbacks) if hooks else 0
-    environment.operation_hook_active = hooks is not None and phase in {"stopping", "deleting"}
+    hook_active = hooks is not None and (pre_hook or progress.provider_completed)
+    if progress.hook_active != hook_active:
+        progress.hook_active = hook_active
+        environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
     deadline = current + timedelta(seconds=seconds + budget)
     environment.operation_deadline = deadline
     environment.lease_owner, environment.lease_token_hash = owner, secret_hash(token)
@@ -794,8 +816,9 @@ async def claim_locked(
         ),
         unresolved=unresolved,
         seconds=seconds,
+        dispatch_before=claimed_at + seconds + budget,
         hooks=hooks,
-        provider_completed=environment.operation_provider_completed,
+        provider_completed=progress.provider_completed,
         credential_version=version,
         credential_changed=changed,
         metrics=launch.restore(runtime.keys, environment) if phase == "creating" else None,
@@ -894,10 +917,11 @@ async def _hook_progress(
             or (environment.lease_expires_at is None or environment.lease_expires_at <= await now(session))
         ):
             return False
+        progress = OperationProgress.model_validate(environment.operation_progress or {})
         if active is not None:
-            environment.operation_hook_active = active
+            progress.hook_active = active
         if completed_app is not None:
-            environment.operation_hooks_completed = [*(environment.operation_hooks_completed or []), completed_app]
+            progress.hooks_completed = (*progress.hooks_completed, completed_app)
         if provider_receipt is not None:
             handle = Handle.model_validate(environment.handle)
             environment.handle = handle.model_copy(
@@ -906,8 +930,9 @@ async def _hook_progress(
                     "credential_version": operation.credential_version,
                 }
             ).model_dump(mode="json")
-            environment.operation_provider_completed = True
+            progress.provider_completed = progress.hook_active = True
             environment.operation_unsettled = False
+        environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
         return True
 
 
@@ -915,13 +940,14 @@ async def _execute_hooks(runtime: Runtime, operation: Operation, state: Environm
     plan = operation.hooks
     if plan is None:
         return None
-    if not await _hook_progress(runtime, operation, active=True):
-        return Outcome(state, pending=True)
     caller = LifecycleCaller(
         operation_id=operation.operation_id, generation=operation.generation, token=operation.token
     )
     phase = _HOOK_PHASES[operation.phase]
-    for app_id, hook in plan.callbacks:
+    for index, (app_id, hook) in enumerate(plan.callbacks, start=1):
+        remaining = operation.dispatch_before - monotonic()
+        if remaining <= 0:
+            return Outcome(state, pending=True, settled=True)
         execution = None
 
         async def call(hook: EnvironmentLifecycleHook = hook, app_id: str = app_id) -> None:
@@ -965,7 +991,7 @@ async def _execute_hooks(runtime: Runtime, operation: Operation, state: Environm
                 call,
                 app_id=app_id,
                 phase=phase,
-                timeout=hook.timeout,
+                timeout=min(hook.timeout, remaining),
                 target_id=operation.environment_id,
                 abortable=operation.phase != "deleting",
             )
@@ -974,10 +1000,13 @@ async def _execute_hooks(runtime: Runtime, operation: Operation, state: Environm
         finally:
             if execution is not None:
                 await close(execution)
-        if succeeded and not await _hook_progress(runtime, operation, completed_app=app_id):
+        if monotonic() >= operation.dispatch_before:
+            return Outcome(state, pending=True, settled=True)
+        last_pre_hook = operation.phase in {"stopping", "deleting"} and index == len(plan.callbacks)
+        if (succeeded or last_pre_hook) and not await _hook_progress(
+            runtime, operation, active=False if last_pre_hook else None, completed_app=app_id if succeeded else None
+        ):
             return Outcome(state, pending=True)
-    if not await _hook_progress(runtime, operation, active=False):
-        return Outcome(state, pending=True)
     return None
 
 
@@ -1121,8 +1150,8 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
         current = await now(session)
         environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
         environment.operation_deadline = environment.next_operation_at = None
-        hook_active = environment.operation_hook_active
-        environment.operation_hook_active = False
+        progress = OperationProgress.model_validate(environment.operation_progress or {})
+        pre_hook_active = progress.hook_active and operation.phase in {"stopping", "deleting"}
         handle = Handle.model_validate(environment.handle)
         result = "pending" if outcome.pending else "failed" if outcome.fault is not None else "completed"
         certainty = outcome.fault.certainty if outcome.fault is not None else "none"
@@ -1138,6 +1167,8 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
 
         after_commit(session, observed)
         if outcome.pending:
+            progress.hook_active = pre_hook_active
+            environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
             environment.next_operation_at = current + timedelta(seconds=outcome.retry_after_seconds)
             environment.operation_unsettled = not outcome.settled
             if outcome.state is not None:
@@ -1148,15 +1179,11 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             preparation_expired(environment, current)
             return
         if outcome.fault is not None:
-            environment.operation_hook_blocked = outcome.hook_abort and outcome.fault.permanent
-            # Keep a pre-hook carrier eligible between attempts, without a live execution lease.
-            environment.operation_hook_active = (
-                hook_active
-                and operation.phase in {"stopping", "deleting"}
-                and (outcome.hook_abort or outcome.interrupted)
-                and not environment.operation_hook_blocked
-            )
-            if not environment.operation_provider_completed:
+            progress.hook_blocked = outcome.hook_abort and outcome.fault.permanent
+            # Retain the pre-hook carrier between retry attempts, but only a live claim authorizes commands.
+            progress.hook_active = pre_hook_active and not progress.hook_blocked
+            environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
+            if not progress.provider_completed:
                 environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
             preparing = (
                 (handle.e2b_desktop_template is not None and handle.recipe.get("template") == "auto")
@@ -1167,9 +1194,9 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             new_loss = outcome.fault is LOST and (environment.failure or {}).get("code") != LOST.code
             fault = replace(outcome.fault, certainty="not_dispatched") if preparing else outcome.fault
             if outcome.interrupted:
-                if environment.operation_provider_completed:
+                if progress.provider_completed:
                     fault = replace(fault, certainty="known")
-                elif hook_active and operation.phase in {"stopping", "deleting"}:
+                elif pre_hook_active:
                     fault = replace(fault, certainty="not_dispatched")
             record_failure(environment, fault, current, unresolved=operation.unresolved and not preparing)
             preparation_expired(environment, current)
@@ -1184,6 +1211,8 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
         environment.operation_unsettled = False
         environment.failure = None
         if preparation_expired(environment, current):
+            progress.hook_active = False
+            environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
             environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
             return
         reached = _REACHES[operation.phase]
@@ -1193,17 +1222,11 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
                 session, runtime, environment, "ready", origin="create" if operation.phase == "creating" else "start"
             )
         elif reached == "deleted":
-            publish_event(
-                session, runtime, environment, "deleted", reason=environment.operation_delete_reason or "explicit"
-            )
+            publish_event(session, runtime, environment, "deleted", reason=progress.delete_reason or "explicit")
         else:
             publish_event(session, runtime, environment, "stopped")
-        environment.operation_delete_reason = None
         environment.operation_id = environment.operation_started_at = None
-        environment.operation_hooks_completed = None
-        environment.operation_provider_completed = environment.operation_live_delete = (
-            environment.operation_hook_blocked
-        ) = False
+        environment.operation_progress = None
         environment.failure = None
         if operation.phase == "creating" and environment.metrics_application is not None:
             applied = MetricsApplication.model_validate(environment.metrics_application)
@@ -1327,6 +1350,8 @@ async def advance(runtime: Runtime, environment_id: str, *, owner: str) -> None:
 
 async def dispatch(runtime: Runtime, operation: Operation) -> None:
     """Perform a claimed operation here and publish its fenced outcome without retaining a transaction."""
+    if monotonic() >= operation.dispatch_before:
+        return
     try:
         outcome = await perform(runtime, operation)
     except BaseException as error:

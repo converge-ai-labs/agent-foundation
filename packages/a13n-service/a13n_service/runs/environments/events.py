@@ -17,7 +17,6 @@ GROUP = "a13n-app-environments"
 PUBLISH_DROPS = meter.create_counter("a13n.environment.events.publish.dropped", unit="{hint}")
 type EnvironmentKind = Literal["managed", "external", "external_http"]
 type EventKind = Literal["ready", "stopped", "deleted", "lost", "recreated"]
-type DeleteReason = Literal["explicit", "idle", "preparation_failed", "replaced"]
 
 
 class EnvironmentEvent(BaseModel):

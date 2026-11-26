@@ -1011,6 +1011,26 @@ async def test_public_threads_cannot_stamp_or_create_app_roots(service, app_runt
         session = await db.get_one(SessionRow, root.session_id)
         run = await db.get_one(RunRow, receipt.run.id)
         assert session.app_context == run.app_context == context
+
+    async def read(path, **params):
+        response = await service.client.get(f"{service.api}/{path}", params=params)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    for value in (
+        (await read("runs", thread_id=root.id))["items"][0],
+        (await read(f"threads/{root.id}/runs"))["items"][0],
+        await read(f"runs/{receipt.run.id}", view="compact"),
+    ):
+        assert value["id"] == receipt.run.id
+        assert value["app_id"] == value["trigger_app_id"] == "claw"
+        assert "app_context" not in value
+    for entry in (
+        (await read(f"threads/{root.id}/inbox", view="compact"))["items"][0],
+        await read(f"threads/{root.id}/inbox/{receipt.entry.id}", view="compact"),
+    ):
+        assert (entry["id"], entry["app_id"]) == (receipt.entry.id, "claw")
+
     path = f"{service.api}/threads"
     refused = await service.client.post(
         path, json={**message, "session_id": root.session_id}, headers=runs_kit.fresh_key()
@@ -1152,3 +1172,85 @@ async def test_app_memory_space_provenance_is_read_only(service, app_runtime):
         async with transaction(app_runtime.storage) as db:
             await db.execute(update(MemorySpaceRow).where(MemorySpaceRow.id == space_id).values(app_context=None))
     assert isinstance(rejected.value.orig, RaiseException)
+
+
+async def test_reusing_app_owned_targets_preserves_existing_context(
+    service, app_runtime, runner, scripted_model, runs_kit
+):
+    from a13n_service.app_provenance import AppProvenance
+    from a13n_service.app_sdk._access import app_actor, app_workspace
+    from a13n_service.runs.schedules import service as schedule_service
+    from a13n_service.runs.schedules.schemas import ScheduleInvocation, ScheduleTarget
+
+    await runs_kit.pause_sweeps(service)
+    workspace = service.tenant.workspace_id
+    agent = await runs_kit.create_agent(service, scripted_model)
+    message = runs_kit.message(agent, "Reuse a target")
+    context = {"instance": "shared"}
+    async with transaction(app_runtime.storage) as db:
+
+        async def ensure(existing=None, app_context=None):
+            return await schedules.ensure_schedule_session(
+                db,
+                app_runtime,
+                workspace,
+                app_id="claw",
+                principal_id=runner,
+                existing_session_id=existing,
+                session_create=SessionCreate(title="Owned Session"),
+                app_context=app_context,
+            )
+
+        existing = await ensure(app_context=context)
+        assert await ensure(existing) == await ensure(existing, context) == existing
+        empty = await ensure()
+        assert await ensure(empty, {}) == empty
+        for mismatch in ({}, {"instance": "wrong"}):
+            with pytest.raises(ServiceError) as denied:
+                await ensure(existing, mismatch)
+            assert denied.value.details["reason"] == "app_owner_mismatch"
+
+        body = threads.NewThread.model_validate({**message, "session_id": existing})
+        admission = await threads.prepare_admission(db, app_runtime, workspace, runner, app_id="claw")
+        root, receipt = await threads.create_thread_in_transaction(
+            db,
+            app_runtime,
+            admission,
+            workspace,
+            body,
+            request_key="reuse-owned-target",
+        )
+        assert receipt.run is not None
+        assert (await db.get_one(ThreadRow, root.id)).app_context == context
+        scope = await app_workspace(db, app_runtime, workspace, "claw")
+        actor = await app_actor(db, app_runtime, scope, runner)
+        invocation = ScheduleInvocation.model_validate(
+            {"agent_id": agent["id"], "agent_revision_id": None, "payload": message["payload"]}
+        )
+        for target, expected in (
+            (ScheduleTarget(session_id=existing), (existing, None)),
+            (ScheduleTarget(mode="thread", thread_id=root.id), (existing, root.id)),
+        ):
+            assert (
+                await schedule_service.resolve_target(
+                    db,
+                    app_runtime,
+                    actor,
+                    scope,
+                    target,
+                    invocation,
+                    provenance=AppProvenance("claw"),
+                )
+                == expected
+            )
+            with pytest.raises(ServiceError) as denied:
+                await schedule_service.resolve_target(
+                    db,
+                    app_runtime,
+                    actor,
+                    scope,
+                    target,
+                    invocation,
+                    provenance=AppProvenance("claw", {"instance": "different"}),
+                )
+            assert denied.value.details["reason"] == "app_owner_mismatch"

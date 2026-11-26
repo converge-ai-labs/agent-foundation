@@ -78,10 +78,11 @@ async def test_lifecycle_hook_retry_preserves_receipt_and_completed_apps(service
     await lifecycle.dispatch(env.runtime, operation)
     blocked = await stored(env, environment_id)
     assert blocked.status == "creating" and blocked.failure["code"] == "restore_pending"
-    assert blocked.operation_provider_completed and blocked.handle["state"] is not None
-    assert blocked.operation_hooks_completed == ["seed"]
+    assert blocked.operation_progress["provider_completed"] and blocked.handle["state"] is not None
+    assert blocked.operation_progress["hooks_completed"] == ["seed"]
     await lifecycle.advance(env.runtime, environment_id, owner="retry")
-    assert (await stored(env, environment_id)).status == "ready"
+    ready = await stored(env, environment_id)
+    assert ready.status == "ready" and ready.operation_progress is None
     assert attempts == [operation.operation_id, operation.operation_id]
     assert successful == BACKEND.preparations == [operation.operation_id]
 
@@ -106,7 +107,7 @@ async def test_lifecycle_interruption_keeps_native_receipt(service):
     with pytest.raises(asyncio.CancelledError):
         await task
     current = await stored(env, environment_id)
-    assert current.operation_provider_completed and current.handle["state"] is not None
+    assert current.operation_progress["provider_completed"] and current.handle["state"] is not None
     await lifecycle.advance(env.runtime, environment_id, owner="retry")
     assert (await stored(env, environment_id)).status == "ready"
     assert attempts == [operation.operation_id] * 2
@@ -151,7 +152,7 @@ async def test_live_hooks_do_not_prevent_destruction_and_skip_stopped(service, d
     await lifecycle.advance(env.runtime, environment_id, owner="test")
     blocked = await stored(env, environment_id)
     assert blocked.status == "stopping" and blocked.failure["code"] == "snapshot_pending"
-    assert blocked.operation_hook_active and BACKEND.instances[environment_id] == "running"
+    assert blocked.operation_progress["hook_active"] and BACKEND.instances[environment_id] == "running"
     await lifecycle.advance(env.runtime, environment_id, owner="retry")
     assert (await stored(env, environment_id)).status == "stopped"
     if delete_ready:
@@ -173,7 +174,11 @@ async def test_permanent_hook_rejects_ready_without_losing_destroy_handle(servic
     env, environment_id = await setup(service, [("seed", EnvironmentLifecycleHook("after_create", reject))])
     await lifecycle.advance(env.runtime, environment_id, owner="test")
     row = await stored(env, environment_id)
-    assert row.failure["permanent"] and row.operation_provider_completed and row.operation_hook_blocked
+    assert (
+        row.failure["permanent"]
+        and row.operation_progress["provider_completed"]
+        and row.operation_progress["hook_blocked"]
+    )
     assert await lifecycle.claim(env.runtime, environment_id, owner="retry") is None
     assert (await act(env, "DELETE", environment_id))[0] == 202
     await lifecycle.advance(env.runtime, environment_id, owner="test")
@@ -196,6 +201,7 @@ async def test_expired_pre_hook_claim_resumes_before_provider_stop(service):
         row = await db.get_one(EnvironmentRow, environment_id)
         row.lease_expires_at = (await now(db)) - timedelta(seconds=1)
     await lifecycle.advance(env.runtime, environment_id, owner="retry")
+    await lifecycle.dispatch(env.runtime, replace(operation, dispatch_before=0))
     assert (await stored(env, environment_id)).status == "stopped"
     assert seen == [operation.operation_id]
 

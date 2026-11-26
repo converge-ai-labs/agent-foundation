@@ -104,7 +104,8 @@ async def test_managed_binding_rechecks_provider_status(service, runs_kit, monke
         await validate_attachment(service.runtime, attachment)
 
 
-async def test_pre_hook_carrier_survives_retry_without_granting_execution(service, runs_kit, monkeypatch):
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_pre_hook_carrier_survives_retry_without_granting_execution(service, runs_kit, monkeypatch, enabled):
     from dataclasses import replace
     from datetime import timedelta
 
@@ -130,12 +131,19 @@ async def test_pre_hook_carrier_survives_retry_without_granting_execution(servic
     attachment = await authenticate(runtime, identity, initial.target.websocket.credential.get_secret_value())
     async with transaction(runtime.storage) as db:
         org = await db.get_one(OrganizationRow, service.tenant.organization_id)
-        org.settings = {**org.settings, "app_plugins": {"enabled": [app_id]}}
+        org.settings = {**org.settings, "app_plugins": {"enabled": [app_id] if enabled else []}}
         row = await db.get_one(EnvironmentRow, identity)
-        await lifecycle.begin(db, row, "stopping")
+        await lifecycle.begin(db, row, "stopping", environment_hooks=runtime.environment_hooks)
     await validate_attachment(runtime, attachment)
     claim = await lifecycle.claim(runtime, identity, owner="before-stop")
     assert claim is not None
+    if not enabled:
+        assert claim.hooks is None
+        with pytest.raises(ServiceError) as closed:
+            await validate_attachment(runtime, attachment)
+        assert closed.value.code == "unavailable"
+        return
+    assert claim.hooks is not None
     proof = LifecycleCaller(operation_id=claim.operation_id, generation=claim.generation, token=claim.token)
 
     async def verify(valid=None, rejected=()):
