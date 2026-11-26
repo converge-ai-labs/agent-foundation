@@ -1179,7 +1179,7 @@
   "Hour": "घंटा",
   "ID": "ID",
   "Icon": "आइकन",
-  "If the address can receive a recovery link, it will arrive shortly.": "अगर इस पते पर रिकवरी लिंक भेजा जा सकता है, तो वह थोड़ी देर में पहुँच जाएगा।",
+  "If this email belongs to an active local-password account, a recovery link will arrive shortly. Check spam, use your identity provider if you sign in with SSO, or contact your organization administrator if it does not arrive.": "यदि यह ईमेल किसी सक्रिय लोकल-पासवर्ड खाते से जुड़ा है, तो रिकवरी लिंक शीघ्र ही पहुँच जाएगा। स्पैम फ़ोल्डर जांचें, SSO से साइन इन करने पर अपने आइडेंटिटी प्रोवाइडर का उपयोग करें, या ईमेल न मिलने पर अपने संगठन के एडमिन से संपर्क करें।",
   "Image": "इमेज",
   "Import a skill from a ZIP file or GitHub repository.": "ZIP फ़ाइल या GitHub रिपॉज़िटरी से Skill इंपोर्ट करें।",
   "Import a skill package to make it available in agent configurations.": "Skill पैकेज इंपोर्ट करें ताकि वह Agent कॉन्फ़िगरेशन में उपलब्ध हो जाए।",

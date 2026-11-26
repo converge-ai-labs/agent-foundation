@@ -54,12 +54,13 @@ parallel = 2
 
 ## 运维 CLI 命令速查
 
-| 命令（`a13n-service --config service.toml ...`）              | 用途                                                                         |
-| ------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `bootstrap --email EMAIL [--password-stdin]`                  | 初始化首个组织、工作区与管理员（见[快速开始](get-started.md)）               |
-| `user disable --email EMAIL` / `user enable --email EMAIL`    | 停用或恢复用户账号（见[运维账号控制](identity.md#operator-account-control)） |
-| `migrate [--check]`                                           | 升级或校验当前构建所需的数据库结构                                           |
-| `migrate-run-objects [--apply --backup-dir PATH] [--limit N]` | 在所有副本停机期间检查或转换旧版运行对象                                     |
-| `run [--role all\|control\|worker]`                           | 启动指定角色的 Service 进程                                                  |
+| 命令（`a13n-service --config service.toml ...`）              | 用途                                                                                   |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `bootstrap --email EMAIL [--password-stdin]`                  | 初始化首个组织、工作区与管理员（见[快速开始](get-started.md)）                         |
+| `user disable --email EMAIL` / `user enable --email EMAIL`    | 停用或恢复用户账号（见[运维账号控制](identity.md#operator-account-control)）           |
+| `user reset-password --email EMAIL [--password-stdin]`        | 重置已启用的本地密码账号密码（见[运维账号控制](identity.md#operator-account-control)） |
+| `migrate [--check]`                                           | 升级或校验当前构建所需的数据库结构                                                     |
+| `migrate-run-objects [--apply --backup-dir PATH] [--limit N]` | 在所有副本停机期间检查或转换旧版运行对象                                               |
+| `run [--role all\|control\|worker]`                           | 启动指定角色的 Service 进程                                                            |
 
 <span id="convert-legacy-run-objects"></span>

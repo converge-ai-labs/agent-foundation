@@ -54,12 +54,13 @@ Alert on `a13n_outbox_backlog_alert == 1` and `a13n_outbox_dead == 1` across `al
 
 ## Operator CLI reference
 
-| Command (`a13n-service --config service.toml ...`)            | Purpose                                                                              |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `bootstrap --email EMAIL [--password-stdin]`                  | Initialize first organization, workspace, and admin ([get started](get-started.md))  |
-| `user disable --email EMAIL` / `user enable --email EMAIL`    | Suspend or restore a user ([operator control](identity.md#operator-account-control)) |
-| `migrate [--check]`                                           | Upgrade or verify the database schema                                                |
-| `migrate-run-objects [--apply --backup-dir PATH] [--limit N]` | Convert legacy run objects while all replicas are stopped                            |
-| `run [--role all\|control\|worker]`                           | Start a Service process                                                              |
+| Command (`a13n-service --config service.toml ...`)            | Purpose                                                                                                   |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `bootstrap --email EMAIL [--password-stdin]`                  | Initialize first organization, workspace, and admin ([get started](get-started.md))                       |
+| `user disable --email EMAIL` / `user enable --email EMAIL`    | Suspend or restore a user ([operator control](identity.md#operator-account-control))                      |
+| `user reset-password --email EMAIL [--password-stdin]`        | Reset an active local-password user's password ([operator control](identity.md#operator-account-control)) |
+| `migrate [--check]`                                           | Upgrade or verify the database schema                                                                     |
+| `migrate-run-objects [--apply --backup-dir PATH] [--limit N]` | Convert legacy run objects while all replicas are stopped                                                 |
+| `run [--role all\|control\|worker]`                           | Start a Service process                                                                                   |
 
 <span id="convert-legacy-run-objects"></span>

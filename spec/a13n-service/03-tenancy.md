@@ -343,6 +343,8 @@ A user renames themselves, changes their email address or password, lists and en
 
 Organization administrators are account recovery contacts when password sign-in is enabled. With a login session, they may issue a reset link for an active local-password user who has a grant in their organization, including a workspace-only grant. One request issues one link. When SMTP is configured, Service queues it for delivery to the user's current account address. On a single-organization deployment the issuing administrator also receives the same link once, whether or not SMTP is configured. Links shown to administrators are valid for up to 15 minutes (capped by `auth.link_seconds`). Issuing a link supersedes an outstanding reset link, leaves the password and sessions unchanged, and records `user.password.reset_assisted` in the organization audit log without recording the secret. The user completes the existing reset flow; roles and grants are unchanged.
 
+For emergency recovery outside any tenant's authority, the deployment operator runs `a13n-service user reset-password --email EMAIL` (or `--principal-id ID`) with an interactive prompt or `--password-stdin`. It requires `auth.password_enabled` and an active local-password user, replaces the password hash, ends every login session and outstanding link of the account, prints `{id}` as JSON, and audits `user.password.reset` with `actor_id` NULL and `details.authority = "operator"`. It refuses OIDC-only users (`conflict`, reason `no_local_password`) and disabled users (`conflict`, reason `disabled`).
+
 Password changes do not revoke API keys; keys are revoked individually or stop working when the account is disabled.
 
 ### Disabling

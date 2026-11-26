@@ -352,6 +352,47 @@ async def set_account_status(
         return row.id
 
 
+async def reset_account_password(
+    storage: Storage,
+    settings: Settings,
+    email: str | None,
+    password: SecretStr,
+    *,
+    principal_id: str | None = None,
+) -> str:
+    """The deployment operator's password reset for an active local-password user; returns the user ID.
+
+    Replaces the password hash and ends every login session and outstanding link of the account.
+    """
+    if not settings.auth.password_enabled:
+        raise ServiceError("forbidden", "Password sign-in is disabled")
+    raw = password.get_secret_value()
+    if len(raw) < 8 or len(raw) > 1024:
+        raise invalid("password", "invalid_length")
+    new_hash = await hash_password(raw)
+    selector = PrincipalRow.id == principal_id if principal_id is not None else PrincipalRow.email == email
+    async with transaction(storage) as session:
+        row = await session.scalar(select(PrincipalRow).where(PrincipalRow.kind == "user", selector).with_for_update())
+        if row is None:
+            raise not_found("user", principal_id or email or "")
+        if row.email is None or await session.get(PasswordRow, row.id) is None:
+            raise conflict("user", row.id, "no_local_password")
+        if row.status != "active":
+            raise conflict("user", row.id, "disabled")
+        await set_password(session, row.id, new_hash)
+        await revoke_tokens(session, row.id)
+        record(
+            session,
+            None,
+            actor_id=None,
+            action="user.password.reset",
+            target_kind="user",
+            target_id=row.id,
+            details={"authority": "operator"},
+        )
+        return row.id
+
+
 async def list_login_sessions(
     storage: Storage, actor: Principal, *, current_session_id: str | None, limit: int, cursor: str | None
 ) -> LoginSessionPage:

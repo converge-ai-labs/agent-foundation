@@ -76,12 +76,15 @@ Create dedicated per-workspace service accounts for applications in **Workspace 
 
 ## Operator account control
 
-Operators can suspend or restore any user account from the CLI (use `--principal-id usr_...` for OIDC accounts):
+Operators can suspend or restore any user account from the CLI (use `--principal-id usr_...` for OIDC accounts), or reset an active local-password user's password directly when email recovery is unavailable:
 
 ```sh
 a13n-service --config service.toml user disable --email person@example.com
 a13n-service --config service.toml user enable --email person@example.com
+a13n-service --config service.toml user reset-password --email person@example.com
 ```
+
+`user reset-password` prompts for the new password interactively (or reads it from stdin with `--password-stdin`), revokes the user's existing login sessions and outstanding recovery links, and refuses disabled or OIDC-only accounts.
 
 ## Audit
 

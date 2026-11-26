@@ -494,7 +494,7 @@ export function AuthPage() {
             <p>
               {mode === "forgot"
                 ? t(
-                    "If the address can receive a recovery link, it will arrive shortly.",
+                    "If this email belongs to an active local-password account, a recovery link will arrive shortly. Check spam, use your identity provider if you sign in with SSO, or contact your organization administrator if it does not arrive.",
                   )
                 : t("Your account has been updated.")}
             </p>

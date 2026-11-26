@@ -7,7 +7,7 @@ This chapter owns the package tree of `packages/a13n-service`, the import direct
 ```
 a13n_service/
   app.py              build_app(distribution, role=..., settings=...): the runtime, routers and background tasks of one role
-  cli.py              `a13n-service run | migrate | bootstrap | user disable | user enable`
+  cli.py              `a13n-service run | migrate | bootstrap | user disable | user enable | user reset-password`
   settings.py         Settings: one section per concern, plus the sections a distribution declares
   distribution.py     Distribution: what a build contributes; OSS, the built-in distribution
 
