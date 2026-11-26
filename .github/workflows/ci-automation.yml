@@ -9,6 +9,7 @@ on:
       - ".pre-commit-config.yaml"
       - ".mdformat.toml"
       - "pyproject.toml"
+      - "release-dependencies.toml"
       - "packages/*/pyproject.toml"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -19,7 +20,6 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
-      - "scripts/classify_harness_pins.py"
       - "scripts/envd_release_metadata.py"
       - "scripts/k8s_local.py"
       - "scripts/tests/test_k8s_local.py"
@@ -40,7 +40,6 @@ on:
       - "scripts/tests/test_impact.py"
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
-      - "scripts/tests/test_classify_harness_pins.py"
       - "scripts/tests/test_release_notes.py"
       - "scripts/envd_size.py"
       - "scripts/tests/test_envd*.py"
@@ -57,6 +56,7 @@ on:
       - ".pre-commit-config.yaml"
       - ".mdformat.toml"
       - "pyproject.toml"
+      - "release-dependencies.toml"
       - "packages/*/pyproject.toml"
       - "Cargo.toml"
       - "Cargo.lock"
@@ -67,7 +67,6 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
-      - "scripts/classify_harness_pins.py"
       - "scripts/envd_release_metadata.py"
       - "scripts/k8s_local.py"
       - "scripts/tests/test_k8s_local.py"
@@ -88,7 +87,6 @@ on:
       - "scripts/tests/test_impact.py"
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
-      - "scripts/tests/test_classify_harness_pins.py"
       - "scripts/tests/test_release_notes.py"
       - "scripts/envd_size.py"
       - "scripts/tests/test_envd*.py"
@@ -106,8 +104,7 @@ permissions:
   contents: read
 
 concurrency:
-  # Each main push owns its pin smoke, even when the next push changes different inputs.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -140,10 +137,6 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Classify Harness pin updates
-        id: harness-pins
-        uses: ./.github/actions/classify-harness-pins
-
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -153,6 +146,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-automation
 
       - name: Synchronize tooling dependencies
         run: uv sync --locked
@@ -165,7 +159,6 @@ jobs:
           scripts/prepare-release-version.py
           scripts/release_notes.py
           scripts/release_version.py
-          scripts/classify_harness_pins.py
           scripts/envd_release_metadata.py
           scripts/run_python_tests.py
           scripts/verify.py
@@ -187,7 +180,6 @@ jobs:
           uv run --locked python -m pytest
           scripts/tests/test_check_release_version.py
           scripts/tests/test_prepare_release_version.py
-          scripts/tests/test_classify_harness_pins.py
           scripts/tests/test_release_notes.py
           scripts/tests/test_pr_labels.py
           scripts/tests/test_pr_change_breakdown.py
@@ -208,6 +200,14 @@ jobs:
           scripts/tests/test_harness_ui_release_workflow.py
           scripts/tests/test_service_contract_notification.py
 
+      - name: Detect changed Harness pins
+        id: harness-pins
+        env:
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          consumers="$(python scripts/release_version.py --changed-harness-pin-consumers)"
+          echo "components=$consumers" >> "$GITHUB_OUTPUT"
+
       - name: Smoke-test consumers with the published Harness pins
         if: steps.harness-pins.outputs.components != ''
         env:
@@ -224,4 +224,5 @@ jobs:
               a13n-service) module=a13n_service.app ;;
             esac
             "$env_path/bin/python" -c 'from importlib import import_module; import sys; import_module(sys.argv[1])' "$module"
+            git checkout -- pyproject.toml uv.lock "packages/$component/pyproject.toml"
           done

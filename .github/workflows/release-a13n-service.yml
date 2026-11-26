@@ -56,6 +56,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-release-service
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4

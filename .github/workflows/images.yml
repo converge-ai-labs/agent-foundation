@@ -66,13 +66,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Classify Harness pin updates
-        id: harness-pins
-        uses: ./.github/actions/classify-harness-pins
-
       - name: Classify image inputs
         id: filter
-        if: steps.harness-pins.outputs.components == ''
         uses: dorny/paths-filter@v3
         with:
           # Select package-root metadata/build hooks and runtime trees, not tests.
