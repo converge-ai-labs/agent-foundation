@@ -189,14 +189,21 @@ async def _replay(
     *,
     trigger_app_id: str | None = None,
     provenance: AppProvenance | None = None,
+    reuse_session: bool = False,
 ) -> Submitted:
     if entry.app_id != trigger_app_id:
         raise conflict("request", request.key, "idempotency_key_reused")
     check_replay(entry, request)
     thread = await session.get(ThreadRow, entry.thread_id)
     assert thread is not None
-    if provenance is not None and (thread.app_id, thread.app_context) != (provenance.app_id, provenance.app_context):
-        raise conflict("request", request.key, "idempotency_key_reused")
+    if provenance is not None:
+        matches = (
+            provenance.matches_owner(thread)
+            if reuse_session
+            else (thread.app_id, thread.app_context) == (provenance.app_id, provenance.app_context)
+        )
+        if not matches:
+            raise conflict("request", request.key, "idempotency_key_reused")
     return await receipt(session, thread, entry)
 
 
@@ -466,6 +473,7 @@ async def create_thread_in_transaction(
             request,
             trigger_app_id=admission._provenance.app_id if admission._provenance else None,
             provenance=admission._provenance,
+            reuse_session=body.session_id is not None,
         )
     thread, source = await prepare_thread(
         session,

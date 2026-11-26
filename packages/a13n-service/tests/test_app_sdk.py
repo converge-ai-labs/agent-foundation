@@ -1254,3 +1254,12 @@ async def test_reusing_app_owned_targets_preserves_existing_context(
                     provenance=AppProvenance("claw", {"instance": "different"}),
                 )
             assert denied.value.details["reason"] == "app_owner_mismatch"
+
+    async with transaction(app_runtime.storage) as db:
+        admission = await threads.prepare_admission(db, app_runtime, workspace, runner, app_id="claw")
+        replayed, replay = await threads.create_thread_in_transaction(
+            db, app_runtime, admission, workspace, body, request_key="reuse-owned-target"
+        )
+        assert replayed.id == root.id
+        assert replay.entry.id == receipt.entry.id
+        assert replay.run is not None and replay.run.id == receipt.run.id
