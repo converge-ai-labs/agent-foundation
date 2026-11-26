@@ -143,9 +143,14 @@ class GoalCapability(AbstractCapability[AgentContext]):
                 self._completion_candidate = False
                 self.goal = self.goal.model_copy(update={"status": "working"})
                 await self._publish(ctx)
-            self._usage(ctx.deps.usage_snapshot.summary, ctx.deps.usage_snapshot.usage_id)
-            await self._save(ctx)
+            await self.save_progress(ctx)
         return request_context
+
+    async def save_progress(self, ctx: RunContext[AgentContext]) -> None:
+        """Retain active progress and accrued usage at a continuation boundary."""
+        snapshot = ctx.deps.usage_snapshot
+        self._usage(snapshot.summary, snapshot.usage_id)
+        await self._save(ctx)
 
     async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
         if isinstance(event, ContextRestoredEvent):

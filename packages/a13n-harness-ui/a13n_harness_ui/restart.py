@@ -77,6 +77,9 @@ class GracefulRestart:
         self._suppressed.discard(thread_id)
         self.signal()
 
+    def can_pause(self, thread_id: str) -> bool:
+        return thread_id in self.active and thread_id not in self._suppressed
+
     async def _publish_candidates(self) -> None:
         # The WebUI automation ownership lock fences this writer across Apps;
         # the local lock serializes concurrent root checkpoint/response hooks.
@@ -205,7 +208,7 @@ class GracefulRestart:
             and thread_id not in self.finalized
         ):
             self.errors[thread_id] = "Final checkpoint or Environment cleanup failed."
-        if failed and (self.requested or self.restoring):
+        if failed and entry is not None and thread_id not in self._suppressed and (self.requested or self.restoring):
             self.errors[thread_id] = "Execution did not reach a saved continuation boundary."
         self.signal()
 
