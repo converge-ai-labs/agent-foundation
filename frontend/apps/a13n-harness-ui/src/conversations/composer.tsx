@@ -459,9 +459,14 @@ export function Composer({
   externalAgent?: boolean;
   acpCommands?: Schema<"AcpCommand">[];
   skillDefaults?: Schema<"NewThreadDefaults">;
-  prepareThread?: () => Promise<void>;
+  prepareThread?: (coordinator: boolean) => Promise<void>;
   queuedInput?: { pending: boolean; locked: boolean; submit: () => void };
-  coordinator?: { active: boolean; available: boolean; locked?: boolean };
+  coordinator?: {
+    active: boolean;
+    available: boolean;
+    locked?: boolean;
+    defaultEnabled?: boolean;
+  };
   owner?: { title: string; onRemove?: () => void; locked?: boolean };
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
@@ -502,10 +507,12 @@ export function Composer({
     coordinator?.active ||
     promotion.data?.role === "coordinator" ||
     coordinatorStatus.data?.thread.role === "coordinator";
+  const coordinatorRequested =
+    draft.coordinator ?? coordinator?.defaultEnabled ?? false;
   const coordinatorBlocked =
     draft.coordinatorUncertain ||
     (!owner &&
-      draft.coordinator &&
+      coordinatorRequested &&
       !coordinatorActive &&
       !coordinator?.available);
   const connection = useRef<ReturnType<ThreadDraft["connect"]> | null>(null);
@@ -816,7 +823,7 @@ export function Composer({
     const promote =
       action === "send" &&
       !owner &&
-      draft.coordinator &&
+      coordinatorRequested &&
       !coordinatorActive &&
       !prepareThread;
     const metadata = attachmentMetadata();
@@ -855,7 +862,7 @@ export function Composer({
           expectedInput !== undefined
           ? async () => {
               if (prepareThread) {
-                await prepareThread();
+                await prepareThread(coordinatorRequested);
                 controller.signal.throwIfAborted();
                 await Promise.all(
                   attachmentSelections(draft.doc).flatMap(({ key }) => {
@@ -1163,9 +1170,9 @@ export function Composer({
     preparing ||
     pending ||
     unknown ||
-    (!draft.coordinator && (!canRun || !coordinator?.available));
+    (!coordinatorRequested && (!canRun || !coordinator?.available));
   const toggleCoordinator = () => {
-    draft.coordinator = !draft.coordinator;
+    draft.coordinator = !coordinatorRequested;
     draft.notify();
   };
   const ownerControl = owner && (
@@ -1201,10 +1208,10 @@ export function Composer({
       </span>
     ) : (
       <Button
-        variant={draft.coordinator ? "secondary" : "ghost"}
+        variant={coordinatorRequested ? "secondary" : "ghost"}
         size="sm"
         className={styles.goalButton}
-        aria-pressed={draft.coordinator}
+        aria-pressed={coordinatorRequested}
         title={
           coordinator.available
             ? t(
@@ -1223,7 +1230,7 @@ export function Composer({
   const modes = (draft.mode === "goal" ||
     ownerControl ||
     coordinatorActive ||
-    draft.coordinator) && (
+    coordinatorRequested) && (
     <div className={styles.composerModes}>
       {!transport.shareId &&
         draft.mode === "goal" &&
@@ -1233,7 +1240,7 @@ export function Composer({
       {ownerControl ||
         (coordinatorActive
           ? coordinatorControl
-          : draft.coordinator && coordinatorControl
+          : coordinatorRequested && coordinatorControl
             ? cloneElement(coordinatorControl, {
                 "aria-label": t("Turn off agent coordination"),
               })
@@ -1537,7 +1544,7 @@ export function Composer({
             </span>
             {!transport.shareId && !queuedInput && (
               <TaskOptions
-                coordinatorEnabled={draft.coordinator}
+                coordinatorEnabled={coordinatorRequested}
                 goal={
                   <Switch
                     aria-label={t("Goal")}
@@ -1561,7 +1568,7 @@ export function Composer({
                           ? coordinatorControl.props.title
                           : undefined
                       }
-                      checked={draft.coordinator}
+                      checked={coordinatorRequested}
                       disabled={coordinatorDisabled}
                       onCheckedChange={(enabled) => {
                         draft.coordinator = enabled;

@@ -129,6 +129,24 @@ it("edits the instance send shortcut without changing other WebUI settings", asy
   ).toBe("enter");
 });
 
+it("edits the Coordinator default without changing other WebUI settings", async () => {
+  renderFields('schema_version: "1"\nwebui: {send_shortcut: mod-enter}\n');
+  const toggle = screen.getByRole("switch", {
+    name: "Coordinate agents by default",
+  });
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  await userEvent.click(toggle);
+  expect(parse(screen.getByTestId("source").textContent!).webui).toEqual({
+    send_shortcut: "mod-enter",
+    coordinator_by_default: true,
+  });
+  await userEvent.click(toggle);
+  expect(
+    parse(screen.getByTestId("source").textContent!).webui
+      .coordinator_by_default,
+  ).toBe(false);
+});
+
 it("configures Bot's Agent and Model defaults, custom instructions and hourly heartbeat", async () => {
   const initial = 'schema_version: "1"\n';
   renderFields(initial);

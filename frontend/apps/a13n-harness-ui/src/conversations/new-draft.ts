@@ -9,6 +9,7 @@ export type NewDraft = {
   threadId: string;
   defaults: Schema<"NewThreadDefaults">;
   coordinatorThreadId?: string;
+  retainedCoordinatorDefault?: boolean;
   acp?: { key: string; selection: Schema<"AcpOptionSelection"> };
   created: boolean;
   attempted: boolean;
@@ -75,8 +76,9 @@ function restore(): Omit<NewDraft, "save"> | undefined {
     throw error;
   }
   if (!saved.optionsUpdate && saved.mode === "goal") composer.mode = "goal";
-  composer.coordinator =
-    !saved.coordinatorThreadId && saved.coordinator === true;
+  if (saved.coordinatorThreadId) composer.coordinator = false;
+  else if (typeof saved.coordinator === "boolean")
+    composer.coordinator = saved.coordinator;
   if (!saved.optionsUpdate && typeof saved.modelId === "string")
     composer.modelId = saved.modelId;
   if (
@@ -100,6 +102,7 @@ function restore(): Omit<NewDraft, "save"> | undefined {
     threadId: saved.threadId,
     defaults,
     coordinatorThreadId: saved.coordinatorThreadId || undefined,
+    retainedCoordinatorDefault: saved.coordinatorByDefault === true,
     acp:
       typeof saved.acp?.key === "string" &&
       typeof saved.acp?.selection?.scope === "string" &&
@@ -123,8 +126,13 @@ export class NewDraftStore {
   error = "";
   private unsubscribe: (() => void) | undefined;
   private restored = false;
+  private coordinatorByDefault = false;
 
-  get(composers: Map<string, ThreadDraft>): NewDraft {
+  get(
+    composers: Map<string, ThreadDraft>,
+    coordinatorByDefault = false,
+  ): NewDraft {
+    this.coordinatorByDefault = coordinatorByDefault;
     if (!this.current) {
       let retained: Omit<NewDraft, "save"> | undefined;
       if (!this.restored) {
@@ -201,6 +209,7 @@ export class NewDraftStore {
       threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
       defaults: { ...old.defaults },
       coordinatorThreadId: old.coordinatorThreadId,
+      retainedCoordinatorDefault: old.retainedCoordinatorDefault,
       created: false,
       attempted: false,
       composer,
@@ -236,6 +245,8 @@ export class NewDraftStore {
               Y.encodeStateAsUpdate(draft.composer.optionsDoc),
             ),
             coordinator: draft.composer.coordinator,
+            coordinatorByDefault:
+              draft.retainedCoordinatorDefault ?? this.coordinatorByDefault,
             submission: draft.composer.submission.kind,
           }),
         );
