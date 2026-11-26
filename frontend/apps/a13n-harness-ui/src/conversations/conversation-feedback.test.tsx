@@ -168,3 +168,175 @@ it("owns a missing chat once despite dependent failures, keeps unsent input, and
     draft.doc.destroy();
   }
 });
+
+it("never blocks a prompt-permitted guest on an ACP thread", async () => {
+  const { GuestAccessContext } = await import("../transport/context");
+  const { encode } = await import("./draft");
+  const Y = await import("yjs");
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener() {},
+    removeEventListener() {},
+  }));
+  const GET = vi.fn(async (path: string) => {
+    if (path === "/api/threads/{thread_id}")
+      return {
+        data: {
+          thread: {
+            thread_id: "guest-acp",
+            title: "Shared ACP",
+            role: "ordinary",
+            archived: false,
+            metadata_version: 1,
+            root_activity: { state: "inactive" },
+            configuration: {
+              version: 1,
+              agent_source: { kind: "acp_agent", id: "acp-agy" },
+              local_roots: [],
+            },
+          },
+          continuation_id: "c1",
+          available_actions: ["run"],
+        },
+      };
+    if (path === "/api/threads/{thread_id}/transcript")
+      return { data: { entries: [], turns: [], next_cursor: null } };
+    if (path === "/api/threads/{thread_id}/work")
+      return {
+        data: { tasks: { completed: 0, total: 0 }, notes: { total: 0 } },
+      };
+    if (path === "/api/threads/{thread_id}/acp-options")
+      throw new Error("Guest must not fetch ACP options");
+    return { data: {} };
+  });
+  const query = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const draft = new ThreadDraft();
+  vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+  draft.doc.getText("text").insert(0, "Guest prompt");
+  draft.receive({
+    draft_id: "draft-guest",
+    participant_id: "guest",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  const view = render(
+    <QueryClientProvider client={query}>
+      <TransportContext
+        value={
+          {
+            shareId: "share-1",
+            client: { GET, POST: vi.fn() },
+          } as unknown as Transport
+        }
+      >
+        <GuestAccessContext
+          value={
+            {
+              grant: {
+                share_id: "share-1",
+                thread_id: "guest-acp",
+                permission: "prompt",
+              },
+            } as never
+          }
+        >
+          <ComposerDrafts value={new Map([["guest-acp", draft]])}>
+            <MemoryRouter>
+              <Conversation
+                threadId="guest-acp"
+                profile={{ display_name: "Guest", color: "#666666" }}
+                unauthorized={() => {}}
+              />
+            </MemoryRouter>
+          </ComposerDrafts>
+        </GuestAccessContext>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  try {
+    const send = (await screen.findByRole("button", {
+      name: "Send",
+    })) as HTMLButtonElement;
+    await waitFor(() => expect(send.disabled).toBe(false));
+    expect(
+      GET.mock.calls.some(
+        ([path]) => path === "/api/threads/{thread_id}/acp-options",
+      ),
+    ).toBe(false);
+  } finally {
+    view.unmount();
+    query.clear();
+    draft.doc.destroy();
+  }
+});
+
+it("classifies ACP loading, refreshing, missing-agent, auth, and generic errors cleanly", async () => {
+  const { acpRunBlock } = await import("./acp-options");
+  const { i18n } = await import("../i18n");
+  await i18n.changeLanguage("en");
+  const base = {
+    agentName: "Antigravity",
+    hasData: false,
+    isFetching: false,
+    isError: false,
+    error: null as unknown,
+    onRetryLoad: vi.fn(),
+    updating: false,
+    updateError: null as unknown,
+    onRetryUpdate: vi.fn(),
+    onDismissUpdateError: vi.fn(),
+    t: i18n.t.bind(i18n),
+  };
+
+  expect(acpRunBlock({ ...base, hasData: true, isFetching: true })).toEqual({
+    kind: "loading",
+    message: "Refreshing Antigravity options…",
+  });
+
+  // TanStack Query v5 retry: isFetching takes precedence over retained isError.
+  expect(
+    acpRunBlock({
+      ...base,
+      isFetching: true,
+      isError: true,
+      error: new ApiError("Timed out", 504, "acp_session_unavailable"),
+    }),
+  ).toEqual({
+    kind: "loading",
+    message: "Loading Antigravity options…",
+  });
+
+  const missing = acpRunBlock({
+    ...base,
+    isError: true,
+    error: new ApiError("Not found", 404, "acp_agent_missing"),
+  });
+  expect(missing?.kind).toBe("error");
+  expect(missing?.message).toBe(
+    "The selected ACP agent is no longer available. Choose another agent or check Settings.",
+  );
+  expect(missing?.action?.label).toBe("Retry");
+
+  const generic = acpRunBlock({
+    ...base,
+    isError: true,
+    error: new ApiError("ACP daemon closed", 503, "acp_session_unavailable"),
+  });
+  expect(generic?.kind).toBe("error");
+  expect(generic?.message).toBe("Could not load Antigravity options.");
+  expect(generic?.detail).toBe("ACP daemon closed");
+  expect(generic?.action?.label).toBe("Retry");
+
+  const authWithoutPath = acpRunBlock({
+    ...base,
+    isError: true,
+    error: new ApiError("Auth needed", 401, "acp_auth_required"),
+  });
+  expect(authWithoutPath?.kind).toBe("action_required");
+  expect(authWithoutPath?.action?.label).toBe("Retry");
+  expect(authWithoutPath?.secondaryAction).toBeUndefined();
+
+  expect(acpRunBlock({ ...base, hasData: true })).toBeNull();
+});

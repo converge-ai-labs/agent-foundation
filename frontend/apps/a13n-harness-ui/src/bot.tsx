@@ -27,6 +27,7 @@ import {
   Composer,
   useDraft,
   waitForSynchronization,
+  type ComposerBlock,
 } from "./conversations/composer";
 import { RunActivity } from "./conversations/run-activity";
 import type { PublishedMessage } from "./conversations/transcript";
@@ -471,6 +472,40 @@ export function BotPage({
           : operation?.status === "preparing"
             ? t("Bot is starting. Your draft is kept; send when it is working.")
             : null;
+  const botLastError = botConversationError(
+    data?.state.last_error,
+    debug.enabled,
+  );
+  const hasFeedback = Boolean(
+    bot.error ||
+    preparationError ||
+    status ||
+    (submission && submission.phase !== "pending") ||
+    botLastError ||
+    (data && !data.available),
+  );
+  const runBlock: ComposerBlock | null =
+    !data && !bot.isError
+      ? { kind: "loading", message: t("Loading Bot status…") }
+      : !data && bot.isError
+        ? {
+            kind: "error",
+            message: t("Could not load Bot status."),
+            coveredByFeedback: true,
+          }
+        : data && !data.available
+          ? {
+              kind: "error",
+              message: t("Bot processing is unavailable"),
+              coveredByFeedback: true,
+            }
+          : data?.pending_decision
+            ? {
+                kind: "action_required",
+                message: t("Bot needs your decision"),
+                coveredByFeedback: true,
+              }
+            : null;
   return (
     <Conversation
       threadId={BOT_THREAD_ID}
@@ -538,9 +573,7 @@ export function BotPage({
               dictation={dictation}
               threadId={BOT_THREAD_ID}
               activity={activity}
-              canRun={
-                !!data?.enabled && !!data.available && !data.pending_decision
-              }
+              runBlock={runBlock}
               queuedInput={{
                 pending: send.isPending || preparing,
                 locked: !!submission,
@@ -551,67 +584,76 @@ export function BotPage({
               reconcile={() => void bot.refetch()}
               controls={() => null}
               feedback={
-                <>
-                  <ErrorNotice
-                    error={bot.error}
-                    retry={() => void bot.refetch()}
-                  />
-                  <ErrorNotice error={preparationError} />
-                  {status && <p role="status">{status}</p>}
-                  {submission && submission.phase !== "pending" && (
-                    <div role="alert" className={styles.recovery}>
-                      <p>
-                        {submission.phase === "unknown"
-                          ? t(
-                              "Delivery is not confirmed. Check status or retry the exact same message; it will not be sent twice.",
-                            )
-                          : t(
-                              "This message was not sent. Edit it or discard it before continuing.",
-                            )}
-                      </p>
-                      <ErrorNotice error={send.error} />
-                      <div className={styles.recoveryActions}>
-                        {submission.phase === "unknown" ? (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void bot.refetch()}
-                            >
-                              {t("Check status")}
-                            </Button>
-                            <Button variant="outline" size="sm" onClick={retry}>
-                              {t("Retry exactly")}
-                            </Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button variant="outline" size="sm" onClick={edit}>
-                              {t("Edit message")}
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={discard}>
-                              {t("Discard")}
-                            </Button>
-                          </>
-                        )}
+                hasFeedback ? (
+                  <>
+                    <ErrorNotice
+                      error={bot.error}
+                      retry={() => void bot.refetch()}
+                    />
+                    <ErrorNotice error={preparationError} />
+                    {status && <p role="status">{status}</p>}
+                    {submission && submission.phase !== "pending" && (
+                      <div role="alert" className={styles.recovery}>
+                        <p>
+                          {submission.phase === "unknown"
+                            ? t(
+                                "Delivery is not confirmed. Check status or retry the exact same message; it will not be sent twice.",
+                              )
+                            : t(
+                                "This message was not sent. Edit it or discard it before continuing.",
+                              )}
+                        </p>
+                        <ErrorNotice error={send.error} />
+                        <div className={styles.recoveryActions}>
+                          {submission.phase === "unknown" ? (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void bot.refetch()}
+                              >
+                                {t("Check status")}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={retry}
+                              >
+                                {t("Retry exactly")}
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={edit}
+                              >
+                                {t("Edit message")}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={discard}
+                              >
+                                {t("Discard")}
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  <ErrorNotice
-                    error={botConversationError(
-                      data?.state.last_error,
-                      debug.enabled,
                     )}
-                  />
-                  {data && !data.available && (
-                    <p>
-                      {t(
-                        "Check Bot's model in Settings. Another app may also own Bot processing.",
-                      )}{" "}
-                      <Link to="/settings/bot">{t("Bot settings")}</Link>
-                    </p>
-                  )}
-                </>
+                    <ErrorNotice error={botLastError} />
+                    {data && !data.available && (
+                      <p>
+                        {t(
+                          "Check Bot's model in Settings. Another app may also own Bot processing.",
+                        )}{" "}
+                        <Link to="/settings/bot">{t("Bot settings")}</Link>
+                      </p>
+                    )}
+                  </>
+                ) : undefined
               }
             />
           ),

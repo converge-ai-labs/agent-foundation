@@ -109,7 +109,6 @@ function mount({
                 threadId="chat-one"
                 activity={activity}
                 local={local}
-                canRun
                 profile={{ display_name: "Alice", color: "#2563eb" }}
                 unauthorized={() => {}}
                 reconcile={() => {}}
