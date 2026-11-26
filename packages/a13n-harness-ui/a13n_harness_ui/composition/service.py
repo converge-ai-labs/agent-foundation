@@ -53,6 +53,7 @@ class CompositionAcceptanceService:
         thinking: ThinkingSelection | None,
         *,
         current_generation: bool = False,
+        subagent_parent_model: str | None = None,
     ) -> ResolvedModelRecipe:
         source = (
             await self.current()
@@ -62,7 +63,7 @@ class CompositionAcceptanceService:
         if source is None:
             raise CompositionError("No configuration has been accepted.", code="configuration_missing")
         policy = source.document.agent_creation if composition is None else composition.agent_creation
-        selected = policy.select_model(model)
+        selected = policy.select_model(model, subagent_parent_model=subagent_parent_model)
         if selected not in source.models:
             raise ConfigurationError(
                 f"The selected creation model {selected!r} is no longer configured.", code="creation_model_missing"

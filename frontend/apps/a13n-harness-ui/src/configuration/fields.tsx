@@ -1009,10 +1009,10 @@ export function ResourceFields({
                     description={
                       allowedModels.length
                         ? t(
-                            "Agents can use these models for new chats, workers, and declared or dynamic subagents.",
+                            "Agents can use these models for new chats, workers, and subagents. Subagents can also use the current chat’s model.",
                           )
                         : t(
-                            "With no models selected, agents can still create chats and workers with configured Agents, without overriding models or delegating to subagents.",
+                            "Subagents can always use the current chat’s model. With no extra models selected, new chats and workers use their Agent’s model.",
                           )
                     }
                     models={selectors.data?.models ?? []}
@@ -1030,18 +1030,15 @@ export function ResourceFields({
                     <ResourceChoice
                       label={t("Default model")}
                       description={t(
-                        "Used when the agent does not choose a model.",
+                        "Used when the agent does not choose a model. With None, dynamic subagents use the current chat’s model.",
                       )}
                       value={defaultModel}
-                      placeholder={t("Choose a model")}
                       loading={selectors.isPending || sources.isPending}
                       onValueChange={(value) =>
                         updateCreationModels(allowedModels, value || undefined)
                       }
                       options={[
-                        ...(dynamicSubagentsEnabled
-                          ? []
-                          : [{ value: "", label: t("None") }]),
+                        { value: "", label: t("None") },
                         ...models.filter((model) =>
                           allowedModels.includes(model.value),
                         ),
@@ -1064,13 +1061,6 @@ export function ResourceFields({
                   <SettingsRow
                     label={t("Let the agent create subagents")}
                     controlId="dynamic-subagents-enabled"
-                    description={
-                      dynamicSubagentsEnabled && !defaultModel
-                        ? t(
-                            "Choose at least one allowed model and a default model in Agent creation above.",
-                          )
-                        : undefined
-                    }
                   >
                     <Switch
                       id="dynamic-subagents-enabled"

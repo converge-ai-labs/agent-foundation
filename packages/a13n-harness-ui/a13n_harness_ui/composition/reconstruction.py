@@ -83,10 +83,22 @@ from a13n_harness.toolsets.web import WebConfiguration
 
 from a13n_harness_ui.acp_execution import AcpTurn
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
-from a13n_harness_ui.configuration.models import WebProviderResource
+from a13n_harness_ui.configuration.models import AgentCreationConfiguration, WebProviderResource
 
 from .auxiliary import capability_configuration
-from .models import ResolvedAcpNode, ResolvedAgentNode, ResolvedMcpRecipe, ResolvedModelRecipe, ResolvedRunComposition
+from .models import (
+    ResolvedAcpNode,
+    ResolvedAgentNode,
+    ResolvedMcpRecipe,
+    ResolvedModelRecipe,
+    ResolvedRunComposition,
+    ResolvedSubagent,
+)
+
+
+def _eligible_children(node: ResolvedAgentNode, policy: AgentCreationConfiguration) -> tuple[ResolvedSubagent, ...]:
+    allowed_models = policy.subagent_models(node.model.model_id)
+    return tuple(item for item in node.children if item.definition.model.model_id in allowed_models)
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,11 +370,7 @@ class AgentReconstructor:
         from a13n_harness_ui.subagent_tools import SubagentTools, guidance
 
         dynamic = not subagent and composition.subagents.dynamic.enabled
-        allowed_child_models = composition.agent_creation.allowed_models
-        eligible_children = tuple(
-            item for item in composition.root.children if item.definition.model.model_id in allowed_child_models
-        )
-        has_children = bool(eligible_children) or dynamic
+        has_children = bool(_eligible_children(composition.root, composition.agent_creation)) or dynamic
         subagent_capability = None
         if has_children:
             if subagent_operator is None:
@@ -416,7 +424,7 @@ class AgentReconstructor:
                 subagent_capability=subagent_capability,
                 root_capabilities=(*root_capabilities, ToolExecutionCapability(composition.tool_execution)),
                 root=True,
-                allowed_child_models=composition.agent_creation.allowed_models,
+                agent_creation=composition.agent_creation,
                 path_layout=path_layout,
                 model_recipes=model_recipes,
                 native_default_tools=(
@@ -560,7 +568,7 @@ class AgentReconstructor:
         subagent_capability: SubagentCapability | None,
         root_capabilities: tuple[AbstractCapability[Any], ...],
         root: bool,
-        allowed_child_models: tuple[str, ...],
+        agent_creation: AgentCreationConfiguration,
         path_layout: EnvironmentPathLayout,
         model_recipes: dict[str, ResolvedModelRecipe],
         native_default_tools: bool,
@@ -610,9 +618,7 @@ class AgentReconstructor:
             if node.tool_search is not None and node.tool_search.enabled
             else None
         )
-        eligible_children = tuple(
-            item for item in node.children if item.definition.model.model_id in allowed_child_models
-        )
+        eligible_children = _eligible_children(node, agent_creation)
         if subagent_capability is not None and (root or eligible_children):
             capabilities.append(subagent_capability)
         if node.tools is not None:
@@ -708,7 +714,7 @@ class AgentReconstructor:
                     subagent_capability=subagent_capability,
                     root_capabilities=(),
                     root=False,
-                    allowed_child_models=allowed_child_models,
+                    agent_creation=agent_creation,
                     path_layout=path_layout,
                     model_recipes=model_recipes,
                     native_default_tools=native_default_tools,

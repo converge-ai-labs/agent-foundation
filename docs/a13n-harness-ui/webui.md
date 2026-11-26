@@ -155,7 +155,7 @@ Agents can inspect related chats, spin up new work, and message existing convers
 | `spawn_subagent`      | A child execution inside the current conversation         | Root chats with dynamic subagents enabled |
 | `send_thread_message` | Sends a follow-up or steering message to an existing chat | Allowed roots within collaboration scope  |
 
-Configure which Agents and Models agents may use for new chats, Coordinator workers, and subagents under **Settings → Agents → Agent creation** (`agent_creation.allowed_agents`, `agent_creation.default_agent`, `agent_creation.allowed_models`, and `agent_creation.default_model`).
+Configure which Agents and Models agents may use for new chats, Coordinator workers, and subagents under **Settings → Agents → Agent creation** (`agent_creation.allowed_agents`, `agent_creation.default_agent`, `agent_creation.allowed_models`, and `agent_creation.default_model`). Subagents can always use the current conversation’s Model. With **Default model** set to **None**, dynamic subagents use that Model when no Model is requested.
 
 ## Observe Memory and configure the workbench
 

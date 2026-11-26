@@ -186,9 +186,22 @@ class AgentCreationConfiguration(ConfigurationModel):
     def allows_agent(self, agent_id: str) -> bool:
         return self.allowed_agents is None or agent_id in self.allowed_agents
 
-    def select_model(self, model: str | None) -> str:
-        selected = self.default_model if model is None else model
-        if selected is None or selected not in self.allowed_models:
+    def subagent_models(self, parent_model: str) -> tuple[str, ...]:
+        if parent_model in self.allowed_models:
+            return self.allowed_models
+        return (*self.allowed_models, parent_model)
+
+    def subagent_default_model(self, parent_model: str) -> str:
+        return self.default_model or parent_model
+
+    def select_model(self, model: str | None, *, subagent_parent_model: str | None = None) -> str:
+        allowed = self.allowed_models
+        default = self.default_model
+        if subagent_parent_model is not None:
+            allowed = self.subagent_models(subagent_parent_model)
+            default = self.subagent_default_model(subagent_parent_model)
+        selected = default if model is None else model
+        if selected is None or selected not in allowed:
             raise ConfigurationError(
                 "Choose a model from the allowed models in Settings > Agents.", code="creation_model_not_allowed"
             )
@@ -568,15 +581,6 @@ class HarnessUiDocument(ConfigurationModel):
         if isinstance(value, dict):
             return lift_legacy_agent_creation(value, check_conflicts=True)
         return value
-
-    @model_validator(mode="after")
-    def _valid_dynamic_subagent_policy(self) -> Self:
-        if self.subagents.dynamic.enabled and self.agent_creation.default_model is None:
-            raise ValueError(
-                "Enabled dynamic subagents require agent_creation.default_model "
-                "and agent_creation.allowed_models that include it"
-            )
-        return self
 
 
 class EnvironmentVariableSource(StrictModel):

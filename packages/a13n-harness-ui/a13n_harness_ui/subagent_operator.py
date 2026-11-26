@@ -495,10 +495,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
     ) -> AsyncExecutionView:
         del tool_call
         scope = await self._require_parent(plan.parent)
-        edge = _require_edge(scope.composition.require_native_root(), request.subagent_name)
+        parent_root = scope.composition.require_native_root()
+        edge = _require_edge(parent_root, request.subagent_name)
         policy = scope.composition.agent_creation
         try:
-            policy.select_model(edge.definition.model.model_id)
+            policy.select_model(edge.definition.model.model_id, subagent_parent_model=parent_root.model.model_id)
         except ConfigurationError as exc:
             raise _SubagentRequestError(str(exc), code=exc.code) from exc
         if (
@@ -638,12 +639,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 "Dynamic subagent creation is disabled in Settings > Agents.",
                 code="dynamic_subagents_disabled",
             )
+        parent_root = scope.composition.require_native_root()
         try:
-            recipe = await self._configurations.creation_model(scope.composition, model, thinking)
+            recipe = await self._configurations.creation_model(
+                scope.composition, model, thinking, subagent_parent_model=parent_root.model.model_id
+            )
         except HarnessUiError as exc:
             raise _SubagentRequestError(str(exc), code=exc.code) from exc
         state = HarnessState.new()
-        parent_root = scope.composition.require_native_root()
         root = parent_root.model_copy(
             update={
                 "source_kind": "dynamic",
