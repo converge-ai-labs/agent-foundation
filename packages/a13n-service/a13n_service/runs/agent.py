@@ -276,15 +276,14 @@ async def open_realtime(
     webrtc: LiveWebRTC | None = None,
 ) -> AsyncIterator[HarnessLiveStream]:
     """Open the Agent's primary model for a caller that owns admission and continuation."""
-    async with (
-        open_realtime_model(
-            agent.model,
-            registry=runtime.registry,
-            keys=runtime.keys,
-            policy=runtime.endpoint_policy.for_run(bindings.configuration),
-            settings=runtime.settings.providers,
-        ) as model,
-        executable.live(
+    async with open_realtime_model(
+        agent.model,
+        registry=runtime.registry,
+        keys=runtime.keys,
+        policy=runtime.endpoint_policy.for_run(bindings.configuration),
+        settings=runtime.settings.providers,
+    ) as model:
+        yield executable.live(
             model=model,
             model_settings=model_settings,
             bindings=bindings,
@@ -292,9 +291,7 @@ async def open_realtime(
             usage_limits=usage_limits,
             memory_context_bytes=runtime.settings.memory.context_bytes,
             webrtc=webrtc,
-        ) as stream,
-    ):
-        yield stream
+        )
 
 
 def model_resolver(agent: ResolvedAgent, models: Mapping[str, Model]) -> RunModelResolver:

@@ -346,7 +346,13 @@ async def test_app_opens_realtime_over_http_and_websocket(
         response = await service.client.post(
             f"{service.api}/realtime/sessions",
             headers=bearer,
-            json={"agent_id": agent_view["id"], "transport": transport, "audio": audio_enabled},
+            json={
+                "agent_id": agent_view["id"],
+                "transport": transport,
+                "audio": audio_enabled,
+                "options": {"max_usage": {"requests": 12}},
+                "memory": {"enabled": True},
+            },
         )
         assert response.status_code == 201, response.text
         assert response.headers["cache-control"] == "no-store"
@@ -425,6 +431,9 @@ async def test_app_opens_realtime_over_http_and_websocket(
                 async for frame in socket:
                     assert json.loads(frame)["type"] in {"transcript", "sealed"}, frame
         run = await runs_kit.get_run(service, receipt["run_id"])
+        session = (await service.client.get(f"{service.api}/sessions/{ticket['session_id']}")).json()
+        assert session["memory"]["enabled"] is True
+        assert run["options"]["max_usage"] == {"requests": 12}
         assert run["trigger"] == "realtime" and run["max_attempts"] == 1
         assert run["status"] == "completed"
         assert provider.hangups == (1 if transport == "webrtc" else 0)
@@ -663,10 +672,23 @@ async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs
     service = executing
     await runs_kit.pause_sweeps(service)
     provider = ScriptedWebRTCProvider()
-    provider.attach_error = ServiceError("conflict", "Sideband unavailable")
+    monkeypatch.setattr("a13n_harness.live._WEBRTC_HANGUP_SECONDS", 0)
     monkeypatch.setattr(OpenAIRealtimeModel, "answer_webrtc_offer", provider.answer)
-    monkeypatch.setattr(OpenAIRealtimeModel, "connect_webrtc", provider.attach)
-    hangup = AsyncMock(side_effect=OSError("Provider unreachable"))
+
+    @asynccontextmanager
+    async def attach(model, session, **kwargs):
+        async with short_session(service.runtime.storage) as db:
+            run = await db.get_one(RunRow, ticket["run_id"])
+            attempt = await db.get_one(AttemptRow, run.current_attempt_id)
+            assert attempt.status == "running" and attempt.harness_run_id
+        async with provider.attach(session, **kwargs) as connected:
+            yield connected
+
+    async def stalled_hangup(session):
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(OpenAIRealtimeModel, "connect_webrtc", attach)
+    hangup = AsyncMock(side_effect=stalled_hangup)
     monkeypatch.setattr(OpenAIRealtimeModel, "hang_up", hangup)
     voice = await create_voice_agent(service, runs_kit)
     response = await service.client.post(
@@ -682,9 +704,16 @@ async def test_orphaned_webrtc_call_survives_interrupted_cleanup(executing, runs
             await socket.send(json.dumps({"type": "offer", "sdp": OPENAI_AUDIO_OFFER}))
             assert json.loads(await socket.recv())["type"] == "accepted"
             assert json.loads(await socket.recv())["type"] == "answer"
-            assert json.loads(await socket.recv())["type"] == "error"
+            assert json.loads(await socket.recv())["type"] == "ready"
+            await socket.send('{"type":"stop"}')
+            terminal = [json.loads(frame) async for frame in socket]
+            assert terminal[-1]["status"] == "completed"
     run_id = ticket["run_id"]
-    assert (await runs_kit.sealed(service, run_id))["status"] == "failed"
+    hangup.assert_awaited_once()
+    async with short_session(service.runtime.storage) as db:
+        run = await db.get_one(RunRow, run_id)
+        assert run.status == "completed" and run.checkpoint
+
     hangup.reset_mock()
     entered = asyncio.Event()
 
@@ -844,6 +873,7 @@ async def test_service_agent_can_run_realtime_from_a_thread_checkpoint(
             bindings=RunBindings.embedded(),
             previous_state=saved.harness,
         ) as stream,
+        stream,
     ):
         assert stream.thread_id == saved.harness.thread_id
         assert "lookup_order" in provider.tools
@@ -1093,12 +1123,15 @@ async def test_crash_before_notice_checkpoint_redelivers_on_reconnect(
                 notice = await session.get_one(InboxEntryRow, notice_id)
                 assert notice.status == "consumed" and notice.incorporated_checkpoint_seq is not None
                 assert notice.assigned_run_id == ticket["run_id"]
+            visible = runs_kit.texts(await runs_kit.items(service, ticket["run_id"]))
+            assert [text for role, text in visible if role == "user"] == ["opening draft"]
+            assert all("tool_receipt" not in text for _, text in visible)
             assert calls == ["lookup"]
 
 
-@pytest.mark.parametrize("after_dispatch", [False, True])
+@pytest.mark.parametrize(("after_dispatch", "requires_approval"), [(False, True), (True, True), (False, False)])
 async def test_approval_close_straddles_dispatch_gate(
-    settings, serve, service_app, runs_kit, monkeypatch, after_dispatch
+    settings, serve, service_app, runs_kit, monkeypatch, after_dispatch, requires_approval
 ):
     from a13n_service.runs.boundaries import Boundaries
 
@@ -1124,7 +1157,7 @@ async def test_approval_close_straddles_dispatch_gate(
             root,
             capabilities=lambda node: [
                 *capabilities(node),
-                Capability(tools=[Tool(lookup_order, requires_approval=True)]),
+                Capability(tools=[Tool(lookup_order, requires_approval=requires_approval)]),
             ],
             **kwargs,
         )
@@ -1165,19 +1198,22 @@ async def test_approval_close_straddles_dispatch_gate(
                     ToolCall("call_order", tool_name="lookup_order", args="{}", response_usage_follows=True)
                 )
                 await provider.connection.incoming.put(ResponseDone())
-                assert json.loads(await ws.recv())["type"] == "approval_required"
-                await ws.send('{"type":"approval","call_id":"call_order","approve":true}')
+                if requires_approval:
+                    assert json.loads(await ws.recv())["type"] == "approval_required"
+                    await ws.send('{"type":"approval","call_id":"call_order","approve":true}')
                 await (dispatched if after_dispatch else gate).wait()
             resume.set()
             # Socket is already closed. Read the durable outcome without a sealed receipt.
             run = await runs_kit.sealed(service, ticket["run_id"])
-            assert run["status"] in {"completed", "failed"}
+            assert run["status"] == "completed"
             assert dispatched.is_set() == after_dispatch
             if after_dispatch:
                 assert ended.is_set()
             items = await runs_kit.items(service, ticket["run_id"])
             item = next(i for i in items["items"] if i["content"].get("toolCallId") == "call_order")
-            assert item["content"]["outcome"] == ("interrupted" if after_dispatch else "expired")
+            assert item["content"]["outcome"] == (
+                "expired" if requires_approval and not after_dispatch else "interrupted"
+            )
 
 
 async def test_missed_sealed_receipt_recovers_via_http(settings, serve, service_app, runs_kit, monkeypatch):
@@ -1295,6 +1331,11 @@ async def test_voice_fork_redeems_into_a_new_thread_at_the_selected_checkpoint(e
             return await runs_kit.get_run(executing, ticket["run_id"]), before
 
         root, _ = await talk("Original branch point")
+        invalid_selection = await client.get(
+            f"{api}/realtime", params={"agent_id": agent_view["id"], "fork_run_id": root["id"], "model": "other"}
+        )
+        assert invalid_selection.status_code == 400
+        assert invalid_selection.json()["error"]["details"]["field"] == "model"
         newer, _ = await talk("Later source message", thread_id=root["thread_id"])
         branch, inherited = await talk("New branch message", fork_run_id=root["id"])
         assert branch["session_id"] == root["session_id"] and branch["thread_id"] != root["thread_id"]
@@ -1303,3 +1344,41 @@ async def test_voice_fork_redeems_into_a_new_thread_at_the_selected_checkpoint(e
         assert "Original branch point" in inherited and "Later source message" not in inherited
         source_thread = (await client.get(f"{api}/threads/{root['thread_id']}")).json()
         assert source_thread["last_run_id"] == newer["id"]
+
+
+async def test_stale_run_removed_during_reconcile_does_not_skip_next_run(settings, serve, runs_kit, monkeypatch):
+    from datetime import timedelta
+
+    from a13n_service.runs import realtime
+    from a13n_service.runs.realtime import ConnectionTicket
+    from a13n_service.runs.tables import RealtimeTicketRow
+
+    async with serve(role="control", settings=settings) as service:
+        await runs_kit.pause_sweeps(service)
+        voice = await create_voice_agent(service, runs_kit)
+        workspace = service.tenant.workspace_id
+        ids = []
+        for _ in range(2):
+            response = await service.client.post(f"{service.api}/realtime/sessions", json={"agent_id": voice["id"]})
+            assert response.status_code == 201
+            raw = response.json()["ticket"]
+            async with short_session(service.runtime.storage) as db:
+                row = await db.get_one(RealtimeTicketRow, realtime.secret_hash(raw))
+                ticket = ConnectionTicket.model_validate(row.request)
+            await realtime._redeem(service.runtime, workspace, raw, ticket)
+            ids.append(ticket.run_id)
+        async with transaction(service.runtime.storage) as db:
+            await db.execute(
+                update(RunRow).where(RunRow.id.in_(ids)).values(available_at=func.now() - timedelta(minutes=1))
+            )
+        stop = realtime._stop_abandoned
+        visited = []
+
+        async def remove_first(runtime, workspace_id, run_id):
+            visited.append(run_id)
+            await stop(runtime, workspace_id, run_id if len(visited) > 1 else "run_missing")
+
+        monkeypatch.setattr(realtime, "_stop_abandoned", remove_first)
+        await realtime_cleanup.reconcile(service.runtime)
+        assert set(visited) == set(ids)
+        assert (await runs_kit.get_run(service, visited[1]))["status"] == "failed"

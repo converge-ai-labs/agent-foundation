@@ -201,11 +201,30 @@ export function NewConversation() {
     selected?.preset_kind === "composer" ? selected.id : undefined,
     options.revision || selected?.default_revision_id,
   );
-  const revisionId = options.build().agent_revision_id;
+  const revisionId = options.revision || undefined;
   const realtime = useRealtimeAvailability({
     agentId: selected?.id,
     revisionId,
+    model: options.model || undefined,
   }).data;
+  const controls = (
+    <>
+      <RunOptions
+        options={options}
+        showAgent={false}
+        agentId={agentId}
+        defaultEnvironment={defaultEnvironment}
+        showRequestLimit={realtime?.realtime}
+      />
+      {can("run") && (
+        <SessionMemoryControl
+          value={memory}
+          onChange={setMemory}
+          locked={memoryLocked}
+        />
+      )}
+    </>
+  );
   return (
     <div className={styles.startPage}>
       <div className={styles.startColumn}>
@@ -254,6 +273,25 @@ export function NewConversation() {
                 : undefined
             }
             availability={realtime}
+            controls={controls}
+            disabled={
+              !can("run") || (memory !== null && !validSpaceSelection(memory))
+            }
+            setup={async () => {
+              const {
+                options: selectedOptions,
+                memories,
+                environment,
+              } = options.build();
+              return {
+                options: selectedOptions,
+                memories,
+                memory,
+                environments: environment
+                  ? [await primaryMount(environment)]
+                  : [],
+              };
+            }}
             onAccepted={(run) => {
               void invalidateConversation(cache, workspace.id, {
                 sessionId: run.session_id,
@@ -273,23 +311,7 @@ export function NewConversation() {
             disabled={!can("run") || !selected}
             submitDisabled={memory !== null && !validSpaceSelection(memory)}
             agentName={selected?.name}
-            options={
-              <>
-                <RunOptions
-                  options={options}
-                  showAgent={false}
-                  agentId={agentId}
-                  defaultEnvironment={defaultEnvironment}
-                />
-                {can("run") && (
-                  <SessionMemoryControl
-                    value={memory}
-                    onChange={setMemory}
-                    locked={memoryLocked}
-                  />
-                )}
-              </>
-            }
+            options={controls}
             submit={async (payload) => {
               const { environment, ...choice } = options.build();
               if (!selected) return;

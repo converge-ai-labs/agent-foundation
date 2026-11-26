@@ -89,7 +89,10 @@ export function presentItem(item: DisplayItem): PresentedItem {
     state:
       item.kind === "tool_call" && toolExecutionReceipt(content.result)
         ? "handed_off"
-        : item.state,
+        : item.kind === "tool_call" &&
+            (content.outcome === "expired" || content.outcome === "interrupted")
+          ? content.outcome
+          : item.state,
     firstPosition: item.first_stream_id,
     lastPosition: item.last_stream_id,
     startedAt: item.started_at,

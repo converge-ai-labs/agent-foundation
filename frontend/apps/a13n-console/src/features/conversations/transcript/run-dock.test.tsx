@@ -77,6 +77,7 @@ function Location() {
 function mount({
   status = "completed",
   historical = false,
+  realtime = false,
   origin = "new",
   reject = false,
   loseAcknowledgement = false,
@@ -88,6 +89,7 @@ function mount({
 }: {
   status?: Schema["RunStatus"];
   historical?: boolean;
+  realtime?: boolean;
   origin?: Schema["ThreadView"]["origin"];
   reject?: boolean;
   loseAcknowledgement?: boolean;
@@ -236,7 +238,12 @@ function mount({
   const tree = (selected: Schema["ThreadView"]) => (
     <QueryClientProvider client={cache}>
       <MemoryRouter initialEntries={[`/${search}`]}>
-        <TestDock run={current} thread={selected} resubmit={resubmit} />
+        <TestDock
+          realtime={realtime && <button>Start voice chat</button>}
+          run={current}
+          thread={selected}
+          resubmit={resubmit}
+        />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>
@@ -634,5 +641,19 @@ it.each(["waiting", "running"] as const)(
       expect(screen.queryByRole("button", { name })).toBeNull();
     expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
     expect(posts).toHaveLength(0);
+  },
+);
+
+it.each([
+  { status: "completed", historical: true, visible: false },
+  { status: "waiting", historical: false, visible: false },
+  { status: "completed", historical: false, visible: true },
+] as const)(
+  "gates the voice composer for $status and historical=$historical",
+  ({ status, historical, visible }) => {
+    mount({ status, historical, realtime: true });
+    expect(
+      Boolean(screen.queryByRole("button", { name: "Start voice chat" })),
+    ).toBe(visible);
   },
 );

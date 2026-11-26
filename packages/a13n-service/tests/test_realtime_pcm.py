@@ -176,6 +176,20 @@ async def test_worker_keeps_stale_pcm_in_previous_epoch_until_provider_cut():
         assert len(calls) == 1 and calls[0].args[1].endswith((3).to_bytes(8) + b"new")
 
 
+async def test_relay_rejects_input_before_worker_attach():
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.realtime import relay
+
+    control, _ = pair()
+    socket = AsyncMock()
+    socket.receive.return_value = {"type": "websocket.receive", "text": '{"type":"text","text":"hello"}'}
+    async with asyncio.timeout(1):
+        with pytest.raises(ServiceError, match="Wait for realtime ready"):
+            await relay(
+                socket, control, offer=None, authorize_attachment=AsyncMock(), reauthorize=AsyncMock(), interval=60
+            )
+
+
 async def test_control_buffers_new_epoch_pcm_until_interruption_receipt():
     from a13n_service.runs.realtime import relay
 
@@ -214,3 +228,32 @@ async def test_control_buffers_new_epoch_pcm_until_interruption_receipt():
         finally:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_unattached_control_close_and_idle_control_stream(redis_url):
+    from a13n_service.infra.errors import ServiceError
+    from a13n_service.runs.realtime_transport import ATTACH_SECONDS, Offer
+    from redis.asyncio import Redis
+
+    async with Redis.from_url(redis_url) as redis:
+        for offered in (False, True):
+            run = f"early-close-{offered}"
+            control = Pipe(Bridge(redis), run, side="control")
+            worker = Pipe(Bridge(redis), run, side="worker")
+            lease = MagicMock(workspace_id="workspace", attempt_id="attempt")
+            if offered:
+                await control.publish_offer(
+                    Offer(control_id=control.control_id, principal_id="user", workspace_id="workspace", audio=True)
+                )
+                await worker.attach(lease)
+            await control.shutdown()
+            async with asyncio.timeout(1):
+                if offered:
+                    assert await worker.receive() == b"closed"
+                else:
+                    with pytest.raises(ServiceError, match="transport is unavailable"):
+                        await worker.attach(lease)
+        await control.send(b"stop")
+        await redis.expire(control.outbox, 1)
+        await control.send(b"ping")
+        assert await redis.ttl(control.outbox) >= ATTACH_SECONDS * 2 - 1

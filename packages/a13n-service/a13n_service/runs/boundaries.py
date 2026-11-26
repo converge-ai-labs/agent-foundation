@@ -21,7 +21,6 @@ from pydantic_ai.messages import ModelMessage, ToolCallPart
 from pydantic_ai.models import ModelRequestContext
 from pydantic_ai.tools import ToolDefinition
 
-from a13n_service.infra.errors import ServiceError
 from a13n_service.runs.display import Snapshot, open_tool_calls
 
 
@@ -150,8 +149,6 @@ class Boundaries(AbstractCapability[AgentContext]):
     async def before_tool_execute(
         self, ctx: RunContext[AgentContext], *, call: ToolCallPart, tool_def: ToolDefinition, args: ValidatedToolArgs
     ) -> ValidatedToolArgs:
-        if self.before_dispatch and self.primary is None:
-            raise ServiceError("conflict", "The realtime call is not ready for tools")
         if ctx.run_id == self.primary:
             async with self.staging:
                 self.pending_live = None

@@ -134,6 +134,8 @@ class Pipe:
     async def attach(self, lease: Lease) -> Offer:
         async with asyncio.timeout(ATTACH_SECONDS):
             while (raw := await self.redis.getdel(self.offer)) is None:
+                if await self.redis.exists(self.inbox + ":close"):
+                    raise unavailable()
                 await asyncio.sleep(0.05)
         offer = Offer.model_validate_json(raw)
         if offer.workspace_id != lease.workspace_id:
@@ -153,16 +155,20 @@ class Pipe:
             self.bridge.calls.pop(address, None)
 
     async def shutdown(self) -> None:
-        if self.peer:
+        if self.side == "control" or self.peer:
             async with self.redis.pipeline(transaction=False) as batch:
-                batch.set(self.outbox + ":close", self.fence, ex=_PEER_TIMEOUT)
-                batch.publish(f"a13n:rt:{self.peer}:control", self.outbox.encode())
+                batch.set(self.outbox + ":close", self.fence, ex=ATTACH_SECONDS * 2)
+                if self.peer:
+                    batch.publish(f"a13n:rt:{self.peer}:control", self.outbox.encode())
                 await batch.execute()
 
     async def send(self, frame: bytes) -> None:
         try:
             if frame == b"ping":
-                await self.redis.set(self.inbox + ":alive", self.fence, ex=_PEER_TIMEOUT)
+                async with self.redis.pipeline(transaction=False) as batch:
+                    batch.set(self.inbox + ":alive", self.fence, ex=_PEER_TIMEOUT)
+                    batch.expire(self.outbox, ATTACH_SECONDS * 2)
+                    await batch.execute()
                 return
             if frame.startswith(b"b"):
                 self.sent += 1
@@ -200,7 +206,7 @@ class Pipe:
                 if self.scan or periodic:
                     self.scan = False
                     close, alive = await self.redis.mget(self.inbox + ":close", self.outbox + ":alive")
-                    if close == self.fence:
+                    if close == self.fence or (self.side == "worker" and close == self.control_id.encode() + b"/"):
                         return b"closed"
                     if periodic:
                         self.last_check = clock

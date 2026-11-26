@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
 
 import anyio
+from a13n_logging import get_logger
 from pydantic import TypeAdapter
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, ValidatedToolArgs, WrapperCapability
@@ -68,6 +69,9 @@ from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord, _stable_id
 
 if TYPE_CHECKING:
     from a13n_harness.execution import ExecutableAgent
+
+
+_WEBRTC_HANGUP_SECONDS = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -597,15 +601,27 @@ class HarnessLiveStream(HarnessRunStream[None]):
                     answer = await native.answer_webrtc_offer(self._webrtc.offer)
                     provider_session = answer.session
 
+                    registered = False
+
                     async def hang_up() -> None:
-                        with anyio.fail_after(5, shield=True):
-                            await native.hang_up(answer.session)
-                            if self._webrtc and self._webrtc.record_call:
+                        try:
+                            with anyio.fail_after(_WEBRTC_HANGUP_SECONDS, shield=True):
+                                await native.hang_up(answer.session)
+                        except Exception as error:
+                            if not registered:
+                                raise
+                            get_logger(__name__).warning(
+                                "Provider hangup deferred to host", extra={"error_type": type(error).__name__}
+                            )
+                            return
+                        if self._webrtc and self._webrtc.record_call:
+                            with anyio.fail_after(_WEBRTC_HANGUP_SECONDS, shield=True):
                                 await self._webrtc.record_call(None)
 
                     transport.push_async_callback(hang_up)
                     if self._webrtc.record_call:
                         await self._webrtc.record_call(answer.session.session_id)
+                        registered = True
                     await self._webrtc.deliver_answer(answer.sdp)
                     bridge.prepare_dispatcher = True
                 session = await transport.enter_async_context(

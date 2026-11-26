@@ -85,9 +85,11 @@ export function useRunOptions() {
     runEnvironment?: string;
     agent?: string;
   }>({});
+  const [requestLimit, setRequestLimit] = useState("");
   const [advanced, setAdvanced] = useState("{}");
   const [execution, setExecution] = useState<Schema["ExecutionOverride"]>({});
   const values = {
+    requestLimit,
     execution,
     agent,
     revision,
@@ -108,6 +110,7 @@ export function useRunOptions() {
     modified = !!(
       agent ||
       revision ||
+      requestLimit ||
       model ||
       overrideInstructions ||
       memories.length ||
@@ -125,6 +128,7 @@ export function useRunOptions() {
     reset: () => {
       setAgent("");
       setRevision("");
+      setRequestLimit("");
       setModel("");
       setInstructions("");
       setOverrideInstructions(false);
@@ -143,6 +147,7 @@ export function useRunOptions() {
     restore: (saved: typeof values) => {
       setAgent(saved.agent);
       setRevision(saved.revision);
+      setRequestLimit(saved.requestLimit);
       setModel(saved.model);
       setMediaUnderstanding(saved.mediaUnderstanding);
       setInstructions(saved.instructions);
@@ -166,6 +171,8 @@ export function useRunOptions() {
     setAgent,
     revision,
     setRevision,
+    requestLimit,
+    setRequestLimit,
     model,
     setModel,
     instructions,
@@ -191,6 +198,12 @@ export function useRunOptions() {
     labels,
     setLabels,
     build: (): Options => {
+      const limit = requestLimit ? Number(requestLimit) : undefined;
+      if (
+        limit !== undefined &&
+        (!Number.isInteger(limit) || limit < 1 || limit > 10000)
+      )
+        throw new Error(t("Enter a model request limit between 1 and 10,000."));
       const extra = jsonObject(advanced);
       for (const key of dedicatedOverrides)
         if (key in extra)
@@ -211,6 +224,7 @@ export function useRunOptions() {
       const policy = executionOverride(execution, t);
       const runOptions: NonNullable<Schema["NewThread"]["options"]> = {
         ...(Object.keys(override).length ? { overrides: override } : {}),
+        ...(limit ? { max_usage: { requests: limit } } : {}),
         ...(policy ? { execution: policy } : {}),
       };
       if (runEnvironment === "none") {
@@ -263,7 +277,9 @@ export function RunOptionsDialog({
   onOpenChange,
   onCancel,
   focus,
+  showRequestLimit,
 }: {
+  showRequestLimit?: boolean;
   options: RunOptionsState;
   showAgent?: boolean;
   newThread?: boolean;
@@ -513,6 +529,19 @@ export function RunOptionsDialog({
               code
               rows={7}
             />
+            {showRequestLimit && (
+              <FormField label={t("Model request limit")}>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={options.requestLimit}
+                  onChange={(event) =>
+                    options.setRequestLimit(event.target.value)
+                  }
+                />
+              </FormField>
+            )}
             <FormField label={t("Pinned agent revision ID")}>
               <Input
                 value={options.revision}

@@ -4020,6 +4020,7 @@
   "Input tokens per request": "प्रति अनुरोध इनपुट टोकन",
   "Tool call limit": "टूल कॉल सीमा",
   "Cost limit (USD)": "लागत सीमा (USD)",
+  "Enter a model request limit between 1 and 10,000.": "मॉडल अनुरोधों की सीमा 1 से 10,000 के बीच दर्ज करें।",
   "Model request limit": "मॉडल अनुरोध सीमा",
   "Search collections": "कलेक्शन खोजें",
   "{{count}} collections on this page": "इस पेज पर {{count}} कलेक्शन",

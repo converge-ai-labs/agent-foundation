@@ -168,11 +168,16 @@ class DisplayFold(SemanticDisplayFold):
                     source = replace(source, event=event.model_copy(update={"payload": payload}))
         return super().events(source)
 
-    def close_realtime_tools(self, expired: set[str], dispatched: set[str]) -> None:
-        for call_id in expired | dispatched:
-            key = item_id(self.run_id, "tool_call", call_id)
-            current = self.items.get(key)
-            if current is None or (call_id not in expired and current.state not in {"in_progress", "interrupted"}):
+    def close_realtime_tools(self, expired: set[str], interrupted: set[str]) -> None:
+        for key, current in self.items.items():
+            call_id = current.content.get("toolCallId")
+            if current.kind != "tool_call" or "subagentRunId" in current.content or not isinstance(call_id, str):
+                continue
+            if (
+                call_id not in expired
+                and call_id not in interrupted
+                and current.state not in {"in_progress", "interrupted"}
+            ):
                 continue
             outcome = "expired" if call_id in expired else "interrupted"
             self.items[key] = current.model_copy(

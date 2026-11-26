@@ -97,7 +97,7 @@ export function RunDock({
   /** A receipt can update the Thread before the route transition commits. */
   pendingRunId?: string;
   level?: ViewLevel;
-  realtime?: boolean;
+  realtime?: ReactNode;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -235,6 +235,11 @@ export function RunDock({
           </div>
         ) : (
           <>
+            {interactive &&
+              !waiting &&
+              can("run") &&
+              latest === run.id &&
+              realtime}
             {interactive && !waiting && !realtime && (
               <Composer
                 key={resubmit ? "resubmit" : "message"}

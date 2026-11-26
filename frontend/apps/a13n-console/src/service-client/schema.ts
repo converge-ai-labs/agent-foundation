@@ -13020,6 +13020,8 @@ export interface components {
        * @default
        */
       draft?: string;
+      /** @default [] */
+      environments?: components["schemas"]["InitialMounts"];
       /** Fork Run Id */
       fork_run_id?: string | null;
       /**
@@ -13028,6 +13030,13 @@ export interface components {
        */
       fresh_environments?: boolean;
       max_usage?: components["schemas"]["UsageLimit"] | null;
+      /**
+       * Memories
+       * @default []
+       */
+      memories?: components["schemas"]["MemoryMount"][];
+      memory?: components["schemas"]["SessionMemorySettings"] | null;
+      options?: components["schemas"]["RunOptions-Input"];
       /** Thread Id */
       thread_id?: string | null;
       /** @default websocket */
@@ -23899,6 +23908,7 @@ export interface operations {
         agent_revision_id?: string | null;
         thread_id?: string | null;
         fork_run_id?: string | null;
+        model?: string | null;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */

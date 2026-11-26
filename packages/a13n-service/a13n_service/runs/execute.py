@@ -929,11 +929,15 @@ class _Attempt:
                 model_settings=settings,
                 webrtc=webrtc,
             ) as stream,
-            self.boundaries.process(partial(self._boundary, stream=stream, output=output)),
-            asyncio.TaskGroup() as tasks,
+            AsyncExitStack() as stack,
         ):
             await claim.start(self.runtime, self.lease, harness_run_id=stream.run_id)
             self.boundaries.primary = stream.run_id
+            await stack.enter_async_context(
+                self.boundaries.process(partial(self._boundary, stream=stream, output=output))
+            )
+            await stack.enter_async_context(stream)
+            tasks = await stack.enter_async_context(asyncio.TaskGroup())
             self.offers.requested = True
             part_audio = webrtc is None and stream.relay_part_audio(channel.emit)
             pcm = stream.stream_audio() if webrtc is None and not part_audio else None
@@ -942,7 +946,9 @@ class _Attempt:
             if opening:
                 if channel.draft:
                     await stream.recall(channel.draft)
-                    opening.append(TextContent(channel.draft))
+                    opening.append(
+                        TextContent(channel.draft, metadata={"a13n.steering-source": "user", "display": False})
+                    )
                 opening_id = stream.enqueue_notice(opening)
             elif channel.draft:
                 await stream.send(channel.draft, respond=True)
@@ -1044,8 +1050,17 @@ class _Attempt:
         for entry in entries:
             content = await self._read(entry, stream.context.environment)
             if content and not channel.closed.is_set():
+                source = "tool_execution" if entry.kind == "tool_result" else "async_subagent"
                 texts.extend(
-                    replace(part, metadata={**(part.metadata or {}), INBOX_METADATA: True})
+                    replace(
+                        part,
+                        metadata={
+                            **(part.metadata or {}),
+                            INBOX_METADATA: True,
+                            "display": False,
+                            "a13n.steering-source": source,
+                        },
+                    )
                     for part in content
                     if isinstance(part, TextContent)
                 )
@@ -1543,7 +1558,7 @@ class _Attempt:
         if self.channel is not None and self.channel.closed.is_set():
             channel = self.channel
             self.fold.close_realtime_tools(
-                channel.expired | (channel.approved - channel.dispatched), channel.dispatched
+                channel.expired | (channel.approved - channel.dispatched), channel.interrupted
             )
         snapshot = self.fold.snapshot()
         tail, written = snapshot.tail, self.live.last_written if self.live is not None else None

@@ -12,6 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { createClient, type Client } from "../../service-client";
+import { RealtimeCallProvider } from "./realtime";
 import { ConversationsPage, NewConversation } from "./page";
 import { conversationKeys, conversationQueries } from "./api";
 import { useSession } from "./queries";
@@ -676,5 +677,44 @@ it("prefills the first message from the link, leaving sending to the user", asyn
   );
   expect(await screen.findByRole("button", { name: "Send" })).toBeTruthy();
   expect(posts).toEqual([]);
+  cache.clear();
+});
+
+it("retains Run options and Session memory when starting a voice conversation", async () => {
+  allowed = ["run"];
+  client = createClient({
+    baseUrl: "https://service.example",
+    auth: { type: "session" },
+    fetch: async (input, init) => {
+      const url = new URL(new Request(input, init).url);
+      if (url.pathname.endsWith("/realtime"))
+        return Response.json({
+          realtime: true,
+          can_start: true,
+          accepts_text: true,
+        });
+      return Response.json({
+        items: [{ id: "agt_voice", name: "Voice" }],
+        next_cursor: null,
+      });
+    },
+  });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter initialEntries={["/sessions/new?agent=agt_voice"]}>
+        <RealtimeCallProvider>
+          <NewConversation />
+        </RealtimeCallProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(
+    await screen.findByRole("button", { name: "Start voice chat" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Run options" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /memory/i })).toBeTruthy();
   cache.clear();
 });

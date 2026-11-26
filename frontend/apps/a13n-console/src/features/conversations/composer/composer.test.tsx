@@ -13,9 +13,13 @@ import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { RealtimeCallProvider, RealtimeComposer } from "../realtime";
 import { Composer } from "./composer";
 
+const getRun = vi.hoisted(() => vi.fn());
 const ticketRequest = vi.hoisted(() => vi.fn());
 vi.mock("../../../auth/context", () => ({
-  useClient: () => ({ http: {}, workspace: () => ({ POST: ticketRequest }) }),
+  useClient: () => ({
+    http: {},
+    workspace: () => ({ POST: ticketRequest, GET: getRun }),
+  }),
 }));
 vi.mock("../../../layout/workspace", () => ({
   useWorkspace: () => ({
@@ -382,10 +386,27 @@ it("transfers call controls to the accepted Run while the same socket becomes re
     expect(send).toHaveBeenCalledTimes(count);
     expect(close).not.toHaveBeenCalled();
     expect(stop).not.toHaveBeenCalled();
+    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "End realtime chat" }));
     expect(send).toHaveBeenCalledWith(JSON.stringify({ type: "stop" }));
     expect(stop).toHaveBeenCalledOnce();
+    getRun
+      .mockResolvedValueOnce({
+        response: new Response(),
+        data: { sealed_at: null },
+      })
+      .mockResolvedValueOnce({
+        response: new Response(),
+        data: { sealed_at: "now" },
+      });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10500);
+    });
+    expect(close).toHaveBeenCalled();
+    expect(getRun).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Saving conversation…")).toBeNull();
   } finally {
+    vi.useRealTimers();
     cleanup();
     vi.unstubAllGlobals();
     if (media) Object.defineProperty(navigator, "mediaDevices", media);

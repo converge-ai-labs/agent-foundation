@@ -4020,6 +4020,7 @@
   "Input tokens per request": "Input tokens per request",
   "Tool call limit": "Tool call limit",
   "Cost limit (USD)": "Cost limit (USD)",
+  "Enter a model request limit between 1 and 10,000.": "Enter a model request limit between 1 and 10,000.",
   "Model request limit": "Model request limit",
   "Search collections": "Search collections",
   "{{count}} collections on this page": "{{count}} collections on this page",

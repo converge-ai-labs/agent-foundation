@@ -10,6 +10,7 @@ from sqlalchemy import JSON, delete, func, or_, select
 
 from a13n_service.infra.crypto import Envelope, SecretLocation
 from a13n_service.infra.db import now, short_session, transaction
+from a13n_service.infra.errors import ServiceError
 from a13n_service.resources.models.realtime import open_realtime_model
 from a13n_service.resources.models.schemas import ModelConfig
 from a13n_service.resources.models.service import ResolvedModel
@@ -86,7 +87,11 @@ async def reconcile(runtime: Runtime) -> None:
         )
         await session.execute(delete(RealtimeCallRow).where(RealtimeCallRow.run_id.in_(finished)))
     for workspace_id, run_id in stale:
-        await _stop_abandoned(runtime, workspace_id, run_id)
+        try:
+            await _stop_abandoned(runtime, workspace_id, run_id)
+        except ServiceError as error:
+            if error.code != "not_found":
+                raise
     for _ in range(limit):
         async with transaction(runtime.storage) as session:
             current = await now(session)

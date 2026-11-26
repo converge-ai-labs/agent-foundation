@@ -37,9 +37,9 @@ Search past conversations across `/sessions`, `/threads`, and `/runs` with `?tex
 
 ## Start a realtime conversation from an app
 
-Connect to the Service API on a `control` or `all` replica. Select a realtime model as the Agent's primary model. You can start a fresh connection on the same Thread after a disconnect to continue from saved history.
+Connect to the Service API on a `control` or `all` replica. Select a realtime model as the Agent's primary Model. You can start a fresh connection on the same Thread after a disconnect to continue from saved history.
 
-1. From your app's backend, call `POST /api/v1/realtime/sessions` using a workspace API key with `run` permission. Send `{"agent_id":"…"}` to start a new conversation or include `thread_id` to continue an existing Thread. Set `audio: false` for text-only input with spoken output.
+1. From your app's backend, call `POST /api/v1/realtime/sessions` using a workspace API key with `run` permission. Send `{"agent_id":"…"}` to start a new conversation or include `thread_id` to continue an existing Thread. Set `audio: false` for text-only input with spoken output. Use `options.max_usage.requests` to limit model requests. New conversations accept `memory` for Session memory settings, plus `memories` and `environments` for initial Thread mounts.
 2. Give the response to the client. Use `new WebSocket(url, [subprotocol, ticket])` in a browser, where `url` is the returned `websocket_path` resolved against the Service origin with the `wss:` scheme. Loopback development can use `ws:`. The ticket is single-use and expires after 30 seconds. Keep the long-lived API key on your backend.
 3. Record the `session_id`, `thread_id`, and `run_id` from the HTTP response. The `accepted` frame confirms creation. Start sending input after `ready`. No separate start frame is needed for a ticket connection.
 

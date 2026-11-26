@@ -26,6 +26,7 @@ import { invalidateConversation, runPath } from "./api";
 interface Selection {
   agentId?: string;
   revisionId?: string | null;
+  model?: string;
   threadId?: string;
   forkRunId?: string;
 }
@@ -45,17 +46,23 @@ export interface RealtimeReceipt {
 }
 
 export function useRealtimeAvailability(
-  { agentId, revisionId, threadId, forkRunId }: Selection,
+  { agentId, revisionId, threadId, forkRunId, model }: Selection,
   busy = false,
 ) {
   const { workspace, can } = useWorkspace();
   const client = useClient();
-  const identity = [workspace.id, agentId, revisionId, threadId ?? forkRunId];
+  const identity = [
+    workspace.id,
+    agentId,
+    revisionId,
+    threadId ?? forkRunId,
+    model,
+  ];
   return useQuery<Availability>({
     queryKey: ["realtime", ...identity, busy],
     placeholderData: (previous, query) =>
       query?.queryKey
-        .slice(1, 5)
+        .slice(1, 1 + identity.length)
         .every((value, index) => value === identity[index])
         ? previous
         : undefined,
@@ -71,6 +78,7 @@ export function useRealtimeAvailability(
               agent_revision_id: revisionId ?? undefined,
               thread_id: threadId,
               fork_run_id: forkRunId,
+              model,
             },
           },
           signal,
@@ -114,6 +122,12 @@ type Event =
 interface CallOptions extends Selection {
   availability: Availability;
   freshEnvironments?: boolean;
+  setup?: () => Promise<
+    Pick<
+      Schema["RealtimeSessionCreate"],
+      "options" | "environments" | "memories" | "memory"
+    >
+  >;
   onAccepted: (receipt: RealtimeReceipt) => void;
 }
 
@@ -137,6 +151,10 @@ function useRealtimeCall() {
   const [acceptsText, setAcceptsText] = useState(true);
   const socket = useRef<WebSocket | null>(null);
   const cleanup = useRef<(() => void) | null>(null);
+  const recoverClose = useRef<(() => void) | null>(null);
+  const endingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const stopMedia = useRef<(() => void) | null>(null);
 
   useEffect(() => () => cleanup.current?.(), []);
@@ -156,6 +174,7 @@ function useRealtimeCall() {
       threadId,
       forkRunId,
       freshEnvironments,
+      setup,
       availability,
       onAccepted,
     }: CallOptions,
@@ -166,7 +185,7 @@ function useRealtimeCall() {
     const useWebRTC =
       availability.transports?.includes("webrtc") &&
       typeof RTCPeerConnection !== "undefined";
-    const context = new AudioContext({ sampleRate: 24000 });
+    const context = new AudioContext();
     const abort = new AbortController();
     let settleFirst: ((result?: Error | false) => void) | undefined;
     let input: MediaStream | undefined;
@@ -244,6 +263,8 @@ function useRealtimeCall() {
       setActiveRun(undefined);
       setPhase("idle");
       interruptPlayback.current = null;
+      clearTimeout(endingTimer.current);
+      recoverClose.current = null;
       abort.abort();
       clearTimeout(startupTimer);
       stopMedia.current?.();
@@ -385,6 +406,7 @@ function useRealtimeCall() {
         .workspace(workspace.id)
         .POST("/api/v1/realtime/sessions", {
           body: {
+            ...(await setup?.()),
             agent_id: agentId,
             agent_revision_id: revisionId,
             thread_id: threadId,
@@ -494,48 +516,36 @@ function useRealtimeCall() {
         }
       };
       connected.onerror = () => setError(t("Realtime connection failed"));
-      connected.onclose = async (event) => {
-        if (disposed) return;
+      let closing = false;
+      const finish = async (code: number) => {
+        if (disposed || closing) return;
+        closing = true;
         stopMedia.current?.();
         clearTimeout(startupTimer);
+        clearTimeout(endingTimer.current);
         setApprovals([]);
         setPhase("ending");
-        if (!ready || event.code !== 1000)
+        if (!ready || code !== 1000)
           setError((value) => value || t("Realtime connection failed"));
         try {
           if (!receipt) return;
           if (!sealed) {
             // The Run page follows an accepted or running Run through lease recovery.
             const api = client.workspace(workspace.id);
-            const run = await api.GET("/api/v1/runs/{run_id}", {
-              params: { path: { run_id: receipt.run_id } },
-              signal: abort.signal,
-            });
-            if (run.response.status === 404) return;
-            data(run);
-            const availability = await api
-              .GET("/api/v1/realtime", {
-                params: {
-                  query: {
-                    agent_id: agentId,
-                    agent_revision_id: revisionId ?? undefined,
-                    thread_id: receipt.thread_id,
-                  },
-                },
-                signal: abort.signal,
-              })
-              .then(data);
-            cache.setQueryData(
-              [
-                "realtime",
-                workspace.id,
-                agentId,
-                revisionId,
-                receipt.thread_id,
-                false,
-              ],
-              availability,
-            );
+            const signal = AbortSignal.any([
+              abort.signal,
+              AbortSignal.timeout(20000),
+            ]);
+            for (let delay = 100; ; delay = Math.min(delay * 2, 1000)) {
+              const run = await api.GET("/api/v1/runs/{run_id}", {
+                params: { path: { run_id: receipt.run_id } },
+                signal,
+              });
+              if (run.response.status === 404) return;
+              if (data(run).sealed_at) break;
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              signal.throwIfAborted();
+            }
           }
           if (!disposed) {
             void invalidateConversation(cache, workspace.id, {
@@ -549,9 +559,17 @@ function useRealtimeCall() {
           if (!disposed) setError(t("Realtime connection failed"));
         } finally {
           if (!disposed) {
+            void cache.invalidateQueries({
+              queryKey: ["realtime", workspace.id, agentId],
+            });
             dispose();
           }
         }
+      };
+      connected.onclose = (event) => void finish(event.code);
+      recoverClose.current = () => {
+        connection?.close();
+        void finish(1000);
       };
       return await firstMessage;
     } catch (cause) {
@@ -578,7 +596,9 @@ function useRealtimeCall() {
 
   function stop() {
     if (phase === "ready" && socket.current?.readyState === WebSocket.OPEN) {
-      socket.current.send(JSON.stringify({ type: "stop" }));
+      const connection = socket.current;
+      connection.send(JSON.stringify({ type: "stop" }));
+      endingTimer.current = setTimeout(() => recoverClose.current?.(), 10000);
       stopMedia.current?.();
       setPhase("ending");
     } else {
@@ -624,11 +644,15 @@ export function useActiveRealtimeAvailability(runId: string) {
 
 export function RealtimeComposer({
   displayedRunId,
+  controls,
+  disabled,
   agentName,
   initial,
   ...options
 }: CallOptions & {
   displayedRunId?: string;
+  controls?: ReactNode;
+  disabled?: boolean;
   agentName?: string;
   initial?: Schema["MessagePayload"];
 }) {
@@ -706,13 +730,14 @@ export function RealtimeComposer({
         </section>
       ))}
       <Composer
+        options={phase === "idle" ? controls : undefined}
         agentName={agentName}
         initial={initial}
         textInput={acceptsText}
         attachmentsEnabled={false}
         submitDisabled={
           (phase === "idle" &&
-            (!availability.can_start || call.phase !== "idle")) ||
+            (disabled || !availability.can_start || call.phase !== "idle")) ||
           phase === "connecting" ||
           phase === "ending"
         }

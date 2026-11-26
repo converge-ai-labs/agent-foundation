@@ -359,20 +359,6 @@ function RunBody({
         </div>
       </div>
       <ThreadDock thread={thread} hidden={replacing}>
-        {interactive && realtime?.realtime && (
-          <RealtimeComposer
-            agentId={run.agent_id}
-            agentName={agentName}
-            threadId={thread.id}
-            displayedRunId={run.id}
-            availability={realtime}
-            onAccepted={(receipt) => {
-              navigate(runPath(basePath, receipt) + "?follow=latest", {
-                state: { continuedFrom: run.id },
-              });
-            }}
-          />
-        )}
         <div inert={switching} className={styles.dockRun}>
           {interactive && can("run") && <McpInputs threadId={thread.id} />}
 
@@ -382,7 +368,23 @@ function RunBody({
             thread={thread}
             level={level}
             agentName={agentName}
-            realtime={realtime?.realtime}
+            realtime={
+              interactive &&
+              realtime?.realtime && (
+                <RealtimeComposer
+                  agentId={run.agent_id}
+                  agentName={agentName}
+                  threadId={thread.id}
+                  displayedRunId={run.id}
+                  availability={realtime}
+                  onAccepted={(receipt) => {
+                    navigate(runPath(basePath, receipt) + "?follow=latest", {
+                      state: { continuedFrom: run.id },
+                    });
+                  }}
+                />
+              )
+            }
             resubmit={resubmit}
             pendingRunId={submitting?.runId}
             onResubmitted={() => setResubmit(null)}
