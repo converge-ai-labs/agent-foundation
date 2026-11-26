@@ -148,7 +148,9 @@ class CompositionAcceptanceService:
         # Recheck the selected SQLite head on every call; cache only verified immutable data.
         async with self._cache_lock:
             if self._cached is None or self._cached[0] != reference:
-                value = await self._store.objects.read_model(reference, LoadedHarnessUiConfiguration)
+                value = await self._store.objects.read_model(
+                    reference, LoadedHarnessUiConfiguration, context={"stored_generation": True}
+                )
                 self._cached = (reference, value)
             cached = self._cached[1]
         # Frozen models still contain mutable mappings. Never lend the cached instance.

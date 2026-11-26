@@ -488,14 +488,6 @@ for line in sys.stdin:
             text("I inspected the workspace. Next I will review the changed files and summarize the findings.")
             send(id=ident, result={"stopReason": "end_turn"})
             continue
-        if MODE == "ui" and message == "silence":
-            assert "finish_silently" in [entry["name"] for entry in mcp("tools/list")["tools"]]
-            text("Preamble")
-            update("tool_call", toolCallId="silent", title="Finish silently", name="finish_silently")
-            assert not mcp("tools/call", {"name": "finish_silently", "arguments": {}})["isError"]
-            update("tool_call_update", toolCallId="silent", status="completed")
-            send(id=ident, result={"stopReason": "end_turn"})
-            continue
         if message == "questions":
             update(
                 "tool_call", toolCallId="question", title="Choose a format", name="mcp__harness-host__ask_user_question"
