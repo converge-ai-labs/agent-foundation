@@ -79,7 +79,7 @@ export function template(kind: ResourceKind, id: string): string {
     agent: { model: null, instructions: "", capabilities: [], subagents: [] },
     acp_agent: {
       preset: "antigravity",
-      args: ["acp", "--dangerously-skip-permissions", "--process-per-session"],
+      args: ["acp", "--dangerously-skip-permissions"],
       instructions: "",
     },
     project: { roots: [{ path: "" }], defaults: {} },

@@ -42,6 +42,18 @@ it("creates MCP templates with schema v2 and unrestricted tool access", () => {
   expect(parse(template("project", "project-test")).schema_version).toBe("1");
 });
 
+it("creates an Antigravity ACP agent template without process-per-session", () => {
+  expect(parse(template("acp_agent", "acp-antigravity"))).toEqual({
+    schema_version: "1",
+    kind: "acp_agent",
+    id: "acp-antigravity",
+    name: "Antigravity",
+    preset: "antigravity",
+    args: ["acp", "--dangerously-skip-permissions"],
+    instructions: "",
+  });
+});
+
 it("creates a Device template with references instead of credential bytes or Sessions", () => {
   expect(parse(template("device", "device-build"))).toEqual({
     schema_version: "1",

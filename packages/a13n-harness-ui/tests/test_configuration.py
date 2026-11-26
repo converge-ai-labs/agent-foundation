@@ -692,7 +692,7 @@ async def test_acp_resources_participate_in_validated_mutation(tmp_path: Path) -
     )
     result = await mutate_configuration_source(root, path, request)
     assert result.action == "created"
-    assert result.configuration.acp_agents["acp-agy"].argv() == ("agy", "acp", "--process-per-session")
+    assert result.configuration.acp_agents["acp-agy"].argv() == ("agy", "acp")
     assert not result.configuration.agents
     assert result.configuration.source_digest != original.source_digest
 
