@@ -44,6 +44,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-hygiene
 
       - name: Run repository lint checks
         run: make lint

@@ -8,6 +8,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
+import { TooltipProvider } from "a13n-ui";
+import type { ComponentProps } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { initialConfig } from "./configuration";
 import { AgentEditor } from "./editor";
@@ -104,31 +106,42 @@ beforeEach(() => {
     },
     response: new Response(null, { status: 200 }),
   }));
+});
+
+function renderEditor(
+  overrides: Partial<ComponentProps<typeof AgentEditor>> = {},
+) {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
-  render(
+  return render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
-        <AgentEditor
-          initial={{
-            ...initialConfig(),
-            model: "model-0123456789abcdef0123",
-            instructions: "Check the evidence.",
-            default_session_configuration: { working_directory: "/workspace" },
-          }}
-          version={7}
-          etag='"agent-v1"'
-          pending={false}
-          error={undefined}
-          submit={submit}
-        />
+        <TooltipProvider delay={0}>
+          <AgentEditor
+            initial={{
+              ...initialConfig(),
+              model: "model-0123456789abcdef0123",
+              instructions: "Check the evidence.",
+              default_session_configuration: {
+                working_directory: "/workspace",
+              },
+            }}
+            version={7}
+            etag='"agent-v1"'
+            pending={false}
+            error={undefined}
+            submit={submit}
+            {...overrides}
+          />
+        </TooltipProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
-});
+}
 
 it("preserves collapsed model settings and saves them with the environment choice", async () => {
+  renderEditor();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: /^Model settings/ }));
   await user.type(
@@ -162,7 +175,7 @@ it("preserves collapsed model settings and saves them with the environment choic
   );
   await user.click(
     screen.getByRole("combobox", {
-      name: "Environment",
+      name: "Default environment",
     }),
   );
   const templates = await screen.findByRole("group", {
@@ -176,7 +189,7 @@ it("preserves collapsed model settings and saves them with the environment choic
   );
   expect(
     screen.getByRole("combobox", {
-      name: "Environment",
+      name: "Default environment",
     }).textContent,
   ).toContain("E2B");
   expect(submit).not.toHaveBeenCalled();
@@ -189,7 +202,7 @@ it("preserves collapsed model settings and saves them with the environment choic
   );
   await waitFor(() =>
     expect(
-      screen.getByRole("combobox", { name: "Environment" }).textContent,
+      screen.getByRole("combobox", { name: "Default environment" }).textContent,
     ).toContain(cloudName),
   );
   expect(submit).not.toHaveBeenCalled();
@@ -205,7 +218,9 @@ it("preserves collapsed model settings and saves them with the environment choic
     null,
   );
   submit.mockClear();
-  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "Default environment" }),
+  );
   await user.click(await screen.findByRole("option", { name: "My laptop" }));
   expect(submit).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save changes" }));
@@ -219,7 +234,9 @@ it("preserves collapsed model settings and saves them with the environment choic
     null,
   );
   submit.mockClear();
-  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "Default environment" }),
+  );
   await user.click(await screen.findByRole("option", { name: "None" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(submit).toHaveBeenCalledWith(
@@ -233,8 +250,11 @@ it("preserves collapsed model settings and saves them with the environment choic
 });
 
 it("saves credential bindings with the selected environment and preserves other Session settings", async () => {
+  renderEditor();
   const user = userEvent.setup();
-  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(
+    screen.getByRole("combobox", { name: "Default environment" }),
+  );
   await user.click(await screen.findByRole("option", { name: "Sandbox E2B" }));
   await user.click(screen.getByRole("combobox", { name: "Outbound network" }));
   await user.click(
@@ -285,4 +305,113 @@ it("saves credential bindings with the selected environment and preserves other 
     '"agent-v1"',
     null,
   );
+});
+
+it("shows accessible icon-only modes and saves a deliberate change", async () => {
+  renderEditor();
+  const user = userEvent.setup();
+  const preparation = within(
+    screen.getByRole("group", { name: "Environment preparation" }),
+  );
+  const onDemand = preparation.getByRole("button", {
+    name: "On demand",
+    pressed: true,
+  });
+  const warmup = preparation.getByRole("button", {
+    name: "Warm up in parallel",
+    pressed: false,
+  });
+  expect(
+    preparation.getByRole("button", {
+      name: "Wait before inference",
+      pressed: false,
+    }),
+  ).toBeTruthy();
+  expect(onDemand.textContent).toBe("");
+  expect(
+    screen.getByText(
+      "On demand · Prepare when a tool first uses the environment.",
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  await user.click(warmup);
+  expect(
+    screen.getByText(
+      "Warm up in parallel · Prepare the environment while inference runs.",
+    ),
+  ).toBeTruthy();
+  expect(
+    preparation.getByRole("button", {
+      name: "Warm up in parallel",
+      pressed: true,
+    }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit.mock.calls[0]?.[0]).toMatchObject({
+    lazy_environment: "warmup",
+  });
+});
+
+it("shows the Default Session summary as the draft is configured and removed", async () => {
+  renderEditor({
+    initial: { ...initialConfig(), model: "model-0123456789abcdef0123" },
+  });
+  const user = userEvent.setup();
+  const section = within(screen.getByRole("region", { name: "Environment" }));
+  await user.click(
+    section.getByRole("button", {
+      name: "Default Session configuration Defaults",
+      expanded: false,
+    }),
+  );
+  expect(section.getByText("No Session defaults configured.")).toBeTruthy();
+  await user.click(
+    section.getByRole("button", { name: "Configure Session defaults" }),
+  );
+  expect(
+    section.getByRole("button", {
+      name: "Default Session configuration Configured",
+      expanded: true,
+    }),
+  ).toBeTruthy();
+  await user.click(
+    section.getByRole("button", { name: "Remove Session defaults" }),
+  );
+  expect(
+    section.getByRole("button", {
+      name: "Default Session configuration Defaults",
+      expanded: true,
+    }),
+  ).toBeTruthy();
+});
+
+it("shows the environment override and current settings in a read-only snapshot", () => {
+  renderEditor({
+    readonly: true,
+    overridden: ["lazy_environment"],
+    initial: {
+      ...initialConfig(),
+      model: "model-0123456789abcdef0123",
+      lazy_environment: "warmup",
+    },
+  });
+  const section = within(screen.getByRole("region", { name: "Environment" }));
+  expect(section.getByText("Overridden")).toBeTruthy();
+  const environment = within(
+    section.getByRole("group", { name: "Default environment" }),
+  );
+  expect(environment.getByText("None")).toBeTruthy();
+  expect(
+    environment.getByText("Used when a session has no primary environment."),
+  ).toBeTruthy();
+  expect(
+    section.getByText(
+      "Warm up in parallel · Prepare the environment while inference runs.",
+    ),
+  ).toBeTruthy();
+  const warmup = section.getByRole<HTMLButtonElement>("button", {
+    name: "Warm up in parallel",
+    pressed: true,
+  });
+  expect(warmup.disabled).toBe(true);
 });

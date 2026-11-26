@@ -52,6 +52,7 @@ def node(script, data):
         ("examples/demo/README.md", "Documentation"),
         ("frontend/apps/a13n-site/posts/hello-world/cover.svg", "Documentation"),
         ("packages/a13n-harness/pyproject.toml", "Dependencies & lockfiles"),
+        ("release-dependencies.toml", "Dependencies & lockfiles"),
         ("frontend/pnpm-lock.yaml", "Dependencies & lockfiles"),
         ("crates/a13n-envd/build_support/mod.rs", "Build, CI & deployment"),
         ("frontend/apps/a13n-console/tsconfig.json", "Build, CI & deployment"),
@@ -224,7 +225,10 @@ def test_workflow_loads_only_trusted_default_branch_code_and_ci_runs_tests():
     ci = yaml.load((ROOT / ".github/workflows/ci-automation.yml").read_text(), Loader=yaml.BaseLoader)
     for event in ("push", "pull_request"):
         assert "scripts/tests/test_pr_change_breakdown.py" in ci["on"][event]["paths"]
-    assert "scripts/tests/test_pr_change_breakdown.py" in ci["jobs"]["release-tooling"]["steps"][-1]["run"]
+    test_step = next(
+        step for step in ci["jobs"]["release-tooling"]["steps"] if step.get("name") == "Test release tooling"
+    )
+    assert "scripts/tests/test_pr_change_breakdown.py" in test_step["run"]
 
 
 @pytest.mark.parametrize("base_branch", ["main", "template/app-plugin"])

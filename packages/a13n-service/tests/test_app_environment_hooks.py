@@ -87,6 +87,47 @@ async def test_lifecycle_hook_retry_preserves_receipt_and_completed_apps(service
     assert successful == BACKEND.preparations == [operation.operation_id]
 
 
+async def test_warmup_publishes_after_create_hook_after_text_run_seals(service, scripted_model, runs_kit):
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    calls = []
+
+    async def seed(context):
+        calls.append(context.operation_id)
+        entered.set()
+        await release.wait()
+
+    env, environment_id = await setup(service, [("seed", EnvironmentLifecycleHook("after_create", seed, timeout=15))])
+    await runs_kit.pause_sweeps(env)
+    agent = await runs_kit.create_agent(env, scripted_model, lazy_environment="warmup")
+    inference = asyncio.Event()
+    scripted_model.say("Text only", gate=inference)
+    submitted = await runs_kit.start_thread(
+        env, agent, "hello", environments=[{"name": "workspace", "environment_id": environment_id}]
+    )
+    run_id = submitted["run"]["id"]
+    task = await runs_kit.attempt(env)
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        blocked = await stored(env, environment_id)
+        assert blocked.status == "creating" and blocked.operation_progress["provider_completed"]
+        assert calls == BACKEND.preparations == [blocked.operation_id]
+        inference.set()
+        await asyncio.wait_for(asyncio.shield(task), 5)
+        assert (await runs_kit.sealed(env, run_id))["status"] == "completed"
+        assert (await stored(env, environment_id)).operation_id == blocked.operation_id
+    finally:
+        inference.set()
+        release.set()
+        await task
+
+    async with asyncio.timeout(5):
+        while (ready := await stored(env, environment_id)).status != "ready":
+            await asyncio.sleep(0.05)
+    assert ready.operation_id is None
+    assert calls == BACKEND.preparations == [blocked.operation_id]
+
+
 async def test_lifecycle_interruption_keeps_native_receipt(service):
     entered = asyncio.Event()
     attempts = []

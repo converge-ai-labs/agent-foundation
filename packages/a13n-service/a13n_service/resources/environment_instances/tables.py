@@ -15,6 +15,7 @@ from sqlalchemy import (
     ForeignKey,
     ForeignKeyConstraint,
     Index,
+    PrimaryKeyConstraint,
     String,
     UniqueConstraint,
     text,
@@ -204,3 +205,24 @@ class EnvironmentRow(AppOwned, Stamped, Base):
     renew_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
+
+
+class EnvironmentBootstrapSnapshotRow(Base):
+    """Last bounded bootstrap observation of a working directory on one instance."""
+
+    __tablename__ = "environment_bootstrap_snapshots"
+    __table_args__ = (
+        PrimaryKeyConstraint("environment_id", "working_directory"),
+        ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
+        ForeignKeyConstraint(
+            ["workspace_id", "environment_id"], ["environments.workspace_id", "environments.id"], ondelete="CASCADE"
+        ),
+    )
+
+    environment_id: Mapped[str] = mapped_column(String(72))
+    working_directory: Mapped[str]
+    organization_id: Mapped[str]
+    workspace_id: Mapped[str]
+    environment_generation: Mapped[int] = mapped_column(BigInteger)
+    snapshot: Mapped[dict] = mapped_column(JSONB)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

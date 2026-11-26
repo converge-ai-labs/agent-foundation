@@ -75,6 +75,8 @@ on:
       - "spec/a13n-envd/07-execution-isolation.md"
       - "spec/a13n-envd/08-protocol-source-client-and-generation.md"
       - "uv.lock"
+  schedule:
+    - cron: "35 19 * * *"
   workflow_dispatch:
 
 env:
@@ -85,7 +87,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -107,6 +109,7 @@ jobs:
 
       - name: Classify changed paths
         id: filter
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         uses: dorny/paths-filter@v3
         with:
           filters: |
@@ -212,6 +215,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-envd-protocol
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@1.96.0
@@ -252,11 +256,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13", "3.14", "3.15"]
+        python-version: ${{ fromJSON(github.event_name == 'push' && '["3.13"]' || '["3.13","3.14","3.15"]') }}
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -275,6 +279,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py${{ matrix.python-version }}-envd
 
       - name: Synchronize Python workspace
         run: uv sync --locked --all-packages
@@ -495,6 +500,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py3.13-envd-daemon
 
       - name: Test native AT-SPI in an isolated desktop and user bus
         if: matrix.linux && matrix.envd-variant == 'default'
@@ -692,7 +698,7 @@ jobs:
           DAEMON_RESULT: ${{ needs.daemon.result }}
           SIZE_RESULT: ${{ needs.size.result }}
           PROTOCOL_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.protocol == 'true' }}
-          CLIENT_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true' }}
+          CLIENT_SELECTED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true' }}
           SIZE_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.size == 'true' }}
           DAEMON_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true' }}
         run: |

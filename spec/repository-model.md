@@ -115,17 +115,18 @@ The development guide does not establish product semantics or subsystem ownershi
 
 ### Dependency Compatibility Lines
 
-Each consuming package owns its cross-release-group Python requirements in its `pyproject.toml` under `[tool.a13n.release-dependencies]`: a mapping from distribution names to Python specifiers. Harness UI and Service pin Harness and Stream Protocol with identical `==VERSION` requirements; other cross-group dependencies use bounded `>=MIN,<MAX` requirements. Release preparation injects these requirements into publishable manifests without changing unversioned source workspace dependencies or committing release versions. Dependencies within a release group remain pinned to the exact shared release version.
+Root `release-dependencies.toml` is the single source of truth for cross-release-group Python requirements, keyed by consuming package (`[a13n-harness]`, `[a13n-harness-ui]`, `[a13n-service]`). Harness UI and Service pin Harness and Stream Protocol with identical `==VERSION` requirements; other cross-group dependencies use bounded `>=MIN,<MAX` requirements. Release preparation injects these requirements into publishable manifests without changing unversioned source workspace dependencies or committing release versions. Dependencies within a release group remain pinned to the exact shared release version.
 
-The current cross-group requirements are:
+The cross-group requirement policy is:
 
-| Consumer                     | Dependency               | Published requirement          |
-| ---------------------------- | ------------------------ | ------------------------------ |
-| Harness UI                   | Harness, Stream Protocol | `==0.43.1`, identical for both |
-| Service                      | Harness, Stream Protocol | `==0.43.1`, identical for both |
-| Harness UI, Harness, Service | `a13n-logging`           | `>=0.2.0,<0.3.0`               |
-| Harness                      | `a13n-envd-client`       | `>=0.8.3,<0.9.0`               |
-| Harness UI, Service          | `a13n-envd-client`       | `>=0.8.3,<0.9.0`               |
+| Consumer                     | Dependency               | Policy                             |
+| ---------------------------- | ------------------------ | ---------------------------------- |
+| Harness UI                   | Harness, Stream Protocol | Exact `==VERSION`, identical pin   |
+| Service                      | Harness, Stream Protocol | Exact `==VERSION`, identical pin   |
+| Harness UI, Harness, Service | `a13n-logging`           | Bounded `>=MIN,<MAX` compatibility |
+| Harness, Harness UI, Service | `a13n-envd-client`       | Bounded `>=MIN,<MAX` compatibility |
+
+Current concrete specifiers live in `release-dependencies.toml` rather than being duplicated here.
 
 Harness constrains Pydantic AI to one reviewed minor line, currently `==2.74.*`. Direct Pydantic AI dependencies in its consumers and examples use the same line, while lock files select the tested patch release. A new minor line requires an explicit compatibility update and validation across consumers.
 

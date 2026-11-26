@@ -366,7 +366,7 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
         submit_thread=submit,
         wait_root_operation=wait,
         get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None, main_account=None)),
-        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
+        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0, context_window=None)),
         thread_usage=AsyncMock(
             side_effect=[
                 SimpleNamespace(combined=_usage_totals()),
@@ -444,7 +444,7 @@ async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
                 status=RootOperationStatus.completed, outcome=outcome, failure=None, goal=None, main_account=None
             )
         ),
-        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
+        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0, context_window=None)),
         thread_usage=AsyncMock(return_value=SimpleNamespace(combined=_usage_totals())),
     )
     backend = SessionBackend(app, CliRequest(), tmp_path, renderer.status)
@@ -500,7 +500,7 @@ async def test_subscription_close_invalidates_outliving_child_process_observatio
                 status=RootOperationStatus.cancelled, outcome=None, failure=None, goal=None, main_account=None
             )
         ),
-        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
+        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0, context_window=None)),
         thread_usage=AsyncMock(return_value=SimpleNamespace(combined=_usage_totals(requests=0))),
     )
     backend = SessionBackend(app, CliRequest(), tmp_path, renderer.status)

@@ -31,6 +31,7 @@ export function ContextActivity({
     prepared: t("Prepared"),
     completed: t("Completed"),
     failed: t("Failed"),
+    cancelled: t("Cancelled"),
     "in-progress": t("In progress"),
   };
   return (

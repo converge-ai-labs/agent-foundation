@@ -66,7 +66,7 @@ from a13n_service.resources.providers.service import (
     resolve_provider,
 )
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments import bootstrap
+from a13n_service.runs.environments import bootstrap, bootstrap_snapshots
 from a13n_service.runs.environments.adapters import (
     Target,
     close,
@@ -1233,6 +1233,7 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             environment.metrics_application = applied.model_copy(update={"applied_at": current}).model_dump(mode="json")
             environment.metrics_launch = None
         if reached == "deleted":
+            await bootstrap_snapshots.discard(session, environment.id)
             await retire_environment(session, environment.id)
             environment.retirement_state = None if outcome.state is None else outcome.state.model_dump(mode="json")
             environment.handle = None

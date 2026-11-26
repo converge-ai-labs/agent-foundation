@@ -59,3 +59,136 @@ def test_acp_thought_is_closed_and_timed_at_tool_start_or_turn_settlement(monkey
     assert reasoning[2]["timestamp"] - reasoning[0]["timestamp"] == 2000
     assert reasoning[5]["timestamp"] > reasoning[3]["timestamp"]
     assert events.index(reasoning[2]) < next(i for i, event in enumerate(events) if event["type"] == "TOOL_CALL_START")
+
+
+def test_acp_compaction_aggregates_chunks_replaces_summary_bounds_size_and_upserts_in_display():
+    events = []
+    stream = AcpRunStream("thread-test", "run-test", events.append)
+    stream.update(schema.AgentMessageChunk(content=schema.TextContentBlock(text="before")))
+    # Chunk arriving before any CompactionUpdate defaults to in_progress and closes active text.
+    stream.update(
+        schema.SessionUpdateCompactionSummaryChunk(
+            compaction_id="cmp-1",
+            content=schema.TextContentBlock(text="First "),
+        )
+    )
+    stream.update(
+        schema.SessionUpdateCompactionSummaryChunk(
+            compaction_id="cmp-1",
+            content=schema.TextContentBlock(text="second."),
+        )
+    )
+    stream.update(schema.SessionUpdateCompactionUpdate(compaction_id="cmp-1", status="completed"))
+    # Complete replacement summary overwrites accumulated chunks.
+    large_summary = "A" * (70 * 1024)
+    stream.update(
+        schema.SessionUpdateCompactionUpdate(
+            compaction_id="cmp-1",
+            status="completed",
+            summary=[schema.TextContentBlock(text=large_summary)],
+        )
+    )
+    stream.update(
+        schema.SessionUpdateCompactionUpdate(
+            compaction_id="cmp-2",
+            status="failed",
+            error="rate_limited",
+        )
+    )
+    stream.update(schema.SessionUpdateCompactionUpdate(compaction_id="cmp-3", status="cancelled"))
+    stream.update(schema.AgentMessageChunk(content=schema.TextContentBlock(text="after")))
+    stream.finish()
+
+    compaction_events = [
+        event["value"] for event in events if event["type"] == "CUSTOM" and event.get("name") == "a13n.acp.compaction"
+    ]
+    assert compaction_events[0] == {"compactionId": "cmp-1", "status": "in_progress", "summary": "First "}
+    assert compaction_events[1] == {"compactionId": "cmp-1", "status": "in_progress", "summary": "First second."}
+    assert compaction_events[2] == {"compactionId": "cmp-1", "status": "completed", "summary": "First second."}
+    assert compaction_events[3]["status"] == "completed"
+    assert len(compaction_events[3]["summary"].encode("utf-8")) == 64 * 1024
+    assert compaction_events[4] == {"compactionId": "cmp-2", "status": "failed", "error": "rate_limited"}
+    assert compaction_events[5] == {"compactionId": "cmp-3", "status": "cancelled"}
+    # Active assistant message was closed before compaction began and never included compaction text.
+    assert stream.final_text == "beforeafter"
+    assert stream.last_text == "after"
+    end_idx = next(i for i, event in enumerate(events) if event["type"] == "TEXT_MESSAGE_END")
+    first_cmp_idx = next(i for i, event in enumerate(events) if event.get("name") == "a13n.acp.compaction")
+    assert end_idx < first_cmp_idx
+
+    # DisplayFold upserts by per-compaction identity and retains >32 KiB summary under full_content=True.
+    full_fold = DisplayFold("run-test", full_content=True)
+    full_fold.fold(events)
+    compaction_items = [
+        item
+        for item in full_fold.export().items
+        if item.kind == "observation" and item.content.get("name") == "a13n.acp.compaction"
+    ]
+    assert len(compaction_items) == 3
+    by_id = {item.content["value"]["compactionId"]: item.content["value"] for item in compaction_items}
+    assert by_id["cmp-1"]["status"] == "completed"
+    assert len(by_id["cmp-1"]["summary"].encode("utf-8")) == 64 * 1024
+    assert by_id["cmp-2"] == {"compactionId": "cmp-2", "status": "failed", "error": "rate_limited"}
+    assert by_id["cmp-3"] == {"compactionId": "cmp-3", "status": "cancelled"}
+
+    compact_fold = DisplayFold("run-test", full_content=False)
+    compact_fold.fold(events)
+    compact_items = [
+        item
+        for item in compact_fold.export().items
+        if item.kind == "observation" and item.content.get("name") == "a13n.acp.compaction"
+    ]
+    assert len(compact_items) == 3
+    assert any(item.content["value"] == {"omitted": True} for item in compact_items)
+
+
+def test_acp_compaction_completed_clears_usage_slot_in_display_fold():
+    events_cleared = []
+    stream_cleared = AcpRunStream("thread-test", "run-cleared", events_cleared.append)
+    stream_cleared.update(schema.UsageUpdate(used=900, size=1000))
+    stream_cleared.update(schema.SessionUpdateCompactionUpdate(compaction_id="c1", status="in_progress"))
+    stream_cleared.update(schema.SessionUpdateCompactionUpdate(compaction_id="c1", status="failed", error="err"))
+    stream_cleared.update(schema.SessionUpdateCompactionUpdate(compaction_id="c2", status="cancelled"))
+    usage_before_complete = [
+        event["value"]
+        for event in events_cleared
+        if event["type"] == "CUSTOM" and event.get("name") == "a13n.acp.usage"
+    ]
+    assert usage_before_complete == [{"used": 900, "size": 1000}]
+
+    stream_cleared.update(schema.SessionUpdateCompactionUpdate(compaction_id="c3", status="completed"))
+    stream_cleared.finish()
+    usage_after_complete = [
+        event["value"]
+        for event in events_cleared
+        if event["type"] == "CUSTOM" and event.get("name") == "a13n.acp.usage"
+    ]
+    assert usage_after_complete == [{"used": 900, "size": 1000}, {"cleared": True}]
+
+    fold_cleared = DisplayFold("run-cleared", full_content=True)
+    fold_cleared.fold(events_cleared)
+    (usage_item_cleared,) = [
+        item
+        for item in fold_cleared.export().items
+        if item.kind == "observation" and item.content.get("name") == "a13n.acp.usage"
+    ]
+    assert usage_item_cleared.content["value"] == {"cleared": True}
+
+    events_refreshed = []
+    stream_refreshed = AcpRunStream("thread-test", "run-refreshed", events_refreshed.append)
+    stream_refreshed.update(schema.UsageUpdate(used=900, size=1000))
+    stream_refreshed.update(schema.SessionUpdateCompactionUpdate(compaction_id="c1", status="completed"))
+    stream_refreshed.update(schema.UsageUpdate(used=150, size=1000))
+    stream_refreshed.finish()
+
+    fold_refreshed = DisplayFold("run-refreshed", full_content=True)
+    fold_refreshed.fold(events_refreshed)
+    exported = fold_refreshed.export().items
+    (usage_item_refreshed,) = [
+        item for item in exported if item.kind == "observation" and item.content.get("name") == "a13n.acp.usage"
+    ]
+    (compaction_item,) = [
+        item for item in exported if item.kind == "observation" and item.content.get("name") == "a13n.acp.compaction"
+    ]
+    assert usage_item_refreshed.ordinal < compaction_item.ordinal
+    assert usage_item_refreshed.content["value"] == {"used": 150, "size": 1000}

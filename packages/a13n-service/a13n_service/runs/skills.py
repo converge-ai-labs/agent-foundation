@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import anyio
 from a13n_harness.capabilities import SkillCatalogItem, SkillManager, SkillsCapability, SkillsPolicy
-from a13n_harness.capabilities.skills import SkillSource
+from a13n_harness.capabilities.skills import ManifestSkillSource, SkillSource
 from a13n_harness.environment.archives import FileArchive
 from a13n_harness.environment.files import FileMetadata, FileOperator, FileStatOperation
 from a13n_harness.environment.models import EnvironmentError
@@ -103,12 +103,19 @@ def skills_capability(
     cache: Cache,
     sync: SkillSync = _DEFAULT_SYNC,
     builtin: SkillSource | None = None,
+    defer_materialization: Callable[[Callable[..., Awaitable[None]]], None] | None = None,
 ) -> SkillsCapability:
-    """The definition's skill catalog; the Harness materializes it when the run starts, before its first request."""
-    pinned = _SkillPackages(tuple(skills), runtime, workspace_id, prove_lease, cache=cache, sync=sync)
-    materialize = bool(skills) or (isinstance(sync, SharedSkillSync) and sync.cleanup)
-    materializers = [pinned] if materialize else []
-    sources: list[SkillSource] = [*materializers, *(() if builtin is None else (builtin,))]
+    """Freeze pinned manifests independently of the execution that publishes their files."""
+    sources: list[SkillSource] = [] if builtin is None else [builtin]
+    materializers = []
+    if skills or (isinstance(sync, SharedSkillSync) and sync.cleanup):
+        pinned = _SkillPackages(tuple(skills), runtime, workspace_id, prove_lease, cache=cache, sync=sync)
+        if defer_materialization is None:
+            sources.append(pinned)
+            materializers.append(pinned)
+        else:
+            sources.append(ManifestSkillSource(pinned.source_id, pinned.roots, pinned.manifests()))
+            defer_materialization(pinned.materialize)
     policy = SkillsPolicy(conflict="error", max_skills=max(1, len(skills) + int(builtin is not None)))
     return SkillsCapability(SkillManager(sources, materializers=materializers, policy=policy))
 
@@ -134,7 +141,9 @@ class _SkillPackages:
         self.cache, self.sync = cache, sync
 
     async def catalog(self, *, files: FileOperator) -> tuple[SkillCatalogItem, ...]:
-        # The manifest holds the frontmatter the Harness validated when the revision was created.
+        return self.manifests()
+
+    def manifests(self) -> tuple[SkillCatalogItem, ...]:
         return tuple(
             SkillCatalogItem(
                 name=skill.name,

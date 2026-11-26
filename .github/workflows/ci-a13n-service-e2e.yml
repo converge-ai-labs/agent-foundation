@@ -46,6 +46,8 @@ on:
   push:
     branches: [main]
     paths: *integration_inputs
+  schedule:
+    - cron: "47 19 * * *"
   workflow_dispatch:
 
 env:
@@ -56,7 +58,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -64,8 +66,8 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     outputs:
-      service: ${{ github.event_name == 'workflow_dispatch' || steps.paths.outputs.service == 'true' }}
-      deploy: ${{ github.event_name != 'pull_request' || steps.paths.outputs.deploy == 'true' }}
+      service: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.paths.outputs.service == 'true' }}
+      deploy: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.paths.outputs.deploy == 'true' }}
       image: ${{ steps.sandbox.outputs.image }}
     steps:
       - uses: actions/checkout@v6
@@ -74,7 +76,7 @@ jobs:
           fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: paths
-        if: github.event_name != 'workflow_dispatch'
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         with:
           filters: |
             service:
@@ -141,7 +143,9 @@ jobs:
               - "LICENSE"
       - name: Resolve a source-matched development sandbox
         id: sandbox
-        if: github.event_name != 'pull_request' || steps.paths.outputs.service == 'true' || steps.paths.outputs.deploy == 'true'
+        if: >-
+          github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+          steps.paths.outputs.service == 'true' || steps.paths.outputs.deploy == 'true'
         run: bash .github/scripts/ci-sandbox-image.sh
 
   support:
@@ -161,6 +165,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py3.13-service-e2e
       - name: Validate fixtures and reviewed selections
         run: make service-e2e-check
 
@@ -197,6 +202,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py3.13-service-e2e
       - name: Set up Rust for the native reverse-link journey
         if: matrix.name == 'other'
         uses: dtolnay/rust-toolchain@1.96.0
@@ -300,6 +306,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py3.13-service-e2e
       - uses: ./.github/actions/load-ci-sandbox
         with:
           image: ${{ needs.changes.outputs.image }}

@@ -112,8 +112,12 @@ TEST_INPUTS: dict[str, tuple[str, ...]] = {
         ".pre-commit-config.yaml",
     ),
     "test_release_notes.py": ("scripts/create-github-release.py", ".github/release-notes/*"),
-    "test_check_release_version.py": ("scripts/check-release-version.py",),
-    "test_prepare_release_version.py": ("scripts/prepare-release-version.py", "scripts/check-release-version.py"),
+    "test_check_release_version.py": ("scripts/check-release-version.py", "release-dependencies.toml"),
+    "test_prepare_release_version.py": (
+        "scripts/prepare-release-version.py",
+        "scripts/check-release-version.py",
+        "release-dependencies.toml",
+    ),
     "test_check_a13n_distributions.py": ("scripts/check-a13n-distributions.py",),
     "test_check_a13n_harness_ui_distribution.py": (
         "scripts/check-a13n-harness-ui-distribution.py",

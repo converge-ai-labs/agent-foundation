@@ -87,6 +87,9 @@ export function useAcpOptionChange(
       await queries.cancelQueries({ queryKey: vars.queryKey, exact: true });
       if (activeScope.current !== vars.scopeKey || activeRun.current) return;
       queries.setQueryData(vars.queryKey, updated);
+      void queries.invalidateQueries({
+        queryKey: ["thread", vars.threadId, "context-usage"],
+      });
     },
   });
   const reset = mutation.reset;

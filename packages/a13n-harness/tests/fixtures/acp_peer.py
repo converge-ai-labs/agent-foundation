@@ -133,6 +133,10 @@ for line in sys.stdin:
     params = frame.get("params", {})
     ident = frame.get("id")
     if method == "initialize":
+        client_caps = params.get("clientCapabilities") or {}
+        client_session = client_caps.get("session") if isinstance(client_caps, dict) else None
+        if "require-compaction-cap" in FLAGS:
+            assert isinstance(client_session, dict) and client_session.get("compaction") is not None, client_caps
         caps = {
             "mcpCapabilities": {"acp": MODE == "remote", "http": MODE == "http" or "use-http" in FLAGS},
             "loadSession": not RESIDENT_ONLY,
@@ -234,6 +238,8 @@ for line in sys.stdin:
                 del response["models"]["currentModelId"]
         if MODE == "ui":
             update("available_commands_update", availableCommands=[{"name": "plan", "description": "Plan a task"}])
+        if "usage-on-open" in FLAGS:
+            update("usage_update", used=12, size=1000)
         send(id=ident, result=response)
         if "delayed-model" in sys.argv[2:]:
             sleep(0.05)
@@ -258,6 +264,8 @@ for line in sys.stdin:
         assert params["value"] in {choice["value"] for choice in option["options"]}, params
         rejected = "unconfirmed-model-change" in FLAGS and option is MODEL and params["value"] == "b"
         option["currentValue"] = None if rejected else params["value"]
+        if "usage-on-model-change" in FLAGS and option is MODEL and not rejected:
+            update("usage_update", used=5, size=2000)
         send(id=ident, result={"configOptions": CONFIG_OPTIONS})
         if "late-model-on-mode-change" in FLAGS and MODEL not in CONFIG_OPTIONS and MODEL_GATE.exists():
             CONFIG_OPTIONS.append(MODEL)
@@ -346,6 +354,39 @@ for line in sys.stdin:
             update("compaction_update", compactionId="compact-1", status="completed")
             text("\n[GOAL_COMPLETE]")
             send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "goal-failed-compaction":
+            text("Checking the work.")
+            update("compaction_update", compactionId="compact-fail", status="failed", error="quota_exceeded")
+            update("compaction_update", compactionId="compact-cancel", status="cancelled")
+            update("compaction_update", compactionId="compact-wip", status="in_progress")
+            text("\n[GOAL_COMPLETE]")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "compact-live":
+            update("usage_update", used=800, size=1000)
+            update("compaction_update", compactionId="c-1", status="in_progress")
+            update("compaction_summary_chunk", compactionId="c-1", content={"type": "text", "text": "Part 1. "})
+            update("compaction_summary_chunk", compactionId="c-1", content={"type": "text", "text": "Part 2."})
+            update("compaction_update", compactionId="c-1", status="completed")
+            text("Done after compact.")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "compact-then-usage":
+            update("usage_update", used=800, size=1000)
+            update("compaction_update", compactionId="c-2", status="completed")
+            update("usage_update", used=150, size=1000)
+            text("Refreshed after compact.")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "compact-cancelled":
+            update("compaction_update", compactionId="c-cancel", status="cancelled")
+            text("Cancelled compaction.")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "usage-then-fail":
+            update("usage_update", used=420, size=1000)
+            send(id=ident, error={"code": -32603, "message": "Failed after usage"})
             continue
         if MODE == "ui" and "acp_compaction" in message:
             text("Audit complete.\n[GOAL_COMPLETE]")

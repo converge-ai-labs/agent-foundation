@@ -6,6 +6,18 @@ import {
 } from "../../shared/forms/validation";
 
 export type AgentConfig = Schema["AgentConfig-Input"];
+export type EnvironmentPreparation = Exclude<
+  AgentConfig["lazy_environment"],
+  boolean | undefined
+>;
+
+export function preparationMode(
+  value: AgentConfig["lazy_environment"],
+): EnvironmentPreparation {
+  if (value === false) return "eager";
+  if (value === true || value === undefined) return "on_demand";
+  return value;
+}
 /** The fields each editor section shows; the advanced JSON holds the rest. */
 const sectionFields = {
   model: ["model", "model_settings", "media_understanding"],
@@ -19,6 +31,7 @@ const sectionFields = {
   toolsets: ["toolsets"],
   reviewer: ["reviewer"],
   environment: [
+    "lazy_environment",
     "default_environment_template_id",
     "default_environment_id",
     "default_session_configuration",
@@ -76,6 +89,7 @@ export function buildConfig(
     | "default_environment_template_id"
     | "default_environment_id"
     | "default_session_configuration"
+    | "lazy_environment"
     | "execution"
     | "background_compaction"
     | "summarize"
@@ -90,6 +104,13 @@ export function buildConfig(
     ...extra,
     ...common,
     plugins: common.plugins ?? original.plugins,
+    ...(original.lazy_environment === undefined &&
+    common.lazy_environment === undefined
+      ? {}
+      : {
+          lazy_environment:
+            common.lazy_environment ?? original.lazy_environment,
+        }),
   };
   if (!validateAgentConfig(value)) throw new Error(schemaErrors());
   return value;

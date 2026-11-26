@@ -78,7 +78,7 @@ async def test_root_display_recovers_tool_results_and_keeps_streaming_before_com
         submit_thread=AsyncMock(side_effect=submit),
         get_root_operation=AsyncMock(return_value=SimpleNamespace(goal=None, main_account=None)),
         wait_root_operation=wait,
-        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
+        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0, context_window=None)),
         thread_usage=AsyncMock(return_value=SimpleNamespace(combined=_usage_totals())),
     )
     backend = SessionBackend(app, CliRequest(), tmp_path, renderer.status)

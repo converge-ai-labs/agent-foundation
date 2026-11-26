@@ -22,7 +22,7 @@ from a13n_service.infra.sweeps import Sweep, item
 from a13n_service.resources.environment_instances.access import superseded
 from a13n_service.resources.environment_templates.service import idle_past
 from a13n_service.resources.providers.service import MANUAL_CLOUDFLARE_UNSUPPORTED, manual_cloudflare_provider
-from a13n_service.runs.environments import vercel_snapshots
+from a13n_service.runs.environments import bootstrap_snapshots, vercel_snapshots
 from a13n_service.runs.environments.egress.storage import retire_environment
 from a13n_service.runs.environments.events import publish_after_commit as publish_event
 from a13n_service.runs.environments.lifecycle import (
@@ -190,6 +190,7 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
             if environment.provider_identity is None:
                 await retire_environment(session, environment.id)
                 environment.status = "deleted"
+                await bootstrap_snapshots.discard(session, environment.id)
                 environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
                 environment.next_operation_at = None
                 environment.operation_unsettled = False

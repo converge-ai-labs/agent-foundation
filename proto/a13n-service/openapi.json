@@ -243,9 +243,21 @@
             "type": "string"
           },
           "lazy_environment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_demand",
+                  "warmup",
+                  "eager"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
             "default": true,
-            "title": "Lazy Environment",
-            "type": "boolean"
+            "title": "Lazy Environment"
           },
           "media_understanding": {
             "$ref": "#/components/schemas/MediaUnderstandingSelection"
@@ -478,9 +490,21 @@
             "type": "string"
           },
           "lazy_environment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_demand",
+                  "warmup",
+                  "eager"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "boolean"
+              }
+            ],
             "default": true,
-            "title": "Lazy Environment",
-            "type": "boolean"
+            "title": "Lazy Environment"
           },
           "media_understanding": {
             "$ref": "#/components/schemas/MediaUnderstandingSelection"
@@ -820,6 +844,14 @@
           "lazy_environment": {
             "anyOf": [
               {
+                "enum": [
+                  "on_demand",
+                  "warmup",
+                  "eager"
+                ],
+                "type": "string"
+              },
+              {
                 "type": "boolean"
               },
               {
@@ -1067,6 +1099,14 @@
           },
           "lazy_environment": {
             "anyOf": [
+              {
+                "enum": [
+                  "on_demand",
+                  "warmup",
+                  "eager"
+                ],
+                "type": "string"
+              },
               {
                 "type": "boolean"
               },

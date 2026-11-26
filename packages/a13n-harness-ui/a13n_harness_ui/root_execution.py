@@ -415,25 +415,25 @@ class RootRunExecutor:
                 raise ThreadError("Could not open the external ACP session.", code="acp_session_unavailable") from exc
         if change is None:
             return self.acp_sessions.options(thread_id)
+        previous_option = next((item for item in self.acp_sessions.options(thread_id) if item.id == change.id), None)
         options, unrestored = await self.acp_sessions.set_option(thread_id, change)
         current = await self._read_acp_state(thread_id)
         assert current is not None
         values = {option.id: option.value for option in options}
         values.update((key, value) for key, value in current.options.items() if key in unrestored)
+        update: dict[str, Any] = {
+            "options": values,
+            "explicit_options": frozenset(
+                key for key in values if not current.prompted and (key == change.id or key in current.explicit_options)
+            ),
+        }
+        live_known, live_window = self.acp_sessions.live_context_window(thread_id)
+        if live_known:
+            update["context_window"] = live_window
+        elif previous_option is not None and previous_option.is_model and change.value != previous_option.value:
+            update["context_window"] = None
         with CancelScope(shield=True):
-            await self._save_acp_state(
-                thread_id,
-                current.model_copy(
-                    update={
-                        "options": values,
-                        "explicit_options": frozenset(
-                            key
-                            for key in values
-                            if not current.prompted and (key == change.id or key in current.explicit_options)
-                        ),
-                    }
-                ),
-            )
+            await self._save_acp_state(thread_id, current.model_copy(update=update))
         return options
 
     async def capture(

@@ -34,6 +34,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-deploy
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -73,6 +74,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-deploy
 
       - name: Set up Helm
         uses: azure/setup-helm@v4
@@ -229,6 +231,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-deploy
 
       - name: Set up Helm
         uses: azure/setup-helm@v4

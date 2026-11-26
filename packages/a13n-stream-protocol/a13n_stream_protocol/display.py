@@ -567,18 +567,30 @@ class DisplayFold:
             "a13n.pydantic_ai.part_delta",
         }:
             return None
-        summary = assembled.get("name") in {"a13n.context.handoff_summary", "a13n.context.compaction_summary"}
+        name = str(assembled.get("name"))
+        compaction_id = (
+            value.get("compactionId")
+            if name == "a13n.acp.compaction" and isinstance(value, dict) and isinstance(value.get("compactionId"), str)
+            else None
+        )
+        summary = name in {
+            "a13n.context.handoff_summary",
+            "a13n.context.compaction_summary",
+            "a13n.acp.compaction",
+        }
         if (
             not self.retain_content
             and not (self.full_content and summary)
             and _json_size(value) > MAX_OBSERVATION_BYTES
         ):
             value = _OMITTED
-        name = str(assembled.get("name"))
         scope = assembled.get("subagentRunId") or "root"
-        identity = (
-            f"{scope}:{name}" if name in {"a13n.acp.plan", "a13n.acp.usage"} else f"{self.attempt}:{self.sequence}"
-        )
+        if compaction_id:
+            identity = f"{scope}:{name}:{compaction_id}"
+        elif name in {"a13n.acp.plan", "a13n.acp.usage"}:
+            identity = f"{scope}:{name}"
+        else:
+            identity = f"{self.attempt}:{self.sequence}"
         key = item_id(self.run_id, "observation", identity)
         content: dict[str, JsonValue] = {"name": name, "value": value}
         if "metadata" in assembled:

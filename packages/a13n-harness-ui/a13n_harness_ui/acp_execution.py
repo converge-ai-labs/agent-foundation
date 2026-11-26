@@ -36,6 +36,7 @@ from a13n_harness.toolsets.interaction import AskUserQuestionRequest, UserQuesti
 from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
 from a13n_stream_protocol.acp import AcpRunStream
 from acp import schema
+from anyio import CancelScope
 from mcp.types import ElicitRequestFormParams
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import BinaryContent, RunContext, TextContent
@@ -467,6 +468,11 @@ class AcpTurn(AbstractHarnessPlugin):
                 if self.prewarm and saved is not None:
                     resident.unrestored_options = frozenset(saved.options.keys() - options.keys())
                     options = saved.options | options
+                initial_context_window = (
+                    runtime.client.context_window
+                    if runtime.client.context_window_version > 0 or runtime.client.context_window is not None
+                    else (saved.context_window if saved else None)
+                )
                 active = AcpSessionState(
                     digest=self.digest,
                     thread_id=context.thread_id,
@@ -482,11 +488,12 @@ class AcpTurn(AbstractHarnessPlugin):
                     else frozenset(),
                     synced_messages=saved.synced_messages if saved and saved.prompted else 0,
                     synced_message_key=saved.synced_message_key if saved and saved.prompted else None,
-                    context_window=runtime.client.context_window or (saved.context_window if saved else None),
+                    context_window=initial_context_window,
                     options=options,
                 )
                 if self.persist is not None and active != saved:
                     await self.persist(active)
+                persisted_context_window = active.context_window
                 if self.prewarm:
                     return HarnessRunResult(
                         thread_id=context.thread_id,
@@ -503,8 +510,13 @@ class AcpTurn(AbstractHarnessPlugin):
                 compacted = False
 
                 async def observe(update: AcpUpdate) -> None:
-                    nonlocal compacted, active
-                    compacted |= isinstance(update, schema.SessionUpdateCompactionUpdate)
+                    nonlocal compacted, active, persisted_context_window
+                    if isinstance(update, schema.SessionUpdateCompactionUpdate) and update.status == "completed":
+                        compacted = True
+                        runtime.client.clear_context_window()
+                        active = active.model_copy(update={"context_window": None})
+                    elif isinstance(update, schema.UsageUpdate) and update.size > 0:
+                        active = active.model_copy(update={"context_window": (update.used, update.size)})
                     transcript.update(update)
                     if (
                         isinstance(update, schema.SessionInfoUpdate)
@@ -516,6 +528,7 @@ class AcpTurn(AbstractHarnessPlugin):
                         active = active.model_copy(update={"commands": acp_commands(runtime)})
                         if self.persist is not None:
                             await self.persist(active)
+                            persisted_context_window = active.context_window
                     await publish()
 
                 binding.on_update = observe
@@ -528,7 +541,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 prompted_this_turn = False
 
                 async def prompt_until_settled() -> schema.PromptResponse:
-                    nonlocal active, compacted, prior_conversation, prompted_this_turn
+                    nonlocal active, compacted, persisted_context_window, prior_conversation, prompted_this_turn
                     prompt = blocks
                     while True:
                         compacted = False
@@ -545,6 +558,7 @@ class AcpTurn(AbstractHarnessPlugin):
                             active = active.model_copy(update={"prompted": True, "explicit_options": frozenset()})
                             if self.persist is not None:
                                 await self.persist(active)
+                                persisted_context_window = active.context_window
                         try:
                             response = await runtime.prompt(prompt, binding=binding, context=hidden)
                         except Exception:
@@ -552,6 +566,7 @@ class AcpTurn(AbstractHarnessPlugin):
                                 active = active.model_copy(update={"prompted": False, "explicit_options": explicit})
                                 if self.persist is not None:
                                     await self.persist(active)
+                                    persisted_context_window = active.context_window
                             raise
                         prompted_this_turn = True
                         prior_conversation = ()
@@ -572,44 +587,59 @@ class AcpTurn(AbstractHarnessPlugin):
                         transcript.reset_reply()
                         prompt = [schema.TextContentBlock(text=continuation[0])]
 
+                persisted_final = False
                 try:
-                    response = (
-                        await prompt_until_settled()
-                        if self.goal is None
-                        else await self.goal.wrap_run(run_context, handler=prompt_until_settled)
-                    )
-                except BaseException:
-                    transcript.finish(error="External ACP turn did not complete.")
-                    await publish()
-                    raise
-                finally:
-                    self.runtime = None
-                commands = acp_commands(runtime)
-                active = active.model_copy(
-                    update={
-                        "options": {option.id: option.current_value for option in runtime.config_options},
-                        "commands": commands if commands is not None else active.commands,
-                        "context_window": runtime.client.context_window or active.context_window,
-                    }
-                )
-                transcript.finish()
-                await publish()
-                cancelled = response.stop_reason == "cancelled"
-                output = transcript.last_text or None
-                history = previous.message_history
-                messages = (*history, user_message)
-                if output:
-                    messages = (*messages, ModelResponse(parts=[TextPart(content=output)], run_id=context.run_id))
-                if prompted_this_turn:
+                    try:
+                        response = (
+                            await prompt_until_settled()
+                            if self.goal is None
+                            else await self.goal.wrap_run(run_context, handler=prompt_until_settled)
+                        )
+                    except BaseException:
+                        transcript.finish(error="External ACP turn did not complete.")
+                        await publish()
+                        raise
+                    finally:
+                        self.runtime = None
+                    commands = acp_commands(runtime)
                     active = active.model_copy(
                         update={
-                            "synced_messages": len(messages),
-                            "synced_message_key": _message_key(messages[-1]),
+                            "options": {option.id: option.current_value for option in runtime.config_options},
+                            "commands": commands if commands is not None else active.commands,
                         }
                     )
-                if self.persist is not None:
-                    await self.persist(active)
-                await context.state.write(_NAMESPACE, active, version="1")
+                    transcript.finish()
+                    await publish()
+                    cancelled = response.stop_reason == "cancelled"
+                    output = transcript.last_text or None
+                    history = previous.message_history
+                    messages = (*history, user_message)
+                    if output:
+                        messages = (*messages, ModelResponse(parts=[TextPart(content=output)], run_id=context.run_id))
+                    if prompted_this_turn:
+                        active = active.model_copy(
+                            update={
+                                "synced_messages": len(messages),
+                                "synced_message_key": _message_key(messages[-1]),
+                            }
+                        )
+                    if self.persist is not None:
+                        await self.persist(active)
+                        persisted_context_window = active.context_window
+                    persisted_final = True
+                    await context.state.write(_NAMESPACE, active, version="1")
+                finally:
+                    if (
+                        not persisted_final
+                        and self.persist is not None
+                        and active.context_window != persisted_context_window
+                    ):
+                        try:
+                            with CancelScope(shield=True):
+                                await self.persist(active)
+                                persisted_context_window = active.context_window
+                        except Exception:
+                            pass
                 return HarnessRunResult(
                     thread_id=context.thread_id,
                     run_id=context.run_id,
