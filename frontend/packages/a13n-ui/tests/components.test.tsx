@@ -2,7 +2,7 @@ import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Button, ModalFrame, FormField, Input } from "../src";
+import { Button, ModalFrame, FormField, Input, ScrollArea } from "../src";
 describe("component interaction contracts", () => {
   it("keeps button content mounted and prevents submission while loading", async () => {
     const click = vi.fn();
@@ -65,5 +65,20 @@ describe("component interaction contracts", () => {
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.activeElement).toBe(trigger);
+  });
+  it("attaches viewportRef to the ScrollArea viewport element", () => {
+    const viewportRef = createRef<HTMLDivElement>();
+    render(
+      <ScrollArea
+        autoHeight
+        viewportRef={viewportRef}
+        viewportProps={{ role: "region", "aria-label": "Thought content" }}
+      >
+        <p>Streaming thoughts</p>
+      </ScrollArea>,
+    );
+    const viewport = screen.getByRole("region", { name: "Thought content" });
+    expect(viewportRef.current).toBe(viewport);
+    expect(viewport.dataset.slot).toBe("scroll-area-viewport");
   });
 });

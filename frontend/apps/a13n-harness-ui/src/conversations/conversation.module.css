@@ -877,8 +877,18 @@ summary:is(:hover, :focus-visible) > .logCaret {
   max-height: 144px;
   margin: 4px 8px 8px;
 }
-.reasoningBody [data-slot="scroll-area-content"] > div + div {
+.reasoningBody [data-slot="scroll-area-content"] > div + div,
+.liveThinkingBody [data-slot="scroll-area-content"] > div + div {
   margin-top: 12px;
+}
+.liveThinkingPreview {
+  color: var(--harness-log-text);
+  font-size: var(--a13n-text-body);
+  line-height: 1.6;
+}
+.liveThinkingBody {
+  max-height: 144px;
+  margin: 4px 0 8px;
 }
 .reasoning > summary:focus-visible {
   outline: 2px solid var(--ring);

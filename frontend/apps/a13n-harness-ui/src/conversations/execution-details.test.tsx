@@ -10,7 +10,8 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ConversationTranscript } from "./transcript";
+import { ConversationTranscript, LiveOutput } from "./transcript";
+import { PauseConversationFollowing } from "./execution-details";
 import { RunActivity } from "./run-activity";
 import type { DisplayBlock } from "./stream";
 import type { Schema } from "../transport/client";
@@ -143,6 +144,13 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     />,
   );
   expect(trigger.textContent).toBe("ThinkingWork log");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(
+    within(screen.getByRole("region", { name: "Thought content" })).getByText(
+      "Next step",
+    ),
+  ).toBeTruthy();
 });
 
 it.each([
@@ -542,4 +550,496 @@ it("keeps the execution reader open without moving the preceding progress on com
   expect(
     screen.getByText("Finished.").closest("[data-execution-reader]"),
   ).toBeNull();
+});
+
+it("streams live thinking beneath the single collapsed desktop trigger, collapses completely on tool calls, reappears for new thinking, and settles on completion", () => {
+  viewport()(false);
+  const pauseFollowing = vi.fn();
+  const input: Schema<"TranscriptEntry"> = {
+    position: 0,
+    message_kind: "request",
+    parts: [{ kind: "user", text: "Trace checkout retries" }],
+  };
+  const turn = {
+    turn_id: "live-turn",
+    input_position: 0,
+    end_position: 1,
+    final_position: null,
+    preview: "Trace checkout retries",
+  };
+  const renderTranscript = (
+    blocks: DisplayBlock[],
+    running = true,
+    complete = false,
+  ) => (
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={
+          complete
+            ? [
+                input,
+                {
+                  position: 1,
+                  message_kind: "response",
+                  parts: [
+                    { kind: "thinking", text: "First step\nSecond step" },
+                    {
+                      kind: "tool_call",
+                      tool_name: "view",
+                      tool_call_id: "read-1",
+                      value: { path: "checkout.ts" },
+                    },
+                    {
+                      kind: "tool_result",
+                      tool_name: "view",
+                      tool_call_id: "read-1",
+                      value: "ok",
+                    },
+                    { kind: "thinking", text: "Verify retry guard" },
+                    { kind: "assistant", text: "Guard added." },
+                  ],
+                },
+              ]
+            : [input]
+        }
+        turns={[
+          complete
+            ? {
+                ...turn,
+                end_position: 2,
+                final_position: 1,
+                duration_ms: 8400,
+              }
+            : turn,
+        ]}
+        blocks={blocks}
+        localInputs={[]}
+        running={running}
+      />
+    </PauseConversationFollowing>
+  );
+
+  // Empty thinking START frame keeps the trigger collapsed and does not flash an empty preview box.
+  const view = render(
+    renderTranscript([{ id: "t1", kind: "thinking", text: "   " }]),
+  );
+  const trigger = screen.getByRole("button", { name: /Work log/ });
+  expect(trigger.textContent).toBe("ThinkingWork log");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(pauseFollowing).not.toHaveBeenCalled();
+
+  // First non-empty delta renders a single Thinking header and live scrolling preview underneath.
+  view.rerender(
+    renderTranscript([{ id: "t1", kind: "thinking", text: "First step" }]),
+  );
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.getAllByText("Thinking")).toHaveLength(1);
+  const thoughtViewport = screen.getByRole("region", {
+    name: "Thought content",
+  });
+  let scrollHeight = 320;
+  Object.defineProperty(thoughtViewport, "scrollHeight", {
+    configurable: true,
+    get: () => scrollHeight,
+  });
+  Object.defineProperty(thoughtViewport, "clientHeight", {
+    configurable: true,
+    get: () => 144,
+  });
+
+  scrollHeight = 460;
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+    ]),
+  );
+  expect(thoughtViewport.scrollTop).toBe(460);
+  expect(pauseFollowing).not.toHaveBeenCalled();
+
+  // Brief gap after REASONING_MESSAGE_END keeps the preview open and settles the single header to Thought.
+  view.rerender(
+    renderTranscript([
+      {
+        id: "t1",
+        kind: "thinking",
+        text: "First step\nSecond step",
+        done: true,
+      },
+    ]),
+  );
+  expect(trigger.textContent).toBe("ThoughtWork log");
+  expect(screen.getByRole("region", { name: "Thought content" })).toBe(
+    thoughtViewport,
+  );
+
+  // Active tool call removes live thinking preview completely and leaves only the collapsed tool overview.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: false,
+      },
+    ]),
+  );
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(screen.queryByText("First step")).toBeNull();
+  expect(trigger.textContent).not.toContain("Thinking");
+  expect(trigger.textContent).toContain("checkout.ts");
+
+  // Completed tool call still stays collapsed without sticking on Thinking even when earlier thinking omitted done.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: true,
+        result: "ok",
+      },
+    ]),
+  );
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(trigger.textContent).toContain("Read 1 file");
+
+  // Subsequent thinking block after tool call reappears with a fresh viewport and scrolls to bottom.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: true,
+        result: "ok",
+      },
+      { id: "t2", kind: "thinking", text: "Verify retry guard" },
+    ]),
+  );
+  expect(trigger.textContent).toBe("ThinkingWork log");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getAllByText("Thinking")).toHaveLength(1);
+  const secondViewport = screen.getByRole("region", {
+    name: "Thought content",
+  });
+  expect(secondViewport).not.toBe(thoughtViewport);
+  expect(within(secondViewport).getByText("Verify retry guard")).toBeTruthy();
+
+  // Brief gap after second thinking ends keeps Thought header instead of flashing prior tool summary.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: true,
+        result: "ok",
+      },
+      { id: "t2", kind: "thinking", text: "Verify retry guard", done: true },
+    ]),
+  );
+  expect(trigger.textContent).toBe("ThoughtWork log");
+  expect(screen.getByRole("region", { name: "Thought content" })).toBe(
+    secondViewport,
+  );
+
+  // Assistant prose follows: live preview disappears and execution stays collapsed without pausing follow.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: true,
+        result: "ok",
+      },
+      { id: "t2", kind: "thinking", text: "Verify retry guard" },
+      { id: "reply-1", kind: "assistant", text: "Guard added." },
+    ]),
+  );
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(pauseFollowing).not.toHaveBeenCalled();
+
+  // Turn completes: collapses behind Worked for ... and stays collapsed.
+  view.rerender(renderTranscript([], false, true));
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(trigger.textContent).toContain("Worked for 8s");
+});
+
+it("hides live thinking preview on manual expand without duplication, pauses tail-scroll on upward scroll, and preserves Reasoning overrides", async () => {
+  viewport()(false);
+  const pauseFollowing = vi.fn();
+  const user = userEvent.setup();
+  const input: Schema<"TranscriptEntry"> = {
+    position: 0,
+    message_kind: "request",
+    parts: [{ kind: "user", text: "Inspect overrides" }],
+  };
+  const turn = {
+    turn_id: "override-turn",
+    input_position: 0,
+    end_position: 1,
+    final_position: null,
+    preview: "Inspect overrides",
+  };
+  const view = render(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[input]}
+        turns={[turn]}
+        blocks={[{ id: "t1", kind: "thinking", text: "Step one" }]}
+        localInputs={[]}
+        running
+      />
+    </PauseConversationFollowing>,
+  );
+
+  const trigger = screen.getByRole("button", { name: /Work log/ });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+
+  // Scroll up pauses auto-scroll in standalone preview; scrolling back within 4px resumes auto-scroll.
+  const previewViewport = screen.getByRole("region", {
+    name: "Thought content",
+  });
+  let scrollHeight = 400;
+  Object.defineProperty(previewViewport, "scrollHeight", {
+    configurable: true,
+    get: () => scrollHeight,
+  });
+  Object.defineProperty(previewViewport, "clientHeight", {
+    configurable: true,
+    get: () => 144,
+  });
+  previewViewport.scrollTop = 256;
+  fireEvent.wheel(previewViewport, { deltaY: -40 });
+  previewViewport.scrollTop = 120;
+  scrollHeight = 520;
+  view.rerender(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[input]}
+        turns={[turn]}
+        blocks={[{ id: "t1", kind: "thinking", text: "Step one\nStep two" }]}
+        localInputs={[]}
+        running
+      />
+    </PauseConversationFollowing>,
+  );
+  expect(previewViewport.scrollTop).toBe(120);
+
+  // Scroll back near bottom (520 - 374 - 144 = 2 <= 4) resumes auto-scroll.
+  previewViewport.scrollTop = 374;
+  fireEvent.scroll(previewViewport);
+  scrollHeight = 640;
+  view.rerender(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[input]}
+        turns={[turn]}
+        blocks={[
+          {
+            id: "t1",
+            kind: "thinking",
+            text: "Step one\nStep two\nStep three",
+          },
+        ]}
+        localInputs={[]}
+        running
+      />
+    </PauseConversationFollowing>,
+  );
+  expect(previewViewport.scrollTop).toBe(640);
+
+  // Manually expanding ExecutionDetails pauses follow, hides standalone preview (no duplicate content), and opens Work log.
+  await user.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(pauseFollowing).toHaveBeenCalledTimes(1);
+  const reader = screen.getByRole("region", { name: "Work log" });
+  expect(
+    screen.getAllByRole("region", { name: "Thought content" }),
+  ).toHaveLength(1);
+  const details = within(reader).getByText("Thinking").closest("details")!;
+  expect(details.open).toBe(true);
+
+  // Manually collapsing active thinking inside Work log keeps it collapsed across updates.
+  await user.click(within(details).getByText("Thinking"));
+  expect(details.open).toBe(false);
+  view.rerender(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[input]}
+        turns={[turn]}
+        blocks={[
+          {
+            id: "t1",
+            kind: "thinking",
+            text: "Step one\nStep two\nStep three\nStep four",
+          },
+        ]}
+        localInputs={[]}
+        running
+      />
+    </PauseConversationFollowing>,
+  );
+  expect(details.open).toBe(false);
+
+  // Manually re-expanding keeps it open across completion and live-to-saved cutover.
+  await user.click(within(details).getByText("Thinking"));
+  expect(details.open).toBe(true);
+
+  // Collapsing ExecutionDetails while still running returns cleanly to standalone live preview.
+  await user.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(
+    screen.getAllByRole("region", { name: "Thought content" }),
+  ).toHaveLength(1);
+
+  // Re-expanding pins ExecutionDetails open across completion.
+  await user.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(pauseFollowing).toHaveBeenCalledTimes(2);
+  view.rerender(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[
+          input,
+          {
+            position: 1,
+            message_kind: "response",
+            parts: [
+              {
+                kind: "thinking",
+                text: "Step one\nStep two\nStep three\nStep four",
+              },
+              { kind: "assistant", text: "All set." },
+            ],
+          },
+        ]}
+        turns={[{ ...turn, end_position: 2, final_position: 1 }]}
+        blocks={[]}
+        localInputs={[]}
+        running={false}
+      />
+    </PauseConversationFollowing>,
+  );
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(details.open).toBe(true);
+});
+
+it("never auto-opens mobile modal or renders inline thinking preview during an active run", () => {
+  viewport();
+  render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[entries[0]]}
+      turns={[
+        {
+          turn_id: "mobile-live",
+          input_position: 0,
+          end_position: 1,
+          final_position: null,
+          preview: "Investigate scrolling",
+        },
+      ]}
+      blocks={[
+        { id: "t1", kind: "thinking", text: "Mobile streaming thought" },
+      ]}
+      localInputs={[]}
+      running
+    />,
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(screen.queryByText("Mobile streaming thought")).toBeNull();
+  expect(screen.getByRole("button", { name: /Work log/ }).textContent).toBe(
+    "ThinkingWork log",
+  );
+});
+
+it("keeps historical or reloaded unfinished runs collapsed without live preview on desktop", () => {
+  viewport()(false);
+  render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[entries[0]]}
+      turns={[
+        {
+          turn_id: "reloaded-turn",
+          input_position: 0,
+          end_position: 1,
+          final_position: null,
+          preview: "Investigate scrolling",
+        },
+      ]}
+      blocks={[{ id: "t1", kind: "thinking", text: "Reloaded thinking" }]}
+      localInputs={[]}
+      running={false}
+    />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /Work log/ })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(screen.queryByText("Reloaded thinking")).toBeNull();
+});
+
+it("auto-expands live thinking in active LiveOutput and collapses it when a tool arrives", () => {
+  const view = render(
+    <LiveOutput
+      running
+      gap={false}
+      blocks={[{ id: "sub-t1", kind: "thinking", text: "Subagent plan" }]}
+    />,
+  );
+  const details = screen.getByText("Thinking").closest("details")!;
+  expect(details.open).toBe(true);
+
+  view.rerender(
+    <LiveOutput
+      running
+      gap={false}
+      blocks={[
+        { id: "sub-t1", kind: "thinking", text: "Subagent plan" },
+        { id: "sub-tool", kind: "tool", name: "view", text: "{}" },
+      ]}
+    />,
+  );
+  expect(details.open).toBe(false);
+  expect(within(details).getByText("Thought")).toBeTruthy();
+  expect(within(details).queryByText("Thinking")).toBeNull();
 });

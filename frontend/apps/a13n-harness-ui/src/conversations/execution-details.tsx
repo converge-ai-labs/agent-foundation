@@ -32,11 +32,13 @@ export function ExecutionDetails({
   complete,
   preview,
   running,
+  livePreview,
   children,
 }: {
   complete: boolean;
   preview: string;
   running?: boolean;
+  livePreview?: ReactNode;
   children: (open: boolean) => ReactNode;
 }) {
   const { t } = useTranslation();
@@ -81,6 +83,7 @@ export function ExecutionDetails({
             />
           </CollapsibleTrigger>
         </div>
+        {!expanded && livePreview}
         <CollapsiblePanel
           className={styles.readerPanel}
           keepMounted

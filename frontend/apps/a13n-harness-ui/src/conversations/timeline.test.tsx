@@ -224,12 +224,13 @@ it("groups adjacent reasoning across saved entries and the live boundary, but no
       threadId="one"
     />,
   );
-  const group = screen.getByText("Thought").closest("details");
+  const group = screen.getByText("Thought").closest("details")!;
+  expect(group.open).toBe(false);
   expect(screen.getByText("First plan").closest("details")).toBe(group);
   expect(screen.getByText("Third plan").closest("details")).toBe(group);
-  expect(screen.getByText("Fourth plan").closest("details")).toBe(
-    screen.getByText("Thinking").closest("details"),
-  );
+  const active = screen.getByText("Thinking").closest("details")!;
+  expect(active.open).toBe(true);
+  expect(screen.getByText("Fourth plan").closest("details")).toBe(active);
 });
 
 it("keeps separate reasoning Markdown documents and stops grouping at tool activity", () => {

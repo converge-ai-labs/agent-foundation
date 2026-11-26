@@ -667,8 +667,10 @@ function groupRows(rows: Row[]) {
   return grouped;
 }
 
-function Reasoning({
+function ThinkingBody({
   segments,
+  followTail,
+  className,
 }: {
   segments: {
     id: string;
@@ -676,20 +678,131 @@ function Reasoning({
     durationMs?: number;
     running?: boolean;
   }[];
+  followTail: boolean;
+  className: string;
 }) {
   const { t } = useTranslation();
-  const running = segments.some((part) => part.running);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
+  const prevFollowTail = useRef(followTail);
+  const textSignature = segments.map((segment) => segment.text).join("\n");
+
+  useLayoutEffect(() => {
+    if (followTail && !prevFollowTail.current) {
+      follow.current = true;
+    }
+    prevFollowTail.current = followTail;
+  }, [followTail]);
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!followTail || !viewport || !follow.current) return;
+    viewport.scrollTop = viewport.scrollHeight;
+  }, [followTail, textSignature]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!followTail || !viewport || typeof ResizeObserver === "undefined")
+      return;
+    const observer = new ResizeObserver(() => {
+      if (follow.current) viewport.scrollTop = viewport.scrollHeight;
+    });
+    observer.observe(viewport);
+    if (viewport.firstElementChild)
+      observer.observe(viewport.firstElementChild);
+    return () => observer.disconnect();
+  }, [followTail]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) follow.current = false;
+    };
+    const onPause = () => {
+      follow.current = false;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === "ArrowUp" ||
+        event.key === "PageUp" ||
+        event.key === "Home"
+      )
+        follow.current = false;
+    };
+    const onScroll = () => {
+      follow.current =
+        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 4;
+    };
+    viewport.addEventListener("wheel", onWheel, { passive: true });
+    viewport.addEventListener("touchstart", onPause, { passive: true });
+    viewport.addEventListener("pointerdown", onPause);
+    viewport.addEventListener("keydown", onKeyDown);
+    viewport.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      viewport.removeEventListener("wheel", onWheel);
+      viewport.removeEventListener("touchstart", onPause);
+      viewport.removeEventListener("pointerdown", onPause);
+      viewport.removeEventListener("keydown", onKeyDown);
+      viewport.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+
+  return (
+    <ScrollArea
+      autoHeight
+      scrollbarGutter
+      overscrollContain
+      viewportRef={viewportRef}
+      className={className}
+      viewportProps={{
+        role: "region",
+        "aria-label": t("Thought content"),
+        tabIndex: 0,
+      }}
+    >
+      {segments.map((segment) => (
+        <MessageText key={segment.id} text={segment.text} />
+      ))}
+    </ScrollArea>
+  );
+}
+
+function Reasoning({
+  segments,
+  activeSegment = false,
+  hasFollowingRow = false,
+}: {
+  segments: {
+    id: string;
+    text: string;
+    durationMs?: number;
+    running?: boolean;
+  }[];
+  activeSegment?: boolean;
+  hasFollowingRow?: boolean;
+}) {
+  const { t } = useTranslation();
+  const hasText = segments.some((segment) => segment.text.trim().length > 0);
+  const running = segments.some((part) => part.running) && !hasFollowingRow;
   const duration = executionTime(
     segments.every((segment) => segment.durationMs != null)
       ? segments.reduce((total, segment) => total + segment.durationMs!, 0)
       : undefined,
   );
-  const [open, setOpen] = useState(false);
+  const autoOpen = activeSegment && !hasFollowingRow && hasText;
+  const [userOverride, setUserOverride] = useState<boolean | null>(null);
+  const effectiveOpen = userOverride ?? autoOpen;
+
   return (
     <details
       className={styles.reasoning}
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      open={effectiveOpen}
+      onToggle={(event) => {
+        const next = event.currentTarget.open;
+        if (next === effectiveOpen) return;
+        setUserOverride(next);
+      }}
     >
       <summary data-running-label={running || undefined}>
         {running ? t("Thinking", { context: "active" }) : t("Thought")}
@@ -700,21 +813,11 @@ function Reasoning({
         )}
         <CaretRight aria-hidden="true" className={styles.logCaret} />
       </summary>
-      <ScrollArea
-        autoHeight
-        scrollbarGutter
-        overscrollContain
+      <ThinkingBody
+        segments={segments}
+        followTail={autoOpen && effectiveOpen}
         className={`${styles.reasoningBody} ${styles.innerReader}`}
-        viewportProps={{
-          role: "region",
-          "aria-label": t("Thought content"),
-          tabIndex: 0,
-        }}
-      >
-        {segments.map((segment) => (
-          <MessageText key={segment.id} text={segment.text} />
-        ))}
-      </ScrollArea>
+      />
     </details>
   );
 }
@@ -726,6 +829,8 @@ function Rows({
   output = [],
   turn,
   messageActions = false,
+  activeSegment = false,
+  hasFollowingSegment = false,
 }: {
   rows: Row[];
   threadId?: string;
@@ -733,6 +838,8 @@ function Rows({
   turn?: Schema<"TranscriptTurn">;
   messageActions?: boolean;
   output?: Extract<Row, { kind: "assistant" }>[];
+  activeSegment?: boolean;
+  hasFollowingSegment?: boolean;
 }) {
   const { t } = useTranslation();
   const actions = useContext(MessageBranches);
@@ -780,7 +887,11 @@ function Rows({
           </header>
         </div>
       ) : row.kind === "thinking" ? (
-        <Reasoning segments={row.segments} />
+        <Reasoning
+          segments={row.segments}
+          activeSegment={activeSegment}
+          hasFollowingRow={index < all.length - 1 || hasFollowingSegment}
+        />
       ) : row.kind === "question" ? (
         (row.content ?? (row.tool && <QuestionInteraction tool={row.tool} />))
       ) : row.kind === "inbox" ? (
@@ -1110,6 +1221,7 @@ export function ConversationTranscript({
           onSavedEntries={onSavedEntries}
           continuation={continuation}
           pending={pending}
+          running={running}
         />
         {activity}
         {gap && <GapNotice />}
@@ -1129,6 +1241,7 @@ function TurnRows({
   onSavedEntries,
   continuation,
   pending,
+  running = false,
 }: {
   connectorOffers: Schema<"SetupOffer">[];
   pending?: PendingInteraction;
@@ -1140,6 +1253,7 @@ function TurnRows({
   loadDetails: boolean;
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
   continuation?: string | null;
+  running?: boolean;
 }) {
   const indexed = useMemo(() => {
     const ordered = [...turns].sort(
@@ -1239,12 +1353,15 @@ function TurnRows({
               key={group.presentationKey}
               rows={questionRows(group.rows)}
               threadId={threadId}
+              activeSegment={running && index === groups.length - 1}
+              hasFollowingSegment={index < groups.length - 1}
             />
           ) : (
             <Turn
               key={group.presentationKey}
               {...group}
               pending={index === groups.length - 1 ? pending : undefined}
+              running={running && index === groups.length - 1}
               entries={
                 group.turn ? indexed.byTurn.get(group.turn.turn_id)! : entries
               }
@@ -1283,6 +1400,7 @@ function TurnRows({
 
 function Turn(props: {
   pending?: PendingInteraction;
+  running?: boolean;
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -1309,6 +1427,7 @@ function TurnHistory({
   ...props
 }: {
   pending?: PendingInteraction;
+  running?: boolean;
   id: string;
   turn?: Schema<"TranscriptTurn">;
   entries: Schema<"TranscriptEntry">[];
@@ -1454,8 +1573,10 @@ function TurnSegments({
   loading = false,
   failed = false,
   pending,
+  running = false,
 }: {
   pending?: PendingInteraction;
+  running?: boolean;
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
@@ -1588,7 +1709,7 @@ function TurnSegments({
   });
   return (
     <section data-turn-id={id} className={styles.turn} tabIndex={-1}>
-      {visibleSegments.map((segment) => {
+      {visibleSegments.map((segment, segmentIndex) => {
         if (segment.kind === "gap")
           return (
             <div
@@ -1621,12 +1742,16 @@ function TurnSegments({
               messageActions
             />
           );
+        const isTrailing = segmentIndex === visibleSegments.length - 1;
+        const activeSegment = Boolean(running && !complete && isTrailing);
         return (
           <ExecutionSegment
             key={segment.id}
             rows={segment.rows}
             threadId={threadId}
             complete={complete}
+            activeSegment={activeSegment}
+            hasFollowingSegment={!isTrailing}
             durationMs={
               visibleSegments.filter((item) => item.kind === "execution")
                 .length === 1
@@ -1663,15 +1788,35 @@ function ExecutionSegment({
   rows,
   threadId,
   complete,
+  activeSegment = false,
+  hasFollowingSegment = false,
   durationMs,
 }: {
   durationMs?: number | null;
   rows: Row[];
   threadId: string;
   complete: boolean;
+  activeSegment?: boolean;
+  hasFollowingSegment?: boolean;
 }) {
   const { t } = useTranslation();
   const duration = executionTime(durationMs);
+  const grouped = groupRows(rows);
+  const hasRunningTool = grouped.some(
+    (row) =>
+      row.kind === "tools" &&
+      row.tools.some((tool) => describeTool(tool).running),
+  );
+  const trailing = grouped.at(-1);
+  const trailingThinking =
+    activeSegment && !hasRunningTool && trailing?.kind === "thinking"
+      ? trailing
+      : undefined;
+  const liveThinking =
+    trailingThinking &&
+    trailingThinking.segments.some((segment) => segment.text.trim().length > 0)
+      ? trailingThinking
+      : undefined;
   const { preview, running } = complete
     ? {
         preview: duration
@@ -1679,12 +1824,45 @@ function ExecutionSegment({
           : t("Worked"),
         running: false,
       }
-    : executionSummary(rows, t);
+    : executionSummary(grouped, t, {
+        hasFollowingSegment,
+        trailingThinking,
+      });
   return (
-    <ExecutionDetails complete={complete} preview={preview} running={running}>
+    <ExecutionDetails
+      complete={complete}
+      preview={preview}
+      running={running}
+      livePreview={
+        liveThinking && (
+          <div
+            className={styles.liveThinkingPreview}
+            onWheel={(event) => event.stopPropagation()}
+            onTouchStart={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") event.stopPropagation();
+            }}
+          >
+            <ThinkingBody
+              key={liveThinking.id}
+              segments={liveThinking.segments}
+              followTail
+              className={`${styles.liveThinkingBody} ${styles.innerReader}`}
+            />
+          </div>
+        )
+      }
+    >
       {(open) => (
         <ExecutionReader open={open} complete={complete}>
-          <Rows rows={rows} threadId={threadId} continuation />
+          <Rows
+            rows={rows}
+            threadId={threadId}
+            continuation
+            activeSegment={activeSegment}
+            hasFollowingSegment={hasFollowingSegment}
+          />
         </ExecutionReader>
       )}
     </ExecutionDetails>
@@ -1692,15 +1870,26 @@ function ExecutionSegment({
 }
 
 function executionSummary(
-  rows: Row[],
+  grouped: Row[],
   t: ReturnType<typeof useTranslation>["t"],
+  options: {
+    hasFollowingSegment?: boolean;
+    trailingThinking?: Extract<Row, { kind: "thinking" }>;
+  } = {},
 ) {
+  const { hasFollowingSegment = false, trailingThinking } = options;
+  if (trailingThinking) {
+    return trailingThinking.segments.some((part) => part.running)
+      ? { preview: t("Thinking", { context: "active" }), running: true }
+      : { preview: t("Thought"), running: false };
+  }
   const counts = new Map<string, Set<string>>();
   let activeStep: string | undefined;
   let thinking = false;
   let notices = 0;
   const otherActivities = new Set<string>();
-  for (const row of rows) {
+  for (let index = 0; index < grouped.length; index++) {
+    const row = grouped[index];
     if (row.kind === "tools") {
       for (const tool of row.tools) {
         const info = describeTool(tool);
@@ -1735,7 +1924,8 @@ function executionSummary(
       }
     } else if (row.kind === "thinking") {
       thinking = true;
-      if (row.segments.some((part) => part.running))
+      const hasFollowingRow = index < grouped.length - 1 || hasFollowingSegment;
+      if (!hasFollowingRow && row.segments.some((part) => part.running))
         activeStep = t("Thinking", { context: "active" });
     } else if (row.kind === "notifications") notices += row.notices.length;
     else if (row.kind === "context")
@@ -1775,6 +1965,7 @@ function ExecutionReader({
 }) {
   const { t } = useTranslation();
   const reader = useRef<HTMLDivElement>(null);
+  const content = useRef<HTMLDivElement>(null);
   const follow = useRef(!complete);
   const anchor = useRef<ReadingAnchor | undefined>(undefined);
   const start = useRef<HTMLDivElement>(null);
@@ -1806,13 +1997,30 @@ function ExecutionReader({
     observer.observe(end.current);
     return () => observer.disconnect();
   }, [open]);
+  useEffect(() => {
+    const root = reader.current;
+    const body = content.current;
+    if (
+      !open ||
+      complete ||
+      !root ||
+      !body ||
+      typeof ResizeObserver === "undefined"
+    )
+      return;
+    const observer = new ResizeObserver(() => {
+      if (follow.current) root.scrollTop = root.scrollHeight;
+    });
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [open, complete]);
   useLayoutEffect(() => {
     const element = reader.current;
     if (!open || !element) return;
-    if (follow.current) element.scrollTop = element.scrollHeight;
+    if (follow.current && !complete) element.scrollTop = element.scrollHeight;
     else restoreReadingAnchor(element, anchor.current);
     anchor.current = captureReadingAnchor(element);
-  }, [children, open]);
+  }, [children, open, complete]);
   return (
     <div
       ref={reader}
@@ -1848,7 +2056,7 @@ function ExecutionReader({
       }}
     >
       <div ref={start} aria-hidden="true" />
-      {children}
+      <div ref={content}>{children}</div>
       <div ref={end} aria-hidden="true" />
     </div>
   );
@@ -1906,7 +2114,7 @@ export function LiveOutput({
       aria-label={t("Current unsaved output")}
     >
       {rows.length > 0 && label && <small>{label}</small>}
-      <Rows rows={rows} threadId={threadId} />
+      <Rows rows={rows} threadId={threadId} activeSegment={running} />
       {gap && <GapNotice />}
     </section>
   );

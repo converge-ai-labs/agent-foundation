@@ -9,6 +9,7 @@ export function ScrollArea({
   children,
   autoHeight = false,
   viewportProps,
+  viewportRef,
   scrollFade = false,
   scrollbarGutter = false,
   fill = false,
@@ -21,6 +22,7 @@ export function ScrollArea({
     ScrollAreaPrimitive.Viewport.Props,
     "role" | "aria-label" | "tabIndex"
   >;
+  viewportRef?: React.Ref<HTMLDivElement>;
   scrollFade?: boolean;
   scrollbarGutter?: boolean;
   fill?: boolean;
@@ -34,6 +36,7 @@ export function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         {...viewportProps}
+        ref={viewportRef}
         className={cn(
           "rounded-[inherit] outline-none transition-shadow",
           autoHeight
