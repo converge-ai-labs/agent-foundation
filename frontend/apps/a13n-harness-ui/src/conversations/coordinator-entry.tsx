@@ -55,11 +55,7 @@ export function CoordinatorEntry({
     )?.observedAt ?? 0;
   for (const { thread, observedAt } of results.threads.values()) {
     if (observedAt <= pageObservedAt(thread.thread_id)) continue;
-    if (
-      thread.coordinator_thread_id === owner &&
-      (rows.has(thread.thread_id) ||
-        results.tracker?.isUnread(thread.thread_id))
-    )
+    if (thread.coordinator_thread_id === owner && rows.has(thread.thread_id))
       rows.set(thread.thread_id, { ...rows.get(thread.thread_id), thread });
   }
   if (

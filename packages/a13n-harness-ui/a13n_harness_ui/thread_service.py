@@ -625,6 +625,8 @@ class ThreadService:
         thread = await self.require_interactive(thread_id)
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
+        if await self._store.threads.worker_owners((thread_id,)):
+            raise ThreadError("Mark the Coordinator unread rather than its workers.", code="worker_unread_unsupported")
         await self._store.threads.mark_unread(thread_id)
 
     async def update_metadata(

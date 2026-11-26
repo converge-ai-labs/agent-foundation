@@ -11,7 +11,7 @@ from sqlalchemy import event, text
 
 from .test_app import _write_configuration
 from .test_configuration_protocol import HEADERS
-from .test_interactive_protocol import listener
+from .test_interactive_protocol import listener, listener_with_app
 from .test_thread_repository import _configuration, _initial
 
 pytestmark = pytest.mark.anyio
@@ -270,5 +270,193 @@ def test_shared_read_upgrade_rolls_back_native_columns_and_retries(tmp_path):
             }
         migrator.upgrade()
         migrator.verify_current()
+    finally:
+        engine.dispose()
+
+
+async def test_coordinator_workers_are_excluded_from_shared_unread_state(tmp_path):
+    settings = StorageSettings(data_root=tmp_path)
+    ref = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="b" * 64)
+    async with open_local_store(settings) as store:
+        coordinator = await store.threads.create(
+            thread_id="thread-coord",
+            configuration=_configuration(project_id="project-main"),
+            initial_state=_initial(),
+            coordinator=True,
+        )
+        worker = await store.threads.create(
+            thread_id="thread-worker",
+            configuration=_configuration(project_id="project-main"),
+            initial_state=_initial(),
+            coordinator_thread_id=coordinator.thread_id,
+        )
+        completed_worker = await store.threads.select_continuation(
+            thread_id=worker.thread_id,
+            expected=None,
+            replacement=ref,
+            read_model=ThreadReadModel(),
+            completed_run_id="run-worker-1",
+        )
+        assert completed_worker.completion is not None and completed_worker.completion.version == 1
+        assert completed_worker.completion.run_id == "run-worker-1"
+        assert not completed_worker.unread and completed_worker.read_state_version == 0
+
+        # Repository mark_unread ignores workers while updating Coordinators.
+        await store.threads.mark_unread(worker.thread_id)
+        reloaded_worker = await store.threads.get(worker.thread_id)
+        assert reloaded_worker is not None and not reloaded_worker.unread and reloaded_worker.read_state_version == 0
+
+        completed_coord = await store.threads.select_continuation(
+            thread_id=coordinator.thread_id,
+            expected=None,
+            replacement=ref,
+            read_model=ThreadReadModel(),
+            completed_run_id="run-coord-1",
+        )
+        assert completed_coord.unread and completed_coord.read_state_version == 1
+
+        # Even if a legacy row has unread=1 on a worker, unread queries and
+        # acknowledge_read exclude workers while keeping ix_thread_unread.
+        async with store.database.engine.begin() as connection:
+            await connection.execute(
+                text("UPDATE thread SET unread = 1, read_state_version = 2 WHERE thread_id = :id"),
+                {"id": worker.thread_id},
+            )
+        unread_rows, unread_total = await store.threads.list(unread=True, limit=20)
+        assert unread_total == 1
+        assert [row.thread_id for row in unread_rows] == [coordinator.thread_id]
+        read_rows, read_total = await store.threads.list(unread=False, limit=20)
+        assert read_total == 1
+        assert [row.thread_id for row in read_rows] == [worker.thread_id]
+        assert (
+            await store.threads.acknowledge_read(
+                (
+                    ThreadReadReceipt(
+                        thread_id=worker.thread_id,
+                        read_state_version=2,
+                        completion_version=1,
+                    ),
+                )
+            )
+            == ()
+        )
+        assert await store.threads.acknowledge_read((receipt(completed_coord),)) == (coordinator.thread_id,)
+        cleared_coord = await store.threads.get(coordinator.thread_id)
+        assert cleared_coord is not None and not cleared_coord.unread and cleared_coord.read_state_version == 2
+
+        async with store.database.engine.connect() as connection:
+            plan = (
+                await connection.execute(
+                    text(
+                        "EXPLAIN QUERY PLAN SELECT thread_id FROM thread "
+                        "WHERE unread = 1 AND memory_scope IS NULL AND parent_thread_id IS NULL AND archived IS 0 "
+                        "AND thread_id NOT IN (SELECT worker_thread_id FROM coordinator_worker) "
+                        "ORDER BY updated_at DESC, thread_id DESC LIMIT 100"
+                    )
+                )
+            ).all()
+            assert "ix_thread_unread" in str(plan)
+
+
+async def test_http_worker_unread_rejection_projection_and_coordinator_lifecycle(tmp_path):
+    configuration = _write_configuration(tmp_path)
+    async with listener_with_app(tmp_path, configuration_path=configuration) as (http, _, app):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            coord = (await api.post("/api/threads", json={"coordinator": True, "title": "Coord"})).json()
+            worker = (
+                await api.post(
+                    "/api/threads",
+                    json={"coordinator_thread_id": coord["thread_id"], "title": "Worker"},
+                )
+            ).json()
+
+            # Reject manual mark_unread on workers with the same 400 contract as starring.
+            rejected = await api.post(f"/api/threads/{worker['thread_id']}/unread")
+            assert rejected.status_code == 400
+            assert rejected.json()["error"]["code"] == "worker_unread_unsupported"
+
+            # Coordinator mark unread, list, and acknowledge read still work normally.
+            marked = await api.post(f"/api/threads/{coord['thread_id']}/unread")
+            assert marked.status_code == 200
+            marked_body = marked.json()
+            assert marked_body["unread"] is True and marked_body["read_state_version"] == 1
+
+            # Even with a legacy unread=1 database value on a worker, projections
+            # and unread=true queries never surface unread on workers.
+            async with app._store.database.engine.begin() as connection:
+                await connection.execute(
+                    text("UPDATE thread SET unread = 1, read_state_version = 3 WHERE thread_id = :id"),
+                    {"id": worker["thread_id"]},
+                )
+            worker_detail = (await api.get(f"/api/threads/{worker['thread_id']}")).json()["thread"]
+            assert worker_detail["unread"] is False
+            unread_page = (await api.get("/api/threads", params={"unread": "true"})).json()
+            assert unread_page["total"] == 1
+            assert [row["thread_id"] for row in unread_page["threads"]] == [coord["thread_id"]]
+
+            cleared = await api.post(
+                "/api/threads/read",
+                json={
+                    "threads": [
+                        {
+                            "thread_id": coord["thread_id"],
+                            "read_state_version": marked_body["read_state_version"],
+                            "completion_version": 0,
+                        }
+                    ]
+                },
+            )
+            assert cleared.status_code == 200
+            assert cleared.json()["threads"][0]["unread"] is False
+
+
+def test_upgrade_clears_historical_worker_unread_state(tmp_path):
+    from a13n_harness_ui.storage.migration import DatabaseMigrator
+    from alembic import command
+    from sqlalchemy import create_engine
+
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, "25cea71e51f9"), write=True)
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            for thread_id, unread, version in (
+                ("coord", 1, 2),
+                ("worker-unread", 1, 3),
+                ("worker-read", 0, 1),
+                ("ordinary", 1, 4),
+            ):
+                connection.execute(
+                    text(
+                        "INSERT INTO thread (thread_id, parent_thread_id, metadata_version, archived, created_at, updated_at, "
+                        "initial_state_schema_version, initial_state_digest, unread, read_state_version, completion_version) "
+                        "VALUES (:id, NULL, 1, 0, '2026-01-01', '2026-01-01', '1', :digest, :unread, :version, 1)"
+                    ),
+                    {"id": thread_id, "digest": "a" * 64, "unread": unread, "version": version},
+                )
+            connection.execute(text("INSERT INTO coordinator (thread_id, auto_followup) VALUES ('coord', 1)"))
+            connection.execute(
+                text(
+                    "INSERT INTO coordinator_worker (worker_thread_id, coordinator_thread_id) "
+                    "VALUES ('worker-unread', 'coord'), ('worker-read', 'coord')"
+                )
+            )
+        migrator.upgrade()
+        migrator.upgrade()
+        migrator.verify_current()
+        with engine.connect() as connection:
+            rows = {
+                row[0]: tuple(row[1:])
+                for row in connection.execute(
+                    text("SELECT thread_id, unread, read_state_version, completion_version FROM thread")
+                ).all()
+            }
+            assert rows == {
+                "coord": (1, 2, 1),
+                "worker-unread": (0, 4, 1),
+                "worker-read": (0, 1, 1),
+                "ordinary": (1, 4, 1),
+            }
     finally:
         engine.dispose()

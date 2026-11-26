@@ -83,6 +83,7 @@ function mount({
   coordinator = false,
   live = false,
   starred = false,
+  unread = false,
   worker = false,
   activeWorkerCount = 0,
 } = {}) {
@@ -95,6 +96,8 @@ function mount({
       role: coordinator ? "coordinator" : worker ? "worker" : "ordinary",
       archived,
       starred,
+      unread,
+      read_state_version: unread ? 1 : 0,
       metadata_version: 3,
       configuration: {
         project_id: live ? null : "project-one",
@@ -535,4 +538,23 @@ it("marks unread without navigation, waits for confirmation, and keeps failure e
   );
   await screen.findByText("Reading state unavailable");
   expect(results.isUnread("thread-one")).toBe(true);
+});
+
+it("hides Mark unread and the unread dot on Coordinator workers while keeping Mark unread on Coordinators", async () => {
+  mount({ worker: true, unread: true });
+  expect(screen.queryByRole("img", { name: "New result" })).toBeNull();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  await screen.findByRole("menu");
+  expect(screen.queryByRole("menuitem", { name: "Mark unread" })).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Star chat" })).toBeNull();
+
+  cleanup();
+  mount({ coordinator: true, unread: true });
+  expect(screen.getByRole("img", { name: "New result" })).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  await screen.findByRole("menuitem", { name: "Mark unread" });
 });

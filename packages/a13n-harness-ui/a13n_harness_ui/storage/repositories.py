@@ -788,8 +788,11 @@ class ThreadRepository:
                 predicates.append(ThreadRecord.archived.is_(False))
             if starred is not None:
                 predicates.append(ThreadRecord.starred.is_(starred))
-            if unread is not None:
-                predicates.append(ThreadRecord.unread == unread)
+            if unread is True:
+                predicates.append(ThreadRecord.unread == True)  # noqa: E712 - literal matches the partial index
+                predicates.append(ThreadRecord.thread_id.not_in(workers))
+            elif unread is False:
+                predicates.append(or_(ThreadRecord.unread == False, ThreadRecord.thread_id.in_(workers)))  # noqa: E712
             normalized = None if query is None else query.strip().casefold()
             if normalized:
                 pattern = f"%{_escape_like(normalized)}%"
@@ -919,6 +922,7 @@ class ThreadRepository:
     async def mark_unread(self, thread_id: str) -> None:
         # A new manual intent fences acknowledgements already in flight, even
         # when the previous generation was also unread. No history is appended.
+        workers = select(CoordinatorWorkerRecord.worker_thread_id)
         async with transaction(self._sessions) as session:
             await session.execute(
                 update(ThreadRecord)
@@ -926,6 +930,7 @@ class ThreadRepository:
                     ThreadRecord.thread_id == thread_id,
                     ThreadRecord.parent_thread_id.is_(None),
                     ThreadRecord.memory_scope.is_(None),
+                    ThreadRecord.thread_id.not_in(workers),
                 )
                 .values(unread=True, read_state_version=ThreadRecord.read_state_version + 1)
             )
@@ -933,10 +938,12 @@ class ThreadRepository:
     async def acknowledge_read(self, receipts: tuple[ThreadReadReceipt, ...]) -> tuple[str, ...]:
         if not 1 <= len(receipts) <= 100:
             raise ValueError("Read acknowledgement is outside supported bounds")
+        workers = select(CoordinatorWorkerRecord.worker_thread_id)
         predicate = and_(
             ThreadRecord.unread == True,  # noqa: E712 - literal matches the partial index
             ThreadRecord.parent_thread_id.is_(None),
             ThreadRecord.memory_scope.is_(None),
+            ThreadRecord.thread_id.not_in(workers),
             or_(
                 *(
                     and_(
@@ -1092,7 +1099,13 @@ class ThreadRepository:
                     record.completion_version += 1
                     # Bot publications own its unread revision independently of
                     # execution completion, including messages sent before failure.
-                    if record.memory_scope is None and record.thread_id != BOT_THREAD_ID:
+                    # Coordinator workers retain completion markers without
+                    # participating in shared unread state.
+                    if (
+                        record.memory_scope is None
+                        and record.thread_id != BOT_THREAD_ID
+                        and await session.get(CoordinatorWorkerRecord, thread_id) is None
+                    ):
                         record.unread = True
                         record.read_state_version += 1
                     record.completion_run_id = completed_run_id
