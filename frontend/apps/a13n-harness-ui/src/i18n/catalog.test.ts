@@ -755,14 +755,6 @@ it("covers literal feedback at its draft and composer sources, not only existing
         node.name.text === "message"
       )
         check(node.initializer);
-      if (
-        ts.isJsxAttribute(node) &&
-        node.name.getText() === "unavailableReason" &&
-        node.initializer &&
-        ts.isJsxExpression(node.initializer) &&
-        node.initializer.expression
-      )
-        check(node.initializer.expression);
       ts.forEachChild(node, visit);
     }
     visit(ast);

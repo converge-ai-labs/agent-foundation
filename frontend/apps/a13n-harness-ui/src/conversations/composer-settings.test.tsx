@@ -161,7 +161,6 @@ function Input({
       local
       threadId="thread-responsive"
       activity={{ state: "inactive" }}
-      canRun
       coordinator={{ active: false, available: true }}
       profile={{ display_name: "Tester", color: "#000000" }}
       unauthorized={() => {}}
@@ -699,4 +698,114 @@ it("keeps saved ACP option mutations mounted across subpage navigation and resol
     rejectPut(new Error("ACP option rejected"));
   });
   expect(await screen.findByText(/ACP option rejected/)).toBeTruthy();
+});
+
+it("shows a loading indicator on the ACP trigger while externalLoading is active and isolates option mutations across scopes", async () => {
+  const { useAcpOptionChange } = await import("./acp-options");
+  let rejectFirst!: (reason?: unknown) => void;
+  const put = vi.fn(
+    () =>
+      new Promise<never>((_resolve, reject) => {
+        rejectFirst = reject;
+      }),
+  );
+  const acpCatalog: Schema<"ThreadSelectorCatalog"> = {
+    ...catalog,
+    agents: [
+      ...catalog.agents,
+      {
+        kind: "acp_agent",
+        agent_id: "acp-one",
+        name: "Antigravity",
+        preset: "antigravity",
+        source_path: "acp_agents/agy.yaml",
+      },
+      {
+        kind: "acp_agent",
+        agent_id: "acp-two",
+        name: "Codex ACP",
+        preset: "codex",
+        source_path: "acp_agents/codex.yaml",
+      },
+    ],
+  };
+  const acpTransport = {
+    client: { PUT: put, GET: get, POST: post },
+  } as unknown as Transport;
+
+  function ScopedHarness({
+    agentId,
+    active = false,
+    loading = false,
+  }: {
+    agentId: string;
+    active?: boolean;
+    loading?: boolean;
+  }) {
+    const change = useAcpOptionChange("thread-scope", active, agentId, "c1");
+    return (
+      <>
+        <ThreadRunChoices
+          catalog={acpCatalog}
+          agentId={agentId}
+          controls={{}}
+          onControlsChange={() => {}}
+          disabled={false}
+          onAgentChange={() => {}}
+          onModelChange={() => {}}
+          externalLoading={loading || change.isPending}
+        />
+        <button
+          type="button"
+          onClick={() => change.mutate({ id: "model", value: "next" })}
+        >
+          Trigger change
+        </button>
+        <output data-testid="state">
+          {JSON.stringify({
+            pending: change.isPending,
+            error: change.error ? String(change.error) : null,
+          })}
+        </output>
+      </>
+    );
+  }
+
+  const wrap = (node: React.ReactNode) => (
+    <LanguageProvider>
+      <MemoryRouter>
+        <QueryClientProvider client={query}>
+          <TransportContext value={acpTransport}>{node}</TransportContext>
+        </QueryClientProvider>
+      </MemoryRouter>
+    </LanguageProvider>
+  );
+
+  const user = userEvent.setup();
+  const view = render(wrap(<ScopedHarness agentId="acp-one" loading />));
+  const trigger = screen.getByRole("button", {
+    name: "Agent & Model settings",
+  });
+  expect(trigger.querySelector("[data-acp-loading]")).toBeTruthy();
+
+  view.rerender(wrap(<ScopedHarness agentId="acp-one" loading={false} />));
+  expect(trigger.querySelector("[data-acp-loading]")).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "Trigger change" }));
+  expect(screen.getByTestId("state").textContent).toContain('"pending":true');
+  expect(trigger.querySelector("[data-acp-loading]")).toBeTruthy();
+
+  // Switching agent immediately clears pending/error from the old agent scope.
+  view.rerender(wrap(<ScopedHarness agentId="acp-two" />));
+  expect(screen.getByTestId("state").textContent).toBe(
+    '{"pending":false,"error":null}',
+  );
+  expect(trigger.querySelector("[data-acp-loading]")).toBeNull();
+
+  await act(async () => {
+    rejectFirst(new Error("Old agent error"));
+  });
+  expect(screen.getByTestId("state").textContent).toBe(
+    '{"pending":false,"error":null}',
+  );
 });

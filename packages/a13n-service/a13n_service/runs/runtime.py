@@ -36,6 +36,7 @@ from a13n_service.tenancy.access import Access
 from a13n_service.tenancy.workspaces import WorkspaceCreated
 
 if TYPE_CHECKING:
+    from a13n_service.app_sdk.hooks import EnvironmentLifecycleHook, EnvironmentRunHook
     from a13n_service.runs.compaction_model import BackgroundCompaction
     from a13n_service.runs.environments.clients.connections import Connections
     from a13n_service.runs.environments.clients.routing import Routing
@@ -74,6 +75,9 @@ class Runtime:
     # The Harness plugin factories the deployment installed; agent configurations select instances of them.
     plugins: HarnessPluginFactoryCatalog = field(default_factory=lambda: HarnessPluginFactoryCatalog(()))
     apps: AppCatalog = field(default_factory=AppCatalog)
+    environment_hooks: tuple[tuple[str, EnvironmentLifecycleHook], ...] = ()
+    environment_run_hooks: tuple[tuple[str, EnvironmentRunHook], ...] = ()
+    has_environment_subscribers: bool = False
     # The backend trace queries read; None when tracing is off.
     traces: TraceProvider | None = None
 
@@ -103,6 +107,10 @@ class Runtime:
         self.post_run_tasks.add(task)
 
         task.add_done_callback(self.post_run_tasks.discard)
+
+    @cached_property
+    def environment_publish_tasks(self) -> set[asyncio.Task[None]]:
+        return set()
 
     @cached_property
     def seal_publish_tasks(self) -> set[asyncio.Task[None]]:

@@ -21,6 +21,7 @@ from a13n_service.runs.environments.clients.schemas import (
     StatusChange,
 )
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
+from a13n_service.runs.environments.events import publish_after_commit as publish_event
 from a13n_service.runs.environments.read_views import environment_view
 from a13n_service.runs.environments.tables import CLIENT_IDENTITY, EnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -68,7 +69,7 @@ async def register(runtime: Runtime, actor: Principal, workspace_id: str, body: 
     async with transaction(runtime.storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "write")
         await advisory_lock(session, "client-registration", scope.workspace_id, actor.id, body.device_id)
-        return await _register(session, actor, scope, body)
+        return await _register(session, runtime, actor, scope, body)
 
 
 async def connect(
@@ -105,7 +106,7 @@ async def connect(
                 .with_for_update()
             )
             if environment is None:
-                return await _register(session, actor, scope, body, token_hash=pairing_token_hash)
+                return await _register(session, runtime, actor, scope, body, token_hash=pairing_token_hash)
         if environment.status != "ready":
             raise conflict("environment", environment.id, f"client_environment_{environment.status}")
         config = await settings(session, environment)
@@ -117,7 +118,13 @@ async def connect(
 
 
 async def _register(
-    session: AsyncSession, actor: Principal, scope: WorkspaceScope, body: Registration, *, token_hash: str | None = None
+    session: AsyncSession,
+    runtime: Runtime,
+    actor: Principal,
+    scope: WorkspaceScope,
+    body: Registration,
+    *,
+    token_hash: str | None = None,
 ) -> Registered:
     environment = await session.scalar(
         insert(EnvironmentRow)
@@ -176,6 +183,7 @@ async def _register(
     session.add(config)
     audit(session, actor, environment, "client.register")
     await session.flush()
+    publish_event(session, runtime, environment, "ready", origin="register")
     return registered(environment, config, token)
 
 

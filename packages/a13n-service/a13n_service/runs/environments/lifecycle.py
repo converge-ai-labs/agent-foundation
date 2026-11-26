@@ -16,6 +16,7 @@ import hmac
 import secrets
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
+from time import monotonic
 from typing import Literal
 
 import anyio
@@ -32,6 +33,13 @@ from sqlalchemy import ColumnElement, SQLColumnExpression, exists, func, or_, se
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from a13n_service.app_provenance import AppProvenance
+from a13n_service.app_sdk.hooks import (
+    EnvironmentHookAbort,
+    EnvironmentHookContext,
+    EnvironmentLifecycleHook,
+    LifecyclePhase,
+)
 from a13n_service.infra.audit import record
 from a13n_service.infra.crypto import secret_hash
 from a13n_service.infra.db import advisory_lock, after_commit, lock, now, transaction
@@ -63,18 +71,32 @@ from a13n_service.runs.environments.adapters import (
     Target,
     close,
     credential_version,
+    execution_connector,
     managed_target,
     open_provider,
     provider_identity,
 )
+from a13n_service.runs.environments.app_hooks import invoke
+from a13n_service.runs.environments.clients.routing import LifecycleCaller
+from a13n_service.runs.environments.clients.worker import Target as RoutedTarget
 from a13n_service.runs.environments.egress.storage import retire_environment
+from a13n_service.runs.environments.events import publish_after_commit as publish_event
 from a13n_service.runs.environments.monitoring import launch
-from a13n_service.runs.environments.schemas import Certainty, EnvironmentFailure, Handle, MetricsApplication
+from a13n_service.runs.environments.schemas import (
+    Certainty,
+    DeleteReason,
+    EnvironmentFailure,
+    Handle,
+    MetricsApplication,
+    OperationProgress,
+)
 from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tables import InboxEntryRow, RunRow, ToolExecutionRow
 from a13n_service.settings import PUBLISH_SECONDS
+from a13n_service.tenancy.app_plugins import policy as app_policy
 from a13n_service.tenancy.authorize import Principal, WorkspaceScope
+from a13n_service.tenancy.tables import OrganizationRow, WorkspaceRow
 
 logger = get_logger(__name__)
 
@@ -198,7 +220,14 @@ async def latest_replacement(session: AsyncSession, workspace_id: str, environme
     return (await session.scalars(select(chain.c.id).where(~superseded(chain.c.id)))).one()
 
 
-async def begin(session: AsyncSession, environment: EnvironmentRow, phase: Phase) -> None:
+async def begin(
+    session: AsyncSession,
+    environment: EnvironmentRow,
+    phase: Phase,
+    *,
+    environment_hooks: tuple[tuple[str, EnvironmentLifecycleHook], ...] = (),
+    delete_reason: DeleteReason = "explicit",
+) -> None:
     """Start a new operation. The caller holds the row lock and has proved the previous one can no longer act."""
     if phase in {"creating", "starting"} and environment.handle is not None:
         handle = Handle.model_validate(environment.handle)
@@ -209,6 +238,18 @@ async def begin(session: AsyncSession, environment: EnvironmentRow, phase: Phase
                     or envd_policy.selected_version(handle.envd_version)
                 }
             ).model_dump(mode="json")
+    hook_active = (
+        phase in {"stopping", "deleting"}
+        and environment.status == "ready"
+        and any(_matches_hook(environment, phase, app_id, hook) for app_id, hook in environment_hooks)
+    )
+    environment.operation_progress = (
+        OperationProgress(
+            hook_active=hook_active, delete_reason=delete_reason if phase == "deleting" else None
+        ).model_dump(mode="json", exclude_defaults=True)
+        if hook_active or phase == "deleting"
+        else None
+    )
     environment.status = phase
     environment.generation += 1
     environment.operation_id = new_object_id("envoper")
@@ -265,6 +306,7 @@ async def reserve(
     name: str | None = None,
     replaces: EnvironmentRow | None = None,
     recipe_overrides: dict | None = None,
+    provenance: AppProvenance | None = None,
 ) -> EnvironmentRow:
     """A new workspace-managed instance in `reserved`, from an enabled template of an enabled provider the principal
     may run. A replacement takes the slot of the locked, confirmed-lost end of its chain. Other reservations
@@ -306,6 +348,8 @@ async def reserve(
     environment = EnvironmentRow(
         id=new_object_id("env"),
         replaces_environment_id=replaces.id if replaces is not None else None,
+        app_id=replaces.app_id if replaces is not None else provenance.app_id if provenance else None,
+        app_context=replaces.app_context if replaces is not None else provenance.app_context if provenance else None,
         organization_id=template.organization_id,
         workspace_id=template.workspace_id,
         provider_id=template.provider_id,
@@ -335,6 +379,26 @@ class Fault:
 
 
 @dataclass(frozen=True, slots=True)
+class HookPlan:
+    organization_id: str
+    workspace_id: str
+    app_id: str | None
+    app_context: dict[str, str] | None
+    replaces_environment_id: str | None
+    callbacks: tuple[tuple[str, EnvironmentLifecycleHook], ...]
+    outbound_device_id: str | None
+
+
+_HOOK_PHASES: dict[Phase, LifecyclePhase] = {
+    "creating": "after_create",
+    "starting": "after_start",
+    "stopping": "before_stop",
+    "deleting": "before_delete",
+}
+HOOK_CLEANUP_SECONDS = 10.0
+
+
+@dataclass(frozen=True, slots=True)
 class Operation:
     """One claimed dispatch of an instance's outstanding operation."""
 
@@ -347,9 +411,12 @@ class Operation:
     # An earlier dispatch may have taken effect, so failing before this one dispatches settles nothing.
     unresolved: bool
     seconds: float
+    dispatch_before: float
     # The provider credential's version now, and whether it changed since that credential last reached the instance.
     credential_version: str | None
     credential_changed: bool
+    hooks: HookPlan | None = None
+    provider_completed: bool = False
     envd_version: str | None = None
     metrics: MetricsLaunch | None = field(default=None, repr=False)
     e2b_desktop_template: str | None = None
@@ -365,6 +432,8 @@ class Outcome:
     pending: bool = False
     retry_after_seconds: float = 2
     settled: bool = True
+    hook_abort: bool = False
+    interrupted: bool = False
 
 
 # A confirmed loss is permanent for this instance ID.
@@ -384,8 +453,11 @@ UNSEEN = Fault(
 
 def confirmed_loss(environment: EnvironmentRow) -> bool:
     failure = environment.failure
+    progress = environment.operation_progress or {}
     return (
         settled(environment)
+        and not progress.get("provider_completed")
+        and not progress.get("hook_blocked")
         and environment.template_id is not None
         and environment.owner_principal_id is None
         and environment.status not in {"deleting", "deleted"}
@@ -552,6 +624,56 @@ async def _refusal(
     return None
 
 
+def _matches_hook(environment: EnvironmentRow, phase: Phase, app_id: str, hook: EnvironmentLifecycleHook) -> bool:
+    return hook.phase == _HOOK_PHASES[phase] and (hook.scope == "organization" or app_id == environment.app_id)
+
+
+async def _plan_hooks(
+    runtime: Runtime,
+    session: AsyncSession,
+    environment: EnvironmentRow,
+    phase: Phase,
+    provider: ResolvedProvider,
+    handle: Handle,
+    progress: OperationProgress,
+) -> HookPlan | None:
+    if not provider.enabled:
+        return None
+    if phase in {"stopping", "deleting"} and (not progress.hook_active or handle.state is None):
+        return None
+    callbacks = tuple(
+        (app_id, hook)
+        for app_id, hook in runtime.environment_hooks
+        if app_id not in progress.hooks_completed and _matches_hook(environment, phase, app_id, hook)
+    )
+    if not callbacks:
+        return None
+    settings = await session.scalar(
+        select(OrganizationRow.settings)
+        .join(WorkspaceRow, WorkspaceRow.organization_id == OrganizationRow.id)
+        .where(
+            OrganizationRow.id == environment.organization_id,
+            WorkspaceRow.id == environment.workspace_id,
+            WorkspaceRow.archived_at.is_(None),
+        )
+    )
+    if settings is None:
+        return None
+    enabled = set(app_policy(settings).enabled)
+    callbacks = tuple((app_id, hook) for app_id, hook in callbacks if app_id in enabled)
+    if not callbacks:
+        return None
+    return HookPlan(
+        environment.organization_id,
+        environment.workspace_id,
+        environment.app_id,
+        environment.app_context,
+        environment.replaces_environment_id,
+        callbacks,
+        handle.outbound.device_id if handle.outbound else None,
+    )
+
+
 async def claim(runtime: Runtime, environment_id: str, *, owner: str) -> Operation | None:
     """Claim the outstanding operation unless nobody needs to or someone else holds it."""
     async with transaction(runtime.storage) as session:
@@ -572,6 +694,11 @@ async def claim_locked(
     phase = None if environment is None else _PHASES.get(environment.status)
     if environment is None or phase is None or environment.operation_id is None:
         return None
+    progress = OperationProgress.model_validate(environment.operation_progress or {})
+    if progress.hook_blocked:
+        return None
+    # Anchor before sampling database time so the local budget cannot outlast the durable lease.
+    claimed_at = monotonic()
     current = await now(session)
     if environment.next_operation_at is not None and environment.next_operation_at > current:
         return None
@@ -590,7 +717,9 @@ async def claim_locked(
     failure = environment.failure or {}
     if failure.get("code") == MANUAL_CLOUDFLARE_UNSUPPORTED:
         return None
-    unresolved = not settled(environment)
+    pre_hook = phase in {"stopping", "deleting"}
+    pre_hook_only = progress.hook_active and pre_hook
+    unresolved = not settled(environment) and not pre_hook_only
     if (
         phase in {"creating", "starting"}
         and failure.get("code") in {"envd_upgrade_failed", "envd_startup_failed"}
@@ -659,11 +788,17 @@ async def claim_locked(
         return None
     assert provider is not None
     token = secrets.token_urlsafe(32)
-    environment.lease_owner, environment.lease_token_hash = owner, secret_hash(token)
-    deadline = current + timedelta(seconds=seconds)
-    environment.operation_deadline = deadline
-    environment.lease_expires_at = deadline + timedelta(seconds=PUBLISH_SECONDS)
     handle = Handle.model_validate(environment.handle)
+    hooks = await _plan_hooks(runtime, session, environment, phase, provider, handle, progress)
+    budget = sum(hook.timeout + HOOK_CLEANUP_SECONDS for _, hook in hooks.callbacks) if hooks else 0
+    hook_active = hooks is not None and (pre_hook or progress.provider_completed)
+    if progress.hook_active != hook_active:
+        progress.hook_active = hook_active
+        environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
+    deadline = current + timedelta(seconds=seconds + budget)
+    environment.operation_deadline = deadline
+    environment.lease_owner, environment.lease_token_hash = owner, secret_hash(token)
+    environment.lease_expires_at = deadline + timedelta(seconds=PUBLISH_SECONDS)
     version, changed = reached_with(handle, provider)
     from a13n_service.runs.environments import outbound
 
@@ -681,6 +816,9 @@ async def claim_locked(
         ),
         unresolved=unresolved,
         seconds=seconds,
+        dispatch_before=claimed_at + seconds + budget,
+        hooks=hooks,
+        provider_completed=progress.provider_completed,
         credential_version=version,
         credential_changed=changed,
         metrics=launch.restore(runtime.keys, environment) if phase == "creating" else None,
@@ -752,7 +890,142 @@ def fault_of(error: Exception, *, dispatched: bool) -> Fault:
     return Fault(code, "The provider operation failed", certainty)
 
 
+def _owns(environment: EnvironmentRow | None, operation: Operation) -> bool:
+    return (
+        environment is not None
+        and environment.generation == operation.generation
+        and environment.status == operation.phase
+        and environment.operation_id == operation.operation_id
+        and environment.lease_token_hash is not None
+        and hmac.compare_digest(environment.lease_token_hash, secret_hash(operation.token))
+    )
+
+
+async def _hook_progress(
+    runtime: Runtime,
+    operation: Operation,
+    *,
+    active: bool | None = None,
+    completed_app: str | None = None,
+    provider_receipt: Outcome | None = None,
+) -> bool:
+    async with transaction(runtime.storage) as session:
+        environment = await lock(session, EnvironmentRow, operation.environment_id)
+        if (
+            environment is None
+            or not _owns(environment, operation)
+            or (environment.lease_expires_at is None or environment.lease_expires_at <= await now(session))
+        ):
+            return False
+        progress = OperationProgress.model_validate(environment.operation_progress or {})
+        if active is not None:
+            progress.hook_active = active
+        if completed_app is not None:
+            progress.hooks_completed = (*progress.hooks_completed, completed_app)
+        if provider_receipt is not None:
+            handle = Handle.model_validate(environment.handle)
+            environment.handle = handle.model_copy(
+                update={
+                    "state": provider_receipt.state,
+                    "credential_version": operation.credential_version,
+                }
+            ).model_dump(mode="json")
+            progress.provider_completed = progress.hook_active = True
+            environment.operation_unsettled = False
+        environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
+        return True
+
+
+async def _execute_hooks(runtime: Runtime, operation: Operation, state: EnvironmentState | None) -> Outcome | None:
+    plan = operation.hooks
+    if plan is None:
+        return None
+    caller = LifecycleCaller(
+        operation_id=operation.operation_id, generation=operation.generation, token=operation.token
+    )
+    phase = _HOOK_PHASES[operation.phase]
+    for index, (app_id, hook) in enumerate(plan.callbacks, start=1):
+        remaining = operation.dispatch_before - monotonic()
+        if remaining <= 0:
+            return Outcome(state, pending=True, settled=True)
+        execution = None
+
+        async def call(hook: EnvironmentLifecycleHook = hook, app_id: str = app_id) -> None:
+            nonlocal execution
+            target = replace(operation.target, state=state)
+            assert isinstance(target.account, ResolvedProvider)
+            definition = runtime.registry.get("environment", target.account.type)
+            directory = definition.describe_environment(
+                definition.validate_environment(target.recipe)
+            ).working_directory
+            if plan.outbound_device_id is not None:
+                connector = RoutedTarget(
+                    operation.environment_id,
+                    plan.outbound_device_id,
+                    directory,
+                    "lifecycle",
+                    state,
+                ).connector(runtime, caller, None)
+            else:
+                connector = await execution_connector(runtime, target)
+            execution = await connector.open()
+            await hook.run(
+                EnvironmentHookContext(
+                    app_id,
+                    phase,
+                    plan.organization_id,
+                    plan.workspace_id,
+                    operation.environment_id,
+                    plan.app_id,
+                    dict(plan.app_context) if plan.app_context is not None else None,
+                    plan.replaces_environment_id,
+                    operation.operation_id,
+                    operation.generation,
+                    directory,
+                    execution,
+                )
+            )
+
+        try:
+            succeeded = await invoke(
+                call,
+                app_id=app_id,
+                phase=phase,
+                timeout=min(hook.timeout, remaining),
+                target_id=operation.environment_id,
+                abortable=operation.phase != "deleting",
+            )
+        except EnvironmentHookAbort as error:
+            return Outcome(state, Fault(error.code, error.message, "known", error.permanent), hook_abort=True)
+        finally:
+            if execution is not None:
+                await close(execution)
+        if monotonic() >= operation.dispatch_before:
+            return Outcome(state, pending=True, settled=True)
+        last_pre_hook = operation.phase in {"stopping", "deleting"} and index == len(plan.callbacks)
+        if (succeeded or last_pre_hook) and not await _hook_progress(
+            runtime, operation, active=False if last_pre_hook else None, completed_app=app_id if succeeded else None
+        ):
+            return Outcome(state, pending=True)
+    return None
+
+
 async def perform(runtime: Runtime, operation: Operation) -> Outcome:
+    if operation.phase in {"stopping", "deleting"}:
+        blocked = await _execute_hooks(runtime, operation, operation.target.state)
+        if blocked is not None:
+            return blocked
+    result = (
+        Outcome(operation.target.state) if operation.provider_completed else await _perform_provider(runtime, operation)
+    )
+    if operation.phase not in {"creating", "starting"} or result.pending or result.fault or operation.hooks is None:
+        return result
+    if not operation.provider_completed and not await _hook_progress(runtime, operation, provider_receipt=result):
+        return Outcome(result.state, pending=True)
+    return await _execute_hooks(runtime, operation, result.state) or result
+
+
+async def _perform_provider(runtime: Runtime, operation: Operation) -> Outcome:
     """One bounded provider call for the claimed phase, with no database session held."""
     provider: EnvironmentProvider | None = None
     dispatched = False
@@ -872,17 +1145,13 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
     """Record the call's outcome if the claim is still current; a superseded dispatcher changes nothing."""
     async with transaction(runtime.storage) as session:
         environment = await lock(session, EnvironmentRow, operation.environment_id)
-        if (
-            environment is None
-            or environment.generation != operation.generation
-            or environment.operation_id != operation.operation_id
-            or environment.lease_token_hash is None
-            or not hmac.compare_digest(environment.lease_token_hash, secret_hash(operation.token))
-        ):
+        if environment is None or not _owns(environment, operation):
             return
         current = await now(session)
         environment.lease_owner = environment.lease_token_hash = environment.lease_expires_at = None
         environment.operation_deadline = environment.next_operation_at = None
+        progress = OperationProgress.model_validate(environment.operation_progress or {})
+        pre_hook_active = progress.hook_active and operation.phase in {"stopping", "deleting"}
         handle = Handle.model_validate(environment.handle)
         result = "pending" if outcome.pending else "failed" if outcome.fault is not None else "completed"
         certainty = outcome.fault.certainty if outcome.fault is not None else "none"
@@ -898,6 +1167,8 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
 
         after_commit(session, observed)
         if outcome.pending:
+            progress.hook_active = pre_hook_active
+            environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
             environment.next_operation_at = current + timedelta(seconds=outcome.retry_after_seconds)
             environment.operation_unsettled = not outcome.settled
             if outcome.state is not None:
@@ -908,17 +1179,30 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
             preparation_expired(environment, current)
             return
         if outcome.fault is not None:
-            environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
+            progress.hook_blocked = outcome.hook_abort and outcome.fault.permanent
+            # Retain the pre-hook carrier between retry attempts, but only a live claim authorizes commands.
+            progress.hook_active = pre_hook_active and not progress.hook_blocked
+            environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
+            if not progress.provider_completed:
+                environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
             preparing = (
                 (handle.e2b_desktop_template is not None and handle.recipe.get("template") == "auto")
                 or (handle.modal_desktop_image is not None and handle.recipe.get("image") == "auto")
                 or (handle.daytona_desktop_snapshot is not None and handle.recipe.get("snapshot") == "auto")
                 or (handle.vercel_desktop_snapshot is not None and handle.recipe.get("snapshot") == "auto")
             )
+            new_loss = outcome.fault is LOST and (environment.failure or {}).get("code") != LOST.code
             fault = replace(outcome.fault, certainty="not_dispatched") if preparing else outcome.fault
+            if outcome.interrupted:
+                if progress.provider_completed:
+                    fault = replace(fault, certainty="known")
+                elif pre_hook_active:
+                    fault = replace(fault, certainty="not_dispatched")
             record_failure(environment, fault, current, unresolved=operation.unresolved and not preparing)
             preparation_expired(environment, current)
             if fault is LOST:
+                if new_loss:
+                    publish_event(session, runtime, environment, "lost", reason=LOST.code)
                 from a13n_service.runs.environments.desktop.identity import invalidate
 
                 await invalidate(session, handle.state)
@@ -927,11 +1211,22 @@ async def publish(runtime: Runtime, operation: Operation, outcome: Outcome) -> N
         environment.operation_unsettled = False
         environment.failure = None
         if preparation_expired(environment, current):
+            progress.hook_active = False
+            environment.operation_progress = progress.model_dump(mode="json", exclude_defaults=True) or None
             environment.handle = handle.model_copy(update={"state": outcome.state}).model_dump(mode="json")
             return
         reached = _REACHES[operation.phase]
         environment.status = reached
+        if reached == "ready":
+            publish_event(
+                session, runtime, environment, "ready", origin="create" if operation.phase == "creating" else "start"
+            )
+        elif reached == "deleted":
+            publish_event(session, runtime, environment, "deleted", reason=progress.delete_reason or "explicit")
+        else:
+            publish_event(session, runtime, environment, "stopped")
         environment.operation_id = environment.operation_started_at = None
+        environment.operation_progress = None
         environment.failure = None
         if operation.phase == "creating" and environment.metrics_application is not None:
             applied = MetricsApplication.model_validate(environment.metrics_application)
@@ -1055,6 +1350,8 @@ async def advance(runtime: Runtime, environment_id: str, *, owner: str) -> None:
 
 async def dispatch(runtime: Runtime, operation: Operation) -> None:
     """Perform a claimed operation here and publish its fenced outcome without retaining a transaction."""
+    if monotonic() >= operation.dispatch_before:
+        return
     try:
         outcome = await perform(runtime, operation)
     except BaseException as error:
@@ -1062,7 +1359,9 @@ async def dispatch(runtime: Runtime, operation: Operation) -> None:
         interrupted = Fault("environment_operation_interrupted", "The dispatcher stopped mid-call", "unknown")
         with anyio.CancelScope(shield=True), anyio.move_on_after(PUBLISH_SECONDS):
             await publish(
-                runtime, operation, Outcome(observed_environment_state(error, operation.target.state), interrupted)
+                runtime,
+                operation,
+                Outcome(observed_environment_state(error, operation.target.state), interrupted, interrupted=True),
             )
         raise
     await publish(runtime, operation, outcome)

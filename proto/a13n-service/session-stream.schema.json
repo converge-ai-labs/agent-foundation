@@ -1314,6 +1314,19 @@
           ],
           "title": "Agent Revision Id"
         },
+        "app_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "readOnly": true,
+          "title": "App Id"
+        },
         "assigned_run_id": {
           "anyOf": [
             {
@@ -2797,6 +2810,19 @@
     "OccurrenceSummary": {
       "additionalProperties": false,
       "properties": {
+        "app_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "readOnly": true,
+          "title": "App Id"
+        },
         "completed_at": {
           "anyOf": [
             {
@@ -3859,6 +3885,19 @@
           ],
           "title": "Agent Revision Id"
         },
+        "app_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "readOnly": true,
+          "title": "App Id"
+        },
         "attempts": {
           "title": "Attempts",
           "type": "integer"
@@ -4110,6 +4149,19 @@
         },
         "trigger": {
           "$ref": "#/$defs/Trigger"
+        },
+        "trigger_app_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "readOnly": true,
+          "title": "Trigger App Id"
         },
         "updated_at": {
           "format": "date-time",
@@ -4755,6 +4807,19 @@
     },
     "ThreadView": {
       "properties": {
+        "app_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "readOnly": true,
+          "title": "App Id"
+        },
         "archived_at": {
           "anyOf": [
             {

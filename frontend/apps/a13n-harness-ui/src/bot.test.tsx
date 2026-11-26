@@ -1746,3 +1746,28 @@ it("retains older pages and the reading position across overlapping and disconne
   expect(publicationCursors.at(-1)).toBe("notice-150");
   expect(screen.getAllByText("Publication 0")).toHaveLength(1);
 });
+
+it("shows explicit Bot loading status while /api/bot is pending and keeps empty composer quiet", async () => {
+  let releaseBot!: () => void;
+  botReadGate = new Promise<void>((resolve) => {
+    releaseBot = resolve;
+  });
+  const view = mount();
+  const composer = () =>
+    view.container.querySelector('section[aria-label="Message composer"]')!;
+  const send = () =>
+    composer().querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+  await waitFor(() => expect(send()).toBeTruthy());
+  expect(send().disabled).toBe(true);
+  expect(send().title).toBe("Loading Bot status…");
+  expect(composer().querySelector('[role="status"]')).toBeNull();
+  typeMessage("Check inbox");
+  expect(composer().querySelector('[role="status"]')?.textContent).toBe(
+    "Loading Bot status…",
+  );
+  await act(async () => {
+    releaseBot();
+  });
+  await waitFor(() => expect(send().disabled).toBe(false));
+  expect(composer().querySelector('[role="status"]')).toBeNull();
+});
