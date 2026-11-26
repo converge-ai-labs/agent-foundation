@@ -31,8 +31,8 @@ pytestmark = pytest.mark.anyio
 _FIXTURE = Path(__file__).parent / "fixtures" / "acp_peer.py"
 
 
-def local(path, mode):
-    return LocalStdioTransport(sys.executable, str(path), (str(_FIXTURE), mode), inherit_environment=True)
+def local(path, mode, *flags):
+    return LocalStdioTransport(sys.executable, str(path), (str(_FIXTURE), mode, *flags), inherit_environment=True)
 
 
 def setup(path):
@@ -105,6 +105,33 @@ async def test_recovery_permission_steer_and_cancel(tmp_path, mode):
         assert ended.is_set()
         await acp.prompt([schema.TextContentBlock(text="again")], binding=AcpRunBinding(on_update=updates.append))
         assert [u.content.text for u in updates if isinstance(u, schema.AgentMessageChunk)] == ["done:again"]
+
+
+@pytest.mark.parametrize("flag", ["null-model", "missing-model"])
+@pytest.mark.parametrize("mode", ["ui", "load", "resume", "legacy"])
+async def test_unselected_models_survive_session_setup(tmp_path, mode, flag):
+    saved = "fixture-session" if mode in {"load", "resume"} else None
+    async with asyncio.timeout(10), AcpSessionRuntime.open(local(tmp_path, mode, flag)) as acp:
+        await acp.open_session(setup(tmp_path), saved_session_id=saved)
+        (option,) = [item for item in acp.config_options if item.id == "model"]
+        assert isinstance(option, schema.SessionConfigOptionSelect)
+        assert option.current_value == ""
+        assert [choice.value for choice in option.options] == ["a", "b"]
+        with pytest.raises(AcpError, match="could not confirm"):
+            await acp.restore_options({"model": ""}, strict=frozenset({"model"}))
+        if mode in {"ui", "legacy"}:
+            await acp.restore_options({"model": "b"}, strict=frozenset({"model"}))
+            assert next(item for item in acp.config_options if item.id == "model").current_value == "b"
+
+
+@pytest.mark.parametrize("flag", ["null-model", "missing-model"])
+async def test_unselected_models_survive_async_config_update(tmp_path, flag):
+    async with asyncio.timeout(10), AcpSessionRuntime.open(local(tmp_path, "update", flag)) as acp:
+        await acp.open_session(setup(tmp_path))
+        assert not acp.config_options
+        await acp.connection.ext_method("fixture/announce_options", {})
+        await acp.wait_for_model_option(1)
+        assert [(item.id, item.current_value) for item in acp.config_options] == [("mode", "chat"), ("model", "")]
 
 
 async def test_vendor_system_prompt_and_legacy_model_selection(tmp_path):

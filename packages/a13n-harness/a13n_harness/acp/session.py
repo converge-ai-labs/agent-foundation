@@ -30,6 +30,18 @@ type PromptBlock = (
 type SteeringOutcome = Literal["accepted", "not_delivered", "unknown", "unsupported"]
 
 
+def _normalize_config_options(container: dict[str, Any]) -> None:
+    options = container.get("configOptions")
+    if isinstance(options, list):
+        for option in options:
+            if isinstance(option, dict) and option.get("type") == "select" and option.get("currentValue") is None:
+                option["currentValue"] = ""
+
+
+def _is_model_option(option: ConfigOption) -> bool:
+    return option.category == "model" or option.id == "model"
+
+
 def connect_streams(
     client: Client, *, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
 ) -> ClientSideConnection:
@@ -52,7 +64,12 @@ class _SessionWire:
         self.system_prompt: Literal["standard", "antigravity"] | None = None
         self.instructions: tuple[str, ...] = ()
         self._initialize_id: object = object()
-        self._session_request: object = object()
+        self._options_request: object = object()
+        self._prompt_request: object | None = None
+        self.prompt_turn_id: str | None = None
+        self._prompt_progress = False
+        self.prompt_rejected_before_progress = False
+        self.disconnected = False
         self.legacy_model: schema.SessionConfigOptionSelect | None = None
         self.session_id: str | None = None
         self.error: Exception | None = None
@@ -62,9 +79,14 @@ class _SessionWire:
         if method == "initialize":
             self._initialize_id = message["id"]
         elif method in {"session/new", "session/load", "session/resume"}:
-            self._session_request = message["id"]
+            self._options_request = message["id"]
             if self.system_prompt and self.instructions:
                 message = {**message, "params": self._system_prompt_params(message["params"])}
+        elif method == "session/set_config_option":
+            self._options_request = message["id"]
+        elif method == "session/prompt":
+            self._prompt_request = message["id"]
+            self._prompt_progress = False
         elif method == "_session/set_model":
             message = {**message, "method": "session/set_model"}
         await self.channel.send(message)
@@ -85,16 +107,61 @@ class _SessionWire:
             }
         return params
 
+    def _observe_prompt_frame(self, message: dict[str, Any]) -> None:
+        # The SDK dispatches notifications in separate tasks. Track evidence in wire order.
+        if self._prompt_request is None:
+            return
+        method = message.get("method")
+        if method is None and message.get("id") == self._prompt_request:
+            self._prompt_request = None
+            error = message.get("error")
+            self.prompt_rejected_before_progress = (
+                not self._prompt_progress
+                and isinstance(error, dict)
+                and error.get("code") != RequestError.request_cancelled().code
+            )
+        elif method is not None and "id" in message:
+            # A peer callback can have side effects even before it emits a session update.
+            self._prompt_progress = True
+        elif method in {"session/update", "_a13n/input_accepted"}:
+            params = message.get("params")
+            if isinstance(params, dict) and params.get("sessionId") == self.session_id:
+                if method == "_a13n/input_accepted":
+                    if self.prompt_turn_id is not None and params.get("turnId") == self.prompt_turn_id:
+                        self._prompt_progress = True
+                    return
+                update = params.get("update")
+                if isinstance(update, dict) and update.get("sessionUpdate") not in (
+                    "config_option_update",
+                    "current_model_update",
+                    "current_mode_update",
+                    "available_commands_update",
+                    "session_info_update",
+                    "usage_update",
+                ):
+                    self._prompt_progress = True
+
     async def receive(self) -> dict[str, Any] | None:
-        try:
-            message = await self.channel.receive()
-        except (AcpError, OSError, EnvironmentError) as exc:
-            self.error = exc
-            return None
-        while message is not None and message.get("method") == "session/update":
+        while True:
+            try:
+                message = await self.channel.receive()
+            except (AcpError, OSError, EnvironmentError) as exc:
+                self.error = exc
+                message = None
+            if message is None:
+                self.disconnected = True
+                return None
+            self._observe_prompt_frame(message)
+            if message.get("method") != "session/update":
+                break
             params = message.get("params")
             update = params.get("update") if isinstance(params, dict) else None
-            if not isinstance(update, dict) or update.get("sessionUpdate") != "current_model_update":
+            if not isinstance(update, dict):
+                break
+            kind = update.get("sessionUpdate")
+            if kind == "config_option_update":
+                _normalize_config_options(update)
+            if kind != "current_model_update":
                 break
             model_id = update.get("currentModelId") or update.get("modelId")
             if (
@@ -104,12 +171,7 @@ class _SessionWire:
                 and params.get("sessionId") == self.session_id
             ):
                 self.legacy_model = self.legacy_model.model_copy(update={"current_value": model_id})
-            try:
-                message = await self.channel.receive()
-            except (AcpError, OSError, EnvironmentError) as exc:
-                self.error = exc
-                return None
-        if message is not None and message.get("id") == self._initialize_id and "result" in message:
+        if message.get("id") == self._initialize_id and "result" in message:
             result = message["result"]
             if isinstance(result, dict):
                 capabilities = result.get("agentCapabilities") or {}
@@ -130,17 +192,18 @@ class _SessionWire:
                         if isinstance(method, dict) and method.get("type", "agent") in ("agent", "terminal")
                     ]
                     message = {**message, "result": {**result, "authMethods": methods}}
-        if message is not None and message.get("id") == self._session_request:
-            result = message.get("result")
-            models = result.get("models") if isinstance(result, dict) else None
+        if message.get("id") == self._options_request and isinstance(result := message.get("result"), dict):
+            _normalize_config_options(result)
+            models = result.get("models")
             if isinstance(models, dict) and isinstance(models.get("availableModels"), list):
+                current = models.get("currentModelId")
                 with suppress(ValidationError):
                     self.legacy_model = schema.SessionConfigOptionSelect.model_validate(
                         {
                             "id": "model",
                             "name": "Model",
                             "category": "model",
-                            "currentValue": models.get("currentModelId"),
+                            "currentValue": "" if current is None else current,
                             "options": [
                                 {
                                     "value": choice.get("modelId"),
@@ -193,6 +256,7 @@ class AcpSessionRuntime:
         self._stopping = False
         self._broken = False
         self._initializing = False
+        self.prompt_rejected_before_progress = False
         self._initial_instructions: tuple[str, ...] = ()
         metadata = initialization.field_meta or {}
         profile = metadata.get("dev.a13n.harness-ui")
@@ -257,12 +321,25 @@ class AcpSessionRuntime:
         return self.client.session_id
 
     @property
+    def connected(self) -> bool:
+        return not self._broken and not self._wire.disconnected
+
+    @property
     def config_options(self) -> tuple[ConfigOption, ...]:
         options = tuple(self.client.config_options)
         legacy = self._wire.legacy_model
-        if legacy is not None and not any(option.category == "model" or option.id == "model" for option in options):
+        if legacy is not None and not any(map(_is_model_option, options)):
             return (legacy, *options)
         return options
+
+    async def wait_for_model_option(self, timeout: float) -> None:
+        """Allow a short discovery window for an option sent after session setup."""
+        changed = self.client._config_options_changed
+        with suppress(TimeoutError):
+            async with asyncio.timeout(timeout):
+                while not any(map(_is_model_option, self.config_options)):
+                    changed.clear()
+                    await changed.wait()
 
     async def open_session(
         self, setup: AcpSessionSetup, *, saved_session_id: str | None = None, discovery: AcpHostToolScope | None = None
@@ -331,30 +408,36 @@ class AcpSessionRuntime:
 
     async def restore_options(self, values: dict[str, str | bool], *, strict: frozenset[str] = frozenset()) -> None:
         # A model change may add or replace the remaining options.
-        models = [item.id for item in self.config_options if item.category == "model" or item.id == "model"]
+        models = [item.id for item in self.config_options if _is_model_option(item)]
         for config_id in (*models, *(key for key in values if key not in models)):
             if config_id not in values:
                 continue
             option = next((item for item in self.config_options if item.id == config_id), None)
             value = values[config_id]
             if isinstance(option, schema.SessionConfigOptionSelect):
-                offered = isinstance(value, str) and any(
-                    item.value == value
-                    for choice in option.options
-                    for item in (choice.options if isinstance(choice, schema.SessionConfigSelectGroup) else (choice,))
+                offered = (
+                    isinstance(value, str)
+                    and bool(value)
+                    and any(
+                        item.value == value
+                        for choice in option.options
+                        for item in (
+                            choice.options if isinstance(choice, schema.SessionConfigSelectGroup) else (choice,)
+                        )
+                    )
                 )
             else:
                 offered = option is not None and isinstance(value, bool)
             if option is not None and offered and value != option.current_value:
                 await self.set_config_option(config_id, value)
         actual = {item.id: item.current_value for item in self.config_options}
-        if any(actual.get(key) != values[key] for key in strict):
+        if any(values.get(key) in (None, "") or actual.get(key) != values[key] for key in strict):
             raise AcpError(
                 "acp_option_invalid", "The ACP Agent could not confirm the selected options. Select them again."
             )
 
     def _idle_session(self) -> str:
-        if self._broken:
+        if not self.connected:
             raise AcpError("acp_connection_closed", "Recover the session on a new ACP connection.")
         if self.session_id is None:
             raise AcpError("acp_session_missing", "Open an ACP session before running a prompt.")
@@ -370,7 +453,7 @@ class AcpSessionRuntime:
             if (
                 config_id == "model"
                 and legacy is not None
-                and not any(option.category == "model" or option.id == "model" for option in self.client.config_options)
+                and not any(map(_is_model_option, self.client.config_options))
             ):
                 if not isinstance(value, str):
                     raise AcpError("acp_option_invalid", "A legacy ACP model selection requires a model ID.")
@@ -411,10 +494,12 @@ class AcpSessionRuntime:
     async def prompt(
         self, content: Sequence[PromptBlock], *, binding: AcpRunBinding, context: Sequence[str] = ()
     ) -> schema.PromptResponse:
+        self.prompt_rejected_before_progress = self._wire.prompt_rejected_before_progress = False
         session_id = self._idle_session()
         self.client.binding = binding
         self.client._update_error = None
         self._turn = uuid4().hex
+        self._wire.prompt_turn_id = self._turn if self._a13n_steering else None
         self._stopping = False
         blocks = [schema.TextContentBlock(text=text) for text in (*self._initial_instructions, *context)]
         self._initial_instructions = ()
@@ -447,6 +532,11 @@ class AcpSessionRuntime:
         finally:
             try:
                 await self.client._unbind(binding)
+                self.prompt_rejected_before_progress = (
+                    self._wire.prompt_rejected_before_progress
+                    and not self._stopping
+                    and (binding.host_tools is None or not binding.host_tools._bridge._tool_call_started)
+                )
             finally:
                 if self._broken:
                     await self.connection.close()

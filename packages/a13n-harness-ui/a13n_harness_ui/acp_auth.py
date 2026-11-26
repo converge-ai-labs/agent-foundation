@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from a13n_harness_ui.acp_inputs import AcpInputs
 from a13n_harness_ui.acp_sessions import (
+    MODEL_OPTION_GRACE_SECONDS,
     AcpOptionPreviewChange,
     AcpOptionsPreview,
     acp_commands,
@@ -149,17 +150,11 @@ async def preview_acp_options(
         async with asyncio.timeout(15), AcpSessionRuntime.open(local_transport(resource, cwd)) as runtime:
             session_id = await runtime.open_session(AcpSessionSetup(cwd=cwd))
             try:
+                await runtime.wait_for_model_option(MODEL_OPTION_GRACE_SECONDS)
                 if request is not None and request.change is not None:
                     change = request.change
                     selections[change.id] = change.value
-                    model = next(
-                        (
-                            option
-                            for option in acp_options(runtime)
-                            if option.category == "model" or option.id == "model"
-                        ),
-                        None,
-                    )
+                    model = next((option for option in acp_options(runtime) if option.is_model), None)
                     strict = frozenset({change.id}) if model and change.id == model.id else frozenset(selections)
                 else:
                     strict = frozenset(selections)

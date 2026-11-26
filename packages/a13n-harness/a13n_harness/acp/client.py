@@ -112,6 +112,7 @@ class AcpEnvironmentClient:
         self.opening_updates: dict[tuple[str, str], AcpUpdate] | None = None
         self.binding: AcpRunBinding | None = None
         self.config_options: list[ConfigOption] = []
+        self._config_options_changed = asyncio.Event()
         self.available_commands: tuple[schema.AvailableCommand, ...] | None = None
         self.session_title: str | None = None
         self.context_window: tuple[int, int] | None = None
@@ -168,6 +169,7 @@ class AcpEnvironmentClient:
     def _remember_session_update(self, update: AcpUpdate) -> None:
         if isinstance(update, schema.ConfigOptionUpdate):
             self.config_options = update.config_options
+            self._config_options_changed.set()
         elif isinstance(update, schema.AvailableCommandsUpdate):
             self.available_commands = tuple(update.available_commands)
         elif isinstance(update, schema.SessionInfoUpdate) and update.title and update.title.strip():

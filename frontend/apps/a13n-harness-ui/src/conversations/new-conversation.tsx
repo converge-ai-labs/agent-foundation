@@ -1,4 +1,4 @@
-import { AcpOptionFields, acpOptionLabel } from "./acp-options";
+import { AcpOptionFields, acpModelOption, acpOptionLabel } from "./acp-options";
 import { useComposerRunChoices } from "./composer-run-choices";
 import {
   createContext,
@@ -316,12 +316,13 @@ function NewConversation({
     query: { project_id: acpProject },
   };
   const acpQueryKey = ["new-acp-options", acpKey] as const;
-  const acp = useQuery({
+  const acp = useQuery<Schema<"AcpOptionsPreview">>({
     queryKey: acpQueryKey,
     enabled: !!acpAgent && !draft.created,
     retry: false,
     refetchOnWindowFocus: false,
-    staleTime: Infinity,
+    staleTime: ({ state }) =>
+      acpModelOption(state.data?.options) ? Infinity : 0,
     queryFn: async ({ signal }) => {
       const base = await result(
         transport.client.GET("/api/acp-agents/{agent_id}/options", {
@@ -348,6 +349,13 @@ function NewConversation({
             error.code !== "acp_option_invalid"
           )
             throw error;
+          if (
+            !acpModelOption(base.options) &&
+            Object.keys(saved.values ?? {}).some(
+              (key) => !base.options.some((option) => option.id === key),
+            )
+          )
+            return base;
         }
       }
       if (
@@ -378,7 +386,8 @@ function NewConversation({
           },
         }),
       ),
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
+      await queries.cancelQueries({ queryKey: acpQueryKey, exact: true });
       if (activeAcpKey.current !== acpKey) return;
       draft.acp = {
         key: acpKey,
@@ -646,11 +655,17 @@ function NewConversation({
                 onAgentChange={(value) => {
                   change({ agent_id: value || null });
                 }}
+                onExternalOptionsOpen={() => {
+                  if (
+                    !draft.created &&
+                    !acpChange.isPending &&
+                    !acpModelOption(acp.data?.options)
+                  )
+                    void acp.refetch({ cancelRefetch: false });
+                }}
                 externalModel={acpOptionLabel(
-                  acp.data?.options.find(
-                    (option) =>
-                      option.category === "model" || option.id === "model",
-                  ),
+                  acpModelOption(acp.data?.options),
+                  t("No model selected"),
                 )}
                 externalThinking={acpOptionLabel(
                   acp.data?.options.find(
