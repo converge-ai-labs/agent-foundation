@@ -548,6 +548,7 @@ class SessionView(BaseModel):
     auto_recreate_lost_environment: bool
     schedule_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     id: str
     workspace_id: str
     title: str | None = None
@@ -575,6 +576,7 @@ class ThreadView(BaseModel):
     schedule_occurrence_id: str | None = None
     model_config = ConfigDict(from_attributes=True)
     purpose: Literal["conversation", "memory_organization"] = "conversation"
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     id: str
     workspace_id: str
     session_id: str
@@ -624,6 +626,7 @@ class ThreadNavigationPage(BaseModel):
 
 class EntryView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     id: str
     thread_id: str
     kind: Literal["message", "child_result", "child_message", "tool_result", "browser_handback", "desktop_handback"]
@@ -659,6 +662,8 @@ class RunView(BaseModel):
     finding_analysis_id: str | None = None
     schedule_origin: ScheduleOrigin | None = None
     model_config = ConfigDict(from_attributes=True)
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
+    trigger_app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     id: str
     workspace_id: str
     session_id: str
@@ -733,6 +738,8 @@ class RunInputPreview(BaseModel):
 
 
 class RunListItem(BaseModel):
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
+    trigger_app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     """Run discovery metadata. Full input, results and execution settings belong to the Run detail read."""
 
     model_config = ConfigDict(from_attributes=True)

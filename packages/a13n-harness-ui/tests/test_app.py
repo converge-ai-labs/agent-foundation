@@ -102,7 +102,7 @@ def _write_configuration(
     root.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: agent-assistant\n')
     if allow_agent_creation:
         with root.open("a") as config:
-            config.write("subagents: {dynamic: {allowed_models: [model-primary], default_model: model-primary}}\n")
+            config.write("agent_creation: {allowed_models: [model-primary], default_model: model-primary}\n")
     resources = {
         "models/primary.yaml": """
 schema_version: "1"
@@ -2184,9 +2184,7 @@ async def test_webui_create_thread_preserves_project_and_returns_before_completi
             )
         assert result["ok"] is True
         created = await app.get_thread(result["thread_id"])
-        assert created.thread.configuration == source.configuration.model_copy(
-            update={"default_model_id": "model-primary"}
-        )
+        assert created.thread.configuration == source.configuration
         assert result["receipt"]["thread_id"] == created.thread.thread_id
         assert created.thread.thread_id != source.thread_id
         assert (await app.list_threads()).total == 2

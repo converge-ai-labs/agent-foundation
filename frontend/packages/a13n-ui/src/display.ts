@@ -373,6 +373,17 @@ export class DisplayNormalizer {
           if (key in event) content[key] = event[key];
         if (name === "a13n.input.media") content.input_media = source.content;
         else this.bounded(content, "text", String(source.content));
+      } else if (name === "a13n.acp.tool" && ref.kind === "tool_call") {
+        // Match DisplayFold's compact ACP tool details; each update carries the
+        // peer's accumulated metadata for this call.
+        content.acp =
+          this.full || jsonSize(value) <= observationLimit
+            ? value
+            : Object.fromEntries(
+                ["title", "kind", "status"]
+                  .filter((key) => key in value)
+                  .map((key) => [key, value[key]]),
+              );
       } else if (ref.kind === "tool_call") {
         const part = object(source.part);
         const native = ["builtin-tool-call", "builtin-tool-return"].includes(
@@ -447,6 +458,7 @@ export class DisplayNormalizer {
         const summary = [
           "a13n.context.handoff_summary",
           "a13n.context.compaction_summary",
+          "a13n.acp.compaction",
         ].includes(name);
         if (!(this.full && summary) && jsonSize(observed) > observationLimit)
           observed = { omitted: true };

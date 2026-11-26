@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
 from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from copy import deepcopy
@@ -444,6 +445,7 @@ class AppStatus(BaseModel):
     memory_organization: MemoryOrganizationStatus | None = None
     input_prediction_enabled: bool = False
     send_shortcut: ComposerSendShortcut = "enter"
+    coordinator_by_default: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -530,7 +532,7 @@ class HarnessUiApp:
         self._mcp_connections = mcp_connections or (mcp_apps.connections if mcp_apps else None)
         self._mcp_inputs = mcp_inputs
         self._acp_auth_active: set[str] = set()
-        self._acp_options_cache: dict[str, AcpOptionsPreview] = {}
+        self._acp_options_cache: dict[str, tuple[float, AcpOptionsPreview]] = {}
         self._mcp_operations = mcp_operations
         self._mcp_app_owners = (
             mcp_operations.owners
@@ -977,6 +979,8 @@ class HarnessUiApp:
                 memory_organization=self._memory_organizer.status(configuration),
                 input_prediction_enabled=configuration is not None and configuration.document.input_prediction.enabled,
                 send_shortcut=configuration.document.webui.send_shortcut if configuration is not None else "enter",
+                coordinator_by_default=configuration is not None
+                and configuration.document.webui.coordinator_by_default,
                 state=self._state,
                 object_count=await self._store.object_count(),
                 accepted_generation_digest=current_digest,
@@ -1389,15 +1393,19 @@ class HarnessUiApp:
     async def context_usage(self, thread_id: str) -> ContextUsageView:
         """Last reported root request footprint, not accumulated Run usage."""
         async with self._operation():
+            acp_live = self._acp_sessions.live_context_window(thread_id)
             active = await self._root_runs.active(thread_id)
             if active is None:
-                return await self._projections.context_usage(thread_id)
+                return await self._projections.context_usage(thread_id, acp_live_context=acp_live)
             reference = await self._root_runs.composition_reference(active.receipt.receipt_id)
             if reference is None:
-                return await self._projections.context_usage(thread_id)
+                return await self._projections.context_usage(thread_id, acp_live_context=acp_live)
             composition = await self._store.objects.read_model(reference, ResolvedRunComposition)
             return await self._projections.context_usage(
-                thread_id, active_composition=composition, active_run_id=active.run_id
+                thread_id,
+                active_composition=composition,
+                active_run_id=active.run_id,
+                acp_live_context=acp_live,
             )
 
     async def resolve_launch_project(
@@ -1541,12 +1549,14 @@ class HarnessUiApp:
         thread_id: str | None = None,
         defaults: NewThreadDefaults | None = None,
         environment: EnvironmentSelectionPatch | None = None,
+        coordinator: bool = False,
     ) -> SkillCatalogView:
         async with self._operation():
             return await self._terminal_projections.skill_catalog(
                 thread_id=thread_id,
                 defaults=defaults,
                 environment=environment,
+                coordinator=coordinator,
             )
 
     async def validate_skill_references(
@@ -1901,13 +1911,16 @@ class HarnessUiApp:
             )
             cwd = self._threads.acp_workspace(configuration)
             scope = acp_options_scope(resource, cwd)
+            now = time.monotonic()
             if request is None and (cached := self._acp_options_cache.get(scope)) is not None:
-                return cached
+                if now - cached[0] < 60.0:
+                    return cached[1]
+                self._acp_options_cache.pop(scope, None)
             result = await preview_acp_options(resource, cwd, request)
-            if request is None:
+            if request is None and any(option.is_model for option in result.options):
                 if len(self._acp_options_cache) >= 32:
                     self._acp_options_cache.pop(next(iter(self._acp_options_cache)))
-                self._acp_options_cache[scope] = result
+                self._acp_options_cache[scope] = (time.monotonic(), result)
             return result
 
     async def acp_auth(self, agent_id: str, request: AcpAuthRequest) -> AcpAuthStatus:
@@ -4749,7 +4762,7 @@ async def open_harness_ui_app(
             )
 
             async def notify_settled(project_id: str | None, operation: RootOperationView) -> None:
-                await thread_tools.notify_coordinator(project_id, operation)
+                await thread_tools.on_operation_settled(project_id, operation)
                 if app is not None and app._voice is not None:
                     await app._voice.executor_settled(operation)
 

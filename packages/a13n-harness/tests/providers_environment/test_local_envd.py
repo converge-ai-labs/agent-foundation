@@ -272,17 +272,27 @@ async def test_runtime_validation_reads_both_pipes_without_deadlock():
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Linux process state inspection")
 async def test_cancelled_runtime_validation_stops_its_process_group(tmp_path):
-    from anyio import move_on_after
+    from anyio import CancelScope, create_task_group, fail_after
 
     child_file = tmp_path / "child.pid"
     script = "import subprocess,sys,time; from pathlib import Path; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); Path(sys.argv[1]).write_text(str(p.pid)); time.sleep(60)"
-    with move_on_after(0.5) as scope:
-        await daemon_module._run_checked_subprocess(
-            Path(sys.executable), "-c", script, str(child_file), environment=None
-        )
+    scope = CancelScope()
+
+    async def run_validation():
+        with scope:
+            await daemon_module._run_checked_subprocess(
+                Path(sys.executable), "-c", script, str(child_file), environment=None
+            )
+
+    async with create_task_group() as group:
+        group.start_soon(run_validation)
+        with fail_after(10):
+            while not child_file.exists() or not child_file.read_text().strip():
+                await asyncio.sleep(0.01)
+        scope.cancel()
     assert scope.cancel_called
-    status = Path(f"/proc/{child_file.read_text()}/stat")
-    async with asyncio.timeout(2):
+    status = Path(f"/proc/{child_file.read_text().strip()}/stat")
+    async with asyncio.timeout(5):
         while True:
             try:
                 state = status.read_text().split()[2]

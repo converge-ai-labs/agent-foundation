@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import load_only
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra.audit import record
 from a13n_service.infra.errors import conflict, invalid, not_found
 from a13n_service.resources.egress_credentials.schemas import SecretReference
@@ -190,6 +191,8 @@ async def update_thread_resources(
     if isinstance(environment_id, str) and isinstance(environment_template_id, str):
         raise invalid("environment_template_id", "mutually_exclusive_with_environment_id")
     root = await get_thread(session, workspace_id, root_thread_id, lock="acceptance", history=False)
+    if root.app_id != app_id:
+        raise conflict("thread", root.id, "app_owner_mismatch")
     require_open(root)
     environment_edit = (
         environment_id is not _Omitted.VALUE
@@ -218,6 +221,7 @@ async def update_thread_resources(
             environment_template_id,
             limit=runtime.settings.environments.managed_count,
             name=template_name,
+            provenance=AppProvenance(app_id, root.app_context),
         )
         await begin(session, row, "creating")
         await session.flush()
@@ -270,6 +274,8 @@ async def update_app_egress_secrets(
     if len(upserts) != len(set_secrets) or upserts.keys() & removals:
         raise invalid("set_secrets", "Credential names must be unique and cannot also be removed")
     root = await get_thread(session, workspace_id, root_thread_id, lock="acceptance", history=False)
+    if root.app_id != app_id:
+        raise conflict("thread", root.id, "app_owner_mismatch")
     require_open(root)
     if not upserts and not removals:
         return
@@ -307,7 +313,7 @@ async def update_app_egress_secrets(
                 select(CredentialRow)
                 .where(
                     CredentialRow.workspace_id == workspace_id,
-                    CredentialRow.owner_app_id == app_id,
+                    CredentialRow.app_id == app_id,
                     CredentialRow.id.in_(owned_ids),
                 )
                 .options(load_only(CredentialRow.id, CredentialRow.state, CredentialRow.allowed_hosts))

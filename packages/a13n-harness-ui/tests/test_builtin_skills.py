@@ -11,7 +11,12 @@ from a13n_harness.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.environment.retention import EnvironmentOutputPolicy
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import AgentReconstructor, ThreadCompositionSelection
-from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_SOURCE_ID
+from a13n_harness_ui.environment_paths import (
+    BUILTIN_COORDINATOR_SKILLS_PATH,
+    BUILTIN_COORDINATOR_SKILLS_SOURCE_ID,
+    BUILTIN_SKILLS_PATH,
+    BUILTIN_SKILLS_SOURCE_ID,
+)
 from a13n_harness_ui.extensions.environment_adapters import NativeProjectAdapter
 from a13n_harness_ui.surfaces import NewThreadDefaults
 
@@ -522,3 +527,145 @@ def test_operation_bundle_contains_new_reference_pages() -> None:
         relative = f"harness/{name}.md"
         assert relative in index
         assert "<!-- reference -->" in bundle.joinpath(relative).read_text()
+
+
+COORDINATOR_SKILL_NAMES = frozenset({"coordinate-pair-design", "coordinate-worktree-pr", "coordinate-parallel"})
+
+
+async def test_coordinator_builtin_skills_are_isolated_to_coordinator_roots(tmp_path: Path) -> None:
+    import yaml
+    from a13n_harness_ui.errors import ThreadError
+    from a13n_harness_ui.surfaces import SkillReference
+
+    path = _write_configuration(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent = yaml.safe_load(agent_path.read_text())
+    agent["capabilities"] = [{"capability": "skills"}]
+    agent["subagents"] = [{"agent": "agent-helper"}]
+    agent_path.write_text(yaml.safe_dump(agent))
+    helper = {**agent, "id": "agent-helper", "name": "Helper"}
+    helper.pop("subagents")
+    (tmp_path / "agents/helper.yaml").write_text(yaml.safe_dump(helper))
+    root_config = yaml.safe_load(path.read_text())
+    root_config["subagents"] = {"dynamic": {"allowed_models": [agent["model"]]}}
+    path.write_text(yaml.safe_dump(root_config))
+
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
+        # Draft previews include coordinator skills only when coordinator=True and a Project is selected.
+        ordinary_draft = await app.skill_catalog(defaults=NewThreadDefaults(project_id="project-main"))
+        assert COORDINATOR_SKILL_NAMES.isdisjoint({item.name for item in ordinary_draft.items})
+
+        projectless_draft = await app.skill_catalog(defaults=NewThreadDefaults(project_id=None), coordinator=True)
+        assert COORDINATOR_SKILL_NAMES.isdisjoint({item.name for item in projectless_draft.items})
+
+        coordinator_draft = await app.skill_catalog(
+            defaults=NewThreadDefaults(project_id="project-main"), coordinator=True
+        )
+        assert COORDINATOR_SKILL_NAMES <= {item.name for item in coordinator_draft.items}
+        draft_item = next(item for item in coordinator_draft.items if item.name == "coordinate-worktree-pr")
+        assert draft_item.source_id == BUILTIN_COORDINATOR_SKILLS_SOURCE_ID
+        assert draft_item.logical_path == f"{BUILTIN_COORDINATOR_SKILLS_PATH}/coordinate-worktree-pr"
+
+        # An ordinary Thread sees them only in coordinator=True preview, never on submission.
+        ordinary = await app.create_thread(defaults=NewThreadDefaults(project_id="project-main"))
+        ordinary_idle = await app.skill_catalog(thread_id=ordinary.thread_id)
+        assert COORDINATOR_SKILL_NAMES.isdisjoint({item.name for item in ordinary_idle.items})
+        ordinary_preview = await app.skill_catalog(thread_id=ordinary.thread_id, coordinator=True)
+        assert COORDINATOR_SKILL_NAMES <= {item.name for item in ordinary_preview.items}
+        ref = SkillReference(
+            catalog_id=ordinary_preview.catalog_id,
+            item_id=next(item.item_id for item in ordinary_preview.items if item.name == "coordinate-pair-design"),
+            name="coordinate-pair-design",
+        )
+        with pytest.raises(ThreadError, match="unavailable") as error:
+            await app.submit_thread(
+                thread_id=ordinary.thread_id,
+                prompt="Use $coordinate-pair-design",
+                skill_references=(ref,),
+            )
+        assert error.value.code == "skill_reference_unavailable"
+
+        # Promoting makes coordinator skills part of the durable idle catalog, mount, and root reconstruction,
+        # while keeping managed workers and nested subagent definitions isolated.
+        await app.promote_coordinator(ordinary.thread_id)
+        coordinator_idle = await app.skill_catalog(thread_id=ordinary.thread_id)
+        assert COORDINATOR_SKILL_NAMES <= {item.name for item in coordinator_idle.items}
+
+        worker = await app.create_thread(
+            defaults=NewThreadDefaults(project_id="project-main"),
+            coordinator_thread_id=ordinary.thread_id,
+        )
+        worker_idle = await app.skill_catalog(thread_id=worker.thread_id)
+        worker_preview_attempt = await app.skill_catalog(thread_id=worker.thread_id, coordinator=True)
+        assert COORDINATOR_SKILL_NAMES.isdisjoint({item.name for item in worker_idle.items})
+        assert COORDINATOR_SKILL_NAMES.isdisjoint({item.name for item in worker_preview_attempt.items})
+
+        executor = app._root_runs._executor
+        source = await app.current_configuration()
+        assert source is not None
+        for role, thread in (("coordinator", ordinary), ("worker", worker)):
+            composition = (
+                await executor._compositions.publish(
+                    source,
+                    ThreadCompositionSelection(
+                        thread_id=thread.thread_id,
+                        version=1,
+                        project_id=thread.configuration.project_id,
+                        agent_source_kind="agent",
+                        agent_source_id="agent-assistant",
+                        local_roots=thread.configuration.local_roots,
+                        environment_profile_id="environment-native",
+                        harness_plugin_ids=(),
+                        environment_run_extension_ids=(),
+                        mcp_server_ids=(),
+                        role=role,
+                        coordinator_thread_id=ordinary.thread_id if role == "worker" else None,
+                    ),
+                )
+            ).value
+            reconstructed = AgentReconstructor().reconstruct(composition, subagent_operator=executor._subagent_operator)
+            plan = await executor._environments.prepare(composition)
+            try:
+                assert ("builtin-coordinator-skills" in plan.environments) is (role == "coordinator")
+                skills = next(
+                    item
+                    for item in reconstructed.executable.definition.capabilities
+                    if isinstance(item, SkillsCapability)
+                )
+                assert (BUILTIN_COORDINATOR_SKILLS_PATH in skills.manager.roots) is (role == "coordinator")
+                child_skills = next(
+                    item
+                    for item in reconstructed.executable.definition.subagents[0].agent.capabilities
+                    if isinstance(item, SkillsCapability)
+                )
+                assert BUILTIN_COORDINATOR_SKILLS_PATH not in child_skills.manager.roots
+                if role == "coordinator":
+                    async with plan.runtime.bind(
+                        thread_id=thread.thread_id,
+                        run_id="run-coordinator-skills",
+                        instance=AgentInstanceContext(
+                            identity=AgentIdentityRef(issuer="test", subject="coordinator-skills"),
+                            agent_instance_id="agent-test",
+                        ),
+                        host_refs={},
+                    ) as environment:
+                        catalog = await skills.manager.scan(files=environment.files)
+                        assert COORDINATOR_SKILL_NAMES <= {item.name for item in catalog}
+                        with pytest.raises(EnvironmentError) as write_error:
+                            await environment.files.write_text(
+                                f"{BUILTIN_COORDINATOR_SKILLS_PATH}/coordinate-parallel/extra.md",
+                                "mutated",
+                                mode="overwrite",
+                            )
+                        assert write_error.value.code == "environment_denied"
+            finally:
+                assert not plan.finalization.cleanup_errors
+
+        # Higher-precedence Project Skills can override coordinator built-in Skills by name.
+        override = tmp_path / "workspace/.agents/skills/coordinate-parallel/SKILL.md"
+        override.parent.mkdir(parents=True, exist_ok=True)
+        override.write_text("---\nname: coordinate-parallel\ndescription: Project parallel workflow.\n---\n")
+        overridden = await app.skill_catalog(thread_id=ordinary.thread_id)
+        item = next(entry for entry in overridden.items if entry.name == "coordinate-parallel")
+        assert item.source_id == "a13n-harness-ui:project:workspace"
+        assert item.description == "Project parallel workflow."

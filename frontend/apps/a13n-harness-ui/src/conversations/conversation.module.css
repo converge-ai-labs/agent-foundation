@@ -354,16 +354,24 @@
   .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
     padding-inline-end: 32px;
   }
-  .threadRow:has(.threadStar, .threadStatus, .draftMarker, .resultDot):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
+  .threadRow:has(
+      .threadStar,
+      .coordinatorActivity,
+      .threadStatus,
+      .draftMarker,
+      .resultDot
+    ):is(:hover, :focus-within, :has([data-popup-open]))
     .threadLink {
     padding-inline-end: 8px;
   }
   .threadRow:is(:hover, :focus-within, :has([data-popup-open]))
-    :is(.threadStar, .threadStatus, .draftMarker, .resultDot) {
+    :is(
+      .threadStar,
+      .coordinatorActivity,
+      .threadStatus,
+      .draftMarker,
+      .resultDot
+    ) {
     opacity: 0;
   }
   .threadRow:hover .threadActions,
@@ -451,67 +459,16 @@
   font-size: var(--harness-nav-font);
   font-variant-numeric: tabular-nums;
 }
-/* An idle Coordinator keeps only its state mark at the row end. Its worker
-   count and star appear beside the row menu while the row is hovered or
-   focused; hidden parts stay available to assistive technology. */
-@media (hover: hover) and (pointer: fine) {
-  .threadRow:has(.threadDisclosure):not(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    :is(.coordinatorActivity, .threadStar),
-  .threadRow:has(.threadDisclosure):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    :is(.threadStatus, .draftMarker, .resultDot) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-  .threadRow:has(.threadDisclosure):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    .threadLink {
-    padding-inline-end: 32px;
-  }
-  /* A visible star takes its own slot inside that edge. */
-  .threadRow:has(.threadDisclosure):not(:has(.threadStatus, .resultDot)):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    .threadLink {
-    padding-inline-end: 56px;
-  }
-  .threadRow:has(.threadDisclosure) .threadStar {
-    position: absolute;
-    inset-inline-end: 32px;
-    margin: 0;
-  }
-  .threadRow:has(.threadDisclosure):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    .threadStar {
-    opacity: 1;
-  }
-}
 .resultDot {
   display: grid;
   place-items: center;
   flex: 0 0 16px;
 }
-/* A row carries one trailing mark, in priority order: live state, then the
-   unread badge, then the star. */
-.threadRow:has(.threadStatus) :is(.resultDot, .threadStar),
+/* A row carries one trailing mark, in priority order: live state, active
+   worker count, unread badge, then star. */
+.threadRow:has(.threadStatus)
+  :is(.coordinatorActivity, .resultDot, .threadStar),
+.threadRow:has(.coordinatorActivity) :is(.resultDot, .threadStar),
 .threadRow:has(.resultDot) .threadStar {
   display: none;
 }
@@ -2311,6 +2268,7 @@ div:has(+ .execution) > .assistantMessage {
   max-height: min(240px, 30dvh);
   overflow: hidden auto;
   overscroll-behavior: contain;
+  margin-bottom: 8px;
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--a13n-surface);
@@ -2322,7 +2280,9 @@ div:has(+ .execution) > .assistantMessage {
 }
 .composerFeedback .warning,
 .composerFeedback .composerStatus,
-.composerFeedback .composerConnection {
+.composerFeedback .composerConnection,
+.composerFeedback .composerLoading,
+.composerFeedback .composerBlock {
   margin: 0;
   padding: 0;
   border: 0;
@@ -2330,8 +2290,48 @@ div:has(+ .execution) > .assistantMessage {
   width: auto;
 }
 .composerFeedback .warning p,
-.composerFeedback .composerStatus p {
+.composerFeedback .composerStatus p,
+.composerFeedback .composerBlock p {
   margin: 0;
+}
+.composerLoading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--a13n-text-body);
+  color: var(--harness-log-text);
+}
+.composerLoading > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.composerBlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  font-size: var(--a13n-text-body);
+  color: var(--a13n-text);
+}
+.composerBlockText {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.composerBlockDetail {
+  display: block;
+  margin-top: 2px;
+  color: var(--harness-log-text);
+  font-size: var(--a13n-text-body);
+  overflow-wrap: anywhere;
+}
+.composerBlockActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .conversationFeedback {
   width: min(var(--harness-reading-width), calc(100% - 32px));

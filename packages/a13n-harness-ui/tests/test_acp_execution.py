@@ -40,6 +40,16 @@ def _resource(*peer_flags: str) -> AcpAgentResource:
     )
 
 
+def _ui_peer_config(tmp_path: Path, *flags: str) -> Path:
+    config = tmp_path / "a13n-harness-ui.yaml"
+    config.write_text('schema_version: "1"\ndefaults:\n  agent: acp-fixture\n')
+    resources = tmp_path / "acp_agents"
+    resources.mkdir()
+    resource = _resource().model_copy(update={"args": (str(_PEER), "ui", "use-http", *flags)})
+    (resources / "fixture.yaml").write_text(resource.model_dump_json(exclude_none=True))
+    return config
+
+
 def test_native_launch_inherits_local_cli_environment(tmp_path: Path) -> None:
     user_bin = tmp_path / ".local" / "bin"
     user_bin.mkdir(parents=True)
@@ -443,6 +453,134 @@ async def test_acp_prewarm_replays_options_after_host_restart(tmp_path: Path, pe
         assert (await app.get_thread(thread.thread_id)).continuation_id is None
 
 
+async def test_acp_preview_retries_incomplete_catalog(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    gate = tmp_path / "model-ready"
+    config = _ui_peer_config(tmp_path, f"model-gate={gate}")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        preview = await app.acp_agent_options("acp-fixture", None)
+        assert [option.id for option in preview.options] == ["mode"]
+        gate.touch()
+        preview = await app.acp_agent_options("acp-fixture", None)
+        assert [(option.id, option.value) for option in preview.options] == [("mode", "chat"), ("model", "")]
+        gate.unlink()
+        assert await app.acp_agent_options("acp-fixture", None) == preview
+
+
+async def test_acp_preview_waits_for_delayed_model(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    config = _ui_peer_config(tmp_path, "delayed-model", "null-model")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        assert [(option.id, option.value) for option in (await app.acp_agent_options("acp-fixture", None)).options] == [
+            ("mode", "chat"),
+            ("model", ""),
+        ]
+
+
+@pytest.mark.parametrize("prompted", [False, True])
+async def test_acp_prewarm_preserves_and_restores_a_model_advertised_late(tmp_path: Path, prompted: bool) -> None:
+    from a13n_harness_ui.acp_sessions import AcpSessionState
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    gate = tmp_path / "model-ready"
+    gate.touch()
+    config = _ui_peer_config(tmp_path, f"model-gate={gate}", "late-model-on-mode-change")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        thread_id = (await app.create_thread()).thread_id
+        assert (await app.acp_options(thread_id))[-1].value == ""
+        with pytest.raises(HarnessUiError, match="did not offer"):
+            await app.acp_options(thread_id, AcpOptionChange(id="model", value=""))
+        assert (await app.acp_options(thread_id, AcpOptionChange(id="model", value="b")))[-1].value == "b"
+        if prompted:
+            receipt = await app.submit_thread(thread_id=thread_id, prompt="verify-restored-model")
+            assert (await app.wait_root_operation(receipt.receipt_id)).status == "completed"
+    gate.unlink()
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        assert [option.id for option in await app.acp_options(thread_id)] == ["mode"]
+        gate.touch()
+        await app.acp_options(thread_id, AcpOptionChange(id="mode", value="plan"))
+        stored = await app._store.threads.acp_state(thread_id)
+        assert stored is not None
+        saved = AcpSessionState.model_validate_json(stored)
+        assert saved.options["model"] == "b"
+        assert saved.explicit_options == (set() if prompted else {"model", "mode"})
+        async with asyncio.timeout(5):
+            while not any(option.is_model for option in await app.acp_options(thread_id)):
+                await asyncio.sleep(0.01)
+        receipt = await app.submit_thread(thread_id=thread_id, prompt="verify-restored-model")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status == "completed"
+        assert (await app.get_thread(thread_id)).thread.excerpt.latest_reply == "Model B restored"
+
+
+async def test_acp_does_not_persist_an_unconfirmed_model_change(tmp_path: Path) -> None:
+    from a13n_harness_ui.acp_sessions import AcpSessionState
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    config = _ui_peer_config(tmp_path, "null-model", "unconfirmed-model-change")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        thread_id = (await app.create_thread()).thread_id
+        await app.acp_options(thread_id, AcpOptionChange(id="model", value="a"))
+        with pytest.raises(HarnessUiError, match="did not confirm"):
+            await app.acp_options(thread_id, AcpOptionChange(id="model", value="b"))
+        stored = await app._store.threads.acp_state(thread_id)
+        assert stored is not None
+        saved = AcpSessionState.model_validate_json(stored)
+        assert saved.options["model"] == "a"
+        assert saved.explicit_options == {"model"}
+
+
+@pytest.mark.parametrize(
+    ("message", "resumable"),
+    [
+        ("reject-prompt", False),
+        ("fail-after-progress", True),
+        ("fail-after-accept", True),
+        ("fail-after-tool", True),
+        ("disconnect-prompt", True),
+    ],
+)
+async def test_acp_first_prompt_recovery_distinguishes_rejection_from_progress_or_unknown_outcome(
+    tmp_path: Path, message: str, resumable: bool
+) -> None:
+    from a13n_harness_ui.acp_sessions import AcpSessionState
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+
+    config = _ui_peer_config(tmp_path, "unique-session", "null-model")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=config) as app:
+        thread_id = (await app.create_thread()).thread_id
+        changed = await app.acp_options(thread_id, AcpOptionChange(id="model", value="b"))
+        assert changed[-1].value == "b"
+        receipt = await app.submit_thread(thread_id=thread_id, prompt=message)
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.failed
+        stored = await app._store.threads.acp_state(thread_id)
+        assert stored is not None
+        failed = AcpSessionState.model_validate_json(stored)
+        assert failed.prompted is resumable
+        assert failed.explicit_options == (set() if resumable else {"model"})
+        assert failed.options["model"] == "b"
+
+        assert (await app.acp_options(thread_id))[-1].value == "b"
+        stored = await app._store.threads.acp_state(thread_id)
+        assert stored is not None
+        recovered = AcpSessionState.model_validate_json(stored)
+        assert (recovered.session_id == failed.session_id) is resumable
+        receipt = await app.submit_thread(thread_id=thread_id, prompt="try again")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+
+
 async def test_acp_shell_review_on_app_callbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import json
 
@@ -597,7 +735,7 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
     (acp_dir / "fixture.yaml").write_text(
         json.dumps(
             _resource()
-            .model_copy(update={"args": (str(_PEER), "ui", "unique-session")})
+            .model_copy(update={"args": (str(_PEER), "ui", "unique-session", "null-model")})
             .model_dump(mode="json", exclude_none=True)
         )
     )
@@ -715,3 +853,303 @@ async def test_acp_thread_fork_branch_and_bidirectional_agent_switching(
         assert (await app.wait_root_operation(back_to_acp.receipt_id)).status is RootOperationStatus.completed
         back_reply = (await app.get_thread(native_to_acp.thread_id)).thread.excerpt.latest_reply
         assert back_reply is not None and "native reply on fork" in back_reply
+
+
+@pytest.mark.anyio
+async def test_acp_presets_resolve_npx_adapters_and_options_cache_ttl_expires(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+    import json
+
+    from a13n_harness.acp import AcpSessionRuntime
+    from a13n_harness_ui.acp_sessions import acp_presets, resolve_acp_argv
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.configuration.models import AcpAgentResource
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from acp import schema
+
+    # 1. Built-in presets cover mainstream ACP CLIs and fall back to npx for adapter packages.
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    for name in ("claude", "npx", "copilot", "goose", "kimi"):
+        exe = fake_bin / name
+        exe.write_text("#!/bin/sh\nexit 0\n")
+        exe.chmod(0o755)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("PATH", str(fake_bin))
+        mp.setattr("a13n_harness_ui.acp_sessions.local_environment", lambda _env=None: {"PATH": str(fake_bin)})
+        presets = {item.id: item for item in acp_presets()}
+        assert {
+            "antigravity",
+            "claude_code",
+            "codex",
+            "gemini_cli",
+            "github_copilot",
+            "opencode",
+            "goose",
+            "kimi_cli",
+        } <= presets.keys()
+        assert presets["antigravity"].args == ("acp", "--process-per-session")
+        assert presets["claude_code"].detected_path == str(fake_bin / "npx")
+        assert presets["claude_code"].executable == "npx"
+        assert presets["claude_code"].args == ("-y", "@zed-industries/claude-agent-acp")
+        assert presets["codex"].detected_path is None  # codex CLI itself is not installed in fake_bin
+        assert presets["github_copilot"].detected_path == str(fake_bin / "copilot")
+        assert resolve_acp_argv(
+            AcpAgentResource(
+                schema_version="1",
+                kind="acp_agent",
+                id="acp-claude",
+                name="Claude Code",
+                preset="claude_code",
+                args=("--verbose",),
+            ),
+            path=str(fake_bin),
+        ) == ("npx", "-y", "@zed-industries/claude-agent-acp", "--verbose")
+        assert resolve_acp_argv(
+            AcpAgentResource(schema_version="1", kind="acp_agent", id="acp-codex", name="Codex", preset="codex"),
+            path=str(fake_bin),
+        ) == ("codex-acp",)
+
+    # 2. Options preview cache honors TTL expiry, and concurrent updates preserve arrival order across async persistence.
+    root = tmp_path / "a13n-harness-ui.yaml"
+    root.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: acp-fixture\n')
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (projects / "main.yaml").write_text(
+        f'schema_version: "1"\nkind: project\nid: project-main\nname: Main\nroots:\n  - path: {workspace}\n'
+    )
+    acp_dir = tmp_path / "acp_agents"
+    acp_dir.mkdir()
+    (acp_dir / "fixture.yaml").write_text(
+        json.dumps(
+            _resource()
+            .model_copy(update={"args": (str(_PEER), "ui", "unique-session", "null-model")})
+            .model_dump(mode="json", exclude_none=True)
+        )
+    )
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=root, instrumentation=None) as app:
+        first_preview = await app.acp_agent_options("acp-fixture", "project-main")
+        assert len(app._acp_options_cache) == 1
+        scope = next(iter(app._acp_options_cache))
+        app._acp_options_cache[scope] = (app._acp_options_cache[scope][0] - 120.0, first_preview)
+        refreshed_preview = await app.acp_agent_options("acp-fixture", "project-main")
+        assert refreshed_preview.options == first_preview.options
+
+        ordered_thread = await app.create_thread()
+        commands_entered = asyncio.Event()
+        release_commands = asyncio.Event()
+        original_save_acp = app._store.threads.save_acp_state
+
+        async def slow_commands_save(tid: str, payload: str) -> None:
+            if tid == ordered_thread.thread_id and "cmd-slow" in payload and not commands_entered.is_set():
+                commands_entered.set()
+                await release_commands.wait()
+            await original_save_acp(tid, payload)
+
+        async def two_chunk_prompt(self, prompt, *, binding, context=()):
+            self.client.available_commands = [schema.AvailableCommand(name="cmd-slow", description="slow")]
+            t0 = asyncio.create_task(
+                binding.on_update(
+                    schema.AvailableCommandsUpdate(
+                        session_update="available_commands_update",
+                        available_commands=self.client.available_commands,
+                    )
+                )
+            )
+            t1 = asyncio.create_task(
+                binding.on_update(
+                    schema.AgentMessageChunk(
+                        session_update="agent_message_chunk", content=schema.TextContentBlock(text="A")
+                    )
+                )
+            )
+            await commands_entered.wait()
+            t2 = asyncio.create_task(
+                binding.on_update(
+                    schema.AgentMessageChunk(
+                        session_update="agent_message_chunk", content=schema.TextContentBlock(text="B")
+                    )
+                )
+            )
+            await asyncio.sleep(0)
+            release_commands.set()
+            await asyncio.gather(t0, t1, t2)
+            return schema.PromptResponse(stop_reason="end_turn")
+
+        monkeypatch.setattr(app._store.threads, "save_acp_state", slow_commands_save)
+        monkeypatch.setattr(AcpSessionRuntime, "prompt", two_chunk_prompt)
+        ordered = await app.submit_thread(thread_id=ordered_thread.thread_id, prompt="order check")
+        assert (await app.wait_root_operation(ordered.receipt_id)).status is RootOperationStatus.completed
+        assert (await app.get_thread(ordered_thread.thread_id)).thread.excerpt.latest_reply == "AB"
+
+
+async def test_acp_compaction_negotiation_projection_goal_semantics_and_context_invalidation(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.display_projection import original_window_text
+    from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.storage.display import read_display_windows
+    from a13n_harness_ui.surfaces import RootOperationStatus
+
+    # Non-completed compaction statuses must NOT trigger Goal restore audit.
+    sessions = AcpSessions()
+    try:
+        turn = AcpTurn(
+            sessions,
+            _resource().model_copy(update={"args": (str(_PEER), "ui", "require-compaction-cap")}),
+            "digest",
+            AcpSessionSetup(cwd=str(tmp_path)),
+            lambda _: None,
+            goal=GoalCapability(GoalView(objective="Verify the work")),
+        )
+        executable = HarnessBuilder(configured_plugins_enabled=False).build(
+            AgentSpec(), output_type=str | None, plugins=(turn,)
+        )
+        goal_result = await executable.run("goal-failed-compaction")
+        assert goal_result.status == "completed"
+        assert goal_result.output == "\n[GOAL_COMPLETE]"
+        goal = saved_goal(goal_result.state)
+        assert goal is not None and goal.status == "verified" and goal.iteration == 0
+    finally:
+        await sessions.close()
+
+    # Full App flow: capability negotiation, transcript projection, live resident invalidation,
+    # summary-less completed compaction, cancelled compaction, and persistence on failed turn.
+    config = _ui_peer_config(tmp_path, "require-compaction-cap")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=config, instrumentation=None) as app:
+        thread = await app.create_thread()
+
+        # Seed prior occupancy first.
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="observe")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        usage = await app.context_usage(thread.thread_id)
+        assert (usage.latest_request_tokens, usage.context_window) == (24, 1000)
+
+        # Completed compaction without a newer usage_update invalidates stale occupancy and projects cleanly.
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="compact-live")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        usage = await app.context_usage(thread.thread_id)
+        assert (usage.latest_request_tokens, usage.context_window) == (None, None)
+
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+        assert transcript.turns[-1].output_preview == "Done after compact."
+        compaction_entry, compaction_index, compaction_part = next(
+            (entry, idx, part)
+            for entry in transcript.entries
+            for idx, part in enumerate(entry.parts)
+            if (part.metadata.model_extra or {}).get("operation_id") == "c-1"
+        )
+        extra = compaction_part.metadata.model_extra or {}
+        assert compaction_part.text == "Part 1. Part 2."
+        assert extra["a13n.context"] == "compaction"
+        assert extra["a13n.context.state"] == "completed"
+        assert extra["a13n.acp.observation"] == "a13n.acp.compaction"
+        # original_window_text must not expose compaction summary as an ordinary assistant reply.
+        stored_thread = await app._store.threads.get(thread.thread_id)
+        assert stored_thread is not None and stored_thread.continuation is not None
+        continuation = await app._store.read_continuation(
+            thread.thread_id, stored_thread.continuation, include_display=True
+        )
+        assert continuation.display is not None
+        windows = await read_display_windows(app._store.objects, continuation.display)
+        assert original_window_text(windows, compaction_entry.position, compaction_index) is None
+
+        # Summary-less completed compaction followed by newer usage_update refreshes occupancy.
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="compact-then-usage")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        usage = await app.context_usage(thread.thread_id)
+        assert (usage.latest_request_tokens, usage.context_window) == (150, 1000)
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+        c2 = next(
+            part
+            for entry in transcript.entries
+            for part in entry.parts
+            if (part.metadata.model_extra or {}).get("operation_id") == "c-2"
+        )
+        assert c2.text == ""
+        assert (c2.metadata.model_extra or {})["a13n.context.state"] == "completed"
+
+        # Cancelled compaction preserves existing context occupancy and projects cancelled state.
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="compact-cancelled")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        usage = await app.context_usage(thread.thread_id)
+        assert (usage.latest_request_tokens, usage.context_window) == (150, 1000)
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+        c_cancel = next(
+            part
+            for entry in transcript.entries
+            for part in entry.parts
+            if (part.metadata.model_extra or {}).get("operation_id") == "c-cancel"
+        )
+        assert (c_cancel.metadata.model_extra or {})["a13n.context.state"] == "cancelled"
+
+        # Failed turn retains latest observed occupancy in DB via shielded finally persistence.
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="usage-then-fail")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.failed
+        # Session was retired on failure, so context_usage reads persisted DB state.
+        usage = await app.context_usage(thread.thread_id)
+        assert (usage.latest_request_tokens, usage.context_window) == (420, 1000)
+
+
+@pytest.mark.parametrize("refresh_on_model_change", [False, True])
+async def test_acp_prewarm_and_model_switch_context_window_authority(
+    tmp_path: Path, refresh_on_model_change: bool
+) -> None:
+    from a13n_harness_ui.acp_sessions import AcpSessionState
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    flags = ("null-model", "usage-on-open") + (("usage-on-model-change",) if refresh_on_model_change else ())
+    config = _ui_peer_config(tmp_path, *flags)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=config, instrumentation=None) as app:
+        thread = await app.create_thread()
+        await app.acp_options(thread.thread_id)
+        assert (await app.get_thread(thread.thread_id)).continuation_id is None
+        # Prewarmed ACP thread without continuation exposes live usage_update from open_session.
+        usage = await app.context_usage(thread.thread_id)
+        assert (usage.latest_request_tokens, usage.context_window) == (12, 1000)
+
+        await app.acp_options(thread.thread_id, AcpOptionChange(id="model", value="a"))
+        expected = (5, 2000) if refresh_on_model_change else (None, None)
+        usage = await app.context_usage(thread.thread_id)
+        assert (usage.latest_request_tokens, usage.context_window) == expected
+        raw = await app._store.threads.acp_state(thread.thread_id)
+        assert raw is not None
+        assert AcpSessionState.model_validate_json(raw).context_window == (
+            expected if refresh_on_model_change else None
+        )
+
+
+async def test_tui_backend_syncs_acp_context_window_on_run_and_resume(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+
+    config = _ui_peer_config(tmp_path, "resident")
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=config, instrumentation=None) as app:
+        status = Status()
+        backend = SessionBackend(app, CliRequest(command="chat"), tmp_path, status)
+        assert await backend.initialize()
+        await backend.execute(StreamRenderer(status), prompt="observe")
+        assert (status.context_tokens, status.context_window) == (24, 1000)
+        thread_id = backend.thread_id
+        assert thread_id is not None
+
+        resumed_status = Status()
+        resumed = SessionBackend(app, CliRequest(command="chat", thread_id=thread_id), tmp_path, resumed_status)
+        assert await resumed.initialize()
+        assert (resumed_status.context_tokens, resumed_status.context_window) == (24, 1000)
+
+        await resumed.execute(StreamRenderer(resumed_status), prompt="compact-live")
+        assert (resumed_status.context_tokens, resumed_status.context_window) == (None, None)

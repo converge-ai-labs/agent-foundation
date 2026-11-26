@@ -53,7 +53,13 @@ from a13n_harness_ui.devices import DeviceConnections
 from a13n_harness_ui.envd_runtime import EnvdRuntimeManager, EnvdStatus
 from a13n_harness_ui.envd_sessions import AdmittedSession, SessionBinding
 from a13n_harness_ui.environment_monitoring import MonitoringSource
-from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, EnvironmentPathLayout
+from a13n_harness_ui.environment_paths import (
+    BUILTIN_COORDINATOR_SKILLS_PATH,
+    BUILTIN_COORDINATOR_SKILLS_ROOT,
+    BUILTIN_SKILLS_PATH,
+    BUILTIN_SKILLS_ROOT,
+    EnvironmentPathLayout,
+)
 from a13n_harness_ui.errors import CompositionError, EnvironmentLifecycleError, HarnessUiError
 from a13n_harness_ui.extensions import (
     LOCAL_ENVD_PROVIDER_KEY,
@@ -504,6 +510,15 @@ class EnvironmentRunService:
                     file_actions=FILE_READ_ACTIONS,
                 )
             )
+            if composition.role == "coordinator":
+                mounts.append(
+                    await self._prepare_host_files_mount(
+                        root=BUILTIN_COORDINATOR_SKILLS_ROOT,
+                        alias="builtin-coordinator-skills",
+                        mount_path=BUILTIN_COORDINATOR_SKILLS_PATH,
+                        file_actions=FILE_READ_ACTIONS,
+                    )
+                )
             if not (canonical_host_paths and Path(path_layout.user_skills) in roots):
                 user_mount = await self._prepare_user_skills_mount(
                     mount_path=(path_layout.user_skills if canonical_host_paths else None), create=not preview

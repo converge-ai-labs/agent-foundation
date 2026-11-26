@@ -974,3 +974,132 @@ it("shares saved composer choices across devices without changing Thread default
     reopened?.close();
   }
 }, 30000);
+
+it("exposes built-in coordinator skills only in coordinator previews and coordinator threads", async () => {
+  const projectPath = "projects/coordinator-fixture.yaml";
+  const projectId = "project-coordinator-fixture";
+  await result(
+    transport.client.PUT("/api/configuration/sources/{relative_path}", {
+      params: { path: { relative_path: projectPath } },
+      body: {
+        content: [
+          'schema_version: "1"',
+          "kind: project",
+          `id: ${projectId}`,
+          "name: Coordinator Fixture",
+          "roots:",
+          `  - path: ${JSON.stringify(app.fixture_root)}`,
+          "",
+        ].join("\n"),
+      },
+    }),
+  );
+  try {
+    const ordinaryDraft = await result(
+      transport.client.POST("/api/threads/skills-preview", {
+        body: { project_id: projectId },
+      }),
+    );
+    expect(
+      ordinaryDraft.items.some(
+        (item) => item.name === "coordinate-worktree-pr",
+      ),
+    ).toBe(false);
+
+    const coordinatorDraft = await result(
+      transport.client.POST("/api/threads/skills-preview", {
+        params: { query: { coordinator: true } },
+        body: { project_id: projectId },
+      }),
+    );
+    const coordSkill = coordinatorDraft.items.find(
+      (item) => item.name === "coordinate-worktree-pr",
+    )!;
+    expect(coordSkill).toBeTruthy();
+    expect(coordSkill.source_id).toBe(
+      "a13n-harness-ui:builtin-coordinator-skills",
+    );
+
+    const created = await result(
+      transport.client.POST("/api/threads", {
+        body: { defaults: { project_id: projectId } },
+      }),
+    );
+    const path = { thread_id: created.thread_id };
+    const ordinaryIdle = await result(
+      transport.client.GET("/api/threads/{thread_id}/skills", {
+        params: { path },
+      }),
+    );
+    expect(
+      ordinaryIdle.items.some((item) => item.name === "coordinate-worktree-pr"),
+    ).toBe(false);
+    const coordinatorPreview = await result(
+      transport.client.GET("/api/threads/{thread_id}/skills", {
+        params: { path, query: { coordinator: true } },
+      }),
+    );
+    expect(
+      coordinatorPreview.items.some(
+        (item) => item.name === "coordinate-worktree-pr",
+      ),
+    ).toBe(true);
+
+    const ref = {
+      catalog_id: coordinatorPreview.catalog_id,
+      item_id: coordSkill.item_id,
+      name: coordSkill.name,
+    };
+    await expect(
+      transport.client.POST("/api/threads/{thread_id}/submit", {
+        params: { path },
+        body: { parts: ["$coordinate-worktree-pr"], skill_references: [ref] },
+      }),
+    ).rejects.toThrow("Skill is unavailable");
+
+    await result(
+      transport.client.POST("/api/threads/{thread_id}/coordinator", {
+        params: { path },
+      }),
+    );
+    const coordinatorIdle = await result(
+      transport.client.GET("/api/threads/{thread_id}/skills", {
+        params: { path },
+      }),
+    );
+    expect(coordinatorIdle.items.map((item) => item.name)).toEqual(
+      expect.arrayContaining([
+        "coordinate-pair-design",
+        "coordinate-worktree-pr",
+        "coordinate-parallel",
+      ]),
+    );
+    const accepted = await result(
+      transport.client.POST("/api/threads/{thread_id}/submit", {
+        params: { path },
+        body: {
+          parts: ["Use $coordinate-worktree-pr"],
+          skill_references: [ref],
+        },
+      }),
+    );
+    expect(accepted.receipt_id).toBeTruthy();
+    await vi.waitFor(
+      async () => {
+        const detail = await result(
+          transport.client.GET("/api/threads/{thread_id}", {
+            params: { path },
+          }),
+        );
+        expect(detail.thread.root_activity.state).toBe("inactive");
+      },
+      { timeout: 10000 },
+    );
+  } finally {
+    await result(
+      transport.client.DELETE("/api/configuration/sources/{relative_path}", {
+        params: { path: { relative_path: projectPath } },
+      }),
+    );
+  }
+});

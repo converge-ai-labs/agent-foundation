@@ -168,11 +168,11 @@ export function AcpAuth({ agentId }: { agentId: string }) {
                     {terminalCommand}
                   </code>
                   {method.id === "agy-terminal" && (
-                    <p>
+                    <span className="mt-1 block">
                       {t(
                         "Open the Google sign-in URL in a browser, then paste the callback into the same terminal.",
                       )}
-                    </p>
+                    </span>
                   )}
                   {!!method.environment_keys?.length && (
                     <code> ({method.environment_keys.join(", ")})</code>

@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.resources.memories.schemas import MemorySpaceCreate
 from a13n_service.resources.memories.spaces import insert_space
 from a13n_service.runs.browsers.lifecycle import authorize_use, find, usable
@@ -20,6 +21,7 @@ async def reserve_environment(
     workspace_id: str,
     *,
     app_id: str,
+    app_context: dict[str, str] | None = None,
     principal_id: str,
     template_id: str,
     name: str | None = None,
@@ -28,7 +30,13 @@ async def reserve_environment(
     scope = await app_workspace(session, runtime, workspace_id, app_id)
     actor = await run_actor(session, runtime, scope, principal_id)
     row = await reserve(
-        session, actor, scope, template_id, limit=runtime.settings.environments.managed_count, name=name
+        session,
+        actor,
+        scope,
+        template_id,
+        limit=runtime.settings.environments.managed_count,
+        name=name,
+        provenance=AppProvenance(app_id, app_context),
     )
     await begin(session, row, "creating")
     await session.flush()
@@ -42,6 +50,7 @@ async def create_memory_space(
     workspace_id: str,
     *,
     app_id: str,
+    app_context: dict[str, str] | None = None,
     actor_id: str,
     name: str,
     description: str | None = None,
@@ -57,6 +66,7 @@ async def create_memory_space(
             scope,
             MemorySpaceCreate(name=name, description=description),
             settings=runtime.settings.memory,
+            provenance=AppProvenance(app_id, app_context),
         )
     ).id
 

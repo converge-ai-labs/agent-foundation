@@ -73,12 +73,17 @@ tools:
   interaction_timeout_seconds: 120
   enable_codeact: true
 
+agent_creation:
+  allowed_agents: null
+  default_agent: null
+  allowed_models: []
+  default_model: null
+
 subagents:
   include: [code-reviewer, executor, explorer]
   max_concurrent: 8
   dynamic:
     enabled: false
-    allowed_models: []
 
 webui:
   allowed_origins: []
@@ -94,7 +99,7 @@ defaults:
 
 `webui.allowed_origins` is a list of exact HTTP(S) origins or the literal `"*"`, defaulting to `[]`. Exact values normalize hostname spelling, default ports and an optional trailing `/`; credentials, non-root paths, queries, fragments and partial wildcards are invalid. Non-default ports remain significant. It is a restart-bound listener setting, not a Run input or a CORS allowlist. The [HTTP access boundary](05-runtime-subagents-and-surfaces.md#http-startup-and-access) owns additive admission, wildcard behavior and lifetime capture.
 
-Model-created chats and workers share the dynamic subagent model choices and default. Manual chat creation uses the composer selection.
+Root `agent_creation` governs both Agents and Models for agent-initiated creation (`create_thread`, `create_worker`, and subagents); manual chat and worker creation remains unaffected. `agent_creation.allowed_agents` is `null` (omitted) by default to allow all configured native (`agent-*`) and ACP (`acp-*`) Agents, an explicit empty list `[]` to disable agent-initiated chat/worker creation (`can_create_threads = false`), or an ordered unique list of configured Agent IDs. `agent_creation.default_agent` is `null` by default (preserving self-inheritance on `project_id="current"` and Project/global defaults on cross-Project creation) or a configured Agent ID used whenever `create_thread` or `create_worker` omits `agent_id` (resolving via normal Project/Agent defaults instead of self-inheritance); when `allowed_agents` is non-null, `default_agent` must occur in `allowed_agents`. `agent_creation.allowed_models` is an ordered unique list of configured Model IDs, default `[]`; unknown references reject the generation. `agent_creation.default_model` is a Model ID that must occur in `allowed_models`. Model-created chats and workers enforce `allowed_agents` and `default_agent` and use `agent_creation.allowed_models` / `default_model` only when explicitly overriding a native Model or when a native Agent omits its Model. Manual chat creation uses the composer selection.
 
 `run_configuration` is the root [Harness Run configuration](../a13n-harness/06-execution-context-and-lifecycle.md#run-configuration), defaulting to `{allowed_hosts: null, extensions: {}}`. Root admission captures it in the immutable composition; inline and async children inherit the parent's snapshot, and reconstruction reads that snapshot rather than current YAML. Configuration edits affect later root Runs only. Host Web requests and redirects, API-key Model clients, auxiliary Models and contextual MCP consume it. Restrictive configurations reject subscription Model transports whose SDK-owned requests cannot be checked. Host operations outside a Run use their own policy, not an active Run's snapshot.
 
@@ -102,7 +107,7 @@ Model-created chats and workers share the dynamic subagent model choices and def
 
 `subagents.include` is an ordered unique list of release-owned names: `code-reviewer`, `executor`, and `explorer`. Omitted or `[]` includes none. Normal setup includes all three; `setup --advanced` offers all or none; individual names remain editor-configurable. These selections extend the root Run roster, not every descendant roster. They are composition inputs, not sticky Thread selections. The package owns the definitions; no definition files are copied into the configuration tree. `a13n-harness-ui config subagents` lists available roles and current inclusion. [Composition](02-agent-composition-and-snapshots.md#built-in-subagents) owns expansion, identity, inheritance, and conflict handling.
 
-`subagents.max_concurrent` is a positive integer, default `8`, limiting locally running children in one root conversation across configured, built-in and dynamic children, including resumed segments. Admission through delegate, spawn and resume shares one serialized limit. `subagents.dynamic.enabled` defaults to `false`; only enabled root Runs expose `spawn_subagent`. `subagents.dynamic.allowed_models` is an ordered unique list of configured Model IDs, default `[]`; unknown references reject the generation. `subagents.dynamic.default_model` is a Model ID that must occur in the allowlist; enabling dynamic creation requires it, so an enabled allowlist is never empty. Dynamic launches use this default when no Model is specified. An empty allowlist hides agent-created chat and worker tools. Declared children resolve their configured or inherited Model, including composer overrides. Only children with an allowed Model appear in the callable roster. An empty roster hides `delegate`. Admission checks the same policy. Explicit Model choices must occur in the allowlist. The `spawn_subagent` tool description lists the allowlist and the Model used on omission. Thinking choices use the selected Model's existing validated thinking controls.
+`subagents.max_concurrent` is a positive integer, default `8`, limiting locally running children in one root conversation across configured, built-in and dynamic children, including resumed segments. Admission through delegate, spawn and resume shares one serialized limit. `subagents.dynamic.enabled` defaults to `false`; only enabled root Runs expose `spawn_subagent`. Enabling `subagents.dynamic.enabled` requires `agent_creation.default_model` (and thus `agent_creation.allowed_models` includes it). For backward compatibility, legacy `subagents.dynamic.allowed_models` and `subagents.dynamic.default_model` keys are accepted at load time and lifted into `agent_creation` with a deprecation warning (conflicting values between legacy and canonical keys are rejected); editing creation Models in WebUI migrates those keys automatically into `agent_creation`, and historical stored snapshots lift them on read. Dynamic launches use `agent_creation.default_model` when no Model is specified. An empty `agent_creation.allowed_models` disables explicit Model overrides on agent-created chats and workers while still permitting creation through allowed configured or inherited Agents. Declared children resolve their configured or inherited Model, including composer overrides. Only children with a Model in `agent_creation.allowed_models` appear in the callable roster. An empty roster hides `delegate`. Admission checks the same policy. Explicit Model choices must occur in `agent_creation.allowed_models`. The `spawn_subagent` tool description lists the allowlist and the Model used on omission. Thinking choices use the selected Model's existing validated thinking controls.
 
 Terminal subagent results are delivered automatically. The Run capture freezes subagent settings; later configuration edits affect later Runs. Results and explicit messages can start eligible parent Runs and incur Model use. [Runtime](05-runtime-subagents-and-surfaces.md#observation-and-checkpointing) owns delivery and wake eligibility.
 
@@ -161,7 +166,7 @@ The owning contracts define the bodies:
 
 ## External ACP Agents
 
-An `acp_agent` resource in `acp_agents/` uses the `acp-` ID prefix. A resource selects an executable and argument vector directly or starts from a data-only preset: `antigravity`, `claude_code`, `codex`, `opencode`, or `custom`. An explicit command and arguments override the preset fields. Provider credentials stay in the external Agent's account store. ACP is an Agent source and has no Harness Model selection.
+An `acp_agent` resource in `acp_agents/` uses the `acp-` ID prefix. A resource selects an executable and argument vector directly or starts from a data-only preset: `antigravity`, `claude_code`, `codex`, `gemini_cli`, `github_copilot`, `opencode`, `goose`, `kimi_cli`, or `custom`. An explicit command and arguments override the preset fields. Provider credentials stay in the external Agent's account store. ACP is an Agent source and has no Harness Model selection.
 
 An explicit connection check launches the saved executable and reads its ACP initialization response. The check reports executable availability and advertised authentication operations; login state is unknown at this point. A protocol login calls `authenticate` using an advertised Agent method and can ask the operator to continue in the provider's browser. Login completes when the Agent returns success. Logout is available when the Agent advertises it and completes on its successful response. Authentication elicitations belong to the configuration owner, outside Thread history and Run admission. When an Agent returns a terminal method, the connection check presents the configured invocation plus the method's arguments and environment variable names. The operator uses their own terminal for this flow; only an Agent method can be sent to `authenticate`.
 

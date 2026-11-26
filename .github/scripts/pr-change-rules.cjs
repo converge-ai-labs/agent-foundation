@@ -22,7 +22,7 @@ const rules = [
   ['Specifications', /^spec\//],
   ['Generated files', {test: path => generated.has(path)}],
   ['Documentation', /(?:\.md$|^frontend\/apps\/a13n-site\/posts\/|(?:^|\/)(?:LICENSE|NOTICE)(?:\.[^/]+)?$)/i],
-  ['Dependencies & lockfiles', /(?:^|\/)(?:pyproject\.toml|Cargo\.(?:toml|lock)|package(?:-lock)?\.json|pnpm-(?:lock|workspace)\.yaml|uv\.lock|requirements[^/]*\.txt)$/],
+  ['Dependencies & lockfiles', /(?:^|\/)(?:pyproject\.toml|release-dependencies\.toml|Cargo\.(?:toml|lock)|package(?:-lock)?\.json|pnpm-(?:lock|workspace)\.yaml|uv\.lock|requirements[^/]*\.txt)$/],
   ['Tests & fixtures', /(?:^|\/)(?:tests?|testdata|fixtures|__tests__|__snapshots__|e2e)(?:\/|$)|(?:^|\/)(?:conftest\.py|test_[^/]+|[^/]+_test\.py)$|\.(?:test|spec)\.[cm]?[jt]sx?$/],
   ['Protocols & migrations', /^proto\/|\/a13n_service\/migrations\//],
   ['Build, CI & deployment', /^\.github\/|^deploy\/|^crates\/[^/]+\/build_support\/|^frontend\/(?:.*\/)?(?:tsconfig[^/]*\.json|\.prettierignore|coss-source\.json)$|(?:^|\/)(?:Makefile|Dockerfile|build\.rs|hatch_build\.py|build_skills\.py|[^/]+\.config\.[^/]+)$|^\.[^/]+$/],

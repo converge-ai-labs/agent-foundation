@@ -239,6 +239,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-containers
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

@@ -356,6 +356,15 @@ class AgentCompositionResolver:
         run_configuration: RunConfiguration | None = None,
     ) -> ResolvedRunComposition:
         """Resolve one exact Thread head against one accepted source generation."""
+        creation = source.document.agent_creation
+        allowed_acp = any(creation.allows_agent(agent_id) for agent_id in source.acp_agents)
+        allowed_native = tuple(agent for agent_id, agent in source.agents.items() if creation.allows_agent(agent_id))
+        can_create_threads = bool(
+            allowed_acp
+            or (
+                allowed_native and (creation.allowed_models or any(agent.model is not None for agent in allowed_native))
+            )
+        )
         if selection.agent_source_kind == "live":
             if model_overrides is not None:
                 raise CompositionError("Select the Live executor Model in Live settings.", code="live_model_override")
@@ -366,8 +375,10 @@ class AgentCompositionResolver:
                 thread_configuration_version=selection.version,
                 project_roots=selection.local_roots,
                 memory_enabled=source.document.memory.enabled,
+                can_create_threads=can_create_threads,
                 run_configuration=source.document.run_configuration,
                 tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
+                agent_creation=creation,
                 subagents=source.document.subagents,
                 root=self._live_node(source),
                 environment_profile=self.environment_profile(source, FULL_CONTROL_PROFILE_ID),
@@ -443,11 +454,13 @@ class AgentCompositionResolver:
             project_id=selection.project_id,
             memory_enabled=source.document.memory.enabled,
             inbox_enabled=source.document.inbox.enabled,
+            can_create_threads=can_create_threads,
             background_compaction=source.document.background_compaction.model_copy(update={"enabled": False})
             if isinstance(root, ResolvedAcpNode)
             else source.document.background_compaction,
             run_configuration=run_configuration or source.document.run_configuration,
             tool_execution=ToolExecutionConfig.model_validate(source.document.tools.execution.model_dump()),
+            agent_creation=creation,
             subagents=source.document.subagents,
             role=selection.role,
             coordinator_thread_id=selection.coordinator_thread_id,

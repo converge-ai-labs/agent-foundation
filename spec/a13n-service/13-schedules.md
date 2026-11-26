@@ -61,6 +61,8 @@ Scheduled Entries carry an internal nullable `schedule_occurrence_id`. Their ini
 
 Existing Run triggers remain unchanged: same-transaction acceptance uses `input`, later inbox acceptance uses `queued`. The trigger Entry's assignment identifies the initial Run; `completion_run_id` identifies the final Run in its waiting/resume sequence.
 
+The App SDK selects owned Schedules by their immutable `app_id` and optional `app_context`; labels are independent filters. An App Schedule passes ownership and context to its Occurrences and fresh Sessions or Threads and marks its Inbox Entries and the resulting Run's `trigger_app_id`. The Thread remains the source of Run ownership. Public updates preserve an App Schedule's target; a target change is rejected with `409 app_managed_schedule_target`. Other Schedule operations retain their ordinary authority rules.
+
 ## Authority
 
 Creating a Schedule is explicit durable delegation. The creator becomes its execution principal; clients cannot select another identity. Its authority is the creator's current Workspace verbs, already narrowed by credential confinement and any accepted execution ceiling. Future grants never widen the saved ceiling. Submission checks the current principal, Workspace and grants against it. Manual dispatch further narrows authority to the caller's current credential.

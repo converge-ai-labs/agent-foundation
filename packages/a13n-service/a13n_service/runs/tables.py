@@ -22,6 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSON, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.app_provenance import AppOwned, app_context_requires_owner, guard_app_provenance
 from a13n_service.infra.db import Base, Stamped, immutable, rules, trigger
 from a13n_service.runs.schemas import EntryStatus, RunStatus
 
@@ -58,9 +59,10 @@ END $$
 """
 
 
-class SessionRow(Stamped, Base):
+class SessionRow(AppOwned, Stamped, Base):
     __tablename__ = "sessions"
     __table_args__ = (
+        app_context_requires_owner(),
         Index("ix_sessions_workspace_updated", "workspace_id", "updated_at", "id"),
         CheckConstraint("purpose IN ('conversation', 'memory_organization')", name="purpose"),
         UniqueConstraint("workspace_id", "id"),
@@ -72,7 +74,7 @@ class SessionRow(Stamped, Base):
             use_alter=True,
         ),
         # A run's acceptance updates the session but not its version, so label edits keep their ETag.
-        rules(unversioned=("last_run_id", "updated_at")),
+        rules(guard_app_provenance("sessions", "app_id", "app_context"), unversioned=("last_run_id", "updated_at")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
@@ -88,9 +90,10 @@ class SessionRow(Stamped, Base):
     last_run_id: Mapped[str | None] = mapped_column(String(72))
 
 
-class ThreadRow(Stamped, Base):
+class ThreadRow(AppOwned, Stamped, Base):
     __tablename__ = "threads"
     __table_args__ = (
+        app_context_requires_owner(),
         Index("ix_threads_session_created", "workspace_id", "session_id", "created_at", "id"),
         UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("workspace_id", "session_id", "id"),
@@ -160,6 +163,7 @@ class ThreadRow(Stamped, Base):
         # advance_threads evidence: idle threads; the sweep then excludes those whose last run waits or paused them.
         Index("ix_threads_advanceable", "id", postgresql_where=text("current_run_id IS NULL AND archived_at IS NULL")),
         rules(
+            guard_app_provenance("threads", "app_id", "app_context"),
             _CHECK_THREAD_POINTERS,
             _thread_pointer_check("threads"),
             # Tables whose statements change a thread's inbox or mounts share one version bump.
@@ -440,6 +444,7 @@ class InboxEntryRow(Base):
             name="request",
         ),
         rules(
+            guard_app_provenance("inbox_entries", "app_id"),
             """
             CREATE FUNCTION guard_entry() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
@@ -474,6 +479,7 @@ class InboxEntryRow(Base):
             " REFERENCING NEW TABLE AS changed FOR EACH STATEMENT EXECUTE FUNCTION touch_threads()",
         ),
     )
+    app_id: Mapped[str | None] = mapped_column(String(128))
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]
@@ -512,9 +518,10 @@ _RUN_PROGRESS = (
 )
 
 
-class RunRow(Stamped, Base):
+class RunRow(AppOwned, Stamped, Base):
     __tablename__ = "runs"
     __table_args__ = (
+        app_context_requires_owner(),
         ForeignKeyConstraint(
             ["thread_id", "occurrence_trigger_entry_id"],
             ["inbox_entries.thread_id", "inbox_entries.id"],
@@ -612,6 +619,7 @@ class RunRow(Stamped, Base):
         CheckConstraint("(status = 'running') = (current_attempt_id IS NOT NULL)", name="attempt"),
         CheckConstraint("attempts >= 0 AND attempts <= max_attempts", name="attempts"),
         rules(
+            guard_app_provenance("runs", "app_id", "app_context", "trigger_app_id"),
             f"""
             CREATE FUNCTION guard_run() RETURNS trigger LANGUAGE plpgsql AS $$
             DECLARE new_facts runs := NEW; old_facts runs := OLD;
@@ -655,10 +663,19 @@ class RunRow(Stamped, Base):
             trigger("runs", "guard_run"),
             _thread_pointer_check("runs"),
             # A checkpoint commit keeps the run's version, so session streams send its state only on real changes.
-            unversioned=("checkpoint", "tail", "memory_cursors", "search_vector"),
+            unversioned=(
+                "checkpoint",
+                "tail",
+                "memory_cursors",
+                "search_vector",
+                "trigger_app_id",
+                "app_id",
+                "app_context",
+            ),
             compare_columns=True,
         ),
     )
+    trigger_app_id: Mapped[str | None] = mapped_column(String(128))
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))
     workspace_id: Mapped[str]

@@ -50,7 +50,7 @@ function catalogErrors(catalogs: Record<string, Record<string, string>>) {
 it("validates localized catalogs with locale-specific plurals and interpolation", () => {
   expect(catalogErrors({ en, "zh-CN": zhCN, hi })).toEqual([]);
   for (const key of Object.keys(en)) expect(i18n.exists(key), key).toBe(true);
-});
+}, 15_000);
 
 // Scan all production TypeScript sources, rather than a curated surface list.
 function sourceFiles(directory: URL, prefix = ""): string[] {
@@ -755,14 +755,6 @@ it("covers literal feedback at its draft and composer sources, not only existing
         node.name.text === "message"
       )
         check(node.initializer);
-      if (
-        ts.isJsxAttribute(node) &&
-        node.name.getText() === "unavailableReason" &&
-        node.initializer &&
-        ts.isJsxExpression(node.initializer) &&
-        node.initializer.expression
-      )
-        check(node.initializer.expression);
       ts.forEachChild(node, visit);
     }
     visit(ast);

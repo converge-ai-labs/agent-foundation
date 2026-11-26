@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { browserSubmissionHeaders } from "../shell/notification-browser";
 import { useInputPrediction } from "./input-prediction";
 import { Dictation } from "./dictation";
@@ -407,6 +408,23 @@ export function submitContinuation(
   );
 }
 
+export type ComposerBlockAction = {
+  label: string;
+  onClick?: () => void;
+  to?: string;
+  loading?: boolean;
+};
+
+export type ComposerBlock = {
+  kind: "loading" | "action_required" | "error";
+  message: string;
+  detail?: string;
+  action?: ComposerBlockAction;
+  secondaryAction?: ComposerBlockAction;
+  showWhenEmpty?: boolean;
+  coveredByFeedback?: boolean;
+};
+
 export function Composer({
   referenceAdded = 0,
   autoFocus = false,
@@ -426,12 +444,11 @@ export function Composer({
   renderHeader,
   threadId,
   activity,
-  canRun,
+  runBlock,
   dictation,
   canClearContext = false,
   continuationId,
   predictionEnabled = false,
-  unavailableReason,
   feedback,
   feedbackError,
   suppressConnectionNotice = false,
@@ -441,12 +458,11 @@ export function Composer({
 }: {
   threadId: string;
   activity: Schema<"RootActivityView">;
-  canRun: boolean;
+  runBlock?: ComposerBlock | null;
   dictation?: DictationTarget;
   canClearContext?: boolean;
   continuationId?: string | null;
   predictionEnabled?: boolean;
-  unavailableReason?: string;
   feedback?: ReactNode;
   feedbackError?: unknown;
   suppressConnectionNotice?: boolean;
@@ -459,9 +475,15 @@ export function Composer({
   externalAgent?: boolean;
   acpCommands?: Schema<"AcpCommand">[];
   skillDefaults?: Schema<"NewThreadDefaults">;
-  prepareThread?: () => Promise<void>;
+  prepareThread?: (coordinator: boolean) => Promise<void>;
   queuedInput?: { pending: boolean; locked: boolean; submit: () => void };
-  coordinator?: { active: boolean; available: boolean; locked?: boolean };
+  coordinator?: {
+    active: boolean;
+    available: boolean;
+    unavailableReason?: "no_project" | "pending_requests";
+    locked?: boolean;
+    defaultEnabled?: boolean;
+  };
   owner?: { title: string; onRemove?: () => void; locked?: boolean };
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
@@ -470,6 +492,7 @@ export function Composer({
   leadingControls?: ReactNode;
   renderHeader?: (modes: ReactNode) => ReactNode;
 }) {
+  const canRun = !runBlock;
   const { t } = useTranslation();
   const sendShortcut = useComposerSendShortcut();
   const draft = useDraft(threadId);
@@ -502,10 +525,12 @@ export function Composer({
     coordinator?.active ||
     promotion.data?.role === "coordinator" ||
     coordinatorStatus.data?.thread.role === "coordinator";
+  const coordinatorRequested =
+    draft.coordinator ?? coordinator?.defaultEnabled ?? false;
   const coordinatorBlocked =
     draft.coordinatorUncertain ||
     (!owner &&
-      draft.coordinator &&
+      coordinatorRequested &&
       !coordinatorActive &&
       !coordinator?.available);
   const connection = useRef<ReturnType<ThreadDraft["connect"]> | null>(null);
@@ -554,11 +579,17 @@ export function Composer({
     values?: Record<string, string>,
     raw = false,
   ) => setNotice({ message, values, raw });
+  const previewCoordinator =
+    !coordinatorActive &&
+    !owner &&
+    coordinatorRequested &&
+    !!coordinator?.available;
   const skillContext = JSON.stringify([
     local,
     skillDefaults,
     draft.environment,
     activity.receipt_id,
+    coordinatorActive || previewCoordinator,
   ]);
   const loadSkills: LoadSkills = () =>
     queries.fetchQuery({
@@ -567,6 +598,9 @@ export function Composer({
         local
           ? result(
               transport.client.POST("/api/threads/skills-preview", {
+                ...(previewCoordinator
+                  ? { params: { query: { coordinator: true } } }
+                  : {}),
                 body: {
                   ...skillDefaults,
                   ...draft.environment,
@@ -574,7 +608,13 @@ export function Composer({
                 signal,
               }),
             )
-          : loadThreadSkills(transport, threadId, draft.environment, signal),
+          : loadThreadSkills(
+              transport,
+              threadId,
+              draft.environment,
+              signal,
+              previewCoordinator,
+            ),
       staleTime: 10000,
     });
   const [syncDelayed, setSyncDelayed] = useState(false);
@@ -758,8 +798,7 @@ export function Composer({
         : "Send message - {{shortcut}}",
     { shortcut: sendShortcut.label },
   );
-  const blockedReason =
-    hasInput &&
+  const activeBlock: ComposerBlock | null =
     !preparing &&
     !pending &&
     !unknown &&
@@ -767,21 +806,93 @@ export function Composer({
     !draft.error &&
     !draft.replacement
       ? missing
-        ? uploading
-          ? t("Waiting for attachments…")
-          : t("Resolve unavailable attachments before sending.")
-        : coordinatorBlocked && !busy
-          ? t("Choose a project and an idle chat to coordinate agents.")
+        ? {
+            kind: uploading ? "loading" : "action_required",
+            message: uploading
+              ? t("Waiting for attachments…")
+              : t("Resolve unavailable attachments before sending."),
+            showWhenEmpty: false,
+          }
+        : clearing
+          ? {
+              kind: "loading",
+              message: t("Clearing context…"),
+            }
           : !ready
-            ? t("Waiting for the shared draft connection…")
-            : !busy && !canRun
-              ? unavailableReason
-                ? composerMessage(unavailableReason, t)
-                : t("Refresh chat status before sending.")
-              : busy && !canSteer && !canInterrupt && !interrupt
-                ? t("This operation cannot accept another message yet.")
-                : undefined
-      : undefined;
+            ? {
+                kind: "loading",
+                message:
+                  disconnected ||
+                  draft.status === "Server restarted" ||
+                  (draft.status === "Disconnected" &&
+                    draft.draftId !== undefined)
+                    ? t("Waiting for the shared draft to reconnect…")
+                    : t("Waiting for the shared draft connection…"),
+              }
+            : !busy && runBlock
+              ? runBlock
+              : !busy && !draft.coordinatorUncertain && coordinatorBlocked
+                ? {
+                    kind: "action_required",
+                    message:
+                      coordinator?.unavailableReason === "no_project"
+                        ? t("Choose a project to coordinate agents.")
+                        : coordinator?.unavailableReason === "pending_requests"
+                          ? t(
+                              "Answer pending requests before coordinating agents.",
+                            )
+                          : t(
+                              "Choose a project and an idle chat to coordinate agents.",
+                            ),
+                    showWhenEmpty: false,
+                  }
+                : busy &&
+                    !canSteer &&
+                    !canInterrupt &&
+                    !interrupt &&
+                    !queuedInput?.locked
+                  ? {
+                      kind: "loading",
+                      message:
+                        activity.state === "preparing"
+                          ? t("Starting operation…")
+                          : externalAgent
+                            ? t("Waiting for the current response to finish…")
+                            : t(
+                                "This operation cannot accept another message yet.",
+                              ),
+                      showWhenEmpty: false,
+                      coveredByFeedback:
+                        activity.state === "preparing" && !!feedback,
+                    }
+                  : null
+      : null;
+  const showActiveBlock =
+    !!activeBlock &&
+    !activeBlock.coveredByFeedback &&
+    (hasInput ||
+      (activeBlock.showWhenEmpty ?? activeBlock.kind !== "loading")) &&
+    !error &&
+    draft.submission.kind !== "rejected";
+  const renderBlockAction = (
+    action: ComposerBlockAction,
+    variant: "outline" | "ghost",
+  ) =>
+    action.to ? (
+      <Button variant={variant} size="sm" render={<Link to={action.to} />}>
+        {action.label}
+      </Button>
+    ) : (
+      <Button
+        type="button"
+        variant={variant}
+        size="sm"
+        loading={action.loading}
+        onClick={action.onClick}
+      >
+        {action.label}
+      </Button>
+    );
   const submit = async (action: "send" | "steer", expectedInput?: string) => {
     if (dictating) return;
     if (action === "send" ? !canSend || !!interruptRef.current : !canSteer)
@@ -816,7 +927,7 @@ export function Composer({
     const promote =
       action === "send" &&
       !owner &&
-      draft.coordinator &&
+      coordinatorRequested &&
       !coordinatorActive &&
       !prepareThread;
     const metadata = attachmentMetadata();
@@ -855,7 +966,7 @@ export function Composer({
           expectedInput !== undefined
           ? async () => {
               if (prepareThread) {
-                await prepareThread();
+                await prepareThread(coordinatorRequested);
                 controller.signal.throwIfAborted();
                 await Promise.all(
                   attachmentSelections(draft.doc).flatMap(({ key }) => {
@@ -1163,9 +1274,9 @@ export function Composer({
     preparing ||
     pending ||
     unknown ||
-    (!draft.coordinator && (!canRun || !coordinator?.available));
+    (!coordinatorRequested && (!canRun || !coordinator?.available));
   const toggleCoordinator = () => {
-    draft.coordinator = !draft.coordinator;
+    draft.coordinator = !coordinatorRequested;
     draft.notify();
   };
   const ownerControl = owner && (
@@ -1201,10 +1312,10 @@ export function Composer({
       </span>
     ) : (
       <Button
-        variant={draft.coordinator ? "secondary" : "ghost"}
+        variant={coordinatorRequested ? "secondary" : "ghost"}
         size="sm"
         className={styles.goalButton}
-        aria-pressed={draft.coordinator}
+        aria-pressed={coordinatorRequested}
         title={
           coordinator.available
             ? t(
@@ -1223,7 +1334,7 @@ export function Composer({
   const modes = (draft.mode === "goal" ||
     ownerControl ||
     coordinatorActive ||
-    draft.coordinator) && (
+    coordinatorRequested) && (
     <div className={styles.composerModes}>
       {!transport.shareId &&
         draft.mode === "goal" &&
@@ -1233,7 +1344,7 @@ export function Composer({
       {ownerControl ||
         (coordinatorActive
           ? coordinatorControl
-          : draft.coordinator && coordinatorControl
+          : coordinatorRequested && coordinatorControl
             ? cloneElement(coordinatorControl, {
                 "aria-label": t("Turn off agent coordination"),
               })
@@ -1298,16 +1409,36 @@ export function Composer({
             </Button>
           </div>
         )}
-        {blockedReason &&
-          (!feedback ||
-            (!!queuedInput && canRun && activity.state !== "preparing")) &&
-          !showSyncStatus &&
-          !error &&
-          draft.submission.kind !== "rejected" && (
-            <p role="status" className={styles.composerConnection}>
-              {blockedReason}
+        {showActiveBlock &&
+          activeBlock &&
+          (activeBlock.kind === "loading" ? (
+            <p role="status" className={styles.composerLoading}>
+              <CircleNotch
+                className={styles.threadRunning}
+                aria-hidden="true"
+              />
+              <span>{activeBlock.message}</span>
             </p>
-          )}
+          ) : (
+            <div role="alert" className={styles.composerBlock}>
+              <div className={styles.composerBlockText}>
+                <p>{activeBlock.message}</p>
+                {activeBlock.detail && (
+                  <small className={styles.composerBlockDetail}>
+                    {activeBlock.detail}
+                  </small>
+                )}
+              </div>
+              {(activeBlock.action || activeBlock.secondaryAction) && (
+                <div className={styles.composerBlockActions}>
+                  {activeBlock.action &&
+                    renderBlockAction(activeBlock.action, "outline")}
+                  {activeBlock.secondaryAction &&
+                    renderBlockAction(activeBlock.secondaryAction, "ghost")}
+                </div>
+              )}
+            </div>
+          ))}
         {interrupt && (
           <div className={styles.composerStatus}>
             <p role="status">{t("Interrupting to send…")}</p>
@@ -1537,7 +1668,7 @@ export function Composer({
             </span>
             {!transport.shareId && !queuedInput && (
               <TaskOptions
-                coordinatorEnabled={draft.coordinator}
+                coordinatorEnabled={coordinatorRequested}
                 goal={
                   <Switch
                     aria-label={t("Goal")}
@@ -1561,7 +1692,7 @@ export function Composer({
                           ? coordinatorControl.props.title
                           : undefined
                       }
-                      checked={draft.coordinator}
+                      checked={coordinatorRequested}
                       disabled={coordinatorDisabled}
                       onCheckedChange={(enabled) => {
                         draft.coordinator = enabled;
@@ -1655,9 +1786,9 @@ export function Composer({
                             : t("Send")
               }
               title={
-                (stopAction ? stopNotice : undefined) ??
-                blockedReason ??
-                (stopAction ? t("Stop this operation") : undefined)
+                stopAction
+                  ? (stopNotice ?? t("Stop this operation"))
+                  : activeBlock?.message
               }
               onClick={() => (stopAction ? void stop() : sendInput())}
             >

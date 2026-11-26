@@ -142,6 +142,8 @@ A Coordinator focuses on planning, delegation, and review while delegating subst
 2. Expand the Coordinator in the sidebar to inspect its workers, or click **New worker** to assign a task directly.
 3. Toggle **Pause/Enable automatic follow-up** in the Coordinator menu to control whether worker completion events automatically wake the Coordinator.
 
+To preselect **Coordinate agents** in new Project chats, turn on **Settings → Chats → New chats → Coordinate agents by default** and save. The instance setting is `webui.coordinator_by_default` (off by default). You can still turn **Coordinate agents** off before the first message.
+
 ## Agent collaboration
 
 Agents can inspect related chats, spin up new work, and message existing conversations within their role:
@@ -153,7 +155,7 @@ Agents can inspect related chats, spin up new work, and message existing convers
 | `spawn_subagent`      | A child execution inside the current conversation         | Root chats with dynamic subagents enabled |
 | `send_thread_message` | Sends a follow-up or steering message to an existing chat | Allowed roots within collaboration scope  |
 
-Configure which Models agents may use for new chats and subagents under **Settings → Agents → Agent creation** (`subagents.dynamic.allowed_models` and `subagents.dynamic.default_model`).
+Configure which Agents and Models agents may use for new chats, Coordinator workers, and subagents under **Settings → Agents → Agent creation** (`agent_creation.allowed_agents`, `agent_creation.default_agent`, `agent_creation.allowed_models`, and `agent_creation.default_model`).
 
 ## Observe Memory and configure the workbench
 

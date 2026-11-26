@@ -30,6 +30,7 @@ import {
   CaretRight,
   Check,
   CaretDown,
+  CircleNotch,
   X,
 } from "@phosphor-icons/react";
 import styles from "./composer-settings.module.css";
@@ -38,10 +39,17 @@ type SearchOption = ComponentProps<
   typeof SearchPicker
 >["groups"][number]["options"][number];
 
-type Page = "root" | "model" | "agent" | "thinking" | "speed" | "reasoning";
+type Page =
+  | "root"
+  | "model"
+  | "agent"
+  | "thinking"
+  | "speed"
+  | "reasoning"
+  | `acp:${string}`;
 const SettingsContext = createContext<{
   page: Page;
-  navigate: (page: Page) => void;
+  navigate: (page: Page, subpageTitle?: string) => void;
   mobile: boolean;
   close: () => void;
   open: boolean;
@@ -53,14 +61,18 @@ export function ComposerSettings({
   className,
   label,
   triggerDescription,
+  loading = false,
+  onOpen,
 }: {
   children: ReactNode;
   className?: string;
   label?: ReactNode;
   triggerDescription?: string;
+  loading?: boolean;
+  onOpen?: () => void;
 }) {
   const { t } = useTranslation();
-  const titles: Record<Page, string> = {
+  const titles: Partial<Record<Page, string>> = {
     root: t("Agent & Model"),
     model: t("Select model"),
     agent: t("Select agent"),
@@ -68,10 +80,15 @@ export function ComposerSettings({
     speed: t("Speed"),
     reasoning: t("Reasoning mode"),
   };
-  const rootTitle = titles.root;
+  const rootTitle = titles.root!;
   const navigationLabel = t("Agent & Model settings");
   const [open, setOpen] = useState(false);
-  const [page, navigate] = useState<Page>("root");
+  const [page, setPage] = useState<Page>("root");
+  const [subpageTitle, setSubpageTitle] = useState("");
+  const navigate = (next: Page, nextTitle = "") => {
+    setPage(next);
+    setSubpageTitle(nextTitle);
+  };
   const [mobile, setMobile] = useState(
     () => window.matchMedia("(max-width: 639px)").matches,
   );
@@ -82,14 +99,19 @@ export function ComposerSettings({
     return () => query.removeEventListener("change", update);
   }, []);
   const changeOpen = (next: boolean) => {
-    if (next) navigate("root");
+    if (next) {
+      navigate("root");
+      onOpen?.();
+    }
     setOpen(next);
   };
   const content = (
     <SettingsContext
       value={{ page, navigate, mobile, open, close: () => changeOpen(false) }}
     >
-      {page !== "thinking" && <SettingsHeader title={titles[page]} />}
+      {page !== "thinking" && (
+        <SettingsHeader title={titles[page] ?? subpageTitle} />
+      )}
       <div className={styles.body}>{children}</div>
     </SettingsContext>
   );
@@ -110,11 +132,20 @@ export function ComposerSettings({
         document.activeElement.blur();
     },
   };
+  const triggerIcon = loading ? (
+    <CircleNotch
+      className={styles.loadingIndicator}
+      aria-hidden="true"
+      data-acp-loading=""
+    />
+  ) : (
+    <CaretDown aria-hidden="true" />
+  );
   return mobile ? (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger render={trigger} {...triggerProps}>
         <span>{label ?? t("Model")}</span>
-        <CaretDown aria-hidden="true" />
+        {triggerIcon}
       </DialogTrigger>
       <DialogPopup
         bottomStickOnMobile
@@ -128,7 +159,7 @@ export function ComposerSettings({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger render={trigger} {...triggerProps}>
         <span>{label ?? t("Model")}</span>
-        <CaretDown aria-hidden="true" />
+        {triggerIcon}
       </PopoverTrigger>
       <PopoverPopup side="top" align="end" className={styles.popup}>
         {content}

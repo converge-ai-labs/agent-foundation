@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createTransport, type Schema } from "../transport/client";
+import { activitySummary, describeTool } from "./tool-presentation";
 import { mockWebSocket, FakeWebSocket } from "../../tests/fake-websocket";
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -1680,6 +1681,99 @@ function rawFrame(
     },
   });
 }
+it("classifies ACP commands and file reads before the run is saved", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let position = 0;
+  const send = (
+    id: string,
+    payload: Record<string, unknown>,
+    state?: string,
+  ) => {
+    position++;
+    display.accept(
+      rawFrame(100 + position, position, payload, id, "tool_call", state),
+    );
+  };
+  for (const id of ["ls", "pwd"]) {
+    send(id, {
+      type: "TOOL_CALL_START",
+      toolCallId: id,
+      toolCallName: "run_command",
+    });
+    send(id, {
+      type: "TOOL_CALL_ARGS",
+      toolCallId: id,
+      delta: JSON.stringify({ CommandLine: id }),
+    });
+    send(id, {
+      type: "CUSTOM",
+      name: "a13n.acp.tool",
+      value: {
+        toolCallId: id,
+        title: `Run ${id}`,
+        kind: "execute",
+        status: "in_progress",
+      },
+    });
+  }
+  const tool = (id: string) => {
+    const block = display.blocks.get(id)!;
+    return {
+      ...block,
+      name: block.name!,
+      input: block.text,
+      inputComplete: block.done,
+      live: true,
+    };
+  };
+  expect(describeTool(tool("pwd"))).toMatchObject({
+    label: "Run command",
+    summary: "pwd",
+    running: true,
+  });
+  expect(activitySummary([tool("ls"), tool("pwd")]).title).toBe(
+    "Running 2 commands",
+  );
+
+  for (const id of ["ls", "pwd"]) {
+    send(id, { type: "TOOL_CALL_END", toolCallId: id });
+    send(
+      id,
+      { type: "TOOL_CALL_RESULT", toolCallId: id, content: "workspace" },
+      "completed",
+    );
+  }
+  expect(activitySummary([tool("ls"), tool("pwd")]).title).toBe(
+    "Ran 2 commands",
+  );
+
+  const id = "read";
+  send(id, {
+    type: "TOOL_CALL_START",
+    toolCallId: id,
+    toolCallName: "read_file",
+  });
+  send(id, {
+    type: "CUSTOM",
+    name: "a13n.acp.tool",
+    value: {
+      toolCallId: id,
+      title: "Read README",
+      kind: "read",
+      status: "in_progress",
+      locations: [{ path: "/workspace/README.md" }],
+    },
+  });
+  expect(describeTool(tool(id))).toMatchObject({
+    label: "Read",
+    summary: "/workspace/README.md",
+    running: true,
+  });
+  expect(display.blocks.size).toBe(3);
+});
+
 it("uses frozen compact coverage, not the later checkpoint notification position", () => {
   const display = new FocusDisplay();
   display.accept(snapshot(0));
@@ -2500,4 +2594,136 @@ it("re-folds transient progress without advancing the suffix and clears it at sc
   expect(display.blocks.get("tool")).toMatchObject({ stopped: true });
   expect(display.blocks.get("tool")?.progress).toBeUndefined();
   expect(display.gap).toBe(false);
+});
+
+it("folds a13n.acp.compaction states into context activity and tri-state clears acpContext on completion", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let seq = 100;
+  let disp = 0;
+  const emit = (name: string, value: Record<string, unknown>, itemId: string) =>
+    display.accept(
+      rawFrame(
+        ++seq,
+        ++disp,
+        { type: "CUSTOM", name, value },
+        itemId,
+        "observation",
+        "completed",
+      ),
+    );
+
+  emit("a13n.acp.usage", { used: 800, size: 1000 }, "usage");
+  expect(display.acpContext).toEqual({ used: 800, size: 1000 });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c1", status: "in_progress", summary: "Working..." },
+    "cmp-c1",
+  );
+  expect(display.acpContext).toEqual({ used: 800, size: 1000 });
+  expect(display.blocks.get("context:c1")).toMatchObject({
+    kind: "activity",
+    context: "compaction",
+    contextState: "in-progress",
+    result: "Working...",
+  });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c1", status: "completed", summary: "Final summary." },
+    "cmp-c1",
+  );
+  emit("a13n.acp.usage", { cleared: true }, "usage");
+  expect(display.acpContext).toBeNull();
+  expect(display.blocks.get("context:c1")).toMatchObject({
+    contextState: "completed",
+    result: "Final summary.",
+  });
+
+  emit("a13n.acp.usage", { used: 120, size: 1000 }, "usage");
+  expect(display.acpContext).toEqual({ used: 120, size: 1000 });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c2", status: "failed", error: "provider_error" },
+    "cmp-c2",
+  );
+  expect(display.acpContext).toEqual({ used: 120, size: 1000 });
+  expect(display.blocks.get("context:c2")).toMatchObject({
+    contextState: "failed",
+    contextDiagnostics: ["provider_error"],
+    result: "",
+  });
+
+  emit(
+    "a13n.acp.compaction",
+    { compactionId: "c3", status: "cancelled" },
+    "cmp-c3",
+  );
+  expect(display.acpContext).toEqual({ used: 120, size: 1000 });
+  expect(display.blocks.get("context:c3")).toMatchObject({
+    contextState: "cancelled",
+    result: "",
+  });
+});
+
+it("preserves post-compaction acpContext across compact display snapshot replay", () => {
+  const replayed = new FocusDisplay();
+  replayed.accept(snapshot(0));
+  replayed.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  replayed.accept(
+    compactFrame(101, [
+      compactItem(
+        "usage-slot",
+        1,
+        { name: "a13n.acp.usage", value: { used: 150, size: 1000 } },
+        "observation",
+      ),
+      compactItem(
+        "compaction-slot",
+        2,
+        {
+          name: "a13n.acp.compaction",
+          value: {
+            compactionId: "c1",
+            status: "completed",
+            summary: "Compacted.",
+          },
+        },
+        "observation",
+      ),
+    ]),
+  );
+  expect(replayed.acpContext).toEqual({ used: 150, size: 1000 });
+  expect(replayed.blocks.get("context:c1")).toMatchObject({
+    context: "compaction",
+    contextState: "completed",
+    result: "Compacted.",
+  });
+
+  const cleared = new FocusDisplay();
+  cleared.accept(snapshot(0));
+  cleared.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  cleared.accept(
+    compactFrame(101, [
+      compactItem(
+        "usage-slot",
+        1,
+        { name: "a13n.acp.usage", value: { cleared: true } },
+        "observation",
+      ),
+      compactItem(
+        "compaction-slot",
+        2,
+        {
+          name: "a13n.acp.compaction",
+          value: { compactionId: "c1", status: "completed" },
+        },
+        "observation",
+      ),
+    ]),
+  );
+  expect(cleared.acpContext).toBeNull();
 });

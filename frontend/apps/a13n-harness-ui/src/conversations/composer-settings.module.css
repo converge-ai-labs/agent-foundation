@@ -148,7 +148,18 @@
 }
 .modelTrigger > svg {
   width: 12px;
+  height: 12px;
   flex-shrink: 0;
+}
+.loadingIndicator {
+  color: var(--a13n-secondary);
+  animation: settingsSpin 1.4s linear infinite;
+  transform-origin: center;
+}
+@keyframes settingsSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .taskPopup {
   width: min(240px, calc(100vw - 24px));
@@ -563,6 +574,7 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
+  .loadingIndicator,
   .effortValue {
     animation: none;
   }

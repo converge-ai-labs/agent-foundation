@@ -1,15 +1,20 @@
 import { useTranslation } from "../i18n";
 import { modifierLabel } from "../platform";
 import { HelpTip } from "../shell/help-tip";
-import { ModelIcon } from "../shell/model-identity";
-import { SettingsTextField as TextField } from "../shell/settings";
-import { SettingsChoice as ChoiceField } from "../shell/settings";
-import { SettingsRow, SettingsSection } from "../shell/settings";
+import { acpPresetBrand, ModelIcon } from "../shell/model-identity";
+import {
+  SettingsChoice as ChoiceField,
+  SettingsRow,
+  SettingsSection,
+  SettingsTextField as TextField,
+  SettingsToggle,
+} from "../shell/settings";
 import { Link, useLocation } from "react-router";
 import environments from "./environments.module.css";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
+import { AgentSelectionField } from "./agent-selection";
 import { ModelSelectionField } from "./model-selection";
 import { Button, FormField, Input, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
@@ -159,11 +164,58 @@ export function ResourceFields({
       ? selected.filter((value): value is string => typeof value === "string")
       : null;
   };
+  const allowedAgentsPath = ["agent_creation", "allowed_agents"];
+  const defaultAgentPath = ["agent_creation", "default_agent"];
+  const allowedModelsPath = ["agent_creation", "allowed_models"];
+  const defaultModelPath = ["agent_creation", "default_model"];
+  const legacyAllowedModelsPath = ["subagents", "dynamic", "allowed_models"];
+  const legacyDefaultModelPath = ["subagents", "dynamic", "default_model"];
+  const allowedAgentsRaw = strings(allowedAgentsPath);
+  const allowedAgents = allowedAgentsRaw ?? [];
   const allowedModels =
-    strings(["subagents", "dynamic", "allowed_models"]) ?? [];
-  const defaultModelPath = ["subagents", "dynamic", "default_model"];
+    strings(allowedModelsPath) ?? strings(legacyAllowedModelsPath) ?? [];
+  const defaultModel = document.hasIn(defaultModelPath)
+    ? text(defaultModelPath)
+    : text(legacyDefaultModelPath);
+  const updateCreationModels = (
+    nextAllowed: string[] | undefined,
+    nextDefault: string | undefined,
+  ) => {
+    let updated = updateDocument(source, allowedModelsPath, nextAllowed);
+    updated = updateDocument(updated, defaultModelPath, nextDefault);
+    if (document.hasIn(legacyAllowedModelsPath))
+      updated = updateDocument(updated, legacyAllowedModelsPath, undefined);
+    if (document.hasIn(legacyDefaultModelPath))
+      updated = updateDocument(updated, legacyDefaultModelPath, undefined);
+    onChange(updated);
+  };
   const dynamicSubagentsEnabled =
     get(["subagents", "dynamic", "enabled"]) === true;
+  const creationAgentOptions = (selectors.data?.agents ?? [])
+    .filter(
+      (agent) =>
+        allowedAgentsRaw === null || allowedAgentsRaw.includes(agent.agent_id),
+    )
+    .map((agent) => {
+      const presetBrand =
+        agent.kind === "acp_agent" ? acpPresetBrand(agent.preset) : undefined;
+      const model =
+        agent.kind === "acp_agent"
+          ? undefined
+          : (selectors.data?.models ?? []).find(
+              (item) => item.model_id === agent.model_id,
+            );
+      return {
+        value: agent.agent_id,
+        label: agent.name,
+        badge: agent.kind === "acp_agent" ? t("ACP agent") : undefined,
+        icon: presetBrand ? (
+          <ModelIcon modelIdentity={presetBrand} />
+        ) : model ? (
+          <ModelIcon model={model} />
+        ) : undefined,
+      };
+    });
   const list = (
     label: string,
     path: string[],
@@ -251,97 +303,218 @@ export function ResourceFields({
           nameField={field(t("Name"), ["name"])}
         />
       )}
-      {kind === "acp_agent" && (
-        <>
-          <SettingsSection variant="grouped" title={t("General")}>
-            {field(t("Name"), ["name"])}
-            <ResourceChoice
-              label={t("ACP preset")}
-              value={text(["preset"]) || "custom"}
-              onValueChange={(value) => {
-                const preset = presets.data?.find((item) => item.id === value);
-                let next = updateDocument(source, ["preset"], value);
-                if (preset?.executable) {
-                  next = updateDocument(
-                    next,
-                    ["command"],
-                    preset.detected_path ?? preset.executable,
-                  );
-                  next = updateDocument(next, ["args"], preset.args ?? []);
-                }
-                onChange(next);
-              }}
-              options={(presets.data ?? []).map((item) => ({
-                value: item.id,
-                label: !item.executable
-                  ? t("Custom ACP Agent")
-                  : item.detected_path
-                    ? t("{{name}} · Detected", { name: item.name })
-                    : t("{{name}} · Not installed", { name: item.name }),
-              }))}
-            />
-            {presets.data
-              ?.filter(
-                (item) =>
-                  item.id === text(["preset"]) &&
-                  item.install_url &&
-                  !item.detected_path,
-              )
-              .map((item) => (
-                <SettingsRow key={item.id} label={t("Install on the Host")}>
-                  <a target="_blank" rel="noreferrer" href={item.install_url!}>
-                    {t("Installation instructions")}
-                  </a>
-                </SettingsRow>
-              ))}
-            <ErrorNotice error={presets.error} />
-            <TextField
-              label={t("Executable")}
-              value={text(["command"])}
-              onChange={(value) => set(["command"], value || undefined)}
-              description={t(
-                "Use a command on the Host PATH or an absolute path. Leave blank to use the preset executable.",
-              )}
-            />
-            <SettingsRow
-              label={t("Arguments")}
-              description={t(
-                "One argument per line. Antigravity’s skip-permissions flag grants unattended access as the Host account.",
-              )}
-            >
-              <Textarea
-                aria-label={t("Arguments")}
-                rows={3}
-                key={text(["preset"])}
-                defaultValue={
-                  Array.isArray(raw.args) ? raw.args.join("\n") : ""
-                }
-                onChange={(event) =>
-                  set(["args"], event.target.value.split("\n").filter(Boolean))
-                }
+      {kind === "acp_agent" &&
+        (() => {
+          const presetValue = text(["preset"]) || "custom";
+          const selectedPreset = presets.data?.find(
+            (item) => item.id === presetValue,
+          );
+          const presetNames = new Set(
+            (presets.data ?? []).map((item) => item.name),
+          );
+          const explicitCommand = text(["command"]);
+          const explicitArgs = Array.isArray(raw.args)
+            ? raw.args.map((item: unknown) => String(item))
+            : undefined;
+          const presetFallbackArgs =
+            presetValue === "antigravity"
+              ? ["acp", "--process-per-session"]
+              : [];
+          const resolvedArgs: readonly string[] =
+            !explicitCommand && selectedPreset?.executable === "npx"
+              ? [...(selectedPreset.args ?? []), ...(explicitArgs ?? [])]
+              : (explicitArgs ?? selectedPreset?.args ?? presetFallbackArgs);
+          const commandPreview = [
+            explicitCommand || selectedPreset?.executable || "",
+            ...resolvedArgs,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          const commandFields = (
+            <>
+              <TextField
+                label={t("Executable")}
+                value={text(["command"])}
+                onChange={(value) => set(["command"], value || undefined)}
+                description={t(
+                  "Use a command on the Host PATH or an absolute path. Leave blank to use the preset executable.",
+                )}
               />
-            </SettingsRow>
-            {list(
-              t("MCP servers"),
-              ["mcp_servers"],
-              selectors.data?.mcp_servers.map((item) => ({
-                value: item.resource_id,
-                label: item.name,
-              })) ?? [],
-            )}
-          </SettingsSection>
-          <SettingsSection variant="plain" title={t("Instructions")}>
-            <Textarea
-              aria-label={t("Additional instructions")}
-              variant="soft"
-              value={text(["instructions"])}
-              onChange={(event) => set(["instructions"], event.target.value)}
-              rows={5}
-              className={management.instructions}
-            />
-          </SettingsSection>
-        </>
-      )}
+              <div className={styles.fieldGroup}>
+                <FormField
+                  label={t("Arguments")}
+                  description={t(
+                    "One argument per line. Antigravity’s skip-permissions flag grants unattended access as the Host account.",
+                  )}
+                >
+                  <Textarea
+                    aria-label={t("Arguments")}
+                    variant="soft"
+                    rows={3}
+                    key={`${presetValue}:${Array.isArray(raw.args) ? raw.args.includes("--dangerously-skip-permissions") : ""}`}
+                    defaultValue={
+                      Array.isArray(raw.args) ? raw.args.join("\n") : ""
+                    }
+                    onChange={(event) =>
+                      set(
+                        ["args"],
+                        event.target.value.split("\n").filter(Boolean),
+                      )
+                    }
+                  />
+                </FormField>
+              </div>
+            </>
+          );
+          return (
+            <>
+              <SettingsSection variant="grouped" title={t("General")}>
+                {field(t("Name"), ["name"])}
+                <ResourceChoice
+                  label={t("ACP preset")}
+                  value={presetValue}
+                  onValueChange={(value) => {
+                    const preset = presets.data?.find(
+                      (item) => item.id === value,
+                    );
+                    const currentName = text(["name"]).trim();
+                    let next = updateDocument(source, ["preset"], value);
+                    if (
+                      preset &&
+                      (!currentName ||
+                        currentName === "Untitled" ||
+                        presetNames.has(currentName))
+                    ) {
+                      next = updateDocument(
+                        next,
+                        ["name"],
+                        value === "custom"
+                          ? t("Custom ACP Agent")
+                          : preset.name,
+                      );
+                    }
+                    if (value !== "custom") {
+                      next = updateDocument(next, ["command"], undefined);
+                      next = updateDocument(
+                        next,
+                        ["args"],
+                        value === "antigravity"
+                          ? [
+                              "acp",
+                              "--dangerously-skip-permissions",
+                              "--process-per-session",
+                            ]
+                          : undefined,
+                      );
+                    }
+                    onChange(next);
+                  }}
+                  options={(presets.data ?? []).map((item) => {
+                    const brand = acpPresetBrand(item.id);
+                    return {
+                      value: item.id,
+                      label: !item.executable
+                        ? t("Custom ACP Agent")
+                        : item.name,
+                      badge: !item.executable
+                        ? undefined
+                        : item.detected_path
+                          ? t("Detected")
+                          : t("Not installed"),
+                      icon: brand ? (
+                        <ModelIcon modelIdentity={brand} />
+                      ) : undefined,
+                    };
+                  })}
+                />
+                {presetValue !== "custom" && commandPreview && (
+                  <SettingsRow
+                    label={t("Command")}
+                    description={
+                      <code style={{ overflowWrap: "anywhere" }}>
+                        {commandPreview}
+                      </code>
+                    }
+                  >
+                    {!explicitCommand &&
+                      selectedPreset &&
+                      (!selectedPreset.detected_path &&
+                      selectedPreset.install_url ? (
+                        <a
+                          target="_blank"
+                          rel="noreferrer"
+                          href={selectedPreset.install_url}
+                        >
+                          {t("Installation instructions")}
+                        </a>
+                      ) : (
+                        <span>
+                          {selectedPreset.detected_path
+                            ? t("Detected")
+                            : t("Not installed")}
+                        </span>
+                      ))}
+                  </SettingsRow>
+                )}
+                {presetValue === "antigravity" && (
+                  <SettingsToggle
+                    label={t("Skip permission prompts")}
+                    description={t(
+                      "Allow unattended tool execution without interactive CLI prompts.",
+                    )}
+                    checked={resolvedArgs.includes(
+                      "--dangerously-skip-permissions",
+                    )}
+                    onCheckedChange={(checked) => {
+                      const base = resolvedArgs.filter(
+                        (arg) => arg !== "--dangerously-skip-permissions",
+                      );
+                      set(
+                        ["args"],
+                        checked
+                          ? [
+                              base[0] ?? "acp",
+                              "--dangerously-skip-permissions",
+                              ...base.slice(1),
+                            ]
+                          : base,
+                      );
+                    }}
+                  />
+                )}
+                <ErrorNotice error={presets.error} />
+                {presetValue === "custom" ? (
+                  commandFields
+                ) : (
+                  <details className={layout.groupDisclosure}>
+                    <summary>{t("Customize command")}</summary>
+                    <div>{commandFields}</div>
+                  </details>
+                )}
+                {list(
+                  t("MCP servers"),
+                  ["mcp_servers"],
+                  selectors.data?.mcp_servers.map((item) => ({
+                    value: item.resource_id,
+                    label: item.name,
+                  })) ?? [],
+                )}
+              </SettingsSection>
+              <SettingsSection variant="plain" title={t("Instructions")}>
+                <Textarea
+                  aria-label={t("Additional instructions")}
+                  variant="soft"
+                  value={text(["instructions"])}
+                  onChange={(event) =>
+                    set(["instructions"], event.target.value)
+                  }
+                  rows={5}
+                  className={management.instructions}
+                />
+              </SettingsSection>
+            </>
+          );
+        })()}
       {kind === "agent" && (
         <>
           <SettingsSection variant="grouped" title={t("General")}>
@@ -539,6 +712,24 @@ export function ResourceFields({
                     agentOptions,
                   )}
 
+                  <SettingsRow
+                    label={t("Coordinate agents by default")}
+                    controlId="coordinator-by-default"
+                    stackOnNarrow={false}
+                    description={t(
+                      "Preselect Coordinate agents for new project chats. You can turn it off before sending the first message.",
+                    )}
+                  >
+                    <Switch
+                      id="coordinator-by-default"
+                      checked={
+                        get(["webui", "coordinator_by_default"]) === true
+                      }
+                      onCheckedChange={(enabled) =>
+                        set(["webui", "coordinator_by_default"], enabled)
+                      }
+                    />
+                  </SettingsRow>
                   <SettingsRow
                     label={t("Automatically generate chat titles")}
                     controlId="auto-chat-title"
@@ -765,6 +956,60 @@ export function ResourceFields({
             {(!group || group === "agents") && (
               <>
                 <SettingsSection title={t("Agent creation")}>
+                  <AgentSelectionField
+                    label={t("Allowed agents")}
+                    description={
+                      allowedAgentsRaw === null
+                        ? t(
+                            "With no agents selected, all configured agents are allowed for new chats and workers.",
+                          )
+                        : allowedAgents.length
+                          ? t(
+                              "Agents can only use these configured agents for new chats and workers.",
+                            )
+                          : t(
+                              "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.",
+                            )
+                    }
+                    agents={selectors.data?.agents ?? []}
+                    models={selectors.data?.models ?? []}
+                    value={allowedAgents}
+                    onChange={(value) => {
+                      let updated = updateDocument(
+                        source,
+                        allowedAgentsPath,
+                        value,
+                      );
+                      // Clear the default agent when it is excluded by a non-empty allowlist.
+                      const fallback = text(defaultAgentPath);
+                      if (
+                        fallback &&
+                        value !== undefined &&
+                        !value.includes(fallback)
+                      )
+                        updated = updateDocument(
+                          updated,
+                          defaultAgentPath,
+                          undefined,
+                        );
+                      onChange(updated);
+                    }}
+                  />
+                  <ResourceChoice
+                    label={t("Default agent")}
+                    description={t(
+                      "Used when creating a new chat or worker without specifying an agent.",
+                    )}
+                    value={text(defaultAgentPath)}
+                    loading={selectors.isPending || sources.isPending}
+                    onValueChange={(value) =>
+                      set(defaultAgentPath, value || undefined)
+                    }
+                    options={[
+                      { value: "", label: t("Same as current agent") },
+                      ...creationAgentOptions,
+                    ]}
+                  />
                   <ModelSelectionField
                     label={t("Allowed models")}
                     description={
@@ -773,26 +1018,18 @@ export function ResourceFields({
                             "Agents can use these models for new chats, workers, and declared or dynamic subagents.",
                           )
                         : t(
-                            "With no models selected, agents cannot create chats or workers, or delegate to subagents.",
+                            "With no models selected, agents can still create chats and workers with configured Agents, without overriding models or delegating to subagents.",
                           )
                     }
                     models={selectors.data?.models ?? []}
                     value={allowedModels}
                     onChange={(value) => {
-                      let updated = updateDocument(
-                        source,
-                        ["subagents", "dynamic", "allowed_models"],
-                        value,
-                      );
-                      // The default must stay one of the allowed models.
-                      const fallback = text(defaultModelPath);
-                      if (fallback && !value?.includes(fallback))
-                        updated = updateDocument(
-                          updated,
-                          defaultModelPath,
-                          undefined,
-                        );
-                      onChange(updated);
+                      // The default must stay one of the allowed models; editing also migrates legacy subagents.dynamic keys.
+                      const nextDefault =
+                        defaultModel && value?.includes(defaultModel)
+                          ? defaultModel
+                          : undefined;
+                      updateCreationModels(value, nextDefault);
                     }}
                   />
                   {allowedModels.length > 0 && (
@@ -801,11 +1038,11 @@ export function ResourceFields({
                       description={t(
                         "Used when the agent does not choose a model.",
                       )}
-                      value={text(defaultModelPath)}
+                      value={defaultModel}
                       placeholder={t("Choose a model")}
                       loading={selectors.isPending || sources.isPending}
                       onValueChange={(value) =>
-                        set(defaultModelPath, value || undefined)
+                        updateCreationModels(allowedModels, value || undefined)
                       }
                       options={[
                         ...(dynamicSubagentsEnabled
@@ -834,7 +1071,7 @@ export function ResourceFields({
                     label={t("Let the agent create subagents")}
                     controlId="dynamic-subagents-enabled"
                     description={
-                      dynamicSubagentsEnabled && !text(defaultModelPath)
+                      dynamicSubagentsEnabled && !defaultModel
                         ? t(
                             "Choose at least one allowed model and a default model in Agent creation above.",
                           )

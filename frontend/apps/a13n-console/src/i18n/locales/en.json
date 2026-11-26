@@ -1142,6 +1142,16 @@
   "Enter a JSON object.": "Enter a JSON object.",
   "Enter a valid JSON value.": "Enter a valid JSON value.",
   "Environment": "Environment",
+  "Default environment": "Default environment",
+  "Workspace default when a thread has no primary environment.": "Workspace default when a thread has no primary environment.",
+  "Used when a session has no primary environment.": "Used when a session has no primary environment.",
+  "Environment preparation": "Environment preparation",
+  "On demand": "On demand",
+  "Warm up in parallel": "Warm up in parallel",
+  "Wait before inference": "Wait before inference",
+  "Prepare when a tool first uses the environment.": "Prepare when a tool first uses the environment.",
+  "Prepare the environment while inference runs.": "Prepare the environment while inference runs.",
+  "Wait until the environment is ready before starting inference.": "Wait until the environment is ready before starting inference.",
   "Environment details": "Environment details",
   "Environment instances": "Environment instances",
   "Template configuration (JSON)": "Template configuration (JSON)",
@@ -4657,5 +4667,9 @@
   "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.",
   "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.": "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
   "This field is required.": "This field is required.",
-  "Enter a valid value for this field.": "Enter a valid value for this field."
+  "Enter a valid value for this field.": "Enter a valid value for this field.",
+  "This connection uses native tool discovery.": "This connection uses native tool discovery.",
+  "More than {{limit}} tools selected": "More than {{limit}} tools selected",
+  "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.": "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.",
+  "Enable tool discovery": "Enable tool discovery"
 }

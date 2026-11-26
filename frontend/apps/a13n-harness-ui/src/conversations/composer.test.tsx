@@ -115,7 +115,6 @@ it("reserves an upload before joining and resolves it after the initial draft id
           <Composer
             threadId="thread-one"
             activity={{ state: "inactive" } as Schema<"RootActivityView">}
-            canRun
             profile={{ display_name: "Alice", color: "#2563eb" }}
             unauthorized={() => {}}
             reconcile={() => {}}
@@ -276,7 +275,6 @@ it.each(["accepted", "rejected", "unknown"] as const)(
             <MessageStream />
             <Composer
               threadId="thread-one"
-              canRun
               activity={
                 {
                   state: "running",
@@ -363,7 +361,6 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
           <Composer
             threadId="thread-one"
             activity={{ state: "inactive" }}
-            canRun
             profile={{ display_name: "Alice", color: "#2563eb" }}
             unauthorized={() => {}}
             reconcile={() => {}}
@@ -422,7 +419,6 @@ it("enables Goal intent from its option label, keeps it visible and disables it 
                 ? { state: "running", receipt_id: "receipt-layout" }
                 : { state: "inactive" }
             }
-            canRun
             leadingControls={<span>Full Control</span>}
             controls={() => <span>Agent and model summary</span>}
             profile={{ display_name: "Test", color: "#2563eb" }}
@@ -490,7 +486,6 @@ it.each([false, true])(
               local={local}
               threadId="thread-one"
               activity={{ state: "inactive" }}
-              canRun
               leadingControls={<span>Full Control</span>}
               profile={{ display_name: "Alice", color: "#2563eb" }}
               unauthorized={() => {}}
@@ -568,7 +563,6 @@ it("switches one action between Stop and Steer without cancelling from a submiss
         <ComposerDrafts value={new Map([["one", draft]])}>
           <Composer
             threadId="one"
-            canRun
             activity={{
               state: "running",
               receipt_id: "current",
@@ -663,7 +657,6 @@ it.each([false, true])(
             <Composer
               threadId="thread-one"
               activity={{ state: "inactive" } as Schema<"RootActivityView">}
-              canRun
               profile={{ display_name: "Alice", color: "#000000" }}
               unauthorized={() => {}}
               reconcile={() => {}}
@@ -1030,7 +1023,6 @@ it.each(["restore", "rejected"])(
             <Composer
               threadId="thread-one"
               activity={{ state: "inactive" }}
-              canRun
               profile={{ display_name: "Test", color: "#000000" }}
               unauthorized={() => {}}
               reconcile={() => {}}
@@ -1092,8 +1084,10 @@ it("explains unavailable send conditions without consuming the authored draft", 
   const props = {
     threadId: "thread-one",
     activity: { state: "inactive" } as Schema<"RootActivityView">,
-    canRun: false,
-    unavailableReason: "Updating chat settings…",
+    runBlock: {
+      kind: "loading" as const,
+      message: "Updating chat settings…",
+    },
     profile: { display_name: "Test", color: "#000000" },
     unauthorized: () => {},
     reconcile: () => {},
@@ -1160,7 +1154,6 @@ it("keeps a single pending action while steering waits for synchronization", asy
         <ComposerDrafts value={new Map([["one", draft]])}>
           <Composer
             threadId="one"
-            canRun
             activity={{
               state: "running",
               receipt_id: "current",
@@ -1283,7 +1276,6 @@ it("keeps unsent input and blocks Send while clearing context", async () => {
             threadId="thread-one"
             activity={{ state: "inactive" }}
             continuationId={"a".repeat(64)}
-            canRun
             canClearContext
             profile={{ display_name: "Alice", color: "#000000" }}
             unauthorized={() => {}}
@@ -1307,6 +1299,10 @@ it("keeps unsent input and blocks Send while clearing context", async () => {
     'button[aria-label="Send"]',
   )!;
   expect(send.disabled).toBe(true);
+  expect(send.title).toBe("Clearing context…");
+  expect(view.container.querySelector('[role="status"]')?.textContent).toBe(
+    "Clearing context…",
+  );
   fireEvent.click(send);
   fireEvent.keyDown(view.container.querySelector('[role="textbox"]')!, {
     key: "Enter",
@@ -1368,7 +1364,6 @@ it.each(["accepted", "promotion-unknown", "submit-rejected"] as const)(
             <Composer
               threadId="thread-one"
               activity={{ state: "inactive" }}
-              canRun
               coordinator={{ active: false, available: true }}
               renderHeader={(modes) => (
                 <div role="group" aria-label="Composer status">
@@ -1594,7 +1589,6 @@ it("preserves an upload error from the server even when it matches application c
             <Composer
               threadId="thread-one"
               activity={{ state: "inactive" } as Schema<"RootActivityView">}
-              canRun
               profile={{ display_name: "Alice", color: "#2563eb" }}
               unauthorized={() => {}}
               reconcile={() => {}}
@@ -1642,7 +1636,6 @@ it.each(["draft", "submission"])(
               <Composer
                 threadId="thread-one"
                 activity={{ state: "inactive" } as Schema<"RootActivityView">}
-                canRun
                 profile={{ display_name: "Alice", color: "#2563eb" }}
                 unauthorized={() => {}}
                 reconcile={() => {}}
@@ -1717,7 +1710,6 @@ it("retains input and translates a pending selected App context rejection on lan
             <Composer
               threadId="thread-one"
               activity={{ state: "inactive" }}
-              canRun
               profile={{ display_name: "Alice", color: "#2563eb" }}
               unauthorized={() => {}}
               reconcile={() => {}}
@@ -1811,7 +1803,6 @@ it.each([false, true])(
             <Composer
               threadId="thread-one"
               activity={{ state: "inactive" } as Schema<"RootActivityView">}
-              canRun
               profile={{ display_name: "Alice", color: "#2563eb" }}
               unauthorized={() => {}}
               reconcile={() => {}}
@@ -1855,3 +1846,247 @@ it.each([false, true])(
     expect(post).toHaveBeenCalledTimes(1);
   },
 );
+
+it("keeps loading runBlocks quiet when empty, shows spinner status with input, and renders actionable error blocks", async () => {
+  const { MemoryRouter } = await import("react-router");
+  const draft = new ThreadDraft();
+  const post = vi.fn();
+  const onRetry = vi.fn();
+  const onKeep = vi.fn();
+  const query = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const renderWith = (
+    runBlock: Parameters<typeof Composer>[0]["runBlock"],
+    extra: Partial<Parameters<typeof Composer>[0]> = {},
+  ) => (
+    <MemoryRouter>
+      <QueryClientProvider client={query}>
+        <TransportContext
+          value={{ client: { POST: post } } as unknown as Transport}
+        >
+          <ComposerDrafts value={new Map([["thread-block", draft]])}>
+            <Composer
+              local
+              threadId="thread-block"
+              activity={{ state: "inactive" }}
+              runBlock={runBlock}
+              profile={{ display_name: "Alice", color: "#2563eb" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+              {...extra}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>
+    </MemoryRouter>
+  );
+
+  const view = render(
+    renderWith({ kind: "loading", message: "Loading Antigravity options…" }),
+  );
+  // Quiet when empty: no status banner, but Send is disabled with title.
+  expect(screen.queryByRole("status")).toBeNull();
+  const send = screen.getByRole("button", {
+    name: "Send",
+  }) as HTMLButtonElement;
+  expect(send.disabled).toBe(true);
+  expect(send.title).toBe("Loading Antigravity options…");
+
+  // Once input is present, show single quiet status row with spinner and block Enter.
+  act(() => draft.doc.getText("text").insert(0, "Run tests"));
+  const status = screen.getByRole("status");
+  expect(status.textContent).toBe("Loading Antigravity options…");
+  expect(status.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), {
+    key: "Enter",
+  });
+  expect(post).not.toHaveBeenCalled();
+
+  // Error/action_required blocks show even when empty with actions and detail.
+  act(() =>
+    draft.doc.getText("text").delete(0, draft.doc.getText("text").length),
+  );
+  view.rerender(
+    renderWith({
+      kind: "action_required",
+      message: "Sign in to Antigravity before sending.",
+      detail: "Session expired.",
+      action: {
+        label: "Open Agent authentication",
+        to: "/settings/source?path=acp_agents%2Fagy.yaml",
+      },
+      secondaryAction: { label: "Retry", onClick: onRetry },
+    }),
+  );
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toContain("Sign in to Antigravity before sending.");
+  expect(alert.textContent).toContain("Session expired.");
+  expect(
+    screen
+      .getByRole("link", { name: "Open Agent authentication" })
+      .getAttribute("href"),
+  ).toBe("/settings/source?path=acp_agents%2Fagy.yaml");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(onRetry).toHaveBeenCalledOnce();
+
+  // coveredByFeedback suppresses duplicate banner while keeping Send disabled + title.
+  view.rerender(
+    renderWith(
+      {
+        kind: "error",
+        message: "Could not load chat.",
+        coveredByFeedback: true,
+        secondaryAction: { label: "Keep current", onClick: onKeep },
+      },
+      { feedback: <p role="alert">Page-level error</p> },
+    ),
+  );
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(screen.getByRole("alert").textContent).toBe("Page-level error");
+  expect(send.disabled).toBe(true);
+  expect(send.title).toBe("Could not load chat.");
+
+  view.unmount();
+  query.clear();
+  draft.doc.destroy();
+});
+
+it("enforces blocking precedence across reconnect, runBlock, coordinator reasons, and busy states", () => {
+  const draft = new ThreadDraft();
+  vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+  draft.doc.getText("text").insert(0, "Ship it");
+  const query = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const renderComposer = (props: Partial<Parameters<typeof Composer>[0]>) => (
+    <QueryClientProvider client={query}>
+      <TransportContext
+        value={{ client: { POST: vi.fn() } } as unknown as Transport}
+      >
+        <ComposerDrafts value={new Map([["thread-order", draft]])}>
+          <Composer
+            threadId="thread-order"
+            activity={{ state: "inactive" }}
+            profile={{ display_name: "Alice", color: "#2563eb" }}
+            unauthorized={() => {}}
+            reconcile={() => {}}
+            {...props}
+          />
+        </ComposerDrafts>
+      </TransportContext>
+    </QueryClientProvider>
+  );
+
+  // Connected once, then disconnected -> reconnect copy.
+  draft.receive({
+    draft_id: "draft-1",
+    participant_id: "p-1",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  draft.status = "Disconnected";
+  const view = render(renderComposer({}));
+  expect(screen.getByRole("status").textContent).toBe(
+    "Waiting for the shared draft to reconnect…",
+  );
+
+  // Reconnect; runBlock takes precedence over coordinatorBlocked.
+  act(() => {
+    draft.status = "Connected";
+    draft.coordinator = true;
+    draft.notify();
+  });
+  view.rerender(
+    renderComposer({
+      runBlock: { kind: "loading", message: "Updating chat settings…" },
+      coordinator: {
+        active: false,
+        available: false,
+        unavailableReason: "no_project",
+      },
+    }),
+  );
+  expect(screen.getByRole("status").textContent).toBe(
+    "Updating chat settings…",
+  );
+  expect(
+    screen.queryByText("Choose a project to coordinate agents."),
+  ).toBeNull();
+
+  // Once runBlock clears, specific coordinator unavailability reason displays.
+  view.rerender(
+    renderComposer({
+      coordinator: {
+        active: false,
+        available: false,
+        unavailableReason: "no_project",
+      },
+    }),
+  );
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Choose a project to coordinate agents.",
+  );
+
+  view.rerender(
+    renderComposer({
+      coordinator: {
+        active: false,
+        available: false,
+        unavailableReason: "pending_requests",
+      },
+    }),
+  );
+  expect(screen.getByRole("alert").textContent).toBe(
+    "Answer pending requests before coordinating agents.",
+  );
+
+  // coordinatorUncertain renders only its dedicated alert, never a duplicate block.
+  act(() => {
+    draft.coordinatorUncertain = true;
+    draft.notify();
+  });
+  expect(screen.getAllByRole("alert")).toHaveLength(1);
+  expect(screen.getByRole("alert").textContent).toContain("Check status");
+  act(() => {
+    draft.coordinatorUncertain = false;
+    draft.coordinator = false;
+    draft.notify();
+  });
+
+  // Busy non-steerable distinctions + queuedInput.locked exclusion.
+  view.rerender(renderComposer({ activity: { state: "preparing" } }));
+  expect(screen.getByRole("status").textContent).toBe("Starting operation…");
+
+  view.rerender(
+    renderComposer({
+      activity: { state: "running", receipt_id: "r1", available_actions: [] },
+      externalAgent: true,
+    }),
+  );
+  expect(screen.getByRole("status").textContent).toBe(
+    "Waiting for the current response to finish…",
+  );
+
+  view.rerender(
+    renderComposer({
+      activity: { state: "running", receipt_id: "r1", available_actions: [] },
+      externalAgent: false,
+    }),
+  );
+  expect(screen.getByRole("status").textContent).toBe(
+    "This operation cannot accept another message yet.",
+  );
+
+  view.rerender(
+    renderComposer({
+      activity: { state: "running", receipt_id: "r1", available_actions: [] },
+      queuedInput: { pending: false, locked: true, submit: vi.fn() },
+    }),
+  );
+  expect(screen.queryByRole("status")).toBeNull();
+
+  view.unmount();
+  query.clear();
+  draft.doc.destroy();
+});

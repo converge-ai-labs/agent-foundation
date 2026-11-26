@@ -32,7 +32,7 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness_ui.bot import BotController
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
-from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedRunComposition
+from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedAgentNode, ResolvedRunComposition
 from a13n_harness_ui.configuration.discovery import ResourceKind, resource_page
 from a13n_harness_ui.configuration.models import ProjectDefaults, ProjectResource, ProjectRoot, ResourceId
 from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
@@ -44,7 +44,13 @@ from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.root_execution import RootRunAdmission
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage.repositories import RetainedThreadRun, ThreadRepository
-from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationView, RunModelOverrides, ThreadSummary
+from a13n_harness_ui.surfaces import (
+    NewThreadDefaults,
+    RootOperationStatus,
+    RootOperationView,
+    RunModelOverrides,
+    ThreadSummary,
+)
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, resolve_thread_configuration
 from a13n_harness_ui.voice import VoiceController
@@ -168,6 +174,7 @@ class ThreadToolController:
         self.create_project = create_project
         self.read_project_memory = read_project_memory
         self.inbox = inbox
+        self._deferred_coordinator_notices: dict[str, tuple[str, str]] = {}
 
     async def post_owner_inbox(self, *, thread_id: str, kind: InboxKind, title: str, message: str) -> InboxItem:
         """Post on behalf of an instance owner outside any Agent Run."""
@@ -185,12 +192,20 @@ class ThreadToolController:
         return await self.inbox.post_from_mcp(thread_id=thread_id, kind=kind, title=title, message=message)
 
     async def resources(
-        self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
+        self,
+        *,
+        kind: ResourceKind,
+        query: str | None,
+        cursor: str | None,
+        limit: int,
+        allowed_agent_ids: tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
         source = await self._configurations.current()
         if source is None:
             raise ConfigurationError("No configuration has been accepted.", code="configuration_missing")
-        return resource_page(source, kind=kind, query=query, cursor=cursor, limit=limit)
+        return resource_page(
+            source, kind=kind, query=query, cursor=cursor, limit=limit, allowed_agent_ids=allowed_agent_ids
+        )
 
     async def get_project(self, project_id: str) -> dict[str, Any]:
         source = await self._configurations.current()
@@ -297,15 +312,42 @@ class ThreadToolController:
             raise ThreadError(
                 "A Coordinator creates workers only in its own Project.", code="coordinator_worker_project_locked"
             )
-        if project_id == "current" and agent_id is None and configuration.agent_source.kind in {"agent", "acp_agent"}:
+        current = await self._configurations.current()
+        if current is None:
+            raise ConfigurationError("No configuration has been accepted.", code="configuration_missing")
+        policy = current.document.agent_creation if source_composition is None else source_composition.agent_creation
+        if policy.allowed_agents == ():
+            raise ThreadError(
+                "Agent creation is disabled because no agents are allowed in Settings > Agents.",
+                code="creation_agent_not_allowed",
+            )
+        selected_agent_id = agent_id if agent_id is not None else policy.default_agent
+        inheriting_self = (
+            project_id == "current"
+            and selected_agent_id is None
+            and (
+                (source_composition is not None and source_composition.root.source_kind in {"agent", "acp_agent"})
+                or (source_composition is None and configuration.agent_source.kind in {"agent", "acp_agent"})
+            )
+        )
+        if inheriting_self:
             inherited_agent = (
                 source_composition.root.source_id
                 if source_composition is not None and source_composition.root.source_kind in {"agent", "acp_agent"}
                 else configuration.agent_source.id
             )
+            inherited_model_id: str | None = None
+            if model_id is None and inherited_agent in current.agents:
+                if source_composition is not None and isinstance(source_composition.root, ResolvedAgentNode):
+                    captured_model = source_composition.root.model.model_id
+                    if captured_model != current.agents[inherited_agent].model:
+                        inherited_model_id = captured_model
+                else:
+                    inherited_model_id = configuration.default_model_id
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id,
                 agent_id=inherited_agent,
+                default_model_id=inherited_model_id,
                 local_roots=configuration.local_roots,
                 environment_profile_id=configuration.environment_profile_id,
                 environment_bindings=configuration.environment_bindings,
@@ -315,23 +357,37 @@ class ThreadToolController:
                 mcp_server_ids=configuration.mcp_server_ids,
             )
         else:
-            # Explicit selections use normal Project/Agent defaults, not the source's MCP or tool selection.
+            # Explicit selections (including agent_creation.default_agent) use normal Project/Agent defaults,
+            # not the source's MCP or tool selection.
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id if project_id == "current" else project_id,
-                agent_id=agent_id,
+                agent_id=selected_agent_id,
             )
-        current = await self._configurations.current()
-        if current is None:
-            raise ConfigurationError("No configuration has been accepted.", code="configuration_missing")
         target = resolve_thread_configuration(current, RootThreadDefaults(**defaults.model_dump(exclude_unset=True)))
+        if not policy.allows_agent(target.agent_source.id):
+            allowed = ", ".join(policy.allowed_agents or ())
+            raise ThreadError(
+                f"Agent {target.agent_source.id!r} is not allowed for agent creation. "
+                f"Choose from the allowed agents ({allowed}) in Settings > Agents.",
+                code="creation_agent_not_allowed",
+            )
         if target.agent_source.kind == "acp_agent":
             if model_id is not None or thinking is not None:
                 raise ThreadError("This Agent source does not accept a Harness Model.", code="thread_model_invalid")
-        else:
+        elif model_id is not None:
             recipe = await self._configurations.creation_model(
                 source_composition, model_id, thinking, current_generation=True
             )
             defaults = defaults.model_copy(update={"default_model_id": recipe.model_id})
+        else:
+            effective_model_id = target.default_model_id or current.agents[target.agent_source.id].model
+            if effective_model_id is None:
+                recipe = await self._configurations.creation_model(
+                    source_composition, None, thinking, current_generation=True
+                )
+                defaults = defaults.model_copy(update={"default_model_id": recipe.model_id})
+            elif thinking is not None:
+                await self._configurations.validate_model_thinking(effective_model_id, thinking)
         created = await self._create_thread(
             defaults=defaults, title=title, coordinator_thread_id=source_thread_id if worker else None
         )
@@ -381,6 +437,10 @@ class ThreadToolController:
             return {**thread_tool_failure(exc, "thread_run_failed"), "thread_id": thread_id}
         return {"ok": True, "thread_id": thread_id, "receipt": receipt.model_dump(mode="json")}
 
+    async def on_operation_settled(self, project_id: str | None, operation: RootOperationView) -> None:
+        await self.notify_coordinator(project_id, operation)
+        await self._flush_coordinator_followup(operation)
+
     async def notify_worker_admitted(self, admission: RootRunAdmission, operation: RootOperationView) -> None:
         if admission.thread.continuation is None and admission.published.value.coordinator_thread_id is not None:
             await self.notify_coordinator(admission.published.value.project_id, operation, started=True)
@@ -415,9 +475,63 @@ class ThreadToolController:
             thread_id=owner_id,
             prompt=[TextContent(message, metadata={"display": False, "source_id": "a13n-harness-ui.thread-lifecycle"})],
         )
-        if not result["ok"]:
+        if result["ok"]:
+            self._deferred_coordinator_notices.pop(owner_id, None)
+            return
+        if result.get("mode") == "steer":
+            target_receipt_id = result["receipt_id"]
+            active = await self._root_runs.active(owner_id)
+            if active is not None and active.receipt.receipt_id == target_receipt_id:
+                existing = self._deferred_coordinator_notices.get(owner_id)
+                if existing is not None and existing[0] == target_receipt_id:
+                    message = (
+                        "Host notification: Multiple managed worker operations updated while your previous turn was running "
+                        f"in Project {project_id} (latest: Thread {operation.receipt.thread_id}, "
+                        f"Receipt {operation.receipt.receipt_id}, Status: {'started' if started else operation.status.value}). "
+                        "Use list_threads and get_thread to inspect your workers' saved results and reconcile your tasks and notes. "
+                        "Do not send an acknowledgement or repeat an already integrated report."
+                    )
+                self._deferred_coordinator_notices[owner_id] = (target_receipt_id, message)
+            else:
+                try:
+                    settled = await self._root_runs.get(target_receipt_id)
+                    if settled.status is RootOperationStatus.completed:
+                        retry = await self._run_or_steer(
+                            thread_id=owner_id,
+                            prompt=[
+                                TextContent(
+                                    message,
+                                    metadata={"display": False, "source_id": "a13n-harness-ui.thread-lifecycle"},
+                                )
+                            ],
+                        )
+                        if retry["ok"]:
+                            return
+                except HarnessUiError:
+                    pass
+        get_logger(__name__).info("Coordinator did not accept lifecycle notification: %s", operation.receipt.receipt_id)
+
+    async def _flush_coordinator_followup(self, operation: RootOperationView) -> None:
+        thread_id = operation.receipt.thread_id
+        entry = self._deferred_coordinator_notices.get(thread_id)
+        if entry is None or entry[0] != operation.receipt.receipt_id:
+            return
+        self._deferred_coordinator_notices.pop(thread_id, None)
+        if operation.status is not RootOperationStatus.completed:
+            return
+        coordinator = (await self._threads.coordinators((thread_id,))).get(thread_id)
+        if coordinator is None or not coordinator.auto_followup:
+            return
+        try:
+            await self._run_or_steer(
+                thread_id=thread_id,
+                prompt=[
+                    TextContent(entry[1], metadata={"display": False, "source_id": "a13n-harness-ui.thread-lifecycle"})
+                ],
+            )
+        except HarnessUiError:
             get_logger(__name__).info(
-                "Coordinator did not accept lifecycle notification: %s", operation.receipt.receipt_id
+                "Deferred Coordinator follow-up skipped after settlement: %s", operation.receipt.receipt_id
             )
 
     async def _require_target(self, source_thread_id: str, thread_id: str) -> None:
@@ -609,17 +723,44 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 + self._guidance("worker")
             )
         if self.composition is not None and self.composition.coordinator_thread_id is None:
-            policy = self.composition.subagents.dynamic
-            if policy.allowed_models:
-                instructions += f"\nAgent creation models: {', '.join(policy.allowed_models)}. "
-                instructions += f"Default: {policy.default_model}." if policy.default_model else "Specify a model."
+            policy = self.composition.agent_creation
+            if not self.composition.can_create_threads:
+                if policy.allowed_agents == ():
+                    instructions += (
+                        "\nAgent creation is disabled (no agents are allowed). Use existing chats for collaboration."
+                    )
+                else:
+                    instructions += "\nNo models are allowed for new agents. Use existing chats for collaboration."
+            else:
+                if policy.allowed_agents is not None:
+                    instructions += f"\nAgent creation agents: {', '.join(policy.allowed_agents)}. "
+                    instructions += (
+                        f"Default agent: {policy.default_agent}."
+                        if policy.default_agent is not None
+                        else "Omit agent_id to use the default or inherited Agent, or pass an allowed agent_id."
+                    )
+                elif policy.default_agent is not None:
+                    instructions += (
+                        f"\nDefault creation agent: {policy.default_agent}. "
+                        "Omit agent_id to use it, or pass any configured agent_id."
+                    )
+                if policy.allowed_models:
+                    instructions += f"\nAgent creation models: {', '.join(policy.allowed_models)}. "
+                    instructions += (
+                        f"Default: {policy.default_model}."
+                        if policy.default_model
+                        else "Omit model to use the selected or inherited Agent's model, or pass an allowed model."
+                    )
+                else:
+                    instructions += (
+                        "\nNo model overrides are allowed for new chats or workers; omit model to use a configured Agent "
+                        "or inherit your own Agent."
+                    )
                 if not is_coordinator:
                     instructions += (
                         " Open an independent chat only for work that needs a separate conversation."
                         " When carrying out another chat's task, finish it and report back."
                     )
-            else:
-                instructions += "\nNo models are allowed for new agents. Use existing chats for collaboration."
         if self._inbox_available:
             instructions += (
                 "\nThe user reads important outcomes in one Inbox instead of opening every chat. Before you end a turn "
@@ -736,7 +877,7 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         if (
             self.composition is not None
             and self.composition.coordinator_thread_id is None
-            and self.composition.subagents.dynamic.allowed_models
+            and self.composition.can_create_threads
         ):
             create = self.create_worker if self.composition.role == "coordinator" else self.create_thread
             self._toolset.add_tool(
@@ -1060,6 +1201,9 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
     ) -> dict[str, Any]:
         """Start an independent chat. Use project_id="current" for this Project, null for no Project, or a Project ID.
 
+        Omit agent_id to use the configured default creation agent when set (otherwise inherit this chat's Agent on
+        "current" or use Project/global defaults), or pass an allowed agent_id (native or ACP).
+        Omit model to use that Agent's model; pass an allowed model only to override a native Agent's model.
         If prompt admission fails with a thread_id, inspect or message that chat instead of creating another.
         """
         return await self._create_chat(ctx, prompt, title, agent_id, project_id, model, thinking, worker=False)
@@ -1075,6 +1219,9 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
     ) -> dict[str, Any]:
         """Start an owned worker in this Coordinator's Project and submit its first prompt.
 
+        Omit agent_id to use the configured default creation agent when set (otherwise inherit this Coordinator's
+        Agent), or pass an allowed agent_id (native or ACP).
+        Omit model to use that Agent's model; pass an allowed model only to override a native Agent's model.
         If prompt admission fails with a thread_id, inspect or message that worker instead of creating another.
         """
         return await self._create_chat(ctx, prompt, title, agent_id, "current", model, thinking, worker=True)
@@ -1137,7 +1284,10 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
     ) -> dict[str, Any]:
         """Discover configured root Agents, their Model IDs and selected Capability IDs, not child roster names."""
         self._require_context(ctx)
-        return await self._resources(kind="agents", query=query, cursor=cursor, limit=limit)
+        allowed_agent_ids = self.composition.agent_creation.allowed_agents if self.composition is not None else None
+        return await self._resources(
+            kind="agents", query=query, cursor=cursor, limit=limit, allowed_agent_ids=allowed_agent_ids
+        )
 
     async def list_models(
         self,
@@ -1151,10 +1301,25 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
         return await self._resources(kind="models", query=query, cursor=cursor, limit=limit)
 
     async def _resources(
-        self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
+        self,
+        *,
+        kind: ResourceKind,
+        query: str | None,
+        cursor: str | None,
+        limit: int,
+        allowed_agent_ids: tuple[str, ...] | None = None,
     ) -> dict[str, Any]:
         try:
-            return {"ok": True, **await self.controller.resources(kind=kind, query=query, cursor=cursor, limit=limit)}
+            return {
+                "ok": True,
+                **await self.controller.resources(
+                    kind=kind,
+                    query=query,
+                    cursor=cursor,
+                    limit=limit,
+                    allowed_agent_ids=allowed_agent_ids,
+                ),
+            }
         except HarnessUiError as exc:
             return thread_tool_failure(exc, "resource_list_failed")
 

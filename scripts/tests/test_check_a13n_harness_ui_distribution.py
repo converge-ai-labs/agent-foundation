@@ -112,6 +112,13 @@ def _write_wheel(
             if f"harness-ui-operations/{relative}" != omitted_skill_file:
                 archive.writestr(str(operations_prefix / relative), content)
         archive.writestr("a13n_harness_ui/assets/guidance/threads.md", operations_files["ui/threads.md"])
+        for name in checker.COORDINATOR_SKILLS:
+            relative = f"coordinator_skills/{name}/SKILL.md"
+            if relative != omitted_skill_file:
+                archive.writestr(
+                    f"a13n_harness_ui/assets/{relative}",
+                    f"---\nname: {name}\ndescription: Coordinator workflow.\n---\n".encode(),
+                )
         archive.writestr("a13n_harness_ui/interactive/__init__.py", b"\n")
         if include_entrypoint:
             archive.writestr(
@@ -441,4 +448,12 @@ def test_rejects_incomplete_operation_skill(artifact: Artifact, missing: str) ->
     path, write = artifact
     write(path, omitted_skill_file=f"harness-ui-operations/{missing}")
     with pytest.raises(DistributionError, match="missing"):
+        _validate_release_artifact(path)
+
+
+@pytest.mark.parametrize("name", checker.COORDINATOR_SKILLS)
+def test_rejects_missing_coordinator_skill(artifact: Artifact, name: str) -> None:
+    path, write = artifact
+    write(path, omitted_skill_file=f"coordinator_skills/{name}/SKILL.md")
+    with pytest.raises(DistributionError, match="missing coordinator Skill"):
         _validate_release_artifact(path)

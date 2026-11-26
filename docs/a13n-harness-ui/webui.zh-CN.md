@@ -142,6 +142,8 @@ flowchart TB
 2. 在侧边栏展开协调器查看其工作对话，或点击 **New worker** 直接指派任务。
 3. 通过协调器菜单中的 **Pause/Enable automatic follow-up** 控制工作对话完成后是否自动唤醒协调器。
 
+如需在新的项目聊天中预先开启「协调智能体」，请在 **设置 → 聊天 → 新聊天 → 默认协调智能体** 中开启并保存。对应的实例配置项是 `webui.coordinator_by_default`，默认关闭。发送首条消息前，仍可在聊天选项中关闭「协调智能体」。
+
 ## 智能体协作
 
 智能体可在各自角色范围内查看相关对话、创建新任务或向已有对话发消息：
@@ -153,7 +155,7 @@ flowchart TB
 | `spawn_subagent`      | 在当前对话树中启动子智能体           | 启用动态子智能体的根对话 |
 | `send_thread_message` | 向范围内的已有对话发送后续指令或引导 | 协作范围内的根对话       |
 
-在 **Settings → Agents → Agent creation**（`subagents.dynamic.allowed_models` 与 `subagents.dynamic.default_model`）中统一配置智能体创建新任务时可用的模型。
+在 **Settings → Agents → Agent creation**（`agent_creation.allowed_agents`、`agent_creation.default_agent`、`agent_creation.allowed_models` 与 `agent_creation.default_model`）中统一配置智能体创建新对话、Coordinator Worker 与子智能体时可用的智能体和模型。
 
 ## 观察记忆与配置工作台
 

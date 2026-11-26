@@ -6273,16 +6273,18 @@
       "post": {
         "summary": "Preview Skills",
         "operationId": "preview_skills_api_threads_skills_preview_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/NewThreadDefaults"
-              }
+        "parameters": [
+          {
+            "name": "coordinator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Coordinator"
             }
-          },
-          "required": true
-        },
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -6291,6 +6293,26 @@
                 "schema": {
                   "$ref": "#/components/schemas/SkillCatalogView"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewThreadDefaults"
               }
             }
           }
@@ -6309,6 +6331,16 @@
             "schema": {
               "type": "string",
               "title": "Thread Id"
+            }
+          },
+          {
+            "name": "coordinator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Coordinator"
             }
           }
         ],
@@ -6346,6 +6378,16 @@
             "schema": {
               "type": "string",
               "title": "Thread Id"
+            }
+          },
+          {
+            "name": "coordinator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Coordinator"
             }
           }
         ],
@@ -10716,8 +10758,11 @@
           "antigravity",
           "claude_code",
           "codex",
-          "opencode",
           "gemini_cli",
+          "github_copilot",
+          "opencode",
+          "goose",
+          "kimi_cli",
           "custom"
         ]
       },
@@ -11312,6 +11357,19 @@
               }
             ],
             "title": "Model Id"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
           },
           "source_path": {
             "type": "string",
@@ -12122,6 +12180,11 @@
             ],
             "title": "Send Shortcut",
             "default": "enter"
+          },
+          "coordinator_by_default": {
+            "type": "boolean",
+            "title": "Coordinator By Default",
+            "default": false
           }
         },
         "additionalProperties": false,

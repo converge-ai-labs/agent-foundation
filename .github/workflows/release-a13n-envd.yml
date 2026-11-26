@@ -91,6 +91,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-release-envd
 
       - name: Build Python client distributions
         run: make a13n-envd-client-build

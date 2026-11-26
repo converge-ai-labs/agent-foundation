@@ -3584,7 +3584,7 @@ export interface components {
             account_id: string;
         };
         /** @enum {string} */
-        AcpAgentPreset: "antigravity" | "claude_code" | "codex" | "opencode" | "gemini_cli" | "custom";
+        AcpAgentPreset: "antigravity" | "claude_code" | "codex" | "gemini_cli" | "github_copilot" | "opencode" | "goose" | "kimi_cli" | "custom";
         /** AcpAgentSource */
         AcpAgentSource: {
             /**
@@ -3784,6 +3784,8 @@ export interface components {
             name: string;
             /** Model Id */
             model_id?: string | null;
+            /** Preset */
+            preset?: string | null;
             /** Source Path */
             source_path: string;
             /**
@@ -4091,6 +4093,11 @@ export interface components {
              * @enum {string}
              */
             send_shortcut?: "enter" | "mod-enter";
+            /**
+             * Coordinator By Default
+             * @default false
+             */
+            coordinator_by_default?: boolean;
         };
         /** AppView */
         AppView: {
@@ -16455,7 +16462,9 @@ export interface operations {
     };
     preview_skills_api_threads_skills_preview_post: {
         parameters: {
-            query?: never;
+            query?: {
+                coordinator?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -16475,11 +16484,22 @@ export interface operations {
                     "application/json": components["schemas"]["SkillCatalogView"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     thread_skills_api_threads__thread_id__skills_get: {
         parameters: {
-            query?: never;
+            query?: {
+                coordinator?: boolean;
+            };
             header?: never;
             path: {
                 thread_id: string;
@@ -16510,7 +16530,9 @@ export interface operations {
     };
     preview_thread_skills_api_threads__thread_id__skills_post: {
         parameters: {
-            query?: never;
+            query?: {
+                coordinator?: boolean;
+            };
             header?: never;
             path: {
                 thread_id: string;

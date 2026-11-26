@@ -20,7 +20,7 @@ from a13n_service.infra.http import require_match
 from a13n_service.infra.ids import new_object_id
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
-from a13n_service.runs.environments import external
+from a13n_service.runs.environments import bootstrap_snapshots, external
 from a13n_service.runs.environments.access import audit, find, require_manager, writable
 from a13n_service.runs.environments.adapters import (
     Target,
@@ -31,6 +31,7 @@ from a13n_service.runs.environments.adapters import (
 )
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.egress.storage import retire_environment
+from a13n_service.runs.environments.events import publish_after_commit as publish_event
 from a13n_service.runs.environments.lifecycle import (
     PHASES,
     begin,
@@ -154,6 +155,7 @@ async def register_external(
         session.add(environment)
         await session.flush()
         audit(session, actor, environment, "register")
+        publish_event(session, runtime, environment, "ready", origin="register")
         return environment_view(environment)
 
 
@@ -273,7 +275,7 @@ async def stop_environment(
             raise conflict("environment", environment.id, "stop_unsupported")
         if await session.scalar(select(in_use(environment.id))):
             raise conflict("environment", environment.id, "in_use")
-        await begin(session, environment, "stopping")
+        await begin(session, environment, "stopping", environment_hooks=runtime.environment_hooks)
         await session.flush()
         audit(session, actor, environment, "stop")
         return environment_view(environment)
@@ -322,8 +324,11 @@ async def delete_environment(
             # Nothing to destroy: an external target keeps running outside the Service, which drops its token,
             # and an unclaimed reservation never reached its provider.
             environment.status = "deleted"
+            await bootstrap_snapshots.discard(session, environment.id)
             environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
             environment.handle = environment.failure = environment.token = None
+            environment.operation_progress = None
+            publish_event(session, runtime, environment, "deleted", reason="explicit")
             if environment.kind == "managed":
                 await retire_environment(session, environment.id)
             if environment.kind == "external":
@@ -334,7 +339,7 @@ async def delete_environment(
         elif not supports(runtime.registry.get("environment", environment.provider_identity["type"]), "deleting"):
             raise conflict("environment", environment.id, "destroy_unsupported")
         else:
-            await begin(session, environment, "deleting")
+            await begin(session, environment, "deleting", environment_hooks=runtime.environment_hooks)
         await session.flush()
         audit(session, actor, environment, "delete")
         return environment_view(environment)

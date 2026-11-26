@@ -92,7 +92,7 @@ async def insert_credential(
     scope: WorkspaceScope,
     body: CredentialCreate,
     *,
-    owner_app_id: str | None = None,
+    app_id: str | None = None,
 ) -> Credential:
     row = CredentialRow(
         id=new_object_id("ecred"),
@@ -101,7 +101,7 @@ async def insert_credential(
         name=body.name,
         description=body.description,
         allowed_hosts=list(body.allowed_hosts),
-        owner_app_id=owner_app_id,
+        app_id=app_id,
         created_by_id=actor.id,
         updated_by_id=actor.id,
     )
@@ -113,12 +113,12 @@ async def insert_credential(
 
 
 def audit_credential(session: AsyncSession, actor: Principal, row: CredentialRow, verb: str, *, version: int) -> None:
-    details = {"app_id": row.owner_app_id} if row.owner_app_id is not None else {}
+    details = {"app_id": row.app_id} if row.app_id is not None else {}
     audit_row(session, actor, row, verb, {**details, "credential_version": version})
 
 
 def require_operator_managed(row: CredentialRow) -> None:
-    if row.owner_app_id is not None:
+    if row.app_id is not None:
         raise conflict(row.KIND, row.id, "app_managed_credential")
 
 

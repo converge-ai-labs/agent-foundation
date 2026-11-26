@@ -19,6 +19,9 @@ from a13n_harness_ui.configuration.models import ACP_AGENT_PRESETS, AcpAgentPres
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.surfaces import SurfaceModel
 
+# A short grace period for peers that publish their model selector after session setup.
+MODEL_OPTION_GRACE_SECONDS = 0.5
+
 
 class AcpCommand(SurfaceModel):
     name: str
@@ -65,6 +68,10 @@ class AcpOption(SurfaceModel):
     value: str | bool
     choices: tuple[AcpOptionValue, ...] = ()
 
+    @property
+    def is_model(self) -> bool:
+        return self.category == "model" or self.id == "model"
+
 
 class AcpOptionChange(SurfaceModel):
     id: str
@@ -107,6 +114,12 @@ def local_environment(environ: Mapping[str, str] | None = None) -> dict[str, str
     return environment
 
 
+_ACP_NPX_ADAPTERS: dict[AcpAgentPreset, tuple[str, str]] = {
+    "claude_code": ("claude", "@zed-industries/claude-agent-acp"),
+    "codex": ("codex", "@zed-industries/codex-acp"),
+}
+
+
 class AcpPresetView(SurfaceModel):
     id: AcpAgentPreset
     name: str
@@ -116,38 +129,61 @@ class AcpPresetView(SurfaceModel):
     install_url: str | None = None
 
 
+def _resolve_preset_command(preset: AcpAgentPreset, *, path: str) -> tuple[str, tuple[str, ...], str | None]:
+    command, default_args = ACP_AGENT_PRESETS[preset]
+    detected = shutil.which(command, path=path)
+    if detected is None and (adapter := _ACP_NPX_ADAPTERS.get(preset)) is not None:
+        npx = shutil.which("npx", path=path)
+        if npx is not None and shutil.which(adapter[0], path=path) is not None:
+            return "npx", ("-y", adapter[1]), npx
+    return command, default_args, detected
+
+
+def resolve_acp_argv(resource: AcpAgentResource, *, path: str | None = None) -> tuple[str, ...]:
+    if resource.command is not None or resource.preset == "custom":
+        return resource.argv()
+    search_path = local_environment().get("PATH", os.defpath) if path is None else path
+    executable, preset_args, _ = _resolve_preset_command(resource.preset, path=search_path)
+    if executable == "npx":
+        return (executable, *preset_args, *(resource.args or ()))
+    return (executable, *(preset_args if resource.args is None else resource.args))
+
+
 def acp_presets() -> tuple[AcpPresetView, ...]:
     path = local_environment().get("PATH", os.defpath)
-    metadata = {
+    metadata: dict[AcpAgentPreset, tuple[str, str]] = {
         "antigravity": ("Antigravity", "https://antigravity.google/docs/getting-started?tab=cli"),
-        "claude_code": ("Claude Code", "https://github.com/agentclientprotocol/claude-agent-acp"),
-        "codex": ("Codex", "https://github.com/agentclientprotocol/codex-acp"),
-        "opencode": ("OpenCode", "https://opencode.ai/docs/"),
+        "claude_code": ("Claude Code", "https://github.com/zed-industries/claude-agent-acp"),
+        "codex": ("Codex", "https://github.com/zed-industries/codex-acp"),
         "gemini_cli": ("Gemini CLI", "https://github.com/google-gemini/gemini-cli"),
+        "github_copilot": ("GitHub Copilot", "https://docs.github.com/en/copilot/how-tos/copilot-cli"),
+        "opencode": ("OpenCode", "https://opencode.ai/docs/"),
+        "goose": ("Goose", "https://block.github.io/goose/"),
+        "kimi_cli": ("Kimi CLI", "https://github.com/MoonshotAI/kimi-cli"),
     }
-    return (
-        *(
+    views: list[AcpPresetView] = []
+    for key in ACP_AGENT_PRESETS:
+        executable, preset_args, detected = _resolve_preset_command(key, path=path)
+        views.append(
             AcpPresetView(
                 id=key,
                 name=metadata[key][0],
-                executable=command,
-                detected_path=shutil.which(command, path=path),
-                args=("acp", "--dangerously-skip-permissions", "--process-per-session")
-                if key == "antigravity"
-                else args,
+                executable=executable,
+                detected_path=detected,
+                args=preset_args,
                 install_url=metadata[key][1],
             )
-            for key, (command, args) in ACP_AGENT_PRESETS.items()
-        ),
-        AcpPresetView(id="custom", name="Custom ACP Agent"),
-    )
+        )
+    views.append(AcpPresetView(id="custom", name="Custom ACP Agent"))
+    return tuple(views)
 
 
 def local_transport(
     resource: AcpAgentResource, cwd: str, *, environ: Mapping[str, str] | None = None
 ) -> LocalStdioTransport:
-    executable, *arguments = resource.argv()
-    return LocalStdioTransport(executable, cwd, tuple(arguments), environment=local_environment(environ))
+    environment = local_environment(environ)
+    executable, *arguments = resolve_acp_argv(resource, path=environment.get("PATH", os.defpath))
+    return LocalStdioTransport(executable, cwd, tuple(arguments), environment=environment)
 
 
 def acp_options(runtime: AcpSessionRuntime) -> tuple[AcpOption, ...]:
@@ -176,6 +212,7 @@ class _Resident:
     runtime: AcpSessionRuntime
     host_tools: AcpHostToolBridge
     resources: AsyncExitStack
+    unrestored_options: frozenset[str] = frozenset()
 
 
 @dataclass(slots=True)
@@ -207,7 +244,7 @@ class AcpSessions:
         saved_session_id: str | None,
         channel: AcpChannel | None = None,
         interactive: bool = False,
-    ) -> AsyncIterator[tuple[AcpSessionRuntime, AcpHostToolBridge]]:
+    ) -> AsyncIterator[_Resident]:
         if self._closed:
             raise AcpError("acp_sessions_closed", "The ACP session owner is closed.")
         entry = self._threads.setdefault(thread_id, _ThreadSession())
@@ -215,7 +252,11 @@ class AcpSessions:
             if self._closed or self._threads.get(thread_id) is not entry:
                 raise AcpError("acp_session_retired", "The ACP session was retired before admission.")
             resident = entry.resident
-            if resident is not None and (resident.digest != digest or resident.runtime.session_id != saved_session_id):
+            if resident is not None and (
+                resident.digest != digest
+                or resident.runtime.session_id != saved_session_id
+                or not resident.runtime.connected
+            ):
                 await entry.retire()
                 resident = None
             if resident is None:
@@ -225,6 +266,7 @@ class AcpSessions:
                     capabilities = schema.ClientCapabilities(
                         fs=schema.FileSystemCapabilities(read_text_file=True, write_text_file=True),
                         terminal=True,
+                        session=schema.ClientSessionCapabilities(compaction=schema.CompactionCapabilities()),
                         elicitation=(
                             schema.ElicitationCapabilities(
                                 form=schema.ElicitationFormCapabilities(), url=schema.ElicitationUrlCapabilities()
@@ -240,7 +282,7 @@ class AcpSessions:
                     )
                     resident = entry.resident = _Resident(digest, runtime, bridge, resources.pop_all())
             try:
-                yield resident.runtime, resident.host_tools
+                yield resident
             except BaseException as exc:
                 # A rejected attachment never reaches the peer. Other failures
                 # may have changed the external session, so retire the connection.
@@ -255,6 +297,7 @@ class AcpSessions:
             session_id is not None
             and resident is not None
             and resident.digest == digest
+            and resident.runtime.connected
             and resident.runtime.session_id == session_id
         )
 
@@ -268,28 +311,48 @@ class AcpSessions:
         entry = self._threads.get(thread_id)
         return acp_commands(entry.resident.runtime) if entry is not None and entry.resident is not None else None
 
-    async def set_option(self, thread_id: str, change: AcpOptionChange) -> tuple[AcpOption, ...]:
+    def live_context_window(self, thread_id: str) -> tuple[bool, tuple[int, int] | None]:
+        """Return (authoritative, context_window) from a connected live resident."""
+        entry = self._threads.get(thread_id)
+        resident = entry.resident if entry is not None else None
+        if resident is None or not resident.runtime.connected:
+            return False, None
+        client = resident.runtime.client
+        if client.context_window_version == 0 and client.context_window is None:
+            return False, None
+        return True, client.context_window
+
+    async def set_option(self, thread_id: str, change: AcpOptionChange) -> tuple[tuple[AcpOption, ...], frozenset[str]]:
         entry = self._threads.get(thread_id)
         if entry is None or entry.resident is None:
             raise ThreadError("Start a session with this ACP Agent first.", code="acp_session_missing")
         async with entry.lock:
-            if entry.resident is None:
+            resident = entry.resident
+            if resident is None:
                 raise ThreadError("The ACP session has retired.", code="acp_session_missing")
             option = next((item for item in self.options(thread_id) if item.id == change.id), None)
             if option is None or (
                 not isinstance(change.value, bool)
                 if isinstance(option.value, bool)
-                else change.value not in {choice.value for choice in option.choices}
+                else change.value == "" or change.value not in {choice.value for choice in option.choices}
             ):
                 raise ThreadError("The ACP Agent did not offer that option value.", code="acp_option_invalid")
+            model_changed = option.is_model and change.value != option.value
+            usage_version = resident.runtime.client.context_window_version
             try:
                 async with asyncio.timeout(15):
-                    await entry.resident.runtime.set_config_option(change.id, change.value)
+                    await resident.runtime.set_config_option(change.id, change.value)
             except (AcpError, RequestError, ConnectionError, TimeoutError) as error:
                 raise ThreadError(
                     "The ACP Agent did not confirm the option change.", code="acp_option_failed"
                 ) from error
-            return self.options(thread_id)
+            options = self.options(thread_id)
+            if not any(item.id == change.id and item.value == change.value for item in options):
+                raise ThreadError("The ACP Agent did not confirm the option change.", code="acp_option_failed")
+            if model_changed and resident.runtime.client.context_window_version == usage_version:
+                resident.runtime.client.clear_context_window()
+            resident.unrestored_options = frozenset() if option.is_model else resident.unrestored_options - {change.id}
+            return options, resident.unrestored_options
 
     async def retire(self, thread_id: str) -> None:
         entry = self._threads.get(thread_id)

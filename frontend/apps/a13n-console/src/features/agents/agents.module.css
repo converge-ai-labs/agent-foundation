@@ -286,11 +286,131 @@
 .webConfigTrigger[aria-expanded="true"] svg {
   transform: rotate(90deg);
 }
+.environmentCard {
+  --environment-inset: 16px;
+  --setting-column-gap: 16px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+  background: var(--a13n-canvas);
+}
+.environmentCard > :not(.environmentSession) {
+  padding: var(--environment-inset);
+}
+.environmentCard > * + * {
+  border-top: 1px solid var(--a13n-border);
+}
+.environmentCard
+  :is(
+    [data-a13n-button],
+    [data-slot="button"],
+    [data-slot="select-trigger"],
+    [data-slot="select-button"],
+    [data-slot="input-control"],
+    [data-slot="input"],
+    [data-slot="textarea-control"],
+    [data-slot="textarea"]
+  ) {
+  font-size: var(--a13n-text-sm);
+}
+.environmentCard > [data-slot="field"] > [data-slot="select-trigger"] {
+  height: 32px;
+  min-height: 32px;
+}
+.environmentCard
+  > [data-field-layout="setting"]
+  > [data-slot="field-description"] {
+  --setting-description-column-narrow: 1;
+  overflow-wrap: anywhere;
+}
+.environmentCard
+  > [data-slot="read-only-field"]
+  > [data-slot="read-only-value"] {
+  text-align: right;
+}
+.environmentPreparation {
+  gap: var(--setting-column-gap);
+}
+.environmentPreparation > div > [data-slot="settings-row-label"] {
+  color: var(--a13n-text);
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  line-height: 20px;
+}
+.environmentPreparation > div > p {
+  margin: 1px 0 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+  font-weight: 400;
+}
+.environmentSession
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-trigger"] {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 12px var(--environment-inset);
+  border-radius: 0;
+  font-size: var(--a13n-text-sm);
+  font-weight: 500;
+  line-height: 20px;
+  scale: none;
+}
+.environmentSession
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-trigger"]:hover {
+  background: var(--a13n-hover);
+}
+.environmentSession
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-trigger"]:focus-visible {
+  outline-offset: -2px;
+}
+.environmentSession
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-trigger"]
+  > svg {
+  order: 1;
+  width: 16px;
+  height: 16px;
+}
+.environmentSession
+  > [data-slot="disclosure-surface"]
+  > [data-slot="collapsible-panel"]
+  > div {
+  padding: var(--environment-inset);
+  border-top: 1px solid var(--a13n-border);
+}
+.environmentSessionOverview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--setting-column-gap);
+}
+.environmentSessionOverview > div {
+  display: grid;
+  gap: 4px;
+}
+.environmentSessionHint {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: var(--a13n-text-xs);
+}
+@media (width < 480px) {
+  .environmentCard {
+    --environment-inset: 14px;
+    --setting-column-gap: 12px;
+  }
+  .environmentSessionOverview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .toolsetPermissions {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
+  padding: 2px;
   border-radius: 8px;
   background: color-mix(in srgb, var(--a13n-text) 5%, var(--a13n-surface));
 }
@@ -305,17 +425,17 @@
     background 120ms ease,
     color 120ms ease;
 }
-.toolsetPermission:hover:not(:disabled) {
+.toolsetPermission:hover:not(:disabled):not([aria-pressed="true"]) {
   color: var(--a13n-text);
-  background: var(--a13n-elevated);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--a13n-text) 12%, transparent);
+  background: color-mix(in srgb, var(--a13n-text) 5%, transparent);
 }
 .toolsetPermission[aria-pressed="true"] {
   color: var(--a13n-text);
   background: var(--a13n-elevated);
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--a13n-text) 10%, transparent);
+  box-shadow: var(--a13n-shadow-subtle);
 }
 .toolsetPermission:disabled {
+  opacity: 0.6;
   cursor: default;
 }
 .toolsetToolHint {
@@ -342,6 +462,9 @@
   padding: 12px 16px 12px 44px;
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-xs);
+}
+.connectionLimitNotice {
+  padding: 4px 16px 12px;
 }
 .connectionOptions {
   padding: 4px 16px 12px 44px;
@@ -423,6 +546,9 @@
   }
   .connectionCatalogStatus {
     padding: 12px 14px;
+  }
+  .connectionLimitNotice {
+    padding: 4px 14px 12px;
   }
   .toolsetToolMain {
     grid-template-columns: minmax(0, 1fr) auto;

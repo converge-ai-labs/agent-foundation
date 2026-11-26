@@ -652,7 +652,7 @@ class ThreadProjectionService:
             touched_at=thread.touched_at,
             archived=thread.archived,
             starred=thread.starred,
-            unread=thread.unread,
+            unread=False if thread.thread_id in owners else thread.unread,
             read_state_version=thread.read_state_version,
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",
@@ -668,6 +668,7 @@ class ThreadProjectionService:
         *,
         active_composition: ResolvedRunComposition | None = None,
         active_run_id: str | None = None,
+        acp_live_context: tuple[bool, tuple[int, int] | None] = (False, None),
     ) -> ContextUsageView:
         thread = await self._store.threads.get(thread_id)
         if thread is None:
@@ -686,19 +687,27 @@ class ThreadProjectionService:
             # A newly seeded context may contain instructions but no measured response.
             if not inspection.context_empty and (active_composition is None or latest is not None):
                 observed = await self._store.usage.latest_root_request(thread_id=thread_id)
-        if composition is None:
-            return ContextUsageView(thread_id=thread_id)
-        if observed is not None:
-            latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
-        if isinstance(composition.root, ResolvedAcpNode) and thread.configuration.agent_source.kind in {
-            "acp_agent",
-            "bot",
-        }:
+        acp_agent = thread.configuration.agent_source.kind == "acp_agent" or (
+            thread.configuration.agent_source.kind == "bot"
+            and (isinstance(composition.root, ResolvedAcpNode) if composition is not None else acp_live_context[0])
+        )
+        if acp_agent:
+            live_authoritative, live_window = acp_live_context
+            if live_authoritative:
+                if live_window is None:
+                    return ContextUsageView(thread_id=thread_id)
+                used, size = live_window
+                return ContextUsageView(thread_id=thread_id, latest_request_tokens=used, context_window=size)
             raw = await self._store.threads.acp_state(thread_id)
             saved = AcpSessionState.model_validate_json(raw) if raw is not None else None
             if saved is not None and saved.context_window is not None:
                 used, size = saved.context_window
                 return ContextUsageView(thread_id=thread_id, latest_request_tokens=used, context_window=size)
+            return ContextUsageView(thread_id=thread_id)
+        if composition is None:
+            return ContextUsageView(thread_id=thread_id)
+        if observed is not None:
+            latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
         model = composition.root.model
         if model is None:
             return ContextUsageView(thread_id=thread_id)

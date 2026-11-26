@@ -9,6 +9,9 @@ from pathlib import Path
 BUILTIN_SKILLS_PATH = "/environment/builtin-skills"
 BUILTIN_SKILLS_ROOT = Path(__file__).parent / "assets" / "builtin_skills"
 BUILTIN_SKILLS_SOURCE_ID = "a13n-harness-ui:builtin-skills"
+BUILTIN_COORDINATOR_SKILLS_PATH = "/environment/builtin-coordinator-skills"
+BUILTIN_COORDINATOR_SKILLS_ROOT = Path(__file__).parent / "assets" / "coordinator_skills"
+BUILTIN_COORDINATOR_SKILLS_SOURCE_ID = "a13n-harness-ui:builtin-coordinator-skills"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,4 +70,12 @@ class EnvironmentPathLayout:
         )
 
 
-__all__ = ["BUILTIN_SKILLS_PATH", "BUILTIN_SKILLS_ROOT", "BUILTIN_SKILLS_SOURCE_ID", "EnvironmentPathLayout"]
+__all__ = [
+    "BUILTIN_COORDINATOR_SKILLS_PATH",
+    "BUILTIN_COORDINATOR_SKILLS_ROOT",
+    "BUILTIN_COORDINATOR_SKILLS_SOURCE_ID",
+    "BUILTIN_SKILLS_PATH",
+    "BUILTIN_SKILLS_ROOT",
+    "BUILTIN_SKILLS_SOURCE_ID",
+    "EnvironmentPathLayout",
+]

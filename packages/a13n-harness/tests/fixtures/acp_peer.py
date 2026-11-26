@@ -6,6 +6,8 @@ import subprocess
 import sys
 import traceback
 from itertools import count
+from pathlib import Path
+from time import sleep
 from urllib.request import Request, urlopen
 
 
@@ -19,6 +21,7 @@ sys.excepthook = log_failure
 IDS = count(100)
 SESSION = "fixture-session"
 MODE = sys.argv[1]
+FLAGS = set(sys.argv[2:])
 RESIDENT_ONLY = MODE == "ui" and "resident" in sys.argv[2:]
 CATALOG = ["identify", "ask_user_question"] if "questions" in sys.argv[2:] else ["identify"]
 STEERING = not RESIDENT_ONLY and MODE not in {"load", "new-no-system", "legacy"}
@@ -34,6 +37,17 @@ CONFIG_OPTIONS = [
         options=[dict(value="chat", name="Chat"), dict(value="plan", name="Plan")],
     )
 ]
+MODEL = {
+    "id": "model",
+    "name": "Model",
+    "category": "model",
+    "type": "select",
+    "options": [{"value": "a", "name": "Model A"}, {"value": "b", "name": "Model B"}],
+}
+if "null-model" in FLAGS:
+    MODEL["currentValue"] = None
+MODEL_GATE = next((Path(arg.removeprefix("model-gate=")) for arg in FLAGS if arg.startswith("model-gate=")), None)
+MODEL_ON_OPEN = bool({"null-model", "missing-model"} & FLAGS or MODEL_GATE) and "delayed-model" not in FLAGS
 MCP = None
 TERMINAL = None
 
@@ -119,7 +133,14 @@ for line in sys.stdin:
     params = frame.get("params", {})
     ident = frame.get("id")
     if method == "initialize":
-        caps = {"mcpCapabilities": {"acp": MODE == "remote", "http": MODE == "http"}, "loadSession": not RESIDENT_ONLY}
+        client_caps = params.get("clientCapabilities") or {}
+        client_session = client_caps.get("session") if isinstance(client_caps, dict) else None
+        if "require-compaction-cap" in FLAGS:
+            assert isinstance(client_session, dict) and client_session.get("compaction") is not None, client_caps
+        caps = {
+            "mcpCapabilities": {"acp": MODE == "remote", "http": MODE == "http" or "use-http" in FLAGS},
+            "loadSession": not RESIDENT_ONLY,
+        }
         if MODE in {"auth", "auth-required"}:
             caps["auth"] = {"logout": {}}
         if MODE == "legacy":
@@ -202,16 +223,32 @@ for line in sys.stdin:
         if method == "session/new" and "unique-session" in sys.argv[2:]:
             SESSION = f"fixture-session-{os.getpid()}-{next(IDS)}"
         response = {"sessionId": SESSION} if method == "session/new" else {}
-        if MODE == "ui":
+        if MODE == "ui" or (MODE not in {"legacy", "update"} and MODEL_ON_OPEN):
+            if MODEL_ON_OPEN and (MODEL_GATE is None or MODEL_GATE.exists()) and MODEL not in CONFIG_OPTIONS:
+                CONFIG_OPTIONS.append(MODEL)
             response["configOptions"] = CONFIG_OPTIONS
         if MODE == "legacy":
             response["models"] = {
                 "currentModelId": "a",
                 "availableModels": [{"modelId": "a", "name": "A"}, {"modelId": "b", "name": "B"}],
             }
+            if "null-model" in sys.argv[2:]:
+                response["models"]["currentModelId"] = None
+            if "missing-model" in sys.argv[2:]:
+                del response["models"]["currentModelId"]
         if MODE == "ui":
             update("available_commands_update", availableCommands=[{"name": "plan", "description": "Plan a task"}])
+        if "usage-on-open" in FLAGS:
+            update("usage_update", used=12, size=1000)
         send(id=ident, result=response)
+        if "delayed-model" in sys.argv[2:]:
+            sleep(0.05)
+            CONFIG_OPTIONS.append(MODEL)
+            update("config_option_update", configOptions=CONFIG_OPTIONS)
+    elif method == "_fixture/announce_options":
+        CONFIG_OPTIONS.append(MODEL)
+        update("config_option_update", configOptions=CONFIG_OPTIONS)
+        send(id=ident, result={})
     elif method == "session/set_model" and MODE == "legacy":
         assert params == {"sessionId": SESSION, "modelId": "b"}
         update("current_model_update", currentModelId="b")
@@ -223,9 +260,16 @@ for line in sys.stdin:
             id=ident, result={"outcome": "injected" if params["prompt"][0]["text"] == "interrupt" else "promptRequired"}
         )
     elif method == "session/set_config_option" and MODE == "ui":
-        assert params["configId"] == "mode" and params["value"] in {"chat", "plan"}, params
-        CONFIG_OPTIONS[0]["currentValue"] = params["value"]
+        option = next(item for item in CONFIG_OPTIONS if item["id"] == params["configId"])
+        assert params["value"] in {choice["value"] for choice in option["options"]}, params
+        rejected = "unconfirmed-model-change" in FLAGS and option is MODEL and params["value"] == "b"
+        option["currentValue"] = None if rejected else params["value"]
+        if "usage-on-model-change" in FLAGS and option is MODEL and not rejected:
+            update("usage_update", used=5, size=2000)
         send(id=ident, result={"configOptions": CONFIG_OPTIONS})
+        if "late-model-on-mode-change" in FLAGS and MODEL not in CONFIG_OPTIONS and MODEL_GATE.exists():
+            CONFIG_OPTIONS.append(MODEL)
+            update("config_option_update", configOptions=CONFIG_OPTIONS)
     elif method == "_fixture/discover":
         assert {entry["name"] for entry in mcp("tools/list")["tools"]} == set(CATALOG)
         assert mcp("tools/call", {"name": "identify"}, expect_error=True)["data"]["code"] == "acp_run_inactive"
@@ -241,6 +285,33 @@ for line in sys.stdin:
             if MODE == "ui"
             else blocks[-1]
         )
+        if MODE == "ui" and message == "disconnect-prompt":
+            break
+        if MODE == "ui" and message == "verify-restored-model":
+            assert MODEL["currentValue"] == "b"
+            text("Model B restored")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message in {"reject-prompt", "fail-after-progress", "fail-after-accept", "fail-after-tool"}:
+            if message == "fail-after-progress":
+                text("Turn started")
+            elif message == "fail-after-accept":
+                turn_id = params["_meta"]["dev.a13n.harness-ui"]["turnId"]
+                send(
+                    method="_a13n/input_accepted",
+                    params={"sessionId": params["sessionId"], "turnId": turn_id, "inputId": "fixture"},
+                )
+            elif message == "fail-after-tool":
+                posted = mcp(
+                    "tools/call",
+                    {
+                        "name": "post_to_inbox",
+                        "arguments": {"kind": "result", "title": "Tool before error", "message": "Saved."},
+                    },
+                )
+                assert not posted["isError"], posted
+            send(id=ident, error={"code": -32603, "message": "Fixture rejected the prompt"})
+            continue
         if MODE == "ui" and message.startswith("observe"):
             update("session_info_update", title=message.partition(":")[2] or "Peer title")
             update("usage_update", used=10, size=1000)
@@ -283,6 +354,39 @@ for line in sys.stdin:
             update("compaction_update", compactionId="compact-1", status="completed")
             text("\n[GOAL_COMPLETE]")
             send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "goal-failed-compaction":
+            text("Checking the work.")
+            update("compaction_update", compactionId="compact-fail", status="failed", error="quota_exceeded")
+            update("compaction_update", compactionId="compact-cancel", status="cancelled")
+            update("compaction_update", compactionId="compact-wip", status="in_progress")
+            text("\n[GOAL_COMPLETE]")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "compact-live":
+            update("usage_update", used=800, size=1000)
+            update("compaction_update", compactionId="c-1", status="in_progress")
+            update("compaction_summary_chunk", compactionId="c-1", content={"type": "text", "text": "Part 1. "})
+            update("compaction_summary_chunk", compactionId="c-1", content={"type": "text", "text": "Part 2."})
+            update("compaction_update", compactionId="c-1", status="completed")
+            text("Done after compact.")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "compact-then-usage":
+            update("usage_update", used=800, size=1000)
+            update("compaction_update", compactionId="c-2", status="completed")
+            update("usage_update", used=150, size=1000)
+            text("Refreshed after compact.")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "compact-cancelled":
+            update("compaction_update", compactionId="c-cancel", status="cancelled")
+            text("Cancelled compaction.")
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and message == "usage-then-fail":
+            update("usage_update", used=420, size=1000)
+            send(id=ident, error={"code": -32603, "message": "Failed after usage"})
             continue
         if MODE == "ui" and "acp_compaction" in message:
             text("Audit complete.\n[GOAL_COMPLETE]")

@@ -46,6 +46,7 @@ from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.environments.adapters import Target, close, managed_target, open_provider, provider_identity
 from a13n_service.runs.environments.desktop import identity
 from a13n_service.runs.environments.egress.storage import retire_environment
+from a13n_service.runs.environments.events import publish_after_commit as publish_event
 from a13n_service.runs.environments.lifecycle import LOST, Fault, fault_of, lost, reached_with, record_failure
 from a13n_service.runs.environments.schemas import EnvironmentFailure, Handle
 from a13n_service.runs.environments.tables import EnvironmentRow
@@ -181,6 +182,7 @@ async def publish(runtime: Runtime, renewal: Renewal, outcome: datetime | Except
             environment.renew_at = max(current, environment.expires_at or horizon)
         elif code == "provider_target_stopped":
             environment.status = "stopped"
+            publish_event(session, runtime, environment, "stopped", reason="provider")
             environment.renew_at = environment.expires_at = environment.failure = None
             record(
                 session,
@@ -193,8 +195,11 @@ async def publish(runtime: Runtime, renewal: Renewal, outcome: datetime | Except
             )
         elif category == EnvironmentProviderErrorCategory.MISSING:
             fault = lost(renewal.credential_changed)
+            new_loss = (environment.failure or {}).get("code") != LOST.code
             _fail(environment, fault, current)
             if fault is LOST:
+                if new_loss:
+                    publish_event(session, runtime, environment, "lost", reason=LOST.code)
                 await identity.invalidate(session, renewal.target.state)
                 await retire_environment(session, environment.id)
         else:

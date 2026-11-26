@@ -2106,43 +2106,77 @@ it("keeps older history reachable when every loaded recent row becomes unread", 
   vi.restoreAllMocks();
 });
 
-it("keeps the owner of an unread worker above read history", async () => {
-  coordinators = [
-    { ...thread("worker-owner"), role: "coordinator", archived: true },
-  ];
+it("does not pin a Coordinator or inflate Project unread counts for worker completions", async () => {
+  const activeOwner = {
+    ...thread("active-owner"),
+    role: "coordinator" as const,
+    touched_at: "2026-09-10T00:00:00Z",
+  };
+  const archivedOwner = {
+    ...thread("archived-owner"),
+    role: "coordinator" as const,
+    archived: true,
+  };
+  coordinators = [activeOwner, archivedOwner];
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
-  const worker = {
-    ...thread("unread-worker"),
-    role: "worker",
-    coordinator_thread_id: "worker-owner",
-    completion: {
-      version: 1,
-      run_id: "run-done",
-      continuation_id: "a".repeat(64),
-      completed_at: "2026-09-16T00:00:00Z",
-    },
-  } as Schema<"ThreadSummary">;
-  results.observe({ ...worker, unread: true, read_state_version: 1 });
+  const completion = {
+    version: 1,
+    run_id: "run-done",
+    continuation_id: "a".repeat(64),
+    completed_at: "2026-09-16T00:00:00Z",
+  };
+  const workerUnderActive = {
+    ...thread("worker-active-owner"),
+    role: "worker" as const,
+    coordinator_thread_id: "active-owner",
+    completion,
+  };
+  const workerUnderArchived = {
+    ...thread("worker-archived-owner"),
+    role: "worker" as const,
+    coordinator_thread_id: "archived-owner",
+    completion,
+  };
+  workerThreads = [workerUnderActive];
+  // Even if stale observations carry unread=true on workers, workers stay excluded.
+  results.observe({
+    ...workerUnderActive,
+    unread: true,
+    read_state_version: 1,
+  } as Schema<"ThreadSummary">);
+  results.observe({
+    ...workerUnderArchived,
+    unread: true,
+    read_state_version: 1,
+  } as Schema<"ThreadSummary">);
   mount("/", false, results);
-  fireEvent.click(await screen.findByRole("button", { name: /^One/ }));
-  const owner = await screen.findByRole("link", {
-    name: /worker-owner.*Coordinator/,
-  });
-  expect(screen.getByRole("link", { name: /worker-owner.*Coordinator/ })).toBe(
-    owner,
-  );
-  const links = screen.getAllByRole("link");
-  expect(links.indexOf(owner)).toBeLessThan(
-    links.findIndex((link) => /^Recent/.test(link.textContent ?? "")),
-  );
+  const group = await screen.findByRole("region", { name: "One" });
+  expect(within(group).queryByLabelText(/chats with new results/)).toBeNull();
   fireEvent.click(
-    screen.getByRole("button", { name: "Expand workers for worker-owner" }),
+    within(group).getByRole("button", { name: /^One/, expanded: false }),
   );
-  await screen.findByRole("link", { name: /unread-worker.*New result/ });
+  await screen.findByRole("link", { name: /active-owner.*Coordinator/ });
+  // Archived owner is not resurrected by an idle worker.
   expect(
-    screen.getByRole("button", { name: "Restore worker-owner" }),
-  ).toBeTruthy();
+    within(group).queryByRole("link", { name: /archived-owner/ }),
+  ).toBeNull();
+  // Active owner stays in read history without an unread dot.
+  expect(within(group).queryByRole("img", { name: "New result" })).toBeNull();
+  expect(
+    within(group)
+      .getByRole("link", { name: /active-owner.*Coordinator/ })
+      .closest<HTMLElement>("[data-nav-bucket]")?.dataset.navBucket,
+  ).toBe("recent");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Expand workers for active-owner" }),
+  );
+  const workerLink = await screen.findByRole("link", {
+    name: /worker-active-owner/,
+  });
+  expect(
+    within(workerLink).queryByRole("img", { name: "New result" }),
+  ).toBeNull();
   vi.restoreAllMocks();
 });
 
@@ -2607,44 +2641,67 @@ it("keeps an archived Coordinator reachable for an unselected active worker in R
   expect(within(workers).getAllByRole("link")).toHaveLength(1);
 });
 
-it("keeps the archived owner of an off-page unread worker reachable in Recent", async () => {
+it("does not resurrect an archived owner for an idle worker in Recent, while keeping a selected worker's owner anchored", async () => {
   localStorage.setItem("a13n-harness-ui.navigation-view", "recent");
-  coordinators = [
-    { ...thread("unread-owner"), role: "coordinator", archived: true },
-  ];
+  const idleOwner = {
+    ...thread("idle-archived-owner"),
+    role: "coordinator" as const,
+    archived: true,
+  };
+  const selectedOwner = {
+    ...thread("selected-archived-owner"),
+    role: "coordinator" as const,
+    archived: true,
+  };
+  coordinators = [idleOwner, selectedOwner];
   const results = new ResultTracker(createTransport("test", () => {}));
   vi.spyOn(results, "invalidate").mockImplementation(() => {});
-  const worker = {
-    ...thread("unread-worker"),
-    role: "worker",
-    coordinator_thread_id: "unread-owner",
+  const idleWorker = {
+    ...thread("idle-worker"),
+    role: "worker" as const,
+    coordinator_thread_id: "idle-archived-owner",
     completion: {
       version: 1,
       run_id: "run-done",
       continuation_id: "a".repeat(64),
       completed_at: "2026-10-30T00:00:00Z",
     },
-  } as Schema<"ThreadSummary">;
-  results.observe({ ...worker, unread: true, read_state_version: 1 });
-  mount("/", false, results);
+  };
+  const selectedWorker = {
+    ...thread("selected-worker"),
+    role: "worker" as const,
+    coordinator_thread_id: "selected-archived-owner",
+  };
+  workerThreads = [selectedWorker];
+  results.observe({
+    ...idleWorker,
+    unread: true,
+    read_state_version: 1,
+  } as Schema<"ThreadSummary">);
+  mount("/threads/selected-worker", false, results);
   const recent = await screen.findByRole("region", {
     name: "Recent chats",
   });
-  await within(recent).findByRole("link", { name: /unread-owner/ });
+  await within(recent).findByRole("link", { name: /selected-archived-owner/ });
   expect(
-    within(recent).getByRole("button", { name: "Restore unread-owner" }),
+    within(recent).queryByRole("link", { name: /idle-archived-owner/ }),
+  ).toBeNull();
+  expect(
+    within(recent).getByRole("button", {
+      name: "Restore selected-archived-owner",
+    }),
   ).toBeTruthy();
   fireEvent.click(
     within(recent).getByRole("button", {
-      name: "Expand workers for unread-owner",
+      name: "Expand workers for selected-archived-owner",
     }),
   );
   const workers = await within(recent).findByLabelText(
-    "Workers for unread-owner",
+    "Workers for selected-archived-owner",
   );
   const row = await within(workers).findByRole("link", {
-    name: /unread-worker/,
+    name: /selected-worker/,
   });
-  expect(within(row).getByRole("img", { name: "New result" })).toBeTruthy();
+  expect(within(row).queryByRole("img", { name: "New result" })).toBeNull();
   vi.restoreAllMocks();
 });

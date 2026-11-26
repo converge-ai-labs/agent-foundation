@@ -422,7 +422,7 @@ function Location() {
     </>
   );
 }
-function mount(initial = path, sidebar = false) {
+function mount(initial = path, sidebar = false, coordinatorByDefault = false) {
   return render(
     <QueryClientProvider client={queries}>
       <TransportContext value={createTransport("test", () => {})}>
@@ -448,6 +448,7 @@ function mount(initial = path, sidebar = false) {
                     path="/new"
                     element={
                       <NewConversationPage
+                        coordinatorByDefault={coordinatorByDefault}
                         profile={{ display_name: "Test", color: "#000000" }}
                         unauthorized={() => {}}
                       />
@@ -457,6 +458,7 @@ function mount(initial = path, sidebar = false) {
                     path="/"
                     element={
                       <NewConversationPage
+                        coordinatorByDefault={coordinatorByDefault}
                         profile={{ display_name: "Test", color: "#000000" }}
                         unauthorized={() => {}}
                       />
@@ -481,7 +483,7 @@ function mount(initial = path, sidebar = false) {
     </QueryClientProvider>,
   );
 }
-async function fill() {
+async function fill(projectName = "Example project") {
   await screen.findByRole("heading", {
     name: "What can I help with?",
   });
@@ -494,7 +496,7 @@ async function fill() {
   );
   expect(
     screen.getByRole("combobox", { name: "Project" }).textContent,
-  ).toContain("Example project");
+  ).toContain(projectName);
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Build this"));
 }
 
@@ -2564,8 +2566,44 @@ it("retains Coordinator intent across Project changes without falling back to or
   expect(writes).toHaveLength(0);
 });
 
+it.each([true, false])(
+  "creates a new project chat with its visible Coordinator choice (%s)",
+  async (enabled) => {
+    failure = "submit-reject";
+    mount(path, false, true);
+    await fill();
+    await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+    const toggle = screen.getByRole("switch", { name: "Coordinate agents" });
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    if (!enabled) await userEvent.click(toggle);
+    const restored = new NewDraftStore();
+    const retained = restored.get(new Map(), false);
+    expect(
+      retained.composer.coordinator ?? retained.retainedCoordinatorDefault,
+    ).toBe(enabled);
+    restored.dispose();
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Chat busy");
+    expect((await writes[0].clone().json()).coordinator).toBe(
+      enabled ? true : undefined,
+    );
+  },
+);
+
+it("does not preselect Coordinator for a projectless draft", async () => {
+  failure = "submit-reject";
+  mount(newConversationPath(), false, true);
+  await fill("Without a project");
+  await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  const toggle = screen.getByRole("switch", { name: "Coordinate agents" });
+  expect(toggle.getAttribute("aria-checked")).toBe("false");
+  await userEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Chat busy");
+  expect(await writes[0].clone().json()).not.toHaveProperty("coordinator");
+});
+
 it("restores worker assignment and removes only ownership without losing the authored draft", async () => {
-  mount(newConversationPath("project-one", ownerId));
+  mount(newConversationPath("project-one", ownerId), false, true);
   await fill();
   await screen.findByText("Managed by - Project manager");
   expect(
@@ -2740,4 +2778,451 @@ it("blocks unavailable owners rather than silently creating an independent threa
     (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
       .disabled,
   ).toBe(false);
+});
+
+it("blocks sending while ACP options load, authenticate, update, or fail on New Chat and isolates agent switches", async () => {
+  const user = userEvent.setup();
+  let resolveOptions!: (response: Response) => void;
+  let optionsResponse: (() => Promise<Response>) | undefined;
+  let optionPostResponse: (() => Promise<Response>) | undefined;
+  const originalFetch = vi.mocked(globalThis.fetch).getMockImplementation()!;
+  vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const pathname = new URL(request.url).pathname;
+    if (pathname === "/api/selectors")
+      return json({
+        agents: [
+          {
+            agent_id: "acp-agy",
+            name: "Antigravity",
+            kind: "acp_agent",
+            preset: "antigravity",
+          },
+          {
+            agent_id: "acp-other",
+            name: "Other ACP",
+            kind: "acp_agent",
+            preset: "codex",
+          },
+        ],
+        models: [],
+        environments: [
+          {
+            profile_id: "environment-native",
+            name: "Full Control",
+            mode: "full-control",
+          },
+        ],
+      });
+    if (pathname === "/api/configuration/sources")
+      return json({
+        sources: [
+          {
+            resource_kind: "acp_agent",
+            relative_path: "acp_agents/agy.yaml",
+            resource_ids: ["acp-agy"],
+          },
+        ],
+      });
+    if (pathname.endsWith("configuration-preview")) {
+      const body = await request.clone().json();
+      const selected = body.agent_id || "acp-agy";
+      return json({
+        configuration: {
+          project_id: body.project_id ?? null,
+          agent_source: { kind: "acp_agent", id: selected },
+          environment_profile_id: "environment-native",
+        },
+      });
+    }
+    if (pathname === "/api/acp-agents/acp-agy/options") {
+      if (request.method === "GET")
+        return optionsResponse
+          ? optionsResponse()
+          : new Promise<Response>((resolve) => {
+              resolveOptions = resolve;
+            });
+      if (request.method === "POST")
+        return optionPostResponse
+          ? optionPostResponse()
+          : json({
+              scope: "s1",
+              options: [
+                {
+                  id: "model",
+                  name: "Model",
+                  category: "model",
+                  value: "m2",
+                  choices: [
+                    { name: "Model 1", value: "m1" },
+                    { name: "Model 2", value: "m2" },
+                  ],
+                },
+              ],
+              selections: { model: "m2" },
+            });
+    }
+    if (pathname === "/api/acp-agents/acp-other/options")
+      return json({
+        scope: "s-other",
+        options: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            value: "m-other",
+            choices: [{ name: "Other Model", value: "m-other" }],
+          },
+        ],
+        selections: { model: "m-other" },
+      });
+    return originalFetch(input, init);
+  });
+
+  mount();
+  await screen.findByRole("heading", { name: "What can I help with?" });
+  const composerRegion = screen.getByRole("region", {
+    name: "Message composer",
+  });
+  const trigger = await screen.findByRole("button", {
+    name: "Agent & Model settings",
+  });
+  await waitFor(() =>
+    expect(trigger.querySelector("[data-acp-loading]")).toBeTruthy(),
+  );
+  // Empty composer stays quiet: no loading banner, Send disabled with title.
+  expect(within(composerRegion).queryByRole("status")).toBeNull();
+  const send = screen.getByRole("button", {
+    name: "Send",
+  }) as HTMLButtonElement;
+  expect(send.disabled).toBe(true);
+  expect(send.title).toBe("Loading Antigravity options…");
+
+  // Typing input reveals the quiet loading status and keeps Enter blocked.
+  act(() => drafts.get(id)!.doc.getText("text").insert(0, "Hello ACP"));
+  expect(within(composerRegion).getByRole("status").textContent).toBe(
+    "Loading Antigravity options…",
+  );
+  expect(screen.queryByText("Refresh chat status before sending.")).toBeNull();
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Message" }), {
+    key: "Enter",
+  });
+  expect(writes).toHaveLength(0);
+
+  // Auth required error surfaces auth link + Retry, and Retry transitions immediately to loading.
+  let resolveRetry!: (response: Response) => void;
+  optionsResponse = () =>
+    new Promise<Response>((resolve) => {
+      resolveRetry = resolve;
+    });
+  await act(async () => {
+    resolveOptions(
+      json(
+        { error: { code: "acp_auth_required", message: "Sign in needed" } },
+        409,
+      ),
+    );
+  });
+  await screen.findByText("Sign in to Antigravity before sending.");
+  expect(
+    screen
+      .getByRole("link", { name: "Open Agent authentication" })
+      .getAttribute("href"),
+  ).toBe("/settings/source?path=acp_agents%2Fagy.yaml");
+  expect(send.disabled).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await waitFor(() =>
+    expect(within(composerRegion).getByRole("status").textContent).toBe(
+      "Loading Antigravity options…",
+    ),
+  );
+
+  // Resolve options -> Send unblocks and trigger spinner clears.
+  await act(async () => {
+    resolveRetry(
+      json({
+        scope: "s1",
+        options: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            value: "m1",
+            choices: [
+              { name: "Model 1", value: "m1" },
+              { name: "Model 2", value: "m2" },
+            ],
+          },
+        ],
+        selections: { model: "m1" },
+      }),
+    );
+  });
+  await waitFor(() => expect(send.disabled).toBe(false));
+  expect(trigger.querySelector("[data-acp-loading]")).toBeNull();
+
+  // Option update failure shows Retry + Keep current; Keep current unblocks Send.
+  let resolveUpdate!: (response: Response) => void;
+  optionPostResponse = () =>
+    new Promise<Response>((resolve) => {
+      resolveUpdate = resolve;
+    });
+  await user.click(trigger);
+  await user.click(await screen.findByRole("button", { name: "Model" }));
+  await user.click(await screen.findByRole("button", { name: "Model 2" }));
+  await waitFor(() => expect(send.disabled).toBe(true));
+  expect(within(composerRegion).getByRole("status").textContent).toBe(
+    "Updating Antigravity options…",
+  );
+  await act(async () => {
+    resolveUpdate(json({ error: { message: "Model quota exhausted" } }, 400));
+  });
+  await screen.findByText("Could not update Antigravity options.");
+  expect(
+    within(composerRegion).getByText("Model quota exhausted"),
+  ).toBeTruthy();
+  expect(send.disabled).toBe(true);
+
+  // Switching to another ACP agent does not inherit the failed option update.
+  await user.click(screen.getByRole("button", { name: "Agent" }));
+  await user.click(await screen.findByRole("button", { name: /Other ACP/ }));
+  await waitFor(() => expect(send.disabled).toBe(false));
+  expect(
+    screen.queryByText("Could not update Antigravity options."),
+  ).toBeNull();
+
+  // Switch back, fail update again, then Keep current to unblock.
+  await user.click(screen.getByRole("button", { name: "Agent" }));
+  await user.click(await screen.findByRole("button", { name: /Antigravity/ }));
+  await waitFor(() => expect(send.disabled).toBe(false));
+  optionPostResponse = async () =>
+    json({ error: { message: "Temporary failure" } }, 500);
+  await user.click(await screen.findByRole("button", { name: "Model" }));
+  await user.click(await screen.findByRole("button", { name: "Model 2" }));
+  await screen.findByText("Could not update Antigravity options.");
+  fireEvent.click(screen.getByRole("button", { name: "Keep current" }));
+  await waitFor(() => expect(send.disabled).toBe(false));
+
+  // After thread creation fails on submit (draft.created === true), ACP gate unlocks retry.
+  failure = "submit-reject";
+  fireEvent.click(send);
+  await screen.findByText("Chat busy");
+  expect(creations.current!.created).toBe(true);
+  expect(send.disabled).toBe(false);
+});
+
+it("prioritizes preview loading over coordinator warnings when coordinatorByDefault is enabled", async () => {
+  let resolvePreview!: (response: Response) => void;
+  const originalFetch = vi.mocked(globalThis.fetch).getMockImplementation()!;
+  vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (new URL(request.url).pathname.endsWith("configuration-preview"))
+      return new Promise<Response>((resolve) => {
+        resolvePreview = resolve;
+      });
+    return originalFetch(input, init);
+  });
+
+  mount(newConversationPath("project-one"), false, true);
+  // Force past opening gate by clicking continue or waiting; first inject input after mount.
+  act(() => drafts.get(id)!.doc.getText("text").insert(0, "Plan work"));
+  await act(async () => {
+    resolvePreview(
+      json({
+        configuration: {
+          project_id: "project-one",
+          agent_source: { kind: "agent", id: "agent-one" },
+          environment_profile_id: "environment-native",
+        },
+      }),
+    );
+  });
+  await screen.findByRole("heading", { name: "What can I help with?" });
+  // Now switch project to trigger a new pending preview while coordinator is enabled.
+  let resolveSecondPreview!: (response: Response) => void;
+  vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    if (new URL(request.url).pathname.endsWith("configuration-preview"))
+      return new Promise<Response>((resolve) => {
+        resolveSecondPreview = resolve;
+      });
+    return originalFetch(input, init);
+  });
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  const composerRegion = screen.getByRole("region", {
+    name: "Message composer",
+  });
+  await waitFor(() =>
+    expect(within(composerRegion).getByRole("status").textContent).toBe(
+      "Updating chat settings…",
+    ),
+  );
+  expect(screen.queryByText(/Choose a project.*coordinate agents/)).toBeNull();
+  await act(async () => {
+    resolveSecondPreview(
+      json({
+        configuration: {
+          project_id: "project-two",
+          agent_source: { kind: "agent", id: "agent-one" },
+          environment_profile_id: "environment-native",
+        },
+      }),
+    );
+  });
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+});
+
+it("blocks saved ACP chat during option loading/updates, keeps active Interrupt & send unblocked, and offers Refresh chat when run action is missing", async () => {
+  const user = userEvent.setup();
+  let resolveOptions!: (response: Response) => void;
+  let optionReads = 0;
+  let putReject!: () => Response;
+  const loadedOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      value: "m1",
+      choices: [
+        { name: "Model 1", value: "m1" },
+        { name: "Model 2", value: "m2" },
+      ],
+    },
+  ];
+  let threadState: Schema<"ThreadDetail"> = {
+    ...threadDetail,
+    thread: {
+      ...threadDetail.thread,
+      configuration: {
+        ...threadDetail.thread.configuration,
+        agent_source: { kind: "acp_agent", id: "acp-agy" },
+      },
+    },
+    available_actions: ["run"],
+  };
+  focused = {
+    epoch: "epoch-acp",
+    cutover_sequence: 0,
+    thread: threadState,
+  };
+  const originalFetch = vi.mocked(globalThis.fetch).getMockImplementation()!;
+  vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const pathname = new URL(request.url).pathname;
+    if (pathname === "/api/selectors")
+      return json({
+        agents: [
+          {
+            agent_id: "acp-agy",
+            name: "Antigravity",
+            kind: "acp_agent",
+            preset: "antigravity",
+          },
+        ],
+        models: [],
+        environments: [],
+      });
+    if (pathname === "/api/configuration/sources")
+      return json({
+        sources: [
+          {
+            resource_kind: "acp_agent",
+            relative_path: "acp_agents/agy.yaml",
+            resource_ids: ["acp-agy"],
+          },
+        ],
+      });
+    if (pathname === `/api/threads/${id}`) return json(threadState);
+    if (pathname === `/api/threads/${id}/acp-commands`) return json([]);
+    if (pathname === `/api/threads/${id}/acp-options`) {
+      if (request.method === "GET")
+        return ++optionReads === 1
+          ? new Promise<Response>((resolve) => {
+              resolveOptions = resolve;
+            })
+          : json(loadedOptions);
+      if (request.method === "PUT") return putReject();
+    }
+    return originalFetch(input, init);
+  });
+
+  mount(`/threads/${id}`);
+  const composerRegion = await screen.findByRole("region", {
+    name: "Message composer",
+  });
+  const send = (await screen.findByRole("button", {
+    name: "Send",
+  })) as HTMLButtonElement;
+  expect(send.disabled).toBe(true);
+  expect(send.title).toBe("Loading Antigravity options…");
+
+  act(() => drafts.get(id)!.doc.getText("text").insert(0, "Continue"));
+  expect(within(composerRegion).getByRole("status").textContent).toBe(
+    "Loading Antigravity options…",
+  );
+
+  await act(async () => {
+    resolveOptions(json(loadedOptions));
+  });
+  await waitFor(() => expect(send.disabled).toBe(false));
+
+  // Failed PUT blocks Send until Keep current resets it.
+  putReject = () => json({ error: { message: "Cannot switch model" } }, 409);
+  await user.click(
+    screen.getByRole("button", { name: "Agent & Model settings" }),
+  );
+  await user.click(await screen.findByRole("button", { name: "Model" }));
+  await user.click(await screen.findByRole("button", { name: "Model 2" }));
+  await screen.findByText("Could not update Antigravity options.");
+  expect(send.disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Keep current" }));
+  await waitFor(() => expect(send.disabled).toBe(false));
+
+  // Active ACP run is never blocked by ACP options so Interrupt & send stays enabled.
+  threadState = {
+    ...threadState,
+    thread: {
+      ...threadState.thread,
+      root_activity: {
+        state: "running",
+        receipt_id: "receipt-live",
+        available_actions: ["cancel"],
+      },
+    },
+    available_actions: [],
+  };
+  await act(async () => {
+    queries.setQueryData(["thread", id, "detail"], threadState);
+  });
+  const interruptButton = (await screen.findByRole("button", {
+    name: /Interrupt & send/,
+  })) as HTMLButtonElement;
+  expect(interruptButton.disabled).toBe(false);
+
+  // Idle thread missing "run" action shows actionable Refresh chat button.
+  threadState = {
+    ...threadState,
+    thread: {
+      ...threadState.thread,
+      root_activity: { state: "inactive" },
+    },
+    available_actions: [],
+  };
+  await act(async () => {
+    queries.setQueryData(["thread", id, "detail"], threadState);
+  });
+  await screen.findByText(
+    "Chat status is unavailable or out of date. Refresh before sending.",
+  );
+  expect(screen.getByRole("button", { name: "Refresh chat" })).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
 });

@@ -102,14 +102,19 @@ export function ThreadRow({
   const [deleting, setDeleting] = useState(false);
   const { tracker: results } = useResults();
   const unsent = useUnsent().inputs.has(row.thread.thread_id);
+  const canMarkUnread =
+    row.thread.role !== "worker" &&
+    !row.thread.parent_thread_id &&
+    !row.thread.memory_scope;
   const reading = results
     ?.getSnapshot()
     .threads.get(row.thread.thread_id)?.thread;
-  const unread =
-    reading &&
-    (reading.read_state_version ?? 0) >= (row.thread.read_state_version ?? 0)
+  const unread = canMarkUnread
+    ? reading &&
+      (reading.read_state_version ?? 0) >= (row.thread.read_state_version ?? 0)
       ? reading.unread
-      : row.thread.unread;
+      : row.thread.unread
+    : false;
   const navigate = useNavigate();
   const location = useLocation();
   const transport = useTransport();
@@ -398,7 +403,7 @@ export function ThreadRow({
                 </MenuItem>
               </>
             )}
-            {!row.thread.parent_thread_id && !row.thread.memory_scope && (
+            {canMarkUnread && (
               <MenuItem
                 disabled={markUnread.isPending}
                 onClick={() => {

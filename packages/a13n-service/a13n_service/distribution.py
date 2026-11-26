@@ -44,6 +44,7 @@ from a13n_service.resources.dashboards.routes import router as dashboards_router
 from a13n_service.resources.dashboards.tables import DashboardRow
 from a13n_service.resources.egress_credentials.routes import router as egress_credentials_router
 from a13n_service.resources.egress_credentials.tables import CredentialRow as EgressCredentialRow
+from a13n_service.resources.environment_instances.tables import EnvironmentBootstrapSnapshotRow
 from a13n_service.resources.environment_templates.routes import router as environment_templates_router
 from a13n_service.resources.environment_templates.tables import EnvironmentTemplateRow
 from a13n_service.resources.memories.purge import MemoryPurger
@@ -473,6 +474,7 @@ OSS = Distribution(
         ThreadCodeActRow,
         ToolExecutionRow,
         EnvironmentRow,
+        EnvironmentBootstrapSnapshotRow,
         ClientSettingsRow,
         E2BDesktopTemplateRow,
         ModalDesktopImageRow,

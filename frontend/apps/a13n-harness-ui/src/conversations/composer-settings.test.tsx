@@ -161,7 +161,6 @@ function Input({
       local
       threadId="thread-responsive"
       activity={{ state: "inactive" }}
-      canRun
       coordinator={{ active: false, available: true }}
       profile={{ display_name: "Tester", color: "#000000" }}
       unauthorized={() => {}}
@@ -587,3 +586,284 @@ it.each([false, true])(
     expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   },
 );
+
+it("keeps saved ACP option mutations mounted across subpage navigation and resolves model ID icons on the trigger", async () => {
+  const { AcpOptions, useAcpOptions } = await import("./acp-options");
+  let rejectPut!: (reason?: unknown) => void;
+  const put = vi.fn(
+    () =>
+      new Promise<never>((_resolve, reject) => {
+        rejectPut = reject;
+      }),
+  );
+  const acpCatalog: Schema<"ThreadSelectorCatalog"> = {
+    ...catalog,
+    agents: [
+      ...catalog.agents,
+      {
+        kind: "acp_agent",
+        agent_id: "acp-agy",
+        name: "Antigravity",
+        preset: "antigravity",
+        source_path: "acp_agents/agy.yaml",
+      },
+    ],
+  };
+  const acpTransport = {
+    client: {
+      GET: vi.fn(async () => ({
+        data: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            value: "gemini-pro-orchestrator-neon",
+            choices: [
+              {
+                name: "Orchestrator (Neon)",
+                value: "gemini-pro-orchestrator-neon",
+              },
+              { name: "Claude Sonnet 5.5", value: "claude-sonnet-5-5" },
+            ],
+          },
+        ],
+      })),
+      PUT: put,
+      POST: post,
+    },
+  } as unknown as Transport;
+
+  function Harness() {
+    const options = useAcpOptions("thread-acp", true, false, "acp-agy", "c1");
+    const modelOpt = options.data?.find((item) => item.id === "model");
+    return (
+      <ThreadRunChoices
+        catalog={acpCatalog}
+        agentId="acp-agy"
+        controls={{}}
+        onControlsChange={() => {}}
+        disabled={false}
+        onAgentChange={() => {}}
+        onModelChange={() => {}}
+        externalModel={
+          modelOpt?.choices?.find((c) => c.value === modelOpt.value)?.name
+        }
+        externalModelId={modelOpt ? String(modelOpt.value) : undefined}
+        externalOptions={
+          <AcpOptions
+            threadId="thread-acp"
+            active={false}
+            agentId="acp-agy"
+            preset="antigravity"
+            continuation="c1"
+            options={options}
+          />
+        }
+      />
+    );
+  }
+
+  const user = userEvent.setup();
+  render(
+    <LanguageProvider>
+      <MemoryRouter>
+        <QueryClientProvider client={query}>
+          <TransportContext value={acpTransport}>
+            <Harness />
+          </TransportContext>
+        </QueryClientProvider>
+      </MemoryRouter>
+    </LanguageProvider>,
+  );
+  const trigger = await screen.findByRole("button", {
+    name: "Agent & Model settings",
+  });
+  await waitFor(() =>
+    expect(trigger.textContent).toContain("Orchestrator (Neon)"),
+  );
+  expect(trigger.querySelector("img")?.getAttribute("src")).toContain(
+    "gemini-color.svg",
+  );
+  await user.click(trigger);
+  await user.click(await screen.findByRole("button", { name: "Model" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Claude Sonnet 5.5" }),
+  );
+  // Returned to root while PUT is still pending: Model row remains disabled!
+  const modelRow = (await screen.findByRole("button", {
+    name: "Model",
+  })) as HTMLButtonElement;
+  expect(modelRow.disabled).toBe(true);
+  await act(async () => {
+    rejectPut(new Error("ACP option rejected"));
+  });
+  expect(await screen.findByText(/ACP option rejected/)).toBeTruthy();
+});
+
+it("shows a loading indicator on the ACP trigger while externalLoading is active and isolates option mutations across scopes", async () => {
+  const { useAcpOptionChange } = await import("./acp-options");
+  let rejectFirst!: (reason?: unknown) => void;
+  const put = vi.fn(
+    () =>
+      new Promise<never>((_resolve, reject) => {
+        rejectFirst = reject;
+      }),
+  );
+  const acpCatalog: Schema<"ThreadSelectorCatalog"> = {
+    ...catalog,
+    agents: [
+      ...catalog.agents,
+      {
+        kind: "acp_agent",
+        agent_id: "acp-one",
+        name: "Antigravity",
+        preset: "antigravity",
+        source_path: "acp_agents/agy.yaml",
+      },
+      {
+        kind: "acp_agent",
+        agent_id: "acp-two",
+        name: "Codex ACP",
+        preset: "codex",
+        source_path: "acp_agents/codex.yaml",
+      },
+    ],
+  };
+  const acpTransport = {
+    client: { PUT: put, GET: get, POST: post },
+  } as unknown as Transport;
+
+  function ScopedHarness({
+    agentId,
+    active = false,
+    loading = false,
+  }: {
+    agentId: string;
+    active?: boolean;
+    loading?: boolean;
+  }) {
+    const change = useAcpOptionChange("thread-scope", active, agentId, "c1");
+    return (
+      <>
+        <ThreadRunChoices
+          catalog={acpCatalog}
+          agentId={agentId}
+          controls={{}}
+          onControlsChange={() => {}}
+          disabled={false}
+          onAgentChange={() => {}}
+          onModelChange={() => {}}
+          externalLoading={loading || change.isPending}
+        />
+        <button
+          type="button"
+          onClick={() => change.mutate({ id: "model", value: "next" })}
+        >
+          Trigger change
+        </button>
+        <output data-testid="state">
+          {JSON.stringify({
+            pending: change.isPending,
+            error: change.error ? String(change.error) : null,
+          })}
+        </output>
+      </>
+    );
+  }
+
+  const wrap = (node: React.ReactNode) => (
+    <LanguageProvider>
+      <MemoryRouter>
+        <QueryClientProvider client={query}>
+          <TransportContext value={acpTransport}>{node}</TransportContext>
+        </QueryClientProvider>
+      </MemoryRouter>
+    </LanguageProvider>
+  );
+
+  const user = userEvent.setup();
+  const view = render(wrap(<ScopedHarness agentId="acp-one" loading />));
+  const trigger = screen.getByRole("button", {
+    name: "Agent & Model settings",
+  });
+  expect(trigger.querySelector("[data-acp-loading]")).toBeTruthy();
+
+  view.rerender(wrap(<ScopedHarness agentId="acp-one" loading={false} />));
+  expect(trigger.querySelector("[data-acp-loading]")).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "Trigger change" }));
+  expect(screen.getByTestId("state").textContent).toContain('"pending":true');
+  expect(trigger.querySelector("[data-acp-loading]")).toBeTruthy();
+
+  // Switching agent immediately clears pending/error from the old agent scope.
+  view.rerender(wrap(<ScopedHarness agentId="acp-two" />));
+  expect(screen.getByTestId("state").textContent).toBe(
+    '{"pending":false,"error":null}',
+  );
+  expect(trigger.querySelector("[data-acp-loading]")).toBeNull();
+
+  await act(async () => {
+    rejectFirst(new Error("Old agent error"));
+  });
+  expect(screen.getByTestId("state").textContent).toBe(
+    '{"pending":false,"error":null}',
+  );
+});
+
+it("refreshes draft skill preview with coordinator=true when enabling Coordinate agents", async () => {
+  const user = userEvent.setup();
+  post.mockImplementation(
+    async (
+      path: string,
+      init?: { params?: { query?: { coordinator?: boolean } } },
+    ) => {
+      if (path !== "/api/threads/skills-preview") return { data: {} };
+      const coordinator = init?.params?.query?.coordinator === true;
+      return {
+        data: {
+          catalog_id: coordinator ? "c".repeat(64) : "a".repeat(64),
+          context_kind: "draft",
+          items: coordinator
+            ? [
+                {
+                  item_id: "b".repeat(64),
+                  name: "coordinate-worktree-pr",
+                  description: "Guide worker PR",
+                  source_id: "a13n-harness-ui:builtin-coordinator-skills",
+                  logical_path:
+                    "/environment/builtin-coordinator-skills/coordinate-worktree-pr",
+                },
+              ]
+            : [],
+        },
+      };
+    },
+  );
+  draft.doc.getText("text").insert(0, "$coordinate-worktree-pr");
+  mount();
+
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      "/api/threads/skills-preview",
+      expect.not.objectContaining({ params: expect.anything() }),
+    ),
+  );
+  expect(
+    document.querySelector('[data-skill="coordinate-worktree-pr"]'),
+  ).toBeNull();
+
+  await user.click(screen.getByRole("button", { name: "Chat options" }));
+  await user.click(screen.getByRole("switch", { name: "Coordinate agents" }));
+
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      "/api/threads/skills-preview",
+      expect.objectContaining({ params: { query: { coordinator: true } } }),
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      document.querySelector('[data-skill="coordinate-worktree-pr"]'),
+    ).toBeTruthy(),
+  );
+});

@@ -1106,6 +1106,24 @@ body:has(.settingsContent) [data-slot="select-list"] {
 .modelSelectionList {
   margin-inline: -8px;
 }
+.agentSelectionLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+.agentSelectionName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agentSelectionKind {
+  flex: none;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
 /* Unknown route: a centered state, like other empty states. */
 .notFound {
   display: flex;

@@ -27,6 +27,7 @@ from a13n_service.resources.agents.schemas import (
     AgentConfig,
     ClientOutputAlternative,
     JsonObject,
+    NativeToolSearch,
     OutputSpec,
     StructuredOutputAlternative,
     ToolSearch,
@@ -194,6 +195,23 @@ def tool_permissions(config: AgentConfig, connection_types: Mapping[str, str]) -
             )
     rules.update((source_tool_id(CLIENT_TOOLSET_ID, tool.name), tool.permission) for tool in config.client_tools)
     return ToolPermissions(rules=rules, respect_mcp_annotations=config.respect_mcp_annotations)
+
+
+def discovered_connections(config: AgentConfig) -> frozenset[str]:
+    """Connection IDs whose tools reach the model through Tool Search rather than directly."""
+    selected = config.tool_search
+    if selected is None:
+        return frozenset()
+    active = frozenset(item.connection_id for item in config.connection_tools if item.tools != ())
+    if isinstance(selected, NativeToolSearch):
+        if not selected.sources.connections:
+            return frozenset()
+        return active - frozenset(selected.sources.exclude_connections)
+    if selected.automatic is not None:
+        if not selected.automatic.connections:
+            return frozenset()
+        return active - frozenset(selected.automatic.exclude_connections)
+    return selected.connection_ids & active
 
 
 def tool_search(

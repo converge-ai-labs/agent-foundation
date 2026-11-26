@@ -38,7 +38,7 @@ import { OptionsRefresh } from "../../../shared/forms/options-refresh";
 import styles from "./editor.module.css";
 import type { ReviewTarget } from "../reviewer";
 import type { AgentDraft } from "./draft";
-import { usesToolDiscovery } from "../tool-search";
+import { enableConnectionDiscovery, usesToolDiscovery } from "../tool-search";
 import { useToolsetCatalog } from "../toolsets";
 import { BuiltinSkillRows } from "./builtin-skills";
 import {
@@ -320,44 +320,67 @@ export function ConnectionsSection({
     >
       {draft.connections.length ? (
         <div className={agentStyles.toolsetCard}>
-          {draft.connections.map((selection) => (
-            <ConnectionGroup
-              key={selection.connection_id}
-              connection={available.find(
-                (item) => item.id === selection.connection_id,
-              )}
-              selection={selection}
-              discovery={
-                usesToolDiscovery(draft.toolSearch, {
-                  kind: "connections",
-                  id: selection.connection_id,
-                  defaultDiscovery:
-                    catalog.data?.discovery_defaults.connections === true,
-                })
-                  ? "proxy"
-                  : undefined
-              }
-              readOnly={readOnly}
-              onReview={onReview}
-              onRequireReviewer={onRequireReviewer}
-              onChange={(change) =>
-                draft.setConnections((previous) =>
-                  previous.map((item) =>
-                    item.connection_id === selection.connection_id
-                      ? change(item)
-                      : item,
-                  ),
-                )
-              }
-              onRemove={() =>
-                draft.setConnections((previous) =>
-                  previous.filter(
-                    (item) => item.connection_id !== selection.connection_id,
-                  ),
-                )
-              }
-            />
-          ))}
+          {draft.connections.map((selection) => {
+            const connection = available.find(
+              (item) => item.id === selection.connection_id,
+            );
+            const covered = usesToolDiscovery(draft.toolSearch, {
+              kind: "connections",
+              id: selection.connection_id,
+              defaultDiscovery: catalog.data
+                ? catalog.data.discovery_defaults.connections === true
+                : true,
+            });
+            const canEnableCustomGroup =
+              draft.toolSearch.mode !== "proxy" ||
+              draft.toolSearch.automatic != null ||
+              draft.toolSearch.groups.length < 128;
+            return (
+              <ConnectionGroup
+                key={selection.connection_id}
+                connection={connection}
+                selection={selection}
+                discovery={
+                  covered
+                    ? draft.toolSearch.mode === "native"
+                      ? "native"
+                      : "proxy"
+                    : undefined
+                }
+                onEnableDiscovery={
+                  canEnableCustomGroup
+                    ? () =>
+                        draft.setToolSearch((current) =>
+                          enableConnectionDiscovery(
+                            current,
+                            selection.connection_id,
+                            connection ? displayName(connection) : undefined,
+                          ),
+                        )
+                    : undefined
+                }
+                readOnly={readOnly}
+                onReview={onReview}
+                onRequireReviewer={onRequireReviewer}
+                onChange={(change) =>
+                  draft.setConnections((previous) =>
+                    previous.map((item) =>
+                      item.connection_id === selection.connection_id
+                        ? change(item)
+                        : item,
+                    ),
+                  )
+                }
+                onRemove={() =>
+                  draft.setConnections((previous) =>
+                    previous.filter(
+                      (item) => item.connection_id !== selection.connection_id,
+                    ),
+                  )
+                }
+              />
+            );
+          })}
         </div>
       ) : (
         readOnly && (

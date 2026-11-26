@@ -40,7 +40,12 @@ import coordinatorStyles from "./coordinator.module.css";
 import { ErrorNotice } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
-import { Composer, submitContinuation, useDraft } from "./composer";
+import {
+  Composer,
+  submitContinuation,
+  useDraft,
+  type ComposerBlock,
+} from "./composer";
 import type { DictationTarget } from "./dictation-context";
 import { useDebug } from "../shell/debug";
 import {
@@ -50,7 +55,14 @@ import {
 import { ComposerStatus } from "./composer-status";
 import { currentGoal } from "./goal-status";
 import { RunActivity } from "./run-activity";
-import { AcpOptions, acpOptionLabel, useAcpOptions } from "./acp-options";
+import {
+  AcpOptions,
+  acpModelOption,
+  acpOptionLabel,
+  acpRunBlock,
+  useAcpOptionChange,
+  useAcpOptions,
+} from "./acp-options";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
 import { McpInputs, useMcpInputRequests } from "./mcp-inputs";
@@ -485,11 +497,13 @@ function ConversationContent({
       ? 0
       : (history.data?.pages[0]?.completion_version ?? 0));
   const readState = results.threads.get(threadId)?.thread;
+  const threadRole = detail.data?.thread.role ?? readState?.role;
   useEffect(() => {
     if (
       hasLater ||
       !pageReady ||
       !tracker ||
+      threadRole === "worker" ||
       (!publication &&
         (!history.data || history.isPreviousHistory || history.isError)) ||
       !readState?.unread ||
@@ -531,6 +545,7 @@ function ConversationContent({
     pageReady,
     tracker,
     threadId,
+    threadRole,
     completionVersion,
     readState?.unread,
     readState?.read_state_version,
@@ -742,9 +757,17 @@ function ConversationContent({
       ? thread.configuration.agent_source.id
       : undefined;
   const acpActive = thread?.root_activity.state !== "inactive";
+  const acpOptionsEnabled =
+    !!acpAgent && !guest && !readOnly && !thread?.archived;
   const acpOptions = useAcpOptions(
     threadId,
-    !!acpAgent && !guest && !readOnly && !thread?.archived,
+    acpOptionsEnabled,
+    acpActive,
+    acpAgent,
+    detail.data?.continuation_id,
+  );
+  const acpChange = useAcpOptionChange(
+    threadId,
     acpActive,
     acpAgent,
     detail.data?.continuation_id,
@@ -769,9 +792,14 @@ function ConversationContent({
       ),
   });
   useEffect(() => {
-    if (acpOptions.isSuccess) void acpCommands.refetch();
+    if (acpOptions.isSuccess) {
+      void acpCommands.refetch();
+      void queries.invalidateQueries({
+        queryKey: ["thread", threadId, "context-usage"],
+      });
+    }
   }, [acpOptions.dataUpdatedAt]);
-  const sources = useSources();
+  const sources = useSources(!!acpAgent);
   const acpSource =
     acpAgent &&
     sources.data?.sources.find(
@@ -910,6 +938,78 @@ function ConversationContent({
         return [{ attachment_id: attachment.attachment_id }];
       return part.text && part.text !== "[Attachment]" ? [part.text] : [];
     }) ?? [];
+  const acpBlock =
+    acpOptionsEnabled && !acpActive
+      ? acpRunBlock({
+          agentName:
+            selectors.data?.agents.find((item) => item.agent_id === acpAgent)
+              ?.name ??
+            acpAgent ??
+            "",
+          hasData: acpOptions.data !== undefined,
+          isFetching: acpOptions.isFetching,
+          isError: acpOptions.isError,
+          error: acpOptions.error,
+          onRetryLoad: () => void acpOptions.refetch(),
+          updating: acpChange.isPending,
+          updateError: acpChange.error,
+          onRetryUpdate: acpChange.retry,
+          onDismissUpdateError: acpChange.reset,
+          acpAuthPath,
+          t,
+        })
+      : null;
+  const runBlock: ComposerBlock | null =
+    !detail.data && !detail.isError
+      ? { kind: "loading", message: t("Loading chat…") }
+      : detail.isError
+        ? {
+            kind: "error",
+            message: t("Could not load chat."),
+            coveredByFeedback: true,
+          }
+        : agentSelection.isPending
+          ? { kind: "loading", message: t("Updating chat settings…") }
+          : agentSelection.isError
+            ? {
+                kind: "error",
+                message: t("Could not update chat settings."),
+                coveredByFeedback: true,
+              }
+            : acpBlock
+              ? acpBlock
+              : !!runAgent && runChoices.pending
+                ? selectors.isError
+                  ? {
+                      kind: "error",
+                      message: t("Could not load model settings."),
+                      coveredByFeedback: true,
+                    }
+                  : {
+                      kind: "loading",
+                      message: t("Loading model settings…"),
+                    }
+                : thread?.root_activity.state === "inactive" &&
+                    !detail.data?.available_actions?.includes("run")
+                  ? detail.data?.deferred_requests?.length
+                    ? {
+                        kind: "action_required",
+                        message: guest
+                          ? t("Waiting for the instance owner to respond.")
+                          : t("Respond to pending requests before sending."),
+                        showWhenEmpty: false,
+                      }
+                    : {
+                        kind: "action_required",
+                        message: t(
+                          "Chat status is unavailable or out of date. Refresh before sending.",
+                        ),
+                        action: {
+                          label: t("Refresh chat"),
+                          onClick: reconcile,
+                        },
+                      }
+                  : null;
   const failureNotice = (
     <RootFailureNotice
       lastExecution={thread?.last_execution}
@@ -938,11 +1038,8 @@ function ConversationContent({
             }
       }
       retryDisabled={
-        !detail.data?.available_actions?.includes("run") ||
+        !!runBlock ||
         thread?.root_activity.state !== "inactive" ||
-        agentSelection.isPending ||
-        agentSelection.isError ||
-        detail.isError ||
         draft.submission.kind === "pending" ||
         draft.submission.kind === "unknown" ||
         (draft.submission.kind === "accepted" &&
@@ -1328,16 +1425,15 @@ function ConversationContent({
                       thread,
                       !!detail.data?.deferred_requests?.length,
                     ),
+                    unavailableReason: !thread.configuration.project_id
+                      ? "no_project"
+                      : detail.data?.deferred_requests?.length
+                        ? "pending_requests"
+                        : undefined,
                   }
                 : undefined
             }
-            canRun={
-              (!runAgent || !runChoices.pending) &&
-              !agentSelection.isPending &&
-              !agentSelection.isError &&
-              !detail.isError &&
-              (detail.data?.available_actions?.includes("run") ?? false)
-            }
+            runBlock={runBlock}
             continuationId={detail.data?.continuation_id}
             predictionEnabled={
               (guest
@@ -1354,13 +1450,6 @@ function ConversationContent({
               !detail.isError &&
               (detail.data?.available_actions?.includes("clear_context") ??
                 false)
-            }
-            unavailableReason={
-              agentSelection.isPending
-                ? t("Updating chat settings…")
-                : !detail.data
-                  ? t("Loading chat…")
-                  : undefined
             }
             leadingControls={
               guest ? undefined : thread?.configuration.agent_source.kind ===
@@ -1384,47 +1473,75 @@ function ConversationContent({
               )
             }
             controls={() =>
-              guest ? null : thread?.configuration.agent_source.kind ===
-                "live" ? null : (
-                <ThreadRunChoices
-                  catalog={selectors.data}
-                  agentId={thread?.configuration.agent_source.id ?? ""}
-                  defaultModelId={thread?.configuration.default_model_id}
-                  modelId={draft.modelId}
-                  controls={draft.controls}
-                  onControlsChange={runChoices.onControlsChange}
-                  disabled={
-                    !thread ||
-                    agentSelection.isPending ||
-                    draft.submission.kind === "pending" ||
-                    draft.submission.kind === "unknown"
-                  }
-                  externalModel={acpOptionLabel(
-                    acpOptions.data?.find(
-                      (item) =>
-                        item.category === "model" || item.id === "model",
-                    ),
-                  )}
-                  externalThinking={acpOptionLabel(
-                    acpOptions.data?.find(
-                      (item) =>
-                        item.category === "thought_level" ||
-                        item.id === "thought_level",
-                    ),
-                  )}
-                  externalOptions={
-                    <AcpOptions
-                      threadId={threadId}
-                      active={acpActive}
-                      agentId={acpAgent}
-                      options={acpOptions}
-                      continuation={detail.data?.continuation_id}
-                    />
-                  }
-                  onAgentChange={(value) => agentSelection.mutate(value)}
-                  onModelChange={runChoices.onModelChange}
-                />
-              )
+              guest
+                ? null
+                : thread?.configuration.agent_source.kind === "live"
+                  ? null
+                  : (() => {
+                      const modelOption = acpModelOption(acpOptions.data);
+                      return (
+                        <ThreadRunChoices
+                          catalog={selectors.data}
+                          agentId={thread?.configuration.agent_source.id ?? ""}
+                          defaultModelId={
+                            thread?.configuration.default_model_id
+                          }
+                          modelId={draft.modelId}
+                          controls={draft.controls}
+                          onControlsChange={runChoices.onControlsChange}
+                          disabled={
+                            !thread ||
+                            agentSelection.isPending ||
+                            draft.submission.kind === "pending" ||
+                            draft.submission.kind === "unknown"
+                          }
+                          onExternalOptionsOpen={() => {
+                            if (acpOptionsEnabled && !acpActive)
+                              void acpOptions.refetch({ cancelRefetch: false });
+                          }}
+                          externalLoading={
+                            acpOptionsEnabled &&
+                            !acpActive &&
+                            (acpChange.isPending || acpOptions.isFetching)
+                          }
+                          externalModel={acpOptionLabel(
+                            modelOption,
+                            t("No model selected"),
+                          )}
+                          externalModelId={
+                            modelOption && modelOption.value !== ""
+                              ? String(modelOption.value)
+                              : undefined
+                          }
+                          externalThinking={acpOptionLabel(
+                            acpOptions.data?.find(
+                              (item) =>
+                                item.category === "thought_level" ||
+                                item.id === "thought_level",
+                            ),
+                          )}
+                          externalOptions={
+                            <AcpOptions
+                              threadId={threadId}
+                              active={acpActive}
+                              agentId={acpAgent}
+                              preset={
+                                selectors.data?.agents.find(
+                                  (item) => item.agent_id === acpAgent,
+                                )?.preset
+                              }
+                              options={acpOptions}
+                              change={acpChange}
+                              continuation={detail.data?.continuation_id}
+                            />
+                          }
+                          onAgentChange={(value) =>
+                            agentSelection.mutate(value)
+                          }
+                          onModelChange={runChoices.onModelChange}
+                        />
+                      );
+                    })()
             }
             profile={profile}
             unauthorized={unauthorized}

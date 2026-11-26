@@ -89,7 +89,7 @@
         grid-row: 1;
       }
       > [data-slot="field-description"] {
-        grid-column: 1 / -1;
+        grid-column: var(--setting-description-column-narrow, 1 / -1);
       }
     }
   }

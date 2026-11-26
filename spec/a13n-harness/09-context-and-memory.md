@@ -275,6 +275,8 @@ An explicit `summarize` handoff uses its own validated history-replacement path:
 
 Handoff reminder thresholds consult only the latest provider-reported usage and never replace provider enforcement. Automatic plain-text compaction is the independent Capability contract below. [Events and Usage](12-events-observability-and-usage.md#first-party-event-contracts) owns the bounded context observations for both paths.
 
+On a mount that defers bootstrap, optional file context and workspace outline use permitted snapshot observations while the execution is unopened. Required explicit file context opens the mount when the snapshot cannot answer the request. Absent files are known results. After activation, file context refreshes once at the next input or tool-results boundary; changed blocks go in the request epilogue. Identical blocks reuse retained history. An opened mount may capture the final observed paths before closing, independently of the prompt's one-time refresh.
+
 ### Retained Execution Boundary
 
 A retained CodeAct runner still uses its original native ToolManager and discovery/capability-loading evidence. While such an invocation is admitted in the current logical Run, automatic compaction skips preparation and explicit Handoff rejects the request before dispatch with ordinary tool-failure feedback asking the Agent to wait and inspect the result. Repeated busy rejections do not consume the model or tool retry budget. The owner also checks this boundary before persisting a summary. The protection spans queued execution, program loading, and nested callbacks until the retained invocation releases its resources. Success, failure, cancellation, and rejected admission release the protection.

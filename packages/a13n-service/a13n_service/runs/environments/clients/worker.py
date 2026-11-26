@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Mapping
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import anyio
 from a13n_envd_client import (
     ControlFrame,
     EIPDeviceConnection,
@@ -34,7 +35,13 @@ from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost
 from a13n_service.runs.environments.clients.connections import Presence, owner_key
 from a13n_service.runs.environments.clients.observations import Incarnation
 from a13n_service.runs.environments.clients.observations import current as tool_observation
-from a13n_service.runs.environments.clients.routing import RECOVERY_DISCOVERY, Failure, NativeFailure, Request
+from a13n_service.runs.environments.clients.routing import (
+    RECOVERY_DISCOVERY,
+    Failure,
+    LifecycleCaller,
+    NativeFailure,
+    Request,
+)
 from a13n_service.runs.environments.clients.streaming import WorkerStreams
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.tool_executions.authority import lock_execution, prove
@@ -71,7 +78,7 @@ class Target:
     def connector(
         self,
         runtime: Runtime,
-        lease: Lease,
+        lease: Lease | LifecycleCaller,
         recovery: EnvdSessionBorrower | None,
         incarnation: Incarnation | None = None,
     ) -> EnvironmentConnector:
@@ -90,7 +97,7 @@ class Target:
 @dataclass(frozen=True, slots=True)
 class Calls:
     runtime: Runtime
-    lease: Lease
+    lease: Lease | LifecycleCaller
     target: Target
     online: Presence
     scope_id: str
@@ -98,22 +105,31 @@ class Calls:
 
     async def call(self, method: str, params: Mapping[str, object]) -> dict[str, JsonValue]:
         execution = current_execution()
-        request = Request(
-            environment_id=self.target.environment_id,
-            mount_name=self.target.mount_name,
-            epoch=self.online.epoch,
-            scope_id=self.scope_id,
-            thread_id=self.lease.thread_id,
-            caller=Caller(
+        lifecycle = isinstance(self.lease, LifecycleCaller)
+        caller = (
+            self.lease
+            if isinstance(self.lease, LifecycleCaller)
+            else Caller(
                 run_id=self.lease.run_id,
                 attempt_id=self.lease.attempt_id,
                 worker_id=self.lease.worker_id,
                 execution_id=self.target.recovery_execution_id
                 or (execution.execution_id if execution is not None else None),
-            ),
+            )
+        )
+        request = Request(
+            environment_id=self.target.environment_id,
+            mount_name=self.target.mount_name,
+            epoch=self.online.epoch,
+            scope_id=self.scope_id,
+            thread_id=self.lease.thread_id if isinstance(self.lease, Lease) else None,
+            caller=caller,
             method=method,
-            cleanup=execution_cleanup_active()
-            or (self.target.recovery_execution_id is not None and method in RECOVERY_DISCOVERY),
+            cleanup=not lifecycle
+            and (
+                execution_cleanup_active()
+                or (self.target.recovery_execution_id is not None and method in RECOVERY_DISCOVERY)
+            ),
             params=_PARAMS.validate_python(params),
             expires_at=datetime.now(UTC) + timedelta(seconds=self.runtime.settings.client_environments.request_seconds),
         )
@@ -176,6 +192,9 @@ class Calls:
                 return success.value
 
     async def prove(self, execution_id: str | None, *, cleanup: bool) -> None:
+        if isinstance(self.lease, LifecycleCaller):
+            # Control validates the operation claim for every routed dispatch.
+            return
         if cleanup and execution_id is not None:
             async with transaction(self.runtime.storage) as session:
                 await lock_execution(session, self.lease, execution_id, cleanup=True)
@@ -184,7 +203,9 @@ class Calls:
 
 
 class Client:
-    def __init__(self, runtime: Runtime, lease: Lease, target: Target, incarnation: Incarnation) -> None:
+    def __init__(
+        self, runtime: Runtime, lease: Lease | LifecycleCaller, target: Target, incarnation: Incarnation
+    ) -> None:
         self.runtime, self.lease, self.target = runtime, lease, target
         self.incarnation = incarnation
 
@@ -199,6 +220,10 @@ class Client:
                 "hint": f"Client mount {self.target.mount_name} is unavailable. This tool did not execute.",
             },
         )
+
+    async def _close_lifecycle_scope(self, calls: Calls) -> None:
+        with anyio.move_on_after(2, shield=True), suppress(EnvironmentError, EIPMethodError):
+            await calls.call("scope.close", {})
 
     @asynccontextmanager
     async def open_session(
@@ -216,7 +241,11 @@ class Client:
             raise EnvironmentError("Client mount selection changed.", code="environment_stale_mount")
         try:
             async with asyncio.timeout(timeout):
-                online = await self.runtime.client_connections.presence(self.target.environment_id)
+                while True:
+                    online = await self.runtime.client_connections.presence(self.target.environment_id)
+                    if online is not None or isinstance(self.lease, Lease):
+                        break
+                    await asyncio.sleep(0.1)
         except (RedisError, TimeoutError) as error:
             raise EnvironmentError(
                 "Client connection state could not be checked.",
@@ -240,62 +269,67 @@ class Client:
             )
         async with self.runtime.client_routing.replies(self.target.environment_id):
             calls = Calls(self.runtime, self.lease, self.target, online, uuid4().hex, self.incarnation)
-            try:
-                result = Opened.model_validate(
-                    await calls.call(
-                        "scope.open",
-                        {
-                            "working_directory": working_directory,
-                            "required_methods": sorted(required_methods),
-                        },
-                    )
-                )
-            except EnvironmentError as error:
-                if error.details.get("client_connection_failed") is True:
-                    self.incarnation.epoch = online.epoch
-                    raise self.unavailable() from error
-                raise
-            if (result.device_descriptor.device_id, result.device_descriptor.generation) != (
-                expected_device_id,
-                online.descriptor.generation,
-            ):
-                raise EnvironmentError("Client changed during Session preparation.", code="environment_stale_mount")
-            if expected_boundary is not None:
-                expected_boundary.check(result.descriptor.boundary)
-            transport = SessionTransport(calls, result)
-            coordinator = RequestCoordinator(
-                transport,
-                request_timeout=self.runtime.settings.client_environments.request_seconds + _RECEIPT_SECONDS + 1,
-            )
-            coordinator.configure_limits(result.device_descriptor.limits)
-            device = EIPDeviceConnection(coordinator, result.device_descriptor, max_in_flight=32)
-
-            async def owner_current() -> bool:
+            async with AsyncExitStack() as cleanup:
+                if isinstance(self.lease, LifecycleCaller):
+                    # This also handles an open response lost before local binding completes.
+                    cleanup.push_async_callback(self._close_lifecycle_scope, calls)
                 try:
-                    execution = current_execution()
-                    await calls.prove(
-                        self.target.recovery_execution_id or (execution.execution_id if execution else None),
-                        cleanup=self.target.recovery_execution_id is not None or execution_cleanup_active(),
+                    result = Opened.model_validate(
+                        await calls.call(
+                            "scope.open",
+                            {
+                                "working_directory": working_directory,
+                                "required_methods": sorted(required_methods),
+                            },
+                        )
                     )
-                    return await self.runtime.redis.get(owner_key(self.target.environment_id)) == online.epoch
-                except (AuthorityRevoked, LeaseLost, RedisError):
-                    # No proof of ownership permits dispatch on this logical binding.
-                    return False
-
-            async with device:
-                session = await device.bind_open_session(
-                    result.descriptor, readiness_timeout=timeout, owner_current=owner_current
+                except EnvironmentError as error:
+                    if error.details.get("client_connection_failed") is True:
+                        self.incarnation.epoch = online.epoch
+                        raise self.unavailable() from error
+                    raise
+                if (result.device_descriptor.device_id, result.device_descriptor.generation) != (
+                    expected_device_id,
+                    online.descriptor.generation,
+                ):
+                    raise EnvironmentError("Client changed during Session preparation.", code="environment_stale_mount")
+                if expected_boundary is not None:
+                    expected_boundary.check(result.descriptor.boundary)
+                transport = SessionTransport(calls, result)
+                coordinator = RequestCoordinator(
+                    transport,
+                    request_timeout=self.runtime.settings.client_environments.request_seconds + _RECEIPT_SECONDS + 1,
                 )
-                async with AsyncExitStack() as lifetime:
-                    lifetime.push_async_callback(session.detach)
-                    await lifetime.enter_async_context(session.use())
-                    self.incarnation.epoch = online.epoch
-                    self.incarnation.scope_id = calls.scope_id
-                    self.incarnation.session = session
+                coordinator.configure_limits(result.device_descriptor.limits)
+                device = EIPDeviceConnection(coordinator, result.device_descriptor, max_in_flight=32)
+
+                async def owner_current() -> bool:
                     try:
-                        yield EIPSessionBinding(session, result.device_descriptor)
-                    finally:
-                        self.incarnation.session = None
+                        execution = current_execution()
+                        await calls.prove(
+                            self.target.recovery_execution_id or (execution.execution_id if execution else None),
+                            cleanup=self.target.recovery_execution_id is not None or execution_cleanup_active(),
+                        )
+                        return await self.runtime.redis.get(owner_key(self.target.environment_id)) == online.epoch
+                    except (AuthorityRevoked, LeaseLost, RedisError):
+                        # No proof of ownership permits dispatch on this logical binding.
+                        return False
+
+                async with device:
+                    session = await device.bind_open_session(
+                        result.descriptor, readiness_timeout=timeout, owner_current=owner_current
+                    )
+                    async with AsyncExitStack() as lifetime:
+                        if not isinstance(self.lease, LifecycleCaller):
+                            lifetime.push_async_callback(session.detach)
+                        await lifetime.enter_async_context(session.use())
+                        self.incarnation.epoch = online.epoch
+                        self.incarnation.scope_id = calls.scope_id
+                        self.incarnation.session = session
+                        try:
+                            yield EIPSessionBinding(session, result.device_descriptor)
+                        finally:
+                            self.incarnation.session = None
 
 
 class SessionTransport:

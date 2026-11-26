@@ -365,7 +365,7 @@ async def test_cleanup_after_revocation_keeps_identity_and_expiry_fences(service
         mount=EnvironmentMount(name="workspace", environment_id="test-environment"),
         descriptor=None,
         provider_key="test",
-        state=None,
+        management_state=None,
     )
     entered, finish = asyncio.Event(), asyncio.Event()
 

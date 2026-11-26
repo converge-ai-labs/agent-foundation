@@ -440,7 +440,8 @@ async def test_background_admission_failure_does_not_skip_later_healthy_tenants(
 
 
 def test_catalog_rejects_duplicate_identity_ownership_and_unguarded_routes():
-    from a13n_service.app_plugin_runtime import app_routers
+    from a13n_service.app_plugin_runtime import app_routers, app_webhook_routers
+    from a13n_service.tenancy.app_plugins import app_webhook_router
     from fastapi import APIRouter
 
     [app] = catalog().apps
@@ -453,6 +454,141 @@ def test_catalog_rejects_duplicate_identity_ownership_and_unguarded_routes():
     router.get("/api/v1/apps/test.reports/unsafe")(lambda: {})
     with pytest.raises(ValueError, match="app_router"):
         app_routers(installed_apps(routers=(router,)))
+
+    webhook = app_webhook_router(APP_ID)
+    webhook.post("/events")(lambda: {})
+    # Mixing webhook routers into business routers fails assembly.
+    with pytest.raises(ValueError, match="app_router"):
+        app_routers(installed_apps(routers=(webhook,)))
+
+    business = app_router(APP_ID)
+    business.post("/report")(lambda: {})
+    wrong_app_webhook = app_webhook_router("other.app")
+    wrong_app_webhook.post("/events")(lambda: {})
+    plain_webhook = APIRouter()
+    plain_webhook.post(f"/api/v1/app-webhooks/{APP_ID}/events")(lambda: {})
+    root_webhook = app_webhook_router(APP_ID)
+    root_webhook.post("")(lambda: {})
+    for bad in (business, wrong_app_webhook, plain_webhook, root_webhook):
+        bad_app = (InstalledApp(AppDefinition(APP_ID, "Reports", webhook_routers=(bad,)), "test-reports", "1.0"),)
+        with pytest.raises(ValueError, match="app_webhook_router"):
+            app_webhook_routers(bad_app)
+
+    mcp_webhook = app_webhook_router(APP_ID)
+    mcp_webhook.post("/events", openapi_extra={"x-a13n-mcp": True})(lambda: {})
+    mcp_app = (InstalledApp(AppDefinition(APP_ID, "Reports", webhook_routers=(mcp_webhook,)), "test-reports", "1.0"),)
+    with pytest.raises(ValueError, match="management MCP"):
+        app_webhook_routers(mcp_app)
+
+
+async def test_webhook_ingress_bypasses_service_auth_and_excludes_openapi_security_and_mcp(serve, monkeypatch):
+    from a13n_service.app_sdk import is_app_enabled
+    from a13n_service.app_sdk import short_session as sdk_short_session
+    from a13n_service.tenancy.app_plugins import app_webhook_router
+    from fastapi import Request
+
+    from .mcp_support import client as mcp_client
+    from .mcp_support import key as mcp_key
+    from .mcp_support import rpc as mcp_rpc
+
+    business = app_router(APP_ID)
+
+    @business.post("/report", name="create_webhook_test_report")
+    async def report():
+        return {"ok": True}
+
+    webhook = app_webhook_router(APP_ID)
+    received = []
+
+    @webhook.post("/events", name="receive_test_webhook")
+    async def receive(request: Request):
+        payload = await request.json()
+        runtime = request.app.state.runtime
+        async with sdk_short_session(runtime.storage) as session:
+            enabled = await is_app_enabled(session, runtime, APP_ID, organization_id=payload["organization_id"])
+        received.append({"auth": request.headers.get("authorization"), "enabled": enabled, "payload": payload})
+        return {"accepted": True, "enabled": enabled}
+
+    installed = (
+        InstalledApp(
+            AppDefinition(
+                app_id=APP_ID,
+                name="Reports",
+                routers=(business,),
+                webhook_routers=(webhook,),
+            ),
+            "test-reports",
+            "1.0",
+        ),
+    )
+    monkeypatch.setattr(assembly, "discover_apps", lambda: installed)
+    async with serve(distribution=OSS.extend(Distribution(name="webhook-test"))) as service:
+        webhook_path = f"/api/v1/app-webhooks/{APP_ID}/events"
+        # Anonymous client: no Service cookie, API key, X-Workspace-ID, or CSRF header.
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=service.app), base_url="https://service.test"
+        ) as external:
+            first = await external.post(
+                webhook_path,
+                json={"organization_id": service.tenant.organization_id, "event": "msg.1"},
+            )
+            assert first.status_code == 200, first.text
+            assert first.headers["cache-control"] == "no-store"
+            assert first.json() == {"accepted": True, "enabled": False}
+
+            await toggle(service, True)
+            # Third-party Authorization header passes through CredentialAccess rather than returning 401.
+            second = await external.post(
+                webhook_path,
+                headers={"Authorization": "Bearer external-sender-token"},
+                json={"organization_id": service.tenant.organization_id, "event": "msg.2"},
+            )
+            assert second.status_code == 200, second.text
+            assert second.json() == {"accepted": True, "enabled": True}
+
+        assert received == [
+            {
+                "auth": None,
+                "enabled": False,
+                "payload": {"organization_id": service.tenant.organization_id, "event": "msg.1"},
+            },
+            {
+                "auth": "Bearer external-sender-token",
+                "enabled": True,
+                "payload": {"organization_id": service.tenant.organization_id, "event": "msg.2"},
+            },
+        ]
+
+        # OpenAPI omits Service security schemes on webhook routes while retaining them on business routes.
+        schema = service.app.openapi()
+        assert "security" not in schema["paths"][webhook_path]["post"]
+        assert "security" in schema["paths"][f"/api/v1/apps/{APP_ID}/report"]["post"]
+
+        # Management MCP never exposes webhook routes.
+        credential = await mcp_key(service)
+        async with mcp_client(service, credential) as http:
+            discovery = await mcp_rpc(http, "tools/list")
+            assert discovery.status_code == 200, discovery.text
+            mcp_tool_names = {tool["name"] for tool in discovery.json()["result"]["tools"]}
+            assert "receive_test_webhook" not in mcp_tool_names
+
+        # Host rate limiting protects unauthenticated webhook ingress per App and client address.
+        from a13n_service.infra.errors import rate_limited
+        from a13n_service.tenancy import app_plugins as tenancy_apps
+
+        async def reject_limit(_request, _runtime, _app_id):
+            raise rate_limited("Too many requests", 5)
+
+        monkeypatch.setattr(tenancy_apps, "limit_app_webhook", reject_limit)
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=service.app), base_url="https://service.test"
+        ) as external:
+            throttled = await external.post(
+                webhook_path,
+                json={"organization_id": service.tenant.organization_id, "event": "msg.3"},
+            )
+            assert throttled.status_code == 429
+            assert throttled.headers["retry-after"] == "5"
 
 
 async def test_disabled_pending_target_is_not_reenabled_or_dispatched(

@@ -61,7 +61,7 @@ class CompositionAcceptanceService:
         )
         if source is None:
             raise CompositionError("No configuration has been accepted.", code="configuration_missing")
-        policy = source.document.subagents.dynamic if composition is None else composition.subagents.dynamic
+        policy = source.document.agent_creation if composition is None else composition.agent_creation
         selected = policy.select_model(model)
         if selected not in source.models:
             raise ConfigurationError(
@@ -70,6 +70,18 @@ class CompositionAcceptanceService:
         recipe = self._resolver.model_recipe(source.models[selected], source)
         if thinking is None:
             return recipe
+        settings = apply_thinking(recipe.route, recipe.settings, thinking)
+        return recipe.model_copy(update={"settings": settings, "thinking_override": thinking})
+
+    async def validate_model_thinking(self, model_id: str, thinking: ThinkingSelection) -> ResolvedModelRecipe:
+        source = await self.current()
+        if source is None:
+            raise CompositionError("No configuration has been accepted.", code="configuration_missing")
+        if model_id not in source.models:
+            raise ConfigurationError(
+                f"The selected model {model_id!r} is no longer configured.", code="creation_model_missing"
+            )
+        recipe = self._resolver.model_recipe(source.models[model_id], source)
         settings = apply_thinking(recipe.route, recipe.settings, thinking)
         return recipe.model_copy(update={"settings": settings, "thinking_override": thinking})
 
@@ -245,6 +257,7 @@ class RunCompositionService:
             environment_run_extensions=parent.environment_run_extensions,
             dependencies=tuple(item for item in parent.dependencies if (item.kind, item.key) in used),
             run_configuration=parent.run_configuration,
+            agent_creation=parent.agent_creation,
             subagents=parent.subagents,
             tool_execution=parent.tool_execution,
             memory_enabled=parent.memory_enabled,

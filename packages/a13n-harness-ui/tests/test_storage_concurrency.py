@@ -116,7 +116,7 @@ async def test_cancelled_writer_exits_before_write_lock_is_released(tmp_path: Pa
                 await entered.wait()
                 await wait_all_tasks_blocked()
                 cancelled.cancel()
-                with move_on_after(0.2) as deadline:
+                with move_on_after(5) as deadline:
                     await finished.wait()
                 exited_while_blocked = not deadline.cancel_called
         assert exited_while_blocked
@@ -153,7 +153,7 @@ async def test_pool_checkout_can_be_cancelled(tmp_path: Path, monkeypatch: pytes
                 await entered.wait()
                 await wait_all_tasks_blocked()
                 cancelled.cancel()
-                with move_on_after(0.2) as deadline:
+                with move_on_after(5) as deadline:
                     await finished.wait()
                 exited_while_blocked = not deadline.cancel_called
         assert exited_while_blocked

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -530,6 +531,7 @@ class TerminalProjectionService:
                                 kind="acp_agent",
                                 agent_id=item.id,
                                 name=item.name,
+                                preset=item.preset,
                                 source_path=paths[item.id],
                             )
                             for item in source.acp_agents.values()
@@ -618,6 +620,7 @@ class TerminalProjectionService:
         defaults: NewThreadDefaults | None = None,
         environment: EnvironmentSelectionPatch | None = None,
         mutation: ThreadConfigurationMutation | None = None,
+        coordinator: bool = False,
     ) -> SkillCatalogView:
         receipt_id: str | None = None
         context_kind: Literal["draft", "idle", "active"] = "draft"
@@ -644,11 +647,28 @@ class TerminalProjectionService:
             resolved = resolve_thread_configuration(
                 source, RootThreadDefaults(**selected.model_dump(exclude_unset=True))
             )
+            owner = None
+            role: Literal["ordinary", "coordinator", "worker"] = (
+                "coordinator" if coordinator and resolved.project_id is not None else "ordinary"
+            )
         else:
             resolved = (
                 apply_configuration_mutation(source, thread, mutation) if mutation is not None else thread.configuration
             )
-        selection = ThreadCompositionSelection.from_configuration(thread_id or "skill-preview", resolved)
+            owner = (await self._store.threads.worker_owners((thread.thread_id,))).get(thread.thread_id)
+            is_coordinator = owner is None and await self._store.threads.is_coordinator(thread.thread_id)
+            role = (
+                "worker"
+                if owner is not None
+                else "coordinator"
+                if is_coordinator or (coordinator and resolved.project_id is not None)
+                else "ordinary"
+            )
+        selection = replace(
+            ThreadCompositionSelection.from_configuration(thread_id or "skill-preview", resolved),
+            role=role,
+            coordinator_thread_id=owner,
+        )
         captured = None
         if thread is not None and thread.continuation is not None:
             continuation = await self._store.read_continuation(thread.thread_id, thread.continuation)
@@ -664,7 +684,11 @@ class TerminalProjectionService:
         catalog = BoundSkillCatalog(items=())
         if recipe is not None:
             async with self._environments.preview(composition) as (bound, path_layout):
-                manager = create_skill_manager(recipe.configuration, path_layout=path_layout)
+                manager = create_skill_manager(
+                    recipe.configuration,
+                    path_layout=path_layout,
+                    include_coordinator_skills=composition.role == "coordinator",
+                )
                 catalog = await manager.scan_environment(environment=bound)
         return _skill_catalog_view(catalog, context_kind=context_kind, thread_id=thread_id, receipt_id=receipt_id)
 

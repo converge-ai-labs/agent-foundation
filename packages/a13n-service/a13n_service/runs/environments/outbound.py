@@ -1,7 +1,9 @@
 """Managed outbound admission and private bootstrap, separate from client enrollment."""
 
 import asyncio
+import hmac
 import secrets
+from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import SecretStr
@@ -13,6 +15,7 @@ from a13n_service.providers.environment.websocket import WebSocketBootstrap
 from a13n_service.providers.registry import Registry
 from a13n_service.resources.providers.service import ResolvedProvider, read_provider, resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
+from a13n_service.runs.environments.clients.routing import LifecycleCaller
 from a13n_service.runs.environments.schemas import Handle, OutboundBinding
 from a13n_service.runs.environments.tables import EnvironmentRow
 from a13n_service.runs.runtime import Runtime
@@ -86,7 +89,13 @@ async def admitted(
 
 
 def binding_for(
-    registry: Registry, environment: EnvironmentRow, provider: ResolvedProvider, *, executing: bool = False
+    registry: Registry,
+    environment: EnvironmentRow,
+    provider: ResolvedProvider,
+    *,
+    executing: bool = False,
+    lifecycle: LifecycleCaller | None = None,
+    at: datetime | None = None,
 ) -> OutboundBinding:
     """Validate already-read instance/provider facts without repeating database queries."""
     allowed = {"ready"} if executing else {"creating", "starting", "ready"}
@@ -99,7 +108,26 @@ def binding_for(
 
     if not provider.enabled or environment.provider_identity != provider_identity(registry, provider):
         raise ServiceError("unauthenticated", "Managed environment provider is unavailable or changed")
-    if environment.status not in allowed:
+    hook_active = (environment.operation_progress or {}).get("hook_active") is True
+    live_hook = (
+        hook_active
+        and at is not None
+        and environment.lease_expires_at is not None
+        and environment.lease_expires_at > at
+        and environment.status in {"creating", "starting", "stopping", "deleting"}
+    )
+    if lifecycle is not None:
+        if (
+            not live_hook
+            or environment.operation_id != lifecycle.operation_id
+            or environment.generation != lifecycle.generation
+            or environment.lease_token_hash is None
+            or not hmac.compare_digest(environment.lease_token_hash, secret_hash(lifecycle.token))
+        ):
+            raise ServiceError("unauthenticated", "Managed Environment operation is no longer authorized")
+    elif environment.status not in allowed and (
+        executing or not (hook_active and environment.status in {"stopping", "deleting"})
+    ):
         raise ServiceError("unavailable", "Managed environment is not ready for an outbound connection")
     return handle.outbound
 

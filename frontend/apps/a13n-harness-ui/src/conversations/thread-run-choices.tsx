@@ -1,6 +1,11 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "../i18n";
-import { ModelIdentity } from "../shell/model-identity";
+import {
+  acpModelIdentity,
+  acpPresetBrand,
+  ModelIcon,
+  ModelIdentity,
+} from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
 import { CaretRight, Desktop } from "@phosphor-icons/react";
 import { useState } from "react";
@@ -160,7 +165,10 @@ type RunChoiceProps = ModelControlProps & {
   onModelChange: (value: string | undefined) => void;
   externalOptions?: ReactNode;
   externalModel?: string;
+  externalModelId?: string;
   externalThinking?: string;
+  externalLoading?: boolean;
+  onExternalOptionsOpen?: () => void;
 };
 
 export function ThreadRunChoices(props: RunChoiceProps) {
@@ -200,15 +208,26 @@ export function ThreadRunChoices(props: RunChoiceProps) {
       title={`${agent?.name ?? t("Default agent")} - ${modelName}`}
     >
       <ComposerSettings
-        triggerDescription={speedDescription}
+        onOpen={isAcp ? props.onExternalOptionsOpen : undefined}
+        loading={props.externalLoading}
+        triggerDescription={
+          props.externalLoading ? t("Loading Agent options…") : speedDescription
+        }
         label={
           <span className={panelStyles.modelSummary}>
             {isAcp ? (
-              props.externalModel ? (
-                `${agent.name} · ${props.externalModel}`
-              ) : (
-                agent.name
-              )
+              <ModelIdentity
+                name={
+                  props.externalModel
+                    ? `${agent.name} · ${props.externalModel}`
+                    : agent.name
+                }
+                modelIdentity={acpModelIdentity(
+                  props.externalModel,
+                  props.externalModelId,
+                  agent.preset,
+                )}
+              />
             ) : (
               <ModelIdentity model={model} name={modelName} />
             )}
@@ -263,12 +282,26 @@ function AgentModelChoices({
               },
             ]
           : []),
-        ...(catalog?.agents ?? []).map((item) => ({
-          value: item.agent_id,
-          label: item.name,
-          description: item.agent_id,
-          badge: item.kind === "acp_agent" ? t("ACP agent") : undefined,
-        })),
+        ...(catalog?.agents ?? []).map((item) => {
+          const itemModel = catalog?.models?.find(
+            (candidate) => candidate.model_id === item.model_id,
+          );
+          const presetBrand = acpPresetBrand(item.preset);
+          return {
+            value: item.agent_id,
+            label: item.name,
+            description: item.agent_id,
+            badge: item.kind === "acp_agent" ? t("ACP agent") : undefined,
+            icon:
+              item.kind === "acp_agent" ? (
+                presetBrand ? (
+                  <ModelIcon modelIdentity={presetBrand} />
+                ) : undefined
+              ) : itemModel ? (
+                <ModelIcon model={itemModel} />
+              ) : undefined,
+          };
+        }),
         ...(agentId && !agent
           ? [
               {
@@ -316,33 +349,31 @@ function AgentModelChoices({
   return (
     <>
       {settings.page === "root" && (
-        <>
-          <SettingsRow
-            label={t("Agent")}
-            value={agent?.name ?? (agentId || t("Default agent"))}
-            disabled={disabled || !catalog}
-            onClick={() => settings.navigate("agent")}
-          />
-          {isAcp && externalOptions}
-          {!isAcp && (
-            <SettingsRow
-              label={t("Model")}
-              value={
-                <ModelIdentity
-                  model={model}
-                  name={
-                    model?.name ??
-                    t("{{name}} (unavailable)", {
-                      name: modelId ?? inheritedModelId ?? t("Model"),
-                    })
-                  }
-                />
+        <SettingsRow
+          label={t("Agent")}
+          value={agent?.name ?? (agentId || t("Default agent"))}
+          disabled={disabled || !catalog}
+          onClick={() => settings.navigate("agent")}
+        />
+      )}
+      {isAcp && externalOptions}
+      {!isAcp && settings.page === "root" && (
+        <SettingsRow
+          label={t("Model")}
+          value={
+            <ModelIdentity
+              model={model}
+              name={
+                model?.name ??
+                t("{{name}} (unavailable)", {
+                  name: modelId ?? inheritedModelId ?? t("Model"),
+                })
               }
-              disabled={disabled || !catalog}
-              onClick={() => settings.navigate("model")}
             />
-          )}
-        </>
+          }
+          disabled={disabled || !catalog}
+          onClick={() => settings.navigate("model")}
+        />
       )}
       {!isAcp && (
         <ModelControlPanel

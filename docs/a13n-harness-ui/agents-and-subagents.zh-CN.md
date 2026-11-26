@@ -73,15 +73,16 @@ subagents:
 启用 `spawn_subagent`，允许根对话按需临时创建叶子子智能体：
 
 ```yaml title="a13n-harness-ui.yaml"
+agent_creation:
+  allowed_models: [model-primary]
+  default_model: model-primary
 subagents:
   max_concurrent: 8
   dynamic:
     enabled: true
-    allowed_models: [model-primary]
-    default_model: model-primary
 ```
 
-- `allowed_models` 与 `default_model` 同时约束 `create_thread`、`create_worker` 与 `delegate` 可选用的模型。
+- `agent_creation.allowed_agents` 与 `default_agent` 约束 `create_thread`、`create_worker` 可用及默认使用的智能体；`agent_creation.allowed_models` 与 `default_model` 约束 `create_thread`、`create_worker`、`delegate` 与 `spawn_subagent` 可选用的模型。旧版 `subagents.dynamic.{allowed_models, default_model}` 加载时会自动提升到 `agent_creation`（冲突时报错），在 WebUI 保存时自动迁移。
 - 动态子智能体继承父级工具与环境，以全新历史启动，完成后自动回传结果。
 - 主智能体可通过 `subagent_info`、`wait_subagent`、`steer_subagent` 与 `resume_subagent` 管理运行中的子任务。
 

@@ -22,11 +22,11 @@ export function useStatus(refetchInterval?: number) {
     queryFn: ({ signal }) => result(client.GET("/api/status", { signal })),
   });
 }
-export function useSources() {
+export function useSources(enabled = true) {
   const { client, shareId } = useTransport();
   return useQuery({
     queryKey: ["sources"],
-    enabled: !shareId,
+    enabled: !shareId && enabled,
     queryFn: ({ signal }) =>
       result(client.GET("/api/configuration/sources", { signal })),
   });

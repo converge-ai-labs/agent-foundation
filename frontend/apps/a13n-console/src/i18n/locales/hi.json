@@ -1142,6 +1142,16 @@
   "Enter a JSON object.": "JSON ऑब्जेक्ट दर्ज करें।",
   "Enter a valid JSON value.": "मान्य JSON मान दर्ज करें।",
   "Environment": "एनवायरनमेंट",
+  "Default environment": "डिफ़ॉल्ट एनवायरनमेंट",
+  "Workspace default when a thread has no primary environment.": "थ्रेड का कोई प्राथमिक एनवायरनमेंट न होने पर वर्कस्पेस का डिफ़ॉल्ट।",
+  "Used when a session has no primary environment.": "सेशन का कोई प्राथमिक एनवायरनमेंट न होने पर इस्तेमाल होता है।",
+  "Environment preparation": "एनवायरनमेंट की तैयारी",
+  "On demand": "ज़रूरत पड़ने पर",
+  "Warm up in parallel": "साथ-साथ तैयारी करें",
+  "Wait before inference": "अनुमान से पहले प्रतीक्षा करें",
+  "Prepare when a tool first uses the environment.": "जब कोई टूल पहली बार परिवेश का उपयोग करे, तब उसे तैयार करें।",
+  "Prepare the environment while inference runs.": "इन्फ़रेंस के दौरान परिवेश तैयार करें।",
+  "Wait until the environment is ready before starting inference.": "इन्फ़रेंस शुरू करने से पहले परिवेश के तैयार होने की प्रतीक्षा करें।",
   "Environment details": "एनवायरनमेंट विवरण",
   "Environment instances": "एनवायरनमेंट इंस्टेंस",
   "Template configuration (JSON)": "टेम्पलेट कॉन्फ़िगरेशन (JSON)",
@@ -4657,5 +4667,9 @@
   "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "ब्राउज़र में कार्रवाई पूरी करें, फिर स्वीकार करें चुनें। सर्वर के क्रेडेंशियल उस पेज पर नहीं भेजे जाते।",
   "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.": "आपका जवाब इस MCP सर्वर को जाएगा। पासवर्ड, टोकन या अन्य गोपनीय जानकारी शामिल न करें।",
   "This field is required.": "यह फ़ील्ड आवश्यक है।",
-  "Enter a valid value for this field.": "इस फ़ील्ड के लिए मान्य मान दर्ज करें।"
+  "Enter a valid value for this field.": "इस फ़ील्ड के लिए मान्य मान दर्ज करें।",
+  "This connection uses native tool discovery.": "यह कनेक्शन मूल टूल खोज का उपयोग करता है।",
+  "More than {{limit}} tools selected": "{{limit}} से अधिक टूल चुने गए",
+  "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.": "सीधे प्रदान करने में प्रति कनेक्शन अधिकतम {{limit}} टूल समर्थित हैं। इस एजेंट पर टूल खोज सक्षम करें या कम टूल चुनें।",
+  "Enable tool discovery": "टूल खोज सक्षम करें"
 }

@@ -1397,6 +1397,16 @@
   "Enter a JSON object.": "请输入 JSON 对象。",
   "Enter a valid JSON value.": "请输入有效的 JSON 值。",
   "Environment": "环境",
+  "Default environment": "默认环境",
+  "Workspace default when a thread has no primary environment.": "会话线程未指定主环境时，使用此工作区默认环境。",
+  "Used when a session has no primary environment.": "Session 未指定主环境时使用。",
+  "Environment preparation": "环境准备方式",
+  "On demand": "按需准备",
+  "Warm up in parallel": "并行预热",
+  "Wait before inference": "推理前等待就绪",
+  "Prepare when a tool first uses the environment.": "在工具首次使用环境时准备。",
+  "Prepare the environment while inference runs.": "在推理的同时准备环境。",
+  "Wait until the environment is ready before starting inference.": "等待环境就绪后再开始推理。",
   "Environment details": "环境详情",
   "Environment instances": "环境实例",
   "Template configuration (JSON)": "环境配置（JSON）",
@@ -4657,5 +4667,9 @@
   "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "在浏览器中完成操作后选择“接受”。服务器凭据不会发送到该页面。",
   "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.": "你的回复将发送给此 MCP 服务器。请勿包含密码、令牌或其他机密。",
   "This field is required.": "此字段必填。",
-  "Enter a valid value for this field.": "请输入有效值。"
+  "Enter a valid value for this field.": "请输入有效值。",
+  "This connection uses native tool discovery.": "此连接使用原生工具发现。",
+  "More than {{limit}} tools selected": "已选择超过 {{limit}} 个工具",
+  "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.": "直接提供模式每个连接最多支持 {{limit}} 个工具。请为此智能体启用工具发现，或减少所选工具数量。",
+  "Enable tool discovery": "启用工具发现"
 }
