@@ -144,12 +144,13 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     />,
   );
   expect(trigger.textContent).toBe("ThinkingWork log");
-  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
   expect(
-    within(screen.getByRole("region", { name: "Work log" }))
-      .getByText("Thinking")
-      .closest("details")?.open,
-  ).toBe(true);
+    within(screen.getByRole("region", { name: "Thought content" })).getByText(
+      "Next step",
+    ),
+  ).toBeTruthy();
 });
 
 it.each([
@@ -551,7 +552,7 @@ it("keeps the execution reader open without moving the preceding progress on com
   ).toBeNull();
 });
 
-it("auto-expands active desktop execution and tails live thinking without pausing conversation follow, then collapses on tool and completion", async () => {
+it("streams live thinking beneath the single collapsed desktop trigger, collapses completely on tool calls, reappears for new thinking, and settles on completion", () => {
   viewport()(false);
   const pauseFollowing = vi.fn();
   const input: Schema<"TranscriptEntry"> = {
@@ -619,25 +620,25 @@ it("auto-expands active desktop execution and tails live thinking without pausin
     </PauseConversationFollowing>
   );
 
-  // Empty thinking START frame opens desktop execution stretch without flashing an empty thought box.
+  // Empty thinking START frame keeps the trigger collapsed and does not flash an empty preview box.
   const view = render(
     renderTranscript([{ id: "t1", kind: "thinking", text: "   " }]),
   );
   const trigger = screen.getByRole("button", { name: /Work log/ });
-  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(trigger.textContent).toBe("ThinkingWork log");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
   expect(pauseFollowing).not.toHaveBeenCalled();
-  const reader = screen.getByRole("region", { name: "Work log" });
-  expect(within(reader).getByText("Thinking").closest("details")?.open).toBe(
-    false,
-  );
 
-  // First non-empty delta auto-opens Thinking and scrolls viewport to bottom.
+  // First non-empty delta renders a single Thinking header and live scrolling preview underneath.
   view.rerender(
     renderTranscript([{ id: "t1", kind: "thinking", text: "First step" }]),
   );
-  const firstDetails = within(reader).getByText("Thinking").closest("details")!;
-  expect(firstDetails.open).toBe(true);
-  const thoughtViewport = within(firstDetails).getByRole("region", {
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.getAllByText("Thinking")).toHaveLength(1);
+  const thoughtViewport = screen.getByRole("region", {
     name: "Thought content",
   });
   let scrollHeight = 320;
@@ -657,8 +658,9 @@ it("auto-expands active desktop execution and tails live thinking without pausin
     ]),
   );
   expect(thoughtViewport.scrollTop).toBe(460);
+  expect(pauseFollowing).not.toHaveBeenCalled();
 
-  // Brief gap after REASONING_MESSAGE_END keeps the trailing thought open until the next row arrives.
+  // Brief gap after REASONING_MESSAGE_END keeps the preview open and settles the single header to Thought.
   view.rerender(
     renderTranscript([
       {
@@ -669,10 +671,33 @@ it("auto-expands active desktop execution and tails live thinking without pausin
       },
     ]),
   );
-  expect(firstDetails.open).toBe(true);
-  expect(within(firstDetails).getByText("Thought")).toBeTruthy();
+  expect(trigger.textContent).toBe("ThoughtWork log");
+  expect(screen.getByRole("region", { name: "Thought content" })).toBe(
+    thoughtViewport,
+  );
 
-  // Tool call arrives even if earlier thinking did not flip done: earlier thinking collapses and settles to Thought.
+  // Active tool call removes live thinking preview completely and leaves only the collapsed tool overview.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: false,
+      },
+    ]),
+  );
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(screen.queryByText("First step")).toBeNull();
+  expect(trigger.textContent).not.toContain("Thinking");
+  expect(trigger.textContent).toContain("checkout.ts");
+
+  // Completed tool call still stays collapsed without sticking on Thinking even when earlier thinking omitted done.
   view.rerender(
     renderTranscript([
       { id: "t1", kind: "thinking", text: "First step\nSecond step" },
@@ -687,12 +712,11 @@ it("auto-expands active desktop execution and tails live thinking without pausin
       },
     ]),
   );
-  expect(firstDetails.open).toBe(false);
-  expect(within(firstDetails).queryByText("Thinking")).toBeNull();
-  expect(within(firstDetails).getByText("Thought")).toBeTruthy();
-  expect(trigger.textContent).not.toContain("Thinking");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(trigger.textContent).toContain("Read 1 file");
 
-  // Subsequent thinking after tool call auto-expands and scrolls live.
+  // Subsequent thinking block after tool call reappears with a fresh viewport and scrolls to bottom.
   view.rerender(
     renderTranscript([
       { id: "t1", kind: "thinking", text: "First step\nSecond step" },
@@ -708,13 +732,37 @@ it("auto-expands active desktop execution and tails live thinking without pausin
       { id: "t2", kind: "thinking", text: "Verify retry guard" },
     ]),
   );
-  expect(firstDetails.open).toBe(false);
-  const secondDetails = within(reader)
-    .getByText("Thinking")
-    .closest("details")!;
-  expect(secondDetails.open).toBe(true);
+  expect(trigger.textContent).toBe("ThinkingWork log");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getAllByText("Thinking")).toHaveLength(1);
+  const secondViewport = screen.getByRole("region", {
+    name: "Thought content",
+  });
+  expect(secondViewport).not.toBe(thoughtViewport);
+  expect(within(secondViewport).getByText("Verify retry guard")).toBeTruthy();
 
-  // Assistant prose follows: ExecutionDetails auto-collapses without pausing follow.
+  // Brief gap after second thinking ends keeps Thought header instead of flashing prior tool summary.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: true,
+        result: "ok",
+      },
+      { id: "t2", kind: "thinking", text: "Verify retry guard", done: true },
+    ]),
+  );
+  expect(trigger.textContent).toBe("ThoughtWork log");
+  expect(screen.getByRole("region", { name: "Thought content" })).toBe(
+    secondViewport,
+  );
+
+  // Assistant prose follows: live preview disappears and execution stays collapsed without pausing follow.
   view.rerender(
     renderTranscript([
       { id: "t1", kind: "thinking", text: "First step\nSecond step" },
@@ -732,15 +780,17 @@ it("auto-expands active desktop execution and tails live thinking without pausin
     ]),
   );
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
   expect(pauseFollowing).not.toHaveBeenCalled();
 
   // Turn completes: collapses behind Worked for ... and stays collapsed.
   view.rerender(renderTranscript([], false, true));
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
   expect(trigger.textContent).toContain("Worked for 8s");
 });
 
-it("respects manual overrides and pauses thinking auto-scroll when the viewer scrolls up", async () => {
+it("hides live thinking preview on manual expand without duplication, pauses tail-scroll on upward scroll, and preserves Reasoning overrides", async () => {
   viewport()(false);
   const pauseFollowing = vi.fn();
   const user = userEvent.setup();
@@ -770,27 +820,25 @@ it("respects manual overrides and pauses thinking auto-scroll when the viewer sc
   );
 
   const trigger = screen.getByRole("button", { name: /Work log/ });
-  expect(trigger.getAttribute("aria-expanded")).toBe("true");
-  const reader = screen.getByRole("region", { name: "Work log" });
-  const details = within(reader).getByText("Thinking").closest("details")!;
-  expect(details.open).toBe(true);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
 
-  // Scroll up pauses auto-scroll; scrolling back within 4px resumes auto-scroll.
-  const thoughtViewport = within(details).getByRole("region", {
+  // Scroll up pauses auto-scroll in standalone preview; scrolling back within 4px resumes auto-scroll.
+  const previewViewport = screen.getByRole("region", {
     name: "Thought content",
   });
   let scrollHeight = 400;
-  Object.defineProperty(thoughtViewport, "scrollHeight", {
+  Object.defineProperty(previewViewport, "scrollHeight", {
     configurable: true,
     get: () => scrollHeight,
   });
-  Object.defineProperty(thoughtViewport, "clientHeight", {
+  Object.defineProperty(previewViewport, "clientHeight", {
     configurable: true,
     get: () => 144,
   });
-  thoughtViewport.scrollTop = 256;
-  fireEvent.wheel(thoughtViewport, { deltaY: -40 });
-  thoughtViewport.scrollTop = 120;
+  previewViewport.scrollTop = 256;
+  fireEvent.wheel(previewViewport, { deltaY: -40 });
+  previewViewport.scrollTop = 120;
   scrollHeight = 520;
   view.rerender(
     <PauseConversationFollowing value={pauseFollowing}>
@@ -804,11 +852,11 @@ it("respects manual overrides and pauses thinking auto-scroll when the viewer sc
       />
     </PauseConversationFollowing>,
   );
-  expect(thoughtViewport.scrollTop).toBe(120);
+  expect(previewViewport.scrollTop).toBe(120);
 
   // Scroll back near bottom (520 - 374 - 144 = 2 <= 4) resumes auto-scroll.
-  thoughtViewport.scrollTop = 374;
-  fireEvent.scroll(thoughtViewport);
+  previewViewport.scrollTop = 374;
+  fireEvent.scroll(previewViewport);
   scrollHeight = 640;
   view.rerender(
     <PauseConversationFollowing value={pauseFollowing}>
@@ -828,9 +876,20 @@ it("respects manual overrides and pauses thinking auto-scroll when the viewer sc
       />
     </PauseConversationFollowing>,
   );
-  expect(thoughtViewport.scrollTop).toBe(640);
+  expect(previewViewport.scrollTop).toBe(640);
 
-  // Manually collapsing active thinking keeps it collapsed across updates.
+  // Manually expanding ExecutionDetails pauses follow, hides standalone preview (no duplicate content), and opens Work log.
+  await user.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(pauseFollowing).toHaveBeenCalledTimes(1);
+  const reader = screen.getByRole("region", { name: "Work log" });
+  expect(
+    screen.getAllByRole("region", { name: "Thought content" }),
+  ).toHaveLength(1);
+  const details = within(reader).getByText("Thinking").closest("details")!;
+  expect(details.open).toBe(true);
+
+  // Manually collapsing active thinking inside Work log keeps it collapsed across updates.
   await user.click(within(details).getByText("Thinking"));
   expect(details.open).toBe(false);
   view.rerender(
@@ -853,18 +912,22 @@ it("respects manual overrides and pauses thinking auto-scroll when the viewer sc
   );
   expect(details.open).toBe(false);
 
-  // Manually expanding keeps it open across subsequent rows and live-to-saved cutover.
+  // Manually re-expanding keeps it open across completion and live-to-saved cutover.
   await user.click(within(details).getByText("Thinking"));
   expect(details.open).toBe(true);
 
-  // Manually collapsing and re-expanding ExecutionDetails pins it open across completion and calls pauseFollowing on expand.
+  // Collapsing ExecutionDetails while still running returns cleanly to standalone live preview.
   await user.click(trigger);
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
-  expect(pauseFollowing).not.toHaveBeenCalled();
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(
+    screen.getAllByRole("region", { name: "Thought content" }),
+  ).toHaveLength(1);
+
+  // Re-expanding pins ExecutionDetails open across completion.
   await user.click(trigger);
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
-  expect(pauseFollowing).toHaveBeenCalledTimes(1);
-
+  expect(pauseFollowing).toHaveBeenCalledTimes(2);
   view.rerender(
     <PauseConversationFollowing value={pauseFollowing}>
       <ConversationTranscript
@@ -894,7 +957,7 @@ it("respects manual overrides and pauses thinking auto-scroll when the viewer sc
   expect(details.open).toBe(true);
 });
 
-it("never auto-opens mobile modal or inline thinking preview during an active run", () => {
+it("never auto-opens mobile modal or renders inline thinking preview during an active run", () => {
   viewport();
   render(
     <ConversationTranscript
@@ -918,13 +981,14 @@ it("never auto-opens mobile modal or inline thinking preview during an active ru
   );
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
   expect(screen.queryByText("Mobile streaming thought")).toBeNull();
   expect(screen.getByRole("button", { name: /Work log/ }).textContent).toBe(
     "ThinkingWork log",
   );
 });
 
-it("keeps historical or reloaded unfinished runs collapsed by default on desktop", () => {
+it("keeps historical or reloaded unfinished runs collapsed without live preview on desktop", () => {
   viewport()(false);
   render(
     <ConversationTranscript
@@ -950,6 +1014,8 @@ it("keeps historical or reloaded unfinished runs collapsed by default on desktop
       .getAttribute("aria-expanded"),
   ).toBe("false");
   expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+  expect(screen.queryByText("Reloaded thinking")).toBeNull();
 });
 
 it("auto-expands live thinking in active LiveOutput and collapses it when a tool arrives", () => {

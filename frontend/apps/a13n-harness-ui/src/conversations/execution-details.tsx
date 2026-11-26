@@ -32,40 +32,37 @@ export function ExecutionDetails({
   complete,
   preview,
   running,
-  autoOpen = false,
+  livePreview,
   children,
 }: {
   complete: boolean;
   preview: string;
   running?: boolean;
-  autoOpen?: boolean;
+  livePreview?: ReactNode;
   children: (open: boolean) => ReactNode;
 }) {
   const { t } = useTranslation();
   const mobile = useMediaQuery("(max-width: 700px)");
   const pauseFollowing = useContext(PauseConversationFollowing);
-  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
+  const [expanded, setExpanded] = useState(false);
   const [inspecting, setInspecting] = useState(false);
   const [visited, setVisited] = useState(false);
-  const open = !mobile && (userExpanded ?? autoOpen);
+  const open = expanded;
   useEffect(() => {
     if (!mobile) setInspecting(false);
   }, [mobile]);
-  useEffect(() => {
-    if (open) setVisited(true);
-  }, [open]);
 
   if (!mobile)
     return (
       <Collapsible
         className={conversation.execution}
-        open={open}
+        open={expanded}
         onOpenChange={(next) => {
           if (next) {
             pauseFollowing?.();
             setVisited(true);
           }
-          setUserExpanded(next);
+          setExpanded(next);
         }}
       >
         <div className={conversation.executionHeading}>
@@ -86,12 +83,13 @@ export function ExecutionDetails({
             />
           </CollapsibleTrigger>
         </div>
+        {!expanded && livePreview}
         <CollapsiblePanel
           className={styles.readerPanel}
           keepMounted
           inert={!open}
         >
-          {(open || visited) && children(open)}
+          {visited && children(open)}
           <ReaderFades />
         </CollapsiblePanel>
       </Collapsible>

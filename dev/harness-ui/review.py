@@ -29,6 +29,7 @@ from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.surfaces import NewThreadDefaults, SkillReference
 from a13n_harness_ui.webui import create_webui
+from pydantic_ai import RunContext
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolReturnPart, UserPromptPart
@@ -701,10 +702,17 @@ async def serve(root: Path, port: int):
     def reconstruct(self, composition, *, root_capabilities=(), **kwargs):
         tools = FunctionToolset(id="design-review")
 
-        @tools.tool_plain
-        async def view(path: str) -> str:
+        @tools.tool
+        async def view(ctx: RunContext[object], path: str) -> str:
             """Read a fictional source file."""
-            await asyncio.sleep(0.25)
+            slow = any(
+                "[slow]" in str(part.content)
+                for message in ctx.messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+            )
+            await asyncio.sleep(3.5 if slow else 0.25)
             return "export async function placeOrder(order) {\n  await checkout.submit(order);\n}\n"
 
         @tools.tool_plain(metadata={"a13n.tool-execution": "owned"})
