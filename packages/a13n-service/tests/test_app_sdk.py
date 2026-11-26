@@ -51,10 +51,10 @@ async def test_egress_app_ownership_and_live_version(service, app_runtime, runne
         allowed_hosts=["example.com"],
         value="old",
     )
-    assert created.owner_app_id == "claw" and created.created_by_id == runner
+    assert created.app_id == "claw" and created.created_by_id == runner
     path = f"{service.api}/egress-credentials/{created.id}"
     read = await service.client.get(path)
-    assert read.json()["owner_app_id"] == "claw"
+    assert read.json()["app_id"] == "claw"
     assert (await service.client.get(f"{service.api}/egress-credentials")).json()["items"][0]["id"] == created.id
     headers = {"if-match": read.headers["etag"]}
     for method, suffix, body in [
@@ -286,7 +286,7 @@ async def test_native_project_revision_and_schedule_facades(service, app_runtime
         result, created = await schedules.create_fresh_schedule(
             session, runtime, ws, app_id="claw", actor_id=actor, body=body, request_key="claw:schedule"
         )
-        assert created and result.labels == {"app": "claw"}
+        assert created and result.app_id == "claw" and not result.labels
         assert (await schedules.list_app_schedules(session, ws, app_id="claw")).items == [result]
         assert await schedules.count_active_fresh_schedules(session, ws, app_id="other") == 0
         assert await schedules.count_active_fresh_schedules(session, ws, app_id="claw") == 1
@@ -463,9 +463,21 @@ async def test_dynamic_child_blocks_rebinding_until_quiescent_then_inherits_new_
         value="synthetic",
     )
     desired = threads.SessionConfiguration.model_validate(selection(credential.id))
-    parent = await runs_kit.start_thread(
-        service, agent, "Parent", environments=[{"name": "workspace", "environment_id": old}]
-    )
+    context = {"instance": "parent"}
+    async with transaction(runtime.storage) as db:
+        admission = await threads.prepare_admission(db, runtime, ws, runner, app_id="claw", app_context=context)
+        root, _ = await threads.create_thread_in_transaction(
+            db,
+            runtime,
+            admission,
+            ws,
+            threads.NewThread.model_validate(
+                runs_kit.message(agent, "Parent", environments=[{"name": "workspace", "environment_id": old}])
+            ),
+            request_key="app-parent",
+        )
+    parent = {"thread": root.model_dump(mode="json")}
+
     (parent_lease,) = await claim(runtime, worker_id="parent", worker_build="test", limit=1)
     spawned = await ChildRuns(runtime, parent_lease, AttemptControl(), {}).spawn(
         Spawn(name="worker", instructions="Task role", prompt="Child", selection={"toolsets": []}),
@@ -473,6 +485,11 @@ async def test_dynamic_child_blocks_rebinding_until_quiescent_then_inherits_new_
     )
     (child_lease,) = await claim(runtime, worker_id="child", worker_build="test", limit=1)
     assert child_lease.run_id == spawned.execution_id
+    async with short_session(runtime.storage) as db:
+        child_run = await db.get_one(RunRow, child_lease.run_id)
+        child_thread = await db.get_one(ThreadRow, child_lease.thread_id)
+        assert child_run.app_id == child_thread.app_id == "claw"
+        assert child_run.app_context == child_thread.app_context == context
     await seal_attempt(runtime, parent_lease, Outcome.cancelled())
     root_id, child_id = parent["thread"]["id"], child_lease.thread_id
 
@@ -507,6 +524,7 @@ async def test_dynamic_child_blocks_rebinding_until_quiescent_then_inherits_new_
 
 
 async def test_template_rebinding_queues_and_audits_creation_and_returns_root_ids(service, app_runtime, runner):
+    from a13n_service.app_provenance import AppProvenance
     from a13n_service.runs.browsers.tables import ThreadBrowserRow
     from a13n_service.runs.environments.tables import EnvironmentRow, ThreadEnvironmentRow
     from a13n_service.runs.sessions import new_session
@@ -529,7 +547,7 @@ async def test_template_rebinding_queues_and_audits_creation_and_returns_root_id
     assert registered.status_code == 201, registered.text
     browser_id = registered.json()["id"]
     async with transaction(runtime.storage) as db:
-        owner = new_session(tenant.organization_id, ws, runner)
+        owner = new_session(tenant.organization_id, ws, runner, provenance=AppProvenance("claw"))
         root = new_thread(owner, mcp_headers={})
         db.add(owner)
         await db.flush()
@@ -652,7 +670,7 @@ async def test_fresh_schedules_filter_instance_labels_and_count_archived_pending
                     labels={"instance": "b", "app": "other"},
                 )
             ).items
-        ] == [b]
+        ] == []
         idle = await db.get_one(ScheduleRow, await make("idle", "idle"))
         idle.state, idle.pause_reason, idle.archived_at = "archived", None, current
         await db.flush()
@@ -930,3 +948,318 @@ async def test_patch_app_egress_secrets_in_each_shared_binding(
         assert root_cfg.egress_mode == "controlled" and root_cfg.egress.destinations == initial_destinations
         assert root_cfg.credential_references == ()
         assert (await saved(db, shared_id)).configuration == operator.model_dump(mode="json")
+
+
+async def test_app_objects_namespace_authority_and_references(service, app_runtime):
+    from a13n_service.app_sdk.objects import AppObjects
+
+    workspace = service.tenant.workspace_id
+    owner = AppObjects(app_runtime, workspace, "claw")
+    other = AppObjects(app_runtime, workspace, "other")
+    snapshot = await owner.put(b"seed\x00bytes", content_type="application/octet-stream", prefix="snapshots/a")
+    assert snapshot.key.startswith(f"apps/claw/{service.tenant.organization_id}/{workspace}/snapshots/a/")
+    assert await owner.get(snapshot.key) == await owner.read(snapshot) == b"seed\x00bytes"
+    assert await owner.keys("snapshots") == [snapshot.key]
+    assert await owner.keys("snapshots", after=snapshot.key) == []
+    assert await other.keys() == []
+    for request in (
+        lambda: other.get(snapshot.key),
+        lambda: other.read(snapshot),
+        lambda: other.delete(snapshot.key),
+        lambda: other.keys(after=snapshot.key),
+        lambda: owner.get(snapshot.key.replace(f"/{workspace}/", "/other-workspace/")),
+        lambda: owner.put(b"no", content_type="text/plain", prefix="../other"),
+        lambda: owner.keys("snapshots/../other"),
+    ):
+        with pytest.raises(ValueError):
+            await request()
+    await owner.delete(snapshot.key)
+    assert await owner.get(snapshot.key) is None and await owner.keys() == []
+    async with transaction(app_runtime.storage) as db:
+        org = await db.get_one(OrganizationRow, service.tenant.organization_id)
+        org.settings = {**org.settings, "app_plugins": {"enabled": ["other"]}}
+    with pytest.raises(ServiceError) as denied:
+        await owner.keys()
+    assert denied.value.code == "disabled"
+
+
+async def test_public_threads_cannot_stamp_or_create_app_roots(service, app_runtime, runner, scripted_model, runs_kit):
+    from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow
+    from psycopg.errors import RaiseException
+    from sqlalchemy import update
+    from sqlalchemy.exc import DBAPIError
+
+    await runs_kit.pause_sweeps(service)
+    tenant = service.tenant
+    agent = await runs_kit.create_agent(service, scripted_model)
+    message = runs_kit.message(agent, "first")
+    context = {"instance": "a"}
+    async with transaction(app_runtime.storage) as db:
+        admission = await threads.prepare_admission(
+            db, app_runtime, tenant.workspace_id, runner, app_id="claw", app_context=context
+        )
+        root, receipt = await threads.create_thread_in_transaction(
+            db,
+            app_runtime,
+            admission,
+            tenant.workspace_id,
+            threads.NewThread.model_validate(message),
+            request_key="owned-root",
+        )
+        assert receipt.run is not None and root.app_id == receipt.entry.app_id == receipt.run.app_id == "claw"
+        assert receipt.run.trigger_app_id == "claw"
+        session = await db.get_one(SessionRow, root.session_id)
+        run = await db.get_one(RunRow, receipt.run.id)
+        assert session.app_context == run.app_context == context
+
+    async def read(path, **params):
+        response = await service.client.get(f"{service.api}/{path}", params=params)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    for value in (
+        (await read("runs", thread_id=root.id))["items"][0],
+        (await read(f"threads/{root.id}/runs"))["items"][0],
+        await read(f"runs/{receipt.run.id}", view="compact"),
+    ):
+        assert value["id"] == receipt.run.id
+        assert value["app_id"] == value["trigger_app_id"] == "claw"
+        assert "app_context" not in value
+    for entry in (
+        (await read(f"threads/{root.id}/inbox", view="compact"))["items"][0],
+        await read(f"threads/{root.id}/inbox/{receipt.entry.id}", view="compact"),
+    ):
+        assert (entry["id"], entry["app_id"]) == (receipt.entry.id, "claw")
+
+    path = f"{service.api}/threads"
+    refused = await service.client.post(
+        path, json={**message, "session_id": root.session_id}, headers=runs_kit.fresh_key()
+    )
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["error"]["details"]["reason"] == "app_managed_session"
+    forged = await service.client.post(
+        path, json={**message, "app_id": "claw", "app_context": context}, headers=runs_kit.fresh_key()
+    )
+    assert forged.status_code == 400, forged.text
+    assert {item["field"]: item["reason"] for item in forged.json()["error"]["details"]["fields"]} == {
+        "body.app_id": "extra_forbidden",
+        "body.app_context": "extra_forbidden",
+    }
+    for table, key, values in (
+        (SessionRow, root.session_id, {"app_id": "other"}),
+        (ThreadRow, root.id, {"app_context": {"instance": "forged"}}),
+        (InboxEntryRow, receipt.entry.id, {"app_id": None}),
+        (RunRow, receipt.run.id, {"trigger_app_id": None}),
+    ):
+        with pytest.raises(DBAPIError) as rejected:
+            async with transaction(app_runtime.storage) as db:
+                await db.execute(update(table).where(table.id == key).values(**values))
+        assert isinstance(rejected.value.orig, RaiseException)
+    with pytest.raises(ServiceError) as denied:
+        async with transaction(app_runtime.storage) as db:
+            await threads.update_thread_resources(
+                db,
+                app_runtime,
+                tenant.workspace_id,
+                app_id="other",
+                principal_id=runner,
+                root_thread_id=root.id,
+                browser_id=None,
+            )
+    assert denied.value.code == "conflict" and denied.value.details["reason"] == "app_owner_mismatch"
+
+    from .environments_support import interrupt
+
+    await interrupt(service, receipt.run.id)
+    fork = await service.client.post(
+        f"{service.api}/runs/{receipt.run.id}/fork", json=message, headers=runs_kit.fresh_key()
+    )
+    assert fork.status_code == 201, fork.text
+    forked = fork.json()
+    assert forked["run"]["app_id"] == forked["thread"]["app_id"] == "claw"
+    assert forked["run"]["trigger_app_id"] is None
+    async with short_session(app_runtime.storage) as db:
+        fork_thread = await db.get_one(ThreadRow, forked["thread"]["id"])
+        fork_run = await db.get_one(RunRow, forked["run"]["id"])
+        assert fork_thread.app_context == fork_run.app_context == context
+
+
+async def test_app_schedule_stamps_occurrence_and_rejects_public_retarget(
+    service, app_runtime, scripted_model, runs_kit
+):
+    from a13n_service.runs.schedules import dispatch
+    from a13n_service.runs.schedules.tables import OccurrenceRow, ScheduleRow
+    from a13n_service.runs.tables import InboxEntryRow, RunRow, SessionRow
+
+    await runs_kit.pause_sweeps(service)
+    tenant = service.tenant
+    agent = await runs_kit.create_agent(service, scripted_model)
+    context = {"instance": "weekly"}
+    body = ScheduleCreate.model_validate(
+        {
+            "name": "Owned schedule",
+            "schedule": {"type": "once", "run_at": datetime.now(UTC) + timedelta(hours=2)},
+            "invocation": {
+                "agent_id": agent["id"],
+                "agent_revision_id": None,
+                "payload": runs_kit.message(agent, "roll up")["payload"],
+            },
+        }
+    )
+    async with transaction(app_runtime.storage) as db:
+        schedule, created = await schedules.create_fresh_schedule(
+            db,
+            app_runtime,
+            tenant.workspace_id,
+            app_id="claw",
+            app_context=context,
+            actor_id=tenant.principal_id,
+            body=body,
+            request_key="owned-schedule",
+        )
+        assert created and schedule.app_id == "claw"
+        scoped = await schedules.list_app_schedules(db, tenant.workspace_id, app_id="claw", app_context=context)
+        assert [item.id for item in scoped.items] == [schedule.id]
+        assert not (
+            await schedules.list_app_schedules(
+                db, tenant.workspace_id, app_id="claw", app_context={"instance": "other"}
+            )
+        ).items
+    path = f"{service.api}/schedules/{schedule.id}"
+    headers = {"if-match": (await service.client.get(path)).headers["etag"]}
+    edit = await service.client.patch(path, headers=headers, json={"target": {"mode": "thread"}})
+    assert edit.status_code == 409 and edit.json()["error"]["details"]["reason"] == "app_managed_schedule_target", (
+        edit.text
+    )
+    result = await service.client.post(f"{path}/dispatch", headers={**headers, **runs_kit.fresh_key()}, json={})
+    assert result.status_code == 202, result.text
+    await dispatch.process(app_runtime, schedule.id)
+    async with short_session(app_runtime.storage) as db:
+        occurrence = await db.get_one(OccurrenceRow, result.json()["id"])
+        assert occurrence.status == "submitted"
+        entry = await db.get_one(InboxEntryRow, occurrence.entry_id)
+        thread = await db.get_one(ThreadRow, occurrence.thread_id)
+        session = await db.get_one(SessionRow, thread.session_id)
+        run = await db.get_one(RunRow, entry.assigned_run_id)
+        for row in (await db.get_one(ScheduleRow, schedule.id), occurrence, thread, session, run):
+            assert row.app_id == "claw" and row.app_context == context
+        assert entry.app_id == run.trigger_app_id == "claw"
+
+
+async def test_app_memory_space_provenance_is_read_only(service, app_runtime):
+    from a13n_service.resources.memories.tables import MemorySpaceRow
+    from psycopg.errors import RaiseException
+    from sqlalchemy import update
+    from sqlalchemy.exc import DBAPIError
+
+    tenant = service.tenant
+    context = {"instance": "library"}
+    async with transaction(app_runtime.storage) as db:
+        space_id = await projects.create_memory_space(
+            db,
+            app_runtime,
+            tenant.workspace_id,
+            app_id="claw",
+            app_context=context,
+            actor_id=tenant.principal_id,
+            name="App library",
+        )
+        row = await db.get_one(MemorySpaceRow, space_id)
+        assert row.app_id == "claw" and row.app_context == context
+    view = await service.client.get(f"{service.api}/memory-spaces/{space_id}")
+    assert view.status_code == 200 and view.json()["app_id"] == "claw", view.text
+    with pytest.raises(DBAPIError) as rejected:
+        async with transaction(app_runtime.storage) as db:
+            await db.execute(update(MemorySpaceRow).where(MemorySpaceRow.id == space_id).values(app_context=None))
+    assert isinstance(rejected.value.orig, RaiseException)
+
+
+async def test_reusing_app_owned_targets_preserves_existing_context(
+    service, app_runtime, runner, scripted_model, runs_kit
+):
+    from a13n_service.app_provenance import AppProvenance
+    from a13n_service.app_sdk._access import app_actor, app_workspace
+    from a13n_service.runs.schedules import service as schedule_service
+    from a13n_service.runs.schedules.schemas import ScheduleInvocation, ScheduleTarget
+
+    await runs_kit.pause_sweeps(service)
+    workspace = service.tenant.workspace_id
+    agent = await runs_kit.create_agent(service, scripted_model)
+    message = runs_kit.message(agent, "Reuse a target")
+    context = {"instance": "shared"}
+    async with transaction(app_runtime.storage) as db:
+
+        async def ensure(existing=None, app_context=None):
+            return await schedules.ensure_schedule_session(
+                db,
+                app_runtime,
+                workspace,
+                app_id="claw",
+                principal_id=runner,
+                existing_session_id=existing,
+                session_create=SessionCreate(title="Owned Session"),
+                app_context=app_context,
+            )
+
+        existing = await ensure(app_context=context)
+        assert await ensure(existing) == await ensure(existing, context) == existing
+        empty = await ensure()
+        assert await ensure(empty, {}) == empty
+        for mismatch in ({}, {"instance": "wrong"}):
+            with pytest.raises(ServiceError) as denied:
+                await ensure(existing, mismatch)
+            assert denied.value.details["reason"] == "app_owner_mismatch"
+
+        body = threads.NewThread.model_validate({**message, "session_id": existing})
+        admission = await threads.prepare_admission(db, app_runtime, workspace, runner, app_id="claw")
+        root, receipt = await threads.create_thread_in_transaction(
+            db,
+            app_runtime,
+            admission,
+            workspace,
+            body,
+            request_key="reuse-owned-target",
+        )
+        assert receipt.run is not None
+        assert (await db.get_one(ThreadRow, root.id)).app_context == context
+        scope = await app_workspace(db, app_runtime, workspace, "claw")
+        actor = await app_actor(db, app_runtime, scope, runner)
+        invocation = ScheduleInvocation.model_validate(
+            {"agent_id": agent["id"], "agent_revision_id": None, "payload": message["payload"]}
+        )
+        for target, expected in (
+            (ScheduleTarget(session_id=existing), (existing, None)),
+            (ScheduleTarget(mode="thread", thread_id=root.id), (existing, root.id)),
+        ):
+            assert (
+                await schedule_service.resolve_target(
+                    db,
+                    app_runtime,
+                    actor,
+                    scope,
+                    target,
+                    invocation,
+                    provenance=AppProvenance("claw"),
+                )
+                == expected
+            )
+            with pytest.raises(ServiceError) as denied:
+                await schedule_service.resolve_target(
+                    db,
+                    app_runtime,
+                    actor,
+                    scope,
+                    target,
+                    invocation,
+                    provenance=AppProvenance("claw", {"instance": "different"}),
+                )
+            assert denied.value.details["reason"] == "app_owner_mismatch"
+
+    async with transaction(app_runtime.storage) as db:
+        admission = await threads.prepare_admission(db, app_runtime, workspace, runner, app_id="claw")
+        replayed, replay = await threads.create_thread_in_transaction(
+            db, app_runtime, admission, workspace, body, request_key="reuse-owned-target"
+        )
+        assert replayed.id == root.id
+        assert replay.entry.id == receipt.entry.id
+        assert replay.run is not None and replay.run.id == receipt.run.id

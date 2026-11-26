@@ -48,7 +48,7 @@ class AppManifest:
     has_run_seal_subscribers: bool = False
 
     def __post_init__(self) -> None:
-        if not re.fullmatch(r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*", self.app_id):
+        if len(self.app_id) > 128 or not re.fullmatch(r"[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*", self.app_id):
             raise ValueError(f"Invalid App ID: {self.app_id}")
         object.__setattr__(self, "factory_keys", frozenset(self.factory_keys))
 

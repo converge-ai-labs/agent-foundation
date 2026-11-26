@@ -22,6 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.app_provenance import AppOwned, app_context_requires_owner, guard_app_provenance
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
 
 STATUSES = ("reserved", "creating", "starting", "ready", "stopping", "stopped", "deleting", "deleted", "disabled")
@@ -29,9 +30,10 @@ OPERATIONS = "('creating', 'starting', 'stopping', 'deleting')"
 CLIENT_IDENTITY = text("kind = 'external' AND status <> 'deleted'")
 
 
-class EnvironmentRow(Stamped, Base):
+class EnvironmentRow(AppOwned, Stamped, Base):
     __tablename__ = "environments"
     __table_args__ = (
+        app_context_requires_owner(),
         UniqueConstraint("workspace_id", "id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(
@@ -124,6 +126,7 @@ class EnvironmentRow(Stamped, Base):
             postgresql_where=text("metrics_data_source_id IS NOT NULL"),
         ),
         rules(
+            guard_app_provenance("environments", "app_id", "app_context"),
             identity_guarded("environments"),
             "CREATE TRIGGER guard_environment_target BEFORE UPDATE ON environments FOR EACH ROW"
             " WHEN (ROW(OLD.kind, OLD.device_id, OLD.owner_principal_id)"
@@ -183,7 +186,9 @@ class EnvironmentRow(Stamped, Base):
     generation: Mapped[int] = mapped_column(BigInteger, server_default=text("0"))
     operation_id: Mapped[str | None]
     operation_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # The bound of the provider call currently claimed.
+    # Hook progress is scoped to the current operation ID, not the current claimant.
+    operation_progress: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
+    # The bound of the provider and hook work currently claimed.
     operation_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Pending operations yield their claim and pace both Worker and Control continuation.
     next_operation_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

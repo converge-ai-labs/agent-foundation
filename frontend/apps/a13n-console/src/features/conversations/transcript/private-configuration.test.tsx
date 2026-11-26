@@ -38,7 +38,7 @@ const saved = {
   id: credentialId,
   version: 4,
   credential_version: 2,
-  owner_app_id: null,
+  app_id: null,
   name: "GitHub",
   allowed_hosts: ["api.github.com"],
   state: "active",
@@ -256,7 +256,7 @@ it.each(["admin", "run"])(
 it.each(["update", "rotate", "revoke"])(
   "blocks %s of App-managed credentials",
   async (action) => {
-    get.mockResolvedValue(ok({ ...saved, owner_app_id: "app_fixture" }));
+    get.mockResolvedValue(ok({ ...saved, app_id: "app_fixture" }));
     const { user } = setup({
       action,
       credential_id: credentialId,
@@ -276,7 +276,7 @@ it.each(["update", "rotate", "revoke"])(
   },
 );
 it("requests synchronization without claiming application and permits App-owned targets", async () => {
-  get.mockResolvedValue(ok({ ...saved, owner_app_id: "app_fixture" }));
+  get.mockResolvedValue(ok({ ...saved, app_id: "app_fixture" }));
   const { user } = setup({ action: "sync", credential_id: credentialId });
   await waitFor(() =>
     expect(

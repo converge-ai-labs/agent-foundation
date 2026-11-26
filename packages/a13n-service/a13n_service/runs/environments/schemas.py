@@ -94,6 +94,19 @@ class Handle(BaseModel):
         return bool(self.recipe.get("desktop") and self.recipe.get("desktop_assistance"))
 
 
+type DeleteReason = Literal["explicit", "idle", "preparation_failed", "replaced"]
+
+
+class OperationProgress(BaseModel):
+    """Durable hook and provider progress for the current Environment operation."""
+
+    hooks_completed: tuple[str, ...] = ()
+    provider_completed: bool = False
+    hook_blocked: bool = False
+    hook_active: bool = False
+    delete_reason: DeleteReason | None = None
+
+
 class EnvironmentFailure(BaseModel):
     """The last error of the outstanding operation or, on a ready instance, of its last renewal.
 
@@ -129,6 +142,7 @@ class ClientConnectionObservation(BaseModel):
 
 class EnvironmentView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+    app_id: str | None = Field(default=None, json_schema_extra={"readOnly": True})
     id: str
     kind: Literal["managed", "external_http", "external"]
     client_connection: ClientConnectionObservation | None = None

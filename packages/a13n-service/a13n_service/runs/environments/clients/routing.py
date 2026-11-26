@@ -13,7 +13,7 @@ from a13n_envd_client.eip.v1 import EIPError
 from a13n_envd_client.errors import EIPMethodError, EIPRequestTimeoutError, EIPTransportClosedError
 from a13n_harness.environment.models import EnvironmentError
 from a13n_logging import exception_details, get_logger
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, model_validator
 from redis.asyncio import Redis
 from redis.asyncio.client import PubSub
 from redis.asyncio.retry import Retry
@@ -59,6 +59,24 @@ RETAINED_CLEANUP = RECOVERY_DISCOVERY | frozenset(
 )
 
 
+class LifecycleCaller(BaseModel):
+    """Private proof of a managed Environment's live operation claim."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["lifecycle"] = "lifecycle"
+    operation_id: str
+    generation: int
+    token: str = Field(repr=False)
+
+    @property
+    def execution_id(self) -> None:
+        return None
+
+
+type ScopeCaller = Caller | LifecycleCaller
+
+
 class Request(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -67,12 +85,25 @@ class Request(BaseModel):
     mount_name: str = Field(min_length=1, max_length=64)
     epoch: str = Field(pattern=r"^[a-f0-9]{32}$")
     scope_id: str = Field(pattern=r"^[a-f0-9]{32}$")
-    thread_id: str = Field(min_length=1, max_length=72)
-    caller: Caller
+    thread_id: str | None = Field(default=None, min_length=1, max_length=72)
+    caller: ScopeCaller
     method: str = Field(min_length=1, max_length=64)
     params: dict[str, JsonValue]
     expires_at: AwareDatetime
     cleanup: bool = False
+
+    @model_validator(mode="after")
+    def validate_owner(self) -> Request:
+        if isinstance(self.caller, LifecycleCaller):
+            if self.thread_id is not None or self.cleanup:
+                raise ValueError("Lifecycle scopes cannot use Run authority")
+        elif self.thread_id is None:
+            raise ValueError("Run scopes require a Thread")
+        return self
+
+    @property
+    def scope_owner(self) -> str | LifecycleCaller:
+        return self.caller.run_id if isinstance(self.caller, Caller) else self.caller
 
     @property
     def retained_cleanup(self) -> bool:

@@ -106,6 +106,8 @@ async def occurrence(
     )
     result = OccurrenceRow(
         id=new_object_id("occ"),
+        app_id=row.app_id,
+        app_context=row.app_context,
         organization_id=row.organization_id,
         workspace_id=row.workspace_id,
         schedule_id=row.id,
