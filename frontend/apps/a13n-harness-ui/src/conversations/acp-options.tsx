@@ -35,7 +35,17 @@ export function useAcpOptions(
   });
 }
 
-export function acpOptionLabel(option?: Schema<"AcpOption">) {
+export function acpModelOption(options?: Schema<"AcpOption">[]) {
+  return options?.find(
+    (option) => option.category === "model" || option.id === "model",
+  );
+}
+
+export function acpOptionLabel(
+  option?: Schema<"AcpOption">,
+  emptyLabel?: string,
+) {
+  if (option?.value === "") return emptyLabel;
   return option
     ? (option.choices?.find((choice) => choice.value === option.value)?.name ??
         String(option.value))
@@ -73,7 +83,8 @@ export function AcpOptions({
           body,
         }),
       ),
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
+      await queries.cancelQueries({ queryKey: key, exact: true });
       queries.setQueryData(key, updated);
     },
   });
@@ -115,18 +126,22 @@ export function AcpOptionFields({
               { label: t("Enabled"), value: "true" },
               { label: t("Disabled"), value: "false" },
             ]
-          : (option.choices ?? []).map(({ name, value }) => ({
-              label: name,
-              value,
-            }));
+          : (option.choices ?? [])
+              .filter(({ value }) => value !== "")
+              .map(({ name, value }) => ({
+                label: name,
+                value,
+              }));
         const disabled = locked || !choices.length;
         return (
           <div key={option.id}>
             <SettingsRow
               label={option.name}
               value={
-                choices.find(({ value }) => value === String(option.value))
-                  ?.label ?? String(option.value)
+                boolean
+                  ? choices.find(({ value }) => value === String(option.value))
+                      ?.label
+                  : acpOptionLabel(option, t("Not selected"))
               }
               disabled={disabled}
               onClick={() =>

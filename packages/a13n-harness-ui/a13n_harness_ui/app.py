@@ -1904,7 +1904,7 @@ class HarnessUiApp:
             if request is None and (cached := self._acp_options_cache.get(scope)) is not None:
                 return cached
             result = await preview_acp_options(resource, cwd, request)
-            if request is None:
+            if request is None and any(option.is_model for option in result.options):
                 if len(self._acp_options_cache) >= 32:
                     self._acp_options_cache.pop(next(iter(self._acp_options_cache)))
                 self._acp_options_cache[scope] = result

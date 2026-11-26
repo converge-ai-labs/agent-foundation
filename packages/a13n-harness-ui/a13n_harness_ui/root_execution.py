@@ -415,20 +415,21 @@ class RootRunExecutor:
                 raise ThreadError("Could not open the external ACP session.", code="acp_session_unavailable") from exc
         if change is None:
             return self.acp_sessions.options(thread_id)
-        options = await self.acp_sessions.set_option(thread_id, change)
+        options, unrestored = await self.acp_sessions.set_option(thread_id, change)
         current = await self._read_acp_state(thread_id)
         assert current is not None
+        values = {option.id: option.value for option in options}
+        values.update((key, value) for key, value in current.options.items() if key in unrestored)
         with CancelScope(shield=True):
             await self._save_acp_state(
                 thread_id,
                 current.model_copy(
                     update={
-                        "options": {option.id: option.value for option in options},
+                        "options": values,
                         "explicit_options": frozenset(
-                            option.id
-                            for option in options
-                            if not current.prompted
-                            and (option.id == change.id or option.id in current.explicit_options)
+                            key
+                            for key in values
+                            if not current.prompted and (key == change.id or key in current.explicit_options)
                         ),
                     }
                 ),
