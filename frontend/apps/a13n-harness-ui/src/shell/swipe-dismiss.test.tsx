@@ -6,27 +6,43 @@ import { useSwipeDismiss } from "./swipe-dismiss";
 function Drawer({
   onDismiss,
   onRow,
+  edge = "left",
 }: {
   onDismiss: () => void;
   onRow: () => void;
+  edge?: "left" | "right";
 }) {
-  const ref = useSwipeDismiss(onDismiss);
+  const ref = useSwipeDismiss(onDismiss, edge);
   return (
     <div ref={ref} data-testid="drawer">
       <button type="button" onClick={onRow}>
         Row
       </button>
+      <div
+        data-testid="scroller"
+        className="cm-scroller"
+        style={{ overflowX: "auto" }}
+      >
+        <span data-testid="code">wide code</span>
+      </div>
     </div>
   );
 }
 
-function setup() {
+function setup(edge: "left" | "right" = "left") {
   const onDismiss = vi.fn();
   const onRow = vi.fn();
-  render(<Drawer onDismiss={onDismiss} onRow={onRow} />);
+  render(<Drawer onDismiss={onDismiss} onRow={onRow} edge={edge} />);
   const drawer = screen.getByTestId("drawer");
   Object.defineProperty(drawer, "offsetWidth", { value: 300 });
-  return { drawer, row: screen.getByRole("button"), onDismiss, onRow };
+  return {
+    drawer,
+    row: screen.getByRole("button"),
+    scroller: screen.getByTestId("scroller"),
+    code: screen.getByTestId("code"),
+    onDismiss,
+    onRow,
+  };
 }
 
 function touch(
@@ -107,4 +123,40 @@ it("ignores mouse drags", () => {
     );
   expect(drawer.style.translate).toBe("");
   expect(onDismiss).not.toHaveBeenCalled();
+});
+
+it("dismisses a right-edge drawer on rightward touch swipe and respects horizontal code scrolling", () => {
+  const { drawer, row, scroller, code, onDismiss } = setup("right");
+  Object.defineProperty(scroller, "scrollWidth", {
+    value: 600,
+    configurable: true,
+  });
+  Object.defineProperty(scroller, "clientWidth", {
+    value: 300,
+    configurable: true,
+  });
+  Object.defineProperty(scroller, "scrollLeft", {
+    value: 80,
+    configurable: true,
+  });
+
+  // When scrolled right inside code, rightward drag belongs to horizontal scroll.
+  touch(code, "pointerdown", 100, 100, 0);
+  touch(code, "pointermove", 220, 100, 50);
+  touch(code, "pointerup", 220, 100, 100);
+  expect(drawer.style.translate).toBe("");
+  expect(onDismiss).not.toHaveBeenCalled();
+
+  // At scrollLeft === 0, a decisive rightward swipe dismisses the drawer.
+  Object.defineProperty(scroller, "scrollLeft", {
+    value: 0,
+    configurable: true,
+  });
+  touch(row, "pointerdown", 50, 100, 0);
+  touch(row, "pointermove", 120, 102, 50);
+  expect(drawer.style.translate).toBe("70px 0");
+  touch(row, "pointermove", 200, 104, 100);
+  touch(row, "pointerup", 200, 104, 300);
+  expect(onDismiss).toHaveBeenCalledTimes(1);
+  expect(drawer.style.translate).toBe("100% 0");
 });

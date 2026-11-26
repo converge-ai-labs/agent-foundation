@@ -28,6 +28,7 @@ vi.mock("../configuration/editor", () => ({
   }) => {
     useImperativeHandle(ref, () => ({
       find,
+      closeFind: () => false,
       focus: vi.fn(),
       goToLine: vi.fn(),
     }));

@@ -152,15 +152,29 @@ async function loadDocument(
     },
   };
 }
+type DocumentPreviewSource =
+  | {
+      path: string;
+      revision: string;
+      sourceKey?: never;
+      loadBytes?: never;
+    }
+  | {
+      sourceKey: string;
+      loadBytes: (signal: AbortSignal) => Promise<ArrayBuffer>;
+      path?: never;
+      revision?: never;
+    };
+
 export function DocumentPreview({
   kind,
   path,
   revision,
+  sourceKey,
+  loadBytes,
 }: {
   kind: DocumentKind;
-  path: string;
-  revision: string;
-}) {
+} & DocumentPreviewSource) {
   const transport = useTransport(),
     { t } = useTranslation();
   const [model, setModel] = useState<Pages | Sheets>(),
@@ -168,21 +182,33 @@ export function DocumentPreview({
     [failed, setFailed] = useState(false);
   const [pageReady, setPageReady] = useState(false);
   const host = useRef<HTMLDivElement>(null);
+  const loader = useRef(loadBytes);
+  loader.current = loadBytes;
   useEffect(() => {
     const controller = new AbortController();
     let loaded: Pages | Sheets | undefined;
+    setModel(undefined);
+    setIndex(0);
+    setFailed(false);
+    setPageReady(false);
     (async () => {
-      const access = await fileTransfer(
-        transport,
-        path,
-        revision,
-        "attachment",
-        controller.signal,
-      );
-      const response = await transport.fetch(access.url, {
-        signal: controller.signal,
-      });
-      loaded = await loadDocument(kind, await response.arrayBuffer());
+      let bytes: ArrayBuffer;
+      if (loader.current) {
+        bytes = await loader.current(controller.signal);
+      } else {
+        const access = await fileTransfer(
+          transport,
+          path!,
+          revision!,
+          "attachment",
+          controller.signal,
+        );
+        const response = await transport.fetch(access.url, {
+          signal: controller.signal,
+        });
+        bytes = await response.arrayBuffer();
+      }
+      loaded = await loadDocument(kind, bytes);
       if (controller.signal.aborted) {
         if ("dispose" in loaded) loaded.dispose();
         return;
@@ -195,7 +221,7 @@ export function DocumentPreview({
       controller.abort();
       if (loaded && "dispose" in loaded) loaded.dispose();
     };
-  }, [transport, path, revision, kind]);
+  }, [transport, path, revision, sourceKey, kind]);
   useEffect(() => {
     if (!model || !("draw" in model) || !host.current) return;
     const target = host.current,

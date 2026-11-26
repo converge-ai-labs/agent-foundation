@@ -19,9 +19,11 @@ import {
 } from "@codemirror/state";
 import { keymap } from "@codemirror/view";
 import {
+  closeSearchPanel,
   gotoLine,
   openSearchPanel,
   search,
+  searchPanelOpen,
   getSearchQuery,
   type SearchQuery,
 } from "@codemirror/search";
@@ -69,6 +71,7 @@ const sourceHighlighting = syntaxHighlighting(
 export type SourceEditorHandle = {
   focus: () => void;
   find: () => void;
+  closeFind: () => boolean;
   goToLine: () => void;
 };
 
@@ -142,6 +145,13 @@ export function SourceEditor({
       focus: () => editor.current?.focus(),
       find: () => {
         if (editor.current) openSearchPanel(editor.current);
+      },
+      closeFind: () => {
+        const view = editor.current;
+        if (!view || !searchPanelOpen(view.state)) return false;
+        closeSearchPanel(view);
+        view.focus();
+        return true;
       },
       goToLine: () => {
         if (editor.current) gotoLine(editor.current);

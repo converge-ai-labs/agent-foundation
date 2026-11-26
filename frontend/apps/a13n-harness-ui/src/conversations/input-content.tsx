@@ -21,6 +21,17 @@ import { ErrorNotice } from "../shell/ui";
 import styles from "./conversation.module.css";
 import { RetainedImagePreview } from "./image-preview";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
+import {
+  AttachmentPreviewSheet,
+  attachmentTargetIdentity,
+  triggerBlobDownload,
+  type AttachmentPreviewTarget,
+} from "./attachment-preview";
+import {
+  loadRetainedAttachment,
+  prefetchRetainedAttachment,
+} from "./attachment-cache";
+import { isRasterImageAttachment } from "./attachment-preview-policy";
 
 export const ChildInputLabels = createContext(false);
 
@@ -66,16 +77,17 @@ function Attachment({
   threadId,
   attachment,
   related,
+  onOpenPreview,
 }: {
   threadId: string;
   attachment: Schema<"ThreadAttachment">;
   related: InputPart[];
+  onOpenPreview?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const transport = useTransport();
-  const image = attachment.media_type.startsWith("image/");
+  const image = isRasterImageAttachment(attachment.media_type);
   const [preview, setPreview] = useState(false);
-  const [url, setUrl] = useState("");
   const download = useRef<AbortController | null>(null);
   useEffect(
     () => () => download.current?.abort(),
@@ -83,28 +95,35 @@ function Attachment({
   );
   const [error, setError] = useState<unknown>();
   const [loading, setLoading] = useState(false);
-  useEffect(
-    () => () => {
-      if (url) URL.revokeObjectURL(url);
-    },
-    [url],
-  );
+
+  if (!image) {
+    const prefetch = () =>
+      prefetchRetainedAttachment(transport, threadId, attachment);
+    return (
+      <span className={styles.inlineAttachment}>
+        <button
+          type="button"
+          className={styles.inlineAttachmentOpen}
+          title={attachment.name}
+          onPointerEnter={prefetch}
+          onFocus={prefetch}
+          onClick={() => onOpenPreview?.()}
+        >
+          <span>{attachment.name}</span>
+        </button>
+      </span>
+    );
+  }
+
   const details = (
     <Popover>
       <PopoverTrigger
-        render={
-          image ? (
-            <Button variant="ghost" size="sm" />
-          ) : (
-            <button type="button" className={styles.inlineAttachmentOpen} />
-          )
-        }
+        render={<Button variant="ghost" size="sm" />}
         title={attachment.name}
       >
-        <span>{image ? t("Attachment details") : attachment.name}</span>
+        <span>{t("Attachment details")}</span>
       </PopoverTrigger>
       <PopoverPopup align="start">
-        {" "}
         <div className={styles.inputAttachmentDetails}>
           <small>
             {attachment.media_type} -{" "}
@@ -120,41 +139,35 @@ function Attachment({
               </pre>
             </details>
           )}
-          {url ? (
-            <a href={url} download={attachment.name}>
-              {t("Download original bytes")}
-            </a>
-          ) : (
-            <Button
-              variant="ghost"
-              loading={loading}
-              onClick={() => {
-                setLoading(true);
-                setError(undefined);
-                download.current?.abort();
-                const controller = new AbortController();
-                download.current = controller;
-                void transport
-                  .fetch(
-                    `/api/threads/${encodeURIComponent(threadId)}/attachments/${encodeURIComponent(attachment.attachment_id)}`,
-                    { signal: controller.signal },
-                  )
-                  .then((response) => response.blob())
-                  .then((blob) => {
-                    if (!controller.signal.aborted)
-                      setUrl(URL.createObjectURL(blob));
-                  })
-                  .catch((failure) => {
-                    if (!controller.signal.aborted) setError(failure);
-                  })
-                  .finally(() => {
-                    if (!controller.signal.aborted) setLoading(false);
-                  });
-              }}
-            >
-              {t("Prepare download")}
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            loading={loading}
+            onClick={() => {
+              setLoading(true);
+              setError(undefined);
+              download.current?.abort();
+              const controller = new AbortController();
+              download.current = controller;
+              void loadRetainedAttachment(
+                transport,
+                threadId,
+                attachment.attachment_id,
+                { signal: controller.signal },
+              )
+                .then((entry) => {
+                  if (!controller.signal.aborted)
+                    triggerBlobDownload(entry.blob, attachment.name);
+                })
+                .catch((failure) => {
+                  if (!controller.signal.aborted) setError(failure);
+                })
+                .finally(() => {
+                  if (!controller.signal.aborted) setLoading(false);
+                });
+            }}
+          >
+            {t("Download")}
+          </Button>
           <details className={styles.rawSource}>
             <summary>{t("What the model sees")}</summary>
             {related.map((item, offset) => (
@@ -169,20 +182,16 @@ function Attachment({
     </Popover>
   );
   return (
-    <span className={image ? styles.sentImage : styles.inlineAttachment}>
-      {image ? (
-        <button
-          type="button"
-          onClick={() => setPreview(true)}
-          aria-label={t("Preview {{name}}", { name: attachment.name })}
-          title={attachment.name}
-        >
-          <AttachmentThumbnail threadId={threadId} attachment={attachment} />
-          <span>{attachment.name}</span>
-        </button>
-      ) : (
-        details
-      )}
+    <span className={styles.sentImage}>
+      <button
+        type="button"
+        onClick={() => setPreview(true)}
+        aria-label={t("Preview {{name}}", { name: attachment.name })}
+        title={attachment.name}
+      >
+        <AttachmentThumbnail threadId={threadId} attachment={attachment} />
+        <span>{attachment.name}</span>
+      </button>
       {preview && (
         <RetainedImagePreview
           threadId={threadId}
@@ -309,6 +318,40 @@ export function InputContent({
   );
   const visible = parts.filter((part) => part.metadata?.display !== false);
   const seen = new Set<string>();
+  const nonImageTargets: AttachmentPreviewTarget[] = [];
+  const seenTargets = new Set<string>();
+  if (threadId) {
+    for (const part of visible) {
+      const attachment = inputAttachment(part.metadata);
+      if (!attachment || isRasterImageAttachment(attachment.media_type))
+        continue;
+      const identity = composerIdentity(part) ?? attachment.attachment_id;
+      const targetKey = `retained:${threadId}:${attachment.attachment_id}`;
+      if (seenTargets.has(targetKey)) continue;
+      seenTargets.add(targetKey);
+      const related = visible.filter(
+        (item) =>
+          (composerIdentity(item) ??
+            inputAttachment(item.metadata)?.attachment_id) === identity,
+      );
+      nonImageTargets.push({
+        kind: "retained",
+        threadId,
+        attachmentId: attachment.attachment_id,
+        name: attachment.name,
+        mediaType: attachment.media_type,
+        size: attachment.size,
+        source: attachment.source,
+        related,
+      });
+    }
+  }
+  const [previewTargetKey, setPreviewTargetKey] = useState<string | null>(null);
+  const activePreviewTarget = previewTargetKey
+    ? (nonImageTargets.find(
+        (item) => attachmentTargetIdentity(item) === previewTargetKey,
+      ) ?? null)
+    : null;
   const copyText = inputCopyText(parts);
   const actions = useContext(MessageBranches);
   const [edit, setEdit] = useState<string | null>(null);
@@ -340,6 +383,11 @@ export function InputContent({
             threadId={threadId}
             attachment={attachment}
             related={related}
+            onOpenPreview={() =>
+              setPreviewTargetKey(
+                `retained:${threadId}:${attachment.attachment_id}`,
+              )
+            }
           />
         );
       }
@@ -514,6 +562,16 @@ export function InputContent({
               />
             )
           }
+        />
+      )}
+      {nonImageTargets.length > 0 && (
+        <AttachmentPreviewSheet
+          target={activePreviewTarget}
+          items={nonImageTargets}
+          onSelect={(next) =>
+            setPreviewTargetKey(attachmentTargetIdentity(next))
+          }
+          onClose={() => setPreviewTargetKey(null)}
         />
       )}
     </div>

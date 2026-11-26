@@ -19,14 +19,7 @@ import { modelControlRequest } from "./model-controls";
 import { useAppContextSelection } from "../mcp-apps/context-selection";
 import { AppContextPendingError } from "../mcp-apps/app-session";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  ModalFrame,
-  Switch,
-  Tooltip,
-  TooltipPopup,
-  TooltipTrigger,
-} from "a13n-ui";
+import { Button, Switch, Tooltip, TooltipPopup, TooltipTrigger } from "a13n-ui";
 import {
   Plus,
   ArrowUp,
@@ -42,6 +35,13 @@ import {
   isReadyAttachment,
 } from "./inline-attachments";
 import { ImagePreview } from "../shell/image-preview";
+import { RetainedImagePreview } from "./image-preview";
+import {
+  AttachmentPreviewSheet,
+  attachmentTargetIdentity,
+  type AttachmentPreviewTarget,
+} from "./attachment-preview";
+import { isRasterImageAttachment } from "./attachment-preview-policy";
 import { TransportContext, useTransport } from "../transport/context";
 import {
   ApiError,
@@ -587,8 +587,6 @@ export function Composer({
     });
     return () => cancelAnimationFrame(frame);
   }, [referenceAdded]);
-  const previewRequest = useRef<AbortController | null>(null);
-  useEffect(() => () => previewRequest.current?.abort(), [transport, threadId]);
   const [notice, setNotice] = useState<{
     message: string;
     values?: Record<string, string>;
@@ -656,14 +654,13 @@ export function Composer({
     const timer = setTimeout(() => setSyncDelayed(true), 700);
     return () => clearTimeout(timer);
   }, [synchronized, draft.status, local]);
-  const [preview, setPreview] = useState<{
-    name: string;
-    text: string;
-    notice?: string;
-    url?: string;
-    source?: Schema<"ThreadAttachment">["source"];
-    image?: boolean;
-  } | null>(null);
+  const [imagePreview, setImagePreview] = useState<
+    | { kind: "retained"; attachment: Schema<"ThreadAttachment"> }
+    | { kind: "local"; name: string; url: string }
+    | null
+  >(null);
+  const [drawerPreview, setDrawerPreview] =
+    useState<AttachmentPreviewTarget | null>(null);
   const selections = attachmentSelections(draft.doc);
   const uploading = selections.some(
     ({ key, id }) =>
@@ -699,9 +696,9 @@ export function Composer({
   }, [draft, transport, threadId, unauthorized, local]);
   useEffect(
     () => () => {
-      if (preview?.url) URL.revokeObjectURL(preview.url);
+      if (imagePreview?.kind === "local") URL.revokeObjectURL(imagePreview.url);
     },
-    [preview],
+    [imagePreview],
   );
   const [interrupt, setInterrupt] = useState<Interrupt>();
   const interruptRef = useRef<Interrupt | undefined>(undefined);
@@ -1227,53 +1224,24 @@ export function Composer({
       if (upload.current) upload.current.value = "";
     }
   }
-  async function showAttachment(
-    id: string,
-    attachment?: Schema<"ThreadAttachment">,
-  ) {
+  function showAttachment(id: string, attachment?: Schema<"ThreadAttachment">) {
     setError("");
-    previewRequest.current?.abort();
-    const controller = new AbortController();
-    previewRequest.current = controller;
-    try {
-      const response = await transport.fetch(
-        `/api/threads/${encodeURIComponent(threadId)}/attachments/${encodeURIComponent(id)}`,
-        { signal: controller.signal },
-      );
-      const blob = await response.blob();
-      let text = "";
-      let notice: string | undefined =
-        "Binary attachment. Download to inspect its original bytes.";
-      if (blob.size <= 256 * 1024) {
-        try {
-          const decoded = new TextDecoder("utf-8", { fatal: true }).decode(
-            await blob.arrayBuffer(),
-          );
-          if (!decoded.includes("\0")) {
-            text = decoded;
-            notice = undefined;
-          }
-        } catch {
-          /* Binary content is never injected into HTML. */
-        }
-      } else notice = "Too large to preview. Download the file to view it.";
-      if (controller.signal.aborted) return;
-      setPreview({
-        name: attachment?.name ?? id,
-        text,
-        notice,
-        url: URL.createObjectURL(blob),
-        source: attachment?.source,
-        image: attachment?.media_type.startsWith("image/"),
-      });
-    } catch (failure) {
-      if (controller.signal.aborted) return;
-      setError(
-        failure instanceof Error ? failure.message : "Preview unavailable.",
-        undefined,
-        failure instanceof Error,
-      );
+    if (attachment && isRasterImageAttachment(attachment.media_type)) {
+      setDrawerPreview(null);
+      setImagePreview({ kind: "retained", attachment });
+      return;
     }
+    setImagePreview(null);
+    setDrawerPreview({
+      kind: "retained",
+      threadId,
+      attachmentId: id,
+      name: attachment?.name ?? id,
+      mediaType: attachment?.media_type,
+      size: attachment?.size,
+      source: attachment?.source,
+      snapshotNotice: true,
+    });
   }
   const goalToggle = (
     <Button
@@ -1653,15 +1621,20 @@ export function Composer({
                       : [],
                   ),
                 ),
-                preview: (id, attachment) =>
-                  void showAttachment(id, attachment),
-                previewLocal: (file) =>
-                  setPreview({
-                    name: file.name,
-                    image: true,
-                    text: "",
-                    url: URL.createObjectURL(file),
-                  }),
+                preview: (id, attachment) => showAttachment(id, attachment),
+                previewLocal: (file) => {
+                  if (isRasterImageAttachment(file.type)) {
+                    setDrawerPreview(null);
+                    setImagePreview({
+                      kind: "local",
+                      name: file.name,
+                      url: URL.createObjectURL(file),
+                    });
+                  } else {
+                    setImagePreview(null);
+                    setDrawerPreview({ kind: "local", file });
+                  }
+                },
                 upload: uploadFiles,
                 retry: (key) => {
                   const item = draft.uploads.get(key);
@@ -1825,62 +1798,71 @@ export function Composer({
           </Tooltip>
         </div>
       </div>
-      {preview?.image && preview.url && (
-        <ImagePreview
-          src={preview.url}
-          name={preview.name}
-          close={() => setPreview(null)}
+      {imagePreview?.kind === "retained" && (
+        <RetainedImagePreview
+          threadId={threadId}
+          attachment={imagePreview.attachment}
+          close={() => setImagePreview(null)}
         />
       )}
-      <ModalFrame
-        open={!!preview && !preview.image}
-        onOpenChange={(open) => {
-          if (!open) {
-            previewRequest.current?.abort();
-            setPreview(null);
+      {imagePreview?.kind === "local" && (
+        <ImagePreview
+          src={imagePreview.url}
+          name={imagePreview.name}
+          close={() => setImagePreview(null)}
+        />
+      )}
+      <AttachmentPreviewSheet
+        target={drawerPreview}
+        items={(() => {
+          const seen = new Set<string>();
+          const items: AttachmentPreviewTarget[] = [];
+          const metadataById = new Map(
+            attachments.flatMap((item) =>
+              item.data ? [[item.data.attachment_id, item.data] as const] : [],
+            ),
+          );
+          for (const { key, id } of selections) {
+            if (isReadyAttachment(id)) {
+              const meta = metadataById.get(id);
+              if (meta && isRasterImageAttachment(meta.media_type)) continue;
+              const entry: AttachmentPreviewTarget = {
+                kind: "retained",
+                threadId,
+                attachmentId: id,
+                name: meta?.name ?? id,
+                mediaType: meta?.media_type,
+                size: meta?.size,
+                source: meta?.source,
+                snapshotNotice: true,
+              };
+              const identity = attachmentTargetIdentity(entry);
+              if (seen.has(identity)) continue;
+              seen.add(identity);
+              items.push(entry);
+            } else {
+              const upload = draft.uploads.get(key);
+              if (
+                !upload ||
+                upload.status === "failed" ||
+                isRasterImageAttachment(upload.file.type)
+              )
+                continue;
+              const entry: AttachmentPreviewTarget = {
+                kind: "local",
+                file: upload.file,
+              };
+              const identity = attachmentTargetIdentity(entry);
+              if (seen.has(identity)) continue;
+              seen.add(identity);
+              items.push(entry);
+            }
           }
-        }}
-        title={preview?.name ?? t("Attachment")}
-        description={t(
-          "This is the attached snapshot. The original file may have changed.",
-        )}
-        closeLabel={t("Close")}
-      >
-        {preview?.source && (
-          <div className={styles.summary}>
-            {"path" in preview.source && (
-              <p>
-                {t("Server snapshot - {{path}}", { path: preview.source.path })}
-              </p>
-            )}
-            {"repository_path" in preview.source && (
-              <p>
-                {preview.source.comparison} - {preview.source.repository_path} -
-                HEAD {preview.source.head_oid ?? t("empty tree")}
-              </p>
-            )}
-            <details>
-              <summary>{t("Source")}</summary>
-              <pre className={styles.code}>
-                {JSON.stringify(preview.source, null, 2)}
-              </pre>
-            </details>
-            <p>
-              {t(
-                "This is a saved snapshot. Sending keeps it and its source details in the chat, even if the original changes.",
-              )}
-            </p>
-          </div>
-        )}
-        <pre className={styles.code}>
-          {preview?.notice ? composerMessage(preview.notice, t) : preview?.text}
-        </pre>
-        {preview?.url && (
-          <a href={preview.url} download={preview.name}>
-            {t("Download original")}
-          </a>
-        )}
-      </ModalFrame>
+          return items;
+        })()}
+        onSelect={setDrawerPreview}
+        onClose={() => setDrawerPreview(null)}
+      />
     </section>
   );
 }
