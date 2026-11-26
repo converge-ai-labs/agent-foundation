@@ -2635,6 +2635,7 @@ it("folds a13n.acp.compaction states into context activity and tri-state clears 
     { compactionId: "c1", status: "completed", summary: "Final summary." },
     "cmp-c1",
   );
+  emit("a13n.acp.usage", { cleared: true }, "usage");
   expect(display.acpContext).toBeNull();
   expect(display.blocks.get("context:c1")).toMatchObject({
     contextState: "completed",
@@ -2666,4 +2667,63 @@ it("folds a13n.acp.compaction states into context activity and tri-state clears 
     contextState: "cancelled",
     result: "",
   });
+});
+
+it("preserves post-compaction acpContext across compact display snapshot replay", () => {
+  const replayed = new FocusDisplay();
+  replayed.accept(snapshot(0));
+  replayed.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  replayed.accept(
+    compactFrame(101, [
+      compactItem(
+        "usage-slot",
+        1,
+        { name: "a13n.acp.usage", value: { used: 150, size: 1000 } },
+        "observation",
+      ),
+      compactItem(
+        "compaction-slot",
+        2,
+        {
+          name: "a13n.acp.compaction",
+          value: {
+            compactionId: "c1",
+            status: "completed",
+            summary: "Compacted.",
+          },
+        },
+        "observation",
+      ),
+    ]),
+  );
+  expect(replayed.acpContext).toEqual({ used: 150, size: 1000 });
+  expect(replayed.blocks.get("context:c1")).toMatchObject({
+    context: "compaction",
+    contextState: "completed",
+    result: "Compacted.",
+  });
+
+  const cleared = new FocusDisplay();
+  cleared.accept(snapshot(0));
+  cleared.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  cleared.accept(
+    compactFrame(101, [
+      compactItem(
+        "usage-slot",
+        1,
+        { name: "a13n.acp.usage", value: { cleared: true } },
+        "observation",
+      ),
+      compactItem(
+        "compaction-slot",
+        2,
+        {
+          name: "a13n.acp.compaction",
+          value: { compactionId: "c1", status: "completed" },
+        },
+        "observation",
+      ),
+    ]),
+  );
+  expect(cleared.acpContext).toBeNull();
 });

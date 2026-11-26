@@ -141,6 +141,8 @@ class AcpRunStream:
         elif update.status == "completed":
             state.error = None
         self._emit_compaction(update.compaction_id, state)
+        if update.status == "completed":
+            self._event("CUSTOM", name="a13n.acp.usage", value={"cleared": True})
 
     def _compaction_chunk(self, update: schema.SessionUpdateCompactionSummaryChunk) -> None:
         self._close_message()

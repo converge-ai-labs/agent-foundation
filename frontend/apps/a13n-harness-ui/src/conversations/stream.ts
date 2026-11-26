@@ -913,12 +913,17 @@ export class FocusDisplay {
       return;
     }
     if (name === "a13n.acp.usage") {
-      if (
-        typeof value.used === "number" &&
-        typeof value.size === "number" &&
-        value.size > 0
-      )
-        this.acpContext = { used: value.used, size: value.size };
+      if (!subagentRunId) {
+        if (value.cleared === true) {
+          this.acpContext = null;
+        } else if (
+          typeof value.used === "number" &&
+          typeof value.size === "number" &&
+          value.size > 0
+        ) {
+          this.acpContext = { used: value.used, size: value.size };
+        }
+      }
       return;
     }
     if (name === "a13n.acp.compaction") {
@@ -935,8 +940,6 @@ export class FocusDisplay {
               ? "cancelled"
               : "in-progress";
       const error = string(value.error);
-      if (!subagentRunId && contextState === "completed")
-        this.acpContext = null;
       setBlock(key, {
         id: key,
         kind: "activity",

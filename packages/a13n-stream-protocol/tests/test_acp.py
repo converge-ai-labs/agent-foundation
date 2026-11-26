@@ -140,3 +140,55 @@ def test_acp_compaction_aggregates_chunks_replaces_summary_bounds_size_and_upser
     ]
     assert len(compact_items) == 3
     assert any(item.content["value"] == {"omitted": True} for item in compact_items)
+
+
+def test_acp_compaction_completed_clears_usage_slot_in_display_fold():
+    events_cleared = []
+    stream_cleared = AcpRunStream("thread-test", "run-cleared", events_cleared.append)
+    stream_cleared.update(schema.UsageUpdate(used=900, size=1000))
+    stream_cleared.update(schema.SessionUpdateCompactionUpdate(compaction_id="c1", status="in_progress"))
+    stream_cleared.update(schema.SessionUpdateCompactionUpdate(compaction_id="c1", status="failed", error="err"))
+    stream_cleared.update(schema.SessionUpdateCompactionUpdate(compaction_id="c2", status="cancelled"))
+    usage_before_complete = [
+        event["value"]
+        for event in events_cleared
+        if event["type"] == "CUSTOM" and event.get("name") == "a13n.acp.usage"
+    ]
+    assert usage_before_complete == [{"used": 900, "size": 1000}]
+
+    stream_cleared.update(schema.SessionUpdateCompactionUpdate(compaction_id="c3", status="completed"))
+    stream_cleared.finish()
+    usage_after_complete = [
+        event["value"]
+        for event in events_cleared
+        if event["type"] == "CUSTOM" and event.get("name") == "a13n.acp.usage"
+    ]
+    assert usage_after_complete == [{"used": 900, "size": 1000}, {"cleared": True}]
+
+    fold_cleared = DisplayFold("run-cleared", full_content=True)
+    fold_cleared.fold(events_cleared)
+    (usage_item_cleared,) = [
+        item
+        for item in fold_cleared.export().items
+        if item.kind == "observation" and item.content.get("name") == "a13n.acp.usage"
+    ]
+    assert usage_item_cleared.content["value"] == {"cleared": True}
+
+    events_refreshed = []
+    stream_refreshed = AcpRunStream("thread-test", "run-refreshed", events_refreshed.append)
+    stream_refreshed.update(schema.UsageUpdate(used=900, size=1000))
+    stream_refreshed.update(schema.SessionUpdateCompactionUpdate(compaction_id="c1", status="completed"))
+    stream_refreshed.update(schema.UsageUpdate(used=150, size=1000))
+    stream_refreshed.finish()
+
+    fold_refreshed = DisplayFold("run-refreshed", full_content=True)
+    fold_refreshed.fold(events_refreshed)
+    exported = fold_refreshed.export().items
+    (usage_item_refreshed,) = [
+        item for item in exported if item.kind == "observation" and item.content.get("name") == "a13n.acp.usage"
+    ]
+    (compaction_item,) = [
+        item for item in exported if item.kind == "observation" and item.content.get("name") == "a13n.acp.compaction"
+    ]
+    assert usage_item_refreshed.ordinal < compaction_item.ordinal
+    assert usage_item_refreshed.content["value"] == {"used": 150, "size": 1000}
