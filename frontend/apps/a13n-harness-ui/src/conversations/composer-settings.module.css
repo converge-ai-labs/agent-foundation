@@ -482,12 +482,9 @@
     0 0 6px color-mix(in srgb, var(--mark-shadow) 25%, transparent);
   transition: left 140ms ease-out;
 }
-.effortTrack[data-active="false"]::after {
-  visibility: hidden;
-}
+.effortTrack[data-active="false"]::after,
 .effortTrack[data-active="false"] .effortFinish {
-  clip-path: none;
-  opacity: 0.22;
+  visibility: hidden;
 }
 .effortTrack[data-dragging="true"]::after,
 .effortTrack[data-dragging="true"] .effortFinish {

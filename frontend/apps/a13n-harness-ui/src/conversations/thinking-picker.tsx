@@ -32,10 +32,14 @@ export function ThinkingPicker({
   const unavailable =
     value != null && (!selected || !!selected.disabled_reason);
   const [drag, setDrag] = useState<number | null>(null);
-  const current = explicit.findIndex((item) => item.value === value);
+  const effectiveValue = value ?? control?.default_value;
+  const current = explicit.findIndex((item) => item.value === effectiveValue);
   const active = drag === null ? current : Math.round(drag);
-  const level = explicit[active];
-  const label = thinkingDetailLabel(control, level?.value ?? value, t);
+  const label = thinkingDetailLabel(
+    control,
+    drag === null ? value : explicit[active]?.value,
+    t,
+  );
   const gesture = useRef<AbortController | null>(null);
   const handledPointer = useRef(false);
   useEffect(() => {
@@ -170,6 +174,7 @@ export function ThinkingPicker({
                   key={JSON.stringify(item.value)}
                   value={JSON.stringify(item.value)}
                   aria-label={modelControlMessage(item.label, t)}
+                  aria-current={index === current || undefined}
                   data-filled={index <= active}
                   disabled={!!item.disabled_reason}
                   title={

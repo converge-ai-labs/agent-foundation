@@ -150,17 +150,24 @@ it("keeps inherited defaults distinct from explicit levels across catalog refres
   );
   const pressed = (name: string) =>
     screen.getByRole("button", { name }).getAttribute("aria-pressed");
+  const currentStop = () => screen.queryByRole("button", { current: true });
+  expect(currentStop()).toBe(screen.getByRole("button", { name: "Quick" }));
   expect(screen.getByText("Quick (default)")).toBeTruthy();
   expect(pressed("Quick")).toBe("false");
   expect(pressed("Use default thinking")).toBe("true");
   view.rerender(
     <ThinkingPicker model={withDefault(false)} onChange={change} />,
   );
+  expect(currentStop()).toBe(
+    screen.getByRole("button", { name: "No thinking" }),
+  );
   expect(screen.getByText("No thinking (default)")).toBeTruthy();
   expect(pressed("No thinking")).toBe("false");
   expect(pressed("Use default thinking")).toBe("true");
   expect(pressed("Quick")).toBe("false");
   view.rerender(<ThinkingPicker model={withDefault(null)} onChange={change} />);
+  expect(currentStop()).toBeNull();
+  expect(screen.getByText("Budget - 8,192 tokens")).toBeTruthy();
   expect(pressed("No thinking")).toBe("false");
   expect(pressed("Quick")).toBe("false");
   view.rerender(
@@ -169,6 +176,9 @@ it("keeps inherited defaults distinct from explicit levels across catalog refres
       value={false}
       onChange={change}
     />,
+  );
+  expect(currentStop()).toBe(
+    screen.getByRole("button", { name: "No thinking" }),
   );
   expect(pressed("No thinking")).toBe("true");
   expect(pressed("Quick")).toBe("false");
