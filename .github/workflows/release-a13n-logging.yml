@@ -44,6 +44,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-release-logging
 
       - name: Build logging Python distributions
         run: make a13n-logging-python-build

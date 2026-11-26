@@ -192,6 +192,7 @@ def test_tooling_suites_keep_one_ci_owner_and_release_manifest_inputs() -> None:
         for path in (
             *ROOT.glob("packages/*/pyproject.toml"),
             ROOT / "pyproject.toml",
+            ROOT / "release-dependencies.toml",
             ROOT / "uv.lock",
             ROOT / "Cargo.toml",
             ROOT / "Cargo.lock",
@@ -199,6 +200,23 @@ def test_tooling_suites_keep_one_ci_owner_and_release_manifest_inputs() -> None:
             ROOT / "scripts/tests/test_prepare_release_version.py",
         ):
             assert any(path.relative_to(ROOT).full_match(pattern) for pattern in automation[True][event]["paths"])
+    for workflow_name in (
+        "ci-a13n-envd.yml",
+        "ci-a13n-harness.yml",
+        "ci-a13n-harness-ui.yml",
+        "ci-a13n-service.yml",
+        "ci-a13n-service-e2e.yml",
+        "ci-a13n-stream-protocol.yml",
+        "ci-containers.yml",
+        "ci-examples.yml",
+        "images.yml",
+    ):
+        workflow = yaml.safe_load((WORKFLOWS / workflow_name).read_text())
+        for event in ("pull_request", "push"):
+            if event in workflow[True]:
+                assert not any(
+                    Path("release-dependencies.toml").full_match(pattern) for pattern in workflow[True][event]["paths"]
+                ), (workflow_name, event)
 
 
 @pytest.mark.parametrize(
@@ -278,13 +296,26 @@ def test_service_ci_selects_only_its_development_inputs(path: str, selected: boo
         assert any(Path(path).full_match(pattern) for pattern in patterns) == selected
 
 
-def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root: Path = ROOT) -> list[dict[str, str]]:
+def _service_matrix(
+    workflow: dict,
+    tests_changed: str,
+    tmp_path: Path,
+    *,
+    root: Path = ROOT,
+    python_versions: str = '["3.13","3.14","3.15"]',
+) -> list[dict[str, str]]:
     step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
     output = tmp_path / "output"
     output.write_text("")
     subprocess.run(
         ["bash", "-c", step["run"]],
-        env={**os.environ, "PYTHONPATH": str(ROOT), "TESTS_CHANGED": tests_changed, "GITHUB_OUTPUT": str(output)},
+        env={
+            **os.environ,
+            "PYTHONPATH": str(ROOT),
+            "TESTS_CHANGED": tests_changed,
+            "PYTHON_VERSIONS": python_versions,
+            "GITHUB_OUTPUT": str(output),
+        },
         cwd=root,
         check=True,
     )
@@ -295,9 +326,18 @@ def _service_matrix(workflow: dict, tests_changed: str, tmp_path: Path, *, root:
 def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     matrix = _service_matrix(workflow, "true", tmp_path)
-    assert [entry["name"] for entry in matrix] == ["checks", "native", *[f"tests-{index}" for index in range(1, 6)]]
-    assert all(entry["targets"] for entry in matrix[2:])
-    targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
+    expected_entries = [("checks", "3.13")]
+    for version in ("3.13", "3.14", "3.15"):
+        expected_entries.extend([("native", version), *((f"tests-{index}", version) for index in range(1, 6))])
+    assert [(entry["name"], entry["python_version"]) for entry in matrix] == expected_entries
+    single_version = _service_matrix(workflow, "true", tmp_path, python_versions='["3.13"]')
+    assert [(entry["name"], entry["python_version"]) for entry in single_version] == [
+        ("checks", "3.13"),
+        ("native", "3.13"),
+        *((f"tests-{index}", "3.13") for index in range(1, 6)),
+    ]
+    assert all(entry["targets"] for entry in single_version[2:])
+    targets = [path for entry in single_version[1:] for path in entry["targets"].splitlines()]
     assert targets
     assert len(targets) == len(set(targets))
     root = ROOT / "packages/a13n-service/tests"
@@ -349,7 +389,7 @@ def test_service_selection_includes_new_nested_files_and_passes_paths_literally(
     timings = tmp_path / ".github/service-test-durations.json"
     timings.parent.mkdir()
     timings.write_text(json.dumps({"packages/a13n-service/tests/deleted.py": 10000}))
-    matrix = _service_matrix(workflow, "true", tmp_path, root=tmp_path)
+    matrix = _service_matrix(workflow, "true", tmp_path, root=tmp_path, python_versions='["3.13"]')
     targets = [path for entry in matrix[1:] for path in entry["targets"].splitlines()]
     expected = sorted(str((root / name).relative_to(tmp_path)) for name in included)
     assert sorted(targets) == expected
@@ -401,7 +441,9 @@ def test_service_documentation_only_changes_skip_database_tests_but_keep_checks(
     for event in ("pull_request", "push"):
         assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
     assert not any(Path(path).full_match(pattern) for pattern in tests)
-    assert [entry["name"] for entry in _service_matrix(workflow, "false", tmp_path)] == ["checks"]
+    assert [(entry["name"], entry["python_version"]) for entry in _service_matrix(workflow, "false", tmp_path)] == [
+        ("checks", "3.13")
+    ]
 
 
 @pytest.mark.parametrize(
@@ -507,15 +549,33 @@ def test_service_e2e_owns_automated_scenarios(path: str, selected: bool) -> None
         ("e2e/service/test_kubernetes.py", True),
     ],
 )
-def test_deployment_prs_select_cluster_inputs_and_main_runs_integration_changes(path, selected):
+def test_deployment_checks_are_path_scoped_on_prs_and_main_with_scheduled_backstop(path, selected):
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service-e2e.yml").read_text())
+    assert workflow[True]["schedule"]
     changes = workflow["jobs"]["changes"]
     paths = next(step for step in changes["steps"] if step.get("id") == "paths")
+    assert paths["if"] == "github.event_name == 'pull_request' || github.event_name == 'push'"
     patterns = yaml.safe_load(paths["with"]["filters"])["deploy"]
     assert any(Path(path).full_match(pattern) for pattern in patterns) == selected
-    assert "github.event_name != 'pull_request'" in changes["outputs"]["deploy"]
+    assert changes["outputs"]["deploy"] == (
+        "${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || "
+        "steps.paths.outputs.deploy == 'true' }}"
+    )
+    assert changes["outputs"]["service"] == (
+        "${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || "
+        "steps.paths.outputs.service == 'true' }}"
+    )
+    sandbox = next(step for step in changes["steps"] if step.get("id") == "sandbox")
+    for token in (
+        "github.event_name == 'schedule'",
+        "github.event_name == 'workflow_dispatch'",
+        "steps.paths.outputs.service == 'true'",
+        "steps.paths.outputs.deploy == 'true'",
+    ):
+        assert token in sandbox["if"]
     if selected:
-        assert any(Path(path).full_match(pattern) for pattern in workflow[True]["pull_request"]["paths"])
+        for event in ("pull_request", "push"):
+            assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="CI image selection runs on Ubuntu")
@@ -800,34 +860,50 @@ def test_windows_ui_gate_requires_all_full_suite_shards(result):
 
 
 @pytest.mark.parametrize(
-    "filename,job_name",
+    "filename,job_name,version_expr",
     [
-        ("ci-a13n-harness.yml", "harness"),
-        ("ci-a13n-harness-ui.yml", "tests"),
-        ("ci-a13n-service.yml", "validation"),
-        ("ci-a13n-stream-protocol.yml", "protocol"),
-        ("ci-a13n-envd.yml", "client"),
-        ("ci-examples.yml", "examples"),
+        ("ci-a13n-harness.yml", "harness", "${{ matrix.python-version }}"),
+        ("ci-a13n-harness-ui.yml", "tests", "${{ matrix.python-version }}"),
+        ("ci-a13n-service.yml", "validation", "${{ matrix.task.python_version }}"),
+        ("ci-a13n-stream-protocol.yml", "protocol", "${{ matrix.python-version }}"),
+        ("ci-a13n-envd.yml", "client", "${{ matrix.python-version }}"),
+        ("ci-examples.yml", "examples", "${{ matrix.python-version }}"),
     ],
 )
-def test_python_component_ci_runs_each_supported_interpreter(filename: str, job_name: str) -> None:
-    job = yaml.safe_load((WORKFLOWS / filename).read_text())["jobs"][job_name]
-    assert job["strategy"]["matrix"]["python-version"] == ["3.13", "3.14", "3.15"]
+def test_python_component_ci_tiers_interpreters_with_daily_schedule(
+    filename: str,
+    job_name: str,
+    version_expr: str,
+) -> None:
+    workflow = yaml.safe_load((WORKFLOWS / filename).read_text())
+    assert workflow[True]["schedule"], filename
+    assert "${{ github.event_name }}" in workflow["concurrency"]["group"], filename
+    job = workflow["jobs"][job_name]
+    tiered_expr = 'github.event_name == \'push\' && \'["3.13"]\' || \'["3.13","3.14","3.15"]\''
+    if filename == "ci-a13n-service.yml":
+        matrix_step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
+        assert matrix_step["env"]["PYTHON_VERSIONS"] == f"${{{{ {tiered_expr} }}}}"
+    else:
+        assert job["strategy"]["matrix"]["python-version"] == f"${{{{ fromJSON({tiered_expr}) }}}}"
     assert job["strategy"]["fail-fast"] is False
     # uv otherwise follows the checkout's .python-version instead of setup-python.
-    assert job["env"]["UV_PYTHON"] == "${{ matrix.python-version }}"
+    assert job["env"]["UV_PYTHON"] == version_expr
     setup = next(step for step in job["steps"] if step.get("uses", "").startswith("actions/setup-python@"))
-    assert setup["with"]["python-version"] == "${{ matrix.python-version }}"
-    assert "${{ matrix.python-version }}" in job["name"]
+    assert setup["with"]["python-version"] == version_expr
+    assert version_expr in job["name"]
     for step in job["steps"]:
         if step.get("uses", "").startswith("actions/upload-artifact@"):
-            assert "${{ matrix.python-version }}" in step["with"]["name"]
+            assert version_expr in step["with"]["name"]
 
 
 def test_harness_python_matrix_retains_each_platform_and_shard() -> None:
     job = yaml.safe_load((WORKFLOWS / "ci-a13n-harness.yml").read_text())["jobs"]["harness"]
     matrix = job["strategy"]["matrix"]
     assert matrix["name"] == ["tests", "checks", "browser", "Windows"]
+    assert matrix["exclude"] == [
+        {"name": "checks", "python-version": "3.14"},
+        {"name": "checks", "python-version": "3.15"},
+    ]
     assert job["timeout-minutes"] == "${{ matrix.name == 'Windows' && 25 || 10 }}"
     assert {entry["name"] for entry in matrix["include"]} == set(matrix["name"])
     for entry in matrix["include"]:
@@ -837,6 +913,7 @@ def test_harness_python_matrix_retains_each_platform_and_shard() -> None:
 
 def test_service_python_versions_cross_the_selected_tasks() -> None:
     job = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())["jobs"]["validation"]
+    assert set(job["strategy"]["matrix"]) == {"task"}
     assert job["strategy"]["matrix"]["task"] == "${{ fromJSON(needs.changes.outputs.matrix) }}"
     assert job["runs-on"] == "${{ matrix.task.runner }}"
     tests = next(step for step in job["steps"] if step.get("name") == "Test a13n Service")
@@ -844,4 +921,23 @@ def test_service_python_versions_cross_the_selected_tasks() -> None:
     assert tests["env"]["TEST_TARGETS"] == "${{ matrix.task.targets }}"
     for name in ("Check Service contract export", "Test Service contract export"):
         export = next(step for step in job["steps"] if step.get("name") == name)
-        assert export["if"] == "matrix.task.name == 'checks' && matrix.python-version == '3.13'"
+        assert export["if"] == "matrix.task.name == 'checks'"
+
+
+def test_setup_uv_caches_set_explicit_cache_suffix() -> None:
+    cached_steps = 0
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        workflow = yaml.safe_load(path.read_text())
+        for job_name, job in workflow["jobs"].items():
+            for step in job.get("steps", []):
+                if not step.get("uses", "").startswith("astral-sh/setup-uv@"):
+                    continue
+                inputs = step.get("with") or {}
+                if inputs.get("enable-cache") is True:
+                    cached_steps += 1
+                    suffix = inputs.get("cache-suffix", "")
+                    assert isinstance(suffix, str) and suffix.strip(), (path.name, job_name)
+                    uv_python = (job.get("env") or {}).get("UV_PYTHON", "")
+                    if uv_python:
+                        assert uv_python in suffix, (path.name, job_name, suffix, uv_python)
+    assert cached_steps >= 20

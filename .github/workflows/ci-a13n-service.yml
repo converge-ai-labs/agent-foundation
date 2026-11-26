@@ -67,6 +67,8 @@ on:
       - "packages/a13n-envd-client/*.py"
       - "packages/a13n-envd-client/a13n_envd_client/**"
       - "uv.lock"
+  schedule:
+    - cron: "29 19 * * *"
   workflow_dispatch:
 
 env:
@@ -77,7 +79,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -140,7 +142,8 @@ jobs:
       - name: Build validation matrix
         id: matrix
         env:
-          TESTS_CHANGED: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.tests == 'true' }}
+          TESTS_CHANGED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || steps.filter.outputs.tests == 'true' }}
+          PYTHON_VERSIONS: ${{ github.event_name == 'push' && '["3.13"]' || '["3.13","3.14","3.15"]' }}
         run: |
           python - <<'PY'
           import json
@@ -148,7 +151,8 @@ jobs:
           from pathlib import Path
           from scripts.run_python_tests import balanced_shards
 
-          matrix = [{"name": "checks", "runner": "ubuntu-24.04", "targets": ""}]
+          python_versions = json.loads(os.environ.get("PYTHON_VERSIONS", '["3.13","3.14","3.15"]'))
+          matrix = [{"name": "checks", "python_version": "3.13", "runner": "ubuntu-24.04", "targets": ""}]
           if os.environ["TESTS_CHANGED"] == "true":
               root = Path("packages/a13n-service/tests")
               # Keep whole files together, matching loadgroup's file-local fixture isolation.
@@ -165,30 +169,38 @@ jobs:
               )
               # Weights never select tests: new files receive the current suite's median.
               durations = json.loads(Path(".github/service-test-durations.json").read_text())
-              matrix.append({"name": "native", "runner": "ubuntu-24.04", "targets": ""})
-              for shard, targets in enumerate(balanced_shards(files, 5, durations), start=1):
+              shards = balanced_shards(files, 5, durations)
+              for shard, targets in enumerate(shards, start=1):
                   assert targets, "Service test shards must not be empty"
                   print(f"Service shard {shard}: {len(targets)} files")
+              for python_version in python_versions:
                   matrix.append({
-                      "name": f"tests-{shard}",
+                      "name": "native",
+                      "python_version": python_version,
                       "runner": "ubuntu-24.04",
-                      "targets": "\n".join(targets),
+                      "targets": "",
                   })
+                  for shard, targets in enumerate(shards, start=1):
+                      matrix.append({
+                          "name": f"tests-{shard}",
+                          "python_version": python_version,
+                          "runner": "ubuntu-24.04",
+                          "targets": "\n".join(targets),
+                      })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"matrix={json.dumps(matrix, separators=(',', ':'))}\n")
           PY
 
   validation:
-    name: a13n Service Python (${{ matrix.task.name }}, ${{ matrix.python-version }})
+    name: a13n Service Python (${{ matrix.task.name }}, ${{ matrix.task.python_version }})
     needs: changes
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13", "3.14", "3.15"]
         task: ${{ fromJSON(needs.changes.outputs.matrix) }}
     env:
-      UV_PYTHON: ${{ matrix.python-version }}
+      UV_PYTHON: ${{ matrix.task.python_version }}
     runs-on: ${{ matrix.task.runner }}
     timeout-minutes: 20
     steps:
@@ -200,13 +212,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.task.python_version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py${{ matrix.task.python_version }}-service
 
       - name: Synchronize Python workspace
         run: uv sync --locked --all-packages
@@ -224,11 +237,11 @@ jobs:
 
       # Generated contracts use the canonical development/release interpreter.
       - name: Check Service contract export
-        if: matrix.task.name == 'checks' && matrix.python-version == '3.13'
+        if: matrix.task.name == 'checks'
         run: uv run --locked python scripts/export-a13n-service-openapi.py --check
 
       - name: Test Service contract export
-        if: matrix.task.name == 'checks' && matrix.python-version == '3.13'
+        if: matrix.task.name == 'checks'
         run: uv run --locked python -m pytest scripts/tests/test_service_contract.py --junitxml=test-results/contract.xml
 
       - name: Test logging
@@ -323,7 +336,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: service-${{ matrix.task.name }}-py${{ matrix.python-version }}-${{ github.run_attempt }}
+          name: service-${{ matrix.task.name }}-py${{ matrix.task.python_version }}-${{ github.run_attempt }}
           path: test-results/
           retention-days: 7
 
@@ -383,9 +396,7 @@ jobs:
   python:
     name: a13n Service Python
     needs: [changes, validation]
-    if: >-
-      always() &&
-      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

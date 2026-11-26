@@ -21,6 +21,8 @@ on:
       - "packages/a13n-harness/a13n_harness/**"
       - "pyproject.toml"
       - "uv.lock"
+  schedule:
+    - cron: "41 19 * * *"
   workflow_dispatch:
 
 env:
@@ -30,7 +32,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -39,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13", "3.14", "3.15"]
+        python-version: ${{ fromJSON(github.event_name == 'push' && '["3.13"]' || '["3.13","3.14","3.15"]') }}
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -60,6 +62,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: examples/*/uv.lock
+          cache-suffix: py${{ matrix.python-version }}-examples
 
       - name: Set up Node.js
         uses: actions/setup-node@v6

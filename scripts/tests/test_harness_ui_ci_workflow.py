@@ -24,13 +24,15 @@ WORKFLOW = ROOT / ".github/workflows/ci-a13n-harness-ui.yml"
     ],
 )
 def test_linux_gate_requires_exact_selected_results(component: str, selected: bool, result: str) -> None:
-    gate = yaml.safe_load(WORKFLOW.read_text())["jobs"]["linux"]["steps"][0]
+    gate_job = yaml.safe_load(WORKFLOW.read_text())["jobs"]["linux"]
+    assert "github.event_name != 'schedule'" not in gate_job["if"]
+    gate = gate_job["steps"][0]
     env = {"CHANGES_RESULT": "success"}
     for name in ("CHECKS", "TESTS", "FRONTEND", "WEBUI", "DISTRIBUTION"):
         env[f"{name}_RESULT"] = "success"
         env[f"{name}_SELECTED"] = "true"
         assert gate["env"][f"{name}_SELECTED"] == (
-            "${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs."
+            "${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs."
             + ({"CHECKS": "tests", "WEBUI": "distribution"}.get(name, name.lower()))
             + " == 'true' }}"
         )
@@ -77,11 +79,13 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
             {"tests", "frontend"},
         ),
         (["docs/a13n-service/index.md"], set()),
+        (["release-dependencies.toml"], set()),
     ],
 )
 def test_ui_ci_selects_only_affected_jobs(paths: list[str], expected: set[str]) -> None:
     workflow = yaml.safe_load(WORKFLOW.read_text())
-    filters = yaml.safe_load(workflow["jobs"]["changes"]["steps"][1]["with"]["filters"])
+    filter_step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    filters = yaml.safe_load(filter_step["with"]["filters"])
     assert all(not pattern.startswith("!") for patterns in filters.values() for pattern in patterns)
     actual = {
         name

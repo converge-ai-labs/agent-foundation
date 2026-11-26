@@ -75,9 +75,9 @@ on:
       - "scripts/tests/test_check_a13n_harness_ui_distribution.py"
       - "scripts/tests/test_prepare_a13n_harness_ui_assets.py"
       - "uv.lock"
-  # Full Windows coverage is a backstop, not a second sweep after every merge.
+  # Daily backstop for full Linux 3.13-3.15 coverage and the full Windows UI suite.
   schedule:
-    - cron: "23 4 * * 1"
+    - cron: "23 19 * * *"
   workflow_dispatch:
 
 env:
@@ -195,7 +195,7 @@ jobs:
   checks:
     name: UI Python checks and native lifecycle
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -214,6 +214,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py3.13-ui
 
       - name: Synchronize UI test environment
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
@@ -253,9 +254,9 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2]
-        python-version: ["3.13", "3.14", "3.15"]
+        python-version: ${{ fromJSON(github.event_name == 'push' && '["3.13"]' || '["3.13","3.14","3.15"]') }}
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
     env:
       UV_PYTHON: ${{ matrix.python-version }}
     runs-on: ubuntu-24.04
@@ -276,6 +277,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py${{ matrix.python-version }}-ui
 
       - name: Synchronize UI test environment
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
@@ -311,7 +313,7 @@ jobs:
           - phase: checks
           - phase: tests
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -366,7 +368,7 @@ jobs:
   webui:
     name: WebUI tests
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
@@ -385,6 +387,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py3.13-ui
 
       # Protocol tests start real Python Apps in isolated subprocesses.
       - name: Synchronize UI test environment
@@ -425,7 +428,7 @@ jobs:
   distribution:
     name: UI distribution
     needs: changes
-    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -444,6 +447,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py3.13-ui
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
@@ -506,7 +510,7 @@ jobs:
     name: UI (Linux)
     needs: [changes, checks, tests, frontend, webui, distribution]
     if: >-
-      always() && github.event_name != 'schedule' &&
+      always() &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-24.04
     steps:
@@ -518,11 +522,11 @@ jobs:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           DISTRIBUTION_RESULT: ${{ needs.distribution.result }}
           WEBUI_RESULT: ${{ needs.webui.result }}
-          CHECKS_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true' }}
-          TESTS_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true' }}
-          FRONTEND_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true' }}
-          DISTRIBUTION_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true' }}
-          WEBUI_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true' }}
+          CHECKS_SELECTED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true' }}
+          TESTS_SELECTED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true' }}
+          FRONTEND_SELECTED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.frontend == 'true' }}
+          DISTRIBUTION_SELECTED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true' }}
+          WEBUI_SELECTED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true' }}
         run: |
           test "$CHANGES_RESULT" = success
           for component in CHECKS TESTS FRONTEND WEBUI DISTRIBUTION; do
@@ -565,6 +569,7 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-suffix: py3.13-ui
 
       - name: Synchronize UI test environment
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups

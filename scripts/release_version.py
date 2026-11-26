@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import stat
+import subprocess
 import tempfile
 import tomllib
 from dataclasses import dataclass
@@ -28,17 +30,18 @@ HARNESS_PACKAGES = (
 )
 HARNESS_UI_MANIFEST = Path("packages/a13n-harness-ui/pyproject.toml")
 HARNESS_UI_PACKAGE = "a13n-harness-ui"
-RELEASE_DEPENDENCIES_TOOL = "tool.a13n.release-dependencies"
+RELEASE_DEPENDENCIES_FILE = Path("release-dependencies.toml")
 LOGGING_MANIFEST = Path("packages/a13n-logging/pyproject.toml")
 LOGGING_PACKAGE = "a13n-logging"
 A13N_SERVICE_MANIFEST = Path("packages/a13n-service/pyproject.toml")
+A13N_SERVICE_PACKAGE = "a13n-service"
 A13N_SERVICE_MANIFESTS = (
     Path("pyproject.toml"),
     A13N_SERVICE_MANIFEST,
 )
 A13N_SERVICE_PACKAGES = (
     "a13n-workspace",
-    "a13n-service",
+    A13N_SERVICE_PACKAGE,
 )
 ROOT_UV_LOCK = Path("uv.lock")
 A13N_ENVD_WORKSPACE_MANIFEST = Path("Cargo.toml")
@@ -46,6 +49,20 @@ A13N_ENVD_MANIFEST = Path("crates/a13n-envd/Cargo.toml")
 A13N_ENVD_LOCK = Path("Cargo.lock")
 A13N_ENVD_CLIENT_MANIFEST = Path("packages/a13n-envd-client/pyproject.toml")
 A13N_ENVD_CLIENT_PACKAGE = "a13n-envd-client"
+HARNESS_PIN_CONSUMERS = (
+    HARNESS_UI_PACKAGE,
+    A13N_SERVICE_PACKAGE,
+)
+_EXPECTED_RELEASE_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    HARNESS_PACKAGE: (LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
+    HARNESS_UI_PACKAGE: (*HARNESS_PACKAGES, LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
+    A13N_SERVICE_PACKAGE: (*HARNESS_PACKAGES, LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
+}
+_RELEASE_DEPENDENCY_MANIFESTS: dict[str, Path] = {
+    HARNESS_PACKAGE: HARNESS_MANIFEST,
+    HARNESS_UI_PACKAGE: HARNESS_UI_MANIFEST,
+    A13N_SERVICE_PACKAGE: A13N_SERVICE_MANIFEST,
+}
 RELEASE_VERSION_PATTERN = re.compile(
     r"(?P<major>0|[1-9][0-9]*)\."
     r"(?P<minor>0|[1-9][0-9]*)\."
@@ -191,31 +208,123 @@ def validate_dependency_pin(value: str) -> str:
     return f"=={version.python_package}"
 
 
-def release_dependency_ranges(root: Path, manifest: Path) -> dict[str, str]:
-    """Read independently versioned dependencies without constraining local workspace members."""
-    expected = {
-        HARNESS_MANIFEST: (LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
-        A13N_SERVICE_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
-        HARNESS_UI_MANIFEST: (*HARNESS_PACKAGES, LOGGING_PACKAGE, A13N_ENVD_CLIENT_PACKAGE),
-    }[manifest]
-    label = f"{RELEASE_DEPENDENCIES_TOOL} in {manifest}"
-    tool = _mapping(_load_toml(root, manifest).get("tool"), label)
-    a13n = _mapping(tool.get("a13n"), label)
-    declarations = _mapping(a13n.get("release-dependencies"), label)
-    if set(declarations) != set(expected):
-        raise ReleaseVersionError(f"Expected {label} keys {sorted(expected)}, found {sorted(declarations)}")
-    ranges = {
-        package: (validate_dependency_pin if package in HARNESS_PACKAGES else validate_dependency_range)(
-            _string(declarations[package], f"{label}.{package}")
+def parse_release_dependencies(
+    content: str,
+    label: str = str(RELEASE_DEPENDENCIES_FILE),
+) -> dict[str, dict[str, str]]:
+    """Parse and validate cross-release-group requirements from release-dependencies.toml."""
+    try:
+        document = tomllib.loads(content)
+    except tomllib.TOMLDecodeError as error:
+        raise ReleaseVersionError(f"Cannot read TOML from {label}: {error}") from error
+    if set(document) != set(_EXPECTED_RELEASE_DEPENDENCIES):
+        raise ReleaseVersionError(
+            f"Expected {label} tables {sorted(_EXPECTED_RELEASE_DEPENDENCIES)}, found {sorted(document)}"
         )
-        for package in expected
-    }
-    if (
-        manifest in {HARNESS_UI_MANIFEST, A13N_SERVICE_MANIFEST}
-        and len({ranges[package] for package in HARNESS_PACKAGES}) != 1
-    ):
-        raise ReleaseVersionError("Consumers must declare the same requirement for all Harness-group dependencies")
-    return ranges
+    parsed: dict[str, dict[str, str]] = {}
+    for component, expected in _EXPECTED_RELEASE_DEPENDENCIES.items():
+        table_label = f"[{component}] in {label}"
+        declarations = _mapping(document.get(component), table_label)
+        if set(declarations) != set(expected):
+            raise ReleaseVersionError(f"Expected {table_label} keys {sorted(expected)}, found {sorted(declarations)}")
+        ranges = {
+            package: (validate_dependency_pin if package in HARNESS_PACKAGES else validate_dependency_range)(
+                _string(declarations[package], f"{table_label}.{package}")
+            )
+            for package in expected
+        }
+        if component in HARNESS_PIN_CONSUMERS and len({ranges[package] for package in HARNESS_PACKAGES}) != 1:
+            raise ReleaseVersionError("Consumers must declare the same requirement for all Harness-group dependencies")
+        parsed[component] = ranges
+    return parsed
+
+
+def load_release_dependencies(root: Path) -> dict[str, dict[str, str]]:
+    return parse_release_dependencies(_read_text(root, RELEASE_DEPENDENCIES_FILE))
+
+
+def release_dependency_ranges(root: Path, component: str) -> dict[str, str]:
+    """Read independently versioned dependencies without constraining local workspace members."""
+    if component not in _EXPECTED_RELEASE_DEPENDENCIES:
+        raise ReleaseVersionError(f"No release dependencies declared for component: {component}")
+    return load_release_dependencies(root)[component]
+
+
+def _git(root: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise ReleaseVersionError(f"git {' '.join(args)} failed: {completed.stderr.strip()}")
+    return completed.stdout
+
+
+def _git_file_exists(root: Path, revision: str, path: Path) -> bool:
+    return (
+        subprocess.run(
+            ["git", "cat-file", "-e", f"{revision}:{path.as_posix()}"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def _resolve_diff_revisions(root: Path, *, event_name: str, before_push: str) -> tuple[str, str] | None:
+    if event_name == "push" or (event_name in {"", "pull_request"} and before_push):
+        if not re.fullmatch(r"[0-9a-f]{40}", before_push) or before_push == "0" * 40:
+            return None
+        is_ancestor = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", before_push, "HEAD"],
+            cwd=root,
+            check=False,
+            capture_output=True,
+        )
+        if is_ancestor.returncode != 0:
+            return None
+        return before_push, "HEAD"
+    if event_name in {"", "pull_request"}:
+        parents = _git(root, "rev-list", "--parents", "-n", "1", "HEAD").split()
+        if len(parents) != 3:
+            return None
+        return parents[1], parents[0]
+    return None
+
+
+def changed_harness_pin_consumers(
+    root: Path,
+    *,
+    event_name: str = "",
+    before_push: str = "",
+) -> tuple[str, ...]:
+    """Return consumers whose Harness-group pin changed in release-dependencies.toml."""
+    revisions = _resolve_diff_revisions(root, event_name=event_name, before_push=before_push)
+    if revisions is None:
+        return ()
+    base, head = revisions
+    changed = _git(root, "diff", "--name-only", base, head, "--", RELEASE_DEPENDENCIES_FILE.as_posix()).strip()
+    if not changed:
+        return ()
+    after = parse_release_dependencies(
+        _git(root, "show", f"{head}:{RELEASE_DEPENDENCIES_FILE.as_posix()}"),
+        label=f"{head}:{RELEASE_DEPENDENCIES_FILE}",
+    )
+    if not _git_file_exists(root, base, RELEASE_DEPENDENCIES_FILE):
+        return HARNESS_PIN_CONSUMERS
+    before = parse_release_dependencies(
+        _git(root, "show", f"{base}:{RELEASE_DEPENDENCIES_FILE.as_posix()}"),
+        label=f"{base}:{RELEASE_DEPENDENCIES_FILE}",
+    )
+    return tuple(
+        consumer
+        for consumer in HARNESS_PIN_CONSUMERS
+        if any(before[consumer][package] != after[consumer][package] for package in HARNESS_PACKAGES)
+    )
 
 
 def _workspace_package_version(root: Path) -> str:
@@ -366,13 +475,9 @@ def validate_component_version(root: Path, component: str, version: str) -> None
             expected = _dependency_with_constraint(actual, package_name, f"=={release_version.python_package}")
             if actual != expected:
                 raise ReleaseVersionError(f"Expected {manifest} dependency {expected}, found {actual}")
-    manifests = {
-        "a13n-harness": (HARNESS_MANIFEST,),
-        "a13n-harness-ui": (HARNESS_UI_MANIFEST,),
-        "a13n-service": (A13N_SERVICE_MANIFEST,),
-    }.get(component, ())
-    for manifest in manifests:
-        for package_name, constraint in release_dependency_ranges(root, manifest).items():
+    manifest = _RELEASE_DEPENDENCY_MANIFESTS.get(component)
+    if manifest is not None:
+        for package_name, constraint in release_dependency_ranges(root, component).items():
             actual = _project_dependency_requirement(root, manifest, package_name)
             expected = _dependency_with_constraint(actual, package_name, constraint)
             if actual != expected:
@@ -597,13 +702,9 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
             ROOT_UV_LOCK,
         )
 
-    manifests = {
-        "a13n-harness": (HARNESS_MANIFEST,),
-        "a13n-harness-ui": (HARNESS_UI_MANIFEST,),
-        "a13n-service": (A13N_SERVICE_MANIFEST,),
-    }.get(component, ())
-    for manifest in manifests:
-        for package_name, constraint in release_dependency_ranges(root, manifest).items():
+    manifest = _RELEASE_DEPENDENCY_MANIFESTS.get(component)
+    if manifest is not None:
+        for package_name, constraint in release_dependency_ranges(root, component).items():
             planned[manifest] = _replace_project_dependency(planned[manifest], package_name, constraint, manifest)
 
     changed = tuple(path for path in sorted(planned) if planned[path] != _read_text(root, path))
@@ -612,3 +713,30 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
 
     validate_component_version(root, component, version)
     return changed
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Inspect release-dependencies.toml changes.")
+    parser.add_argument(
+        "--changed-harness-pin-consumers",
+        action="store_true",
+        help="Print space-separated consumer packages whose Harness-group pin changed.",
+    )
+    parser.add_argument("--event-name", default=os.environ.get("GITHUB_EVENT_NAME", ""))
+    parser.add_argument("--before", default=os.environ.get("PUSH_BEFORE", ""))
+    args = parser.parse_args()
+    if not args.changed_harness_pin_consumers:
+        parser.error("Specify --changed-harness-pin-consumers")
+    try:
+        consumers = changed_harness_pin_consumers(
+            Path.cwd(),
+            event_name=args.event_name,
+            before_push=args.before,
+        )
+    except ReleaseVersionError as error:
+        raise SystemExit(str(error)) from error
+    print(" ".join(consumers))
+
+
+if __name__ == "__main__":
+    main()

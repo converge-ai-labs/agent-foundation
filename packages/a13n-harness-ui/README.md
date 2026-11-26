@@ -82,7 +82,7 @@ A13N_HARNESS_UI_TEST_SANDBOX=1 A13N_ENVD_EXECUTABLE="$PWD/target/debug/a13n-envd
 
 ## Dependencies
 
-The source version is `0.0.0` with unversioned workspace dependencies. Publishable bounds live in `[tool.a13n.release-dependencies]`; Harness UI releases independently from Harness and Stream Protocol. Check the manifest and [release policy](../../spec/repository-model.md#dependency-compatibility-lines) before changing bounds.
+The source version is `0.0.0` with unversioned workspace dependencies. Publishable bounds live in root [`release-dependencies.toml`](../../release-dependencies.toml); Harness UI releases independently from Harness and Stream Protocol. Check `release-dependencies.toml` and [release policy](../../spec/repository-model.md#dependency-compatibility-lines) before changing bounds.
 
 ## Packaging
 
