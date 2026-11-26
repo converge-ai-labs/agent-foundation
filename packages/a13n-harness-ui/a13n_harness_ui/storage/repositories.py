@@ -224,6 +224,24 @@ class ThreadRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
+    async def acp_state(self, thread_id: str) -> str | None:
+        async with short_session(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            if record is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            return record.acp_state_json
+
+    async def save_acp_state(self, thread_id: str, value: str) -> None:
+        async with transaction(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            if record is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
+            state = json.loads(value)
+            previous = json.loads(record.acp_state_json) if record.acp_state_json else {}
+            # Title ownership belongs to the metadata transaction, not a Run snapshot.
+            state["peer_title"] = previous.get("peer_title")
+            record.acp_state_json = json.dumps(state)
+
     async def external_context(self, thread_id: str) -> ExternalContext:
         """Read a detached latest value without loading or changing a checkpoint."""
         async with short_session(self._sessions) as session:
@@ -257,6 +275,7 @@ class ThreadRepository:
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
         memory_scope: str | None = None,
+        acp_state_json: str | None = None,
     ) -> Thread:
         if coordinator and (
             configuration.project_id is None or parent_thread_id is not None or coordinator_thread_id is not None
@@ -298,6 +317,7 @@ class ThreadRepository:
                 parent_thread_id=parent_thread_id,
                 metadata_version=1,
                 title=title,
+                acp_state_json=acp_state_json,
                 search_text=f"{thread_id}\n{title or ''}".casefold(),
                 archived=False,
                 created_at=now,
@@ -330,6 +350,7 @@ class ThreadRepository:
         historical: bool = False,
         continuation: ObjectRef | None,
         read_model: ThreadReadModel | None,
+        acp_state_json: str | None = None,
     ) -> Thread:
         """Publish a complete copy only while the captured source remains eligible."""
         _require_kind(initial_state, ObjectKind.thread_initial_state)
@@ -346,7 +367,7 @@ class ThreadRepository:
             if (
                 current.parent_thread_id is not None
                 or current.memory_scope is not None
-                or source.configuration.agent_source.kind != "agent"
+                or source.configuration.agent_source.kind not in {"agent", "acp_agent"}
                 or await session.get(CoordinatorRecord, source.thread_id) is not None
                 or await session.get(CoordinatorWorkerRecord, source.thread_id) is not None
             ):
@@ -402,6 +423,7 @@ class ThreadRepository:
                 read_model_schema_version=continuation.object_schema_version if continuation else None,
                 read_model_digest=continuation.logical_digest if continuation else None,
                 read_model_json=read_model.model_dump_json() if read_model else None,
+                acp_state_json=acp_state_json,
             )
             record.search_text = _search_text(record)
             session.add(record)
@@ -849,6 +871,21 @@ class ThreadRepository:
             await session.flush()
             return _thread_value(record, replacement)
 
+    async def set_acp_title(self, thread_id: str, title: str) -> bool:
+        async with transaction(self._sessions) as session:
+            record = await session.get(ThreadRecord, thread_id)
+            if record is None or record.acp_state_json is None or record.title == title:
+                return False
+            state = json.loads(record.acp_state_json)
+            if record.title is not None and record.title != state.get("peer_title"):
+                return False
+            state["peer_title"] = title
+            record.acp_state_json = json.dumps(state)
+            record.title = title
+            record.search_text = _search_text(record)
+            record.metadata_version += 1
+            return True
+
     async def update_metadata(
         self,
         *,
@@ -1018,6 +1055,7 @@ class ThreadRepository:
         activity_changed: bool = True,
         updated_at: datetime | None = None,
         clear_compaction: bool = False,
+        clear_acp_state: bool = False,
         compaction_settlement: CompactionSettlement | None = None,
         tool_completions: tuple[str, ...] = (),
     ) -> Thread:
@@ -1040,6 +1078,8 @@ class ThreadRepository:
             from .tool_executions import consume_completions
 
             await consume_completions(session, thread_id, tool_completions)
+            if clear_acp_state:
+                record.acp_state_json = None
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
             record.read_model_digest = replacement.logical_digest
@@ -1606,7 +1646,7 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
 
 
 def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfiguration:
-    from .contracts import BotAgentSource, DynamicAgentSource, LiveAgentSource, MemoryAgentSource
+    from .contracts import AcpAgentSource, BotAgentSource, DynamicAgentSource, LiveAgentSource, MemoryAgentSource
 
     source = (
         MemoryAgentSource()
@@ -1619,6 +1659,8 @@ def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfigurati
         if record.agent_source_kind == "dynamic"
         else AgentResourceSource(id=record.agent_source_id)
         if record.agent_source_kind == "agent"
+        else AcpAgentSource(id=record.agent_source_id)
+        if record.agent_source_kind == "acp_agent"
         else MarkdownSubagentSource(id=record.agent_source_id)
     )
     return ThreadConfiguration(

@@ -49,6 +49,11 @@ class AgentResourceSource(StoredContract):
     id: str = Field(min_length=1, max_length=128)
 
 
+class AcpAgentSource(StoredContract):
+    kind: Literal["acp_agent"] = "acp_agent"
+    id: str = Field(max_length=128, pattern=r"^acp(?:-[a-z0-9]+)+$")
+
+
 class MarkdownSubagentSource(StoredContract):
     kind: Literal["markdown"] = "markdown"
     id: str = Field(min_length=1, max_length=128)
@@ -84,6 +89,7 @@ class BotAgentSource(StoredContract):
 
 type AgentSource = (
     AgentResourceSource
+    | AcpAgentSource
     | MarkdownSubagentSource
     | MemoryAgentSource
     | LiveAgentSource

@@ -31,7 +31,9 @@ def resource_page(
                 code="resource_cursor_mismatch",
             )
         offset = int(suffix)
-    resources = {"projects": source.projects, "agents": source.agents, "models": source.models}[kind]
+    resources = {"projects": source.projects, "agents": source.agents | source.acp_agents, "models": source.models}[
+        kind
+    ]
     selected = sorted(
         (item for item in resources.values() if normalized in f"{item.id} {item.name}".casefold()),
         key=lambda item: item.id,
@@ -40,8 +42,11 @@ def resource_page(
     for item in selected[offset : offset + limit]:
         summary: dict[str, Any] = {"id": item.id, "name": item.name}
         if kind == "agents":
-            agent = source.agents[item.id]
-            summary.update(model_id=agent.model, capability_ids=[entry.capability for entry in agent.capabilities])
+            agent = source.agents.get(item.id)
+            if agent is None:
+                summary.update(kind="acp_agent", model_id=None)
+            else:
+                summary.update(model_id=agent.model, capability_ids=[entry.capability for entry in agent.capabilities])
         elif kind == "models":
             model = source.models[item.id]
             summary.update(route=model.route)

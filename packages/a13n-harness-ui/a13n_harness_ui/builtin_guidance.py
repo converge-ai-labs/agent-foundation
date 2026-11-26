@@ -6,15 +6,15 @@ from importlib.resources import files
 from a13n_harness.environment import DynamicEnvironmentConfiguration
 from a13n_harness.guidance import render_guidance
 
-from a13n_harness_ui.composition.models import ResolvedAgentNode
+from a13n_harness_ui.composition.models import ResolvedAcpNode, ResolvedAgentNode
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH
 
 GUIDANCE_SKILL_NAME = "harness-ui-operations"
 
 
-def instruction_reference_root(node: ResolvedAgentNode) -> str | None:
+def instruction_reference_root(node: ResolvedAgentNode | ResolvedAcpNode) -> str | None:
     """Use references only when this Agent selects the bundle and its file reader."""
-    if not any(item.capability == "skills" for item in node.capabilities):
+    if isinstance(node, ResolvedAcpNode) or not any(item.capability == "skills" for item in node.capabilities):
         return None
     if node.tools is not None and "view" not in node.tools:
         return None

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterable, Mapping
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -41,6 +41,18 @@ from pydantic_ai import BinaryContent, ToolReturn, prices
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent, UserContent
 
+from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus, acp_auth, auth_input_scope, preview_acp_options
+from a13n_harness_ui.acp_sessions import (
+    AcpCommand,
+    AcpOption,
+    AcpOptionChange,
+    AcpOptionPreviewChange,
+    AcpOptionSelection,
+    AcpOptionsPreview,
+    AcpSessions,
+    AcpSessionState,
+    acp_options_scope,
+)
 from a13n_harness_ui.background_input import background_input
 from a13n_harness_ui.browser import (
     BrowserAccess,
@@ -307,7 +319,6 @@ from a13n_harness_ui.shared_drafts import CachedInputPrediction, DraftCapture, D
 from a13n_harness_ui.sharing import Sharing
 from a13n_harness_ui.skill_input import prepare_skill_input
 from a13n_harness_ui.storage import (
-    AgentResourceSource,
     LocalStore,
     ThreadConfiguration,
     ThreadConfigurationMutation,
@@ -383,7 +394,12 @@ from a13n_harness_ui.thread_files import (
     ThreadFiles,
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
-from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
+from a13n_harness_ui.thread_service import (
+    RootThreadDefaults,
+    ThreadService,
+    configured_agent_source,
+    resolve_thread_configuration,
+)
 from a13n_harness_ui.thread_work import ThreadWorkService
 from a13n_harness_ui.tool_executions import ToolExecutions, execution_view
 from a13n_harness_ui.voice import VoiceController
@@ -465,6 +481,7 @@ class HarnessUiApp:
         terminal_projections: TerminalProjectionService,
         work: ThreadWorkService,
         root_runs: RootRunCoordinator,
+        acp_sessions: AcpSessions,
         tool_executions: ToolExecutions,
         thread_files: ThreadFiles,
         subagent_operator: HarnessUiSubagentOperator,
@@ -504,6 +521,7 @@ class HarnessUiApp:
         if browsers is not None:
             browsers.handback.deliver = self._deliver_browser_handback
         self._compaction = compaction
+        self._acp_sessions = acp_sessions
         self._settings = settings
         self.shutdown = Shutdown()
         self._mcp_apps = mcp_apps
@@ -511,6 +529,8 @@ class HarnessUiApp:
         self.mcp_logins = mcp_logins
         self._mcp_connections = mcp_connections or (mcp_apps.connections if mcp_apps else None)
         self._mcp_inputs = mcp_inputs
+        self._acp_auth_active: set[str] = set()
+        self._acp_options_cache: dict[str, AcpOptionsPreview] = {}
         self._mcp_operations = mcp_operations
         self._mcp_app_owners = (
             mcp_operations.owners
@@ -754,13 +774,17 @@ class HarnessUiApp:
         )
         if not text.strip():
             return
+        model = admission.published.value.root.model
+        title_model_id = admission.source.document.chat_title_model or (model.model_id if model is not None else None)
+        if title_model_id is None:
+            return
         async with self._operation():
             try:
                 title = await self._generate_chat_title(
                     thread.thread_id,
                     [text],
                     admission.source,
-                    admission.source.document.chat_title_model or admission.published.value.root.model.model_id,
+                    title_model_id,
                 )
             except HarnessUiError as exc:
                 get_logger(__name__).info(
@@ -1603,6 +1627,7 @@ class HarnessUiApp:
         thread_id: str | None = None,
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
+        acp_options: AcpOptionSelection | None = None,
     ) -> ThreadSummary:
         async with self._operation():
             selected = (
@@ -1612,6 +1637,7 @@ class HarnessUiApp:
             )
             thread = await self._threads.create(
                 defaults=selected,
+                acp_options=acp_options,
                 title=title,
                 thread_id=thread_id,
                 coordinator_thread_id=coordinator_thread_id,
@@ -1806,12 +1832,20 @@ class HarnessUiApp:
     ) -> ThreadSummary:
         # Serialize with this App's generation acceptance, not with Agent execution.
         async with self._operation(), self._configuration_lock:
-            await self._threads.apply_project_defaults(
-                thread_id=thread_id,
-                expected_version=request.expected_version,
-                defaults_digest=request.defaults_digest,
-                environments_only=environments_only,
+            preview = await self._threads.preview_project_defaults(thread_id, environments_only=environments_only)
+            acp = (
+                preview.current.agent_source.kind in {"acp_agent", "bot"}
+                or preview.replacement.agent_source.kind == "acp_agent"
             )
+            async with self._root_runs.require_inactive(thread_id, clear_interaction=False) if acp else nullcontext():
+                await self._threads.apply_project_defaults(
+                    thread_id=thread_id,
+                    expected_version=request.expected_version,
+                    defaults_digest=request.defaults_digest,
+                    environments_only=environments_only,
+                )
+                if acp:
+                    await self._acp_sessions.retire(thread_id)
             await self._retire_mcp_owners()
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
@@ -1841,6 +1875,74 @@ class HarnessUiApp:
             if self._mcp_connections is not None:
                 await self._mcp_connections.close_integration(thread_id, server_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+
+    async def acp_options(self, thread_id: str, change: AcpOptionChange | None = None) -> tuple[AcpOption, ...]:
+        async with self._operation():
+            return await self._root_runs.acp_options(thread_id, change)
+
+    async def acp_commands(self, thread_id: str) -> tuple[AcpCommand, ...]:
+        async with self._operation():
+            await self._threads.require_interactive(thread_id)
+            commands = self._acp_sessions.commands(thread_id)
+            if commands is not None:
+                return commands
+            saved = await self._store.threads.acp_state(thread_id)
+            return AcpSessionState.model_validate_json(saved).commands if saved is not None else ()
+
+    async def acp_agent_options(
+        self, agent_id: str, project_id: str | None, request: AcpOptionPreviewChange | None = None
+    ) -> AcpOptionsPreview:
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None or (resource := source.acp_agents.get(agent_id)) is None:
+                raise HarnessUiError("The external Agent is not configured.", code="acp_agent_missing")
+            configuration = resolve_thread_configuration(
+                source, RootThreadDefaults(agent_id=agent_id, project_id=project_id)
+            )
+            cwd = self._threads.acp_workspace(configuration)
+            scope = acp_options_scope(resource, cwd)
+            if request is None and (cached := self._acp_options_cache.get(scope)) is not None:
+                return cached
+            result = await preview_acp_options(resource, cwd, request)
+            if request is None:
+                if len(self._acp_options_cache) >= 32:
+                    self._acp_options_cache.pop(next(iter(self._acp_options_cache)))
+                self._acp_options_cache[scope] = result
+            return result
+
+    async def acp_auth(self, agent_id: str, request: AcpAuthRequest) -> AcpAuthStatus:
+        async with self._operation():
+            source = await self._configurations.current()
+            resource = source.acp_agents.get(agent_id) if source is not None else None
+            if resource is None:
+                raise HarnessUiError("The external Agent is not configured.", code="acp_agent_missing")
+            if agent_id in self._acp_auth_active:
+                raise HarnessUiError(
+                    "An authentication operation is already active for this Agent.", code="acp_auth_busy"
+                )
+            self._acp_auth_active.add(agent_id)
+            try:
+                return await acp_auth(resource, self._store.settings.data_root, request, self._mcp_inputs)
+            finally:
+                self._acp_auth_active.discard(agent_id)
+                if request.action != "probe":
+                    self._acp_options_cache.clear()
+
+    async def acp_auth_inputs(self, agent_id: str) -> tuple[McpInputRequestView, ...]:
+        async with self._operation():
+            if self._mcp_inputs is None or agent_id not in self._acp_auth_active:
+                return ()
+            return tuple(
+                view for view in self._mcp_inputs.requests({auth_input_scope(agent_id)}) if view.state == "pending"
+            )
+
+    async def respond_acp_auth_input(
+        self, agent_id: str, request_id: str, response: McpInputResponse
+    ) -> McpInputRequestView:
+        async with self._operation():
+            if self._mcp_inputs is None:
+                raise HarnessUiError("Interactive input is unavailable.", code="mcp_input_not_found")
+            return await self._mcp_inputs.respond({auth_input_scope(agent_id)}, request_id, response)
 
     async def _mcp_input_scope(self, thread_id: str) -> set[str]:
         await self._threads.get(thread_id)
@@ -2077,10 +2179,14 @@ class HarnessUiApp:
                 raise AppStateError(
                     "Child Threads are managed through their parent execution.", code="child_thread_scoped"
                 )
-            await self._threads.update_configuration(
-                thread_id=thread_id,
-                mutation=mutation,
+            patch = mutation.patch
+            acp = thread.configuration.agent_source.kind in {"acp_agent", "bot"} or (
+                patch.agent_source is not None and patch.agent_source.kind == "acp_agent"
             )
+            async with self._root_runs.require_inactive(thread_id, clear_interaction=False) if acp else nullcontext():
+                await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
+                if acp:
+                    await self._acp_sessions.retire(thread_id)
             await self._retire_mcp_owners()
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
@@ -2095,7 +2201,10 @@ class HarnessUiApp:
         values: dict[str, object] = {}
         if "agent_id" in patch.model_fields_set:
             assert patch.agent_id is not None
-            values["agent_source"] = AgentResourceSource(id=patch.agent_id)
+            agent_source = configured_agent_source(patch.agent_id)
+            values["agent_source"] = agent_source
+            if agent_source.kind == "acp_agent":
+                values["default_model_id"] = None
         values.update(patch.model_dump(exclude_unset=True, exclude={"agent_id"}))
         stored = StoredThreadConfigurationPatch.model_validate(values, strict=True)
         return await self.update_thread_configuration(
@@ -2126,6 +2235,7 @@ class HarnessUiApp:
                 await self._threads.clear_context(
                     thread_id=thread_id, expected_continuation_id=expected_continuation_id
                 )
+                await self._acp_sessions.retire(thread_id)
                 self._root_runs.cancel_prediction(thread_id)
                 draft = None
                 async with self._shared_drafts_lock:
@@ -2156,6 +2266,7 @@ class HarnessUiApp:
                             busy_thread_ids=self._tool_executions.busy_thread_ids(),
                         )
                     for removed in deleted:
+                        await self._acp_sessions.retire(removed)
                         self._root_runs.cancel_prediction(removed)
                         self._tool_executions.forget(removed)
                         self._tool_executions.clear_state(removed)
@@ -3368,7 +3479,9 @@ class HarnessUiApp:
                 )
 
             return SetupStatus(
-                needed=current is None or not current.agents or defaults is None or defaults.agent is None,
+                needed=(
+                    current is None or defaults is None or defaults.agent not in (current.agents | current.acp_agents)
+                ),
                 fresh=(current is None or not (current.agents or current.models or current.projects))
                 and self._candidate_error is None
                 and await to_thread.run_sync(untouched),
@@ -4573,6 +4686,7 @@ async def open_harness_ui_app(
                 await app._publish_input_prediction(thread_id, continuation_id, execution_id, text)
 
             root_executor = RootRunExecutor(
+                acp_inputs=mcp_inputs,
                 unattended=unattended,
                 input_prediction=InputPredictionPlugin(prediction_eligible, publish_prediction)
                 if host_mode == "webui"
@@ -4596,6 +4710,7 @@ async def open_harness_ui_app(
                 cleanup_timeout_seconds=cleanup_timeout,
                 thread_files=thread_files,
             )
+            resources.push_async_callback(root_executor.acp_sessions.close)
             web_push = None
             if host_mode == "webui":
                 push_client = await resources.enter_async_context(
@@ -4724,6 +4839,7 @@ async def open_harness_ui_app(
                 terminal_projections=terminal_projections,
                 work=work,
                 root_runs=root_runs,
+                acp_sessions=root_executor.acp_sessions,
                 tool_executions=tool_executions,
                 thread_files=thread_files,
                 subagent_operator=operator,

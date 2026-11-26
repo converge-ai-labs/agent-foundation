@@ -35,7 +35,6 @@ from a13n_harness_ui.model_fast import FastControl, apply_fast, fast_state
 from a13n_harness_ui.model_reasoning_mode import ReasoningModeControl, apply_reasoning_mode, reasoning_mode_state
 from a13n_harness_ui.model_thinking import ThinkingControl, apply_thinking, summarize_thinking
 from a13n_harness_ui.storage import (
-    AgentResourceSource,
     ThreadConfiguration,
     ThreadConfigurationMutation,
     ThreadConfigurationPatch,
@@ -52,6 +51,7 @@ from a13n_harness_ui.surfaces import (
     TranscriptPage,
 )
 from a13n_harness_ui.thread_files import ComposerInput
+from a13n_harness_ui.thread_service import configured_agent_source
 
 from .decisions import DecisionInteraction
 from .rendering import Status, StreamRenderer
@@ -77,6 +77,7 @@ class SessionBackend:
         self.status = status
         self.thread_id = request.thread_id
         self.agent_id = request.agent_id
+        self._uses_acp = False
         self.overrides = RunModelOverrides()
         self.thinking_control: ThinkingControl | None = None
         self.fast_control: FastControl | None = None
@@ -194,7 +195,10 @@ class SessionBackend:
             self.status.session_id = self.thread_id
             self.environment = thread.configuration.environment_profile_id
         agent = configuration.agents.get(agent_id or "")
-        self.status.agent = "not configured" if agent is None else agent.name
+        acp_agent = configuration.acp_agents.get(agent_id or "")
+        self._uses_acp = acp_agent is not None
+        selected_agent = acp_agent or agent
+        self.status.agent = "not configured" if selected_agent is None else selected_agent.name
         selected = thread.configuration if thread is not None else draft
         model_id = (
             self.overrides.model_id
@@ -207,8 +211,10 @@ class SessionBackend:
             if draft is not None
             else self.environment or configuration.document.defaults.environment_profile or "environment-native"
         )
-        if model is None:
-            self.status.model = "not configured"
+        if model is None or self._uses_acp:
+            self.status.model = "External ACP" if self._uses_acp else "not configured"
+            if self._uses_acp:
+                self.overrides = RunModelOverrides()
             self.status.thinking = "default"
             self.thinking_control = None
             self.status.service_tier = None
@@ -219,7 +225,7 @@ class SessionBackend:
             self.status.reasoning_mode = "default"
             self.status.reasoning_mode_description = "Provider default"
             self.status.context_window = None
-            return False
+            return self._uses_acp
         self.status.model = model.route
         controls = describe_model_controls(model.route, model.settings)
         self.fast_control = controls.fast
@@ -294,16 +300,17 @@ class SessionBackend:
         if configuration is None:
             raise ValueError("Run a13n-harness-ui setup first.")
         if selected is None:
-            return (
-                "\n".join(f"{item.id}: {item.name}" for item in configuration.agents.values())
-                or "No agents yet. Run a13n-harness-ui add agent."
-            )
+            lines = [f"{item.id}: {item.name}" for item in configuration.agents.values()]
+            lines.extend(f"{item.id}: {item.name} (ACP)" for item in configuration.acp_agents.values())
+            return "\n".join(lines) or "No agents yet. Run a13n-harness-ui add agent."
         if selected == "default":
             selected = configuration.document.defaults.agent
-        agent = configuration.agents.get(selected or "")
+        native_agent = configuration.agents.get(selected or "")
+        acp_agent = configuration.acp_agents.get(selected or "")
+        agent = native_agent or acp_agent
         if agent is None:
             raise ValueError("Unknown agent. Use /agent to see available choices.")
-        if agent.model is None:
+        if native_agent is not None and native_agent.model is None:
             raise ValueError("This agent has no model. Configure it before switching.")
         if self.thread_id is not None:
             detail = await self.app.get_thread(self.thread_id)
@@ -311,7 +318,10 @@ class SessionBackend:
                 thread_id=self.thread_id,
                 mutation=ThreadConfigurationMutation(
                     expected_version=detail.thread.configuration.version,
-                    patch=ThreadConfigurationPatch(agent_source=AgentResourceSource(id=agent.id)),
+                    patch=ThreadConfigurationPatch(
+                        agent_source=configured_agent_source(agent.id),
+                        **({"default_model_id": None} if acp_agent is not None else {}),
+                    ),
                 ),
             )
         self.agent_id = agent.id
@@ -321,6 +331,8 @@ class SessionBackend:
         return f"Agent · {agent.name} · {self.status.model}"
 
     async def models(self, selected: str) -> str:
+        if self._uses_acp:
+            raise ValueError("The external ACP agent selects its model.")
         configuration = await self.app.current_configuration()
         if configuration is None:
             raise ValueError("Run a13n-harness-ui setup first.")

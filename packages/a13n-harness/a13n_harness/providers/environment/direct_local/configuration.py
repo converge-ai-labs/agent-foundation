@@ -75,7 +75,7 @@ class DirectLocalEnvironmentConfiguration(BaseModel):
 
     root: DirectLocalRootConfiguration
     shell_profiles: tuple[DirectLocalShellProfile, ...] = ()
-    allowed_executables: frozenset[Path] = frozenset()
+    allowed_executables: frozenset[Path] | None = frozenset()
     environment: EnvironmentVariables = Field(default_factory=dict)
     envd: EnvdSettings = Field(default_factory=EnvdSettings, exclude_if=lambda value: not value.overrides())
     inherit_environment: bool = False
@@ -107,7 +107,9 @@ class DirectLocalEnvironmentConfiguration(BaseModel):
 
     @field_validator("allowed_executables")
     @classmethod
-    def _absolute_allowed_executables(cls, value: frozenset[Path]) -> frozenset[Path]:
+    def _absolute_allowed_executables(cls, value: frozenset[Path] | None) -> frozenset[Path] | None:
+        if value is None:
+            return None
         expanded = frozenset(path.expanduser() for path in value)
         if any("\x00" in str(path) for path in expanded):
             raise ValueError("allowed executables must not contain NUL")

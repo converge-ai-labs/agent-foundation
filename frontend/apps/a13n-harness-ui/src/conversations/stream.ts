@@ -15,6 +15,7 @@ import { ProcessObservations } from "./process-observations";
 import {
   sourceText,
   parsed,
+  acpEdit,
   type AppliedEdit,
   type ToolView,
 } from "./tool-presentation";
@@ -48,6 +49,7 @@ export type DisplayBlock = {
   retry?: boolean;
   stopped?: boolean;
   edit?: AppliedEdit;
+  acp?: Record<string, unknown>;
   images?: Schema<"ToolImageView">[];
   apps?: Schema<"AppReference">[];
   imageUnavailable?: boolean;
@@ -158,6 +160,7 @@ export class FocusDisplay {
   terminalFailure?: string;
   terminalFailureCode?: string;
   contextUsage?: { tokens: number; ordinal: number; recordId?: string };
+  acpContext?: { used: number; size: number };
   readonly checkpoints = new Map<string, number>();
   private readonly savedBlocks = new Map<string, number>();
   blocksAfter(continuation: string | null | undefined) {
@@ -209,6 +212,7 @@ export class FocusDisplay {
     this.sequence = 0;
     this.gap = false;
     this.contextUsage = undefined;
+    this.acpContext = undefined;
     this.recovery = undefined;
     this.terminalFailure = undefined;
     this.terminalFailureCode = undefined;
@@ -572,16 +576,30 @@ export class FocusDisplay {
       type === "TOOL_CALL_END"
     ) {
       const block = this.blocks.get(key);
-      if (block)
+      if (block) {
+        const startedAt =
+          typeof block.timestamp === "number"
+            ? block.timestamp
+            : typeof block.timestamp === "string"
+              ? Date.parse(block.timestamp)
+              : NaN;
+        const durationMs =
+          type === "REASONING_MESSAGE_END" &&
+          Number.isFinite(startedAt) &&
+          typeof payload.timestamp === "number"
+            ? Math.max(0, payload.timestamp - startedAt)
+            : block.durationMs;
         this.blocks.set(key, {
           ...block,
           done: true,
+          durationMs,
           shellCommand: this.processes.command(
             scope ?? "",
             block.name ?? "",
             block.text,
           ),
         });
+      }
     } else if (type === "TOOL_CALL_START") {
       this.blocks.set(key, {
         id: key,
@@ -800,7 +818,10 @@ export class FocusDisplay {
       block.images = content.tool_images as
         Schema<"ToolImageView">[] | undefined;
       block.apps = content.mcp_apps as Schema<"AppReference">[] | undefined;
-      block.edit = content.applied_edit as AppliedEdit | undefined;
+      block.acp = object(content.acp) ? content.acp : undefined;
+      block.edit =
+        (content.applied_edit as AppliedEdit | undefined) ??
+        acpEdit(block.acp, block.name, block.text);
       block.imageUnavailable = content.tool_image_unavailable === true;
       block.provider = string(content.provider) || undefined;
       if (!block.provider)
@@ -872,6 +893,40 @@ export class FocusDisplay {
     const value = object(event.value) ? event.value : {};
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
+    if (name === "a13n.acp.tool") {
+      const id = string(value.toolCallId);
+      const key = `${scope}:${id}`;
+      const block = this.blocks.get(key);
+      if (id && block?.kind === "tool") {
+        const acp = { ...block.acp, ...value };
+        setBlock(key, {
+          ...block,
+          acp,
+          edit: acpEdit(acp, block.name, block.text) ?? block.edit,
+        });
+      }
+      return;
+    }
+    if (name === "a13n.acp.usage") {
+      if (
+        typeof value.used === "number" &&
+        typeof value.size === "number" &&
+        value.size > 0
+      )
+        this.acpContext = { used: value.used, size: value.size };
+      return;
+    }
+    if (name === "a13n.acp.plan") {
+      const key = `${scope}:${name}`;
+      setBlock(key, {
+        id: key,
+        kind: "activity",
+        text: "",
+        metadata: { "a13n.acp.observation": name },
+        value,
+      });
+      return;
+    }
     if (
       name === "a13n.shell.status" &&
       this.runId &&

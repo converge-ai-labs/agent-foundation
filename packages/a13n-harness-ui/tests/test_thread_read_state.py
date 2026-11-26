@@ -220,7 +220,10 @@ def test_upgrade_keeps_historical_completions_read_and_preserves_children(tmp_pa
             migrator.upgrade()
         finally:
             event.remove(Engine, "before_cursor_execute", executed)
-        assert sum(statement.startswith("ALTER TABLE thread ADD COLUMN ") for statement in statements) == 2
+        for column in ("unread", "read_state_version"):
+            assert (
+                sum(statement.startswith(f"ALTER TABLE thread ADD COLUMN {column} ") for statement in statements) == 1
+            )
         assert not any("_alembic_tmp_thread " in statement for statement in statements)
         migrator.verify_current()
         with engine.connect() as connection:

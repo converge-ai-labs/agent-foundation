@@ -7,6 +7,8 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
+    "agent-client-protocol==1.0.0",
+    "aiohttp>=3.9,<4",
     "a13n-envd-client",
     "cdp-use>=1.4.5,<2",
     "pathspec>=1.1,<2",
@@ -48,7 +50,6 @@ e2b = [
 ]
 modal = ["modal>=1.5.5,<2"]
 kubernetes = [
-    "aiohttp>=3.9,<4",
     "kubernetes-asyncio>=34.3,<35",
 ]
 
@@ -77,4 +78,4 @@ a13n-logging = ">=0.2.0,<0.3.0"
 
 [tool.deptry]
 known_first_party = ["a13n_harness"]
-package_module_name_map = { "a13n-envd-client" = "a13n_envd_client", "google-auth" = "google", "google-genai" = "google", "fastmcp-slim" = "fastmcp" }
+package_module_name_map = { "agent-client-protocol" = "acp", "a13n-envd-client" = "a13n_envd_client", "google-auth" = "google", "google-genai" = "google", "fastmcp-slim" = "fastmcp" }

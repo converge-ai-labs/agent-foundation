@@ -41,6 +41,8 @@ The Harness owns code-first Agent construction, a neutral package-local official
 
 [Object Store](24-object-store.md) owns scoped immutable binary objects, capture, management, the Object Reference Transport tool extension and the Host Store boundary.
 
+[External ACP sessions](25-acp.md) owns external agent connections, Run bindings, and scoped host tools.
+
 [Browser Use](23-browser-use.md) owns Chromium CDP tools, global/owned tab access and cleanup ownership, human-control admission, and the Host lifecycle boundary.
 
 [Codex Live Transport](16c-codex-live.md) owns subscription WebRTC bootstrap, sideband lifetime, typed client delegation, and the media/Host boundary.

@@ -243,3 +243,40 @@ it("shows missing required input beside the field before submitting", async () =
   );
   expect(client.POST).not.toHaveBeenCalled();
 });
+
+it("renders private OAuth callback forms as password fields without retaining submitted secrets", async () => {
+  client.GET.mockResolvedValue({
+    data: [
+      {
+        ...request,
+        message: "",
+        private_form: true,
+        url: "https://accounts.google.com/o/oauth2/auth?state=fixture",
+        url_host: "accounts.google.com",
+        schema: {
+          type: "object",
+          required: ["callback"],
+          properties: { callback: { type: "string", minLength: 1 } },
+        },
+      },
+    ],
+  });
+  client.POST.mockResolvedValue({ data: { ...request, state: "accepted" } });
+  mount();
+  const link = await screen.findByRole("link", { name: "Open Google sign-in" });
+  expect(link.getAttribute("href")).toContain("https://accounts.google.com/");
+  const input = screen.getByLabelText(
+    "Callback URL or authorization code",
+  ) as HTMLInputElement;
+  expect(input.type).toBe("password");
+  fireEvent.change(input, { target: { value: "auth-code-123" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send response" }));
+  await waitFor(() =>
+    expect(client.POST).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        body: { action: "accept", content: { callback: "auth-code-123" } },
+      }),
+    ),
+  );
+});

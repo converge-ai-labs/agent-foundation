@@ -38,6 +38,7 @@ def test_live_upgrade_preserves_existing_configuration_and_state(tmp_path):
                 "external_context_json": None,
                 "unread": 0,
                 "read_state_version": 0,
+                "acp_state_json": None,
             }
             assert (
                 dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one()) == before_config

@@ -255,3 +255,41 @@ async def test_private_workers_are_filtered_before_search_and_pagination(tmp_pat
             await tools.list_threads(
                 source_thread_id=second.thread_id, query="Private", cursor=page["next_cursor"], limit=1
             )
+
+
+async def test_native_coordinator_creates_and_runs_an_acp_worker(tmp_path: Path) -> None:
+    import json
+
+    from .test_acp_execution import _PEER, _resource
+
+    root = coordinator_configuration(tmp_path)
+    resources = tmp_path / "acp_agents"
+    resources.mkdir()
+    resource = _resource().model_copy(update={"args": (str(_PEER), "ui")})
+    (resources / "fixture.yaml").write_text(json.dumps(resource.model_dump(mode="json", exclude_none=True)))
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        lead = await create_coordinator(app)
+        compose = (await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Plan")).published.value
+        tools = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=lead.thread_id, composition=compose
+        )
+        ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=lead.thread_id))
+        with pytest.raises(ThreadError) as denied:
+            await controller(app).create_thread(
+                source_thread_id=lead.thread_id,
+                prompt="worker task",
+                title=None,
+                agent_id=resource.id,
+                model_id="model-secondary",
+                worker=True,
+                source_composition=compose,
+            )
+        assert denied.value.code == "thread_model_invalid"
+        created = await tools.create_worker(ctx, prompt="worker task", agent_id=resource.id)
+        assert created["ok"], created
+        worker = (await app.get_thread(created["thread_id"])).thread
+        assert worker.coordinator_thread_id == lead.thread_id
+        assert worker.configuration.agent_source.kind == "acp_agent" and worker.configuration.default_model_id is None
+        outcome = await app.wait_root_operation(created["receipt"]["receipt_id"])
+        assert outcome.status == "completed", outcome.failure
+        assert (await app.get_thread(worker.thread_id)).thread.excerpt.latest_reply == "done:worker task"

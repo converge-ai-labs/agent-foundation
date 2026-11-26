@@ -38,12 +38,16 @@ export function ComposerStatus({
   busy = false,
   liveTokens,
   liveRecordId,
+  acpContext,
+  external = false,
 }: {
   threadId: string;
   receipt?: string | null;
   busy?: boolean;
   liveTokens?: number;
   liveRecordId?: string;
+  acpContext?: { used: number; size: number };
+  external?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const { enabled: debug } = useDebug();
@@ -93,12 +97,21 @@ export function ComposerStatus({
   useEffect(() => {
     if (detail === "Context" && liveRecordId) void refreshContext();
   }, [detail, liveRecordId, liveTokens, refreshContext]);
-  const tokens = liveTokens ?? context.data?.latest_request_tokens;
+  const tokens =
+    acpContext?.used ??
+    (external ? undefined : liveTokens) ??
+    context.data?.latest_request_tokens;
+  const contextData = acpContext
+    ? {
+        ...context.data,
+        thread_id: threadId,
+        latest_request_tokens: acpContext.used,
+        context_window: acpContext.size,
+      }
+    : context.data;
   const summary = usageSummary(
     usage.data,
-    context.data
-      ? { ...context.data, latest_request_tokens: tokens }
-      : undefined,
+    contextData ? { ...contextData, latest_request_tokens: tokens } : undefined,
   );
   const percent = summary.contextPercent;
   const contextLabel = percent == null ? "—" : `${Math.round(percent)}%`;
@@ -172,7 +185,10 @@ export function ComposerStatus({
                 ) : (
                   <CurrencyDollar aria-hidden />
                 )}{" "}
-                {label === "Context" && !debug && tokens != null ? (
+                {label === "Context" &&
+                !debug &&
+                !external &&
+                tokens != null ? (
                   <span>
                     {Intl.NumberFormat(i18n.resolvedLanguage, {
                       minimumFractionDigits: 1,
@@ -242,7 +258,7 @@ export function ComposerStatus({
                               : undefined
                           }
                           used={tokens}
-                          capacity={context.data?.context_window}
+                          capacity={contextData?.context_window}
                           onGroupOpen={() => {
                             // Keep this upward-opening popover at its natural resting height.
                             const body = contextBody.current;

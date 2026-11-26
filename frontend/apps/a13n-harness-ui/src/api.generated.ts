@@ -2243,6 +2243,92 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acp-agents/presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Agent Presets */
+        get: operations["acp_agent_presets_api_acp_agents_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp-agents/{agent_id}/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Agent Options */
+        get: operations["acp_agent_options_api_acp_agents__agent_id__options_get"];
+        put?: never;
+        /** Preview Acp Agent Options */
+        post: operations["preview_acp_agent_options_api_acp_agents__agent_id__options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp-agents/{agent_id}/auth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acp Auth */
+        post: operations["acp_auth_api_acp_agents__agent_id__auth_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp-agents/{agent_id}/auth/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Auth Inputs */
+        get: operations["acp_auth_inputs_api_acp_agents__agent_id__auth_inputs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp-agents/{agent_id}/auth/inputs/{request_id}/response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Respond Acp Auth Input */
+        post: operations["respond_acp_auth_input_api_acp_agents__agent_id__auth_inputs__request_id__response_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/configuration/sources": {
         parameters: {
             query?: never;
@@ -2342,6 +2428,41 @@ export interface paths {
         put?: never;
         /** Preview Thread Skills */
         post: operations["preview_thread_skills_api_threads__thread_id__skills_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/acp-commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Commands */
+        get: operations["acp_commands_api_threads__thread_id__acp_commands_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/acp-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Options */
+        get: operations["acp_options_api_threads__thread_id__acp_options_get"];
+        /** Set Acp Option */
+        put: operations["set_acp_option_api_threads__thread_id__acp_options_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3462,6 +3583,134 @@ export interface components {
             /** Account Id */
             account_id: string;
         };
+        /** @enum {string} */
+        AcpAgentPreset: "antigravity" | "claude_code" | "codex" | "opencode" | "gemini_cli" | "custom";
+        /** AcpAgentSource */
+        AcpAgentSource: {
+            /**
+             * Kind
+             * @default acp_agent
+             * @constant
+             */
+            kind?: "acp_agent";
+            /** Id */
+            id: string;
+        };
+        /** AcpAuthMethod */
+        AcpAuthMethod: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "agent" | "terminal" | "browser";
+            /**
+             * Argv
+             * @default []
+             */
+            argv?: string[];
+            /**
+             * Environment Keys
+             * @default []
+             */
+            environment_keys?: string[];
+        };
+        /** AcpAuthStatus */
+        AcpAuthStatus: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "executable_missing" | "ready" | "auth_required" | "login_completed" | "logout_completed";
+            /** Agent Name */
+            agent_name?: string | null;
+            /** Agent Version */
+            agent_version?: string | null;
+            /** Default Model */
+            default_model?: string | null;
+            /**
+             * Methods
+             * @default []
+             */
+            methods?: components["schemas"]["AcpAuthMethod"][];
+            /**
+             * Logout Supported
+             * @default false
+             */
+            logout_supported?: boolean;
+        };
+        /** AcpCommand */
+        AcpCommand: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Hint */
+            hint?: string | null;
+        };
+        /** AcpOption */
+        AcpOption: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Category */
+            category?: string | null;
+            /** Value */
+            value: string | boolean;
+            /**
+             * Choices
+             * @default []
+             */
+            choices?: components["schemas"]["AcpOptionValue"][];
+        };
+        /** AcpOptionValue */
+        AcpOptionValue: {
+            /** Value */
+            value: string;
+            /** Name */
+            name: string;
+        };
+        /** AcpOptionsPreview */
+        AcpOptionsPreview: {
+            /** Scope */
+            scope: string;
+            /** Options */
+            options: components["schemas"]["AcpOption"][];
+            /**
+             * Commands
+             * @default []
+             */
+            commands?: components["schemas"]["AcpCommand"][];
+            /** Selections */
+            selections?: {
+                [key: string]: string | boolean;
+            };
+        };
+        /** AcpPresetView */
+        AcpPresetView: {
+            id: components["schemas"]["AcpAgentPreset"];
+            /** Name */
+            name: string;
+            /** Executable */
+            executable?: string | null;
+            /** Detected Path */
+            detected_path?: string | null;
+            /**
+             * Args
+             * @default []
+             */
+            args?: string[];
+            /** Install Url */
+            install_url?: string | null;
+        };
         /** ActivitySummary */
         ActivitySummary: {
             /**
@@ -3510,19 +3759,25 @@ export interface components {
             /** Id */
             id: string;
         };
-        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"] | components["schemas"]["DynamicAgentSource"];
+        AgentSource: components["schemas"]["AgentResourceSource"] | components["schemas"]["AcpAgentSource"] | components["schemas"]["MarkdownSubagentSource"] | components["schemas"]["MemoryAgentSource"] | components["schemas"]["LiveAgentSource"] | components["schemas"]["BotAgentSource"] | components["schemas"]["DynamicAgentSource"];
         /** AgentSourceView */
         AgentSourceView: {
             /**
              * Kind
              * @enum {string}
              */
-            kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
+            kind: "agent" | "acp_agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
             /** Id */
             id: string;
         };
         /** AgentSummary */
         AgentSummary: {
+            /**
+             * Kind
+             * @default agent
+             * @enum {string}
+             */
+            kind?: "agent" | "acp_agent";
             /** Agent Id */
             agent_id: string;
             /** Name */
@@ -4427,13 +4682,13 @@ export interface components {
              * Source Kind
              * @enum {string}
              */
-            source_kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic";
+            source_kind: "agent" | "markdown" | "memory" | "live" | "bot" | "dynamic" | "acp_agent";
             /** Source Id */
             source_id: string;
             /** Base Agent Id */
             base_agent_id?: string | null;
             /** Model Id */
-            model_id: string;
+            model_id: string | null;
             /** Thinking Summary */
             thinking_summary?: string | null;
             /** @default default */
@@ -6654,12 +6909,22 @@ export interface components {
              */
             server_name?: string | null;
             /**
+             * View Id
+             * @default null
+             */
+            view_id?: string | null;
+            /**
              * Mode
              * @enum {string}
              */
-            mode: "form" | "url";
+            mode: "form" | "url" | "question";
             /** Message */
             message: string;
+            /**
+             * Questions
+             * @default []
+             */
+            questions?: components["schemas"]["UserQuestion"][];
             /**
              * Schema
              * @default null
@@ -6678,21 +6943,21 @@ export interface components {
              */
             url_host?: string | null;
             /**
-             * Expires At
-             * Format: date-time
+             * Private Form
+             * @default false
              */
-            expires_at: string;
-            /**
-             * View Id
-             * @default null
-             */
-            view_id?: string | null;
+            private_form?: boolean;
             /**
              * State
              * @default pending
              * @enum {string}
              */
             state?: "pending" | "accepted" | "declined" | "cancelled" | "expired" | "unavailable";
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
         };
         /** McpIntegrationView */
         McpIntegrationView: {
@@ -9722,6 +9987,33 @@ export interface components {
             /** Reset At */
             reset_at: number;
         };
+        /**
+         * UserQuestion
+         * @description One bounded structured question.
+         */
+        UserQuestion: {
+            /** Question */
+            question: string;
+            /** Header */
+            header: string;
+            /** Options */
+            options: components["schemas"]["UserQuestionOption"][];
+            /**
+             * Multiselect
+             * @default false
+             */
+            multiSelect?: boolean;
+        };
+        /**
+         * UserQuestionOption
+         * @description One selectable answer shown by the Host.
+         */
+        UserQuestionOption: {
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -11205,6 +11497,37 @@ export interface components {
             /** Tools */
             tools: components["schemas"]["McpToolName"][] | null;
         };
+        /** AcpOptionChange */
+        AcpOptionChange: {
+            /** Id */
+            id: string;
+            /** Value */
+            value: string | boolean;
+        };
+        /** AcpOptionSelection */
+        AcpOptionSelection: {
+            /** Scope */
+            scope: string;
+            /** Values */
+            values?: {
+                [key: string]: string | boolean;
+            };
+        };
+        /** AcpOptionPreviewChange */
+        AcpOptionPreviewChange: {
+            selection: components["schemas"]["AcpOptionSelection"];
+            change?: components["schemas"]["AcpOptionChange"] | null;
+        };
+        /** AcpAuthRequest */
+        AcpAuthRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "probe" | "login" | "logout";
+            /** Method Id */
+            method_id?: string | null;
+        };
         /**
          * ResourceMutationRequest
          * @description Replacement content for a create or update.
@@ -11389,6 +11712,7 @@ export interface components {
             /** Thread Id */
             thread_id?: string | null;
             defaults?: components["schemas"]["NewThreadDefaults"] | null;
+            acp_options?: components["schemas"]["AcpOptionSelection"] | null;
             /** Title */
             title?: string | null;
         };
@@ -15761,6 +16085,198 @@ export interface operations {
             };
         };
     };
+    acp_agent_presets_api_acp_agents_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpPresetView"][];
+                };
+            };
+        };
+    };
+    acp_agent_options_api_acp_agents__agent_id__options_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpOptionsPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_acp_agent_options_api_acp_agents__agent_id__options_post: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpOptionPreviewChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpOptionsPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_auth_api_acp_agents__agent_id__auth_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpAuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpAuthStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_auth_inputs_api_acp_agents__agent_id__auth_inputs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpInputRequestView"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    respond_acp_auth_input_api_acp_agents__agent_id__auth_inputs__request_id__response_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpInputResponse"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpInputRequestView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     configuration_sources_api_configuration_sources_get: {
         parameters: {
             query?: never;
@@ -16014,6 +16530,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillCatalogView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_commands_api_threads__thread_id__acp_commands_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpCommand"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acp_options_api_threads__thread_id__acp_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpOption"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_acp_option_api_threads__thread_id__acp_options_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpOptionChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpOption"][];
                 };
             };
             /** @description Validation Error */

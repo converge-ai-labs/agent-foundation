@@ -1,3 +1,4 @@
+import { AcpOptionFields, acpOptionLabel } from "./acp-options";
 import { useComposerRunChoices } from "./composer-run-choices";
 import {
   createContext,
@@ -100,6 +101,7 @@ export async function ensureConversation(
           body: {
             thread_id: threadId,
             defaults: draft.defaults,
+            ...(draft.acp ? { acp_options: draft.acp.selection } : {}),
             ...(draft.coordinatorThreadId
               ? { coordinator_thread_id: draft.coordinatorThreadId }
               : draft.composer.coordinator
@@ -303,6 +305,89 @@ function NewConversation({
   const effectiveAgent = selectors.data?.agents.find(
     (item) => item.agent_id === effective?.agent_source.id,
   );
+  const acpAgent =
+    effectiveAgent?.kind === "acp_agent" ? effectiveAgent.agent_id : undefined;
+  const acpProject = effective?.project_id ?? undefined;
+  const acpKey = JSON.stringify([acpAgent, acpProject]);
+  const activeAcpKey = useRef(acpKey);
+  activeAcpKey.current = acpKey;
+  const acpParams = {
+    path: { agent_id: acpAgent ?? "" },
+    query: { project_id: acpProject },
+  };
+  const acpQueryKey = ["new-acp-options", acpKey] as const;
+  const acp = useQuery({
+    queryKey: acpQueryKey,
+    enabled: !!acpAgent && !draft.created,
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: Infinity,
+    queryFn: async ({ signal }) => {
+      const base = await result(
+        transport.client.GET("/api/acp-agents/{agent_id}/options", {
+          params: acpParams,
+          signal,
+        }),
+      );
+      const saved = draft.acp?.key === acpKey ? draft.acp.selection : undefined;
+      if (
+        saved?.scope === base.scope &&
+        Object.keys(saved.values ?? {}).length
+      ) {
+        try {
+          return await result(
+            transport.client.POST("/api/acp-agents/{agent_id}/options", {
+              params: acpParams,
+              signal,
+              body: { selection: saved },
+            }),
+          );
+        } catch (error) {
+          if (
+            !(error instanceof ApiError) ||
+            error.code !== "acp_option_invalid"
+          )
+            throw error;
+        }
+      }
+      if (
+        saved &&
+        activeAcpKey.current === acpKey &&
+        draft.acp?.selection === saved
+      ) {
+        draft.acp = undefined;
+        draft.save();
+      }
+      return base;
+    },
+  });
+  const acpChange = useMutation({
+    mutationFn: ({
+      change,
+      data,
+    }: {
+      change: Schema<"AcpOptionChange">;
+      data: Schema<"AcpOptionsPreview">;
+    }) =>
+      result(
+        transport.client.POST("/api/acp-agents/{agent_id}/options", {
+          params: acpParams,
+          body: {
+            selection: { scope: data.scope, values: data.selections },
+            change,
+          },
+        }),
+      ),
+    onSuccess: (updated) => {
+      if (activeAcpKey.current !== acpKey) return;
+      draft.acp = {
+        key: acpKey,
+        selection: { scope: updated.scope, values: updated.selections },
+      };
+      draft.save();
+      queries.setQueryData(acpQueryKey, updated);
+    },
+  });
   const runChoices = useComposerRunChoices(
     composerDraft,
     defaults.agent_id ?? effective?.agent_source.id,
@@ -494,6 +579,7 @@ function NewConversation({
             }
             canRun={
               !runChoices.pending &&
+              (!acpAgent || (!!acp.data && !acpChange.isPending)) &&
               !!preview.data &&
               !preview.error &&
               ownerAvailable &&
@@ -518,8 +604,20 @@ function NewConversation({
               void refreshThreadLists(queries);
             }}
             local={!draft.created}
+            acpCommands={acpAgent ? acp.data?.commands : undefined}
+            externalAgent={!!acpAgent}
             skillDefaults={defaults}
-            prepareThread={() => create.mutateAsync()}
+            prepareThread={() => {
+              if (
+                !draft.created &&
+                (!acpAgent ||
+                  draft.acp?.key !== acpKey ||
+                  draft.acp.selection.scope !== acp.data?.scope)
+              ) {
+                draft.acp = undefined;
+              }
+              return create.mutateAsync();
+            }}
             onPreparing={setPreparing}
             onSubmitted={openConversation}
             onReviewOutcome={openConversation}
@@ -548,6 +646,33 @@ function NewConversation({
                 onAgentChange={(value) => {
                   change({ agent_id: value || null });
                 }}
+                externalModel={acpOptionLabel(
+                  acp.data?.options.find(
+                    (option) =>
+                      option.category === "model" || option.id === "model",
+                  ),
+                )}
+                externalThinking={acpOptionLabel(
+                  acp.data?.options.find(
+                    (option) =>
+                      option.category === "thought_level" ||
+                      option.id === "thought_level",
+                  ),
+                )}
+                externalOptions={
+                  acpAgent && (
+                    <AcpOptionFields
+                      key={acpKey}
+                      options={acp.data?.options}
+                      loading={acp.isFetching}
+                      disabled={choicesDisabled || acpChange.isPending}
+                      error={acpChange.error ?? acp.error}
+                      onChange={(change) =>
+                        acp.data && acpChange.mutate({ change, data: acp.data })
+                      }
+                    />
+                  )
+                }
                 onModelChange={runChoices.onModelChange}
               />
             )}

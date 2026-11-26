@@ -9,6 +9,7 @@ export type NewDraft = {
   threadId: string;
   defaults: Schema<"NewThreadDefaults">;
   coordinatorThreadId?: string;
+  acp?: { key: string; selection: Schema<"AcpOptionSelection"> };
   created: boolean;
   attempted: boolean;
   pending?: Promise<void>;
@@ -99,6 +100,16 @@ function restore(): Omit<NewDraft, "save"> | undefined {
     threadId: saved.threadId,
     defaults,
     coordinatorThreadId: saved.coordinatorThreadId || undefined,
+    acp:
+      typeof saved.acp?.key === "string" &&
+      typeof saved.acp?.selection?.scope === "string" &&
+      saved.acp.selection.values &&
+      typeof saved.acp.selection.values === "object" &&
+      Object.values(saved.acp.selection.values).every(
+        (value) => typeof value === "string" || typeof value === "boolean",
+      )
+        ? saved.acp
+        : undefined,
     created: saved.created,
     attempted: saved.attempted,
     composer,
@@ -216,6 +227,7 @@ export class NewDraftStore {
             threadId: draft.threadId,
             defaults: draft.defaults,
             coordinatorThreadId: draft.coordinatorThreadId,
+            acp: draft.acp,
             created: draft.created,
             attempted: draft.attempted,
             update: encode(Y.encodeStateAsUpdate(draft.composer.doc)),

@@ -42,9 +42,10 @@ from pydantic_ai.messages import (
     UserPromptPart,
 )
 
+from a13n_harness_ui.acp_sessions import AcpSessionState
 from a13n_harness_ui.background_input import ACTIVITY_SOURCES
 from a13n_harness_ui.composition import CompositionAcceptanceService
-from a13n_harness_ui.composition.models import ResolvedRunComposition
+from a13n_harness_ui.composition.models import ResolvedAcpNode, ResolvedRunComposition
 from a13n_harness_ui.conversation import excerpt_text, input_excerpt
 from a13n_harness_ui.display_history import DisplayHistory
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
@@ -495,10 +496,14 @@ class ThreadProjectionService:
             ),
             None,
         )
-        if position is None:
-            return header.source_id, None
+        # ACP host tools without a unique peer call ID use the Run's input identity.
         turns = await self._store.inspections.turns(
-            thread_id, header.source_id, lower=position, upper=position + 1, limit=1
+            thread_id,
+            header.source_id,
+            lower=position,
+            upper=None if position is None else position + 1,
+            turn_id=tool_call_id if position is None else None,
+            limit=1,
         )
         return header.source_id, TranscriptTurn.model_validate_json(turns[0]).turn_id if turns else None
 
@@ -685,7 +690,18 @@ class ThreadProjectionService:
             return ContextUsageView(thread_id=thread_id)
         if observed is not None:
             latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
+        if isinstance(composition.root, ResolvedAcpNode) and thread.configuration.agent_source.kind in {
+            "acp_agent",
+            "bot",
+        }:
+            raw = await self._store.threads.acp_state(thread_id)
+            saved = AcpSessionState.model_validate_json(raw) if raw is not None else None
+            if saved is not None and saved.context_window is not None:
+                used, size = saved.context_window
+                return ContextUsageView(thread_id=thread_id, latest_request_tokens=used, context_window=size)
         model = composition.root.model
+        if model is None:
+            return ContextUsageView(thread_id=thread_id)
         from a13n_harness_ui.model_thinking import summarize_thinking
 
         thinking = model.thinking_override if model.thinking_override is not None else model.settings.get("thinking")

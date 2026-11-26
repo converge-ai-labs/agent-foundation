@@ -2373,3 +2373,29 @@ div:has(+ .execution) > .assistantMessage {
 .noticeSummary {
   gap: 8px;
 }
+
+.acpPlan {
+  color: var(--muted-foreground);
+  font-size: var(--interface-size, 14px);
+}
+.acpPlan ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.acpPlan li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.acpPlan li span {
+  flex: none;
+}
+.acpPlan li svg {
+  vertical-align: -0.12em;
+}
+.acpPlan li[data-status="in_progress"] {
+  color: var(--foreground);
+}

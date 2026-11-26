@@ -159,6 +159,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
                 ]
             ),
             "inherit_environment": True,
+            "allowed_executables": None,
             "allowed_environment_keys": None,
         }
         configuration = provider.validate_environment(value)

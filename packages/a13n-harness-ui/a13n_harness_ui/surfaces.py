@@ -67,7 +67,7 @@ class ContextUsageView(SurfaceModel):
 
 
 class AgentSourceView(SurfaceModel):
-    kind: Literal["agent", "markdown", "memory", "live", "bot", "dynamic"]
+    kind: Literal["agent", "acp_agent", "markdown", "memory", "live", "bot", "dynamic"]
     id: str = Field(min_length=1, max_length=128)
 
     @classmethod
@@ -818,6 +818,7 @@ class ThreadActivityPage(SurfaceModel):
 
 
 class AgentSummary(SurfaceModel):
+    kind: Literal["agent", "acp_agent"] = "agent"
     agent_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)

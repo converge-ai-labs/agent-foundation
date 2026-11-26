@@ -46,6 +46,7 @@ from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage.repositories import RetainedThreadRun, ThreadRepository
 from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationView, RunModelOverrides, ThreadSummary
 from a13n_harness_ui.thread_projection import ThreadProjectionService
+from a13n_harness_ui.thread_service import RootThreadDefaults, resolve_thread_configuration
 from a13n_harness_ui.voice import VoiceController
 
 _THREAD_CAPABILITY_ID = "a13n.harness-ui.thread-collaboration"
@@ -296,19 +297,15 @@ class ThreadToolController:
             raise ThreadError(
                 "A Coordinator creates workers only in its own Project.", code="coordinator_worker_project_locked"
             )
-        recipe = await self._configurations.creation_model(
-            source_composition, model_id, thinking, current_generation=True
-        )
-        if project_id == "current" and agent_id is None and configuration.agent_source.kind == "agent":
+        if project_id == "current" and agent_id is None and configuration.agent_source.kind in {"agent", "acp_agent"}:
             inherited_agent = (
                 source_composition.root.source_id
-                if source_composition is not None and source_composition.root.source_kind == "agent"
+                if source_composition is not None and source_composition.root.source_kind in {"agent", "acp_agent"}
                 else configuration.agent_source.id
             )
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id,
                 agent_id=inherited_agent,
-                default_model_id=recipe.model_id,
                 local_roots=configuration.local_roots,
                 environment_profile_id=configuration.environment_profile_id,
                 environment_bindings=configuration.environment_bindings,
@@ -322,8 +319,19 @@ class ThreadToolController:
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id if project_id == "current" else project_id,
                 agent_id=agent_id,
-                default_model_id=recipe.model_id,
             )
+        current = await self._configurations.current()
+        if current is None:
+            raise ConfigurationError("No configuration has been accepted.", code="configuration_missing")
+        target = resolve_thread_configuration(current, RootThreadDefaults(**defaults.model_dump(exclude_unset=True)))
+        if target.agent_source.kind == "acp_agent":
+            if model_id is not None or thinking is not None:
+                raise ThreadError("This Agent source does not accept a Harness Model.", code="thread_model_invalid")
+        else:
+            recipe = await self._configurations.creation_model(
+                source_composition, model_id, thinking, current_generation=True
+            )
+            defaults = defaults.model_copy(update={"default_model_id": recipe.model_id})
         created = await self._create_thread(
             defaults=defaults, title=title, coordinator_thread_id=source_thread_id if worker else None
         )
@@ -1012,11 +1020,12 @@ class ThreadCollaborationCapability(AbstractModelContextCapability):
                 ),
             }
             if thread_id == self.source_thread_id and self.composition is not None:
+                model = self.composition.root.model
                 result["current_run"] = {
                     "project_id": self.composition.project_id,
                     "project_roots": list(self.composition.project_roots),
                     "agent_id": self.composition.root.source_id,
-                    "model_id": self.composition.root.model.model_id,
+                    "model_id": None if model is None else model.model_id,
                     "role": self.composition.role,
                     "coordinator_thread_id": self.composition.coordinator_thread_id,
                     "generation_digest": self.composition.generation_digest,

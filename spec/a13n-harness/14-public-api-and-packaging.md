@@ -82,6 +82,10 @@ Record memory APIs are imported from `a13n_harness.capabilities`: `RecordMemoryC
 
 Tool permission APIs are imported from `a13n_harness.tools`: `ToolIdentity`, `ToolIdentityToolset`, `source_tool_id`, `ToolPermissions`, `ToolPermissionsCapability`, and `ToolApprovalContext`. Generic review APIs are imported from `a13n_harness.capabilities`: `ToolRiskLevel`, `ToolReviewPolicy`, `ToolReviewRule`, `ToolReviewConfig`, `ToolReviewer`, `AgentToolReviewer`, `ToolReviewRequest`, `ToolReviewAssessment`, `ToolReviewResult`, and `ToolReviewError`. `ToolPermissionsCapability` is the sole permission/review Capability; review values and implementations are collaborators, not separately registered Capabilities. `WebDomainPolicy` is public from `a13n_harness.capabilities.web` for Host transports that enforce domain checks at each redirect. Behavior belongs to [Tool Execution](07-tool-execution.md#tool-permissions-and-review) and [Web Resources](09-context-and-memory.md#media-documents-and-web-resources), not the package root.
 
+## ACP client API
+
+`a13n_harness.acp` exports `AcpSessionRuntime`, `AcpSessionSetup`, `AcpEnvironmentClient`, `AcpRunBinding`, `AcpHostToolBridge`, `AcpHostToolScope`, `AcpChannel`, `AcpTransport`, `StreamChannel`, `LocalStdioTransport`, `connect_streams`, `AcpError`, `AcpUpdate`, `ConfigOption`, `PromptBlock`, and `SteeringOutcome`. The package root does not re-export ACP APIs. See [External ACP sessions](25-acp.md) for ownership and compatibility.
+
 ## Build API
 
 ```python

@@ -170,10 +170,19 @@ class RunCompositionService:
         *,
         model_overrides: RunModelOverrides | None = None,
     ) -> PublishedRunComposition:
+        return await self.save(await self.resolve(source, selection, model_overrides=model_overrides))
+
+    async def resolve(
+        self,
+        source: LoadedHarnessUiConfiguration,
+        selection: ThreadCompositionSelection,
+        *,
+        model_overrides: RunModelOverrides | None = None,
+    ) -> ResolvedRunComposition:
         value = self._resolver.resolve_run(source, selection, model_overrides=model_overrides)
         if self.connector_capture is not None and value.root.source_kind not in {"live", "memory"}:
             value = value.model_copy(update={"connectors": await self.connector_capture()})
-        return await self.save(await self._bind_oauth(value))
+        return await self._bind_oauth(value)
 
     async def resolve_child_resume(
         self,
@@ -186,7 +195,7 @@ class RunCompositionService:
         value = self._resolver.resolve_run(
             source,
             selection,
-            parent_node=parent.root,
+            parent_node=parent.require_native_root(),
             dynamic_node=dynamic_node,
             run_configuration=parent.run_configuration,
         )
@@ -265,6 +274,7 @@ def _resource_value(source: LoadedHarnessUiConfiguration, kind: str, resource_id
         "environment_run_extension": source.environment_run_extensions,
         "mcp_server": source.mcp_servers,
         "agent": source.agents,
+        "acp_agent": source.acp_agents,
         "subagent": source.subagents,
         "project": source.projects,
         "device": source.devices,

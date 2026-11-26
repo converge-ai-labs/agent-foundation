@@ -679,3 +679,30 @@ async def test_disabled_dictation_preserves_advanced_preset_edits(tmp_path: Path
     assert loaded.document.dictation.backend == "model"
     assert loaded.document.model_dump(mode="json")["dictation"]["codex"]["model"] == "gpt-5.6-luna"
     assert loaded.subscription_group_providers() == set()
+
+
+async def test_acp_resources_participate_in_validated_mutation(tmp_path: Path) -> None:
+    from a13n_harness_ui.configuration.mutation import ResourceMutationRequest, mutate_configuration_source
+
+    root = _write_source_tree(tmp_path)
+    original = await load_harness_ui_configuration(root)
+    path = "acp_agents/antigravity.yaml"
+    request = ResourceMutationRequest(
+        content='schema_version: "1"\nkind: acp_agent\nid: acp-agy\nname: Antigravity\npreset: antigravity\n'
+    )
+    result = await mutate_configuration_source(root, path, request)
+    assert result.action == "created"
+    assert result.configuration.acp_agents["acp-agy"].argv() == ("agy", "acp", "--process-per-session")
+    assert not result.configuration.agents
+    assert result.configuration.source_digest != original.source_digest
+
+
+async def test_acp_resource_rejects_missing_custom_command(tmp_path: Path) -> None:
+    root = _write_source_tree(
+        tmp_path,
+        resources={
+            "acp_agents/custom.yaml": 'schema_version: "1"\nkind: acp_agent\nid: acp-custom\nname: Custom\n',
+        },
+    )
+    with pytest.raises(ConfigurationError):
+        await load_harness_ui_configuration(root)

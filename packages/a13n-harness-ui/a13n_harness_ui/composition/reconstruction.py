@@ -27,6 +27,7 @@ from a13n_harness.capabilities import (
     ToolSearchSelection,
 )
 from a13n_harness.capabilities.memory import FileMemoryCapability, FileMount, MemoryCursors
+from a13n_harness.capabilities.tool_review import AgentToolReviewer, ToolReviewConfig
 from a13n_harness.environment.models import FILE_EXECUTION_ACTIONS
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.mcp import UnavailableMCPToolset
@@ -45,6 +46,7 @@ from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.token_pricing import TokenPricingCapability
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY, ToolPermissionsCapability
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
+from a13n_harness.tools.permissions import ToolPermissions
 from a13n_harness.tools.tool_search import grouped_tool_name
 from a13n_harness.toolsets.computer import ComputerToolset
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
@@ -79,10 +81,12 @@ if TYPE_CHECKING:
 from a13n_harness.capabilities.web import WebBinding
 from a13n_harness.toolsets.web import WebConfiguration
 
+from a13n_harness_ui.acp_execution import AcpTurn
+from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.configuration.models import WebProviderResource
 
 from .auxiliary import capability_configuration
-from .models import ResolvedAgentNode, ResolvedModelRecipe, ResolvedRunComposition
+from .models import ResolvedAcpNode, ResolvedAgentNode, ResolvedMcpRecipe, ResolvedModelRecipe, ResolvedRunComposition
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +294,7 @@ class AgentReconstructor:
         memory_positions: Mapping[str, str | None] | None = None,
         organization: MemoryOrganizationRun | None = None,
         background_compaction: BackgroundCompaction | None = None,
+        acp_turn: AcpTurn | None = None,
     ) -> ReconstructedAgent:
         if composition.memory_organization:
             if organization is None:
@@ -304,8 +309,52 @@ class AgentReconstructor:
             enabled=composition.memory_enabled,
             project_id=composition.project_id,
             positions=memory_positions,
-            bot=composition.root.source_kind == "bot",
+            bot=composition.thread_id == BOT_THREAD_ID,
         )
+        if isinstance(composition.root, ResolvedAcpNode):
+            if acp_turn is None:
+                raise CompositionError("ACP requires an admitted outbound turn.", code="acp_turn_required")
+            acp_turn.capabilities = (
+                CurrentAgentContextCapability(),
+                *root_capabilities,
+                *((memory,) if memory is not None else ()),
+                *(self._mcp_capability(item) for item in composition.root.mcp_servers),
+            )
+            acp_models = {model_recipe_id(item): item for item in composition.media_understanding.values()}
+            review_recipe = composition.root.shell_review
+            review_configuration = capability_configuration(review_recipe, acp_models) if review_recipe else None
+            model_resolver = HarnessUiModelResolver(
+                acp_models,
+                subscription_sources=subscription_sources,
+                api_keys=self._api_keys,
+                configuration=composition.run_configuration,
+            )
+            if review_configuration is not None:
+                config = ToolReviewConfig.model_validate(review_configuration["review"])
+                permissions = ToolPermissions.model_validate({"rules": review_configuration["rules"]})
+
+                async def shell_review(thread_id: str) -> ToolPermissionsCapability:
+                    model = await model_resolver.resolve(config.model, thread_id=thread_id)
+                    return ToolPermissionsCapability(
+                        permissions, review=config, reviewer=AgentToolReviewer(model, config)
+                    )
+
+                acp_turn.shell_review = shell_review
+            return ReconstructedAgent(
+                executable=HarnessBuilder(
+                    configured_plugins_enabled=False, instrumentation=self._instrumentation
+                ).build(
+                    AgentSpec(),
+                    output_type=str | None,
+                    plugins=(acp_turn,),
+                    pricing_catalog=pricing_catalog,
+                ),
+                model_resolver=model_resolver,
+                definition_capability_ids=frozenset(item.id for item in acp_turn.capabilities if item.id is not None),
+                run_configuration=composition.run_configuration,
+                media_models=composition.media_understanding,
+                memory_cursors=cursors,
+            )
         from a13n_harness_ui.subagent_tools import SubagentTools, guidance
 
         dynamic = not subagent and composition.subagents.dynamic.enabled
@@ -439,6 +488,15 @@ class AgentReconstructor:
             },
         )
 
+    def _mcp_capability(self, item: ResolvedMcpRecipe) -> HarnessUiMCP:
+        return HarnessUiMCP(
+            item,
+            configuration_root=self._configuration_root,
+            oauth=self._mcp_oauth,
+            apps=self._mcp_apps if item.apps_enabled else None,
+            connections=self._mcp_connections,
+        )
+
     def _reconstruct_memory(
         self,
         composition: ResolvedRunComposition,
@@ -447,7 +505,7 @@ class AgentReconstructor:
         subscription_sources: Mapping[str, SubscriptionSource] | None,
         pricing_catalog: PricingCatalog | None,
     ) -> ReconstructedAgent:
-        node = composition.root
+        node = composition.require_native_root()
         recipe_id = model_recipe_id(node.model)
         memory = FileMemoryCapability(
             (
@@ -528,16 +586,7 @@ class AgentReconstructor:
             local_sources[recipe.capability] = capability
         if node.global_guidance is not None:
             capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
-        mcp_sources = {
-            item.server_id: HarnessUiMCP(
-                item,
-                configuration_root=self._configuration_root,
-                oauth=self._mcp_oauth,
-                apps=self._mcp_apps if item.apps_enabled else None,
-                connections=self._mcp_connections,
-            )
-            for item in node.mcp_servers
-        }
+        mcp_sources = {item.server_id: self._mcp_capability(item) for item in node.mcp_servers}
         capabilities.extend(mcp_sources.values())
         tool_search = (
             ToolSearchPlan(

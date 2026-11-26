@@ -8,6 +8,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "ag-ui-protocol>=1.0.0,<2",
+    "agent-client-protocol==1.0.0",
     "a13n-harness",
     "pydantic>=2.12,<3",
     "pydantic-ai-slim==2.74.*",
@@ -33,4 +34,4 @@ packages = ["a13n_stream_protocol"]
 
 [tool.deptry]
 known_first_party = ["a13n_stream_protocol"]
-package_module_name_map = { "ag-ui-protocol" = "ag_ui", "a13n-harness" = "a13n_harness", "pydantic-ai-slim" = "pydantic_ai" }
+package_module_name_map = { "agent-client-protocol" = "acp",  "ag-ui-protocol" = "ag_ui", "a13n-harness" = "a13n_harness", "pydantic-ai-slim" = "pydantic_ai" }

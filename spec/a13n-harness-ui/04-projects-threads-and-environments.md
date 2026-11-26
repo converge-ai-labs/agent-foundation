@@ -137,7 +137,11 @@ class LiveAgentSource(BaseModel):
     id: Literal["live"]
 
 
-AgentSource = AgentResourceSource | MarkdownSubagentSource | LiveAgentSource
+class AcpAgentSource(BaseModel):
+    kind: Literal["acp_agent"] = "acp_agent"
+    id: ResourceId
+
+AgentSource = AgentResourceSource | AcpAgentSource | MarkdownSubagentSource | LiveAgentSource
 
 
 class ThreadConfiguration(BaseModel):
@@ -158,7 +162,7 @@ The stored value is exact. It contains no omitted or globally enabled state. [TU
 
 The internal `LiveAgentSource` is created only for the persistent projectless [Live executor](10-live-mode.md#configuration-and-executor). It cannot be selected by ordinary Thread creation or mutation. Its workspace and restricted composition are App-owned.
 
-A new root Thread resolves its Agent resource from explicit creation input, the selected Project's Agent default, or the root YAML Agent default into `AgentResourceSource`, then resolves other axes under the shared creation precedence and stores the exact result. Root Threads cannot select a Markdown subagent as their source; that concise format depends on a parent Agent capture.
+A new root Thread resolves its Agent resource from explicit creation input, the selected Project's Agent default, or the root YAML Agent default. It stores an `AgentResourceSource` for a native Agent or an `AcpAgentSource` for an external ACP Agent. Other axes follow the shared creation precedence and store the exact result. Root Threads cannot select a Markdown subagent as their source; that concise format depends on a parent Agent capture.
 
 A child Thread stores the selected roster entry as either an Agent resource or Markdown subagent source. Project, local roots, Environment profile, remote bindings, default mount, and Run Extensions default from the admitting parent capture. Agent-resource children use their own Plugin and MCP defaults when present; Markdown children inherit the admitting parent capture's exact Plugin and MCP lists. After creation the child owns these stored selections independently. Agent-resource children start with a null default Model and retain their independent Model selection. Markdown children inherit the admitting parent Model and reject a non-null `default_model_id` rather than silently ignoring it.
 
