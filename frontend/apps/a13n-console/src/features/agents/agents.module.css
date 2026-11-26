@@ -301,7 +301,17 @@
 .environmentCard > * + * {
   border-top: 1px solid var(--a13n-border);
 }
-.environmentCard [data-slot="select-trigger"] {
+.environmentCard
+  :is(
+    [data-a13n-button],
+    [data-slot="button"],
+    [data-slot="select-trigger"],
+    [data-slot="select-button"],
+    [data-slot="input-control"],
+    [data-slot="input"],
+    [data-slot="textarea-control"],
+    [data-slot="textarea"]
+  ) {
   font-size: var(--a13n-text-sm);
 }
 .environmentCard > [data-slot="field"] > [data-slot="select-trigger"] {
@@ -372,6 +382,16 @@
   padding: var(--environment-inset);
   border-top: 1px solid var(--a13n-border);
 }
+.environmentSessionOverview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--setting-column-gap);
+}
+.environmentSessionOverview > div {
+  display: grid;
+  gap: 4px;
+}
 .environmentSessionHint {
   margin: 0;
   color: var(--a13n-secondary);
@@ -381,6 +401,9 @@
   .environmentCard {
     --environment-inset: 14px;
     --setting-column-gap: 12px;
+  }
+  .environmentSessionOverview {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 .toolsetPermissions {

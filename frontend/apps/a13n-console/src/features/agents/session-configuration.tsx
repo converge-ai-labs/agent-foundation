@@ -29,12 +29,32 @@ export function AgentSessionConfiguration({
       onOpenChange={setOpen}
     >
       <div className={shared.stack}>
-        <p className={agentStyles.environmentSessionHint}>
-          {t(
-            "Used only when creating a new primary environment binding. Existing conversation bindings keep their own configuration.",
+        <div className={agentStyles.environmentSessionOverview}>
+          <div>
+            {!value && (
+              <p className={agentStyles.environmentSessionHint}>
+                {t("No Session defaults configured.")}
+              </p>
+            )}
+            <p className={agentStyles.environmentSessionHint}>
+              {t(
+                "Used only when creating a new primary environment binding. Existing conversation bindings keep their own configuration.",
+              )}
+            </p>
+          </div>
+          {!value && !readOnly && (
+            <Button
+              type="button"
+              variant="outline"
+              className={styles.inlineAction}
+              size="sm"
+              onClick={() => onChange({})}
+            >
+              {t("Configure Session defaults")}
+            </Button>
           )}
-        </p>
-        {value ? (
+        </div>
+        {value && (
           <>
             <SessionPolicyFields
               value={value}
@@ -50,23 +70,6 @@ export function AgentSessionConfiguration({
                 onClick={() => onChange(null)}
               >
                 {t("Remove Session defaults")}
-              </Button>
-            )}
-          </>
-        ) : (
-          <>
-            <p className={agentStyles.environmentSessionHint}>
-              {t("No Session defaults configured.")}
-            </p>
-            {!readOnly && (
-              <Button
-                type="button"
-                variant="outline"
-                className={styles.inlineAction}
-                size="sm"
-                onClick={() => onChange({})}
-              >
-                {t("Configure Session defaults")}
               </Button>
             )}
           </>
