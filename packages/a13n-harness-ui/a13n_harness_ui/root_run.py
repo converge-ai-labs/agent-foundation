@@ -552,7 +552,7 @@ class RootRunCoordinator:
                 ):
                     self._interaction_waits.pop(thread_id)
                     pending.cancelled.set()
-                if self._restart is not None and organization is None:
+                if self._restart is not None and self._restart.enabled and admission.restart_eligible:
                     self._restart.register(thread_id)
                 self._operations[receipt.receipt_id] = operation
                 self.cancel_prediction(thread_id)
@@ -976,7 +976,7 @@ class RootRunCoordinator:
                     pending.cancelled.set()
             if operation.status is RootOperationStatus.suspended and outcome is not None:
                 self._start_interaction(operation, outcome)
-            if self._restart is not None and admission.organization is None:
+            if self._restart is not None and self._restart.enabled and admission.restart_eligible:
                 self._restart.finished(operation.receipt.thread_id, failed=failure is not None)
                 try:
                     await self._restart.invalidate(operation.receipt.thread_id)

@@ -179,6 +179,7 @@ class RootRunAdmission:
     memory_positions: dict[str, str | None] = field(default_factory=dict)
     organization: MemoryOrganizationRun | None = None
     resume_usage: bool = False
+    resume_from_restart: bool = False
     display: DisplayArchive | None = None
     browser_binding: str | None = None
     browser_unavailable: str = ""
@@ -186,6 +187,14 @@ class RootRunAdmission:
     acp_state: AcpSessionState | None = field(default=None, repr=False)
     strict_inputs: StrictRootInputs | None = field(default=None, repr=False)
     run_capabilities: tuple[AbstractCapability[AgentContext], ...] = field(default=(), repr=False)
+
+    @property
+    def restart_eligible(self) -> bool:
+        return (
+            self.organization is None
+            and self.thread.thread_id != BOT_THREAD_ID
+            and self.published.value.root.source_kind not in {"bot", "live"}
+        )
 
 
 class RootRunExecutor:
@@ -282,6 +291,8 @@ class RootRunExecutor:
         saved: AcpSessionState | None,
         *,
         goal: GoalCapability | None = None,
+        restart: GracefulRestart | None = None,
+        resume_from_restart: bool = False,
     ) -> AcpTurn:
         node = composition.root
         assert isinstance(node, ResolvedAcpNode)
@@ -321,6 +332,8 @@ class RootRunExecutor:
             interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
             ask_user_enabled=not is_bot and source.document.tools.enable_ask_user_question,
             goal=goal,
+            restart=restart,
+            resume_from_restart=resume_from_restart,
             saved=saved,
             persist=partial(self._save_acp_state, thread_id),
             update_title=partial(self._set_acp_title, thread_id) if not is_bot else None,
@@ -362,7 +375,13 @@ class RootRunExecutor:
             capabilities.append(
                 BrowserUseCapability(backend, on_human_control=partial(browsers.handback.blocked, thread_id))
             )
-        if local and self._restart is not None:
+        if (
+            local
+            and self._restart is not None
+            and self._restart.enabled
+            and thread_id != BOT_THREAD_ID
+            and composition.root.source_kind not in {"bot", "live", "acp_agent"}
+        ):
             capabilities.append(RestartPauseCapability(self._restart, thread_id))
         if local and self._root_capability_factory is not None:
             capabilities.append(self._root_capability_factory(composition))
@@ -592,6 +611,7 @@ class RootRunExecutor:
             response,
             positions,
             resume_usage=restart is not None and UsageSnapshot.from_state(previous_state) is not None,
+            resume_from_restart=restart is not None,
             display=archive,
             browser_binding=browser_binding,
             browser_unavailable=browser_unavailable,
@@ -726,11 +746,7 @@ class RootRunExecutor:
                 thread = thread.model_copy(update={"continuation": selected.reference, "excerpt": excerpt})
                 if strict_inputs is not None:
                     strict_inputs.commit(state, steers)
-                if (
-                    self._restart is not None
-                    and admission.organization is None
-                    and published.value.root.source_kind not in {"live", "bot"}
-                ):
+                if self._restart is not None and admission.restart_eligible and acp_turn is None:
                     await self._restart.boundary(
                         RestartItem(
                             thread_id=thread_id,
@@ -769,7 +785,16 @@ class RootRunExecutor:
             node = published.value.root
             is_bot = thread_id == BOT_THREAD_ID
             acp_turn = (
-                self._acp_turn(published.value, source, admission.acp_state, goal=goal_capability)
+                self._acp_turn(
+                    published.value,
+                    source,
+                    admission.acp_state,
+                    goal=goal_capability,
+                    restart=self._restart
+                    if admission.restart_eligible and self._restart is not None and self._restart.enabled
+                    else None,
+                    resume_from_restart=admission.resume_from_restart,
+                )
                 if isinstance(node, ResolvedAcpNode)
                 else None
             )

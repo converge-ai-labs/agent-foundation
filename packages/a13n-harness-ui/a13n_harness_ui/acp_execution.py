@@ -41,7 +41,7 @@ from a13n_harness.toolsets.interaction import AskUserQuestionRequest, UserQuesti
 from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
 from a13n_stream_protocol.acp import AcpRunStream
 from acp import schema
-from anyio import CancelScope, to_thread
+from anyio import CancelScope, create_task_group, to_thread
 from mcp.types import ElicitRequestFormParams
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import BinaryContent, RunContext, TextContent
@@ -74,6 +74,7 @@ from a13n_harness_ui.environment_paths import acp_skill_host_path
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.goal import GoalCapability
 from a13n_harness_ui.mcp_runtime.inputs import Inputs
+from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.skill_input import format_skill_selection
 
 _NATIVE_AGENTS_MD_PRESETS = frozenset({"antigravity", "codex", "opencode", "github_copilot", "goose", "kimi_cli"})
@@ -84,6 +85,19 @@ _EXCLUDED_ACP_CONTEXT_SOURCES = frozenset({"a13n.environment", "a13n.environment
 _INBOX_REMINDER_SOURCE = "a13n-harness-ui.inbox-reminder"
 _INPUT_SURFACE_SOURCE = "a13n-harness-ui.input-surface"
 _SKILLS_SELECTION_SOURCE = "a13n-harness-ui.skills"
+_RESTART_PROMPT = (
+    "The host application restarted and interrupted the previous turn. Inspect the current workspace and "
+    "environment state and any retained outputs before retrying external operations with side effects. "
+    "Continue completing the previous request."
+)
+
+
+class _AcpRestartState(AcpSessionState):
+    # Retain exact wire content only if the Host paused before dispatch. A
+    # cancelled prompt already belongs to the peer's resumed conversation.
+    pending_prompt: tuple[PromptBlock, ...] | None = None
+    pending_user_input: bool = False
+    first_prompt_pending: bool = False
 
 
 def _is_readable_regular_file(path: Path) -> bool:
@@ -357,6 +371,8 @@ class AcpTurn(AbstractHarnessPlugin):
     persist: Callable[[AcpSessionState], Awaitable[None]] | None = None
     update_title: Callable[[str], Awaitable[None]] | None = None
     prewarm: bool = False
+    restart: GracefulRestart | None = None
+    resume_from_restart: bool = False
     _stop_requested: bool = False
 
     @property
@@ -546,6 +562,46 @@ class AcpTurn(AbstractHarnessPlugin):
         await self.runtime.cancel()
         return True
 
+    async def _prompt_with_restart(
+        self,
+        runtime: AcpSessionRuntime,
+        prompt: Sequence[PromptBlock],
+        *,
+        binding: AcpRunBinding,
+        hidden: Sequence[str],
+        restart: GracefulRestart,
+        thread_id: str,
+    ) -> tuple[schema.PromptResponse, bool]:
+        restart_cancelled = False
+        response: schema.PromptResponse | None = None
+        error: Exception | None = None
+        async with create_task_group() as group:
+
+            async def watch() -> None:
+                nonlocal restart_cancelled, error
+                await restart.pause_requested.wait()
+                if self._stop_requested or not restart.can_pause(thread_id):
+                    return
+                try:
+                    # The peer can settle before the notification send returns.
+                    restart_cancelled = True
+                    restart_cancelled = await runtime.cancel()
+                except Exception as exc:
+                    error = exc
+                    group.cancel_scope.cancel()
+
+            group.start_soon(watch)
+            try:
+                response = await runtime.prompt(prompt, binding=binding, context=hidden)
+            except Exception as exc:
+                error = exc
+            finally:
+                group.cancel_scope.cancel()
+        if error is not None:
+            raise error
+        assert response is not None
+        return response, restart_cancelled
+
     async def _record_usage(
         self, context: AgentContext, runtime: AcpSessionRuntime, response: schema.PromptResponse
     ) -> None:
@@ -593,23 +649,42 @@ class AcpTurn(AbstractHarnessPlugin):
         self, exchange: PluginRunExchange, call_next: PluginRunNext[Any]
     ) -> HarnessRunResult[str | None]:
         context = exchange.context
-        if exchange.input.value is None and not self.prewarm:
+        restart = self.restart if not self.prewarm and not self.bot else None
+        resuming = self.resume_from_restart and exchange.input.value is None
+        if exchange.input.value is None and not self.prewarm and not resuming:
             raise AcpError("acp_input_required", "An external ACP turn requires a prompt.")
         previous = await exchange.export_current_state()
-        legacy = await context.state.read(_NAMESPACE, AcpSessionState, version="1")
-        saved = self.saved if self.saved is not None and self.saved.digest == self.digest else None
-        if self.saved is not None and self.saved.session_id is None:
-            if self.saved.digest == acp_options_scope(self.resource, self.setup.cwd):
-                saved = self.saved
-            elif saved is None and not self.prewarm:
-                raise AcpError("acp_option_invalid", "The ACP Agent or workspace changed. Select its options again.")
-        if (
-            saved is None
-            and legacy is not None
-            and legacy.digest == self.digest
-            and legacy.thread_id in {None, context.thread_id}
-        ):
-            saved = legacy
+        restart_state = None
+        if resuming:
+            restart_state = await context.state.read(_NAMESPACE, _AcpRestartState, version="1")
+            if (
+                restart is None
+                or restart_state is None
+                or restart_state.digest != self.digest
+                or restart_state.thread_id not in {None, context.thread_id}
+                or not restart_state.session_id
+                or not restart_state.prompted
+            ):
+                raise AcpError("acp_restart_session_missing", "The restart checkpoint has no matching ACP session.")
+        if restart_state is not None:
+            saved = restart_state
+        else:
+            legacy = await context.state.read(_NAMESPACE, AcpSessionState, version="1")
+            saved = self.saved if self.saved is not None and self.saved.digest == self.digest else None
+            if self.saved is not None and self.saved.session_id is None:
+                if self.saved.digest == acp_options_scope(self.resource, self.setup.cwd):
+                    saved = self.saved
+                elif saved is None and not self.prewarm:
+                    raise AcpError(
+                        "acp_option_invalid", "The ACP Agent or workspace changed. Select its options again."
+                    )
+            if (
+                saved is None
+                and legacy is not None
+                and legacy.digest == self.digest
+                and legacy.thread_id in {None, context.thread_id}
+            ):
+                saved = legacy
         saved_id = saved.session_id if saved is not None else None
         pending: list[dict[str, Any]] = []
         transcript = AcpRunStream(context.thread_id, context.run_id, self.emit or pending.append)
@@ -633,11 +708,26 @@ class AcpTurn(AbstractHarnessPlugin):
             interactive=self.inputs is not None and not context.unattended,
         ) as resident:
             runtime, bridge = resident.runtime, resident.host_tools
-            prompt_capabilities = runtime.capabilities.prompt_capabilities or schema.PromptCapabilities()
+            peer = runtime.capabilities
+            session = peer.session_capabilities
+            if (
+                restart is not None
+                and not resuming
+                and not (peer.load_session or (session and session.resume is not None))
+            ):
+                restart.finished(context.thread_id)
+                restart = None
+            prompt_capabilities = peer.prompt_capabilities or schema.PromptCapabilities()
             blocks, retained_user_items = self.build_prompt_blocks(
                 exchange.input.value, prompt_capabilities=prompt_capabilities
             )
-            user_message = replace(input_request(retained_user_items), run_id=context.run_id)
+            user_message = (
+                replace(input_request(retained_user_items), run_id=context.run_id)
+                if exchange.input.value is not None
+                else None
+            )
+            history = previous.message_history
+            input_history = (*history, user_message) if user_message is not None else history
             skill_catalog = self.initial_skill_catalog
             if self.skill_manager is not None and not self.prewarm:
                 skill_catalog = await self.skill_manager.scan_environment(environment=context.environment)
@@ -650,7 +740,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 model=None,  # pyright: ignore[reportArgumentType]
                 usage=RunUsage(),
                 run_id=context.run_id,
-                messages=[*previous.message_history, user_message],
+                messages=list(input_history),
             )
             capabilities = self.capabilities
             if self.shell_review is not None and not self.prewarm:
@@ -703,6 +793,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 if self.shell_review is not None and not self.prewarm:
                     _bind_shell_review(binding, scope.context, interactions)
                 opened_fresh_session = False
+                resume_instructions: tuple[str, ...] = ()
                 if runtime.session_id is None:
                     recovering = saved.session_id if saved is not None and saved.prompted else None
                     opened_fresh_session = recovering is None
@@ -721,6 +812,10 @@ class AcpTurn(AbstractHarnessPlugin):
                         *((skills_index,) if skills_index is not None else ()),
                         *((tool_hint,) if tool_hint is not None else ()),
                     )
+                    if restart_state is not None and restart_state.first_prompt_pending:
+                        # Some peers receive setup guidance only with the first
+                        # prompt. That prompt was never sent on the old connection.
+                        resume_instructions = session_instructions
                     await runtime.open_session(
                         AcpSessionSetup(
                             cwd=self.setup.cwd,
@@ -734,9 +829,10 @@ class AcpTurn(AbstractHarnessPlugin):
                     if self.prewarm or (saved is not None and saved.options):
                         await runtime.wait_for_model_option(MODEL_OPTION_GRACE_SECONDS)
                     if saved is not None:
-                        await runtime.restore_options(
-                            saved.options, strict=saved.explicit_options if not self.prewarm else frozenset()
-                        )
+                        strict = saved.explicit_options if not self.prewarm else frozenset()
+                        if resuming:
+                            strict |= frozenset(key for key, value in saved.options.items() if value != "")
+                        await runtime.restore_options(saved.options, strict=strict)
                 elif not self.prewarm and saved is not None:
                     # Replay choices that prewarm could not apply, plus explicit first-turn selections.
                     keys = resident.unrestored_options | saved.explicit_options
@@ -795,7 +891,11 @@ class AcpTurn(AbstractHarnessPlugin):
                         _messages=previous.message_history,
                         _new_message_index=len(previous.message_history),
                     )
-                assert exchange.input.value is not None
+                if resuming:
+                    assert restart is not None
+                    # Validate the external session and its options before the
+                    # batch is consumed. No session/prompt can cross this gate.
+                    await restart.checkpoint(context.thread_id, previous)
                 binding.host_tools = scope
                 compacted = False
 
@@ -822,18 +922,41 @@ class AcpTurn(AbstractHarnessPlugin):
                     await publish()
 
                 binding.on_update = observe
-                for event in input_events(exchange.input.value, source="user", input_id=context.run_id):
-                    await context.events.emit(event)
+                if exchange.input.value is not None:
+                    for event in input_events(exchange.input.value, source="user", input_id=context.run_id):
+                        await context.events.emit(event)
                 transcript.start()
                 self.runtime = runtime
 
-                prior_conversation = _prior_conversation(previous.message_history, active)
+                pending_user_input = restart_state is not None and restart_state.pending_user_input
+                prior_conversation = _prior_conversation(history[:-1] if pending_user_input else history, active)
+                pending_user_input = pending_user_input or user_message is not None
                 prompted_this_turn = False
+                first_prompt_pending = not active.prompted or (
+                    restart_state is not None and restart_state.first_prompt_pending
+                )
+                restart_paused = False
+                pending_prompt: tuple[PromptBlock, ...] | None = None
+
+                def pause_before_prompt(prompt: Sequence[PromptBlock]) -> bool:
+                    nonlocal restart_paused, pending_prompt
+                    if self._stop_requested or restart is None or not restart.requested:
+                        return False
+                    if not restart.can_pause(context.thread_id):
+                        return False
+                    restart_paused = True
+                    pending_prompt = tuple(prompt)
+                    return True
 
                 async def prompt_until_settled() -> schema.PromptResponse:
-                    nonlocal active, compacted, persisted_context_window, prior_conversation, prompted_this_turn
-                    prompt = blocks
+                    nonlocal active, compacted, persisted_context_window, prior_conversation
+                    nonlocal prompted_this_turn, restart_paused, pending_user_input, first_prompt_pending
+                    prompt: Sequence[PromptBlock] = (
+                        restart_state.pending_prompt or () if restart_state is not None else blocks
+                    )
                     while True:
+                        if self._stop_requested or pause_before_prompt(prompt):
+                            return schema.PromptResponse(stop_reason="cancelled")
                         compacted = False
                         guidance = self.goal.get_instructions() if self.goal is not None else None
                         history = ModelContextHistory(active.delivered_context)
@@ -849,18 +972,35 @@ class AcpTurn(AbstractHarnessPlugin):
                         hidden = (*(block.content for block in context_blocks), *prior_conversation)
                         if guidance is not None:
                             hidden = (*hidden, guidance)
-                        if self._stop_requested:
+                        if resuming and not prompted_this_turn:
+                            hidden = (*resume_instructions, *hidden, _RESTART_PROMPT)
+                        if self._stop_requested or pause_before_prompt(prompt):
                             return schema.PromptResponse(stop_reason="cancelled")
                         first = not active.prompted
                         explicit = active.explicit_options
-                        if first:
+                        if first or explicit:
                             # Persist before dispatch so an interruption with unknown outcome still recovers.
                             active = active.model_copy(update={"prompted": True, "explicit_options": frozenset()})
                             if self.persist is not None:
                                 await self.persist(active)
                                 persisted_context_window = active.context_window
+                        if self._stop_requested or pause_before_prompt(prompt):
+                            return schema.PromptResponse(stop_reason="cancelled")
+                        if prompted_this_turn:
+                            transcript.reset_reply()
                         try:
-                            response = await runtime.prompt(prompt, binding=binding, context=hidden)
+                            if restart is None:
+                                response = await runtime.prompt(prompt, binding=binding, context=hidden)
+                            else:
+                                response, restart_cancelled = await self._prompt_with_restart(
+                                    runtime,
+                                    prompt,
+                                    binding=binding,
+                                    hidden=hidden,
+                                    restart=restart,
+                                    thread_id=context.thread_id,
+                                )
+                                restart_paused = restart_cancelled and response.stop_reason == "cancelled"
                         except Exception:
                             if first and runtime.prompt_rejected_before_progress:
                                 active = active.model_copy(update={"prompted": False, "explicit_options": explicit})
@@ -869,6 +1009,8 @@ class AcpTurn(AbstractHarnessPlugin):
                                     persisted_context_window = active.context_window
                             raise
                         prompted_this_turn = True
+                        pending_user_input = False
+                        first_prompt_pending = False
                         prior_conversation = ()
                         active = active.model_copy(
                             update={
@@ -881,17 +1023,16 @@ class AcpTurn(AbstractHarnessPlugin):
                             await self._record_usage(context, runtime, response)
                         if self._stop_requested:
                             return schema.PromptResponse(stop_reason="cancelled")
+                        if compacted and self.goal is not None:
+                            await self.goal.observe_restore(run_context, "acp_compaction")
                         if response.stop_reason == "cancelled" or self.goal is None:
                             return response
-                        if compacted:
-                            await self.goal.observe_restore(run_context, "acp_compaction")
                         continuation: list[str] = []
                         await self.goal.after_reply(run_context, transcript.last_text, continuation.append)
                         if self._stop_requested:
                             return schema.PromptResponse(stop_reason="cancelled")
                         if not continuation:
                             return response
-                        transcript.reset_reply()
                         prompt = [schema.TextContentBlock(text=continuation[0])]
 
                 persisted_final = False
@@ -919,22 +1060,43 @@ class AcpTurn(AbstractHarnessPlugin):
                     await publish()
                     cancelled = response.stop_reason == "cancelled"
                     output = transcript.last_text or None
-                    history = previous.message_history
-                    messages = (*history, user_message)
+                    messages = input_history
                     if output:
                         messages = (*messages, ModelResponse(parts=[TextPart(content=output)], run_id=context.run_id))
-                    if prompted_this_turn:
+                    if prompted_this_turn and messages:
                         active = active.model_copy(
                             update={
                                 "synced_messages": len(messages),
                                 "synced_message_key": _message_key(messages[-1]),
                             }
                         )
+                    if restart_paused:
+                        active = active.model_copy(update={"prompted": True})
                     if self.persist is not None:
                         await self.persist(active)
                         persisted_context_window = active.context_window
                     persisted_final = True
-                    await context.state.write(_NAMESPACE, active, version="1")
+                    checkpoint_session = (
+                        _AcpRestartState(
+                            **active.model_dump(),
+                            pending_prompt=pending_prompt,
+                            pending_user_input=pending_user_input,
+                            first_prompt_pending=first_prompt_pending,
+                        )
+                        if restart_paused
+                        else active
+                    )
+                    await context.state.write(_NAMESPACE, checkpoint_session, version="1")
+                    if restart_paused and self.goal is not None:
+                        await self.goal.save_progress(run_context)
+                    state = await context.export_state(messages)
+                    if (
+                        restart_paused
+                        and restart is not None
+                        and not self._stop_requested
+                        and restart.can_pause(context.thread_id)
+                    ):
+                        await restart.checkpoint(context.thread_id, state)
                 finally:
                     if (
                         not persisted_final
@@ -952,7 +1114,7 @@ class AcpTurn(AbstractHarnessPlugin):
                     run_id=context.run_id,
                     status="cancelled" if cancelled else "completed",
                     output=None if cancelled else output,
-                    state=await context.export_state(messages),
+                    state=state,
                     usage=context.usage_attribution.summary(),
                     _messages=messages,
                     _new_message_index=len(history),
