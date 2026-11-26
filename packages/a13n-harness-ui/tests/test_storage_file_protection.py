@@ -147,7 +147,10 @@ async def test_native_reads_preserve_sqlite_locks_across_external_connection_clo
                             "source", AttachmentUpload(target.name, b"\0" * target.stat().st_size)
                         )
                         content = (
-                            thread_files.directory("source") / "tmp/uploads" / attachment.attachment_id / "content"
+                            thread_files.directory("source")
+                            / "tmp/uploads"
+                            / attachment.attachment_id
+                            / attachment.storage_name
                         )
                         content.unlink()
                         content.hardlink_to(target)
@@ -190,7 +193,12 @@ async def test_stored_attachment_reads_reject_protected_aliases(
     files = ThreadFiles(tmp_path)
     try:
         attachment = await files.stage("source", AttachmentUpload("notes.txt", b"stored content"))
-        target = files.directory("source") / "tmp/uploads" / attachment.attachment_id / filename
+        target = (
+            files.directory("source")
+            / "tmp/uploads"
+            / attachment.attachment_id
+            / (attachment.storage_name if filename == "content" else filename)
+        )
         target.unlink()
         target.hardlink_to(protected_path)
         with pytest.raises(PermissionError):

@@ -33,7 +33,7 @@ _SAFE_EXTENSION = re.compile(r"\.[a-z0-9]{1,10}\Z")
 
 def _storage_name(name: str, media_type: str) -> str:
     suffix = Path(name).suffix.lower()
-    if not _SAFE_EXTENSION.fullmatch(suffix):
+    if not _SAFE_EXTENSION.fullmatch(suffix) and media_type != "application/octet-stream":
         suffix = (mimetypes.guess_extension(media_type, strict=False) or "").lower()
     if suffix == ".jpe":
         suffix = ".jpg"
@@ -335,6 +335,8 @@ class ThreadFiles:
             absent = set()
             if attachment.source is None:
                 absent.add("source")
+            if attachment.storage_name == "content":
+                absent.add("storage_name")
             metadata = attachment.model_dump_json(exclude=absent)
             _write_file(target, "metadata.json", metadata.encode("utf-8"))
 

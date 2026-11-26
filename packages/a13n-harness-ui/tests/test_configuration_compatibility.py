@@ -427,8 +427,15 @@ async def test_attachment_metadata_accepts_additions_and_preserves_integrity(tmp
         attachment = await files.stage("thread-test", AttachmentUpload(name="plain.txt", data=b"hello"))
         metadata = files.directory("thread-test") / "tmp/uploads" / attachment.attachment_id / "metadata.json"
         original = json.loads(metadata.read_text())
-        # Fields before 8f202793; no gratuitous source:null for ordinary uploads.
-        assert set(original) == {"attachment_id", "name", "media_type", "size"}
+        # No gratuitous source:null for ordinary uploads; storage_name is written when suffixed
+        # and omitted when using the default legacy filename ("content").
+        assert set(original) == {"attachment_id", "name", "media_type", "size", "storage_name"}
+        assert original["storage_name"] == "content.txt"
+        extensionless = await files.stage("thread-test", AttachmentUpload(name="README", data=b"plain"))
+        extensionless_meta = json.loads(
+            (files.directory("thread-test") / "tmp/uploads" / extensionless.attachment_id / "metadata.json").read_text()
+        )
+        assert set(extensionless_meta) == {"attachment_id", "name", "media_type", "size"}
         original["future_caption"] = {"text": "display only"}
         metadata.write_text(json.dumps(original))
         assert await files.read("thread-test", attachment.attachment_id) == (attachment, b"hello")
