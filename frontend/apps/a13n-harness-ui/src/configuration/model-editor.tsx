@@ -364,19 +364,28 @@ function LoadedModelEditor({
       );
       setBaseUrl(String(prepared.recipe.model_configuration?.base_url ?? ""));
       const { pricing: _pricing, ...recipe } = prepared.recipe;
-      onChange(
-        {
-          ...recipe,
-          model_configuration: api
-            ? {
-                ...value?.model_configuration,
-                ...prepared.recipe.model_configuration,
-                base_url: prepared.recipe.model_configuration?.base_url,
-              }
-            : prepared.recipe.model_configuration,
-        },
-        options.data?.name,
+      const nextRecipe: Recipe = {
+        ...recipe,
+        model_configuration: api
+          ? {
+              ...value?.model_configuration,
+              ...prepared.recipe.model_configuration,
+              base_url: prepared.recipe.model_configuration?.base_url,
+            }
+          : prepared.recipe.model_configuration,
+      };
+      // Record our own emission so the external-value sync effects do not mistake
+      // it for an external edit if the user switches connection before value echoes back.
+      previousRoute.current = nextRecipe.route;
+      previousConnection.current = connectionId(
+        nextRecipe,
+        choices.connections ?? [],
       );
+      previousAuth.current = JSON.stringify(nextRecipe.authentication);
+      previousUrl.current = String(
+        nextRecipe.model_configuration?.base_url ?? "",
+      );
+      onChange(nextRecipe, options.data?.name);
     },
   });
   useEffect(() => {

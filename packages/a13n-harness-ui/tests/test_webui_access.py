@@ -277,5 +277,5 @@ async def test_pick_host_directory_accepts_only_local_shared_requests(tmp_path: 
             assert (await client.post(PUBLIC + path)).status_code == 403
             assert (await client.post(path, headers={"X-Forwarded-For": "192.0.2.1"})).status_code == 403
             run.assert_not_awaited()
-            assert (await client.post(path)).json() == "/tmp/two words"
+            assert (await client.post(path)).json() == str(Path("/tmp/two words"))
             assert (await client.post(path)).json() is None
