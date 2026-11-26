@@ -13,7 +13,7 @@ import userEvent from "@testing-library/user-event";
 import { ConversationTranscript, LiveOutput } from "./transcript";
 import { PauseConversationFollowing } from "./execution-details";
 import { RunActivity } from "./run-activity";
-import type { DisplayBlock } from "./stream";
+import { FocusDisplay, focusFrame, type DisplayBlock } from "./stream";
 import type { Schema } from "../transport/client";
 
 afterEach(() => {
@@ -1042,4 +1042,244 @@ it("auto-expands live thinking in active LiveOutput and collapses it when a tool
   expect(details.open).toBe(false);
   expect(within(details).getByText("Thought")).toBeTruthy();
   expect(within(details).queryByText("Thinking")).toBeNull();
+});
+
+it("keeps Thinking header and live preview in lockstep after an empty-string tool result and while an earlier tool is running", () => {
+  viewport()(false);
+  const input: Schema<"TranscriptEntry"> = {
+    position: 0,
+    message_kind: "request",
+    parts: [{ kind: "user", text: "Apply the edit and verify" }],
+  };
+  const turn = {
+    turn_id: "lockstep-turn",
+    input_position: 0,
+    end_position: 1,
+    final_position: null,
+    preview: "Apply the edit and verify",
+  };
+  const renderTranscript = (blocks: DisplayBlock[]) => (
+    <ConversationTranscript
+      threadId="one"
+      entries={[input]}
+      turns={[turn]}
+      blocks={blocks}
+      localInputs={[]}
+      running
+    />
+  );
+
+  // Completed tool returning empty string "" followed by active streaming thinking
+  // shows the single Thinking header and live preview underneath.
+  const view = render(
+    renderTranscript([
+      {
+        id: "edit-1",
+        kind: "tool",
+        name: "edit_file",
+        toolCallId: "edit-1",
+        text: '{"Path":"checkout.ts"}',
+        result: "",
+        done: true,
+        stopped: true,
+        outcome: "success",
+      },
+      {
+        id: "thought-1",
+        kind: "thinking",
+        text: "Verifying the applied diff.",
+      },
+    ]),
+  );
+  const trigger = screen.getByRole("button", { name: /Work log/ });
+  expect(trigger.textContent).toBe("ThinkingWork log");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(
+    within(screen.getByRole("region", { name: "Thought content" })).getByText(
+      "Verifying the applied diff.",
+    ),
+  ).toBeTruthy();
+
+  // Earlier tool still running while a trailing thinking block actively streams:
+  // header says Thinking and live preview stays visible in lockstep.
+  view.rerender(
+    renderTranscript([
+      {
+        id: "cmd-1",
+        kind: "tool",
+        name: "shell_exec",
+        toolCallId: "cmd-1",
+        text: '{"command":"pnpm test"}',
+        done: true,
+      },
+      {
+        id: "thought-2",
+        kind: "thinking",
+        text: "Reviewing test progress while command runs.",
+      },
+    ]),
+  );
+  expect(trigger.textContent).toBe("ThinkingWork log");
+  expect(
+    within(screen.getByRole("region", { name: "Thought content" })).getByText(
+      "Reviewing test progress while command runs.",
+    ),
+  ).toBeTruthy();
+
+  // Once the trailing thinking finishes while the earlier tool is still running,
+  // live preview disappears and the trigger returns to the running tool overview.
+  view.rerender(
+    renderTranscript([
+      {
+        id: "cmd-1",
+        kind: "tool",
+        name: "shell_exec",
+        toolCallId: "cmd-1",
+        text: '{"command":"pnpm test"}',
+        done: true,
+      },
+      {
+        id: "thought-2",
+        kind: "thinking",
+        text: "Reviewing test progress while command runs.",
+        done: true,
+      },
+    ]),
+  );
+  expect(trigger.textContent).toContain("pnpm test");
+  expect(trigger.textContent).not.toContain("Thinking");
+  expect(screen.queryByRole("region", { name: "Thought content" })).toBeNull();
+});
+
+it("streams live thinking preview directly from FocusDisplay after an empty-string displayItem tool result", () => {
+  viewport()(false);
+  const display = new FocusDisplay();
+  display.accept(
+    focusFrame({
+      kind: "snapshot",
+      resume_cursor: null,
+      snapshot: {
+        epoch: "epoch-one",
+        cutover_sequence: 100,
+        thread: {
+          thread: {
+            thread_id: "one",
+            created_at: "2026-11-26",
+            updated_at: "2026-11-26",
+            metadata_version: 1,
+            archived: false,
+            configuration: {
+              version: 1,
+              agent_source: { kind: "acp_agent", id: "acp-one" },
+              environment_profile_id: "local",
+            },
+            continuation_state: "initial",
+            root_activity: { state: "running", run_id: "run-one" },
+          },
+          continuation_id: null,
+        },
+        children: { executions: [], total: 0 },
+        recent_events: [],
+        root_stream: {
+          thread_id: "one",
+          run_id: "run-one",
+          base_continuation_id: null,
+          event_count: 0,
+        },
+      },
+    }),
+  );
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let position = 0;
+  const emit = (
+    id: string,
+    kind: "tool_call" | "reasoning_message",
+    state: "in_progress" | "completed",
+    payload: Record<string, unknown>,
+  ) => {
+    position++;
+    display.accept(
+      focusFrame({
+        kind: "event",
+        resume_cursor: `cursor-${position}`,
+        event: {
+          sequence: 100 + position,
+          epoch: "epoch-one",
+          run_kind: "root",
+          thread_id: "one",
+          root_thread_id: "one",
+          run_id: "run-one",
+          event_type: String(payload.type),
+          payload,
+          payload_omitted: false,
+          display_position: { attempt: 1, sequence: position },
+          item: { id, kind, state },
+        },
+      }),
+    );
+  };
+
+  emit("tool-1", "tool_call", "in_progress", {
+    type: "TOOL_CALL_START",
+    toolCallId: "tool-1",
+    toolCallName: "edit_file",
+  });
+  emit("tool-1", "tool_call", "in_progress", {
+    type: "TOOL_CALL_ARGS",
+    toolCallId: "tool-1",
+    delta: '{"Path":"checkout.ts"}',
+  });
+  emit("tool-1", "tool_call", "in_progress", {
+    type: "TOOL_CALL_END",
+    toolCallId: "tool-1",
+  });
+  emit("tool-1", "tool_call", "completed", {
+    type: "TOOL_CALL_RESULT",
+    toolCallId: "tool-1",
+    messageId: "tool-1:result",
+    content: "",
+  });
+  emit("thought-1", "reasoning_message", "in_progress", {
+    type: "REASONING_MESSAGE_START",
+    messageId: "thought-1",
+    role: "reasoning",
+  });
+  emit("thought-1", "reasoning_message", "in_progress", {
+    type: "REASONING_MESSAGE_CONTENT",
+    messageId: "thought-1",
+    delta: "Checking retry idempotency after applying edit.",
+  });
+
+  render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[
+        {
+          position: 0,
+          message_kind: "request",
+          parts: [{ kind: "user", text: "Fix checkout.ts" }],
+        },
+      ]}
+      turns={[
+        {
+          turn_id: "acp-turn",
+          input_position: 0,
+          end_position: 1,
+          final_position: null,
+          preview: "Fix checkout.ts",
+        },
+      ]}
+      blocks={display.blocksAfter(null)}
+      localInputs={[]}
+      running
+    />,
+  );
+  const trigger = screen.getByRole("button", { name: /Work log/ });
+  expect(trigger.textContent).toBe("ThinkingWork log");
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(
+    within(screen.getByRole("region", { name: "Thought content" })).getByText(
+      "Checking retry idempotency after applying edit.",
+    ),
+  ).toBeTruthy();
 });

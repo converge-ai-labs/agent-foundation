@@ -2727,3 +2727,199 @@ it("preserves post-compaction acpContext across compact display snapshot replay"
   );
   expect(cleared.acpContext).toBeNull();
 });
+
+it("marks completed empty-string, truncated, and terminal tool display items as finished rather than running", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let position = 0;
+  const send = (
+    id: string,
+    payload: Record<string, unknown>,
+    state:
+      "in_progress" | "completed" | "failed" | "interrupted" = "in_progress",
+  ) => {
+    position++;
+    display.accept(
+      rawFrame(100 + position, position, payload, id, "tool_call", state),
+    );
+  };
+  const tool = (id: string) => {
+    const block = display.blocks.get(id)!;
+    return {
+      ...block,
+      name: block.name!,
+      input: block.text,
+      inputComplete: block.done,
+      live: true,
+    };
+  };
+
+  // ACP edit/silent command returning an empty string result.
+  send("acp-edit", {
+    type: "TOOL_CALL_START",
+    toolCallId: "acp-edit",
+    toolCallName: "edit_file",
+  });
+  send("acp-edit", {
+    type: "TOOL_CALL_ARGS",
+    toolCallId: "acp-edit",
+    delta: JSON.stringify({
+      Path: "/workspace/checkout.ts",
+      Target: "old",
+      Replacement: "new",
+    }),
+  });
+  send("acp-edit", {
+    type: "CUSTOM",
+    name: "a13n.acp.tool",
+    value: {
+      toolCallId: "acp-edit",
+      title: "Edit checkout.ts",
+      kind: "edit",
+      status: "completed",
+      content: [
+        {
+          type: "diff",
+          path: "/workspace/checkout.ts",
+          oldText: "old",
+          newText: "new",
+        },
+      ],
+    },
+  });
+  send("acp-edit", { type: "TOOL_CALL_END", toolCallId: "acp-edit" });
+  send(
+    "acp-edit",
+    { type: "TOOL_CALL_RESULT", toolCallId: "acp-edit", content: "" },
+    "completed",
+  );
+
+  expect(display.blocks.get("acp-edit")?.result).toBe("");
+  expect(describeTool(tool("acp-edit"))).toMatchObject({
+    phase: "Result received",
+    running: false,
+  });
+  expect(activitySummary([tool("acp-edit")]).running).toBe(false);
+
+  // Compact snapshot items: empty-string result, truncated/omitted results,
+  // completed without result, failed without explicit outcome, and interrupted.
+  const compacted = new FocusDisplay();
+  compacted.accept(snapshot(0));
+  compacted.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  compacted.accept(
+    compactFrame(101, [
+      compactItem(
+        "empty-str",
+        1,
+        {
+          toolCallId: "empty-str",
+          toolCallName: "run_command",
+          arguments: '{"CommandLine":"true"}',
+          result: "",
+        },
+        "tool_call",
+      ),
+      compactItem(
+        "truncated-value",
+        2,
+        {
+          toolCallId: "truncated-value",
+          toolCallName: "shell_exec",
+          arguments: '{"command":"cat huge.log"}',
+          truncated: true,
+        },
+        "tool_call",
+      ),
+      compactItem(
+        "truncated-parts",
+        3,
+        {
+          toolCallId: "truncated-parts",
+          toolCallName: "shell_exec",
+          arguments: '{"command":"render"}',
+          result_parts: [],
+          truncated: true,
+        },
+        "tool_call",
+      ),
+      compactItem(
+        "completed-no-result",
+        4,
+        {
+          toolCallId: "completed-no-result",
+          toolCallName: "browser_navigate",
+          arguments: "{}",
+          outcome: "success",
+        },
+        "tool_call",
+      ),
+      {
+        ...compactItem(
+          "failed-no-outcome",
+          5,
+          {
+            toolCallId: "failed-no-outcome",
+            toolCallName: "shell_exec",
+            arguments: '{"command":"false"}',
+          },
+          "tool_call",
+        ),
+        state: "failed",
+      },
+      {
+        ...compactItem(
+          "interrupted-no-outcome",
+          6,
+          {
+            toolCallId: "interrupted-no-outcome",
+            toolCallName: "shell_exec",
+            arguments: '{"command":"sleep 10"}',
+          },
+          "tool_call",
+        ),
+        state: "interrupted",
+      },
+    ]),
+  );
+  const compactTool = (id: string) => {
+    const block = compacted.blocks.get(id)!;
+    return {
+      ...block,
+      name: block.name!,
+      input: block.text,
+      inputComplete: block.done,
+      live: true,
+    };
+  };
+
+  expect(compacted.blocks.get("empty-str")?.result).toBe("");
+  expect(describeTool(compactTool("empty-str"))).toMatchObject({
+    phase: "Result received",
+    running: false,
+  });
+  expect(compacted.blocks.get("truncated-value")?.resultOmitted).toBe(true);
+  expect(describeTool(compactTool("truncated-value"))).toMatchObject({
+    phase: "Result received",
+    running: false,
+  });
+  expect(compacted.blocks.get("truncated-parts")?.resultOmitted).toBe(true);
+  expect(compacted.blocks.get("truncated-parts")?.resultParts).toBeUndefined();
+  expect(describeTool(compactTool("truncated-parts"))).toMatchObject({
+    phase: "Result received",
+    running: false,
+  });
+  expect(describeTool(compactTool("completed-no-result"))).toMatchObject({
+    phase: "No result recorded",
+    running: false,
+  });
+  expect(describeTool(compactTool("failed-no-outcome"))).toMatchObject({
+    phase: "Failed",
+    failed: true,
+    running: false,
+  });
+  expect(describeTool(compactTool("interrupted-no-outcome"))).toMatchObject({
+    phase: "Interrupted",
+    running: false,
+  });
+});
