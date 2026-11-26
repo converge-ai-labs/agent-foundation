@@ -410,6 +410,7 @@ class AgentCompositionResolver:
                     if acp_bot is not None
                     else source.global_guidance
                 ),
+                capabilities=(ResolvedCapabilityRecipe(capability="skills"),),
                 mcp_servers=self._mcp_recipes(
                     source,
                     selection.mcp_server_ids

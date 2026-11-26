@@ -47,4 +47,36 @@ it("renders identical preview and historical references while copying only autho
     />,
   );
   expect(legacy.container.querySelector("[data-skill]")).toBeNull();
+  legacy.unmount();
+
+  const slashAuthored = "/review fix the bug";
+  const slashPreview = previewInput(
+    "input-slash",
+    [slashAuthored],
+    new Map(),
+    catalog,
+    new Set(["compact"]),
+  );
+  const slashView = render(
+    <InputContent parts={slashPreview} renderText={(text) => text} />,
+  );
+  expect(
+    slashView.container.querySelectorAll('[data-skill="review"]'),
+  ).toHaveLength(1);
+  expect(slashView.container.textContent).toBe("Review fix the bug");
+  expect(inputCopyText(slashPreview)).toBe(slashAuthored);
+  slashView.unmount();
+
+  const commandPreview = previewInput(
+    "input-cmd",
+    ["/compact now"],
+    new Map(),
+    catalog,
+    new Set(["compact"]),
+  );
+  const commandView = render(
+    <InputContent parts={commandPreview} renderText={(text) => text} />,
+  );
+  expect(commandView.container.querySelector("[data-skill]")).toBeNull();
+  expect(commandView.container.textContent).toBe("/compact now");
 });

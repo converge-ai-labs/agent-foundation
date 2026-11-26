@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import traceback
@@ -50,6 +51,8 @@ MODEL_GATE = next((Path(arg.removeprefix("model-gate=")) for arg in FLAGS if arg
 MODEL_ON_OPEN = bool({"null-model", "missing-model"} & FLAGS or MODEL_GATE) and "delayed-model" not in FLAGS
 MCP = None
 TERMINAL = None
+SYSTEM_PROMPT = None
+STEER_PROMPTS = []
 
 
 def send(**data):
@@ -82,13 +85,19 @@ def session_call(method, **params):
     return result(method, sessionId=SESSION, **params)
 
 
+def extract_file_path(message):
+    for line in message.splitlines():
+        if line.startswith("File: "):
+            return line.removeprefix("File: ").strip()
+        match = re.match(r"^Attachment .+ \([^)]+\): (.+?)\.(?: Selected Host source: .+)?$", line)
+        if match:
+            return match.group(1)
+    return None
+
+
 def file_content(message):
-    lines = message.splitlines()
-    path = next(
-        line.removeprefix("File path for ACP readers: ")
-        for line in lines
-        if line.startswith("File path for ACP readers: ")
-    )
+    path = extract_file_path(message)
+    assert path is not None, message
     assert not any(os.path.commonpath((directory, path)) == directory for directory in ADDITIONAL), ADDITIONAL
     content = session_call("fs/read_text_file", path=path)["content"]
     with open(path, encoding="utf-8") as file:
@@ -137,9 +146,17 @@ for line in sys.stdin:
         client_session = client_caps.get("session") if isinstance(client_caps, dict) else None
         if "require-compaction-cap" in FLAGS:
             assert isinstance(client_session, dict) and client_session.get("compaction") is not None, client_caps
+        prompt_caps = {}
+        if "prompt-image" in FLAGS:
+            prompt_caps["image"] = True
+        if "prompt-audio" in FLAGS:
+            prompt_caps["audio"] = True
+        if "embedded-context" in FLAGS:
+            prompt_caps["embeddedContext"] = True
         caps = {
             "mcpCapabilities": {"acp": MODE == "remote", "http": MODE == "http" or "use-http" in FLAGS},
             "loadSession": not RESIDENT_ONLY,
+            **({"promptCapabilities": prompt_caps} if prompt_caps else {}),
         }
         if MODE in {"auth", "auth-required"}:
             caps["auth"] = {"logout": {}}
@@ -166,7 +183,7 @@ for line in sys.stdin:
                 if MODE in {"auth", "auth-required"}
                 else [],
                 "_meta": {"steering": {"supported": True}}
-                if MODE == "standard-steer"
+                if MODE == "standard-steer" or "standard-steer" in FLAGS
                 else {"dev.a13n.harness-ui": {"version": 1}}
                 if STEERING
                 else {},
@@ -194,6 +211,7 @@ for line in sys.stdin:
         send(id=ident, error={"code": -32602, "message": "Unknown session"})
     elif method in {"session/new", "session/load", "session/resume"}:
         ADDITIONAL = params.get("additionalDirectories", ())
+        SYSTEM_PROMPT = params.get("systemPrompt")
         assert (method == "session/load") == (MODE == "load")
         if STEERING and MODE not in {"ui", "auth"}:
             assert params["systemPrompt"]["mode"] == "append"
@@ -253,12 +271,21 @@ for line in sys.stdin:
         assert params == {"sessionId": SESSION, "modelId": "b"}
         update("current_model_update", currentModelId="b")
         send(id=ident, result={})
-    elif method == "_session/steering" and MODE == "standard-steer":
+    elif method == "_session/steering" and (MODE == "standard-steer" or "standard-steer" in FLAGS):
         assert params["sessionId"] == SESSION
-        assert params["prompt"][0]["type"] == "text"
-        send(
-            id=ident, result={"outcome": "injected" if params["prompt"][0]["text"] == "interrupt" else "promptRequired"}
-        )
+        prompt_items = params["prompt"]
+        STEER_PROMPTS.append(prompt_items)
+        if MODE == "standard-steer":
+            if prompt_items[0]["type"] == "text" and prompt_items[0]["text"] == "next turn":
+                send(id=ident, result={"outcome": "promptRequired"})
+            else:
+                send(id=ident, result={"outcome": "injected"})
+        else:
+            send(id=ident, result={"outcome": "injected"})
+            if PENDING is not None:
+                text(json.dumps(prompt_items))
+                send(id=PENDING, result={"stopReason": "end_turn"})
+                PENDING = None
     elif method == "session/set_config_option" and MODE == "ui":
         option = next(item for item in CONFIG_OPTIONS if item["id"] == params["configId"])
         assert params["value"] in {choice["value"] for choice in option["options"]}, params
@@ -275,16 +302,39 @@ for line in sys.stdin:
         assert mcp("tools/call", {"name": "identify"}, expect_error=True)["data"]["code"] == "acp_run_inactive"
         send(id=ident, result={})
     elif method == "session/prompt":
-        blocks = [item["text"] for item in params["prompt"]]
+        raw_blocks = params["prompt"]
+        blocks = [item["text"] for item in raw_blocks if item.get("type") == "text"]
         if MODE == "load":
             assert blocks in (["wait"], ["again"], ["tools"]), blocks
         if MODE == "new-no-system":
-            assert blocks in (["guide", "first"], ["again"]), blocks
+            assert blocks in (["guide\n\n", "first"], ["again"]), blocks
         message = (
             next(block for block in reversed(blocks) if not block.startswith("This input was submitted through "))
             if MODE == "ui"
             else blocks[-1]
         )
+        if MODE == "ui" and any(block.strip() == "echo-instructions" for block in blocks):
+            text(json.dumps(SYSTEM_PROMPT))
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and any(block.strip().startswith("echo-prompt") for block in blocks):
+            text(json.dumps(raw_blocks))
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and any(block.strip() == "compact-and-echo" for block in blocks):
+            update("compaction_update", compactionId="compact-1", status="completed")
+            text(json.dumps(raw_blocks))
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
+        if MODE == "ui" and any(block.strip() == "wait-steer" for block in blocks):
+            text("waiting")
+            PENDING = ident
+            continue
+        if MODE == "ui" and any(block.strip() == "call-screenshot" for block in blocks):
+            tool = mcp("tools/call", {"name": "screenshot", "arguments": {}})
+            text(json.dumps(tool))
+            send(id=ident, result={"stopReason": "end_turn"})
+            continue
         if MODE == "ui" and message == "disconnect-prompt":
             break
         if MODE == "ui" and message == "verify-restored-model":
@@ -332,16 +382,30 @@ for line in sys.stdin:
             )
             continue
         if MODE == "ui" and any(block.startswith("echo-prior:") for block in blocks):
-            prior = [block for block in blocks if block.startswith("<prior-thread-conversation>")]
-            text(f"session={SESSION};mode={CONFIG_OPTIONS[0]['currentValue']};prior={prior[0] if prior else 'none'}")
+            prior_match = next(
+                (
+                    match.group(0)
+                    for block in blocks
+                    if (match := re.search(r"<prior-thread-conversation>.*?</prior-thread-conversation>", block, re.S))
+                ),
+                None,
+            )
+            text(f"session={SESSION};mode={CONFIG_OPTIONS[0]['currentValue']};prior={prior_match or 'none'}")
             send(id=ident, result={"stopReason": "end_turn"})
             continue
         if MODE == "ui" and message in {"handoff-check", "handoff-next"}:
-            prior = [block for block in blocks if block.startswith("<prior-thread-conversation>")]
-            assert bool(prior) == (message == "handoff-check"), blocks
-            if prior:
-                assert "native-visible" in prior[0] and "native answer" in prior[0]
-                assert "private system text" not in prior[0]
+            prior_match = next(
+                (
+                    match.group(0)
+                    for block in blocks
+                    if (match := re.search(r"<prior-thread-conversation>.*?</prior-thread-conversation>", block, re.S))
+                ),
+                None,
+            )
+            assert bool(prior_match) == (message == "handoff-check"), blocks
+            if prior_match:
+                assert "native-visible" in prior_match and "native answer" in prior_match
+                assert "private system text" not in prior_match
             text("verified handoff")
             send(id=ident, result={"stopReason": "end_turn"})
             continue
@@ -393,7 +457,7 @@ for line in sys.stdin:
             send(id=ident, result={"stopReason": "end_turn"})
             continue
         if MODE == "ui" and "files" in sys.argv[2:]:
-            contents = [file_content(block) for block in blocks if "File path for ACP readers:" in block]
+            contents = [file_content(block) for block in blocks if extract_file_path(block) is not None]
             assert contents == ["initial line\n" * 80, "name,value\nexample,42\n"], contents
             text("Files read")
             PENDING = ident

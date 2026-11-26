@@ -20,6 +20,8 @@ import {
   currentCompletions,
   pickedCompletion,
   startCompletion,
+  type CompletionContext,
+  type CompletionResult,
   type CompletionSource,
 } from "@codemirror/autocomplete";
 import {
@@ -62,26 +64,36 @@ function acpCommandPrefix(text: string) {
 export function acpCommandCompletion(
   commands: () => readonly Schema<"AcpCommand">[],
 ): CompletionSource {
-  return (context) => {
-    const doc = context.state.doc;
-    const prefix = doc.toString();
+  const complete = (context: CompletionContext): CompletionResult | null => {
+    const prefix = context.state.sliceDoc(0, context.pos);
     if (!acpCommandPrefix(prefix)) return null;
     return {
       from: 0,
-      to: doc.length,
+      to:
+        context.pos +
+        (context.state.sliceDoc(context.pos, context.pos + 1) === " " ? 1 : 0),
       filter: false,
       options: commands()
         .filter(({ name }) =>
           `/${name}`.toLowerCase().startsWith(prefix.toLowerCase()),
         )
-        .map(({ name, description, hint }) => ({
-          label: `/${name}`,
-          detail: hint ?? undefined,
-          info: description || undefined,
-          apply: `/${name} `,
-        })),
+        .map(
+          ({ name, description, hint }) =>
+            ({
+              label: `/${name}`,
+              detail:
+                (description || hint || "").replace(/\s+/g, " ").trim() ||
+                undefined,
+              info: description && hint ? hint : undefined,
+              apply: `/${name} `,
+              source: "acp-command",
+              boost: 1,
+            }) satisfies SkillOption,
+        ),
+      update: (_result, _from, _to, next) => complete(next),
     };
   };
+  return complete;
 }
 
 export function ComposerEditor({
@@ -552,14 +564,28 @@ export function ComposerEditor({
                   ...(externalCommands
                     ? [acpCommandCompletion(() => commands.current ?? [])]
                     : []),
-                  ...(loadSkills ? [skillCompletion(loadCatalog)] : []),
+                  ...(loadSkills
+                    ? [
+                        skillCompletion(loadCatalog, {
+                          commandNames: () =>
+                            new Set(
+                              (commands.current ?? []).map((item) =>
+                                item.name.toLowerCase(),
+                              ),
+                            ),
+                        }),
+                      ]
+                    : []),
                 ],
                 activateOnTyping: false,
                 defaultKeymap: false,
                 icons: false,
                 aboveCursor: true,
                 tooltipClass: () => skillStyles.picker,
-                optionClass: () => skillStyles.option,
+                optionClass: (option) =>
+                  (option as Partial<SkillOption>).source === "acp-command"
+                    ? `${skillStyles.option} ${skillStyles.commandOption}`
+                    : skillStyles.option,
                 addToOptions: [
                   {
                     position: 90,

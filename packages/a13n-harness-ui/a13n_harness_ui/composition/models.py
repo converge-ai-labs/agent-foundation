@@ -226,11 +226,11 @@ class ResolvedAcpNode(CompositionModel):
     roster_name: str
     resource: AcpAgentResource
     global_guidance: tuple[str, ...] = ()
+    capabilities: tuple[ResolvedCapabilityRecipe, ...] = Field(default=(), max_length=128)
     mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=256)
     shell_review: ResolvedCapabilityRecipe | None = Field(default=None, exclude_if=lambda value: value is None)
     model: ClassVar[None] = None
     children: ClassVar[tuple[()]] = ()
-    capabilities: ClassVar[tuple[()]] = ()
     harness_plugins: ClassVar[tuple[()]] = ()
     tools: ClassVar[None] = None
     tool_search: ClassVar[None] = None

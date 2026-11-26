@@ -53,6 +53,7 @@ class AcpSessionState(BaseModel):
     explicit_options: frozenset[str] = frozenset()
     synced_messages: int = 0
     synced_message_key: str | None = None
+    delivered_context: tuple[tuple[str, str | None, str], ...] = ()
 
 
 class AcpOptionValue(SurfaceModel):

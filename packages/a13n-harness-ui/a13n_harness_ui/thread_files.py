@@ -28,6 +28,16 @@ MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 MAX_INPUT_BYTES = 20 * 1024 * 1024
 MAX_ATTACHMENTS = 8
 _SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")
+_SAFE_EXTENSION = re.compile(r"\.[a-z0-9]{1,10}\Z")
+
+
+def _storage_name(name: str, media_type: str) -> str:
+    suffix = Path(name).suffix.lower()
+    if not _SAFE_EXTENSION.fullmatch(suffix) and media_type != "application/octet-stream":
+        suffix = (mimetypes.guess_extension(media_type, strict=False) or "").lower()
+    if suffix == ".jpe":
+        suffix = ".jpg"
+    return f"content{suffix}" if _SAFE_EXTENSION.fullmatch(suffix) else "content"
 
 
 class ThreadAttachment(BaseModel):
@@ -39,7 +49,12 @@ class ThreadAttachment(BaseModel):
     name: str
     media_type: str
     size: int
+    storage_name: str = Field(default="content", pattern=r"^content(?:\.[a-z0-9]{1,10})?$")
     source: CapturedSource | None = None
+
+    @property
+    def relative_path(self) -> str:
+        return f"attachments/{self.attachment_id}/{self.storage_name}"
 
 
 class InputAttachmentReference(BaseModel):
@@ -304,6 +319,7 @@ class ThreadFiles:
             name=name,
             media_type=media_type,
             size=len(upload.data),
+            storage_name=_storage_name(name, media_type),
             source=upload.source,
         )
         directory = await self.touch(thread_id)
@@ -313,12 +329,14 @@ class ThreadFiles:
     @staticmethod
     def _stage(directory: Path, attachment: ThreadAttachment, data: bytes) -> None:
         with _directory(directory, ("tmp", "uploads", attachment.attachment_id), create=True) as target:
-            _write_file(target, "content", data)
+            _write_file(target, attachment.storage_name, data)
             # Only omit absent top-level metadata, not required nullable fields
             # inside captured provenance (for example an unborn Git HEAD).
             absent = set()
             if attachment.source is None:
                 absent.add("source")
+            if attachment.storage_name == "content":
+                absent.add("storage_name")
             metadata = attachment.model_dump_json(exclude=absent)
             _write_file(target, "metadata.json", metadata.encode("utf-8"))
 
@@ -335,7 +353,7 @@ class ThreadFiles:
                     if isinstance(source, dict) and source.get("kind") == "comment_reference":
                         metadata["source"] = None
                     attachment = ThreadAttachment.model_validate(metadata)
-                    with _open_file(directory, "content") as stream:
+                    with _open_file(directory, attachment.storage_name) as stream:
                         size = os.fstat(stream.fileno()).st_size
                         if (
                             attachment.attachment_id != attachment_id

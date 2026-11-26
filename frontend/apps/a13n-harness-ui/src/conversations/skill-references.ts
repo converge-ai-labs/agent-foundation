@@ -33,14 +33,49 @@ export function loadThreadSkills(
         }),
       );
 }
+export function leadingSlashSkillToken(
+  text: string,
+): { name: string; start: number; end: number } | null {
+  const match = /^\/([^\s/]+)(?=\s|$)/u.exec(text);
+  if (!match) return null;
+  const name = match[1];
+  return { name, start: 0, end: [...`/${name}`].length };
+}
+
+export function hasSkillTrigger(
+  parts: OrderedInputPart[],
+  excludedSlashNames?: ReadonlySet<string>,
+): boolean {
+  if (
+    parts.some(
+      (part) => typeof part === "string" && /(?:^|\s)\$\S+/u.test(part),
+    )
+  )
+    return true;
+  const first = parts[0];
+  if (typeof first !== "string") return false;
+  const leading = leadingSlashSkillToken(first);
+  return leading !== null && !excludedSlashNames?.has(leading.name);
+}
+
 export function skillReferences(
   parts: OrderedInputPart[],
   catalog?: SkillCatalog,
+  options?: { excludedSlashNames?: ReadonlySet<string> },
 ) {
   const names = new Set(
-    parts.flatMap((part) =>
+    parts.flatMap((part, index) =>
       typeof part === "string"
-        ? skillSpans(part, catalog).map((span) => span.name)
+        ? skillSpans(
+            part,
+            catalog,
+            index === 0
+              ? {
+                  allowLeadingSlash: true,
+                  excludedSlashNames: options?.excludedSlashNames,
+                }
+              : undefined,
+          ).map((span) => span.name)
         : [],
     ),
   );
@@ -59,22 +94,43 @@ export type SkillSpan = {
   start: number;
   end: number;
 };
-export function skillSpans(text: string, catalog?: SkillCatalog): SkillSpan[] {
+export function skillSpans(
+  text: string,
+  catalog?: SkillCatalog,
+  options?: {
+    allowLeadingSlash?: boolean;
+    excludedSlashNames?: ReadonlySet<string>;
+  },
+): SkillSpan[] {
   const items = new Map(catalog?.items.map((item) => [item.name, item]));
-  return [...text.matchAll(/(?:^|\s)\$(\S+)/gu)].flatMap((match) => {
+  const spans: SkillSpan[] = [];
+  if (options?.allowLeadingSlash) {
+    const leading = leadingSlashSkillToken(text);
+    if (leading && !options.excludedSlashNames?.has(leading.name)) {
+      const item = items.get(leading.name);
+      if (item) {
+        spans.push({
+          name: item.name,
+          source_id: item.source_id,
+          start: leading.start,
+          end: leading.end,
+        });
+      }
+    }
+  }
+  for (const match of text.matchAll(/(?:^|\s)\$(\S+)/gu)) {
     const item = items.get(match[1]);
-    if (!item) return [];
+    if (!item) continue;
     const from = match.index + match[0].indexOf("$");
     const start = [...text.slice(0, from)].length;
-    return [
-      {
-        name: item.name,
-        source_id: item.source_id,
-        start,
-        end: start + [...`$${item.name}`].length,
-      },
-    ];
-  });
+    spans.push({
+      name: item.name,
+      source_id: item.source_id,
+      start,
+      end: start + [...`$${item.name}`].length,
+    });
+  }
+  return spans;
 }
 export function retainedSkillSpans(
   text: string,
@@ -99,8 +155,13 @@ export function retainedSkillSpans(
       !Number.isInteger(span.end) ||
       span.start < end ||
       span.end <= span.start ||
-      span.end > points.length ||
-      points.slice(span.start, span.end).join("") !== `$${span.name}`
+      span.end > points.length
+    )
+      return false;
+    const literal = points.slice(span.start, span.end).join("");
+    if (
+      literal !== `$${span.name}` &&
+      !(span.start === 0 && literal === `/${span.name}`)
     )
       return false;
     end = span.end;
@@ -116,6 +177,7 @@ export function skillDisplayName(name: string) {
 
 // Only label sources identified by the catalog; an unknown source stays unlabelled.
 export function skillSourceLabel(id: string) {
+  if (id === "acp-command") return "Command";
   const [owner, kind] = id.split(":");
   if (owner !== "a13n-harness-ui") return;
   switch (kind) {
@@ -145,10 +207,18 @@ function skillQuery(context: CompletionContext) {
   const token = context.matchBefore(/(?:^|\s)(?:\$[^\s$]*|\/[^\s/]*)$/);
   if (!token || context.view?.compositionStarted) return null;
   const from = token.from + token.text.search(/[$/]/);
-  return { from, prefix: context.state.sliceDoc(from + 1, context.pos) };
+  const trigger = context.state.sliceDoc(from, from + 1);
+  return {
+    from,
+    trigger,
+    prefix: context.state.sliceDoc(from + 1, context.pos),
+  };
 }
 
-export function skillCompletion(load: LoadSkills) {
+export function skillCompletion(
+  load: LoadSkills,
+  options?: { commandNames?: () => ReadonlySet<string> },
+) {
   return async (
     context: CompletionContext,
   ): Promise<CompletionResult | null> => {
@@ -161,19 +231,26 @@ export function skillCompletion(load: LoadSkills) {
       return null;
     }
     if (context.aborted) return null;
-    const options: SkillOption[] = catalog.items
+    const baseOptions = catalog.items
       .filter((item) => !/\s/.test(item.name))
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((item) => ({
-        label: `$${item.name}`,
-        displayLabel: skillDisplayName(item.name),
-        detail: item.description.replace(/\s+/g, " ").trim(),
-        apply: `$${item.name} `,
-        source: item.source_id,
+        name: item.name,
+        option: {
+          label: `$${item.name}`,
+          displayLabel: skillDisplayName(item.name),
+          detail: item.description.replace(/\s+/g, " ").trim(),
+          apply: `$${item.name} `,
+          source: item.source_id,
+        } satisfies SkillOption,
       }));
     const complete = (current: CompletionContext): CompletionResult | null => {
       const query = skillQuery(current);
       if (!query) return null;
+      const duplicateCommands =
+        query.trigger === "/" && query.from === 0
+          ? options?.commandNames?.()
+          : undefined;
       return {
         from: query.from,
         // The accepted reference supplies its own separator.
@@ -183,9 +260,16 @@ export function skillCompletion(load: LoadSkills) {
             ? 1
             : 0),
         filter: false,
-        options: options.filter((item) =>
-          item.label.startsWith(`$${query.prefix}`),
-        ),
+        options: baseOptions
+          .filter(({ option }) => option.label.startsWith(`$${query.prefix}`))
+          .map(({ name, option }) =>
+            duplicateCommands?.has(name.toLowerCase())
+              ? {
+                  ...option,
+                  displayLabel: `${skillDisplayName(name)} ($${name})`,
+                }
+              : option,
+          ),
         update: (_result, _from, _to, next) => complete(next),
       };
     };

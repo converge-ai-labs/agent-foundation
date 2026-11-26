@@ -63,6 +63,7 @@ import { ClearContext } from "./clear-context";
 import { TaskOptions } from "./task-options";
 import { useStopOperation } from "./stop-operation";
 import {
+  hasSkillTrigger,
   loadThreadSkills,
   skillReferences,
   type LoadSkills,
@@ -89,6 +90,7 @@ function beginInput(
   preset?: string,
   catalog?: Schema<"SkillCatalogView">,
   optimistic = true,
+  excludedSlashNames?: ReadonlySet<string>,
 ): LocalInput {
   const text = preset ?? draft.doc.getText("text").toString();
   const parts: OrderedInputPart[] = [];
@@ -118,6 +120,7 @@ function beginInput(
       ),
       attachments,
       catalog,
+      excludedSlashNames,
     ),
     state: "preparing",
   };
@@ -203,12 +206,16 @@ export async function submitDraft(
   captureAppContext?: () => Schema<"AppContextReference">[],
   retryParts?: OrderedInputPart[],
   externalAgent = false,
+  acpCommands?: readonly Schema<"AcpCommand">[],
 ) {
   if (
     draft.submission.kind === "pending" ||
     draft.submission.kind === "unknown"
   )
     return;
+  const excludedSlashNames = acpCommands?.length
+    ? new Set(acpCommands.map((command) => command.name))
+    : undefined;
   const annotations =
     preset === undefined && !retryParts ? draft.annotations : [];
   // Own the shared submission state before any asynchronous preparation so
@@ -221,8 +228,18 @@ export async function submitDraft(
       action,
       attachments,
       preset ?? (retryParts ? "" : undefined),
+      undefined,
+      true,
+      excludedSlashNames,
     );
-  if (retryParts) input.parts = previewInput(input.id, retryParts, attachments);
+  if (retryParts)
+    input.parts = previewInput(
+      input.id,
+      retryParts,
+      attachments,
+      undefined,
+      excludedSlashNames,
+    );
   draft.notify();
   let captured: DraftCapture | undefined;
   let parts: OrderedInputPart[];
@@ -248,12 +265,10 @@ export async function submitDraft(
     if (
       !transport.shareId &&
       loadSkills &&
-      parts.some(
-        (part) => typeof part === "string" && /(?:^|\s)\$\S+/.test(part),
-      )
+      hasSkillTrigger(parts, excludedSlashNames)
     ) {
       skillCatalog = await loadSkills();
-      references = skillReferences(parts, skillCatalog);
+      references = skillReferences(parts, skillCatalog, { excludedSlashNames });
     }
     parts = withReplyAnnotations(parts, annotations);
     signal?.throwIfAborted();
@@ -272,7 +287,13 @@ export async function submitDraft(
     draft.notify();
     return;
   }
-  input.parts = previewInput(input.id, parts, attachments, skillCatalog);
+  input.parts = previewInput(
+    input.id,
+    parts,
+    attachments,
+    skillCatalog,
+    excludedSlashNames,
+  );
   input.state = "pending";
   draft.submission = { kind: "pending", action };
   draft.notify();
@@ -586,6 +607,7 @@ export function Composer({
     !!coordinator?.available;
   const skillContext = JSON.stringify([
     local,
+    externalAgent,
     skillDefaults,
     draft.environment,
     activity.receipt_id,
@@ -931,6 +953,9 @@ export function Composer({
       !coordinatorActive &&
       !prepareThread;
     const metadata = attachmentMetadata();
+    const excludedSlashNames = acpCommands?.length
+      ? new Set(acpCommands.map((command) => command.name))
+      : undefined;
     const localInput = beginInput(
       draft,
       action,
@@ -943,6 +968,7 @@ export function Composer({
         skillContext,
       ]),
       !externalAgent,
+      excludedSlashNames,
     );
     try {
       setPreparing(true);
@@ -1020,6 +1046,7 @@ export function Composer({
         () => appContexts?.capture(threadId) ?? [],
         undefined,
         externalAgent,
+        acpCommands,
       );
       reconcile();
       if (submitted && !controller.signal.aborted) await onSubmitted?.();

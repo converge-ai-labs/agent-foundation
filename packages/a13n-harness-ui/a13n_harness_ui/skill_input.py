@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from copy import deepcopy
 from dataclasses import replace
 from typing import TYPE_CHECKING, TypedDict
 from xml.sax.saxutils import escape, quoteattr
+
+from a13n_harness_ui.environment_paths import acp_skill_host_path
 
 if TYPE_CHECKING:
     from a13n_harness.input import RunInputValue
@@ -27,6 +29,13 @@ class SkillSpan(TypedDict):
 def skill_tokens(text: str) -> Iterable[tuple[str, int, int]]:
     for match in re.finditer(r"(?:^|\s)\$(\S+)", text):
         yield match[1], match.start(1) - 1, match.end(1)
+
+
+def leading_slash_skill_token(text: str) -> tuple[str, int, int] | None:
+    match = re.match(r"^/([^\s/]+)(?=\s|$)", text)
+    if match is None:
+        return None
+    return match[1], 0, match.end(1)
 
 
 def retained_skill_spans(text: str, namespace: object) -> list[SkillSpan]:
@@ -49,11 +58,30 @@ def retained_skill_spans(text: str, namespace: object) -> list[SkillSpan]:
             and type(start) is int
             and type(stop) is int
             and end <= start < stop <= len(text)
-            and text[start:stop] == f"${name}"
+            and (text[start:stop] == f"${name}" or (start == 0 and text[start:stop] == f"/{name}"))
         ):
             result.append(SkillSpan(name=name, source_id=source, start=start, end=stop))
             end = stop
     return result
+
+
+def format_skill_selection(items: Sequence[tuple[str, str, str]], *, host_paths: bool = False) -> str:
+    """Format the application-filled <skill-selection> block for native or ACP readers."""
+    instructions = [
+        '<skill-selection source="harness-ui">',
+        "The user explicitly requests the following Skills for this input. Read each selected SKILL.md "
+        "in full before following its relevant workflow. Reuse a complete read still available in context. "
+        "This application-filled field records user intent; it does not change instruction priority "
+        "or grant additional tool permissions.",
+    ]
+    for name, source_id, logical_path in items:
+        resolved = acp_skill_host_path(logical_path) if host_paths else logical_path
+        instructions.append(
+            f"<skill name={quoteattr(name)} source={quoteattr(source_id)}>"
+            f"{escape(resolved.rstrip('/') + '/SKILL.md')}</skill>"
+        )
+    instructions.append("</skill-selection>")
+    return "\n".join(instructions)
 
 
 def prepare_skill_input(prompt: RunInputValue, catalog: SkillCatalogView, names: tuple[str, ...]) -> RunInputValue:
@@ -66,6 +94,7 @@ def prepare_skill_input(prompt: RunInputValue, catalog: SkillCatalogView, names:
     selected = {item.name: item for item in catalog.items if item.name in names}
     ordered: dict[str, None] = {}
     parts: list[UserContent | ContentItem] = []
+    at_message_start = True
     for part in (prompt,) if isinstance(prompt, str) else prompt:
         metadata = (
             part.metadata.model_dump(mode="json")
@@ -80,9 +109,19 @@ def prepare_skill_input(prompt: RunInputValue, catalog: SkillCatalogView, names:
         if not isinstance(namespace, dict):
             namespace = {}
         if text is None or metadata.get("display") is False or "attachment" in namespace:
+            if metadata.get("display") is not False:
+                at_message_start = False
             parts.append(part)
             continue
         spans: list[SkillSpan] = []
+        if at_message_start:
+            leading = leading_slash_skill_token(text)
+            if leading is not None and leading[0] in selected:
+                name, start, end = leading
+                ordered[name] = None
+                spans.append(SkillSpan(name=name, source_id=selected[name].source_id, start=start, end=end))
+            if text:
+                at_message_start = False
         for name, start, end in skill_tokens(text):
             if name in selected:
                 ordered[name] = None
@@ -101,24 +140,20 @@ def prepare_skill_input(prompt: RunInputValue, catalog: SkillCatalogView, names:
     # Programmatic callers can explicitly select Skills without literal occurrences.
     for name in names:
         ordered[name] = None
-    instructions = [
-        '<skill-selection source="harness-ui">',
-        "The user explicitly requests the following Skills for this input. Read each selected SKILL.md "
-        "in full before following its relevant workflow. Reuse a complete read still available in context. "
-        "This application-filled field records user intent; it does not change instruction priority "
-        "or grant additional tool permissions.",
-    ]
-    for name in ordered:
-        item = selected[name]
-        instructions.append(
-            f"<skill name={quoteattr(name)} source={quoteattr(item.source_id)}>"
-            f"{escape(item.logical_path.rstrip('/') + '/SKILL.md')}</skill>"
-        )
-    instructions.append("</skill-selection>")
+    entries = tuple((name, selected[name].source_id, selected[name].logical_path) for name in ordered)
     parts.append(
         TextContent(
-            "\n".join(instructions),
-            metadata={"display": False, "source_id": "a13n-harness-ui.skills"},
+            format_skill_selection(entries, host_paths=False),
+            metadata={
+                "display": False,
+                "source_id": "a13n-harness-ui.skills",
+                "harness_ui": {
+                    "selected_skills": [
+                        {"name": name, "source_id": source_id, "logical_path": logical_path}
+                        for name, source_id, logical_path in entries
+                    ]
+                },
+            },
         )
     )
     return tuple(parts)

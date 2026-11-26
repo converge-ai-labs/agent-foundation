@@ -78,6 +78,7 @@ from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
+from a13n_harness_ui.extensions.catalog import create_skill_manager
 from a13n_harness_ui.external_context import ExternalContext
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
 from a13n_harness_ui.input_prediction import InputPredictionPlugin
@@ -374,7 +375,17 @@ class RootRunExecutor:
         if thread.configuration.agent_source.kind not in {"acp_agent", "bot"}:
             return ()
         source = await self._required_configuration()
-        composition = await self._compositions.resolve(source, _selection(thread))
+        owner = (await self._store.threads.worker_owners((thread_id,))).get(thread_id)
+        selection = replace(
+            _selection(thread),
+            role="worker"
+            if owner is not None
+            else "coordinator"
+            if await self._store.threads.is_coordinator(thread_id)
+            else "ordinary",
+            coordinator_thread_id=owner,
+        )
+        composition = await self._compositions.resolve(source, selection)
         if not isinstance(composition.root, ResolvedAcpNode):
             return ()
         saved = await self._read_acp_state(thread_id)
@@ -383,6 +394,15 @@ class RootRunExecutor:
             # Reuse the ACP middleware for discovery only. There is no root
             # admission, prompt, live publication, or tool-call authority.
             turn.prewarm = True
+            skills_recipe = next((item for item in composition.root.capabilities if item.capability == "skills"), None)
+            if skills_recipe is not None:
+                async with self._environments.preview(composition) as (bound, path_layout):
+                    manager = create_skill_manager(
+                        skills_recipe.configuration,
+                        path_layout=path_layout,
+                        include_coordinator_skills=composition.role == "coordinator",
+                    )
+                    turn.initial_skill_catalog = await manager.scan_environment(environment=bound)
             state, _, _, _, positions, _ = await self._load_run_state(thread)
             browser_binding, browser_unavailable = await self._capture_browser(composition)
             reconstructed = self._agents.reconstruct(
@@ -812,7 +832,16 @@ class RootRunExecutor:
                 subscription_sources=self._subscription_sources,
             )
             record_configuration(published.value, reconstructed.definition_capability_ids)
-            if on_skill_catalog is not None and SkillsCapability.id not in reconstructed.definition_capability_ids:
+            acp_skills_recipe = (
+                next((item for item in published.value.root.capabilities if item.capability == "skills"), None)
+                if acp_turn is not None
+                else None
+            )
+            if (
+                on_skill_catalog is not None
+                and SkillsCapability.id not in reconstructed.definition_capability_ids
+                and acp_skills_recipe is None
+            ):
                 on_skill_catalog(BoundSkillCatalog(items=()))
             input_files = (
                 RootInputFiles(
@@ -853,6 +882,16 @@ class RootRunExecutor:
                     if admission.organization is not None or live_without_files
                     else await self._environments.prepare(published.value)
                 )
+            if acp_turn is not None and acp_skills_recipe is not None:
+                if environment is not None:
+                    acp_turn.skill_manager = create_skill_manager(
+                        acp_skills_recipe.configuration,
+                        path_layout=environment.path_layout,
+                        include_coordinator_skills=published.value.role == "coordinator",
+                    )
+                    acp_turn.on_skill_catalog = on_skill_catalog
+                elif on_skill_catalog is not None:
+                    on_skill_catalog(BoundSkillCatalog(items=()))
             instance = AgentInstanceContext(
                 identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread.thread_id),
                 agent_instance_id=f"agent-{uuid4().hex[:20]}",

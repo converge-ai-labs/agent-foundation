@@ -42,6 +42,22 @@ def _is_model_option(option: ConfigOption) -> bool:
     return option.category == "model" or option.id == "model"
 
 
+def _separate_text_blocks(blocks: Sequence[PromptBlock]) -> list[PromptBlock]:
+    """Keep adjacent text blocks cleanly separated for peers that concatenate them directly."""
+    result = list(blocks)
+    for index in range(len(result) - 1):
+        current, following = result[index], result[index + 1]
+        if isinstance(current, schema.TextContentBlock) and isinstance(following, schema.TextContentBlock):
+            if not current.text or not following.text:
+                continue
+            trailing = len(current.text) - len(current.text.rstrip("\n"))
+            leading = len(following.text) - len(following.text.lstrip("\n"))
+            needed = 2 - (trailing + leading)
+            if needed > 0:
+                result[index] = current.model_copy(update={"text": current.text + "\n" * needed})
+    return result
+
+
 def connect_streams(
     client: Client, *, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
 ) -> ClientSideConnection:
@@ -501,8 +517,10 @@ class AcpSessionRuntime:
         self._turn = uuid4().hex
         self._wire.prompt_turn_id = self._turn if self._a13n_steering else None
         self._stopping = False
-        blocks = [schema.TextContentBlock(text=text) for text in (*self._initial_instructions, *context)]
+        preamble = "\n\n".join(text for text in (*self._initial_instructions, *context) if text)
+        blocks: list[PromptBlock] = [schema.TextContentBlock(text=preamble)] if preamble else []
         self._initial_instructions = ()
+        prompt_blocks = _separate_text_blocks([*blocks, *content])
         if self._a13n_steering:
             metadata: dict[str, Any] = {"dev.a13n.harness-ui": {"version": 1, "turnId": self._turn}}
         else:
@@ -512,7 +530,7 @@ class AcpSessionRuntime:
                 if self.client._bridge is None:
                     raise AcpError("acp_host_tools_unconfigured", "Open the ACP connection with a host tool bridge.")
                 self.client._bridge._bind(binding.host_tools, self._turn)
-            response = await self.connection.prompt(session_id=session_id, prompt=[*blocks, *content], **metadata)
+            response = await self.connection.prompt(session_id=session_id, prompt=prompt_blocks, **metadata)
             if self.client._update_error is not None:
                 raise self.client._update_error
             return response
@@ -555,15 +573,23 @@ class AcpSessionRuntime:
     def supports_steering(self) -> bool:
         return self._a13n_steering or self._session_steering
 
-    async def steer(self, text: str) -> SteeringOutcome:
+    @property
+    def supports_multimodal_steering(self) -> bool:
+        return self._session_steering
+
+    async def steer(self, content: Sequence[PromptBlock] | str) -> SteeringOutcome:
         if self._turn is None or self._stopping or self.session_id is None:
             return "not_delivered"
         if not self.supports_steering:
             return "unsupported"
+        blocks = [schema.TextContentBlock(text=content)] if isinstance(content, str) else _separate_text_blocks(content)
+        if not blocks:
+            return "not_delivered"
         try:
             if self._session_steering:
+                payload = [block.model_dump(by_alias=True, exclude_none=True) for block in blocks]
                 result = await self.connection.ext_method(
-                    "session/steering", {"sessionId": self.session_id, "prompt": [{"type": "text", "text": text}]}
+                    "session/steering", {"sessionId": self.session_id, "prompt": payload}
                 )
                 match result.get("outcome"):
                     case "injected":
@@ -572,6 +598,9 @@ class AcpSessionRuntime:
                         return "not_delivered"
                     case _:
                         return "unknown"
+            if not all(isinstance(block, schema.TextContentBlock) for block in blocks):
+                return "not_delivered"
+            text = "".join(block.text for block in blocks if isinstance(block, schema.TextContentBlock))
             result = await self.connection.ext_method(
                 "a13n/steer",
                 {"sessionId": self.session_id, "turnId": self._turn, "inputId": uuid4().hex, "text": text},

@@ -3,6 +3,8 @@ import { createTransport } from "../transport/client";
 import { CompletionContext } from "@codemirror/autocomplete";
 import { EditorState } from "@codemirror/state";
 import {
+  hasSkillTrigger,
+  leadingSlashSkillToken,
   loadThreadSkills,
   skillCompletion,
   skillReferences,
@@ -157,4 +159,88 @@ it("reuses the full catalog when a prefix narrows, broadens, or has no matches",
   expect(update("x$review")).toBeNull();
   expect(update("$review ")).toBeNull();
   expect(update("")).toBeNull();
+});
+
+it("recognizes direct leading /skill-name references while preserving peer commands and paths", () => {
+  const excluded = new Set(["compact", "plan"]);
+  expect(leadingSlashSkillToken("/review fix bug")).toEqual({
+    name: "review",
+    start: 0,
+    end: 7,
+  });
+  expect(leadingSlashSkillToken("/usr/bin/env")).toBeNull();
+  expect(hasSkillTrigger(["/review fix bug"], excluded)).toBe(true);
+  expect(hasSkillTrigger(["/compact now"], excluded)).toBe(false);
+  expect(hasSkillTrigger(["check /review"], excluded)).toBe(false);
+  expect(hasSkillTrigger(["check $review"], excluded)).toBe(true);
+
+  expect(
+    skillReferences(["/review fix bug"], catalog, {
+      excludedSlashNames: excluded,
+    }),
+  ).toEqual([
+    {
+      catalog_id: catalog.catalog_id,
+      item_id: catalog.items[0].item_id,
+      name: "review",
+    },
+  ]);
+  expect(
+    skillReferences(["/compact now"], catalog, {
+      excludedSlashNames: excluded,
+    }),
+  ).toEqual([]);
+  expect(
+    skillReferences(["/unknown do thing"], catalog, {
+      excludedSlashNames: excluded,
+    }),
+  ).toEqual([]);
+  expect(
+    skillReferences(["check /review"], catalog, {
+      excludedSlashNames: excluded,
+    }),
+  ).toEqual([]);
+  const slashSpans = skillSpans("/review and $review", catalog, {
+    allowLeadingSlash: true,
+    excludedSlashNames: excluded,
+  });
+  expect(slashSpans).toEqual([
+    { name: "review", source_id: "project", start: 0, end: 7 },
+    { name: "review", source_id: "project", start: 12, end: 19 },
+  ]);
+  expect(
+    retainedSkillSpans("/review and $review", { skills: slashSpans }),
+  ).toEqual(slashSpans);
+  expect(
+    retainedSkillSpans("check /review", {
+      skills: [{ name: "review", source_id: "project", start: 6, end: 13 }],
+    }),
+  ).toEqual([]);
+  expect(skillSourceLabel("acp-command")).toBe("Command");
+});
+
+it("disambiguates duplicate skill names when slash completion merges peer commands", async () => {
+  const source = skillCompletion(async () => catalog, {
+    commandNames: () => new Set(["review"]),
+  });
+  const slash = await source(
+    new CompletionContext(EditorState.create({ doc: "/rev" }), 4, false),
+  );
+  expect(slash?.options).toMatchObject([
+    {
+      label: "$review",
+      displayLabel: "Review ($review)",
+      apply: "$review ",
+    },
+  ]);
+  const dollar = await source(
+    new CompletionContext(EditorState.create({ doc: "$rev" }), 4, false),
+  );
+  expect(dollar?.options).toMatchObject([
+    {
+      label: "$review",
+      displayLabel: "Review",
+      apply: "$review ",
+    },
+  ]);
 });

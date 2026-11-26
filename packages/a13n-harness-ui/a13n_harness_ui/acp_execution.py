@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 from base64 import b64encode
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, replace
@@ -10,7 +12,7 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, quoteattr
 
 from a13n_harness.acp import (
     AcpChannel,
@@ -23,10 +25,13 @@ from a13n_harness.acp import (
     SteeringOutcome,
 )
 from a13n_harness.capabilities.context import restored_history_summary
+from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillManager
 from a13n_harness.content import ContentItem, content_items, input_request, request_input_content
 from a13n_harness.context import AgentContext
 from a13n_harness.environment.commands import ArgvCommand, CommandRequest
 from a13n_harness.events import input_events
+from a13n_harness.input import RunInputValue
+from a13n_harness.model_context import ModelContextBlock, ModelContextHistory
 from a13n_harness.plugins import AbstractHarnessPlugin, PluginRunExchange, PluginRunNext
 from a13n_harness.result import HarnessRunResult
 from a13n_harness.tools.identity import TOOL_IDENTITY_KEY, ToolIdentity
@@ -36,7 +41,7 @@ from a13n_harness.toolsets.interaction import AskUserQuestionRequest, UserQuesti
 from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
 from a13n_stream_protocol.acp import AcpRunStream
 from acp import schema
-from anyio import CancelScope
+from anyio import CancelScope, to_thread
 from mcp.types import ElicitRequestFormParams
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_ai import BinaryContent, RunContext, TextContent
@@ -63,11 +68,133 @@ from a13n_harness_ui.acp_sessions import (
     acp_commands,
     acp_options_scope,
 )
-from a13n_harness_ui.configuration.models import AcpAgentResource
+from a13n_harness_ui.configuration.models import AcpAgentPreset, AcpAgentResource
 from a13n_harness_ui.conversation import input_excerpt
+from a13n_harness_ui.environment_paths import acp_skill_host_path
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.goal import GoalCapability
 from a13n_harness_ui.mcp_runtime.inputs import Inputs
+from a13n_harness_ui.skill_input import format_skill_selection
+
+_NATIVE_AGENTS_MD_PRESETS = frozenset({"antigravity", "codex", "opencode", "github_copilot", "goose", "kimi_cli"})
+_INJECT_AGENTS_MD_PRESETS = frozenset({"claude_code", "gemini_cli"})
+_MAX_AGENTS_MD_BYTES = 32 * 1024
+_MAX_EMBEDDED_ATTACHMENT_BYTES = 64 * 1024
+_EXCLUDED_ACP_CONTEXT_SOURCES = frozenset({"a13n.environment", "a13n.environment-mounts"})
+_INBOX_REMINDER_SOURCE = "a13n-harness-ui.inbox-reminder"
+_INPUT_SURFACE_SOURCE = "a13n-harness-ui.input-surface"
+_SKILLS_SELECTION_SOURCE = "a13n-harness-ui.skills"
+
+
+def _is_readable_regular_file(path: Path) -> bool:
+    try:
+        return path.is_file() and os.access(path, os.R_OK)
+    except OSError:
+        return False
+
+
+def _read_bounded_utf8(path: Path, max_bytes: int) -> str | None:
+    try:
+        with path.open("rb") as stream:
+            raw = stream.read(max_bytes + 1)
+    except OSError:
+        return None
+    truncated = len(raw) > max_bytes
+    text = raw[:max_bytes].decode("utf-8", errors="ignore").strip()
+    if not text:
+        return None
+    if truncated:
+        text += "\n\n[Truncated at 32 KiB; read the file on disk for the remainder.]"
+    return text
+
+
+def workspace_agents_instructions(
+    preset: AcpAgentPreset, cwd: str, additional_directories: tuple[str, ...]
+) -> tuple[str, ...]:
+    """Resolve preset-aware workspace AGENTS.md instructions for an ACP session."""
+    sections: list[str] = []
+    cwd_agents = Path(cwd) / "AGENTS.md"
+    if _is_readable_regular_file(cwd_agents):
+        if preset in _INJECT_AGENTS_MD_PRESETS:
+            content = _read_bounded_utf8(cwd_agents, _MAX_AGENTS_MD_BYTES)
+            if content is not None:
+                sections.append(
+                    f"# AGENTS.md instructions ({cwd_agents})\n\n<INSTRUCTIONS>\n{content}\n</INSTRUCTIONS>"
+                )
+        elif preset == "custom":
+            sections.append(
+                f"Project instructions are available in {cwd_agents}; read it if your runtime has not already loaded it."
+            )
+    extra_agents = [
+        str(candidate)
+        for directory in additional_directories
+        if _is_readable_regular_file(candidate := Path(directory) / "AGENTS.md")
+    ]
+    if extra_agents:
+        sections.append("Additional project root AGENTS.md files: " + ", ".join(extra_agents) + ".")
+    return tuple(sections)
+
+
+def _format_acp_skills_index(catalog: BoundSkillCatalog | None) -> str | None:
+    if catalog is None or not catalog.items:
+        return None
+    lines = [
+        '<available-skills source="harness-ui">',
+        "The following Harness UI Skills are available for this session. When a skill directly applies, "
+        "read its SKILL.md in full from the listed Host path before following its workflow.",
+    ]
+    for item in catalog.items:
+        host_path = acp_skill_host_path(item.path).rstrip("/") + "/SKILL.md"
+        summary = " ".join(item.description.split())
+        lines.append(
+            f"<skill name={quoteattr(item.name)} source={quoteattr(item.source_id)} "
+            f"path={quoteattr(host_path)}>{escape(summary)}</skill>"
+        )
+    lines.append("</available-skills>")
+    return "\n".join(lines)
+
+
+def _host_tool_hint(available_tools: frozenset[str]) -> str | None:
+    has_question = "ask_user_question" in available_tools
+    has_inbox = "post_to_inbox" in available_tools
+    if has_question and has_inbox:
+        return (
+            "Use harness-host ask_user_question to ask for confirmation inline "
+            "without ending the turn, and post_to_inbox to report results or blockers."
+        )
+    if has_question:
+        return "Use harness-host ask_user_question to ask for confirmation inline without ending the turn."
+    if has_inbox:
+        return "Use harness-host post_to_inbox to report results or blockers."
+    return None
+
+
+def _merge_delivered_context(
+    existing: tuple[tuple[str, str | None, str], ...],
+    blocks: Sequence[ModelContextBlock],
+) -> tuple[tuple[str, str | None, str], ...]:
+    if not blocks:
+        return existing
+    entries: dict[tuple[str, str | None], str] = {(source_id, key): digest for source_id, key, digest in existing}
+    for block in blocks:
+        entries[(block.source_id, block.key)] = block.content_hash
+    return tuple((source_id, key, digest) for (source_id, key), digest in entries.items())
+
+
+def _read_small_utf8_file(path: Path, max_bytes: int) -> str | None:
+    try:
+        if path.is_symlink() or not path.is_file():
+            return None
+        with path.open("rb") as stream:
+            raw = stream.read(max_bytes + 1)
+    except OSError:
+        return None
+    if len(raw) > max_bytes or b"\x00" in raw:
+        return None
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def _message_key(message: ModelMessage) -> str:
@@ -222,6 +349,9 @@ class AcpTurn(AbstractHarnessPlugin):
     bind_environment: Callable[[AgentContext], AcpRunBinding] = lambda _: AcpRunBinding()
     goal: GoalCapability | None = None
     bot: bool = False
+    skill_manager: SkillManager | None = None
+    initial_skill_catalog: BoundSkillCatalog | None = None
+    on_skill_catalog: Callable[[BoundSkillCatalog], None] | None = None
     runtime: AcpSessionRuntime | None = None
     saved: AcpSessionState | None = None
     persist: Callable[[AcpSessionState], Awaitable[None]] | None = None
@@ -233,27 +363,177 @@ class AcpTurn(AbstractHarnessPlugin):
     def plugin_id(self) -> str:
         return _NAMESPACE
 
-    def prompt_text(self, item: ContentItem) -> str:
-        value = item.value
-        if isinstance(value, str):
-            return value
-        assert isinstance(value, TextContent)
-        metadata = (item.metadata.model_extra or {}).get("harness_ui")
+    def _retained_host_path(self, metadata: dict[str, Any] | None) -> Path | None:
         if (
-            isinstance(metadata, dict)
-            and metadata.get("mount") == "thread-files"
-            and isinstance(path := metadata.get("path"), str)
+            self.thread_files is None
+            or not isinstance(metadata, dict)
+            or metadata.get("mount") != "thread-files"
+            or not isinstance(path := metadata.get("path"), str)
         ):
-            text = value.content.replace("Read this file with view", "Read this file")
-            if self.thread_files is not None:
-                return f"{text}\nFile path for ACP readers: {self.thread_files / path}"
-            return text
-        return value.content
+            return None
+        return self.thread_files / path
 
-    async def steer(self, text: str) -> SteeringOutcome:
+    def _skill_selection_text(self, item: ContentItem, fallback: str) -> str:
+        namespace = (item.metadata.model_extra or {}).get("harness_ui")
+        selected = namespace.get("selected_skills") if isinstance(namespace, dict) else None
+        if not isinstance(selected, list) or not selected:
+            return fallback
+        entries: list[tuple[str, str, str]] = []
+        for entry in selected:
+            if (
+                isinstance(entry, dict)
+                and isinstance(name := entry.get("name"), str)
+                and isinstance(source_id := entry.get("source_id"), str)
+                and isinstance(logical_path := entry.get("logical_path"), str)
+            ):
+                entries.append((name, source_id, logical_path))
+        return format_skill_selection(entries, host_paths=True) if entries else fallback
+
+    def _attachment_blocks(
+        self,
+        item: ContentItem,
+        *,
+        prompt_capabilities: schema.PromptCapabilities,
+        text_only: bool,
+    ) -> list[PromptBlock]:
+        value = item.value
+        assert isinstance(value, TextContent)
+        namespace = (item.metadata.model_extra or {}).get("harness_ui")
+        if not isinstance(namespace, dict) or namespace.get("mount") != "thread-files":
+            return [schema.TextContentBlock(text=value.content)]
+        if namespace.get("captured_source_text"):
+            return [schema.TextContentBlock(text=value.content)]
+        path = namespace.get("path")
+        if not isinstance(path, str):
+            return [schema.TextContentBlock(text=value.content)]
+        host_path = self._retained_host_path(namespace)
+        resolved_path = str(host_path) if host_path is not None else path
+        attachment = namespace.get("attachment")
+        attachment_dict = attachment if isinstance(attachment, dict) else {}
+        raw_name = attachment_dict.get("name")
+        att_name = raw_name if isinstance(raw_name, str) else Path(path).name
+        raw_media_type = attachment_dict.get("media_type")
+        media_type = raw_media_type if isinstance(raw_media_type, str) else "application/octet-stream"
+        raw_size = attachment_dict.get("size")
+        size = raw_size if isinstance(raw_size, int) else None
+        source = attachment_dict.get("source")
+        if namespace.get("long_text"):
+            characters = namespace.get("characters")
+            char_label = f" ({characters} characters)" if isinstance(characters, int) else ""
+            text = (
+                f"The user's submitted text{char_label} is saved in a retained input file.\n"
+                f"File: {resolved_path}\n"
+                "Read this file to understand the user's request before answering. "
+                "Read further sections as needed; no part of the original text is included inline."
+            )
+            blocks: list[PromptBlock] = [schema.TextContentBlock(text=text)]
+            if not text_only and host_path is not None:
+                blocks.append(
+                    schema.ResourceContentBlock(uri=host_path.as_uri(), name=att_name, mime_type="text/plain")
+                )
+            return blocks
+        composer = namespace.get("composer")
+        label = composer.get("label") if isinstance(composer, dict) and isinstance(composer.get("label"), str) else None
+        display_name = f"{label} ({att_name!r})" if label else repr(att_name)
+        source_description = f" Selected Host source: {json.dumps(source)}." if source is not None else ""
+        header = f"Attachment {display_name} ({media_type}): {resolved_path}.{source_description}"
+        blocks = [schema.TextContentBlock(text=header)]
+        if text_only or host_path is None or media_type.startswith("image/") or media_type.startswith("audio/"):
+            return blocks
+        if (
+            prompt_capabilities.embedded_context
+            and source is None
+            and (size is None or size <= _MAX_EMBEDDED_ATTACHMENT_BYTES)
+        ):
+            embedded = _read_small_utf8_file(host_path, _MAX_EMBEDDED_ATTACHMENT_BYTES)
+            if embedded is not None:
+                blocks.append(
+                    schema.EmbeddedResourceContentBlock(
+                        resource=schema.TextResourceContents(
+                            uri=host_path.as_uri(), mime_type=media_type, text=embedded
+                        )
+                    )
+                )
+                return blocks
+        if host_path.is_file():
+            blocks.append(schema.ResourceContentBlock(uri=host_path.as_uri(), name=att_name, mime_type=media_type))
+        return blocks
+
+    def build_prompt_blocks(
+        self,
+        value: RunInputValue | None,
+        *,
+        prompt_capabilities: schema.PromptCapabilities,
+        text_only: bool = False,
+    ) -> tuple[list[PromptBlock], list[ContentItem]]:
+        blocks: list[PromptBlock] = []
+        retained: list[ContentItem] = []
+        for item in content_items(value) if value is not None else ():
+            if item.metadata.display or item.metadata.source_id == _INPUT_SURFACE_SOURCE:
+                retained.append(item)
+            if item.metadata.source_id == _INPUT_SURFACE_SOURCE:
+                continue
+            part = item.value
+            if isinstance(part, str):
+                blocks.append(schema.TextContentBlock(text=part))
+            elif isinstance(part, TextContent):
+                if item.metadata.source_id == _SKILLS_SELECTION_SOURCE:
+                    blocks.append(schema.TextContentBlock(text=self._skill_selection_text(item, part.content)))
+                else:
+                    blocks.extend(
+                        self._attachment_blocks(item, prompt_capabilities=prompt_capabilities, text_only=text_only)
+                    )
+            elif isinstance(part, BinaryContent):
+                namespace = (item.metadata.model_extra or {}).get("harness_ui")
+                host_path = self._retained_host_path(namespace if isinstance(namespace, dict) else None)
+                if not text_only and part.is_image and prompt_capabilities.image:
+                    blocks.append(
+                        schema.ImageContentBlock(data=b64encode(part.data).decode("ascii"), mime_type=part.media_type)
+                    )
+                elif not text_only and part.is_audio and prompt_capabilities.audio:
+                    blocks.append(
+                        schema.AudioContentBlock(data=b64encode(part.data).decode("ascii"), mime_type=part.media_type)
+                    )
+                elif host_path is not None:
+                    attachment = namespace.get("attachment") if isinstance(namespace, dict) else None
+                    raw_name = attachment.get("name") if isinstance(attachment, dict) else None
+                    att_name = raw_name if isinstance(raw_name, str) else host_path.name
+                    kind = "Image" if part.is_image else "Audio" if part.is_audio else "Binary"
+                    blocks.append(
+                        schema.TextContentBlock(
+                            text=(
+                                f"{kind} attachment {att_name!r} ({part.media_type}) is saved on disk at {host_path}. "
+                                "Inspect it from disk because this session does not accept inline media blocks."
+                            )
+                        )
+                    )
+                    if not text_only:
+                        blocks.append(
+                            schema.ResourceContentBlock(
+                                uri=host_path.as_uri(), name=att_name, mime_type=part.media_type
+                            )
+                        )
+                else:
+                    raise AcpError("acp_input_unsupported", "The external Agent cannot accept this attachment.")
+            else:
+                raise AcpError("acp_input_unsupported", "The external Agent cannot accept this attachment.")
+        return blocks, retained
+
+    def build_steer_blocks(self, value: RunInputValue) -> list[PromptBlock]:
+        if self.runtime is None:
+            return []
+        prompt_capabilities = self.runtime.capabilities.prompt_capabilities or schema.PromptCapabilities()
+        blocks, _ = self.build_prompt_blocks(
+            value,
+            prompt_capabilities=prompt_capabilities,
+            text_only=not self.runtime.supports_multimodal_steering,
+        )
+        return blocks
+
+    async def steer(self, content: Sequence[PromptBlock] | str) -> SteeringOutcome:
         if self.runtime is None:
             return "not_delivered"
-        return await self.runtime.steer(text)
+        return await self.runtime.steer(content)
 
     @property
     def supports_steering(self) -> bool:
@@ -353,23 +633,16 @@ class AcpTurn(AbstractHarnessPlugin):
             interactive=self.inputs is not None and not context.unattended,
         ) as resident:
             runtime, bridge = resident.runtime, resident.host_tools
-            blocks: list[PromptBlock] = []
-            authored: list[ContentItem] = []
             prompt_capabilities = runtime.capabilities.prompt_capabilities or schema.PromptCapabilities()
-            for item in content_items(exchange.input.value) if exchange.input.value is not None else ():
-                value = item.value
-                if isinstance(value, str | TextContent):
-                    block = schema.TextContentBlock(text=self.prompt_text(item))
-                elif isinstance(value, BinaryContent) and value.is_image and prompt_capabilities.image:
-                    block = schema.ImageContentBlock(data=b64encode(value.data).decode(), mime_type=value.media_type)
-                elif isinstance(value, BinaryContent) and value.is_audio and prompt_capabilities.audio:
-                    block = schema.AudioContentBlock(data=b64encode(value.data).decode(), mime_type=value.media_type)
-                else:
-                    raise AcpError("acp_input_unsupported", "The external Agent cannot accept this attachment.")
-                blocks.append(block)
-                if item.metadata.display:
-                    authored.append(item)
-            user_message = replace(input_request(authored), run_id=context.run_id)
+            blocks, retained_user_items = self.build_prompt_blocks(
+                exchange.input.value, prompt_capabilities=prompt_capabilities
+            )
+            user_message = replace(input_request(retained_user_items), run_id=context.run_id)
+            skill_catalog = self.initial_skill_catalog
+            if self.skill_manager is not None and not self.prewarm:
+                skill_catalog = await self.skill_manager.scan_environment(environment=context.environment)
+            if self.on_skill_catalog is not None and not self.prewarm:
+                self.on_skill_catalog(skill_catalog or BoundSkillCatalog(items=()))
             # The external agent runs its own model loop. This RunContext only
             # binds Host capabilities and never invokes a native model.
             run_context = RunContext(
@@ -429,17 +702,29 @@ class AcpTurn(AbstractHarnessPlugin):
             async with bridge.prepare(run_context, capabilities=capabilities, toolsets=toolsets) as scope:
                 if self.shell_review is not None and not self.prewarm:
                     _bind_shell_review(binding, scope.context, interactions)
+                opened_fresh_session = False
                 if runtime.session_id is None:
                     recovering = saved.session_id if saved is not None and saved.prompted else None
+                    opened_fresh_session = recovering is None
+                    workspace_guidance = await to_thread.run_sync(
+                        workspace_agents_instructions,
+                        self.resource.preset,
+                        self.setup.cwd,
+                        self.setup.additional_directories,
+                    )
+                    skills_index = _format_acp_skills_index(skill_catalog)
+                    tool_hint = _host_tool_hint(await scope.tool_names())
+                    session_instructions = (
+                        *self.setup.instructions,
+                        *workspace_guidance,
+                        *(await scope.instructions()),
+                        *((skills_index,) if skills_index is not None else ()),
+                        *((tool_hint,) if tool_hint is not None else ()),
+                    )
                     await runtime.open_session(
                         AcpSessionSetup(
                             cwd=self.setup.cwd,
-                            instructions=(
-                                *self.setup.instructions,
-                                *(await scope.instructions()),
-                                "When available, use harness-host ask_user_question to ask for confirmation inline "
-                                "without ending the turn, and post_to_inbox to report results or blockers.",
-                            ),
+                            instructions=session_instructions,
                             mcp_servers=self.setup.mcp_servers,
                             additional_directories=self.setup.additional_directories,
                         ),
@@ -488,6 +773,11 @@ class AcpTurn(AbstractHarnessPlugin):
                     else frozenset(),
                     synced_messages=saved.synced_messages if saved and saved.prompted else 0,
                     synced_message_key=saved.synced_message_key if saved and saved.prompted else None,
+                    delivered_context=(
+                        saved.delivered_context
+                        if saved is not None and saved.prompted and not opened_fresh_session
+                        else ()
+                    ),
                     context_window=initial_context_window,
                     options=options,
                 )
@@ -546,7 +836,17 @@ class AcpTurn(AbstractHarnessPlugin):
                     while True:
                         compacted = False
                         guidance = self.goal.get_instructions() if self.goal is not None else None
-                        hidden = (*await scope.prompt_context(), *prior_conversation)
+                        history = ModelContextHistory(active.delivered_context)
+                        raw_blocks = await scope.prompt_context_blocks(
+                            history=history,
+                            exclude_sources=_EXCLUDED_ACP_CONTEXT_SOURCES,
+                        )
+                        context_blocks = tuple(
+                            block
+                            for block in raw_blocks
+                            if not (block.source_id == _INBOX_REMINDER_SOURCE and history.contains(block))
+                        )
+                        hidden = (*(block.content for block in context_blocks), *prior_conversation)
                         if guidance is not None:
                             hidden = (*hidden, guidance)
                         if self._stop_requested:
@@ -570,6 +870,13 @@ class AcpTurn(AbstractHarnessPlugin):
                             raise
                         prompted_this_turn = True
                         prior_conversation = ()
+                        active = active.model_copy(
+                            update={
+                                "delivered_context": ()
+                                if compacted
+                                else _merge_delivered_context(active.delivered_context, context_blocks)
+                            }
+                        )
                         if response.usage is not None:
                             await self._record_usage(context, runtime, response)
                         if self._stop_requested:

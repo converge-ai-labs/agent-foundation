@@ -17,7 +17,6 @@ from uuid import uuid4
 from a13n_harness import HarnessRunStream, SafeFailure
 from a13n_harness.acp import AcpError
 from a13n_harness.capabilities.skills import BoundSkillCatalog
-from a13n_harness.content import content_items
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
@@ -699,11 +698,11 @@ class RootRunCoordinator:
             if authorize is not None:
                 await authorize()
             if acp_turn is not None:
-                parts = content_items(prepared)
-                if not parts or any(not isinstance(part.value, str | TextContent) for part in parts):
+                blocks = acp_turn.build_steer_blocks(prepared)
+                if not blocks:
                     return RootControlResult(receipt_id=receipt_id, accepted=False)
                 check_active()
-                delivery = await acp_turn.steer("\n".join(acp_turn.prompt_text(part) for part in parts))
+                delivery = await acp_turn.steer(blocks)
                 if delivery != "accepted":
                     return RootControlResult(receipt_id=receipt_id, accepted=False)
                 enqueue_id = None

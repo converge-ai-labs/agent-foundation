@@ -1153,3 +1153,352 @@ async def test_tui_backend_syncs_acp_context_window_on_run_and_resume(tmp_path: 
 
         await resumed.execute(StreamRenderer(resumed_status), prompt="compact-live")
         assert (resumed_status.context_tokens, resumed_status.context_window) == (None, None)
+
+
+def test_acp_workspace_agents_md_policy_by_preset(tmp_path: Path) -> None:
+    from a13n_harness_ui.acp_execution import workspace_agents_instructions
+
+    primary = tmp_path / "primary"
+    extra = tmp_path / "extra"
+    primary.mkdir()
+    extra.mkdir()
+    (primary / "AGENTS.md").write_text("Primary workspace rules.\n", encoding="utf-8")
+    (extra / "AGENTS.md").write_text("Extra root rules.\n", encoding="utf-8")
+
+    for native_preset in ("antigravity", "codex", "opencode", "github_copilot", "goose", "kimi_cli"):
+        sections = workspace_agents_instructions(native_preset, str(primary), (str(extra),))
+        assert not any("Primary workspace rules." in section for section in sections)
+        assert sections == (f"Additional project root AGENTS.md files: {extra / 'AGENTS.md'}.",)
+
+    for inject_preset in ("claude_code", "gemini_cli"):
+        sections = workspace_agents_instructions(inject_preset, str(primary), (str(extra),))
+        assert len(sections) == 2
+        assert "Primary workspace rules." in sections[0]
+        assert str(extra / "AGENTS.md") in sections[1]
+
+    custom_sections = workspace_agents_instructions("custom", str(primary), (str(extra),))
+    assert len(custom_sections) == 2
+    assert str(primary / "AGENTS.md") in custom_sections[0]
+    assert "Primary workspace rules." not in custom_sections[0]
+    assert str(extra / "AGENTS.md") in custom_sections[1]
+
+    # Oversized AGENTS.md is bounded at 32 KiB for injected presets.
+    (primary / "AGENTS.md").write_text("x" * (40 * 1024), encoding="utf-8")
+    bounded = workspace_agents_instructions("claude_code", str(primary), ())
+    assert len(bounded) == 1
+    assert "[Truncated at 32 KiB;" in bounded[0]
+    assert len(bounded[0].encode("utf-8")) < 34 * 1024
+
+
+async def _latest_reply_text(app: Any, thread_id: str) -> str:
+    transcript = await app.get_thread_transcript(thread_id=thread_id)
+    turn = transcript.turns[-1]
+    assert turn.output_position is not None
+    entry = next(item for item in transcript.entries if item.position == turn.output_position)
+    return "".join(part.text or "" for part in entry.parts if part.kind == "assistant")
+
+
+async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp_path: Path) -> None:
+    from a13n_harness_ui.acp_sessions import AcpSessionState
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+
+    config = _ui_peer_config(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("Global Harness UI guidance.\n", encoding="utf-8")
+    config.write_text(
+        'schema_version: "1"\ndefaults:\n  agent: acp-fixture\ntools:\n  enable_ask_user_question: false\n'
+    )
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings, configuration_path=config, host_mode="webui") as app:
+        thread = await app.create_thread()
+
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-instructions", input_surface="webui")
+        outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status is RootOperationStatus.completed, outcome.failure
+        instructions_reply = await _latest_reply_text(app, thread.thread_id)
+        system_prompt = json.loads(instructions_reply)
+        joined_instructions = "\n".join(block["text"] for block in system_prompt["content"])
+        assert "Global Harness UI guidance." in joined_instructions
+        assert "Use harness-host post_to_inbox to report results or blockers." in joined_instructions
+        assert "Use harness-host ask_user_question" not in joined_instructions
+
+        # Turn 2: unchanged dynamic context (<agent-context>, <surface-context>, <inbox-reminder>) is deduplicated.
+        second = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-prompt", input_surface="webui")
+        assert (await app.wait_root_operation(second.receipt_id)).status is RootOperationStatus.completed
+        turn2_blocks = json.loads(await _latest_reply_text(app, thread.thread_id) or "[]")
+        turn2_text = "\n".join(item["text"] for item in turn2_blocks if item.get("type") == "text")
+        assert "Current Environment mounts" not in turn2_text
+        assert "This input was submitted through Harness UI WebUI." not in turn2_text
+        assert "<agent-context" not in turn2_text
+        assert "<surface-context" not in turn2_text
+        assert "<inbox-reminder>" not in turn2_text
+
+        # Turn 3: compaction update resets delivered_context so Turn 4 re-delivers dynamic context.
+        third = await app.submit_thread(thread_id=thread.thread_id, prompt="compact-and-echo", input_surface="webui")
+        assert (await app.wait_root_operation(third.receipt_id)).status is RootOperationStatus.completed
+        stored = await app._store.threads.acp_state(thread.thread_id)
+        assert stored is not None
+        assert AcpSessionState.model_validate_json(stored).delivered_context == ()
+
+        fourth = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-prompt", input_surface="webui")
+        assert (await app.wait_root_operation(fourth.receipt_id)).status is RootOperationStatus.completed
+        turn4_blocks = json.loads(await _latest_reply_text(app, thread.thread_id) or "[]")
+        turn4_text = "\n".join(item["text"] for item in turn4_blocks if item.get("type") == "text")
+        assert "<agent-context" in turn4_text
+        assert "<surface-context" in turn4_text
+        assert "<inbox-reminder>" in turn4_text
+        assert "Current Environment mounts" not in turn4_text
+        assert "This input was submitted through Harness UI WebUI." not in turn4_text
+
+
+async def test_acp_skills_discovery_index_direct_slash_and_host_paths(tmp_path: Path) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.environment_paths import (
+        BUILTIN_COORDINATOR_SKILLS_PATH,
+        BUILTIN_COORDINATOR_SKILLS_ROOT,
+        BUILTIN_SKILLS_PATH,
+        BUILTIN_SKILLS_ROOT,
+        acp_skill_host_path,
+    )
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus, SkillReference
+
+    assert acp_skill_host_path(f"{BUILTIN_COORDINATOR_SKILLS_PATH}/coordinate-worktree-pr") == str(
+        (BUILTIN_COORDINATOR_SKILLS_ROOT.resolve() / "coordinate-worktree-pr").as_posix()
+    )
+
+    workspace = tmp_path / "workspace"
+    project_skill = workspace / ".agents" / "skills" / "proj-workflow"
+    project_skill.mkdir(parents=True)
+    (project_skill / "SKILL.md").write_text(
+        "---\nname: proj-workflow\ndescription: Project workflow guide.\n---\nFollow project steps.\n",
+        encoding="utf-8",
+    )
+    user_skills = tmp_path / "user-skills"
+    personal_skill = user_skills / "personal-note"
+    personal_skill.mkdir(parents=True)
+    (personal_skill / "SKILL.md").write_text(
+        "---\nname: personal-note\ndescription: Personal note helper.\n---\nUse personal notes.\n",
+        encoding="utf-8",
+    )
+
+    config = _ui_peer_config(tmp_path)
+    config.write_text('schema_version: "1"\ndefaults:\n  project: project-main\n  agent: acp-fixture\n')
+    projects = tmp_path / "projects"
+    projects.mkdir()
+    (projects / "main.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "kind": "project",
+                "id": "project-main",
+                "name": "Main",
+                "roots": [{"path": str(workspace)}],
+            }
+        )
+    )
+    settings = HarnessUiSettings(
+        storage=StorageSettings(data_root=tmp_path / "data"),
+        pricing_auto_update=False,
+    )
+    async with open_harness_ui_app(settings, configuration_path=config, host_mode="webui") as app:
+        app._root_runs._executor._environments._user_skills_root = user_skills
+        preview = await app.skill_catalog(defaults=NewThreadDefaults(project_id="project-main"))
+        names = {item.name for item in preview.items}
+        assert {"proj-workflow", "personal-note", "harness-ui-configuration", "harness-ui-operations"} <= names
+
+        thread = await app.create_thread()
+        idle_catalog = await app.skill_catalog(thread_id=thread.thread_id)
+        assert {item.name for item in idle_catalog.items} == names
+
+        # Session instructions include <available-skills source="harness-ui"> with real Host paths.
+        first = await app.submit_thread(thread_id=thread.thread_id, prompt="echo-instructions")
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        system_prompt = json.loads(await _latest_reply_text(app, thread.thread_id) or "{}")
+        joined = "\n".join(block["text"] for block in system_prompt["content"])
+        assert '<available-skills source="harness-ui">' in joined
+        assert "proj-workflow" in joined
+        assert "personal-note" in joined
+        assert "harness-ui-configuration" in joined
+        assert BUILTIN_SKILLS_PATH not in joined
+        assert str((BUILTIN_SKILLS_ROOT.resolve() / "harness-ui-configuration" / "SKILL.md").as_posix()) in joined
+
+        # Direct leading /skill-name submits resolve built-in skills to real Host paths for ACP.
+        builtin_item = next(item for item in idle_catalog.items if item.name == "harness-ui-configuration")
+        second = await app.submit_thread(
+            thread_id=thread.thread_id,
+            prompt="/harness-ui-configuration echo-prompt",
+            skill_references=(
+                SkillReference(
+                    catalog_id=idle_catalog.catalog_id,
+                    item_id=builtin_item.item_id,
+                    name=builtin_item.name,
+                ),
+            ),
+        )
+        assert (await app.wait_root_operation(second.receipt_id)).status is RootOperationStatus.completed
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+        user_entry = next(
+            entry for entry in transcript.entries if entry.position == transcript.turns[-1].input_position
+        )
+        assert any(
+            (part.metadata.model_extra or {}).get("harness_ui", {}).get("skills")
+            == [
+                {
+                    "name": "harness-ui-configuration",
+                    "source_id": builtin_item.source_id,
+                    "start": 0,
+                    "end": len("/harness-ui-configuration"),
+                }
+            ]
+            for part in user_entry.parts
+        )
+        # Verify the peer received the real Host path in <skill-selection>, not /environment/builtin-skills.
+        prompt_text = await app.submit_thread(
+            thread_id=thread.thread_id,
+            prompt="echo-prompt",
+            skill_references=(
+                SkillReference(
+                    catalog_id=idle_catalog.catalog_id,
+                    item_id=builtin_item.item_id,
+                    name=builtin_item.name,
+                ),
+            ),
+        )
+        assert (await app.wait_root_operation(prompt_text.receipt_id)).status is RootOperationStatus.completed
+        blocks = json.loads(await _latest_reply_text(app, thread.thread_id) or "[]")
+        joined_prompt = "\n".join(item["text"] for item in blocks if item.get("type") == "text")
+        assert '<skill-selection source="harness-ui">' in joined_prompt
+        assert (
+            str((BUILTIN_SKILLS_ROOT.resolve() / "harness-ui-configuration" / "SKILL.md").as_posix()) in joined_prompt
+        )
+        assert BUILTIN_SKILLS_PATH not in joined_prompt
+
+        # Active ACP Run publishes its frozen skill catalog for steering validation.
+        async with app.live_events(root_thread_id=thread.thread_id) as live:
+            waiting = await app.submit_thread(thread_id=thread.thread_id, prompt="wait-steer")
+            async with asyncio.timeout(15):
+                while "waiting" not in str((await live.receive()).payload):
+                    pass
+            active_catalog = await app.skill_catalog(thread_id=thread.thread_id)
+            assert active_catalog.context_kind == "active"
+            proj_item = next(item for item in active_catalog.items if item.name == "proj-workflow")
+            steered = await app.steer_root_operation(
+                receipt_id=waiting.receipt_id,
+                message="$proj-workflow apply",
+                skill_references=(
+                    SkillReference(
+                        catalog_id=active_catalog.catalog_id,
+                        item_id=proj_item.item_id,
+                        name=proj_item.name,
+                    ),
+                ),
+            )
+            assert steered.accepted
+            assert (await app.cancel_root_operation(waiting.receipt_id)).accepted
+            await app.wait_root_operation(waiting.receipt_id)
+
+        # Coordinator ACP Thread exposes Coordinator built-in Skills with real Host paths.
+        coord_thread = await app.create_thread()
+        await app.promote_coordinator(coord_thread.thread_id)
+        coord_catalog = await app.skill_catalog(thread_id=coord_thread.thread_id)
+        assert "coordinate-worktree-pr" in {item.name for item in coord_catalog.items}
+        coord_first = await app.submit_thread(thread_id=coord_thread.thread_id, prompt="echo-instructions")
+        assert (await app.wait_root_operation(coord_first.receipt_id)).status is RootOperationStatus.completed
+        coord_system_prompt = json.loads(await _latest_reply_text(app, coord_thread.thread_id) or "{}")
+        coord_joined = "\n".join(block["text"] for block in coord_system_prompt["content"])
+        assert BUILTIN_COORDINATOR_SKILLS_PATH not in coord_joined
+        assert (
+            str((BUILTIN_COORDINATOR_SKILLS_ROOT.resolve() / "coordinate-worktree-pr" / "SKILL.md").as_posix())
+            in coord_joined
+        )
+
+
+async def test_acp_attachments_embedded_context_image_fallback_and_multimodal_steering(tmp_path: Path) -> None:
+    from io import BytesIO
+
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from a13n_harness_ui.thread_files import AttachmentUpload
+    from PIL import Image
+
+    png_bytes = BytesIO()
+    Image.new("RGB", (2, 2), "red").save(png_bytes, format="PNG")
+    raw_png = png_bytes.getvalue()
+
+    # 1. Peer with embeddedContext (and without promptCapabilities.image): small text embeds, retained image falls back to disk path.
+    dir_embed = tmp_path / "embed"
+    dir_embed.mkdir()
+    config_embed = _ui_peer_config(dir_embed, "embedded-context")
+    settings_embed = HarnessUiSettings(storage=StorageSettings(data_root=dir_embed / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings_embed, configuration_path=config_embed, host_mode="webui") as app:
+        thread = await app.create_thread()
+        csv_att = await app.stage_thread_attachment(
+            thread_id=thread.thread_id,
+            upload=AttachmentUpload("metrics.csv", b"k,v\na,1\n", "text/csv"),
+        )
+        img_att = await app.stage_thread_attachment(
+            thread_id=thread.thread_id,
+            upload=AttachmentUpload("shot.png", raw_png, "image/png"),
+        )
+        assert csv_att.storage_name == "content.csv"
+        assert img_att.storage_name == "content.png"
+        receipt = await app.submit_thread(
+            thread_id=thread.thread_id,
+            prompt="echo-prompt",
+            attachment_ids=(csv_att.attachment_id, img_att.attachment_id),
+        )
+        outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status is RootOperationStatus.completed, outcome.failure
+        blocks = json.loads(await _latest_reply_text(app, thread.thread_id) or "[]")
+        embedded = [block for block in blocks if block.get("type") == "resource"]
+        assert len(embedded) == 1
+        assert embedded[0]["resource"]["text"] == "k,v\na,1\n"
+        assert embedded[0]["resource"]["uri"].endswith("/content.csv")
+        text_blocks = "\n".join(block["text"] for block in blocks if block.get("type") == "text")
+        assert "on the thread-files Environment mount" not in text_blocks
+        assert "content.png" in text_blocks
+        assert "Inspect it from disk" in text_blocks
+
+    # 2. Peer with promptCapabilities.image and _session/steering (without embeddedContext):
+    #    non-image uses resource_link; steering delivers multimodal image block!
+    dir_steer = tmp_path / "steer"
+    dir_steer.mkdir()
+    config_steer = _ui_peer_config(dir_steer, "prompt-image", "standard-steer")
+    settings_steer = HarnessUiSettings(storage=StorageSettings(data_root=dir_steer / "data"), pricing_auto_update=False)
+    async with open_harness_ui_app(settings_steer, configuration_path=config_steer, host_mode="webui") as app:
+        thread = await app.create_thread()
+        csv_att = await app.stage_thread_attachment(
+            thread_id=thread.thread_id,
+            upload=AttachmentUpload("notes.csv", b"x,y\n1,2\n", "text/csv"),
+        )
+        first = await app.submit_thread(
+            thread_id=thread.thread_id, prompt="echo-prompt", attachment_ids=(csv_att.attachment_id,)
+        )
+        assert (await app.wait_root_operation(first.receipt_id)).status is RootOperationStatus.completed
+        first_blocks = json.loads(await _latest_reply_text(app, thread.thread_id) or "[]")
+        links = [block for block in first_blocks if block.get("type") == "resource_link"]
+        assert len(links) == 1 and links[0]["uri"].endswith("/content.csv")
+
+        img_att = await app.stage_thread_attachment(
+            thread_id=thread.thread_id,
+            upload=AttachmentUpload("steer.png", raw_png, "image/png"),
+        )
+        async with app.live_events(root_thread_id=thread.thread_id) as live:
+            waiting = await app.submit_thread(thread_id=thread.thread_id, prompt="wait-steer")
+            async with asyncio.timeout(15):
+                while "waiting" not in str((await live.receive()).payload):
+                    pass
+            steered = await app.steer_root_operation(
+                receipt_id=waiting.receipt_id,
+                message="Look at this screenshot",
+                attachment_ids=(img_att.attachment_id,),
+            )
+            assert steered.accepted
+            outcome = await app.wait_root_operation(waiting.receipt_id)
+            assert outcome.status is RootOperationStatus.completed, outcome.failure
+        reply = await _latest_reply_text(app, thread.thread_id)
+        steer_blocks = json.loads(reply.removeprefix("waiting"))
+        assert any(block.get("type") == "image" and block.get("mimeType") == "image/png" for block in steer_blocks)
