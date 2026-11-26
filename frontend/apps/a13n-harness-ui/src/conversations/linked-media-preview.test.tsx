@@ -10,7 +10,12 @@ import {
 import { MessageText } from "./message-text";
 import { OpenHostFile } from "./tool-call";
 import { TransportContext } from "../transport/context";
-import { ApiError, type Schema, type Transport } from "../transport/client";
+import {
+  ApiError,
+  NetworkError,
+  type Schema,
+  type Transport,
+} from "../transport/client";
 import { MAX_MEDIA_BYTES } from "../native/media-kind";
 
 afterEach(() => {
@@ -173,6 +178,70 @@ it("keeps SVG files as original links without inline content requests", async ()
   expect(f.post).not.toHaveBeenCalled();
   expect(f.fetch).not.toHaveBeenCalled();
 });
+
+it.each([
+  [
+    400,
+    "host_files_type_invalid",
+    "Only regular files support content operations.",
+  ],
+  [
+    404,
+    "host_files_not_found",
+    "The native path or its parent does not exist.",
+  ],
+  [403, "host_files_disabled", "Native file access requires --share-computer."],
+  [403, "host_files_permission_denied", "Permission denied."],
+  [400, "host_files_path_invalid", "Host paths must be absolute."],
+  [422, "request_invalid", "Query does not match the API schema."],
+] as const)(
+  "keeps the original link when media metadata returns %i %s",
+  async (status, code, message) => {
+    const path = "/tmp/reference";
+    const f = fixture(path);
+    f.get.mockRejectedValueOnce(new ApiError(message, status, code));
+    const view = render(f.tree());
+    await waitFor(() =>
+      expect(view.container.querySelector("figure")).toBeNull(),
+    );
+    expect(screen.queryByText(message)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(f.get).toHaveBeenCalledWith(
+      "/api/host/files/info",
+      expect.objectContaining({ params: { query: { path } } }),
+    );
+    expect(f.post).not.toHaveBeenCalled();
+    const original = screen.getByRole("link", { name: "Original" });
+    expect(original.getAttribute("href")).toBe(link(path));
+    fireEvent.click(original);
+    expect(f.open).toHaveBeenCalledWith(path);
+  },
+);
+
+it.each([
+  ["network failure", new NetworkError(new TypeError("Failed to fetch"))],
+  [
+    "filesystem I/O failure",
+    new ApiError("File probe failed.", 500, "host_files_io_error"),
+  ],
+  [
+    "unexpected API error",
+    new ApiError("Request rejected.", 403, "unexpected"),
+  ],
+] as const)(
+  "shows a %s from the metadata probe and retries",
+  async (_name, error) => {
+    const f = fixture();
+    f.get.mockRejectedValueOnce(error);
+    render(f.tree());
+    await screen.findByText(error.message);
+    expect(f.post).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByAltText("photo.png");
+    expect(f.get).toHaveBeenCalledTimes(2);
+    expect(f.post).toHaveBeenCalledTimes(1);
+  },
+);
 
 it.each(["voice.wav", "clip.mp4"])(
   "renders %s with playback controls and an explicit decode fallback",

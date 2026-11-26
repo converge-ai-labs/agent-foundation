@@ -1,11 +1,21 @@
 import { useTranslation } from "../i18n";
 import { useEffect, useRef, useState } from "react";
-import { result, type Schema } from "../transport/client";
+import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { FileMedia } from "../native/file-media";
 import { mediaKind, MAX_MEDIA_BYTES } from "../native/media-kind";
 import styles from "./markdown.module.css";
+
+// A speculative probe can miss without making the original Files link unusable.
+const unavailablePreviewCodes = new Set([
+  "host_files_type_invalid",
+  "host_files_not_found",
+  "host_files_disabled",
+  "host_files_permission_denied",
+  "host_files_path_invalid",
+  "request_invalid", // The info route also validates the path query length.
+]);
 
 export function LinkedMediaPreview({ path }: { path: string }) {
   const { t } = useTranslation();
@@ -58,13 +68,20 @@ export function LinkedMediaPreview({ path }: { path: string }) {
   const current =
     read?.path === path && read.attempt === attempt ? read : undefined;
   const file = current?.file;
+  const error = current?.error;
   const kind = mediaKind(file?.media_type);
-  if (file && !kind) return null;
+  if (
+    (file && !kind) ||
+    (error instanceof ApiError &&
+      error.code &&
+      unavailablePreviewCodes.has(error.code))
+  )
+    return null;
   return (
     <figure
       ref={container}
       className={styles.linkedPreview}
-      data-state={!current ? "loading" : current.error ? "error" : "ready"}
+      data-state={!current ? "loading" : error ? "error" : "ready"}
       aria-label={t("Media preview: {{name}}", {
         name: path.split(/[\\/]/).at(-1),
       })}
@@ -76,18 +93,17 @@ export function LinkedMediaPreview({ path }: { path: string }) {
       )}
       <ErrorNotice
         inline
-        error={current?.error}
+        error={error}
         retry={() => setAttempt((value) => value + 1)}
       />
       {file &&
+        kind &&
         (kind === "image" && file.entry.size > MAX_MEDIA_BYTES ? (
           <p>
             {t(
               "Too large to preview. Open the original file. The preview limit is 10 MiB.",
             )}
           </p>
-        ) : !kind ? (
-          <p>{t("Can't preview this file. Open the original instead.")}</p>
         ) : (
           <FileMedia
             key={`${path}:${file.entry.revision}:${attempt}`}
