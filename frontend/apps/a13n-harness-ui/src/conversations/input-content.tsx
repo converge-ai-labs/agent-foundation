@@ -245,7 +245,7 @@ function composerIdentity(part: InputPart) {
     ? `${part.metadata.source_id}:${composer.index}`
     : undefined;
 }
-export function inputCopyText(parts: InputPart[]) {
+function inputMessageText(parts: InputPart[], includeAttachments: boolean) {
   const seen = new Set<string>();
   let text = "";
   let previousInline = false;
@@ -259,6 +259,7 @@ export function inputCopyText(parts: InputPart[]) {
     const attachment = inputAttachment(part.metadata);
     let value = part.kind === "user" ? (part.text ?? "") : "";
     if (attachment) {
+      if (!includeAttachments) continue;
       const identity = composer ?? attachment.attachment_id;
       if (seen.has(identity)) continue;
       seen.add(identity);
@@ -271,6 +272,10 @@ export function inputCopyText(parts: InputPart[]) {
     previousInline = !!composer;
   }
   return text;
+}
+
+export function inputCopyText(parts: InputPart[]) {
+  return inputMessageText(parts, false);
 }
 
 function focusEnd(editor: HTMLTextAreaElement | null) {
@@ -310,9 +315,12 @@ export function InputContent({
   const editable =
     branchKey && actions?.points?.[branchKey]?.edit && !actions.busy;
 
+  const showActions = copyText.trim() || timestamp != null || editable;
+
   const source = visible
     .map((part) => threadMessage(part.metadata))
     .find(Boolean);
+  const preview = source && !expanded ? inputMessageText(parts, true) : "";
   const body =
     (!source || expanded) &&
     visible.map((part, index) => {
@@ -475,12 +483,12 @@ export function InputContent({
               aria-controls={contentId}
               onClick={() => setExpanded(!expanded)}
             >
-              {!expanded && copyText.trim() && (
+              {preview.trim() && (
                 <span
                   className={styles.threadMessagePreview}
                   aria-hidden="true"
                 >
-                  {copyText}
+                  {preview}
                 </span>
               )}
               <span className={styles.threadMessageToggleLabel}>
@@ -491,7 +499,7 @@ export function InputContent({
           )}
         </div>
       )}
-      {(!source || expanded) && (copyText.trim() || timestamp != null) && (
+      {(!source || expanded) && showActions && (
         <CopyMessage
           text={copyText}
           timestamp={timestamp}
@@ -502,7 +510,7 @@ export function InputContent({
               <MessageActionButton
                 kind="edit"
                 disabled={!editable}
-                onClick={() => setEdit(copyText)}
+                onClick={() => setEdit(inputMessageText(parts, true))}
               />
             )
           }
