@@ -1809,7 +1809,9 @@ function ExecutionSegment({
   );
   const trailing = grouped.at(-1);
   const trailingThinking =
-    activeSegment && !hasRunningTool && trailing?.kind === "thinking"
+    activeSegment &&
+    trailing?.kind === "thinking" &&
+    (!hasRunningTool || trailing.segments.some((part) => part.running))
       ? trailing
       : undefined;
   const liveThinking =

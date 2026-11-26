@@ -46,6 +46,7 @@ export type DisplayBlock = {
   name?: string;
   result?: string;
   resultParts?: ContentPart[];
+  resultOmitted?: boolean;
   subagentRunId?: string;
   done?: boolean;
   outcome?: ToolView["outcome"];
@@ -812,14 +813,36 @@ export class FocusDisplay {
       block.result =
         string(content.result) ||
         (content.value !== undefined
-          ? JSON.stringify(content.value)
-          : undefined);
+          ? typeof content.value === "string"
+            ? content.value
+            : JSON.stringify(content.value)
+          : typeof content.result === "string"
+            ? content.result
+            : undefined);
       block.resultParts = readContentParts(content.result_parts);
-      block.outcome = content.outcome as ToolView["outcome"];
+      if (
+        item.state !== "in_progress" &&
+        content.truncated === true &&
+        block.result === undefined &&
+        !block.resultParts?.length
+      ) {
+        block.resultParts = undefined;
+        block.resultOmitted = true;
+      }
+      block.outcome =
+        (content.outcome as ToolView["outcome"]) ||
+        (item.state === "failed"
+          ? "failed"
+          : item.state === "interrupted"
+            ? "interrupted"
+            : item.state === "completed"
+              ? "success"
+              : undefined);
       block.failure = object(content.failure)
         ? string(content.failure.message)
         : undefined;
       block.retry = content.retry === true || content.outcome === "retried";
+      if (item.state !== "in_progress") block.stopped = true;
       block.images = content.tool_images as
         Schema<"ToolImageView">[] | undefined;
       block.apps = content.mcp_apps as Schema<"AppReference">[] | undefined;
