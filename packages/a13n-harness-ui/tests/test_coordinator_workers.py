@@ -7,14 +7,80 @@ import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError, ThreadError
 from a13n_harness_ui.storage import ThreadConfigurationMutation
-from a13n_harness_ui.surfaces import NewThreadDefaults
+from a13n_harness_ui.surfaces import NewThreadDefaults, ThreadMetadataMutation, ThreadMetadataPatch
 from a13n_harness_ui.thread_capability import ThreadCollaborationCapability
+from anyio import fail_after
 
 from .test_app import _CompletedReconstructor, _settings
 from .test_coordinators import coordinator_configuration, create_coordinator
 from .test_thread_collaboration import controller
 
 pytestmark = [pytest.mark.anyio, pytest.mark.usefixtures("migrated_databases")]
+
+
+async def test_unarchived_worker_count_updates_navigation_and_invalidates_owner(tmp_path: Path) -> None:
+    root = coordinator_configuration(tmp_path)
+    settings = _settings(tmp_path / "data")
+    defaults = NewThreadDefaults(project_id="project-main")
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        lead = await app.create_thread(defaults=defaults, coordinator=True)
+        another = await app.create_thread(defaults=defaults, coordinator=True)
+        ordinary = await app.create_thread(defaults=defaults)
+        ids = (lead.thread_id, another.thread_id, ordinary.thread_id)
+
+        async def assert_counts(expected: int) -> None:
+            counts = dict(zip(ids, (expected, 0, 0), strict=True))
+            assert (await app.get_thread(lead.thread_id)).thread.unarchived_worker_count == expected
+            assert {
+                item.thread_id: item.unarchived_worker_count
+                for item in (await app.lookup_threads(thread_ids=ids)).threads
+            } == counts
+            assert {
+                row.thread.thread_id: row.thread.unarchived_worker_count
+                for row in await app.lookup_thread_activity(thread_ids=ids)
+            } == counts
+            for project_id in ("project-main", None):
+                page = await app.thread_activity(project_id=project_id, independent_only=True)
+                assert {row.thread.thread_id: row.thread.unarchived_worker_count for row in page.rows} == counts
+
+        await assert_counts(0)
+        async with app._summary_hub.subscribe() as hints:
+
+            async def assert_worker_hints(worker_id: str) -> None:
+                pending = {lead.thread_id, worker_id}
+                with fail_after(3):
+                    while pending:
+                        hint = await hints.receive()
+                        if hint.kind == "thread" and hint.thread_id is not None:
+                            pending.discard(hint.thread_id)
+
+            worker = await app.create_thread(defaults=defaults, coordinator_thread_id=lead.thread_id)
+            await assert_worker_hints(worker.thread_id)
+            await assert_counts(1)
+            second = await app.create_thread(defaults=defaults, coordinator_thread_id=lead.thread_id)
+            await assert_worker_hints(second.thread_id)
+            await assert_counts(2)
+            for item, count in ((worker, 1), (second, 0)):
+                archived = await app.update_thread_metadata(
+                    thread_id=item.thread_id,
+                    mutation=ThreadMetadataMutation(
+                        expected_version=item.metadata_version, patch=ThreadMetadataPatch(archived=True)
+                    ),
+                )
+                assert archived.archived
+                await assert_worker_hints(item.thread_id)
+                await assert_counts(count)
+            restored = await app.update_thread_metadata(
+                thread_id=second.thread_id,
+                mutation=ThreadMetadataMutation(
+                    expected_version=archived.metadata_version, patch=ThreadMetadataPatch(archived=False)
+                ),
+            )
+            await assert_worker_hints(second.thread_id)
+            await assert_counts(1)
+            await app.delete_thread(thread_id=restored.thread_id, expected_version=restored.metadata_version)
+            await assert_worker_hints(restored.thread_id)
+            await assert_counts(0)
 
 
 async def test_creation_owns_only_new_lead_workers_and_retains_failed_admission(tmp_path: Path, monkeypatch) -> None:

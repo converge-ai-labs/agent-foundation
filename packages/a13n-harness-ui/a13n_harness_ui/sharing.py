@@ -89,7 +89,10 @@ class Sharing:
             for action in detail.available_actions
             if action == "wait" or (grant.permission == "prompt" and action in {"run", "steer"})
         )
-        return detail.model_copy(update={"available_actions": actions})
+        thread = detail.thread
+        if grant.scope == "thread":
+            thread = thread.model_copy(update={"unarchived_worker_count": None})
+        return detail.model_copy(update={"thread": thread, "available_actions": actions})
 
     async def create_thread(self, share_id: str, *, thread_id: str, title: str | None) -> ThreadSummary:
         grant = await self.active(share_id, prompt=True)

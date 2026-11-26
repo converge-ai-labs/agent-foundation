@@ -168,8 +168,8 @@ class ThreadProjectionService:
         self._root_activities = batch_lookup
 
     async def get_thread(self, thread_id: str) -> ThreadSummary:
-        thread, owners, coordinators = await self._required_thread_with_roles(thread_id)
-        return await self._summary(thread, owners=owners, coordinators=coordinators)
+        thread, owner, coordinator, worker_count = await self._required_thread_with_roles(thread_id)
+        return await self._summary(thread, owner=owner, coordinator=coordinator, worker_count=worker_count)
 
     async def list_threads(
         self,
@@ -256,11 +256,15 @@ class ThreadProjectionService:
         activities: Mapping[str, RootActivityView] = {}
         if visible and self._root_activities is not None:
             activities = await self._root_activities(visible_ids)
-        owners, coordinators = await self._store.threads.roles(visible_ids)
+        owners, coordinators, worker_counts = await self._store.threads.roles(visible_ids)
         summaries = tuple(
             [
                 await self._summary(
-                    item, activity=activities.get(item.thread_id), owners=owners, coordinators=coordinators
+                    item,
+                    activity=activities.get(item.thread_id),
+                    owner=owners.get(item.thread_id),
+                    coordinator=coordinators.get(item.thread_id),
+                    worker_count=worker_counts.get(item.thread_id, 0),
                 )
                 for item in visible
             ]
@@ -303,12 +307,16 @@ class ThreadProjectionService:
             memory=memory, thread_ids=tuple(set(thread_ids)), include_archived=True, limit=100
         )
         activities = {} if self._root_activities is None else await self._root_activities(thread_ids)
-        owners, coordinators = await self._store.threads.roles(thread_ids)
+        owners, coordinators, worker_counts = await self._store.threads.roles(thread_ids)
         return ThreadPage(
             threads=tuple(
                 [
                     await self._summary(
-                        item, activity=activities.get(item.thread_id), owners=owners, coordinators=coordinators
+                        item,
+                        activity=activities.get(item.thread_id),
+                        owner=owners.get(item.thread_id),
+                        coordinator=coordinators.get(item.thread_id),
+                        worker_count=worker_counts.get(item.thread_id, 0),
                     )
                     for item in stored
                 ]
@@ -319,8 +327,8 @@ class ThreadProjectionService:
     async def detail(self, thread_id: str) -> ThreadDetail:
         from a13n_harness_ui.bot_models import BOT_THREAD_ID
 
-        thread, owners, coordinators = await self._required_thread_with_roles(thread_id)
-        summary = await self._summary(thread, owners=owners, coordinators=coordinators)
+        thread, owner, coordinator, worker_count = await self._required_thread_with_roles(thread_id)
+        summary = await self._summary(thread, owner=owner, coordinator=coordinator, worker_count=worker_count)
         continuation_id = None
         requests: tuple[DeferredRequestView, ...] = ()
         if thread.parent_thread_id is not None:
@@ -591,9 +599,7 @@ class ThreadProjectionService:
             raise ThreadError("Thread does not exist.", code="thread_missing")
         return thread
 
-    async def _required_thread_with_roles(
-        self, thread_id: str
-    ) -> tuple[Thread, dict[str, str], dict[str, Coordinator]]:
+    async def _required_thread_with_roles(self, thread_id: str) -> tuple[Thread, str | None, Coordinator | None, int]:
         result = await self._store.threads.get_with_roles(thread_id)
         if result is None:
             raise ThreadError("Thread does not exist.", code="thread_missing")
@@ -604,11 +610,10 @@ class ThreadProjectionService:
         thread: Thread,
         *,
         activity: RootActivityView | None = None,
-        owners: Mapping[str, str] | None = None,
-        coordinators: Mapping[str, Coordinator] | None = None,
+        owner: str | None,
+        coordinator: Coordinator | None,
+        worker_count: int,
     ) -> ThreadSummary:
-        if owners is None:
-            owners = await self._store.threads.worker_owners((thread.thread_id,))
         if activity is None:
             activity = _ROOT_INACTIVE
             if thread.parent_thread_id is None and self._root_activity is not None:
@@ -618,9 +623,6 @@ class ThreadProjectionService:
             # An active checkpoint left by an interrupted process is not liveness.
             pending = thread.read_model is not None and thread.read_model.deferred_requests is not None
             goal = goal.model_copy(update={"status": "suspended" if pending else "unverified_stop"})
-        if coordinators is None:
-            coordinators = await self._store.threads.coordinators((thread.thread_id,))
-        coordinator = coordinators.get(thread.thread_id)
         execution = thread.last_execution
         if (
             execution is not None
@@ -638,10 +640,11 @@ class ThreadProjectionService:
             )
         return ThreadSummary(
             memory_scope=thread.memory_scope,
-            role="coordinator" if coordinator else "worker" if thread.thread_id in owners else "ordinary",
+            role="coordinator" if coordinator else "worker" if owner is not None else "ordinary",
             auto_followup=coordinator.auto_followup if coordinator else None,
+            unarchived_worker_count=worker_count,
             thread_id=thread.thread_id,
-            coordinator_thread_id=owners.get(thread.thread_id),
+            coordinator_thread_id=owner,
             parent_thread_id=thread.parent_thread_id,
             created_at=thread.created_at,
             updated_at=thread.updated_at,
@@ -652,7 +655,7 @@ class ThreadProjectionService:
             touched_at=thread.touched_at,
             archived=thread.archived,
             starred=thread.starred,
-            unread=False if thread.thread_id in owners else thread.unread,
+            unread=False if owner is not None else thread.unread,
             read_state_version=thread.read_state_version,
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",

@@ -51,7 +51,7 @@ it("patches only dirty loaded rows without invalidating content-only pages or ot
   applyActivityUpdates(client, [changed], ["changed"]);
   expect(
     client.getQueryData<InfiniteData<Page>>(key("one"))?.pages[0].rows[0],
-  ).toEqual(changed);
+  ).toEqual({ ...changed, observedAt: expect.any(Number) });
   expect(client.getQueryState(key("one"))?.isInvalidated).toBe(false);
   expect(client.getQueryData(key("two"))).toBe(before);
   client.clear();
@@ -210,7 +210,7 @@ it("patches content-only updates in the starred supplement without refreshing", 
   applyActivityUpdates(client, [changed], ["starred"]);
   expect(
     client.getQueryData<InfiniteData<Page>>(key("one"))?.pages[0].starred_rows,
-  ).toEqual([changed]);
+  ).toEqual([{ ...changed, observedAt: expect.any(Number) }]);
   expect(client.getQueryState(key("one"))?.isInvalidated).toBe(false);
   client.clear();
 });
@@ -261,7 +261,9 @@ it.each([false, true])(
     applyActivityUpdates(client, [next], ["changed"]);
     const updated = client.getQueryData<InfiniteData<Page>>(key("one"))
       ?.pages[0];
-    expect(wasStarred ? updated?.starred_rows : updated?.rows).toEqual([next]);
+    expect(wasStarred ? updated?.starred_rows : updated?.rows).toEqual([
+      { ...next, observedAt: Date.now() },
+    ]);
     await vi.advanceTimersByTimeAsync(200);
     expect(client.getQueryState(key("one"))?.isInvalidated).toBe(true);
     expect(client.getQueryState(key("two"))?.isInvalidated).toBe(false);

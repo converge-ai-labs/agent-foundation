@@ -302,9 +302,6 @@
 .threadRow:has(.threadDisclosure) .threadLink {
   padding-inline-start: 8px;
 }
-.threadRow:has(.threadDisclosure) .threadLabel > strong {
-  font-weight: 500;
-}
 .threadDisclosure:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;

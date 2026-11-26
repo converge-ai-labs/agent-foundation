@@ -9357,6 +9357,11 @@ export interface components {
              * @default null
              */
             auto_followup?: boolean | null;
+            /**
+             * Unarchived Worker Count
+             * @default null
+             */
+            unarchived_worker_count?: number | null;
             /** Thread Id */
             thread_id: string;
             /**

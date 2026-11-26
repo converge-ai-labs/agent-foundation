@@ -1654,6 +1654,8 @@ class HarnessUiApp:
                 coordinator=coordinator,
             )
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
+            if coordinator_thread_id is not None:
+                await self._summary_hub.publish(kind="thread", thread_id=coordinator_thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
     async def fork_thread(self, thread_id: str) -> ThreadSummary:
@@ -2271,6 +2273,7 @@ class HarnessUiApp:
         async with self._operation():
             async with self._root_runs.require_inactive(thread_id):
                 with CancelScope(shield=True):
+                    owner = (await self._store.threads.worker_owners((thread_id,))).get(thread_id)
                     async with self._subagent_operator.guard_execution_admission() as active:
                         deleted = await self._threads.delete(
                             thread_id,
@@ -2291,6 +2294,8 @@ class HarnessUiApp:
                         await ThreadObjectStore(self._store.layout.root, removed).clear()
                     await self._retire_mcp_owners()
                     await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+                    if owner is not None:
+                        await self._summary_hub.publish(kind="thread", thread_id=owner)
                 assert deleted is not None
                 return deleted
 
@@ -2311,7 +2316,10 @@ class HarnessUiApp:
             else:
                 await self._threads.update_metadata(thread_id=thread_id, mutation=mutation)
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
-            return await self._projections.get_thread(thread_id)
+            summary = await self._projections.get_thread(thread_id)
+            if mutation.patch.archived is not None and summary.coordinator_thread_id is not None:
+                await self._summary_hub.publish(kind="thread", thread_id=summary.coordinator_thread_id)
+            return summary
 
     def page_presence(self) -> PagePresence:
         self._require_ready()

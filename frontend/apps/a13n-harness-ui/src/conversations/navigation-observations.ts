@@ -3,7 +3,7 @@ import { useThreadOwners, type useThreads } from "./queries";
 import { useResults } from "./results";
 
 export type NavigationRow = Pick<Schema<"ThreadActivityView">, "thread"> &
-  Partial<Schema<"ThreadActivityView">>;
+  Partial<Schema<"ThreadActivityView">> & { observedAt?: number };
 
 // Project and chronological navigation share observation freshness and ownership.
 export function useNavigationObservations({
@@ -24,25 +24,25 @@ export function useNavigationObservations({
     thread.thread_id !== "thread_bot" && belongs(thread);
   // The selected detail can arrive before a slower sidebar refresh. Use that
   // observation for this row, without replacing other Projects or page cursors.
-  const observed = new Map<string, NavigationRow>(
-    [
-      ...(list.data?.pages.flatMap((page) => page.rows) ?? []),
-      ...(list.data?.pages[0]?.active_rows ?? []),
-      ...(list.data?.pages[0]?.starred_rows ?? []),
-    ]
-      .filter((row) => included(row.thread))
-      .map((row) => [row.thread.thread_id, row]),
-  );
+  const observed = new Map<string, NavigationRow>();
+  const observeRows = (rows: NavigationRow[], pageObservedAt: number) => {
+    for (const row of rows)
+      if (included(row.thread))
+        observed.set(row.thread.thread_id, {
+          ...row,
+          observedAt: row.observedAt ?? pageObservedAt,
+        });
+  };
+  const pages = list.data?.pages ?? [];
+  for (const page of pages) observeRows(page.rows, page.observedAt);
+  const firstPage = pages[0];
+  if (firstPage) {
+    observeRows(firstPage.active_rows ?? [], firstPage.observedAt);
+    observeRows(firstPage.starred_rows ?? [], firstPage.observedAt);
+  }
   for (const { thread, observedAt } of results.threads.values()) {
-    const page = list.data?.pages.find((page, index) =>
-      [
-        ...page.rows,
-        ...(index === 0 ? (page.active_rows ?? []) : []),
-        ...(index === 0 ? (page.starred_rows ?? []) : []),
-      ].some((row) => row.thread.thread_id === thread.thread_id),
-    );
-    if (observed.has(thread.thread_id) && observedAt <= (page?.observedAt ?? 0))
-      continue;
+    const row = observed.get(thread.thread_id);
+    if (row && observedAt <= (row.observedAt ?? 0)) continue;
     if (!included(thread)) {
       observed.delete(thread.thread_id);
       continue;
@@ -51,36 +51,21 @@ export function useNavigationObservations({
       observed.has(thread.thread_id) ||
       (thread.role !== "worker" && results.tracker?.isUnread(thread.thread_id))
     )
-      observed.set(thread.thread_id, {
-        ...observed.get(thread.thread_id),
-        thread,
-      });
+      observed.set(thread.thread_id, { ...row, thread, observedAt });
   }
-  const selectedPage = selected
-    ? list.data?.pages.find((page, index) =>
-        (index === 0
-          ? [
-              ...page.rows,
-              ...(page.active_rows ?? []),
-              ...(page.starred_rows ?? []),
-            ]
-          : page.rows
-        ).some((row) => row.thread.thread_id === selected.thread_id),
-      )
-    : undefined;
   if (
     selected &&
     included(selected) &&
-    (!observed.has(selected.thread_id) ||
-      selectedUpdatedAt >
-        Math.max(
-          selectedPage?.observedAt ?? 0,
-          results.threads.get(selected.thread_id)?.observedAt ?? 0,
-        ))
+    selectedUpdatedAt >
+      Math.max(
+        observed.get(selected.thread_id)?.observedAt ?? -1,
+        results.threads.get(selected.thread_id)?.observedAt ?? -1,
+      )
   ) {
     observed.set(selected.thread_id, {
       ...observed.get(selected.thread_id),
       thread: selected,
+      observedAt: selectedUpdatedAt,
     });
   }
   // Metadata/activity responses can arrive after a read-state mutation. Their
@@ -120,21 +105,35 @@ export function useNavigationObservations({
       ownerIds.includes(thread.thread_id) &&
       !observed.has(thread.thread_id)
     )
-      observed.set(thread.thread_id, { thread });
+      observed.set(thread.thread_id, {
+        thread,
+        observedAt: owners.dataUpdatedAt,
+      });
   }
   // Use the same reconciled observations for grouping and activity summaries.
   // Worker disclosure queries are lazy and must not reset these counts.
   const activeWorkerCounts = new Map<string, number>();
-  for (const { thread } of observed.values()) {
-    if (
-      !thread.archived &&
-      thread.role === "worker" &&
-      thread.coordinator_thread_id &&
-      thread.root_activity.state !== "inactive"
-    ) {
-      const owner = thread.coordinator_thread_id;
+  const ownersWithObservedWorkers = new Set<string>();
+  for (const { thread, observedAt } of observed.values()) {
+    const owner = thread.coordinator_thread_id;
+    if (thread.archived || thread.role !== "worker" || !owner) continue;
+    if (thread.root_activity.state !== "inactive")
       activeWorkerCounts.set(owner, (activeWorkerCounts.get(owner) ?? 0) + 1);
-    }
+    // A newer active or selected worker can precede its owner's refreshed
+    // count. A fresh zero remains authoritative over earlier worker evidence.
+    const ownerRow = observed.get(owner);
+    if (
+      ownerRow?.thread.unarchived_worker_count == null ||
+      (observedAt ?? 0) > (ownerRow.observedAt ?? 0)
+    )
+      ownersWithObservedWorkers.add(owner);
   }
-  return { observed, ownerIds, activeWorkerCounts, results, owners };
+  return {
+    observed,
+    ownerIds,
+    activeWorkerCounts,
+    ownersWithObservedWorkers,
+    results,
+    owners,
+  };
 }
