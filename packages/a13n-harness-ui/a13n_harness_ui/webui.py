@@ -2131,21 +2131,26 @@ def create_webui(
         return await app().explain_thread_configuration(defaults=await _document(request, NewThreadDefaults))
 
     @server.post("/api/threads/skills-preview", response_model=SkillCatalogView, openapi_extra=_body(NewThreadDefaults))
-    async def preview_skills(request: Request) -> SkillCatalogView:
-        return await app().skill_catalog(defaults=await _document(request, NewThreadDefaults))
+    async def preview_skills(request: Request, coordinator: bool = False) -> SkillCatalogView:
+        return await app().skill_catalog(
+            defaults=await _document(request, NewThreadDefaults),
+            coordinator=coordinator,
+        )
 
     @server.get("/api/threads/{thread_id}/skills", response_model=SkillCatalogView)
-    async def thread_skills(thread_id: str) -> SkillCatalogView:
-        return await app().skill_catalog(thread_id=thread_id)
+    async def thread_skills(thread_id: str, coordinator: bool = False) -> SkillCatalogView:
+        return await app().skill_catalog(thread_id=thread_id, coordinator=coordinator)
 
     @server.post(
         "/api/threads/{thread_id}/skills",
         response_model=SkillCatalogView,
         openapi_extra=_body(EnvironmentSelectionPatch),
     )
-    async def preview_thread_skills(thread_id: str, request: Request) -> SkillCatalogView:
+    async def preview_thread_skills(thread_id: str, request: Request, coordinator: bool = False) -> SkillCatalogView:
         return await app().skill_catalog(
-            thread_id=thread_id, environment=await _document(request, EnvironmentSelectionPatch)
+            thread_id=thread_id,
+            environment=await _document(request, EnvironmentSelectionPatch),
+            coordinator=coordinator,
         )
 
     @server.get("/api/threads/{thread_id}/acp-commands", response_model=tuple[AcpCommand, ...])

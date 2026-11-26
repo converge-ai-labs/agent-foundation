@@ -424,6 +424,7 @@ class AgentReconstructor:
                     and environment_profile.provider_key == FULL_CONTROL_PROFILE.provider_key
                     and environment_profile.adapter_key == FULL_CONTROL_PROFILE.adapter_key
                 ),
+                coordinator_skills=composition.role == "coordinator",
             )
             model_resolver = HarnessUiModelResolver(
                 model_recipes,
@@ -563,6 +564,7 @@ class AgentReconstructor:
         path_layout: EnvironmentPathLayout,
         model_recipes: dict[str, ResolvedModelRecipe],
         native_default_tools: bool,
+        coordinator_skills: bool = False,
     ) -> AgentDefinition[str | None]:
         recipe_id = model_recipe_id(node.model)
         previous = model_recipes.setdefault(recipe_id, node.model)
@@ -570,7 +572,11 @@ class AgentReconstructor:
             raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
 
         selections = [(item.capability, capability_configuration(item, model_recipes)) for item in node.capabilities]
-        selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
+        selected = self._catalog.capabilities(
+            tuple(selections),
+            path_layout=path_layout,
+            include_coordinator_skills=root and coordinator_skills,
+        )
         capabilities: list[AbstractCapability[Any]] = [CurrentAgentContextCapability()]
         local_sources: dict[str, AbstractCapability[Any]] = {}
         for recipe, item in zip(node.capabilities, selected, strict=True):

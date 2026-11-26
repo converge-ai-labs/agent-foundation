@@ -606,6 +606,7 @@ function reservedAlias(alias: string) {
       "thread-files",
       "configuration",
       "builtin-skills",
+      "builtin-coordinator-skills",
       "user-skills",
     ].includes(alias) || /^(workspace|content-plugin)-[0-9]+$/.test(alias)
   );
