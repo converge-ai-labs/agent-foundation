@@ -16,33 +16,47 @@ def _workflow() -> dict:
 
 
 @pytest.mark.parametrize(
-    ("title", "body", "existing", "expected"),
+    ("title", "body", "existing", "expected", "suggested_scope"),
     [
-        ("feat(ui): add previews", "", [], ["enhancement"]),
-        ("perf(runtime): reduce allocations", "", [], ["enhancement"]),
-        ("fix(envd): retain errors", "", [], ["bug"]),
-        ("revert(ui): restore defaults", "", [], ["bug"]),
-        ("docs: explain setup", "", [], ["documentation"]),
-        ("chore(ci): update runners", "", [], ["chore"]),
-        ("refactor(runtime): simplify calls", "", [], ["chore"]),
-        ("test(runtime): cover recovery", "", [], ["chore"]),
-        ("ci: adjust jobs", "", [], ["chore"]),
-        ("build: update tooling", "", [], ["chore"]),
-        ("style: format sources", "", [], ["chore"]),
-        ("feat(api)!: remove old fields", "", [], ["enhancement", "breaking-change"]),
-        ("fix(api): update defaults", "Details\n\nBREAKING CHANGE: migrate config", [], ["bug", "breaking-change"]),
-        ("fix(api): update defaults", "BREAKING-CHANGE: migrate config", [], ["bug", "breaking-change"]),
-        ("feat(api)!: update defaults", "", ["bug", "help wanted"], ["breaking-change"]),
-        ("feat(api)!: update defaults", "", ["bug", "breaking-change"], []),
-        ("feat(ui): add previews", "", ["enhancement"], []),
-        ("feat(ui): add previews", "", ["chore"], []),
-        ("fix(ui): correct layout", "", ["help wanted"], ["bug"]),
-        ("Update UI", "", [], []),
-        ("constructor: not a recognized type", "", [], []),
-        ("feat(ui): ${process.exit(1)}", "", [], ["enhancement"]),
+        *[
+            (f"feat(a13n-{scope})!: simplify interfaces", "", ["bug"], ["breaking-change"], scope)
+            for scope in ("harness", "stream-protocol", "harness-ui", "service", "envd", "logging")
+        ],
+        ("feat(a13n-unknown): add support", "", [], ["enhancement"], None),
+        ("feat(a13n-harness-ui${process.exit}): add support", "", [], ["enhancement"], None),
+        ("feat(ui): add previews", "", [], ["enhancement"], None),
+        ("perf(runtime): reduce allocations", "", [], ["enhancement"], None),
+        ("fix(envd): retain errors", "", [], ["bug"], None),
+        ("revert(ui): restore defaults", "", [], ["bug"], None),
+        ("docs: explain setup", "", [], ["documentation"], None),
+        ("chore(ci): update runners", "", [], ["chore"], None),
+        ("refactor(runtime): simplify calls", "", [], ["chore"], None),
+        ("test(runtime): cover recovery", "", [], ["chore"], None),
+        ("ci: adjust jobs", "", [], ["chore"], None),
+        ("build: update tooling", "", [], ["chore"], None),
+        ("style: format sources", "", [], ["chore"], None),
+        ("feat(api)!: remove old fields", "", [], ["enhancement", "breaking-change"], None),
+        (
+            "fix(api): update defaults",
+            "Details\n\nBREAKING CHANGE: migrate config",
+            [],
+            ["bug", "breaking-change"],
+            None,
+        ),
+        ("fix(api): update defaults", "BREAKING-CHANGE: migrate config", [], ["bug", "breaking-change"], None),
+        ("feat(api)!: update defaults", "", ["bug", "help wanted"], ["breaking-change"], None),
+        ("feat(api)!: update defaults", "", ["bug", "breaking-change"], [], None),
+        ("feat(ui): add previews", "", ["enhancement"], [], None),
+        ("feat(ui): add previews", "", ["chore"], [], None),
+        ("fix(ui): correct layout", "", ["help wanted"], ["bug"], None),
+        ("Update UI", "", [], [], None),
+        ("constructor: not a recognized type", "", [], [], None),
+        ("feat(ui): ${process.exit(1)}", "", [], ["enhancement"], None),
     ],
 )
-def test_auto_labels_preserve_manual_choices_and_treat_pr_text_as_data(title, body, existing, expected):
+def test_auto_labels_preserve_manual_choices_and_treat_pr_text_as_data(
+    title, body, existing, expected, suggested_scope
+):
     script = _workflow()["jobs"]["labels"]["steps"][0]["with"]["script"]
     runner = """
 import fs from 'node:fs';
@@ -72,8 +86,16 @@ console.log(JSON.stringify({calls, notices}));
     assert output["calls"] == (
         [{"owner": "owner", "repo": "repo", "issue_number": 42, "labels": expected}] if expected else []
     )
-    if title in ("Update UI", "constructor: not a recognized type"):
-        assert output["notices"]
+    if suggested_scope:
+        assert output["notices"] == [
+            f"Use ({suggested_scope}) instead of (a13n-{suggested_scope}) in the PR title. "
+            "See Canonical Scopes in CONTRIBUTING.md."
+        ]
+    elif title in ("Update UI", "constructor: not a recognized type"):
+        assert len(output["notices"]) == 1
+        assert output["notices"][0].startswith("No type inferred")
+    else:
+        assert output["notices"] == []
 
 
 def test_auto_labels_run_only_on_open_and_ready_without_executing_pr_code():

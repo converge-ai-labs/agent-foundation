@@ -15,8 +15,10 @@ sys.path.insert(0, str(SCRIPTS_DIRECTORY))
 from release_notes import (  # noqa: E402
     COMPONENT_PATHS,
     INITIAL_NOTES,
+    DependencyChange,
     ReleaseChange,
     build_release_command,
+    collect_dependency_changes,
     collect_release_changes,
     component_paths,
     load_pull_request_metadata,
@@ -315,12 +317,14 @@ def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> N
 @pytest.mark.parametrize(
     ("subject", "body", "category", "title"),
     [
-        ("feat(ui): add previews (#12)", "", "Features", "add previews"),
-        ("fix(runtime): retain errors", "", "Bug fixes", "retain errors"),
+        ("feat(ui): add previews (#12)", "", "Features", "**ui**: add previews"),
+        ("fix(runtime): retain errors", "", "Bug fixes", "**runtime**: retain errors"),
+        ("revert(logging): restore defaults", "", "Bug fixes", "restore defaults"),
+        ("security: document policy", "", "Other changes", "security: document policy"),
         ("perf: reduce allocations", "", "Performance", "reduce allocations"),
         ("docs: explain migration", "", "Documentation", "explain migration"),
         ("test: exercise Windows paths", "", "Other changes", "exercise Windows paths"),
-        ("feat(api)!: remove legacy fields", "", "Breaking changes", "remove legacy fields"),
+        ("feat(api)!: remove legacy fields", "", "Breaking changes", "**api**: remove legacy fields"),
         ("fix: change defaults", "BREAKING CHANGE: update config", "Breaking changes", "change defaults"),
         ("fix: change defaults", "BREAKING-CHANGE: update config", "Breaking changes", "change defaults"),
         ("An ordinary commit", "", "Other changes", "An ordinary commit"),
@@ -395,6 +399,8 @@ def _commit(root: Path, path: str, subject: str) -> str:
         ("a13n-harness", "packages/a13n-stream-protocol/api.py"),
         ("a13n-harness-ui", "packages/a13n-harness-ui/api.py"),
         ("a13n-harness-ui", "frontend/apps/a13n-harness-ui/app.tsx"),
+        ("a13n-harness-ui", "scripts/prepare-a13n-harness-ui-assets.py"),
+        ("a13n-harness-ui", "scripts/prepare_a13n_harness_ui_assets.py"),
         ("a13n-harness-ui", "frontend/packages/a13n-ui/button.tsx"),
         ("a13n-logging", "packages/a13n-logging/api.py"),
         ("a13n-service", "packages/a13n-service/api.py"),
@@ -403,6 +409,7 @@ def _commit(root: Path, path: str, subject: str) -> str:
         ("a13n-service", "frontend/apps/a13n-console/app.tsx"),
         ("a13n-service", "deploy/docker/images/a13n-service/Dockerfile"),
         ("a13n-service", "deploy/docker/compose/a13n-service.yaml"),
+        ("a13n-service", "deploy/docker/compose/a13n-service-browser.yaml"),
         ("a13n-service", "deploy/kubernetes/helm/a13n-service/values.yaml"),
         ("a13n-service", "deploy/monitoring/alerts.yaml"),
         ("a13n-envd", "crates/a13n-envd/src/lib.rs"),
@@ -623,7 +630,7 @@ def test_metadata_queries_are_only_for_relevant_pr_numbers_and_are_reused(monkey
     assert changes[0].labels == ()
 
 
-def test_release_notes_preserve_pr_titles_and_deduplicate_only_listed_contributors():
+def test_release_notes_format_pr_titles_and_deduplicate_only_listed_contributors():
     notes = render_release_notes(
         component="a13n-logging",
         version="0.1.1",
@@ -645,7 +652,7 @@ def test_release_notes_preserve_pr_titles_and_deduplicate_only_listed_contributo
         ],
     )
     assert notes.startswith("Release initiated by @Publisher.\n\n## Highlights")
-    assert r"- feat(api): preserve \[titles\] and \<values\> — by @Alice, @Bob; reviewed by @Reviewer" in notes
+    assert r"- **api**: preserve \[titles\] and \<values\> — by @Alice, @Bob; reviewed by @Reviewer" in notes
     assert "old merge subject" not in notes
     assert "reviewed by @alice" not in notes
     assert "not-in-release" not in notes
@@ -838,7 +845,7 @@ def test_release_cli_reads_metadata_before_rendering_and_dry_run_never_publishes
     assert "### Bug fixes" in notes
     assert "### Features" not in notes
     assert "#99" not in notes
-    assert "feat(api): retain release behavior — by @coauthor, @pr-author; reviewed by @reviewer" in notes
+    assert "**api**: retain release behavior — by @coauthor, @pr-author; reviewed by @reviewer" in notes
     assert "## Contributors\n\n@coauthor @pr-author @reviewer" in notes
     if not dry_run:
         assert calls[-1][:3] == ["release", "create", "release/a13n-logging-v0.1.1"]
@@ -946,3 +953,260 @@ def test_service_exports_do_not_enter_envd_release_notes(git_repository):
     change = _commit(root, "proto/a13n-service/openapi.json", "fix: update the Service contract")
     assert collect_release_changes(root, "a13n-envd", base, "HEAD") == []
     assert [item.commit for item in collect_release_changes(root, "a13n-service", base, "HEAD")] == [change]
+
+
+@pytest.mark.parametrize(
+    ("component", "path"),
+    [
+        ("a13n-harness", "packages/a13n-harness/tests/test_local_envd.py"),
+        ("a13n-harness", "spec/a13n-stream-protocol/README.md"),
+        ("a13n-harness-ui", "frontend/apps/a13n-harness-ui/src/stream.test.ts"),
+        ("a13n-harness-ui", "frontend/packages/a13n-ui/tests/helper.ts"),
+        ("a13n-service", "frontend/apps/a13n-console/editor.spec.tsx"),
+        ("a13n-service", "deploy/monitoring/tests/alerts.test.yaml"),
+        ("a13n-service", "deploy/kubernetes/kind-local.yaml"),
+        ("a13n-service", "spec/a13n-service/README.md"),
+        ("a13n-logging", ".github/workflows/release-a13n-logging.yml"),
+        ("a13n-envd", "packages/a13n-envd-client/tests/test_session.py"),
+    ],
+)
+def test_ignores_non_product_paths_even_with_breaking_title(git_repository, component, path):
+    root = git_repository
+    base = _git(root, "rev-parse", "HEAD")
+    _commit(root, path, "feat!: ignored path")
+    assert collect_release_changes(root, component, base, "HEAD") == []
+
+
+def test_shared_only_is_channel_local_and_ignores_primary_test_files(git_repository):
+    root = git_repository
+    base = _git(root, "rev-parse", "HEAD")
+    paths = (
+        "frontend/packages/a13n-ui/src/display.ts",
+        "frontend/apps/a13n-harness-ui/src/stream.test.ts",
+        "frontend/apps/a13n-console/src/stream.ts",
+    )
+    for path in paths:
+        file = root / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("changed\n")
+    _git(root, "add", *paths)
+    _git(root, "commit", "--quiet", "-m", "fix(ui): retain events")
+    docs = _commit(root, "docs/environments/cloud-providers.md", "docs: document providers")
+    for component, expected in (
+        ("a13n-harness-ui", [("fix(ui): retain events", True)]),
+        ("a13n-service", [("docs: document providers", True), ("fix(ui): retain events", False)]),
+        ("a13n-harness", [("docs: document providers", True)]),
+        ("a13n-envd", []),
+        ("a13n-logging", []),
+    ):
+        changes = collect_release_changes(root, component, base, docs)
+        assert [(item.subject, item.shared_only) for item in changes] == expected
+
+
+def test_rename_to_an_excluded_path_keeps_the_runtime_removal(git_repository):
+    root = git_repository
+    source = "packages/a13n-logging/api.py"
+    base = _commit(root, source, "fix: expose API")
+    target = root / "packages/a13n-logging/tests/test_api.py"
+    target.parent.mkdir()
+    _git(root, "mv", source, target.relative_to(root).as_posix())
+    _git(root, "commit", "--quiet", "-m", "refactor!: remove API")
+    [item] = collect_release_changes(root, "a13n-logging", base, "HEAD")
+    assert item.subject == "refactor!: remove API"
+    assert not item.shared_only
+
+
+@pytest.mark.parametrize(
+    ("subject", "body", "title", "labels", "shared_only", "section", "summary"),
+    [
+        (
+            "fix: old (#42)",
+            "",
+            "feat(A13N-Harness-UI)!: Require ACP",
+            ("skip-changelog",),
+            False,
+            "Breaking changes",
+            "Require ACP",
+        ),
+        (
+            "fix(a13n-stream-protocol)!: old (#42)",
+            "",
+            "fix(a13n-stream-protocol)!: Adopt v2",
+            ("chore", "bug"),
+            True,
+            "Breaking changes",
+            "**stream-protocol**: Adopt v2",
+        ),
+        (
+            "Merge pull request #42 from owner/topic",
+            "fix(service)!: Old wording\n\nDetails",
+            "fix(service): Restore v2",
+            ("bug",),
+            True,
+            "Shared changes",
+            "**service**: Restore v2",
+        ),
+        (
+            "Merge pull request #42 from owner/topic",
+            "fix(WebUI)!: Replace API\n\nDetails",
+            None,
+            ("skip-changelog",),
+            True,
+            "Breaking changes",
+            "**WebUI**: Replace API",
+        ),
+        (
+            "fix: old (#42)",
+            "BREAKING-CHANGE: migrate",
+            "fix(a13n-harness-ui): update e2e",
+            ("enhancement", "skip-changelog"),
+            False,
+            "Breaking changes",
+            "update e2e",
+        ),
+        (
+            "fix: old (#42)",
+            "",
+            "perf(ui): keep ACP fast",
+            ("enhancement",),
+            False,
+            "Performance",
+            "**ui**: keep ACP fast",
+        ),
+        ("fix: old (#42)", "", "perf: keep ACP fast", ("enhancement", "bug"), False, "Features", "keep ACP fast"),
+        (
+            "fix: old (#42)",
+            "",
+            "perf: keep ACP fast",
+            ("enhancement", "documentation"),
+            False,
+            "Features",
+            "keep ACP fast",
+        ),
+        ("fix: old (#42)", "", "perf: keep ACP fast", ("documentation",), False, "Documentation", "keep ACP fast"),
+        ("fix: old (#42)", "", "fix(acp): Keep ACP fast", ("bug",), True, "Shared changes", "**acp**: Keep ACP fast"),
+        ("fix: old (#42)", "", "fix(ui): preserve behavior", ("skip-changelog",), True, None, None),
+        ("fix: old (#42)", "", "fix(ui): preserve behavior", ("chore",), True, None, None),
+        ("fix: old (#42)", "", "security: Keep [details]", (), False, "Other changes", r"security: Keep \[details\]"),
+        (
+            "fix: old (#42)",
+            "",
+            "fix(scope_name): Keep [details]",
+            (),
+            False,
+            "Bug fixes",
+            r"**scope\_name**: Keep \[details\]",
+        ),
+        (
+            "fix: old (#42)",
+            "",
+            "fix(<scope>): Keep behavior",
+            (),
+            False,
+            "Bug fixes",
+            r"**\<scope\>**: Keep behavior",
+        ),
+    ],
+)
+def test_classifies_before_rendering_live_pr_titles(subject, body, title, labels, shared_only, section, summary):
+    notes = render_release_notes(
+        component="a13n-harness-ui",
+        version="1.0.1",
+        repository="owner/repo",
+        previous_tag="release/a13n-harness-ui-v1.0.0",
+        changes=[ReleaseChange("a" * 40, subject, body, labels, title, shared_only=shared_only)],
+    )
+    if section is None:
+        assert "No component-scoped changelog entries" in notes
+        assert "[#42]" not in notes
+    else:
+        assert f"### {section}\n\n- {summary} ([#42]" in notes
+
+
+def _commit_toml(root: Path, path: str, contents: str) -> str:
+    file = root / path
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text(contents, encoding="utf-8")
+    _git(root, "add", path)
+    _git(root, "commit", "--quiet", "-m", "chore(release): update dependency declarations")
+    return _git(root, "rev-parse", "HEAD")
+
+
+def test_dependency_delta_reads_tagged_blobs_and_only_the_current_channel(git_repository):
+    root = git_repository
+    component = "a13n-harness-ui"
+    legacy = _commit_toml(
+        root,
+        "packages/a13n-harness-ui/pyproject.toml",
+        '[tool.a13n.release-dependencies]\nz = "==1.0.0"\na = ">=1.0.0,<2.0.0"\nb = "==1.0.0"\n',
+    )
+    _git(root, "tag", "release/a13n-harness-ui-v1.0.0", legacy)
+    current = _commit_toml(
+        root,
+        "release-dependencies.toml",
+        '[a13n-harness-ui]\nb = "==1.0.0"\nz = "==1.1.0"\nc = "==1.0.0"\n[a13n-service]\nz = "==9.0.0"\n',
+    )
+    _git(root, "tag", "release/a13n-harness-ui-v1.0.1", current)
+    # Previews read both tagged blobs rather than current checkout data.
+    (root / "release-dependencies.toml").write_text("malformed working tree data")
+    assert collect_dependency_changes(
+        root, component, "release/a13n-harness-ui-v1.0.0", "release/a13n-harness-ui-v1.0.1"
+    ) == [
+        DependencyChange("a", ">=1.0.0,<2.0.0", None),
+        DependencyChange("c", None, "==1.0.0"),
+        DependencyChange("z", "==1.0.0", "==1.1.0"),
+    ]
+    assert collect_dependency_changes(root, "a13n-service", legacy, current) == []
+    assert collect_dependency_changes(root, "a13n-envd", legacy, current) == []
+
+
+def test_dependency_delta_accepts_legacy_tables_at_both_tags(git_repository):
+    root = git_repository
+    path = "packages/a13n-service/pyproject.toml"
+    base = _commit_toml(root, path, '[tool.a13n.release-dependencies]\na = "==1.0.0"\n')
+    current = _commit_toml(root, path, '[tool.a13n.release-dependencies]\na = "==1.1.0"\n')
+    assert collect_dependency_changes(root, "a13n-service", base, current) == [
+        DependencyChange("a", "==1.0.0", "==1.1.0")
+    ]
+
+
+def test_dependency_delta_ignores_other_tables_and_formatting(git_repository):
+    root = git_repository
+    base = _commit_toml(root, "release-dependencies.toml", '[a13n-service]\na = "==1.0.0"\n')
+    current = _commit_toml(
+        root,
+        "release-dependencies.toml",
+        '[a13n-harness]\na = "==2.0.0"\n[a13n-service]\n# unchanged declaration\na="==1.0.0"\n',
+    )
+    assert collect_dependency_changes(root, "a13n-service", base, current) == []
+
+
+@pytest.mark.parametrize("malformed", ["[a13n-service\n", "a13n-service = 42\n", "[a13n-service]\na = 42\n"])
+def test_dependency_delta_reports_malformed_tagged_data(git_repository, malformed):
+    root = git_repository
+    current = _commit_toml(root, "release-dependencies.toml", malformed)
+    with pytest.raises(ValueError, match=r"release-dependencies\.toml"):
+        collect_dependency_changes(root, "a13n-service", "HEAD^", current)
+
+
+def test_dependency_only_preview_uses_release_comparison_base(git_repository):
+    root = git_repository
+    for version, requirement in (
+        ("1.0.0", "1.0.0"),
+        ("1.1.0-rc.1", "1.1.0rc1"),
+        ("1.1.0-rc.2", "1.1.0rc2"),
+        ("1.1.0", "1.1.0"),
+    ):
+        _commit_toml(root, "release-dependencies.toml", f'[a13n-service]\na13n-harness = "=={requirement}"\n')
+        _git(root, "tag", f"release/a13n-service-v{version}")
+    for version, before, after in (("1.1.0-rc.2", "1.1.0rc1", "1.1.0rc2"), ("1.1.0", "1.0.0", "1.1.0")):
+        preview = subprocess.run(
+            [sys.executable, str(CREATE_RELEASE), "a13n-service", version, "Service", "--dry-run"],
+            cwd=root,
+            env={**os.environ, "GITHUB_REPOSITORY": "owner/repo"},
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        assert f"### Dependencies\n\n- `a13n-harness`: `=={before}` → `=={after}`" in preview.stdout
+        assert "No component-scoped changelog entries" not in preview.stdout
