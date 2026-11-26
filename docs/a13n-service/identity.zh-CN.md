@@ -76,12 +76,15 @@ curl "$A13N_URL/api/v1/workspaces/$WORKSPACE_ID" -H "Authorization: Bearer $A13N
 
 ## 运维账号控制
 
-运维人员可通过 CLI 停用或恢复任意账号（OIDC 账号使用 `--principal-id usr_...`）：
+运维人员可通过 CLI 停用或恢复任意账号（OIDC 账号使用 `--principal-id usr_...`），或在邮件找回不可用时直接重置已启用的本地密码账号的密码：
 
 ```sh
 a13n-service --config service.toml user disable --email person@example.com
 a13n-service --config service.toml user enable --email person@example.com
+a13n-service --config service.toml user reset-password --email person@example.com
 ```
+
+`user reset-password` 默认以交互方式输入新密码（也可通过 `--password-stdin` 从标准输入读取），会吊销该账号所有既有登录会话和未使用的重置链接，并拒绝已停用或纯 OIDC 账号。
 
 ## 审计
 

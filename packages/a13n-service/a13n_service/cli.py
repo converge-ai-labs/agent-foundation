@@ -30,7 +30,7 @@ from a13n_service.migrations import run_objects
 from a13n_service.migrations.runner import check, generate, heads, upgrade
 from a13n_service.settings import ProcessRole, Settings, load_settings
 from a13n_service.tenancy.bootstrap import AlreadyBootstrapped, BootstrapInput, bootstrap
-from a13n_service.tenancy.users import set_account_status
+from a13n_service.tenancy.users import reset_account_password, set_account_status
 
 
 @click.group()
@@ -241,6 +241,37 @@ def disable_user(settings: Settings, email: str | None, principal_id: str | None
 def enable_user(settings: Settings, email: str | None, principal_id: str | None) -> None:
     """Restore a disabled user with the grants and keys it had."""
     _set_status(settings, email, principal_id, "active")
+
+
+@user.command("reset-password")
+@click.option("--email")
+@click.option("--principal-id")
+@click.option("--password-stdin", is_flag=True, help="Read the password from the first line of standard input.")
+@click.pass_obj
+def reset_user_password(settings: Settings, email: str | None, principal_id: str | None, password_stdin: bool) -> None:
+    """Set a new password for an active local-password user and revoke their sessions and links."""
+    if bool(email) == bool(principal_id):
+        raise click.UsageError("Specify exactly one of --email or --principal-id")
+    if password_stdin:
+        password = sys.stdin.readline().removesuffix("\n")
+    else:
+        password = click.prompt("Password", hide_input=True, confirmation_prompt=True)
+    if len(password) < 8 or len(password) > 1024:
+        raise click.ClickException("Password reset refused: password must be between 8 and 1024 characters")
+    try:
+        user_id = _with_storage(
+            settings,
+            partial(
+                reset_account_password,
+                settings=settings,
+                email=email.lower() if email else None,
+                password=SecretStr(password),
+                principal_id=principal_id,
+            ),
+        )
+    except ServiceError as error:
+        raise click.ClickException(error.message) from None
+    click.echo(json.dumps({"id": user_id}))
 
 
 def _set_status(

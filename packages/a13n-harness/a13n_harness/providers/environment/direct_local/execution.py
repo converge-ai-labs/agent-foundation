@@ -77,7 +77,9 @@ class DirectLocalExecution(DirectLocalReference, ExecutionBackend):
             generation=generation,
         )
         self._files = files
-        process_enabled = bool(self._configuration.allowed_executables or self._configuration.shell_profiles)
+        process_enabled = self._configuration.allowed_executables is None or bool(
+            self._configuration.allowed_executables or self._configuration.shell_profiles
+        )
         processes: LocalProcessManager | None = None
         retention: LocalRetentionStore | None = None
         if process_enabled:

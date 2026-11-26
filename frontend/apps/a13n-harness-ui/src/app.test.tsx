@@ -191,6 +191,137 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it.each(["saved", "new"] as const)(
+  "refreshes incomplete ACP options on opening Agent & Model in a %s chat",
+  async (chat) => {
+    await i18n.changeLanguage("en");
+    localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+    const saved = chat === "saved";
+    const threadPath = "/api/threads/external";
+    const optionsPath = saved
+      ? `${threadPath}/acp-options`
+      : "/api/acp-agents/external/options";
+    window.history.replaceState(null, "", saved ? "/threads/external" : "/");
+    const configuration = {
+      agent_source: { kind: "acp_agent", id: "external" },
+      version: 1,
+    };
+    const mode = {
+      id: "mode",
+      name: "Mode",
+      value: "default",
+      choices: [{ value: "default", name: "Default" }],
+    };
+    const model = {
+      id: "engine",
+      category: "model",
+      name: "Model",
+      value: "",
+      choices: [{ value: "model-a", name: "Fixture Model A" }],
+    };
+    let reads = 0;
+    let staleRead: AbortSignal | undefined;
+    let finishWrite!: () => void;
+    let finishStaleRead!: () => void;
+    const writeReady = new Promise<void>((resolve) => (finishWrite = resolve));
+    const staleReadReady = new Promise<void>(
+      (resolve) => (finishStaleRead = resolve),
+    );
+    const writes: unknown[] = [];
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const request = input as Request;
+      const path = new URL(request.url).pathname;
+      if (path === "/api/setup") return json({ needed: false });
+      if (path === "/api/selectors")
+        return json({
+          agents: [
+            { agent_id: "external", name: "Fixture Agent", kind: "acp_agent" },
+          ],
+          environments: [],
+          models: [],
+        });
+      if (path === "/api/threads/configuration-preview")
+        return json({ configuration });
+      if (path === threadPath)
+        return json({
+          available_actions: [],
+          thread: {
+            configuration,
+            thread_id: "external",
+            title: "Fixture chat",
+            root_activity: { state: "inactive" },
+            archived: false,
+            metadata_version: 1,
+            role: "ordinary",
+          },
+        });
+      if (
+        path === `${threadPath}/inputs` ||
+        path === `${threadPath}/transcript`
+      )
+        return json({ entries: [], turns: [], next_cursor: null });
+      if (path === `${threadPath}/children`)
+        return json({ executions: [], next_cursor: null });
+      if (path === `${threadPath}/work`)
+        return json({ tasks: { completed: 0, total: 0 }, notes: { total: 0 } });
+      if (path === optionsPath) {
+        if (request.method === "GET") {
+          const options = ++reads === 1 ? [mode] : [mode, model];
+          if (saved && reads === 3) {
+            staleRead = request.signal;
+            await staleReadReady;
+          }
+          return json(saved ? options : { scope: "fixture", options });
+        }
+        writes.push(await request.json());
+        if (saved) await writeReady;
+        const options = [mode, { ...model, value: "model-a" }];
+        return json(
+          saved
+            ? options
+            : { scope: "fixture", options, selections: { engine: "model-a" } },
+        );
+      }
+      return fixture(request);
+    });
+
+    render(<BrowserApp />);
+    const panel = await screen.findByRole("button", {
+      name: "Agent & Model settings",
+    });
+    await waitFor(() => expect(reads).toBe(1));
+    expect(panel.textContent).not.toContain("Fixture Model A");
+    const user = userEvent.setup();
+    await user.click(panel);
+    const row = await screen.findByRole("button", { name: "Model" });
+    expect(within(row).getByText("Not selected")).toBeTruthy();
+    expect(panel.textContent).toContain("No model selected");
+    expect(reads).toBe(2);
+    await user.click(row);
+    await user.click(screen.getByRole("button", { name: "Fixture Model A" }));
+    if (saved) {
+      await waitFor(() => expect(writes).toHaveLength(1));
+      await user.keyboard("{Escape}");
+      await waitFor(() =>
+        expect(panel.getAttribute("aria-expanded")).toBe("false"),
+      );
+      await user.click(panel);
+      await waitFor(() => expect(reads).toBe(3));
+      finishWrite();
+    }
+    await waitFor(() => expect(panel.textContent).toContain("Fixture Model A"));
+    if (saved) {
+      expect(staleRead?.aborted).toBe(true);
+      await act(async () => finishStaleRead());
+      expect(panel.textContent).toContain("Fixture Model A");
+    }
+    const change = { id: "engine", value: "model-a" };
+    expect(writes).toEqual([
+      saved ? change : { selection: { scope: "fixture" }, change },
+    ]);
+  },
+);
+
 it("observes Memory with the shared Thread viewer and scoped files without mounting an editor", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
   window.history.replaceState(null, "", "/memory");

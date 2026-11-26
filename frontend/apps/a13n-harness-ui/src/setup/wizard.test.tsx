@@ -579,6 +579,42 @@ it("offers affinity presets and captures a custom replacement alongside the endp
   expect(model?.settings).not.toHaveProperty("extra_headers");
 });
 
+it("keeps a newly selected API connection when an initial prepare resolves mid-switch", async () => {
+  let resolvePrepare: ((response: Response) => void) | undefined;
+  let prepareEntered!: () => void;
+  const prepareStarted = new Promise<void>((resolve) => {
+    prepareEntered = resolve;
+  });
+  override = async (request) => {
+    if (
+      new URL(request.url).pathname === "/api/models/prepare" &&
+      !resolvePrepare
+    ) {
+      prepareEntered();
+      return new Promise<Response>((resolve) => {
+        resolvePrepare = resolve;
+      });
+    }
+    return undefined;
+  };
+  mount();
+  await prepareStarted;
+  resolvePrepare!(
+    json({
+      route: "openai-codex:gpt-5.6-sol",
+      authentication: { kind: "codex_subscription" },
+      model_configuration: {},
+      settings: { thinking: "high" },
+      model_characteristics: { context_window_tokens: 350000 },
+    }),
+  );
+  await selectApi();
+  expect(await screen.findByLabelText("Provider API key")).toBeTruthy();
+  expect(
+    screen.getByRole("combobox", { name: "Model connection" }).textContent,
+  ).toContain("OpenAI API");
+});
+
 it.each([null, "custom/reviewer"])(
   "explicitly chooses or skips the API reviewer (%s) and retains the choice on refresh",
   async (reviewer) => {

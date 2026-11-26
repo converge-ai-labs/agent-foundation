@@ -142,6 +142,8 @@ A Coordinator focuses on planning, delegation, and review while delegating subst
 2. Expand the Coordinator in the sidebar to inspect its workers, or click **New worker** to assign a task directly.
 3. Toggle **Pause/Enable automatic follow-up** in the Coordinator menu to control whether worker completion events automatically wake the Coordinator.
 
+To preselect **Coordinate agents** in new Project chats, turn on **Settings → Chats → New chats → Coordinate agents by default** and save. The instance setting is `webui.coordinator_by_default` (off by default). You can still turn **Coordinate agents** off before the first message.
+
 ## Agent collaboration
 
 Agents can inspect related chats, spin up new work, and message existing conversations within their role:

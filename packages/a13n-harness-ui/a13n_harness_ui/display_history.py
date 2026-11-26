@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from typing import Any, cast
 
-from a13n_harness import HarnessStreamEvent
+from a13n_harness import HarnessEvent, HarnessStreamEvent
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState, HarnessState, decode_messages
 from a13n_stream_protocol.display import DisplayContinuation, DisplayFold, Item, Observed, StreamPosition
 from a13n_stream_protocol.observer import TOOL_PROGRESS_EVENT
@@ -189,7 +189,12 @@ class DisplayHistoryCollector:
                 first=(self.saved.items[0].ordinal if self.saved.items else 1),
             )
             self.fold.changed.clear()
-        self._enqueue(self.fold.fold(self.fold.events(source), source, sequence_progress=False))
+        from a13n_harness_ui.acp_execution import AcpDisplayEvent
+
+        if isinstance(source, HarnessEvent) and isinstance(source.event, AcpDisplayEvent):
+            self._enqueue(self.fold.fold(source.event.events, sequence_progress=False))
+        else:
+            self._enqueue(self.fold.fold(self.fold.events(source), source, sequence_progress=False))
         if (
             self._pending_response is not None
             and not self._resume_group_assigned

@@ -373,6 +373,7 @@ class ThreadRecord(Base):
     read_model_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_execution_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     external_context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    acp_state_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     unread: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("0"))
     read_state_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     completion_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
@@ -496,7 +497,8 @@ class ThreadConfigurationRecord(Base):
     __table_args__ = (
         CheckConstraint("version >= 1", name="version"),
         CheckConstraint(
-            "agent_source_kind IN ('agent', 'markdown', 'memory', 'live', 'bot', 'dynamic')", name="agent_source_kind"
+            "agent_source_kind IN ('agent', 'markdown', 'memory', 'live', 'bot', 'dynamic', 'acp_agent')",
+            name="agent_source_kind",
         ),
     )
 

@@ -1,3 +1,4 @@
+import { AcpOptionFields, acpModelOption, acpOptionLabel } from "./acp-options";
 import { useComposerRunChoices } from "./composer-run-choices";
 import {
   createContext,
@@ -80,6 +81,7 @@ export async function ensureConversation(
   transport: Transport,
   threadId: string,
   draft: NewDraft,
+  coordinator: boolean,
 ) {
   if (draft.pending) return draft.pending;
   if (draft.created) return;
@@ -93,6 +95,7 @@ export async function ensureConversation(
       );
     }
     draft.attempted = true;
+    draft.composer.coordinator = !draft.coordinatorThreadId && coordinator;
     draft.save();
     try {
       const created = await result(
@@ -100,9 +103,10 @@ export async function ensureConversation(
           body: {
             thread_id: threadId,
             defaults: draft.defaults,
+            ...(draft.acp ? { acp_options: draft.acp.selection } : {}),
             ...(draft.coordinatorThreadId
               ? { coordinator_thread_id: draft.coordinatorThreadId }
-              : draft.composer.coordinator
+              : coordinator
                 ? { coordinator: true }
                 : {}),
           },
@@ -136,13 +140,17 @@ export async function ensureConversation(
 export function NewConversationPage(props: {
   profile: Profile;
   unauthorized: () => void;
+  coordinatorByDefault?: boolean;
 }) {
   const drafts = useContext(NewConversationDrafts);
   const composers = useContext(ComposerDrafts);
   const { key } = useLocation();
   // A new navigation can leave a retired composer behind after a successful
   // Send whose saved-page read failed; ordinary rerenders must not replace it.
-  const draft = useMemo(() => drafts.get(composers), [drafts, composers, key]);
+  const draft = useMemo(
+    () => drafts.get(composers, props.coordinatorByDefault),
+    [drafts, composers, key, props.coordinatorByDefault],
+  );
   return <NewConversation key={draft.threadId} draft={draft} {...props} />;
 }
 
@@ -150,8 +158,10 @@ function NewConversation({
   draft,
   profile,
   unauthorized,
+  coordinatorByDefault = false,
 }: {
   draft: NewDraft;
+  coordinatorByDefault?: boolean;
   profile: Profile;
   unauthorized: () => void;
 }) {
@@ -199,7 +209,8 @@ function NewConversation({
       ),
   });
   const create = useMutation({
-    mutationFn: () => ensureConversation(transport, threadId, draft),
+    mutationFn: (coordinator: boolean) =>
+      ensureConversation(transport, threadId, draft, coordinator),
     onSettled: (_data, error) => {
       if (draft.created) void refreshThreadLists(queries);
       if (draft.created && error && active.current) openConversation();
@@ -300,9 +311,106 @@ function NewConversation({
     (item) => item.project_id === defaults.project_id,
   );
   const effective = preview.data?.configuration;
+  const canCoordinate = !!effective?.project_id && !preview.error;
   const effectiveAgent = selectors.data?.agents.find(
     (item) => item.agent_id === effective?.agent_source.id,
   );
+  const acpAgent =
+    effectiveAgent?.kind === "acp_agent" ? effectiveAgent.agent_id : undefined;
+  const acpProject = effective?.project_id ?? undefined;
+  const acpKey = JSON.stringify([acpAgent, acpProject]);
+  const activeAcpKey = useRef(acpKey);
+  activeAcpKey.current = acpKey;
+  const acpParams = {
+    path: { agent_id: acpAgent ?? "" },
+    query: { project_id: acpProject },
+  };
+  const acpQueryKey = ["new-acp-options", draft.threadId, acpKey] as const;
+  const acp = useQuery<Schema<"AcpOptionsPreview">>({
+    queryKey: acpQueryKey,
+    enabled: !!acpAgent && !draft.created,
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: ({ state }) =>
+      acpModelOption(state.data?.options) ? Infinity : 0,
+    queryFn: async ({ signal }) => {
+      const base = await result(
+        transport.client.GET("/api/acp-agents/{agent_id}/options", {
+          params: acpParams,
+          signal,
+        }),
+      );
+      const saved = draft.acp?.key === acpKey ? draft.acp.selection : undefined;
+      if (
+        saved?.scope === base.scope &&
+        Object.keys(saved.values ?? {}).length
+      ) {
+        try {
+          return await result(
+            transport.client.POST("/api/acp-agents/{agent_id}/options", {
+              params: acpParams,
+              signal,
+              body: { selection: saved },
+            }),
+          );
+        } catch (error) {
+          if (
+            !(error instanceof ApiError) ||
+            error.code !== "acp_option_invalid"
+          )
+            throw error;
+          if (
+            !acpModelOption(base.options) &&
+            Object.keys(saved.values ?? {}).some(
+              (key) => !base.options.some((option) => option.id === key),
+            )
+          )
+            return base;
+        }
+      }
+      if (
+        saved &&
+        activeAcpKey.current === acpKey &&
+        draft.acp?.selection === saved
+      ) {
+        draft.acp = undefined;
+        draft.save();
+      }
+      return base;
+    },
+  });
+  const acpChange = useMutation({
+    mutationFn: ({
+      change,
+      data,
+      params,
+    }: {
+      change: Schema<"AcpOptionChange">;
+      data: Schema<"AcpOptionsPreview">;
+      key: string;
+      queryKey: typeof acpQueryKey;
+      params: typeof acpParams;
+    }) =>
+      result(
+        transport.client.POST("/api/acp-agents/{agent_id}/options", {
+          params,
+          body: {
+            selection: { scope: data.scope, values: data.selections },
+            change,
+          },
+        }),
+      ),
+    onSuccess: async (updated, vars) => {
+      await queries.cancelQueries({ queryKey: vars.queryKey, exact: true });
+      if (activeAcpKey.current !== vars.key) return;
+      draft.acp = {
+        key: vars.key,
+        selection: { scope: updated.scope, values: updated.selections },
+      };
+      draft.save();
+      queries.setQueryData(vars.queryKey, updated);
+    },
+  });
   const runChoices = useComposerRunChoices(
     composerDraft,
     defaults.agent_id ?? effective?.agent_source.id,
@@ -487,13 +595,18 @@ function NewConversation({
               ownerId
                 ? undefined
                 : {
-                    active: draft.created && composerDraft.coordinator,
-                    available: !!effective?.project_id && !preview.error,
+                    active: draft.created && composerDraft.coordinator === true,
+                    available: canCoordinate,
+                    defaultEnabled:
+                      canCoordinate &&
+                      (draft.retainedCoordinatorDefault ??
+                        coordinatorByDefault),
                     locked: draft.attempted,
                   }
             }
             canRun={
               !runChoices.pending &&
+              (!acpAgent || (!!acp.data && !acpChange.isPending)) &&
               !!preview.data &&
               !preview.error &&
               ownerAvailable &&
@@ -518,8 +631,20 @@ function NewConversation({
               void refreshThreadLists(queries);
             }}
             local={!draft.created}
+            acpCommands={acpAgent ? acp.data?.commands : undefined}
+            externalAgent={!!acpAgent}
             skillDefaults={defaults}
-            prepareThread={() => create.mutateAsync()}
+            prepareThread={(coordinator) => {
+              if (
+                !draft.created &&
+                (!acpAgent ||
+                  draft.acp?.key !== acpKey ||
+                  draft.acp.selection.scope !== acp.data?.scope)
+              ) {
+                draft.acp = undefined;
+              }
+              return create.mutateAsync(coordinator);
+            }}
             onPreparing={setPreparing}
             onSubmitted={openConversation}
             onReviewOutcome={openConversation}
@@ -535,22 +660,71 @@ function NewConversation({
                 }}
               />
             }
-            controls={() => (
-              <ThreadRunChoices
-                catalog={selectors.data}
-                agentId={defaults.agent_id ?? ""}
-                defaultAgentId={effectiveAgent?.agent_id}
-                defaultModelId={effective?.default_model_id}
-                modelId={composerDraft.modelId}
-                controls={composerDraft.controls}
-                onControlsChange={runChoices.onControlsChange}
-                disabled={choicesDisabled}
-                onAgentChange={(value) => {
-                  change({ agent_id: value || null });
-                }}
-                onModelChange={runChoices.onModelChange}
-              />
-            )}
+            controls={() => {
+              const modelOption = acpModelOption(acp.data?.options);
+              return (
+                <ThreadRunChoices
+                  catalog={selectors.data}
+                  agentId={defaults.agent_id ?? ""}
+                  defaultAgentId={effectiveAgent?.agent_id}
+                  defaultModelId={effective?.default_model_id}
+                  modelId={composerDraft.modelId}
+                  controls={composerDraft.controls}
+                  onControlsChange={runChoices.onControlsChange}
+                  disabled={choicesDisabled}
+                  onAgentChange={(value) => {
+                    change({ agent_id: value || null });
+                  }}
+                  onExternalOptionsOpen={() => {
+                    if (
+                      !draft.created &&
+                      !acpChange.isPending &&
+                      !acpModelOption(acp.data?.options)
+                    )
+                      void acp.refetch({ cancelRefetch: false });
+                  }}
+                  externalModel={acpOptionLabel(
+                    modelOption,
+                    t("No model selected"),
+                  )}
+                  externalModelId={
+                    modelOption && modelOption.value !== ""
+                      ? String(modelOption.value)
+                      : undefined
+                  }
+                  externalThinking={acpOptionLabel(
+                    acp.data?.options.find(
+                      (option) =>
+                        option.category === "thought_level" ||
+                        option.id === "thought_level",
+                    ),
+                  )}
+                  externalOptions={
+                    acpAgent && (
+                      <AcpOptionFields
+                        key={acpKey}
+                        options={acp.data?.options}
+                        preset={effectiveAgent?.preset}
+                        loading={acp.isFetching}
+                        disabled={choicesDisabled || acpChange.isPending}
+                        error={acpChange.error ?? acp.error}
+                        onChange={(change) =>
+                          acp.data &&
+                          acpChange.mutate({
+                            change,
+                            data: acp.data,
+                            key: acpKey,
+                            queryKey: acpQueryKey,
+                            params: acpParams,
+                          })
+                        }
+                      />
+                    )
+                  }
+                  onModelChange={runChoices.onModelChange}
+                />
+              );
+            }}
           />
           {drafts.error && (
             <p role="alert">{composerMessage(drafts.error, t)}</p>

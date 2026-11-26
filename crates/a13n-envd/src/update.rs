@@ -472,17 +472,32 @@ fn installed_version(path: &Path) -> Result<Option<Version>> {
     Ok(Some(parse_version(value.trim_end_matches('\r'))?))
 }
 
+fn spawn_command(command: &mut Command) -> io::Result<std::process::Child> {
+    // On Linux, spawning a freshly written executable while another thread forks
+    // can transiently fail with ETXTBSY until the sibling child calls execve.
+    for attempt in 0..10 {
+        match command.spawn() {
+            Err(error) if error.kind() == io::ErrorKind::ExecutableFileBusy && attempt < 9 => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            result => return result,
+        }
+    }
+    unreachable!()
+}
+
 fn probe(path: &Path, argument: &str) -> Result<String> {
     reject_link(path)?;
     // File-backed output avoids unbounded pipe buffers and lets the parent enforce
     // a deadline without waiting for a candidate's inherited stdout handle.
     let mut stdout = tempfile::tempfile()?;
-    let mut child = Command::new(path)
+    let mut command = Command::new(path);
+    command
         .arg(argument)
         .stdin(Stdio::null())
         .stdout(stdout.try_clone()?)
-        .stderr(Stdio::null())
-        .spawn()?;
+        .stderr(Stdio::null());
+    let mut child = spawn_command(&mut command)?;
     let deadline = Instant::now() + Duration::from_secs(10);
     let status = loop {
         if let Some(status) = child.try_wait()? {
@@ -968,14 +983,20 @@ mod publication_tests {
         fs::copy(std::env::current_exe().unwrap(), &executable).unwrap();
         let candidate = temp.path().join("replacement");
         fs::write(&candidate, b"verified replacement fixture").unwrap();
-        let output = Command::new(&executable)
+        let mut command = Command::new(&executable);
+        command
             .args([
                 "--ignored",
                 "--exact",
                 "update::publication_tests::self_replace_child",
             ])
             .env("A13N_TEST_UPDATE_CANDIDATE", &candidate)
-            .output()
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let output = spawn_command(&mut command)
+            .unwrap()
+            .wait_with_output()
             .unwrap();
         assert!(
             output.status.success(),

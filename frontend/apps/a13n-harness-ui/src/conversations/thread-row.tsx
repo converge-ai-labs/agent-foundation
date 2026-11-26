@@ -438,7 +438,8 @@ export function ThreadRow({
             {row.thread.role === "ordinary" &&
               !row.thread.parent_thread_id &&
               !row.thread.memory_scope &&
-              row.thread.configuration.agent_source.kind === "agent" && (
+              (row.thread.configuration.agent_source.kind === "agent" ||
+                row.thread.configuration.agent_source.kind === "acp_agent") && (
                 <MenuItem
                   disabled={fork.isPending}
                   onClick={() => fork.mutate()}

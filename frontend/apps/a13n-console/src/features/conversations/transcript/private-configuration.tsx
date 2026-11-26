@@ -123,7 +123,7 @@ function ConfigurationFields({
   });
   const ready = !id || (webhook ? !!subscription.data : !!credential.data);
   const managed =
-    !webhook && !!credential.data?.owner_app_id && request.action !== "sync";
+    !webhook && !!credential.data?.app_id && request.action !== "sync";
   const revoked =
     !webhook &&
     credential.data?.state === "revoked" &&

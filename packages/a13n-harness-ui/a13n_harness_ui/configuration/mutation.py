@@ -22,7 +22,17 @@ from .models import LoadedHarnessUiConfiguration
 
 _MAX_SOURCE_BYTES = 1024 * 1024
 _RESOURCE_DIRECTORIES = frozenset(
-    {"models", "extensions", "mcp", "agents", "projects", "devices", "subscription_groups", "web_providers"}
+    {
+        "models",
+        "extensions",
+        "mcp",
+        "agents",
+        "acp_agents",
+        "projects",
+        "devices",
+        "subscription_groups",
+        "web_providers",
+    }
 )
 
 type CandidateValidator = Callable[[LoadedHarnessUiConfiguration], None]

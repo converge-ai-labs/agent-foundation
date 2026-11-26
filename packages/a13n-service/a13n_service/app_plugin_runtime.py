@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from importlib.resources import as_file, files
@@ -17,15 +17,20 @@ from sqlalchemy import select
 
 from a13n_service.app_definitions import InstalledApp, OrganizationSweep
 from a13n_service.app_plugins import AppCatalog, AppManifest
+from a13n_service.app_sdk.hooks import HookScope
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import not_found
 from a13n_service.infra.sweeps import Sweep
 from a13n_service.infra.telemetry import meter
+from a13n_service.runs import seal_events
+from a13n_service.runs.environments import events as environment_events
+from a13n_service.runs.environments.app_hooks import invoke
 from a13n_service.runs.runtime import Runtime
 from a13n_service.tenancy.app_plugins import AppRoute, policy
 from a13n_service.tenancy.tables import OrganizationRow
 
 SEAL_DROPS = meter.create_counter("a13n.app.run_seal.dropped", unit="{hint}")
+ENVIRONMENT_DROPS = meter.create_counter("a13n.app.environment_event.dropped", unit="{hint}")
 STALE_CONSUMER_IDLE_MS = 300_000
 _MAX_PRUNE_PER_PASS = 100
 
@@ -155,12 +160,10 @@ def app_sweeps(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> list[Sweep]:
     ]
 
 
-async def _prune_stale_consumers(runtime: Runtime, current: str) -> None:
+async def _prune_stale_consumers(runtime: Runtime, current: str, stream_key: str, group: str) -> None:
     """Drop dead control consumer metadata left behind after ungraceful exits."""
-    from a13n_service.runs.seal_events import GROUP, STREAM_KEY
-
     threshold = STALE_CONSUMER_IDLE_MS
-    consumers: Any = await runtime.redis.xinfo_consumers(STREAM_KEY, GROUP)
+    consumers: Any = await runtime.redis.xinfo_consumers(stream_key, group)
     deleted = 0
     for info in consumers:
         if deleted >= _MAX_PRUNE_PER_PASS:
@@ -169,83 +172,133 @@ async def _prune_stale_consumers(runtime: Runtime, current: str) -> None:
         idle = info.get("idle")
         pending = info.get("pending", 0)
         if isinstance(name, str) and name != current and isinstance(idle, int) and idle >= threshold and pending == 0:
-            await runtime.redis.xgroup_delconsumer(STREAM_KEY, GROUP, name)
+            await runtime.redis.xgroup_delconsumer(stream_key, group, name)
             deleted += 1
 
 
+@dataclass(frozen=True)
+class _Subscription[E: (seal_events.RunSealEvent, environment_events.EnvironmentEvent)]:
+    app_id: str
+    scope: HookScope
+    timeout: float
+    matches: Callable[[E], bool]
+    run: Callable[[Runtime, E], Awaitable[object]]
+
+
 async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> None:
+    subscriptions = [
+        _Subscription(app.app_id, sub.scope, sub.timeout, lambda event, sub=sub: event.status in sub.statuses, sub.run)
+        for app in apps
+        for sub in app.definition.run_seals
+    ]
+    await _receive(runtime, seal_events.STREAM_KEY, seal_events.GROUP, seal_events.RunSealEvent, subscriptions)
+
+
+async def app_environment_events(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> None:
+    subscriptions = [
+        _Subscription(app.app_id, sub.scope, sub.timeout, lambda event, sub=sub: event.event in sub.events, sub.run)
+        for app in apps
+        for sub in app.definition.environment_events
+    ]
+    await _receive(
+        runtime,
+        environment_events.STREAM_KEY,
+        environment_events.GROUP,
+        environment_events.EnvironmentEvent,
+        subscriptions,
+    )
+
+
+async def _receive[E: (seal_events.RunSealEvent, environment_events.EnvironmentEvent)](
+    runtime: Runtime,
+    stream_key: str,
+    group: str,
+    event_type: type[E],
+    subscriptions: list[_Subscription[E]],
+) -> None:
     """Receive lossy cross-role hints; drop excess work and rely on App reconciliation."""
     from a13n_logging import exception_details, get_logger
     from pydantic import ValidationError
     from redis.exceptions import RedisError, ResponseError
 
-    from a13n_service.runs.seal_events import GROUP, STREAM_KEY, RunSealEvent
-
     logger = get_logger(__name__)
-    subscriptions = [(app.app_id, sub) for app in apps for sub in app.definition.run_seals]
     if not subscriptions:
         return
     consumer = f"control-{uuid4().hex[:12]}"
     block_ms = min(1000, max(1, int(runtime.settings.redis.timeout * 500)))
     running: set[asyncio.Task[None]] = set()
-    app_running: dict[str, set[asyncio.Task[None]]] = {app_id: set() for app_id, _ in subscriptions}
+    app_running: dict[str, set[asyncio.Task[None]]] = {sub.app_id: set() for sub in subscriptions}
 
-    async def deliver(app_id: str, subscription: object, event: RunSealEvent) -> None:
-        from a13n_service.app_definitions import RunSealSubscription
-
-        assert isinstance(subscription, RunSealSubscription)
+    async def deliver(subscription: _Subscription[E], event: E) -> None:
         try:
             admission = runtime.settings.database.connect_timeout + runtime.settings.database.statement_timeout
-            async with asyncio.timeout(admission + subscription.timeout):
+            async with asyncio.timeout(admission):
                 async with short_session(runtime.storage) as session:
                     organization = await session.get(OrganizationRow, event.organization_id)
-                    enabled = organization is not None and app_id in policy(organization.settings).enabled
-                if enabled:
-                    async with asyncio.timeout(subscription.timeout):
-                        await subscription.run(runtime, event)
+                    enabled = organization is not None and subscription.app_id in policy(organization.settings).enabled
+            if not enabled:
+                return
+            if isinstance(event, environment_events.EnvironmentEvent):
+                await invoke(
+                    lambda: subscription.run(runtime, event),
+                    app_id=subscription.app_id,
+                    phase="event",
+                    timeout=subscription.timeout,
+                    target_id=event.environment_id,
+                    abortable=False,
+                )
+            else:
+                async with asyncio.timeout(subscription.timeout):
+                    await subscription.run(runtime, event)
         except Exception as error:
             logger.warning(
-                "App Run seal callback failed", extra={"app_id": app_id, "exception_details": exception_details(error)}
+                "App event delivery failed",
+                extra={"app_id": subscription.app_id, "stream": stream_key, "error_type": type(error).__name__},
             )
 
     try:
         while True:
             try:
                 try:
-                    await runtime.redis.xgroup_create(STREAM_KEY, GROUP, id="$", mkstream=True)
+                    await runtime.redis.xgroup_create(stream_key, group, id="$", mkstream=True)
                 except ResponseError as error:
                     if not str(error).startswith("BUSYGROUP"):
                         raise
-                await _prune_stale_consumers(runtime, consumer)
+                await _prune_stale_consumers(runtime, consumer, stream_key, group)
                 next_prune = time.monotonic() + STALE_CONSUMER_IDLE_MS / 1000
                 while True:
                     batches: Any = await runtime.redis.xreadgroup(
-                        GROUP, consumer, {STREAM_KEY: ">"}, count=32, block=block_ms, noack=True
+                        group, consumer, {stream_key: ">"}, count=32, block=block_ms, noack=True
                     )
                     if time.monotonic() >= next_prune:
-                        await _prune_stale_consumers(runtime, consumer)
+                        await _prune_stale_consumers(runtime, consumer, stream_key, group)
                         next_prune = time.monotonic() + STALE_CONSUMER_IDLE_MS / 1000
                     for _, entries in batches:
                         for _, fields in entries:
                             try:
-                                event = RunSealEvent.model_validate_json(fields["data"])
+                                event = event_type.model_validate_json(fields["data"])
                             except (KeyError, ValidationError, ValueError, TypeError):
                                 continue
-                            for app_id, subscription in subscriptions:
-                                if event.status not in subscription.statuses:
+                            for subscription in subscriptions:
+                                app_id = subscription.app_id
+                                if not subscription.matches(event) or (
+                                    subscription.scope == "app" and event.app_id != app_id
+                                ):
                                     continue
                                 active = app_running[app_id]
                                 if len(active) >= 32:
-                                    SEAL_DROPS.add(1, {"stage": "delivery", "app_id": app_id})
+                                    drops = SEAL_DROPS if stream_key == seal_events.STREAM_KEY else ENVIRONMENT_DROPS
+                                    drops.add(1, {"stage": "delivery", "app_id": app_id})
                                     continue
-                                task = asyncio.create_task(deliver(app_id, subscription, event))
+                                task = asyncio.create_task(deliver(subscription, event))
                                 running.add(task)
                                 active.add(task)
                                 task.add_done_callback(running.discard)
                                 task.add_done_callback(active.discard)
             except RedisError as error:
                 logger.warning(
-                    "App Run seal subscription disconnected", extra={"exception_details": exception_details(error)}
+                    "App event stream disconnected",
+                    extra={"stream": stream_key, "exception_details": exception_details(error)},
                 )
                 await asyncio.sleep(1)
     finally:
@@ -254,6 +307,6 @@ async def app_run_seals(runtime: Runtime, apps: tuple[InstalledApp, ...]) -> Non
         await asyncio.gather(*running, return_exceptions=True)
         try:
             async with asyncio.timeout(min(runtime.settings.redis.timeout, 0.5)):
-                await runtime.redis.xgroup_delconsumer(STREAM_KEY, GROUP, consumer)
+                await runtime.redis.xgroup_delconsumer(stream_key, group, consumer)
         except (RedisError, TimeoutError):
             pass

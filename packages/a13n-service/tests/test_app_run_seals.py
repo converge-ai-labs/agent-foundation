@@ -22,7 +22,11 @@ async def test_seal_hints_commit_rollback_and_no_subscribers(service):
     async def callback(runtime, event):
         pass
 
-    app = InstalledApp(AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback),)), "test", "1")
+    app = InstalledApp(
+        AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback, scope="organization"),)),
+        "test",
+        "1",
+    )
     runtime = replace(service.runtime, apps=AppCatalog((app.manifest,)))
     run = SimpleNamespace(
         organization_id="org_test",
@@ -32,6 +36,9 @@ async def test_seal_hints_commit_rollback_and_no_subscribers(service):
         id="run_test",
         principal_id="prn_test",
         labels={},
+        app_id=None,
+        app_context=None,
+        trigger_app_id=None,
     )
     await runtime.redis.delete(STREAM_KEY)
     with pytest.raises(ValueError):
@@ -92,7 +99,11 @@ async def test_subscription_admits_current_enabled_organization_and_status(servi
     async def callback(runtime, event):
         await calls.put(event.status)
 
-    app = InstalledApp(AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback),)), "test", "1")
+    app = InstalledApp(
+        AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback, scope="organization"),)),
+        "test",
+        "1",
+    )
     organization_id = "org_seal_test"
     async with transaction(service.runtime.storage) as session:
         session.add(OrganizationRow(id=organization_id, name="Seals", settings={}))
@@ -210,7 +221,11 @@ async def test_worker_seal_reaches_control_listener(service, scripted_model, run
     async def callback(runtime, event):
         await received.put(event)
 
-    app = InstalledApp(AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback),)), "test", "1")
+    app = InstalledApp(
+        AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback, scope="organization"),)),
+        "test",
+        "1",
+    )
     catalog = AppCatalog((app.manifest,))
     control, worker = replace(service.runtime, apps=catalog), replace(service.runtime, apps=catalog)
     async with transaction(control.storage) as session:
@@ -260,7 +275,9 @@ async def test_callback_timeout_and_waiting_opt_in_do_not_stop_listener(service)
         else:
             await calls.put(event.status)
 
-    sub = RunSealSubscription(callback, timeout=0.05, statuses=frozenset({"waiting", "failed", "cancelled"}))
+    sub = RunSealSubscription(
+        callback, scope="organization", timeout=0.05, statuses=frozenset({"waiting", "failed", "cancelled"})
+    )
     app = InstalledApp(AppDefinition("test.seals", "Seals", run_seals=(sub,)), "test", "1")
     runtime = replace(service.runtime, apps=AppCatalog((app.manifest,)))
     async with transaction(runtime.storage) as session:
@@ -411,8 +428,16 @@ async def test_slow_app_cannot_exhaust_another_apps_delivery_slots(service):
         await fast_received.put(event.run_id)
 
     apps = (
-        InstalledApp(AppDefinition("test.slow", "Slow", run_seals=(RunSealSubscription(slow),)), "slow", "1"),
-        InstalledApp(AppDefinition("test.fast", "Fast", run_seals=(RunSealSubscription(fast),)), "fast", "1"),
+        InstalledApp(
+            AppDefinition("test.slow", "Slow", run_seals=(RunSealSubscription(slow, scope="organization"),)),
+            "slow",
+            "1",
+        ),
+        InstalledApp(
+            AppDefinition("test.fast", "Fast", run_seals=(RunSealSubscription(fast, scope="organization"),)),
+            "fast",
+            "1",
+        ),
     )
     runtime = replace(service.runtime, apps=AppCatalog(tuple(app.manifest for app in apps)))
     async with transaction(runtime.storage) as session:
@@ -459,7 +484,11 @@ async def test_stream_buffer_and_group_recreation_after_eviction(service):
     async def callback(runtime, event):
         await received.put(event.run_id)
 
-    app = InstalledApp(AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback),)), "test", "1")
+    app = InstalledApp(
+        AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback, scope="organization"),)),
+        "test",
+        "1",
+    )
     runtime = replace(service.runtime, apps=AppCatalog((app.manifest,)))
     async with transaction(runtime.storage) as session:
         session.add(
@@ -513,7 +542,11 @@ async def test_stale_consumers_are_pruned_without_removing_active_consumers(serv
     async def callback(runtime, event):
         pass
 
-    app = InstalledApp(AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback),)), "test", "1")
+    app = InstalledApp(
+        AppDefinition("test.seals", "Seals", run_seals=(RunSealSubscription(callback, scope="organization"),)),
+        "test",
+        "1",
+    )
     runtime = replace(service.runtime, apps=AppCatalog((app.manifest,)))
     await reset_group(runtime)
     monkeypatch.setattr(app_plugin_runtime, "STALE_CONSUMER_IDLE_MS", 120)

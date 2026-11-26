@@ -126,6 +126,7 @@ async def append_message(
     request: Request | None,
     control: Control,
     schedule_occurrence_id: str | None = None,
+    app_id: str | None = None,
 ) -> InboxEntryRow:
     payload = message.payload.model_dump(mode="json")
     size = payload_size(payload)
@@ -136,6 +137,7 @@ async def append_message(
         workspace_id=thread.workspace_id,
         thread_id=thread.id,
         schedule_occurrence_id=schedule_occurrence_id,
+        app_id=app_id,
         kind="message",
         delivery=message.delivery,
         position=await _next_position(session, thread.id),

@@ -118,6 +118,8 @@ Each App uses its own fixed instrument-name prefix as well as a meter scope. The
 
 App HTTP routes and organization sweeps already participate in the host's boundary metrics. Additional instruments measure the App's business operations, with attempt observations distinguished from committed facts. Observable callbacks read cached memory only; external inventory refresh runs outside collection and publishes freshness so unavailable or disabled work cannot appear as fresh zeroes. Custom metric dashboards and alert rules remain operator/App-owned rather than automatically entering the bundled Service panels.
 
+Environment hook failures count by callback phase and result (`timeout`, `error` or `aborted`). Environment event publisher and consumer drops count separately. Structured callback warnings identify the App, phase and target without recording callback input or exception messages.
+
 ## Traces
 
 Executing roles export Harness spans over OTLP/HTTP to the configured trace backend in background batches, with the resource attributes `service.name = a13n-service` and the package version, so a slow or failing backend never delays execution; each export call and the final flush are bounded by 10 seconds. `telemetry.trace_content` decides whether prompts, outputs and tool payloads leave the deployment.

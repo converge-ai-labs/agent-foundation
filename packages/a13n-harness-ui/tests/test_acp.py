@@ -1383,3 +1383,35 @@ mcp.run(show_banner=False)
         assert not any(frame.get("params", {}).get("update", {}).get("title") == "opt_echo" for frame in frames)
     assert not started.exists() and not skipped.exists()
     assert all(b"transient-token" not in file.read_bytes() for file in (tmp_path / "data").rglob("*") if file.is_file())
+
+
+@pytest.mark.anyio
+async def test_harness_acp_client_interoperates_with_ui_agent(tmp_path, monkeypatch):
+    from a13n_harness.acp import AcpRunBinding, AcpSessionRuntime, AcpSessionSetup, LocalStdioTransport
+    from acp.schema import AgentMessageChunk, TextContentBlock
+
+    path = await _seed(tmp_path, monkeypatch)
+    transport = LocalStdioTransport(
+        sys.executable,
+        str(tmp_path),
+        ("-c", _FAKE, "--config", str(path), "--data-root", str(tmp_path / "data"), "acp"),
+        inherit_environment=True,
+    )
+    setup = AcpSessionSetup(str(tmp_path))
+    async with asyncio.timeout(45):
+        async with AcpSessionRuntime.open(transport) as runtime:
+            session_id = await runtime.open_session(setup)
+            updates = []
+            response = await runtime.prompt(
+                [TextContentBlock(text="model check")], binding=AcpRunBinding(on_update=updates.append)
+            )
+            assert response.stop_reason == "end_turn"
+            assert "gpt-5.6-sol high" in "".join(
+                update.content.text
+                for update in updates
+                if isinstance(update, AgentMessageChunk) and isinstance(update.content, TextContentBlock)
+            )
+        async with AcpSessionRuntime.open(transport) as runtime:
+            assert await runtime.open_session(setup, saved_session_id=session_id) == session_id
+            response = await runtime.prompt([TextContentBlock(text="model check")], binding=AcpRunBinding())
+            assert response.stop_reason == "end_turn"

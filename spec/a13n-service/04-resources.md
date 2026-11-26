@@ -450,7 +450,7 @@ An egress credential is a workspace-owned, write-only static token for a control
 
 ```
 egress_credentials   (ecred_)
-  id  organization_id  workspace_id  name  description  owner_app_id NULL  allowed_hosts JSONB  value JSONB NULL
+  id  organization_id  workspace_id  name  description  app_id NULL  allowed_hosts JSONB  value JSONB NULL
   state  credential_version  version  created_by_id  updated_by_id  created_at  updated_at  revoked_at NULL
   UNIQUE (workspace_id, id)
   state IN ('active', 'revoked')
@@ -461,7 +461,7 @@ egress_credentials   (ecred_)
 
 `POST /egress-credentials` creates an active credential at credential version 1. `GET` lists it newest-first or reads one resource. `PATCH` edits only name and description. `PUT /egress-credentials/{id}/value` replaces the encrypted value and increments `credential_version`; `POST /egress-credentials/{id}/revoke` clears the value, records `revoked_at` and increments the same counter. Both return 202 after database commit: saving a version does not prove that every existing Session has applied it. Mutations of an existing resource require its `If-Match`. Metadata edits advance only the ordinary resource version; encryption-key rewrapping does not itself rotate the upstream token. Revocation is final and retained resources are not hard-deleted.
 
-`owner_app_id` is nullable, immutable metadata. `NULL` denotes an operator-owned credential. An installed App enabled for the organization can create, rotate and revoke only its own credentials through the [App SDK](15-app-plugins.md#app-sdk). The ordinary list/detail and synchronization request retain their existing permissions; operator metadata changes, rotation and revocation return `409 app_managed_credential` for an App-owned credential. App mutations record the acting principal and App ID in audit, and value changes publish the same post-commit version hint as operator changes.
+`app_id` is nullable, immutable metadata. `NULL` denotes an operator-owned credential. An installed App enabled for the organization can create, rotate and revoke only its own credentials through the [App SDK](15-app-plugins.md#app-sdk). The ordinary list/detail and synchronization request retain their existing permissions; operator metadata changes, rotation and revocation return `409 app_managed_credential` for an App-owned credential. App mutations record the acting principal and App ID in audit, and value changes publish the same post-commit version hint as operator changes.
 
 Management reads are explicitly admitted to MCP. Credential writes are excluded from management MCP and Run platform tools. Audit actions are `egress_credential.create`, `.update`, `.rotate` and `.revoke`; details contain changed field names or the credential version, never the value. Envd Session references, application evidence and lifecycle are owned by [Environments](06-environments.md).
 

@@ -1,5 +1,11 @@
+import type { ReactNode } from "react";
 import { useTranslation } from "../i18n";
-import { ModelIdentity } from "../shell/model-identity";
+import {
+  acpModelIdentity,
+  acpPresetBrand,
+  ModelIcon,
+  ModelIdentity,
+} from "../shell/model-identity";
 import { Button, ModalFrame } from "a13n-ui";
 import { CaretRight, Desktop } from "@phosphor-icons/react";
 import { useState } from "react";
@@ -157,6 +163,11 @@ type RunChoiceProps = ModelControlProps & {
   disabled: boolean;
   onAgentChange: (value: string) => void;
   onModelChange: (value: string | undefined) => void;
+  externalOptions?: ReactNode;
+  externalModel?: string;
+  externalModelId?: string;
+  externalThinking?: string;
+  onExternalOptionsOpen?: () => void;
 };
 
 export function ThreadRunChoices(props: RunChoiceProps) {
@@ -180,8 +191,9 @@ export function ThreadRunChoices(props: RunChoiceProps) {
     speed === "on" || speed === "ultrafast"
       ? modelControlMessage(speedLabel(speed), t)
       : undefined;
+  const isAcp = agent?.kind === "acp_agent";
   const modelName =
-    model?.name ??
+    (isAcp ? (props.externalModel ?? t("External ACP agent")) : model?.name) ??
     (selectedModelId
       ? t("{{name}} (unavailable)", { name: selectedModelId })
       : t("Model unavailable"));
@@ -195,12 +207,31 @@ export function ThreadRunChoices(props: RunChoiceProps) {
       title={`${agent?.name ?? t("Default agent")} - ${modelName}`}
     >
       <ComposerSettings
+        onOpen={isAcp ? props.onExternalOptionsOpen : undefined}
         triggerDescription={speedDescription}
         label={
           <span className={panelStyles.modelSummary}>
-            <ModelIdentity model={model} name={modelName} />
-            {thinking && <small>{thinking}</small>}
-            <SpeedIndicator speed={speed} />
+            {isAcp ? (
+              <ModelIdentity
+                name={
+                  props.externalModel
+                    ? `${agent.name} · ${props.externalModel}`
+                    : agent.name
+                }
+                modelIdentity={acpModelIdentity(
+                  props.externalModel,
+                  props.externalModelId,
+                  agent.preset,
+                )}
+              />
+            ) : (
+              <ModelIdentity model={model} name={modelName} />
+            )}
+            {isAcp && props.externalThinking && (
+              <small>{props.externalThinking}</small>
+            )}
+            {!isAcp && thinking && <small>{thinking}</small>}
+            {!isAcp && <SpeedIndicator speed={speed} />}
           </span>
         }
       >
@@ -221,12 +252,14 @@ function AgentModelChoices({
   disabled,
   onAgentChange,
   onModelChange,
+  externalOptions,
 }: RunChoiceProps) {
   const { t } = useTranslation();
   const settings = useComposerSettings()!;
   const agent = catalog?.agents.find(
     (item) => item.agent_id === (agentId || defaultAgentId),
   );
+  const isAcp = agent?.kind === "acp_agent";
   const inheritedModelId = defaultModelId ?? agent?.model_id;
   const agentGroups = [
     {
@@ -245,11 +278,26 @@ function AgentModelChoices({
               },
             ]
           : []),
-        ...(catalog?.agents ?? []).map((item) => ({
-          value: item.agent_id,
-          label: item.name,
-          description: item.agent_id,
-        })),
+        ...(catalog?.agents ?? []).map((item) => {
+          const itemModel = catalog?.models?.find(
+            (candidate) => candidate.model_id === item.model_id,
+          );
+          const presetBrand = acpPresetBrand(item.preset);
+          return {
+            value: item.agent_id,
+            label: item.name,
+            description: item.agent_id,
+            badge: item.kind === "acp_agent" ? t("ACP agent") : undefined,
+            icon:
+              item.kind === "acp_agent" ? (
+                presetBrand ? (
+                  <ModelIcon modelIdentity={presetBrand} />
+                ) : undefined
+              ) : itemModel ? (
+                <ModelIcon model={itemModel} />
+              ) : undefined,
+          };
+        }),
         ...(agentId && !agent
           ? [
               {
@@ -265,7 +313,7 @@ function AgentModelChoices({
   const model = catalog?.models?.find(
     (item) => item.model_id === (modelId ?? inheritedModelId),
   );
-  if (settings.page === "model")
+  if (settings.page === "model" && !isAcp)
     return (
       <ModelOptions
         models={catalog?.models ?? []}
@@ -297,37 +345,40 @@ function AgentModelChoices({
   return (
     <>
       {settings.page === "root" && (
-        <>
-          <SettingsRow
-            label={t("Agent")}
-            value={agent?.name ?? (agentId || t("Default agent"))}
-            disabled={disabled || !catalog}
-            onClick={() => settings.navigate("agent")}
-          />
-          <SettingsRow
-            label={t("Model")}
-            value={
-              <ModelIdentity
-                model={model}
-                name={
-                  model?.name ??
-                  t("{{name}} (unavailable)", {
-                    name: modelId ?? inheritedModelId ?? t("Model"),
-                  })
-                }
-              />
-            }
-            disabled={disabled || !catalog}
-            onClick={() => settings.navigate("model")}
-          />
-        </>
+        <SettingsRow
+          label={t("Agent")}
+          value={agent?.name ?? (agentId || t("Default agent"))}
+          disabled={disabled || !catalog}
+          onClick={() => settings.navigate("agent")}
+        />
       )}
-      <ModelControlPanel
-        model={model}
-        controls={controls}
-        onControlsChange={onControlsChange}
-        disabled={disabled || !catalog}
-      />
+      {isAcp && externalOptions}
+      {!isAcp && settings.page === "root" && (
+        <SettingsRow
+          label={t("Model")}
+          value={
+            <ModelIdentity
+              model={model}
+              name={
+                model?.name ??
+                t("{{name}} (unavailable)", {
+                  name: modelId ?? inheritedModelId ?? t("Model"),
+                })
+              }
+            />
+          }
+          disabled={disabled || !catalog}
+          onClick={() => settings.navigate("model")}
+        />
+      )}
+      {!isAcp && (
+        <ModelControlPanel
+          model={model}
+          controls={controls}
+          onControlsChange={onControlsChange}
+          disabled={disabled || !catalog}
+        />
+      )}
     </>
   );
 }

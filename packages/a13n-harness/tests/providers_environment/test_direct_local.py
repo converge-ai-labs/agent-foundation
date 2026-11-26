@@ -5,8 +5,7 @@ import signal as os_signal
 import sys
 from pathlib import Path
 from threading import Barrier
-from types import SimpleNamespace
-from typing import Any, cast
+from typing import cast
 
 import a13n_harness.providers.environment.direct_local.files as files_module
 import a13n_harness.providers.environment.direct_local.processes as process_module
@@ -18,7 +17,7 @@ from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalRootConfiguration,
 )
 from a13n_harness.providers.environment.direct_local.execution import DirectLocalExecution
-from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
+from a13n_harness.providers.environment.direct_local.processes import NativeProcessTrees
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 
 pytestmark = pytest.mark.anyio
@@ -172,8 +171,7 @@ async def test_process_group_cleanup_treats_permission_denial_as_terminal(
     denied_signal_name: str,
 ) -> None:
     denied_signal = cast(int, getattr(os_signal, denied_signal_name))
-    manager = cast(Any, object.__new__(LocalProcessManager))
-    manager._policy = SimpleNamespace(terminate_grace_seconds=0)
+    manager = NativeProcessTrees(terminate_grace_seconds=0)
     signals: list[int] = []
 
     def killpg(process_group: int, sent_signal: int) -> None:

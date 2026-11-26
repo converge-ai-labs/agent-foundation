@@ -252,3 +252,7 @@ Standard AG-UI names and fields retain their upstream meaning. The selected Harn
 7. One source item is processed and accumulated atomically, and returned events and snapshots are detached from observer state.
 8. The observer owns no durable identity, history retention or selection, cursor, gap policy, durable replay, fan-out, backpressure, cancellation, or transport behavior.
 9. AG-UI observation and reconstruction never become Harness continuation state or strengthen a Host lifecycle fact.
+
+## External ACP turns
+
+`a13n_stream_protocol.acp.AcpRunStream` projects live [ACP session updates](../a13n-harness/25-acp.md) into AG-UI payloads consumable by `DisplayFold.fold()`. The Host publishes authored input and settles the Run. Assistant text and thought chunks use AG-UI text and reasoning events. ACP tool updates own each tool card and its result; `a13n.acp.tool` enriches the existing card with status, locations, and diff or terminal content. Plan and context-window usage are `a13n.acp.plan` and `a13n.acp.usage` observations. ACP user-message echoes do not publish hidden prompt context.

@@ -14,6 +14,7 @@ from a13n_logging import exception_details, get_logger
 from sqlalchemy import and_, case, exists, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.execution_policy import ExecutionOverride, ExecutionPolicy, ToolExecutionOverride, matches
 from a13n_service.infra.db import after_commit, now, transaction
 from a13n_service.infra.errors import ServiceError, conflict, invalid
@@ -421,7 +422,12 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     if selection is not None and selection.mode != "none" and primary_override is None:
         if selection.mode == "fresh":
             instance = await reserve(
-                session, principal, scope, selection.template_id, limit=runtime.settings.environments.managed_count
+                session,
+                principal,
+                scope,
+                selection.template_id,
+                limit=runtime.settings.environments.managed_count,
+                provenance=AppProvenance(thread.app_id, thread.app_context) if thread.app_id else None,
             )
             environment_id = instance.id
         else:
@@ -457,6 +463,7 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
             )
     mounts = await freeze_mounts(
         session,
+        runtime,
         thread,
         principal=principal,
         primary=primary_override,
@@ -515,6 +522,9 @@ async def start_run(session: AsyncSession, runtime: Runtime, thread: ThreadRow, 
     current = await now(session)
     run = RunRow(
         id=run_id,
+        app_id=thread.app_id,
+        app_context=thread.app_context,
+        trigger_app_id=source.entry.app_id if source.entry is not None else None,
         organization_id=thread.organization_id,
         workspace_id=thread.workspace_id,
         session_id=thread.session_id,

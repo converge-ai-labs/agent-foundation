@@ -202,3 +202,22 @@ it.each(["/forgot-password", "/reset-password#token=fixture"])(
     ).toBeNull();
   },
 );
+
+it("clarifies recovery eligibility and fallback steps after submitting forgot password", async () => {
+  http.POST.mockResolvedValue({
+    response: new Response(null, { status: 204 }),
+  });
+  const user = renderAt("/forgot-password", { email_delivery: true });
+  await user.type(
+    await screen.findByLabelText("Email address"),
+    "ada@example.com",
+  );
+  await user.click(screen.getByRole("button", { name: "Send recovery link" }));
+
+  expect(await screen.findByText("Check your inbox")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "If this email belongs to an active local-password account, a recovery link will arrive shortly. Check spam, use your identity provider if you sign in with SSO, or contact your organization administrator if it does not arrive.",
+    ),
+  ).toBeTruthy();
+});

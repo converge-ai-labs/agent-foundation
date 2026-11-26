@@ -93,7 +93,7 @@ it("latches concurrent clicks before React commits and retains the request acros
     }),
   );
   let hook = f.mount();
-  let first!: Promise<void>;
+  let first!: Promise<boolean>;
   act(() => {
     first = hook.result.current.stop();
     void hook.result.current.stop();
@@ -119,7 +119,7 @@ it("does not let a late old acknowledgement or failure control a replacement rec
     }),
   );
   const hook = f.mount();
-  let first!: Promise<void>;
+  let first!: Promise<boolean>;
   act(() => {
     first = hook.result.current.stop();
   });
@@ -282,7 +282,7 @@ it("does not let a manual refresh observe before the cancellation acknowledgemen
     }),
   );
   const hook = f.mount();
-  let sending!: Promise<void>;
+  let sending!: Promise<boolean>;
   act(() => {
     sending = hook.result.current.stop();
   });

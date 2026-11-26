@@ -11,7 +11,7 @@ The Service produces three kinds of output, with different owners:
 | Resumable run state      | Checkpoint state, display and saved content objects                                                      | Object bytes selected by run pointers and pages    |
 | Observations and notices | The session stream, lifecycle webhooks, identity mail, trace queries                                     | Derived; never decides execution                   |
 
-PostgreSQL owns lifecycle, execution authority, inbox disposition, the pointers that select each run's committed state and display tail, and the catalog of its display pages. Objects hold immutable bytes. Redis carries provisional live output, worker wakeups and App Run seal hints; it never advances execution history or decides that a run is finished. The outbox durably stages delivery with its transaction and retries within a finite budget; deliveries can be duplicated or become dead.
+PostgreSQL owns lifecycle, execution authority, inbox disposition, the pointers that select each run's committed state and display tail, and the catalog of its display pages. Objects hold immutable bytes. Redis carries provisional live output, worker wakeups and App Run seal and Environment transition hints; it never advances execution history or decides that a run is finished. The outbox durably stages delivery with its transaction and retries within a finite budget; deliveries can be duplicated or become dead.
 
 ## Immutable facts
 

@@ -1,4 +1,6 @@
 {
+  "App Id": "App ID",
+  "Trigger App Id": "触发 App ID",
   "List pending human input for this run's retained MCP tool executions.": "列出此运行保留的 MCP 工具执行中等待人工处理的输入请求。",
   "List Mcp Inputs": "列出 MCP 输入请求",
   "Send one answer to the originating MCP task, without resuming the run.": "向发出请求的 MCP 任务提交一条回复，无需恢复运行。",

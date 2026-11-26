@@ -267,9 +267,11 @@ class ThreadConfiguration(BaseModel):
     mcp_server_ids: tuple[str, ...]
 ```
 
-`agent_source` is the discriminated Agent-resource, Markdown-subagent, or internal Live-executor reference owned by [Projects, Threads, and Environments](04-projects-threads-and-environments.md#sticky-thread-configuration). A null `project_id` records a Thread without a Project and is preserved across restart and child creation. The SQLite upgrade rebuilds the Thread configuration table with a nullable Project column while preserving existing rows and references; no existing Thread is reassigned. It uses the normal serialized migration transaction. Readers that require a non-null Project cannot interpret projectless Threads; revision equality is not a substitute for that payload compatibility boundary. The lists are exact ordered enabled selections. Omission belongs only to create or patch input; the stored head contains no inheritance marker. Every non-empty update compares the caller's required expected version, commits all changed axes, and increments `version` atomically. A no-op can retain the version.
+`agent_source` is the discriminated root or child Agent source owned by [Projects, Threads, and Environments](04-projects-threads-and-environments.md#sticky-thread-configuration). A null `project_id` records a Thread without a Project and is preserved across restart and child creation. The SQLite upgrade rebuilds the Thread configuration table with a nullable Project column while preserving existing rows and references; no existing Thread is reassigned. It uses the normal serialized migration transaction. Readers that require a non-null Project cannot interpret projectless Threads; revision equality is not a substitute for that payload compatibility boundary. The lists are exact ordered enabled selections. Omission belongs only to create or patch input; the stored head contains no inheritance marker. Every non-empty update compares the caller's required expected version, commits all changed axes, and increments `version` atomically. A no-op can retain the version.
 
 An admitted Run records the Thread configuration version and accepted generation it captured. A later update is valid and affects only later admissions.
+
+The `acp_agent` discriminator stores the external `acp-` resource ID with a null default Model. The SQLite upgrade expands the source-kind constraint and preserves existing heads and references.
 
 ## Immutable Publication
 
@@ -287,6 +289,8 @@ Checkpoint publication preserves mapping insertion order throughout the payload,
 Readers accept both payload codecs and verify each using its own encoding. Existing codec-1 objects and their references are not rewritten; mapping order already lost in those objects cannot be recovered. Subsequent checkpoints preserve the restored order and newly produced history. Before starting a codec-2 writer, stop and upgrade every App sharing the data root. Readers supporting only codec `1` cannot open new codec-2 checkpoints: mixed-version access with those Apps and downgrading after such publication are unsupported. No SQLite schema or portable `HarnessState` format change is required.
 
 ## Run Composition and Continuation
+
+An external ACP continuation stores the session ID and lease digest in the `a13n.acp` Harness state namespace once session setup succeeds. Authored input and the final reply segment provide native-shaped history for summaries; the display archive carries the ACP event transcript. Accepted cancellation preserves the session identity and partial reply. A later process uses the saved ID only when the digest matches and resumes or loads it through the protocol. The resident connection itself is process-local.
 
 A resolved Run composition captures one complete effective configuration without live collaborators. Root and child checkpoints record its composition reference. New root continuations use a version-2 manifest with physically separate native state and display objects. Conceptual schema:
 

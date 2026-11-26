@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra.db import advisory_lock, assign, now, short_session, transaction
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, ServiceError, conflict, invalid, rate_limited
 from a13n_service.infra.http import require_match
@@ -136,19 +137,25 @@ async def resolve_target(
     scope: WorkspaceScope,
     target: ScheduleTarget,
     invocation: ScheduleInvocation,
+    *,
+    provenance: AppProvenance | None = None,
 ) -> tuple[str, str | None]:
     _require_invocation_target(invocation, new_thread=target.mode == "new_thread")
     if target.thread_id is not None:
         thread = await get_thread(session, scope.workspace_id, target.thread_id)
         require_open(thread)
+        if provenance and not provenance.matches_owner(thread):
+            raise conflict("thread", thread.id, "app_owner_mismatch")
         if target.session_id is not None and target.session_id != thread.session_id:
             raise invalid("target.session_id", "thread_session_mismatch")
         return thread.session_id, thread.id
     if target.session_id is not None:
         owner = await find_session(session, scope.workspace_id, target.session_id)
         require_conversation(owner)
+        if not (provenance.matches_owner(owner) if provenance else owner.app_id is None):
+            raise conflict("session", owner.id, "app_managed_session" if provenance is None else "app_owner_mismatch")
     else:
-        owner = new_session(scope.organization_id, scope.workspace_id, actor.id)
+        owner = new_session(scope.organization_id, scope.workspace_id, actor.id, provenance=provenance)
         owner.memory = SessionMemorySettings(enabled=False).model_dump(mode="json")
         session.add(owner)
         await session.flush()
@@ -207,6 +214,7 @@ async def create_in_transaction(
     *,
     request_key: str,
     source_id: str | None = None,
+    provenance: AppProvenance | None = None,
 ) -> tuple[Schedule, bool]:
     authority = execution_authority(actor, scope)
     digest = request_digest(
@@ -224,7 +232,9 @@ async def create_in_transaction(
         )
     )
     if found is not None:
-        if found.create_request_digest != digest:
+        if found.create_request_digest != digest or (found.app_id, found.app_context) != (
+            (provenance.app_id, provenance.app_context) if provenance else (None, None)
+        ):
             raise conflict("request", request_key, IDEMPOTENCY_KEY_REUSED)
         return queries.view(found), False
     count = await session.scalar(
@@ -249,9 +259,13 @@ async def create_in_transaction(
         if source_id is not None and isinstance(body.schedule, OnceSchedule)
         else first_fire(body.schedule, current)
     )
-    session_id, thread_id = await resolve_target(session, runtime, actor, scope, body.target, body.invocation)
+    session_id, thread_id = await resolve_target(
+        session, runtime, actor, scope, body.target, body.invocation, provenance=provenance
+    )
     row = ScheduleRow(
         id=new_object_id("sch"),
+        app_id=provenance.app_id if provenance else None,
+        app_context=provenance.app_context if provenance else None,
         organization_id=scope.organization_id,
         workspace_id=scope.workspace_id,
         session_id=session_id,
@@ -321,7 +335,16 @@ async def update(
             "invocation": config.invocation.model_dump(mode="json"),
         }
         if body.target is not None:
-            session_id, thread_id = await resolve_target(session, runtime, actor, scope, body.target, config.invocation)
+            if row.app_id is not None:
+                raise conflict("schedule", row.id, "app_managed_schedule_target")
+            session_id, thread_id = await resolve_target(
+                session,
+                runtime,
+                actor,
+                scope,
+                body.target,
+                config.invocation,
+            )
             values.update(session_id=session_id, thread_id=thread_id)
         else:
             _require_invocation_target(config.invocation, new_thread=row.thread_id is None)

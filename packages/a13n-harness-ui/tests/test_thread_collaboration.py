@@ -484,7 +484,7 @@ async def test_worker_can_ask_requester_receive_answer_and_report_results(
             else:
                 worker_id = thread_id
                 if coordinator:
-                    assert self._recipes[model_id].model_id == "model-secondary"
+                    assert self._recipes[model_id].model_id == "model-primary"
                     assert "You are a Coordinator in this Project" not in info.instructions
                     assert "requester is the Coordinator" in str(messages)
                 if step == 0:

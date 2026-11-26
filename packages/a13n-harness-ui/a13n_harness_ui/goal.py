@@ -148,28 +148,35 @@ class GoalCapability(AbstractCapability[AgentContext]):
         return request_context
 
     async def on_event(self, ctx: RunContext[AgentContext], *, event: AgentStreamEvent) -> None:
-        if (
-            ctx.run_id == self._active_run_id
-            and isinstance(event, ContextRestoredEvent)
-            and self.goal is not None
-            and self.goal.active
-        ):
-            self.goal = self.goal.model_copy(update={"needs_restore_audit": True, "restore_source": event.source})
+        if isinstance(event, ContextRestoredEvent):
+            await self.observe_restore(ctx, event.source)
+
+    async def observe_restore(self, ctx: RunContext[AgentContext], source: str) -> None:
+        if ctx.run_id == self._active_run_id and self.goal is not None and self.goal.active:
+            self.goal = self.goal.model_copy(update={"needs_restore_audit": True, "restore_source": source})
             await self._publish(ctx)
 
     async def after_output_process(self, ctx: RunContext[AgentContext], *, output_context: Any, output: Any) -> Any:
         # Plain text bypasses native validate hooks. The process hook is the
         # final output boundary shared with ordinary Agent output validators.
         del output_context
+        if not ctx.partial_output and isinstance(output, str):
+
+            def enqueue(prompt: str) -> None:
+                continuation = TextContent(prompt, metadata={"display": False, "source_id": GOAL_CAPABILITY_ID})
+                if ctx.enqueue(ModelRequest(parts=[UserPromptPart([continuation])]), priority="asap") is None:
+                    raise RuntimeError("Goal continuation could not be enqueued")
+
+            await self.after_reply(ctx, output, enqueue)
+        return output
+
+    async def after_reply(
+        self, ctx: RunContext[AgentContext], output: str, continue_with: Callable[[str], None]
+    ) -> None:
+        """Advance the shared Goal state at a completed reply boundary."""
         goal = self.goal
-        if (
-            ctx.partial_output
-            or ctx.run_id != self._active_run_id
-            or goal is None
-            or not goal.active
-            or not isinstance(output, str)
-        ):
-            return output
+        if ctx.run_id != self._active_run_id or goal is None or not goal.active:
+            return
         marker = has_completion_marker(output)
         if has_blocked_marker(output):
             self._completion_candidate = False
@@ -187,11 +194,7 @@ class GoalCapability(AbstractCapability[AgentContext]):
             if goal.iteration >= goal.max_iterations:
                 self.goal = goal.model_copy(update={"status": "max_iterations"})
             else:
-                # Enqueue before recording progress: an unavailable native queue
-                # must fail execution rather than display a fictitious iteration.
-                continuation = TextContent(prompt, metadata={"display": False, "source_id": GOAL_CAPABILITY_ID})
-                if ctx.enqueue(ModelRequest(parts=[UserPromptPart([continuation])]), priority="asap") is None:
-                    raise RuntimeError("Goal continuation could not be enqueued")
+                continue_with(prompt)
                 self.goal = goal.model_copy(
                     update={
                         "iteration": goal.iteration + 1,
@@ -202,7 +205,6 @@ class GoalCapability(AbstractCapability[AgentContext]):
                 )
         self._usage(ctx.deps.usage_snapshot.summary, ctx.deps.usage_snapshot.usage_id)
         await self._publish(ctx)
-        return output
 
     async def finish(
         self,

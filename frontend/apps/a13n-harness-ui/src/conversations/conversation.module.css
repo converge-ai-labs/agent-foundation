@@ -354,16 +354,24 @@
   .threadRow:is(:hover, :focus-within, :has([data-popup-open])) .threadLink {
     padding-inline-end: 32px;
   }
-  .threadRow:has(.threadStar, .threadStatus, .draftMarker, .resultDot):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
+  .threadRow:has(
+      .threadStar,
+      .coordinatorActivity,
+      .threadStatus,
+      .draftMarker,
+      .resultDot
+    ):is(:hover, :focus-within, :has([data-popup-open]))
     .threadLink {
     padding-inline-end: 8px;
   }
   .threadRow:is(:hover, :focus-within, :has([data-popup-open]))
-    :is(.threadStar, .threadStatus, .draftMarker, .resultDot) {
+    :is(
+      .threadStar,
+      .coordinatorActivity,
+      .threadStatus,
+      .draftMarker,
+      .resultDot
+    ) {
     opacity: 0;
   }
   .threadRow:hover .threadActions,
@@ -451,67 +459,16 @@
   font-size: var(--harness-nav-font);
   font-variant-numeric: tabular-nums;
 }
-/* An idle Coordinator keeps only its state mark at the row end. Its worker
-   count and star appear beside the row menu while the row is hovered or
-   focused; hidden parts stay available to assistive technology. */
-@media (hover: hover) and (pointer: fine) {
-  .threadRow:has(.threadDisclosure):not(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    :is(.coordinatorActivity, .threadStar),
-  .threadRow:has(.threadDisclosure):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    :is(.threadStatus, .draftMarker, .resultDot) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-  }
-  .threadRow:has(.threadDisclosure):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    .threadLink {
-    padding-inline-end: 32px;
-  }
-  /* A visible star takes its own slot inside that edge. */
-  .threadRow:has(.threadDisclosure):not(:has(.threadStatus, .resultDot)):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    .threadLink {
-    padding-inline-end: 56px;
-  }
-  .threadRow:has(.threadDisclosure) .threadStar {
-    position: absolute;
-    inset-inline-end: 32px;
-    margin: 0;
-  }
-  .threadRow:has(.threadDisclosure):is(
-      :hover,
-      :focus-within,
-      :has([data-popup-open])
-    )
-    .threadStar {
-    opacity: 1;
-  }
-}
 .resultDot {
   display: grid;
   place-items: center;
   flex: 0 0 16px;
 }
-/* A row carries one trailing mark, in priority order: live state, then the
-   unread badge, then the star. */
-.threadRow:has(.threadStatus) :is(.resultDot, .threadStar),
+/* A row carries one trailing mark, in priority order: live state, active
+   worker count, unread badge, then star. */
+.threadRow:has(.threadStatus)
+  :is(.coordinatorActivity, .resultDot, .threadStar),
+.threadRow:has(.coordinatorActivity) :is(.resultDot, .threadStar),
 .threadRow:has(.resultDot) .threadStar {
   display: none;
 }
@@ -2372,4 +2329,30 @@ div:has(+ .execution) > .assistantMessage {
 
 .noticeSummary {
   gap: 8px;
+}
+
+.acpPlan {
+  color: var(--muted-foreground);
+  font-size: var(--interface-size, 14px);
+}
+.acpPlan ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.acpPlan li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.acpPlan li span {
+  flex: none;
+}
+.acpPlan li svg {
+  vertical-align: -0.12em;
+}
+.acpPlan li[data-status="in_progress"] {
+  color: var(--foreground);
 }

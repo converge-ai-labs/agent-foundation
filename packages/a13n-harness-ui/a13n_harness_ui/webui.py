@@ -39,6 +39,17 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
+from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus
+from a13n_harness_ui.acp_sessions import (
+    AcpCommand,
+    AcpOption,
+    AcpOptionChange,
+    AcpOptionPreviewChange,
+    AcpOptionSelection,
+    AcpOptionsPreview,
+    AcpPresetView,
+    acp_presets,
+)
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
 from a13n_harness_ui.bot import BotSnapshot
 from a13n_harness_ui.bot_models import (
@@ -282,6 +293,7 @@ class CreateThreadRequest(SurfaceModel):
     coordinator_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, pattern=r"^thread[-_][0-9a-f]{32}$")
     defaults: NewThreadDefaults | None = None
+    acp_options: AcpOptionSelection | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
 
 
@@ -2041,6 +2053,40 @@ def create_webui(
     async def web_providers() -> WebProviderCatalogView:
         return await app().web_provider_catalog()
 
+    @server.get("/api/acp-agents/presets", response_model=tuple[AcpPresetView, ...])
+    async def acp_agent_presets() -> tuple[AcpPresetView, ...]:
+        return acp_presets()
+
+    @server.get("/api/acp-agents/{agent_id}/options", response_model=AcpOptionsPreview)
+    async def acp_agent_options(agent_id: str, project_id: str | None = None) -> AcpOptionsPreview:
+        return await app().acp_agent_options(agent_id, project_id)
+
+    @server.post(
+        "/api/acp-agents/{agent_id}/options",
+        response_model=AcpOptionsPreview,
+        openapi_extra=_body(AcpOptionPreviewChange),
+    )
+    async def preview_acp_agent_options(
+        agent_id: str, request: Request, project_id: str | None = None
+    ) -> AcpOptionsPreview:
+        return await app().acp_agent_options(agent_id, project_id, await _document(request, AcpOptionPreviewChange))
+
+    @server.post("/api/acp-agents/{agent_id}/auth", response_model=AcpAuthStatus, openapi_extra=_body(AcpAuthRequest))
+    async def acp_auth(agent_id: str, request: Request) -> AcpAuthStatus:
+        return await app().acp_auth(agent_id, await _document(request, AcpAuthRequest))
+
+    @server.get("/api/acp-agents/{agent_id}/auth/inputs", response_model=tuple[McpInputRequestView, ...])
+    async def acp_auth_inputs(agent_id: str) -> tuple[McpInputRequestView, ...]:
+        return await app().acp_auth_inputs(agent_id)
+
+    @server.post(
+        "/api/acp-agents/{agent_id}/auth/inputs/{request_id}/response",
+        response_model=McpInputRequestView,
+        openapi_extra=_body(McpInputResponse),
+    )
+    async def respond_acp_auth_input(agent_id: str, request_id: str, request: Request) -> McpInputRequestView:
+        return await app().respond_acp_auth_input(agent_id, request_id, await _document(request, McpInputResponse))
+
     @server.get("/api/configuration/sources", response_model=ConfigurationSourceCatalog)
     async def configuration_sources() -> ConfigurationSourceCatalog:
         return await app().configuration_sources()
@@ -2101,6 +2147,22 @@ def create_webui(
         return await app().skill_catalog(
             thread_id=thread_id, environment=await _document(request, EnvironmentSelectionPatch)
         )
+
+    @server.get("/api/threads/{thread_id}/acp-commands", response_model=tuple[AcpCommand, ...])
+    async def acp_commands(thread_id: str) -> tuple[AcpCommand, ...]:
+        return await app().acp_commands(thread_id)
+
+    @server.get("/api/threads/{thread_id}/acp-options", response_model=tuple[AcpOption, ...])
+    async def acp_options(thread_id: str) -> tuple[AcpOption, ...]:
+        return await app().acp_options(thread_id)
+
+    @server.put(
+        "/api/threads/{thread_id}/acp-options",
+        response_model=tuple[AcpOption, ...],
+        openapi_extra=_body(AcpOptionChange),
+    )
+    async def set_acp_option(thread_id: str, request: Request) -> tuple[AcpOption, ...]:
+        return await app().acp_options(thread_id, await _document(request, AcpOptionChange))
 
     @server.get("/api/threads/{thread_id}/configuration", response_model=ThreadConfigurationInspection)
     async def inspect_configuration(thread_id: str) -> ThreadConfigurationInspection:
@@ -2367,6 +2429,7 @@ def create_webui(
         document = await _document(request, CreateThreadRequest)
         return await app().create_thread(
             defaults=document.defaults,
+            acp_options=document.acp_options,
             title=document.title,
             thread_id=document.thread_id,
             coordinator=document.coordinator,
@@ -2481,6 +2544,8 @@ def create_webui(
     async def submit(thread_id: str, request: Request) -> RootRunReceipt:
         # Ordered input and its base64 CRDT capture can each contain the prompt.
         document = await _document(request, SubmitRequest, max_bytes=2 * _MAX_BODY)
+        controls = document.controls().model_dump(exclude_none=True)
+        overrides = RunModelOverrides(model_id=document.model_id, **controls) if document.model_id or controls else None
         try:
             return await app().submit_thread(
                 thread_id=thread_id,
@@ -2488,7 +2553,7 @@ def create_webui(
                 app_context=document.app_context,
                 mode=document.mode,
                 environment=document.environment,
-                model_overrides=RunModelOverrides(model_id=document.model_id, **document.controls().model_dump()),
+                model_overrides=overrides,
                 skill_references=document.skill_references,
                 input_surface="webui",
                 draft=document.draft,

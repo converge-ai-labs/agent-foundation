@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from sqlalchemy import ColumnElement, Select, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra import cursors
 from a13n_service.infra.db import Storage, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
@@ -35,7 +36,12 @@ PREVIEW_OUTPUT = 512
 
 
 def new_session(
-    organization_id: str, workspace_id: str, created_by_id: str, details: SessionCreate | None = None
+    organization_id: str,
+    workspace_id: str,
+    created_by_id: str,
+    details: SessionCreate | None = None,
+    *,
+    provenance: AppProvenance | None = None,
 ) -> SessionRow:
     details = details or SessionCreate()
     return SessionRow(
@@ -47,6 +53,8 @@ def new_session(
         origin=details.origin.model_dump(mode="json") if details.origin is not None else None,
         labels=dict(details.labels),
         created_by_id=created_by_id,
+        app_id=provenance.app_id if provenance else None,
+        app_context=provenance.app_context if provenance else None,
     )
 
 
@@ -113,6 +121,7 @@ async def _views(session: AsyncSession, rows: Sequence[SessionRow]) -> list[Sess
         SessionView.model_validate(
             {
                 "id": row.id,
+                "app_id": row.app_id,
                 "workspace_id": row.workspace_id,
                 "auto_recreate_lost_environment": row.auto_recreate_lost_environment,
                 "title": row.title,

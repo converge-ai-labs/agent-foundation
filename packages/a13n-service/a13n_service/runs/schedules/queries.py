@@ -40,6 +40,7 @@ def view(row: ScheduleRow) -> Schedule:
                 "thread_id": row.thread_id,
             },
             "id": row.id,
+            "app_id": row.app_id,
             "session_id": row.session_id,
             "workspace_id": row.workspace_id,
             "name": row.name,

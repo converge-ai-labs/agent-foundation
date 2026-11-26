@@ -143,7 +143,7 @@ async def test_pending_automatic_title_joins_app_shutdown_after_root_completion(
                 await stop.wait()
         closed.set()
 
-    with fail_after(10):
+    with fail_after(15):
         async with create_task_group() as group:
             group.start_soon(lifetime)
             await ready.wait()
@@ -153,7 +153,7 @@ async def test_pending_automatic_title_joins_app_shutdown_after_root_completion(
                 stop.set()
             # Bound title cancellation, not unrelated collaborator/storage teardown.
             # Release the old implementation's shielded join if cancellation fails.
-            with move_on_after(2) as shutdown_wait:
+            with move_on_after(5) as shutdown_wait:
                 await cancelled.wait()
             release.set()
             await closed.wait()

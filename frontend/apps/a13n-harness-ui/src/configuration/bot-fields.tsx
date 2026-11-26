@@ -41,11 +41,14 @@ export function BotFields({
   const models = selectors.data?.models ?? [];
   const agents = selectors.data?.agents ?? [];
   const defaultAgent = agents.find(
-    (agent) => agent.agent_id === document?.getIn(["defaults", "agent"]),
+    (agent) =>
+      agent.kind !== "acp_agent" &&
+      agent.agent_id === document?.getIn(["defaults", "agent"]),
   );
   const selectedAgent = get("agent")
     ? agents.find((agent) => agent.agent_id === get("agent"))
     : defaultAgent;
+  const external = !!get("agent") && selectedAgent?.kind === "acp_agent";
   const defaultModel = models.find(
     (model) => model.model_id === selectedAgent?.model_id,
   );
@@ -105,41 +108,52 @@ export function BotFields({
                 label: agent.name,
               })),
             ]}
-            onValueChange={(value) => set("agent", value || null)}
+            onValueChange={(value) => {
+              set("agent", value || null);
+              if (
+                agents.some(
+                  (agent) =>
+                    agent.agent_id === value && agent.kind === "acp_agent",
+                )
+              )
+                set("model", null);
+            }}
             loading={selectors.isLoading}
           />
-          <ResourceChoice
-            label={t("Bot model")}
-            description={t(
-              "Default follows the selected Agent's model. Changes apply to later runs.",
-            )}
-            value={String(get("model") ?? "")}
-            options={[
-              {
-                value: "",
-                label: defaultModel
-                  ? t("Default ({{name}})", {
-                      name: defaultModel.name,
-                    })
-                  : t("Default (no model)"),
-                icon: defaultModel ? (
-                  <ModelIcon model={defaultModel} />
-                ) : undefined,
-              },
-              ...models.map((model) => ({
-                value: model.model_id,
-                label: model.name,
-                icon: <ModelIcon model={model} />,
-              })),
-            ]}
-            onValueChange={(value) => set("model", value || null)}
-            loading={selectors.isLoading}
-          />
+          {!external && (
+            <ResourceChoice
+              label={t("Bot model")}
+              description={t(
+                "Default follows the selected Agent's model. Changes apply to later runs.",
+              )}
+              value={String(get("model") ?? "")}
+              options={[
+                {
+                  value: "",
+                  label: defaultModel
+                    ? t("Default ({{name}})", {
+                        name: defaultModel.name,
+                      })
+                    : t("Default (no model)"),
+                  icon: defaultModel ? (
+                    <ModelIcon model={defaultModel} />
+                  ) : undefined,
+                },
+                ...models.map((model) => ({
+                  value: model.model_id,
+                  label: model.name,
+                  icon: <ModelIcon model={model} />,
+                })),
+              ]}
+              onValueChange={(value) => set("model", value || null)}
+              loading={selectors.isLoading}
+            />
+          )}
           <ErrorNotice
             error={selectors.error}
             retry={() => void selectors.refetch()}
           />
-          {!get("model") && !defaultModel && (
+          {!external && !get("model") && !defaultModel && (
             <p className={styles.fieldGroup}>
               {models.length ? (
                 t("Choose an existing model to continue.")

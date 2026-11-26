@@ -1,6 +1,7 @@
 import { useTranslation } from "../i18n";
 import type { ReactNode } from "react";
 import { Button } from "a13n-ui";
+import { Link } from "react-router";
 import { WarningCircle } from "@phosphor-icons/react";
 import { useOperation } from "./queries";
 import type { FocusDisplay } from "./stream";
@@ -73,6 +74,7 @@ export function RootFailureNotice({
   completedContinuationId,
   retry,
   retryDisabled = false,
+  acpAuthPath,
 }: {
   threadId: string;
   receipt?: string | null;
@@ -82,6 +84,7 @@ export function RootFailureNotice({
   completedContinuationId?: string | null;
   retry?: () => void;
   retryDisabled?: boolean;
+  acpAuthPath?: string;
 }) {
   const { t } = useTranslation();
   const operation = useOperation(threadId, receipt);
@@ -120,6 +123,10 @@ export function RootFailureNotice({
     current?.outcome?.continuation.continuation_id ?? completedContinuationId;
   const contextChanged =
     continuationId !== undefined && continuationId !== (retryContext ?? null);
+  const failureCode =
+    savedFailure?.code ??
+    retainedFailure?.error_code ??
+    (live ? display.terminalFailureCode : undefined);
   return (
     <FailureNotice
       title={
@@ -135,11 +142,7 @@ export function RootFailureNotice({
         live ??
         (settled ? t("The operation could not finish.") : undefined)
       }
-      code={
-        savedFailure?.code ??
-        retainedFailure?.error_code ??
-        (live ? display.terminalFailureCode : undefined)
-      }
+      code={failureCode}
       threadId={threadId}
       runId={
         settled?.run_id ??
@@ -149,14 +152,26 @@ export function RootFailureNotice({
       executionId={settled?.receipt.receipt_id ?? retainedFailure?.execution_id}
       details={savedFailure?.details}
       action={
-        !superseded &&
-        current?.status === "failed" &&
-        retry &&
-        !contextChanged ? (
-          <Button variant="outline" disabled={retryDisabled} onClick={retry}>
-            {t("Retry")}
-          </Button>
-        ) : undefined
+        <>
+          {failureCode === "acp_auth_required" && acpAuthPath && (
+            <Button variant="outline" render={<Link to={acpAuthPath} />}>
+              {t("Open Agent authentication")}
+            </Button>
+          )}
+          {!superseded &&
+            (current?.status === "failed" ||
+              failureCode === "acp_auth_required") &&
+            retry &&
+            !contextChanged && (
+              <Button
+                variant="outline"
+                disabled={retryDisabled}
+                onClick={retry}
+              >
+                {t("Retry")}
+              </Button>
+            )}
+        </>
       }
     />
   );

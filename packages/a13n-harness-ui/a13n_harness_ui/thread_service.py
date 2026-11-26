@@ -10,12 +10,15 @@ from pathlib import Path
 
 from a13n_harness import HarnessState
 from a13n_harness import __version__ as harness_version
+from a13n_harness.state import AgentContextStateSnapshot
 from anyio import CancelScope, to_thread
 from filelock import AsyncFileLock
 
+from a13n_harness_ui.acp_sessions import AcpOptionSelection, AcpSessionState, acp_options_scope
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
+from a13n_harness_ui.configuration.models import AgentResource
 from a13n_harness_ui.display_history import (
     DisplayHistoryCollector,
     ordinary_input,
@@ -36,7 +39,7 @@ from a13n_harness_ui.storage import (
 )
 from a13n_harness_ui.storage.checkpoint_lock import checkpoint_lock
 from a13n_harness_ui.storage.continuations import publish_continuation, read_continuation
-from a13n_harness_ui.storage.contracts import BotAgentSource, LiveAgentSource, MemoryAgentSource
+from a13n_harness_ui.storage.contracts import AcpAgentSource, BotAgentSource, LiveAgentSource, MemoryAgentSource
 from a13n_harness_ui.storage.display import read_display
 from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.surfaces import (
@@ -104,6 +107,7 @@ class ThreadService:
         thread_id: str | None = None,
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
+        acp_options: AcpOptionSelection | None = None,
     ) -> Thread:
         source = await self._required_configuration()
         configuration = resolve_thread_configuration(source, defaults)
@@ -115,8 +119,29 @@ class ThreadService:
                 raise ThreadError("The Coordinator's Project is unavailable.", code="thread_project_missing")
         if coordinator and configuration.project_id not in source.projects:
             raise ThreadError("A Coordinator requires an available Project.", code="thread_project_missing")
+        acp_state = None
+        if acp_options is not None and acp_options.values:
+            resource = (
+                source.acp_agents.get(configuration.agent_source.id)
+                if isinstance(configuration.agent_source, AcpAgentSource)
+                else None
+            )
+            if resource is None:
+                raise ThreadError("Select an ACP Agent before choosing its options.", code="acp_option_invalid")
+            cwd = self.acp_workspace(configuration)
+            if acp_options.scope != acp_options_scope(resource, cwd):
+                raise ThreadError(
+                    "The ACP Agent or workspace changed. Select its options again.", code="acp_option_invalid"
+                )
+            acp_state = AcpSessionState(
+                digest=acp_options.scope,
+                prompted=False,
+                options=acp_options.values,
+                explicit_options=frozenset(acp_options.values),
+            )
         return await self._create(
             configuration=configuration,
+            acp_state=acp_state,
             title=title,
             thread_id=thread_id,
             coordinator_thread_id=coordinator_thread_id,
@@ -194,12 +219,26 @@ class ThreadService:
             thread_id == BOT_THREAD_ID
             or source.parent_thread_id is not None
             or source.memory_scope is not None
-            or source.configuration.agent_source.kind != "agent"
+            or source.configuration.agent_source.kind not in {"agent", "acp_agent"}
             or await self._store.threads.is_coordinator(thread_id)
             or await self._store.threads.worker_owners((thread_id,))
         ):
             raise ThreadError("Only independent ordinary Threads can be forked.", code="thread_fork_unsupported")
         return source
+
+    @staticmethod
+    def _strip_acp_state(state: HarnessState) -> HarnessState:
+        if state.agent_context_state.get("a13n.acp") is None:
+            return state
+        return state.model_copy(
+            update={
+                "agent_context_state": AgentContextStateSnapshot(
+                    entries={
+                        key: value for key, value in state.agent_context_state.entries.items() if key != "a13n.acp"
+                    }
+                )
+            }
+        )
 
     @staticmethod
     def _source_id(ref: ObjectRef) -> str:
@@ -343,12 +382,29 @@ class ThreadService:
                     raise ThreadError(
                         "The selected state belongs to another Thread.", code="thread_continuation_incompatible"
                     )
-                state = await to_thread.run_sync(stored.harness_state.fork)
+                state = self._strip_acp_state(await to_thread.run_sync(stored.harness_state.fork))
                 initial_state = (
-                    await to_thread.run_sync(lambda: baseline.harness_state.fork(thread_id=state.thread_id))
+                    self._strip_acp_state(
+                        await to_thread.run_sync(lambda: baseline.harness_state.fork(thread_id=state.thread_id))
+                    )
                     if source.continuation is not None
                     else state
                 )
+            acp_state = None
+            if isinstance(source.configuration.agent_source, AcpAgentSource):
+                saved_acp = await self._store.threads.acp_state(thread_id)
+                current = await self._configurations.current()
+                resource = current.acp_agents.get(source.configuration.agent_source.id) if current is not None else None
+                if saved_acp is not None and resource is not None:
+                    prior_acp = AcpSessionState.model_validate_json(saved_acp)
+                    acp_state = AcpSessionState(
+                        digest=acp_options_scope(resource, self.acp_workspace(source.configuration)),
+                        thread_id=state.thread_id,
+                        prompted=False,
+                        commands=prior_acp.commands,
+                        options=prior_acp.options,
+                        explicit_options=prior_acp.explicit_options,
+                    )
         now = datetime.now(UTC)
         copied: Thread | None = None
         with CancelScope(shield=True):
@@ -371,6 +427,7 @@ class ThreadService:
                     initial_state=initial.ref,
                     continuation=continuation,
                     read_model=read_model,
+                    acp_state_json=acp_state.model_dump_json() if acp_state is not None else None,
                 )
             await self._store.publish_work(copied.thread_id, continuation or initial.ref, state)
         assert copied is not None
@@ -402,6 +459,7 @@ class ThreadService:
         coordinator_thread_id: str | None = None,
         coordinator: bool = False,
         memory_scope: str | None = None,
+        acp_state: AcpSessionState | None = None,
     ) -> Thread:
         baseline = HarnessState.new(thread_id=thread_id)
         initial = await self._store.objects.publish_model(
@@ -413,12 +471,21 @@ class ThreadService:
             memory_scope=memory_scope,
             configuration=configuration,
             initial_state=initial.ref,
+            acp_state_json=acp_state.model_dump_json() if acp_state is not None else None,
             title=title,
             coordinator_thread_id=coordinator_thread_id,
             coordinator=coordinator,
         )
         await self._store.publish_work(thread.thread_id, initial.ref, baseline)
         return thread
+
+    def acp_workspace(self, configuration: ThreadConfiguration) -> str:
+        if configuration.environment_profile_id != FULL_CONTROL_PROFILE_ID or configuration.environment_bindings:
+            raise ThreadError(
+                "Launching a local ACP executable requires Full Control without Device bindings.",
+                code="acp_requires_native_environment",
+            )
+        return configuration.local_roots[0] if configuration.local_roots else str(self._store.settings.data_root)
 
     async def preview_creation(self, defaults: RootThreadDefaults | None = None) -> ThreadConfiguration:
         return resolve_thread_configuration(await self._required_configuration(), defaults)
@@ -527,6 +594,7 @@ class ThreadService:
                 read_model=read_model,
                 activity_changed=False,
                 clear_compaction=True,
+                clear_acp_state=True,
             )
             await self._store.publish_work(thread_id, published, state)
 
@@ -629,16 +697,24 @@ def apply_configuration_mutation(
     if thread.configuration.version != mutation.expected_version:
         raise ThreadError("Thread configuration version changed; read it again.", code="thread_configuration_conflict")
     replacement = mutation.patch.apply(thread.configuration)
+    if mutation.patch.agent_source is not None and isinstance(replacement.agent_source, AcpAgentSource):
+        replacement = replacement.model_copy(update={"default_model_id": None})
     if thread.thread_id == BOT_THREAD_ID and replacement.project_id is not None:
         raise ThreadError("Bot belongs to the instance, not a Project.", code="bot_thread_reserved")
     _validate_configuration(source, replacement, root=thread.parent_thread_id is None)
     return replacement
 
 
+def configured_agent_source(agent_id: str) -> AgentResourceSource | AcpAgentSource:
+    return AcpAgentSource(id=agent_id) if agent_id.startswith("acp-") else AgentResourceSource(id=agent_id)
+
+
 def project_defaults_patch(defaults: ProjectDefaults) -> ProjectDefaultsPatch:
     values: dict[str, object] = {}
     if defaults.agent is not None:
-        values["agent_source"] = AgentResourceSource(id=defaults.agent)
+        values["agent_source"] = configured_agent_source(defaults.agent)
+        if isinstance(values["agent_source"], AcpAgentSource):
+            values["default_model_id"] = None
     for name, value in (
         ("environment_profile_id", defaults.environment_profile),
         ("environment_bindings", defaults.environment_bindings),
@@ -671,9 +747,12 @@ def resolve_thread_configuration_details(
     agent_id, agent_origin = _first_selection(
         (requested.agent_id, "explicit"), (project.agent, "project"), (global_defaults.agent, "global")
     )
-    if agent_id is None or agent_id not in source.agents:
+    if agent_id is None:
         raise ThreadError("A root Thread requires an available Agent.", code="thread_agent_missing")
-    agent = source.agents[agent_id]
+    agent_source = configured_agent_source(agent_id)
+    agent = (source.acp_agents if isinstance(agent_source, AcpAgentSource) else source.agents).get(agent_id)
+    if agent is None:
+        raise ThreadError("A root Thread requires an available Agent.", code="thread_agent_missing")
     environment, environment_origin = _first_selection(
         (requested.environment_profile_id, "explicit"),
         (project.environment_profile, "project"),
@@ -692,7 +771,7 @@ def resolve_thread_configuration_details(
     plugins, plugins_origin = _first_selection(
         (requested.harness_plugin_ids, "explicit"),
         (project.harness_plugins, "project"),
-        (agent.harness_plugins, "agent"),
+        (agent.harness_plugins if isinstance(agent, AgentResource) else None, "agent"),
         (global_defaults.harness_plugins, "global"),
     )
     extensions, extensions_origin = _first_selection(
@@ -716,7 +795,7 @@ def resolve_thread_configuration_details(
         version=1,
         local_roots=roots or (),
         project_id=project_id,
-        agent_source=AgentResourceSource(id=agent_id),
+        agent_source=agent_source,
         default_model_id=requested.default_model_id,
         environment_profile_id=environment,
         environment_bindings=bindings or (),
@@ -758,11 +837,11 @@ def _validate_configuration(
 ) -> None:
     if value.project_id is not None and value.project_id not in source.projects:
         raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
-    if root and value.agent_source.kind != "agent":
+    if root and value.agent_source.kind not in {"agent", "acp_agent"}:
         raise ThreadError("A root Thread cannot select a Markdown source.", code="thread_agent_invalid")
     if value.default_model_id is not None:
         if value.agent_source.kind != "agent":
-            raise ThreadError("A Markdown child follows its parent Model.", code="thread_model_invalid")
+            raise ThreadError("This Agent source does not accept a Harness Model.", code="thread_model_invalid")
         if value.default_model_id not in source.models:
             raise ThreadError("The selected Thread Model is unavailable.", code="thread_model_missing")
     for binding in value.environment_bindings:
@@ -776,8 +855,14 @@ def _validate_configuration(
         )
     except ValueError as error:
         raise ThreadError(str(error), code="thread_environment_invalid") from error
-    resources = source.agents if value.agent_source.kind == "agent" else source.subagents
-    if value.agent_source.id not in resources:
+    match value.agent_source:
+        case AgentResourceSource():
+            agent_exists = value.agent_source.id in source.agents
+        case AcpAgentSource():
+            agent_exists = value.agent_source.id in source.acp_agents
+        case _:
+            agent_exists = value.agent_source.id in source.subagents
+    if not agent_exists:
         raise ThreadError("The selected Agent source is unavailable.", code="thread_agent_missing")
     if (
         built_in_environment_profile(value.environment_profile_id) is None

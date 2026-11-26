@@ -27,6 +27,7 @@ from a13n_harness import (
     RunModelResolver,
 )
 from a13n_harness import __version__ as harness_version
+from a13n_harness.acp import AcpError, AcpRunBinding, AcpSessionSetup
 from a13n_harness.capabilities import AskUserQuestionRequest, UserQuestionAnswers
 from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.capabilities.skills import BoundSkillCatalog, SkillCatalogResolvedEvent, SkillsCapability
@@ -37,13 +38,16 @@ from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_harness.usage import UsageDeltaReporter, UsageReporter, UsageSnapshot
 from a13n_logging import get_logger
-from anyio import CancelScope, get_cancelled_exc_class, to_thread
+from acp import RequestError
+from anyio import CancelScope, fail_after, get_cancelled_exc_class, to_thread
 from opentelemetry.trace import StatusCode
 from pydantic_ai import RunContext, ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import AgentStreamEvent, FunctionToolResultEvent, ModelMessage
 from pydantic_ai.tools import DeferredToolApprovalResult, ToolApproved
 
+from a13n_harness_ui.acp_execution import AcpTurn
+from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange, AcpSessions, AcpSessionState
 from a13n_harness_ui.bot_environments import BotEnvironmentsCapability
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser import HostBrowsers
@@ -58,7 +62,8 @@ from a13n_harness_ui.composition import (
     RunCompositionService,
     ThreadCompositionSelection,
 )
-from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
+from a13n_harness_ui.composition.models import ResolvedAcpNode
+from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
 from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector, checkpoint_excerpt
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.display_history import (
@@ -78,6 +83,7 @@ from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
 from a13n_harness_ui.input_prediction import InputPredictionPlugin
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.mcp_apps.snapshots import AppSnapshots
+from a13n_harness_ui.mcp_runtime.inputs import Inputs
 from a13n_harness_ui.memory import MemoryOrganizationRun
 from a13n_harness_ui.model_accounts.models import MainAccountSelection
 from a13n_harness_ui.model_accounts.provenance import MainAccountCapability
@@ -176,6 +182,7 @@ class RootRunAdmission:
     browser_binding: str | None = None
     browser_unavailable: str = ""
     external_context: ExternalContext = field(default_factory=ExternalContext, repr=False)
+    acp_state: AcpSessionState | None = field(default=None, repr=False)
     strict_inputs: StrictRootInputs | None = field(default=None, repr=False)
     run_capabilities: tuple[AbstractCapability[AgentContext], ...] = field(default=(), repr=False)
 
@@ -206,7 +213,10 @@ class RootRunExecutor:
         compaction: BackgroundCompaction | None = None,
         unattended: bool = False,
         input_prediction: InputPredictionPlugin | None = None,
+        acp_inputs: Inputs | None = None,
     ) -> None:
+        self._acp_inputs = acp_inputs
+        self.acp_sessions = AcpSessions()
         self._unattended = unattended
         self._browsers = browsers
         self._compaction = compaction
@@ -256,6 +266,175 @@ class RootRunExecutor:
         self, publisher: Callable[[DisplayPublication | None, bool, str | None], Awaitable[None]]
     ) -> None:
         self._bot_display_publisher = publisher
+
+    async def _read_acp_state(self, thread_id: str) -> AcpSessionState | None:
+        value = await self._store.threads.acp_state(thread_id)
+        return AcpSessionState.model_validate_json(value) if value is not None else None
+
+    async def _save_acp_state(self, thread_id: str, state: AcpSessionState) -> None:
+        await self._store.threads.save_acp_state(thread_id, state.model_dump_json())
+
+    def _acp_turn(
+        self,
+        composition: ResolvedRunComposition,
+        source: LoadedHarnessUiConfiguration,
+        saved: AcpSessionState | None,
+        *,
+        goal: GoalCapability | None = None,
+    ) -> AcpTurn:
+        node = composition.root
+        assert isinstance(node, ResolvedAcpNode)
+        thread_id = composition.thread_id
+        is_bot = thread_id == BOT_THREAD_ID
+        if composition.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID or composition.environment_bindings:
+            raise RunCoordinationError(
+                "Launching a local ACP executable requires Full Control without Device bindings.",
+                code="acp_requires_native_environment",
+            )
+        workspaces = composition.project_roots
+        cwd = workspaces[0] if workspaces else str(self._store.settings.data_root)
+        thread_files = (
+            self._thread_files.directory(thread_id) if not is_bot and self._thread_files is not None else None
+        )
+        return AcpTurn(
+            sessions=self.acp_sessions,
+            resource=node.resource,
+            digest=canonical_digest(
+                {
+                    "root": node.model_dump(mode="json"),
+                    "cwd": cwd,
+                    # Retain the existing continuation identity for saved sessions.
+                    "additional_directories": (
+                        *workspaces[1:],
+                        *((str(thread_files),) if thread_files else ()),
+                    ),
+                }
+            ),
+            setup=AcpSessionSetup(
+                cwd=cwd,
+                instructions=(*node.global_guidance, node.resource.instructions),
+                additional_directories=workspaces[1:],
+            ),
+            thread_files=thread_files,
+            inputs=self._acp_inputs,
+            interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
+            ask_user_enabled=not is_bot and source.document.tools.enable_ask_user_question,
+            goal=goal,
+            saved=saved,
+            persist=partial(self._save_acp_state, thread_id),
+            update_title=partial(self._set_acp_title, thread_id) if not is_bot else None,
+            bot=is_bot,
+            bind_environment=lambda context: AcpRunBinding(
+                environment=context.environment,
+                files_enabled=not is_bot or source.document.webui.bot.files_enabled is True,
+                terminals_enabled=not is_bot or source.document.webui.bot.shell_enabled is True,
+            ),
+        )
+
+    async def _set_acp_title(self, thread_id: str, title: str) -> None:
+        if await self._store.threads.set_acp_title(thread_id, title[:512]) and self._summary_hub is not None:
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+
+    async def _capture_browser(self, composition: ResolvedRunComposition) -> tuple[str | None, str]:
+        if composition.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:
+            return None, "Host browser requires this Run to use Full Control."
+        if self._browsers is None:
+            return None, "Host browser is unavailable."
+        binding = await self._browsers.admit(composition.thread_id)
+        return binding, "" if binding is not None else self._browsers.unavailable_reason()
+
+    def _conversation_capabilities(
+        self,
+        composition: ResolvedRunComposition,
+        browser_binding: str | None,
+        browser_unavailable: str,
+        *,
+        local: bool = True,
+    ) -> tuple[AbstractCapability[AgentContext], ...]:
+        thread_id = composition.thread_id
+        capabilities: list[AbstractCapability[AgentContext]] = []
+        browsers = self._browsers
+        backend = browsers.backend(thread_id, browser_binding) if browsers is not None and browser_binding else None
+        if local:
+            capabilities.append(BrowserContextCapability(backend, unavailable=browser_unavailable))
+        if backend is not None and browsers is not None:
+            capabilities.append(
+                BrowserUseCapability(backend, on_human_control=partial(browsers.handback.blocked, thread_id))
+            )
+        if local and self._restart is not None:
+            capabilities.append(RestartPauseCapability(self._restart, thread_id))
+        if local and self._root_capability_factory is not None:
+            capabilities.append(self._root_capability_factory(composition))
+        return tuple(capabilities)
+
+    async def prepare_acp_options(self, thread_id: str, change: AcpOptionChange | None) -> tuple[AcpOption, ...]:
+        thread = await self._threads.require_interactive(thread_id)
+        if thread.archived or thread.parent_thread_id is not None:
+            return ()
+        if thread.configuration.agent_source.kind not in {"acp_agent", "bot"}:
+            return ()
+        source = await self._required_configuration()
+        composition = await self._compositions.resolve(source, _selection(thread))
+        if not isinstance(composition.root, ResolvedAcpNode):
+            return ()
+        saved = await self._read_acp_state(thread_id)
+        turn = self._acp_turn(composition, source, saved)
+        if saved is None or not self.acp_sessions.matches(thread_id, turn.digest, saved.session_id):
+            # Reuse the ACP middleware for discovery only. There is no root
+            # admission, prompt, live publication, or tool-call authority.
+            turn.prewarm = True
+            state, _, _, _, positions, _ = await self._load_run_state(thread)
+            browser_binding, browser_unavailable = await self._capture_browser(composition)
+            reconstructed = self._agents.reconstruct(
+                composition,
+                subagent_operator=None,
+                acp_turn=turn,
+                root_capabilities=self._conversation_capabilities(composition, browser_binding, browser_unavailable),
+                subscription_sources=self._subscription_sources,
+                memory_positions=positions,
+            )
+            bindings = RunBindings(
+                instance=AgentInstanceContext(
+                    identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread_id),
+                    agent_instance_id=f"agent-{uuid4().hex[:20]}",
+                    actor="a13n-harness-ui.root",
+                    host_refs={"thread_id": thread_id},
+                ),
+                configuration=reconstructed.run_configuration,
+                model_resolver=reconstructed.model_resolver,
+                unattended=self._unattended,
+            )
+            try:
+                with fail_after(20):
+                    async with reconstructed.executable.stream(bindings=bindings, previous_state=state) as stream:
+                        async for _ in stream:
+                            pass
+            except AcpError as exc:
+                raise ThreadError(str(exc), code=exc.code) from exc
+            except (RequestError, ConnectionError, TimeoutError) as exc:
+                raise ThreadError("Could not open the external ACP session.", code="acp_session_unavailable") from exc
+        if change is None:
+            return self.acp_sessions.options(thread_id)
+        options, unrestored = await self.acp_sessions.set_option(thread_id, change)
+        current = await self._read_acp_state(thread_id)
+        assert current is not None
+        values = {option.id: option.value for option in options}
+        values.update((key, value) for key, value in current.options.items() if key in unrestored)
+        with CancelScope(shield=True):
+            await self._save_acp_state(
+                thread_id,
+                current.model_copy(
+                    update={
+                        "options": values,
+                        "explicit_options": frozenset(
+                            key
+                            for key in values
+                            if not current.prompted and (key == change.id or key in current.explicit_options)
+                        ),
+                    }
+                ),
+            )
+        return options
 
     async def capture(
         self,
@@ -382,14 +561,7 @@ class RootRunExecutor:
                     object_kind=ObjectKind.run_composition, value=captured
                 )
                 published = PublishedRunComposition(value=captured, reference=envelope.ref)
-        browser_binding = None
-        browser_unavailable = "Host browser is unavailable."
-        if published.value.environment_profile.profile_id != FULL_CONTROL_PROFILE_ID:
-            browser_unavailable = "Host browser requires this Run to use Full Control."
-        elif self._browsers is not None:
-            browser_binding = await self._browsers.admit(thread_id)
-            if browser_binding is None:
-                browser_unavailable = self._browsers.unavailable_reason()
+        browser_binding, browser_unavailable = await self._capture_browser(published.value)
         return RootRunAdmission(
             thread,
             source,
@@ -404,13 +576,17 @@ class RootRunExecutor:
             browser_binding=browser_binding,
             browser_unavailable=browser_unavailable,
             external_context=await self._store.threads.external_context(thread_id),
+            acp_state=await self._read_acp_state(thread_id)
+            if isinstance(published.value.root, ResolvedAcpNode)
+            else None,
         )
 
     async def execute(
         self,
         admission: RootRunAdmission,
         *,
-        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
+        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None, AcpTurn | None], Awaitable[None]]
+        | None = None,
         goal: GoalView | None = None,
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
         on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
@@ -430,7 +606,8 @@ class RootRunExecutor:
         self,
         admission: RootRunAdmission,
         *,
-        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
+        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None, AcpTurn | None], Awaitable[None]]
+        | None = None,
         goal: GoalView | None = None,
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
         on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
@@ -569,7 +746,13 @@ class RootRunExecutor:
                 )
                 display.supplement((*image_events, *app_events))
 
-            is_bot = published.value.root.source_kind == "bot"
+            node = published.value.root
+            is_bot = thread_id == BOT_THREAD_ID
+            acp_turn = (
+                self._acp_turn(published.value, source, admission.acp_state, goal=goal_capability)
+                if isinstance(node, ResolvedAcpNode)
+                else None
+            )
             prediction = (
                 self._input_prediction
                 if published.value.root.source_kind == "agent"
@@ -590,6 +773,8 @@ class RootRunExecutor:
             reconstruct = self._agents.reconstruct
             if prediction is not None:
                 reconstruct = partial(reconstruct, root_plugins=(prediction,))
+            if acp_turn is not None:
+                reconstruct = partial(reconstruct, acp_turn=acp_turn)
             reconstructed = reconstruct(
                 published.value,
                 background_compaction=self._compaction,
@@ -598,7 +783,7 @@ class RootRunExecutor:
                 organization=admission.organization,
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
-                    MainAccountCapability(published.value.root.model.model_id, on_main_account),
+                    *((MainAccountCapability(node.model.model_id, on_main_account),) if node.model is not None else ()),
                     *(
                         (
                             BotEnvironmentsCapability(
@@ -608,7 +793,7 @@ class RootRunExecutor:
                         if is_bot and environment is not None
                         else ()
                     ),
-                    goal_capability,
+                    *((goal_capability,) if acp_turn is None else ()),
                     *admission.run_capabilities,
                     RootCheckpointCapability(
                         save_checkpoint,
@@ -617,37 +802,11 @@ class RootRunExecutor:
                         else None,
                     ),
                     _ToolPresentationCapability(retain_tool_presentation),
-                    *(
-                        (
-                            BrowserContextCapability(
-                                self._browsers.backend(thread_id, admission.browser_binding)
-                                if self._browsers is not None and admission.browser_binding is not None
-                                else None,
-                                unavailable=admission.browser_unavailable,
-                            ),
-                        )
-                        if admission.organization is None
-                        else ()
-                    ),
-                    *(
-                        (
-                            BrowserUseCapability(
-                                self._browsers.backend(thread_id, admission.browser_binding),
-                                on_human_control=partial(self._browsers.handback.blocked, thread_id),
-                            ),
-                        )
-                        if self._browsers is not None and admission.browser_binding is not None
-                        else ()
-                    ),
-                    *(
-                        (RestartPauseCapability(self._restart, thread_id),)
-                        if self._restart is not None and admission.organization is None
-                        else ()
-                    ),
-                    *(
-                        ()
-                        if self._root_capability_factory is None or admission.organization is not None
-                        else (self._root_capability_factory(published.value),)
+                    *self._conversation_capabilities(
+                        published.value,
+                        admission.browser_binding,
+                        admission.browser_unavailable,
+                        local=admission.organization is None,
                     ),
                 ),
                 subscription_sources=self._subscription_sources,
@@ -660,10 +819,14 @@ class RootRunExecutor:
                     self._thread_files,
                     thread_id,
                     source.document.input,
-                    view_enabled=(published.value.root.tools is None or "view" in published.value.root.tools)
-                    and any(
-                        isinstance(capability, DynamicEnvironmentCapability) and capability.configuration.files_enabled
-                        for capability in reconstructed.executable.definition.capabilities
+                    view_enabled=acp_turn is not None
+                    or (
+                        (published.value.root.tools is None or "view" in published.value.root.tools)
+                        and any(
+                            isinstance(capability, DynamicEnvironmentCapability)
+                            and capability.configuration.files_enabled
+                            for capability in reconstructed.executable.definition.capabilities
+                        )
                     ),
                 )
                 if self._thread_files is not None and admission.organization is None
@@ -708,7 +871,11 @@ class RootRunExecutor:
                 if reconstructed.compaction is not None
                 else None
             )
-            compaction_result = await self._compaction.restore(previous_state) if self._compaction is not None else None
+            compaction_result = (
+                await self._compaction.restore(previous_state)
+                if self._compaction is not None and acp_turn is None
+                else None
+            )
 
             def observe_production(item: HarnessEvent) -> None:
                 # The root's exact stream exists before Capability freezing starts.
@@ -728,7 +895,11 @@ class RootRunExecutor:
                 metadata=admission.external_context.model_copy(deep=True).metadata,
                 request_context=admission.external_context.request_context(),
                 tool_execution=self._tool_executions.runtime if self._tool_executions is not None else None,
-                codeact_state=self._tool_executions.state(thread_id) if self._tool_executions is not None else None,
+                codeact_state=(
+                    self._tool_executions.state(thread_id)
+                    if self._tool_executions is not None and acp_turn is None
+                    else None
+                ),
                 instance=instance,
                 configuration=reconstructed.run_configuration,
                 environment=None if environment is None else environment.runtime,
@@ -791,7 +962,7 @@ class RootRunExecutor:
                 stream_entry_attempted = True
                 async with stream:
                     if on_stream is not None:
-                        await on_stream(stream, input_files)
+                        await on_stream(stream, input_files, acp_turn)
                     async for item in stream:
                         record_skill_event(item)
                         excerpts.observe(item)

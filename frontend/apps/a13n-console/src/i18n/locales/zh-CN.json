@@ -1444,7 +1444,7 @@
   "Hour": "时",
   "ID": "ID",
   "Icon": "图标",
-  "If the address can receive a recovery link, it will arrive shortly.": "如果此邮箱符合接收恢复链接的条件，邮件将很快送达。",
+  "If this email belongs to an active local-password account, a recovery link will arrive shortly. Check spam, use your identity provider if you sign in with SSO, or contact your organization administrator if it does not arrive.": "如果此邮箱对应已启用的本地密码账号，恢复链接将很快送达。如未收到，请检查垃圾邮件；如果使用 SSO 登录，请通过身份提供商重置；或联系组织管理员协助处理。",
   "Image": "图片",
   "Import a skill from a ZIP file or GitHub repository.": "从 ZIP 文件或 GitHub 仓库导入技能。",
   "Import a skill package to make it available in agent configurations.": "导入技能包后，即可在 Agent 配置中使用。",

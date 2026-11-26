@@ -240,18 +240,20 @@ def _configuration_summary(
     composition: ResolvedRunComposition, capability_ids: Collection[str]
 ) -> dict[str, JsonValue]:
     node = composition.root
+    model = node.model
     settings: dict[str, JsonValue] = {}
-    for key in _MODEL_NUMERIC_SETTINGS:
-        value = node.model.settings.get(key)
-        if not isinstance(value, bool) and isinstance(value, (int, float)) and isfinite(value):
-            settings[key] = value
-    parallel = node.model.settings.get("parallel_tool_calls")
-    if isinstance(parallel, bool):
-        settings["parallel_tool_calls"] = parallel
-    for key, allowed in _MODEL_ENUM_SETTINGS.items():
-        value = node.model.settings.get(key)
-        if isinstance(value, str) and value in allowed:
-            settings[key] = value
+    if model is not None:
+        for key in _MODEL_NUMERIC_SETTINGS:
+            value = model.settings.get(key)
+            if not isinstance(value, bool) and isinstance(value, (int, float)) and isfinite(value):
+                settings[key] = value
+        parallel = model.settings.get("parallel_tool_calls")
+        if isinstance(parallel, bool):
+            settings["parallel_tool_calls"] = parallel
+        for key, allowed in _MODEL_ENUM_SETTINGS.items():
+            value = model.settings.get(key)
+            if isinstance(value, str) and value in allowed:
+                settings[key] = value
     return {
         "generation_digest": composition.generation_digest,
         "thread_configuration_version": composition.thread_configuration_version,
@@ -262,11 +264,13 @@ def _configuration_summary(
             **({"base_agent_id": _configuration_label(node.base_agent_id)} if node.base_agent_id is not None else {}),
         },
         "model": {
-            "id": _configuration_label(node.model.model_id),
-            "route": _configuration_label(node.model.route),
-            "authentication_kind": node.model.authentication.kind,
+            "id": _configuration_label(model.model_id),
+            "route": _configuration_label(model.route),
+            "authentication_kind": model.authentication.kind,
             "settings": settings,
-        },
+        }
+        if model is not None
+        else None,
         "capabilities": _configuration_items(sorted(capability_ids)),
         "harness_plugins": _configuration_items([item.plugin_id for item in node.harness_plugins]),
         "mcp_servers": _configuration_items([item.server_id for item in node.mcp_servers]),

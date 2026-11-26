@@ -19,6 +19,7 @@ from a13n_harness_ui.content_plugins import ContentPluginStore, InstalledContent
 from a13n_harness_ui.errors import ConfigurationError
 
 from .models import (
+    AcpAgentResource,
     AgentResource,
     CanonicalSubagent,
     ConfigurationModel,
@@ -55,6 +56,7 @@ _YAML_DIRECTORIES = (
     "extensions",
     "mcp",
     "agents",
+    "acp_agents",
     "projects",
     "devices",
     "subscription_groups",
@@ -66,6 +68,7 @@ _RESOURCE_TYPES: dict[str, type[Any]] = {
     "subscription_groups": SubscriptionGroupResource,
     "mcp": McpServerResource,
     "agents": AgentResource,
+    "acp_agents": AcpAgentResource,
     "projects": ProjectResource,
     "devices": DeviceResource,
 }
@@ -291,6 +294,7 @@ def _parse_complete_tree(
     run_extensions: dict[str, EnvironmentRunExtensionResource] = {}
     mcp: dict[str, McpServerResource] = {}
     agents: dict[str, AgentResource] = {}
+    acp_agents: dict[str, AcpAgentResource] = {}
     subagents: dict[str, CanonicalSubagent] = {}
     projects: dict[str, ProjectResource] = {}
     devices: dict[str, DeviceResource] = {}
@@ -365,6 +369,7 @@ def _parse_complete_tree(
                     "subscription_groups": "subscription_group",
                     "mcp": "mcp_server",
                     "agents": "agent",
+                    "acp_agents": "acp_agent",
                     "projects": "project",
                     "devices": "device",
                 }[directory]
@@ -380,6 +385,7 @@ def _parse_complete_tree(
                     "subscription_groups": subscription_groups,
                     "mcp": mcp,
                     "agents": agents,
+                    "acp_agents": acp_agents,
                     "projects": projects,
                     "devices": devices,
                 }[directory]
@@ -442,6 +448,7 @@ def _parse_complete_tree(
             environment_run_extensions=run_extensions,
             mcp_servers=mcp,
             agents=agents,
+            acp_agents=acp_agents,
             subagents=subagents,
             projects=projects,
             devices=devices,

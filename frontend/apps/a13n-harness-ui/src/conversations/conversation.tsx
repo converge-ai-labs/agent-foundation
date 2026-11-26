@@ -31,6 +31,7 @@ import { result, type Schema } from "../transport/client";
 import {
   useGuestAccess,
   useSelectors,
+  useSources,
   useStatus,
   useTransport,
 } from "../transport/context";
@@ -49,6 +50,12 @@ import {
 import { ComposerStatus } from "./composer-status";
 import { currentGoal } from "./goal-status";
 import { RunActivity } from "./run-activity";
+import {
+  AcpOptions,
+  acpModelOption,
+  acpOptionLabel,
+  useAcpOptions,
+} from "./acp-options";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions, useDecisionPlacement } from "./decisions";
 import { McpInputs, useMcpInputRequests } from "./mcp-inputs";
@@ -735,6 +742,54 @@ function ConversationContent({
     },
   });
   const thread = detail.data?.thread;
+  const acpAgent =
+    thread?.configuration.agent_source.kind === "acp_agent"
+      ? thread.configuration.agent_source.id
+      : undefined;
+  const acpActive = thread?.root_activity.state !== "inactive";
+  const acpOptionsEnabled =
+    !!acpAgent && !guest && !readOnly && !thread?.archived;
+  const acpOptions = useAcpOptions(
+    threadId,
+    acpOptionsEnabled,
+    acpActive,
+    acpAgent,
+    detail.data?.continuation_id,
+  );
+  const acpCommands = useQuery({
+    queryKey: [
+      "thread",
+      threadId,
+      "acp-commands",
+      acpAgent,
+      detail.data?.continuation_id,
+    ],
+    enabled: !!acpAgent && !guest && !readOnly && !thread?.archived,
+    retry: false,
+    refetchInterval: acpActive || acpOptions.isFetching ? 2000 : false,
+    queryFn: ({ signal }) =>
+      result(
+        transport.client.GET("/api/threads/{thread_id}/acp-commands", {
+          params: { path: { thread_id: threadId } },
+          signal,
+        }),
+      ),
+  });
+  useEffect(() => {
+    if (acpOptions.isSuccess) void acpCommands.refetch();
+  }, [acpOptions.dataUpdatedAt]);
+  const sources = useSources();
+  const acpSource =
+    acpAgent &&
+    sources.data?.sources.find(
+      (item) =>
+        item.resource_kind === "acp_agent" &&
+        item.resource_ids.includes(acpAgent),
+    );
+  const acpAuthPath = acpSource
+    ? `/settings/source?${new URLSearchParams({ path: acpSource.relative_path, returnThread: threadId })}`
+    : undefined;
+
   const runAgent = guest ? undefined : thread?.configuration.agent_source.id;
   const refreshRunConfiguration = useCallback(async () => {
     const [current, catalog] = await Promise.all([
@@ -837,16 +892,46 @@ function ConversationContent({
         </Link>
       </div>
     );
+  const acpAuthFailure =
+    thread?.last_execution?.error_code === "acp_auth_required" ||
+    observedOperation.data?.outcome?.continuation.failure?.code ===
+      "acp_auth_required";
+  const retryInput = acpAuthFailure
+    ? draft.localInputs.findLast(
+        (input) => input.state === "accepted" && input.action === "send",
+      )
+    : undefined;
+  const retryParts =
+    retryInput?.parts.flatMap<string | { attachment_id: string }>((part) => {
+      const raw = part.metadata?.harness_ui;
+      const attachment =
+        raw && typeof raw === "object" && "attachment" in raw
+          ? raw.attachment
+          : undefined;
+      if (
+        attachment &&
+        typeof attachment === "object" &&
+        "attachment_id" in attachment &&
+        typeof attachment.attachment_id === "string"
+      )
+        return [{ attachment_id: attachment.attachment_id }];
+      return part.text && part.text !== "[Attachment]" ? [part.text] : [];
+    }) ?? [];
   const failureNotice = (
     <RootFailureNotice
       lastExecution={thread?.last_execution}
+      acpAuthPath={acpAuthPath}
       threadId={threadId}
       receipt={receipt}
       display={display}
       continuationId={detail.data?.continuation_id}
       completedContinuationId={thread?.completion?.continuation_id}
       retry={
-        isBot || guest || readOnly || thread?.archived
+        isBot ||
+        guest ||
+        readOnly ||
+        thread?.archived ||
+        (acpAuthFailure && !retryParts.length)
           ? undefined
           : () => {
               void submitContinuation(
@@ -855,6 +940,7 @@ function ConversationContent({
                 threadId,
                 undefined,
                 () => appContexts?.capture(threadId) ?? [],
+                acpAuthFailure ? retryParts : undefined,
               ).finally(reconcile);
             }
       }
@@ -914,6 +1000,8 @@ function ConversationContent({
                   liveRecordId={
                     showLive ? display.contextUsage?.recordId : undefined
                   }
+                  acpContext={showLive ? display.acpContext : undefined}
+                  external={!!acpAgent}
                   liveTokens={
                     showLive ? display.contextUsage?.tokens : undefined
                   }
@@ -1049,7 +1137,9 @@ function ConversationContent({
                       thread.role === "ordinary" &&
                       !thread.parent_thread_id &&
                       !thread.memory_scope &&
-                      thread.configuration.agent_source.kind === "agent" &&
+                      (thread.configuration.agent_source.kind === "agent" ||
+                        thread.configuration.agent_source.kind ===
+                          "acp_agent") &&
                       !thread.archived
                     }
                     active={
@@ -1224,6 +1314,10 @@ function ConversationContent({
             autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
             activity={thread?.root_activity ?? { state: "inactive" }}
+            acpCommands={acpAgent ? acpCommands.data : undefined}
+            externalAgent={
+              thread?.configuration.agent_source.kind === "acp_agent"
+            }
             owner={
               !guest && ownerId
                 ? {
@@ -1297,25 +1391,69 @@ function ConversationContent({
               )
             }
             controls={() =>
-              guest ? null : thread?.configuration.agent_source.kind ===
-                "live" ? null : (
-                <ThreadRunChoices
-                  catalog={selectors.data}
-                  agentId={thread?.configuration.agent_source.id ?? ""}
-                  defaultModelId={thread?.configuration.default_model_id}
-                  modelId={draft.modelId}
-                  controls={draft.controls}
-                  onControlsChange={runChoices.onControlsChange}
-                  disabled={
-                    !thread ||
-                    agentSelection.isPending ||
-                    draft.submission.kind === "pending" ||
-                    draft.submission.kind === "unknown"
-                  }
-                  onAgentChange={(value) => agentSelection.mutate(value)}
-                  onModelChange={runChoices.onModelChange}
-                />
-              )
+              guest
+                ? null
+                : thread?.configuration.agent_source.kind === "live"
+                  ? null
+                  : (() => {
+                      const modelOption = acpModelOption(acpOptions.data);
+                      return (
+                        <ThreadRunChoices
+                          catalog={selectors.data}
+                          agentId={thread?.configuration.agent_source.id ?? ""}
+                          defaultModelId={
+                            thread?.configuration.default_model_id
+                          }
+                          modelId={draft.modelId}
+                          controls={draft.controls}
+                          onControlsChange={runChoices.onControlsChange}
+                          disabled={
+                            !thread ||
+                            agentSelection.isPending ||
+                            draft.submission.kind === "pending" ||
+                            draft.submission.kind === "unknown"
+                          }
+                          onExternalOptionsOpen={() => {
+                            if (acpOptionsEnabled && !acpActive)
+                              void acpOptions.refetch({ cancelRefetch: false });
+                          }}
+                          externalModel={acpOptionLabel(
+                            modelOption,
+                            t("No model selected"),
+                          )}
+                          externalModelId={
+                            modelOption && modelOption.value !== ""
+                              ? String(modelOption.value)
+                              : undefined
+                          }
+                          externalThinking={acpOptionLabel(
+                            acpOptions.data?.find(
+                              (item) =>
+                                item.category === "thought_level" ||
+                                item.id === "thought_level",
+                            ),
+                          )}
+                          externalOptions={
+                            <AcpOptions
+                              threadId={threadId}
+                              active={acpActive}
+                              agentId={acpAgent}
+                              preset={
+                                selectors.data?.agents.find(
+                                  (item) => item.agent_id === acpAgent,
+                                )?.preset
+                              }
+                              options={acpOptions}
+                              continuation={detail.data?.continuation_id}
+                            />
+                          }
+                          onAgentChange={(value) =>
+                            agentSelection.mutate(value)
+                          }
+                          onModelChange={runChoices.onModelChange}
+                        />
+                      );
+                    })()
             }
             profile={profile}
             unauthorized={unauthorized}

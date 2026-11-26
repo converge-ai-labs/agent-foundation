@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Self, get_args, get_origin
+from typing import ClassVar, Literal, Self, get_args, get_origin
 
 from a13n_harness import RunConfiguration, ToolExecutionConfig
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
 from a13n_harness_ui.configuration.models import (
+    AcpAgentResource,
     AgentToolSearch,
     BackgroundCompactionConfiguration,
     DeviceResource,
@@ -21,6 +22,7 @@ from a13n_harness_ui.configuration.models import (
 )
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
 from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
+from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.mcp_oauth.models import OAuthBinding
 from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.notification_origin import BrowserId
@@ -216,6 +218,23 @@ class ResolvedSubagent(CompositionModel):
     definition: ResolvedAgentNode
 
 
+class ResolvedAcpNode(CompositionModel):
+    source_kind: Literal["acp_agent"] = "acp_agent"
+    source_id: str
+    roster_name: str
+    resource: AcpAgentResource
+    global_guidance: tuple[str, ...] = ()
+    mcp_servers: tuple[ResolvedMcpRecipe, ...] = Field(default=(), max_length=256)
+    shell_review: ResolvedCapabilityRecipe | None = Field(default=None, exclude_if=lambda value: value is None)
+    model: ClassVar[None] = None
+    children: ClassVar[tuple[()]] = ()
+    capabilities: ClassVar[tuple[()]] = ()
+    harness_plugins: ClassVar[tuple[()]] = ()
+    tools: ClassVar[None] = None
+    tool_search: ClassVar[None] = None
+    base_agent_id: ClassVar[None] = None
+
+
 class ResolvedRunComposition(CompositionModel):
     origin_browser_id: BrowserId | None = Field(default=None, exclude_if=lambda value: value is None)
     schema_version: Literal["1"] = "1"
@@ -235,6 +254,8 @@ class ResolvedRunComposition(CompositionModel):
     memory_enabled: bool = Field(default=False, exclude_if=lambda value: not value)
     # Missing in old captures keeps the Inbox tool those Runs already had.
     inbox_enabled: bool = Field(default=True, exclude_if=lambda value: value)
+    # Missing in old captures keeps root creation tools when an Agent or creation Model exists.
+    can_create_threads: bool = Field(default=True, exclude_if=lambda value: value)
     run_configuration: RunConfiguration = Field(
         default_factory=RunConfiguration, exclude_if=lambda value: value == RunConfiguration()
     )
@@ -250,7 +271,7 @@ class ResolvedRunComposition(CompositionModel):
     )
     content_plugins: tuple[ResolvedContentPlugin, ...] = Field(default=(), max_length=256)
     connectors: tuple[ConnectorCapture, ...] = Field(default=(), exclude_if=lambda value: not value)
-    root: ResolvedAgentNode
+    root: ResolvedAgentNode | ResolvedAcpNode
     environment_profile: ResolvedEnvironmentProfile
     # Local Envd admission adds Thread grants to environment_profile. Retain the input for new children.
     base_environment_profile: ResolvedEnvironmentProfile | None = Field(
@@ -265,9 +286,14 @@ class ResolvedRunComposition(CompositionModel):
     environment_run_extensions: tuple[ResolvedRunExtensionRecipe, ...] = Field(default=(), max_length=128)
     dependencies: tuple[DependencyProvenance, ...] = ()
 
+    def require_native_root(self) -> ResolvedAgentNode:
+        if isinstance(self.root, ResolvedAcpNode):
+            raise CompositionError("This operation requires a native Agent.", code="native_agent_required")
+        return self.root
+
     def agent_nodes(self) -> tuple[ResolvedAgentNode, ...]:
         values: list[ResolvedAgentNode] = []
-        pending = [self.root]
+        pending = [self.root] if isinstance(self.root, ResolvedAgentNode) else []
         while pending:
             node = pending.pop()
             values.append(node)

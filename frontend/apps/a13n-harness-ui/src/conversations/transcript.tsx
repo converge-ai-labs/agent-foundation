@@ -27,7 +27,13 @@ import {
   restoreReadingAnchor,
   type ReadingAnchor,
 } from "./reading-anchor";
-import { ArrowClockwise, CaretRight } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  CaretRight,
+  CheckCircle,
+  Circle,
+  CircleHalf,
+} from "@phosphor-icons/react";
 import { executionTime } from "./execution-time";
 import { ExecutionDetails } from "./execution-details";
 import { AppCard } from "../mcp-apps/app-card";
@@ -78,8 +84,66 @@ function systemNotice(metadata?: Record<string, unknown> | null) {
 
 // Generated run, subagent and recovery chrome is translated here; backend
 // messages, part kinds and outcome values stay verbatim.
+function acpActivity(
+  metadata: Record<string, unknown> | null | undefined,
+  value: unknown,
+) {
+  const name = metadata?.["a13n.acp.observation"];
+  if (!value || typeof value !== "object") return undefined;
+  if (
+    name === "a13n.acp.plan" &&
+    "entries" in value &&
+    Array.isArray(value.entries)
+  )
+    return {
+      kind: "plan" as const,
+      entries: value.entries.flatMap((entry: unknown) => {
+        if (
+          !entry ||
+          typeof entry !== "object" ||
+          !("content" in entry) ||
+          typeof entry.content !== "string" ||
+          !("status" in entry)
+        )
+          return [];
+        return [{ content: entry.content, status: entry.status }];
+      }),
+    };
+  return undefined;
+}
+
 function ActivityRow({ row }: { row: Extract<Row, { kind: "activity" }> }) {
   const { t } = useTranslation();
+  if (row.acp?.kind === "plan")
+    return (
+      <details open className={styles.acpPlan}>
+        <summary>{t("Agent plan")}</summary>
+        <ul>
+          {row.acp.entries.map((entry, index) => {
+            const StatusIcon =
+              entry.status === "completed"
+                ? CheckCircle
+                : entry.status === "in_progress"
+                  ? CircleHalf
+                  : Circle;
+            const status =
+              entry.status === "completed"
+                ? t("Completed")
+                : entry.status === "in_progress"
+                  ? t("In progress")
+                  : t("Pending");
+            return (
+              <li key={index} data-status={String(entry.status)}>
+                <span role="img" aria-label={status} title={status}>
+                  <StatusIcon aria-hidden="true" />
+                </span>
+                {entry.content}
+              </li>
+            );
+          })}
+        </ul>
+      </details>
+    );
   const title = row.execution
     ? row.execution === "cancelled"
       ? t("Execution cancelled")
@@ -176,6 +240,7 @@ type Row = {
   | { kind: "failure"; text: string }
   | {
       kind: "activity";
+      acp?: ReturnType<typeof acpActivity>;
       name?: string;
       text: string;
       omitted?: boolean;
@@ -300,7 +365,11 @@ function savedRows(
         rows.push({
           id,
           kind: "activity",
-          name: part.kind,
+          name:
+            part.metadata?.["a13n.acp.observation"] === "a13n.acp.plan"
+              ? "Agent plan"
+              : part.kind,
+          acp: acpActivity(part.metadata, part.value),
           text: part.text ?? JSON.stringify(part.value, null, 2),
           omitted: part.value_omitted ?? undefined,
         });
@@ -443,6 +512,7 @@ function liveRows(
         id: block.id,
         kind: "activity",
         name: block.name || undefined,
+        acp: acpActivity(block.metadata, block.value),
         text: [block.text, block.result].filter(Boolean).join("\n"),
         execution: block.execution,
         recoveryOutcome: block.recoveryOutcome,
@@ -1620,16 +1690,23 @@ function executionSummary(
           activeStep = [toolLabel(info, t), toolSummary(info, t)]
             .filter(Boolean)
             .join(" ");
+        const activity = activityKind(tool);
         const action =
           info.kind === "file"
             ? "Read {{count}} files"
             : info.kind === "edit"
               ? "Edit {{count}} files"
-              : tool.name === "shell_exec"
-                ? "Run {{count}} commands"
-                : info.kind === "search"
+              : info.kind === "shell"
+                ? tool.name === "manage_task"
+                  ? "Manage {{count}} processes"
+                  : "Run {{count}} commands"
+                : info.kind === "search" || info.kind === "web"
                   ? "Run {{count}} searches"
-                  : "Call {{count}} tools";
+                  : activity === "work"
+                    ? "Update tasks & notes"
+                    : activity === "subagents"
+                      ? "Work with subagents"
+                      : "Call {{count}} tools";
         const id =
           (info.kind === "file" || info.kind === "edit") && info.path
             ? info.path

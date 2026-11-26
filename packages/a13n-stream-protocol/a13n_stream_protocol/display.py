@@ -399,7 +399,7 @@ class DisplayFold:
 
     def fold(
         self,
-        events: list[dict[str, Any]],
+        events: Sequence[dict[str, Any]],
         source: HarnessStreamEvent[Any] | None = None,
         *,
         sequence_progress: bool = True,
@@ -510,6 +510,17 @@ class DisplayFold:
         if assembled is None:
             return None
         value: JsonValue = assembled.get("value")  # type: ignore[assignment]
+        if assembled.get("name") == "a13n.acp.tool" and isinstance(value, dict):
+            key = item_id(self.run_id, "tool_call", str(value.get("toolCallId")))
+            previous = self.items.get(key)
+            if previous is None:
+                return None
+            details: JsonValue = value
+            if not self.retain_content and _json_size(details) > MAX_OBSERVATION_BYTES:
+                details = {name: value[name] for name in ("title", "kind", "status") if name in value}
+            return self._put(
+                key, "tool_call", previous.state, {**previous.content, "acp": details}, at=_occurred(payload)
+            )
         input_event = value.get("event") if isinstance(value, dict) else None
         lifecycle = input_event.get("payload") if isinstance(input_event, dict) else None
         if (
@@ -563,8 +574,13 @@ class DisplayFold:
             and _json_size(value) > MAX_OBSERVATION_BYTES
         ):
             value = _OMITTED
-        key = item_id(self.run_id, "observation", f"{self.attempt}:{self.sequence}")
-        content: dict[str, JsonValue] = {"name": str(assembled.get("name")), "value": value}
+        name = str(assembled.get("name"))
+        scope = assembled.get("subagentRunId") or "root"
+        identity = (
+            f"{scope}:{name}" if name in {"a13n.acp.plan", "a13n.acp.usage"} else f"{self.attempt}:{self.sequence}"
+        )
+        key = item_id(self.run_id, "observation", identity)
+        content: dict[str, JsonValue] = {"name": name, "value": value}
         if "metadata" in assembled:
             content["metadata"] = cast(JsonValue, assembled["metadata"])
         if "subagentRunId" in assembled:

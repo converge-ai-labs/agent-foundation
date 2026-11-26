@@ -15,7 +15,9 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
+from a13n_harness.acp import AcpError
 from a13n_harness.capabilities.skills import BoundSkillCatalog
+from a13n_harness.content import content_items
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import HarnessError
 from a13n_harness.input import RunInputValue
@@ -28,6 +30,8 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import TextContent
 
+from a13n_harness_ui.acp_execution import AcpTurn
+from a13n_harness_ui.acp_sessions import AcpOption, AcpOptionChange
 from a13n_harness_ui.bot_models import BOT_THREAD_ID
 from a13n_harness_ui.browser_handback import BrowserHandback
 from a13n_harness_ui.diagnostics import exception_feedback
@@ -89,6 +93,7 @@ class _RootOperation:
     run_recorded: Event | None = None
     scope: CancelScope | None = None
     stream: HarnessRunStream[Any] | None = None
+    acp_turn: AcpTurn | None = None
     input_files: RootInputFiles | None = None
     branch_base: ObjectRef | None = None
     continuing_turn: bool = False
@@ -99,6 +104,7 @@ class _RootOperation:
     outcome: RootRunOutcomeView | None = None
     failure: FailureView | None = None
     cancel_requested: bool = False
+    settling: bool = False
     restart: RestartItem | None = None
     goal: GoalView | None = None
     observation_only: bool = False
@@ -333,6 +339,17 @@ class RootRunCoordinator:
             yield
             if clear_interaction and (pending := self._interaction_waits.pop(thread_id, None)) is not None:
                 pending.cancelled.set()
+
+    async def acp_options(self, thread_id: str, change: AcpOptionChange | None) -> tuple[AcpOption, ...]:
+        if change is None and thread_id in self._active_by_thread:
+            return self._executor.acp_sessions.options(thread_id)
+        try:
+            async with self.require_inactive(thread_id, clear_interaction=False):
+                return await self._executor.prepare_acp_options(thread_id, change)
+        except RunCoordinationError as exc:
+            if change is None and exc.code == "thread_run_active":
+                return self._executor.acp_sessions.options(thread_id)
+            raise
 
     @asynccontextmanager
     async def message_branch_source(
@@ -611,7 +628,11 @@ class RootRunCoordinator:
                     state=RootActivityState.running,
                     receipt_id=operation.receipt.receipt_id,
                     run_id=operation.run_id,
-                    available_actions=("wait",) if operation.observation_only else ("wait", "steer", "cancel"),
+                    available_actions=("wait",)
+                    if operation.observation_only
+                    else ("wait", "steer", "cancel")
+                    if operation.acp_turn is None or operation.acp_turn.supports_steering
+                    else ("wait", "cancel"),
                 )
         return result
 
@@ -671,14 +692,25 @@ class RootRunCoordinator:
                 before_accept()
 
         try:
-            prepared = (
-                await input_files.prepare(message, stream.context.environment) if input_files is not None else message
-            )
+            acp_turn = operation.acp_turn
+            prepared = await input_files.prepare(message, stream.context.environment) if input_files else message
             if self._restart is not None:
                 self._restart.require_input()
             if authorize is not None:
                 await authorize()
-            enqueue_id = await stream.steer(prepared, immediate=immediate, best_effort=True, before_accept=check_active)
+            if acp_turn is not None:
+                parts = content_items(prepared)
+                if not parts or any(not isinstance(part.value, str | TextContent) for part in parts):
+                    return RootControlResult(receipt_id=receipt_id, accepted=False)
+                check_active()
+                delivery = await acp_turn.steer("\n".join(acp_turn.prompt_text(part) for part in parts))
+                if delivery != "accepted":
+                    return RootControlResult(receipt_id=receipt_id, accepted=False)
+                enqueue_id = None
+            else:
+                enqueue_id = await stream.steer(
+                    prepared, immediate=immediate, best_effort=True, before_accept=check_active
+                )
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if touch and self._touch_thread is not None:
@@ -713,6 +745,15 @@ class RootRunCoordinator:
                 self._restart.require_input()
             offer.offered = True
 
+        if operation.acp_turn is not None:
+            try:
+                check_active()
+                delivery = await operation.acp_turn.steer(message)
+                offer.settle("not_delivered" if delivery == "unsupported" else delivery)
+            except Exception:
+                offer.settle("unknown" if offer.offered else "not_delivered")
+            return await asyncio.shield(offer.completion)
+
         try:
             await stream.steer(
                 (TextContent(message, metadata={"source_id": offer.native_id}),),
@@ -732,7 +773,7 @@ class RootRunCoordinator:
         operation = self._operations.get(receipt_id)
         if operation is None:
             raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
-        if operation.status in _TERMINAL:
+        if operation.settling or operation.status in _TERMINAL:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         if self._browser_handback is not None:
             self._browser_handback.suppress(operation.receipt.thread_id)
@@ -741,6 +782,8 @@ class RootRunCoordinator:
             await self._restart.invalidate(operation.receipt.thread_id, suppress=True)
             self._restart.active.pop(operation.receipt.thread_id, None)
             self._restart.signal()
+        if operation.settling:
+            return RootControlResult(receipt_id=receipt_id, accepted=False)
         await self._request_cancel(operation)
         return RootControlResult(receipt_id=receipt_id, accepted=True)
 
@@ -749,9 +792,25 @@ class RootRunCoordinator:
         await self._publish_change(operation)
 
     async def _request_cancel(self, operation: _RootOperation) -> None:
+        if operation.settling or operation.cancel_requested:
+            return
         operation.cancel_requested = True
-        # The operation owns preparation, streaming and post-stream Host work.
-        # Harness handles native teardown when its consumer is cancelled.
+        if operation.acp_turn is not None and self._task_group is not None:
+            with move_on_after(1, shield=True):
+                try:
+                    if await operation.acp_turn.stop():
+                        self._task_group.start_soon(self._finish_acp_stop, operation)
+                        return
+                except (AcpError, ConnectionError):
+                    pass
+        if operation.scope is not None:
+            operation.scope.cancel()
+
+    @staticmethod
+    async def _finish_acp_stop(operation: _RootOperation) -> None:
+        # Give the protocol response time to commit partial output and session state.
+        with move_on_after(3):
+            await operation.done.wait()
         if operation.scope is not None:
             operation.scope.cancel()
 
@@ -794,6 +853,16 @@ class RootRunCoordinator:
         failure: FailureView | None = None
         cancelled = False
         cancelled_class = get_cancelled_exc_class()
+
+        async def on_stream(
+            stream: HarnessRunStream[Any], input_files: RootInputFiles | None = None, acp_turn: AcpTurn | None = None
+        ) -> None:
+            receipt_id = operation.receipt.receipt_id
+            if acp_turn is None:
+                await self._running(receipt_id, stream, input_files)
+            else:
+                await self._running(receipt_id, stream, input_files, acp_turn=acp_turn)
+
         try:
             # Registration is the admission boundary (including source authority).
             # Save even a pre-start cancellation, before any execution effects.
@@ -809,9 +878,7 @@ class RootRunCoordinator:
                         on_goal=lambda value: self._goal_changed(operation, value),
                         on_main_account=lambda value: self._main_account_changed(operation, value),
                         on_skill_catalog=lambda value: self._skill_catalog_resolved(operation, value),
-                        on_stream=lambda stream, input_files=None: self._running(
-                            operation.receipt.receipt_id, stream, input_files
-                        ),
+                        on_stream=on_stream,
                     )
             if outcome is None:
                 cancelled = True
@@ -820,6 +887,8 @@ class RootRunCoordinator:
         except BaseException as exc:
             if isinstance(exc, HarnessUiError):
                 failure = _exception_failure(exc, code="root_operation_failed")
+            elif isinstance(exc, AcpError):
+                failure = FailureView(code=exc.code, message=str(exc))
             else:
                 with CancelScope(shield=True):
                     feedback = await to_thread.run_sync(
@@ -838,6 +907,7 @@ class RootRunCoordinator:
                             code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
                         )
                     )
+        operation.settling = True
         with CancelScope(shield=True):
             # Completion is navigation-worthy, unlike streamed progress. Persist it
             # before releasing waiters/publishing the terminal view, outside the lock.
@@ -884,6 +954,7 @@ class RootRunCoordinator:
                 )
             operation.scope = None
             operation.stream = None
+            operation.acp_turn = None
             thread_id = operation.receipt.thread_id
             self._latest_terminal.pop(thread_id, None)
             self._latest_terminal[thread_id] = _view(operation)
@@ -1039,7 +1110,11 @@ class RootRunCoordinator:
         return operation.composition
 
     async def _running(
-        self, receipt_id: str, stream: HarnessRunStream[Any], input_files: RootInputFiles | None = None
+        self,
+        receipt_id: str,
+        stream: HarnessRunStream[Any],
+        input_files: RootInputFiles | None = None,
+        acp_turn: AcpTurn | None = None,
     ) -> None:
         operation = self._operations.get(receipt_id)
         if operation is None or operation.status is not RootOperationStatus.preparing:
@@ -1048,6 +1123,7 @@ class RootRunCoordinator:
                 code="thread_run_admission_invalid",
             )
         operation.stream = stream
+        operation.acp_turn = acp_turn
         operation.input_files = input_files
         operation.run_id = stream.run_id
         operation.started_at = datetime.now(UTC)
@@ -1055,9 +1131,7 @@ class RootRunCoordinator:
         cancel_requested = operation.cancel_requested
         await self._persist_execution(operation)
         await self._publish_change(operation)
-        if cancel_requested:
-            await self._request_cancel(operation)
-        elif self._tool_executions is not None:
+        if not cancel_requested and self._tool_executions is not None:
             self._tool_executions.retry(operation.receipt.thread_id)
         if not operation.cancel_requested and self._browser_handback is not None:
             self._browser_handback.retry(operation.receipt.thread_id)

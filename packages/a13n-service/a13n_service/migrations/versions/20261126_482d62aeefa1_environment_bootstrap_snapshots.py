@@ -1,15 +1,15 @@
 """environment bootstrap snapshots
 
-Revision ID: ff4778422867
-Revises: 7b2bb3943ecc
+Revision ID: 482d62aeefa1
+Revises: db4155c836ca
 """
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "ff4778422867"
-down_revision = "7b2bb3943ecc"
+revision = "482d62aeefa1"
+down_revision = "db4155c836ca"
 branch_labels = None
 depends_on = None
 

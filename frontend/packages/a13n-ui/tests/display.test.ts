@@ -5,6 +5,79 @@ import {
   type ItemRef,
 } from "../src/display";
 
+it.each([false, true])(
+  "normalizes fragmented ACP details on their tool item (full content: %s)",
+  (full) => {
+    const normalizer = new DisplayNormalizer({ full_content: full });
+    const items = new Map<string, DisplayItem>();
+    const tool = {
+      id: "call",
+      kind: "tool_call",
+      state: "in_progress",
+    } as const;
+    let sequence = 0;
+    const apply = (
+      event: Record<string, unknown>,
+      item: ItemRef | null = null,
+    ) =>
+      normalizer.apply(items, {
+        run_id: "run",
+        attempt: 1,
+        sequence: ++sequence,
+        event,
+        item,
+      });
+    apply(
+      {
+        type: "TOOL_CALL_START",
+        toolCallId: "read",
+        toolCallName: "read_file",
+      },
+      tool,
+    );
+    const summary = {
+      title: "Read notes",
+      kind: "read",
+      status: "in_progress",
+    };
+    const details = {
+      ...summary,
+      toolCallId: "read",
+      locations: [{ path: "/workspace/notes.md" }],
+      content: [
+        {
+          type: "content",
+          content: { type: "text", text: "a".repeat(33_000) },
+        },
+      ],
+    };
+    const encoded = JSON.stringify({
+      type: "CUSTOM",
+      name: "a13n.acp.tool",
+      value: details,
+    });
+    const fragment = (index: number, data: string) => ({
+      type: "CUSTOM",
+      name: "a13n.stream.fragment",
+      value: { id: "details", index, count: 2, data },
+    });
+    apply(fragment(0, encoded.slice(0, 100)));
+    expect(items.get(tool.id)?.content.acp).toBeUndefined();
+    apply(fragment(1, encoded.slice(100)), tool);
+    apply(
+      { type: "TOOL_CALL_RESULT", content: "ok" },
+      { ...tool, state: "completed" },
+    );
+    expect(items.size).toBe(1);
+    expect(items.get(tool.id)).toMatchObject({
+      state: "completed",
+      content: { toolCallName: "read_file", result: "ok" },
+    });
+    expect(items.get(tool.id)?.content.acp).toEqual(full ? details : summary);
+    expect(normalizer.incomplete).toBe(false);
+  },
+);
+
 it("clears progress in the terminal scope and ignores progress on a completed tool", () => {
   const normalizer = new DisplayNormalizer();
   const items = new Map<string, DisplayItem>();

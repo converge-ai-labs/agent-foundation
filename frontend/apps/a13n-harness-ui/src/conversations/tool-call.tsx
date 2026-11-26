@@ -25,6 +25,7 @@ import {
   parsed,
   record,
   sourceText,
+  acpPaths,
   type AppliedEdit,
   type ToolView,
 } from "./tool-presentation";
@@ -464,6 +465,7 @@ function ToolDetails({ tool }: { tool: ToolView }) {
           input: tool.input,
           result: tool.result,
           outcome: tool.outcome,
+          acp: tool.acp,
           failure: tool.failure,
         }}
       />
@@ -620,8 +622,14 @@ function ToolActions({ tool }: { tool: ToolView }) {
   const guest = useGuestAccess();
   const info = describeTool(tool);
   const openFile = useContext(OpenHostFile);
-  const path = hostLookupPath(info.path);
-  if (guest || (!info.threadId && !(openFile && path))) return null;
+  const paths = [
+    ...new Set(
+      [info.path, ...acpPaths(tool.acp)]
+        .map(hostLookupPath)
+        .filter((path): path is string => !!path),
+    ),
+  ];
+  if (guest || (!info.threadId && !(openFile && paths.length))) return null;
   return (
     <div className={styles.actions}>
       {info.threadId && (
@@ -634,20 +642,22 @@ function ToolActions({ tool }: { tool: ToolView }) {
           {info.threadTitle || t("Open chat")}
         </Link>
       )}
-      {openFile && path && (
-        <Button
-          className={styles.fileLink}
-          size="sm"
-          variant="ghost"
-          title={t(
-            "Opens the server's copy of this file, or your unsaved draft. This may differ from the agent's copy.",
-          )}
-          onClick={() => openFile(path)}
-        >
-          <ArrowSquareOut />
-          {t("Open on host")}
-        </Button>
-      )}
+      {openFile &&
+        paths.map((path) => (
+          <Button
+            key={path}
+            className={styles.fileLink}
+            size="sm"
+            variant="ghost"
+            title={t(
+              "Opens the server's copy of this file, or your unsaved draft. This may differ from the agent's copy.",
+            )}
+            onClick={() => openFile(path)}
+          >
+            <ArrowSquareOut />
+            {paths.length === 1 ? t("Open on host") : path}
+          </Button>
+        ))}
     </div>
   );
 }

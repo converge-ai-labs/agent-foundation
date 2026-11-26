@@ -300,7 +300,8 @@ class VoiceController:
             if reference is None:
                 raise ThreadError("The Live executor is still preparing.", code="live_executor_preparing")
             composition = await self._store.objects.read_model(reference, ResolvedRunComposition)
-            if composition.root.model.model_id != settings.model:
+            model = composition.root.model
+            if model is None or model.model_id != settings.model:
                 raise ThreadError(
                     "The active executor uses another Model. Wait for it to finish.", code="live_executor_conflict"
                 )
