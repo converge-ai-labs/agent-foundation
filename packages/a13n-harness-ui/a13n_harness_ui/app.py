@@ -2864,7 +2864,7 @@ class HarnessUiApp:
     ) -> list[UserContent | ContentItem]:
         # Retain before admission, so accepted input never references draft scratch.
         await self._thread_files.retain(thread_id, item.attachment_id)
-        path = f"attachments/{item.attachment_id}/content"
+        path = item.relative_path
         namespace: dict[str, Any] = {"attachment": item.model_dump(), "mount": "thread-files", "path": path}
         metadata: dict[str, Any] = {"harness_ui": namespace}
         if source_id is not None:
@@ -2885,9 +2885,12 @@ class HarnessUiApp:
         if item.source is not None:
             captured_text = context_text(item.source, data)
             if captured_text is not None:
-                parts.append(
-                    TextContent(captured_text, metadata={**metadata, "display": False} if source_id else metadata)
-                )
+                captured_metadata = {
+                    **metadata,
+                    "harness_ui": {**namespace, "captured_source_text": True},
+                    **({"display": False} if source_id else {}),
+                }
+                parts.append(TextContent(captured_text, metadata=captured_metadata))
         if is_image:
             parts.append(
                 ContentItem(

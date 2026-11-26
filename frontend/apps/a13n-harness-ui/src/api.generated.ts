@@ -9102,6 +9102,11 @@ export interface components {
             media_type: string;
             /** Size */
             size: number;
+            /**
+             * Storage Name
+             * @default content
+             */
+            storage_name?: string;
             /** Source */
             source?: components["schemas"]["FileContextSource"] | components["schemas"]["GitContextSource"] | null;
         };

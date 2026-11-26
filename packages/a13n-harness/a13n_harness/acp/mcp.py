@@ -6,7 +6,8 @@ import asyncio
 import json
 import secrets
 import sys
-from collections.abc import AsyncIterator, Callable, Sequence
+from base64 import b64encode
+from collections.abc import AsyncIterator, Callable, Collection, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from inspect import isawaitable, signature
@@ -15,7 +16,7 @@ from typing import Any, cast
 from acp import RequestError, schema
 from aiohttp import web
 from pydantic import ValidationError
-from pydantic_ai import ModelRetry, RunContext, ToolDenied, ToolReturn
+from pydantic_ai import BinaryContent, ModelRetry, RunContext, TextContent, ToolDenied, ToolReturn
 from pydantic_ai.agent import _build_run_capabilities
 from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
 from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, UnexpectedModelBehavior
@@ -27,6 +28,8 @@ from pydantic_core import to_jsonable_python
 
 from a13n_harness.context import AgentContext
 from a13n_harness.model_context import (
+    ModelContextBlock,
+    ModelContextHistory,
     ModelContextInputOrigin,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
@@ -80,15 +83,40 @@ class AcpHostToolScope:
                 texts.append(value.content if isinstance(value, InstructionPart) else str(value))
         return tuple(filter(None, texts))
 
-    async def prompt_context(self) -> tuple[str, ...]:
+    async def prompt_context_blocks(
+        self,
+        *,
+        history: ModelContextHistory | None = None,
+        exclude_sources: Collection[str] = (),
+    ) -> tuple[ModelContextBlock, ...]:
         projection = await _project_model_context(
             self.context,
             ModelContextProjectionRequest(
-                kind=ModelContextRequestKind.INPUT, input_origin=ModelContextInputOrigin.USER
+                kind=ModelContextRequestKind.INPUT,
+                input_origin=ModelContextInputOrigin.USER,
+                history=history or ModelContextHistory(),
             ),
         )
-        projection._confirm(projection.blocks)
-        return tuple(block.content for block in projection.blocks)
+        excluded = frozenset(exclude_sources)
+        blocks = (
+            tuple(block for block in projection.blocks if block.source_id not in excluded)
+            if excluded
+            else projection.blocks
+        )
+        projection._confirm(blocks)
+        return blocks
+
+    async def prompt_context(
+        self,
+        *,
+        history: ModelContextHistory | None = None,
+        exclude_sources: Collection[str] = (),
+    ) -> tuple[str, ...]:
+        blocks = await self.prompt_context_blocks(history=history, exclude_sources=exclude_sources)
+        return tuple(block.content for block in blocks)
+
+    async def tool_names(self) -> frozenset[str]:
+        return frozenset(tool["name"] for tool in await self._describe_tools())
 
     async def _manager(self) -> ToolManager[AgentContext]:
         return await ToolManager(self.toolset, root_capability=self.capability).for_run_step(self.context)
@@ -126,13 +154,41 @@ class AcpHostToolScope:
             return _tool_result("The host could not complete the tool call.", error=True)
         if isinstance(result, ToolDenied):
             return _tool_result(result.message, error=True)
-        return _tool_result(result.return_value if isinstance(result, ToolReturn) else result)
+        return _tool_result(result)
+
+
+def _serialize_tool_value(value: Any) -> str:
+    data = to_jsonable_python(value)
+    return data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
 
 
 def _tool_result(value: Any, *, error: bool = False) -> dict[str, Any]:
-    data = to_jsonable_python(value)
-    text = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
-    return {"content": [{"type": "text", "text": text}], "isError": error}
+    if isinstance(value, ToolReturn):
+        content: list[dict[str, Any]] = [{"type": "text", "text": _serialize_tool_value(value.return_value)}]
+        extra = value.content
+        if extra is not None:
+            items: Sequence[Any] = (
+                (extra,)
+                if isinstance(extra, str | bytes | TextContent | BinaryContent) or not isinstance(extra, Sequence)
+                else extra
+            )
+            for item in items:
+                if isinstance(item, BinaryContent) and item.is_image:
+                    content.append(
+                        {"type": "image", "data": b64encode(item.data).decode("ascii"), "mimeType": item.media_type}
+                    )
+                elif isinstance(item, BinaryContent) and item.is_audio:
+                    content.append(
+                        {"type": "audio", "data": b64encode(item.data).decode("ascii"), "mimeType": item.media_type}
+                    )
+                elif isinstance(item, TextContent):
+                    content.append({"type": "text", "text": item.content})
+                elif isinstance(item, str):
+                    content.append({"type": "text", "text": item})
+                else:
+                    content.append({"type": "text", "text": _serialize_tool_value(item)})
+        return {"content": content, "isError": error}
+    return {"content": [{"type": "text", "text": _serialize_tool_value(value)}], "isError": error}
 
 
 class AcpHostToolBridge:

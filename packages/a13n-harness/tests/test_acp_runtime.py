@@ -20,7 +20,7 @@ from a13n_harness.context import AgentContext
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from acp import schema
-from pydantic_ai import FunctionToolset, RunContext
+from pydantic_ai import BinaryContent, FunctionToolset, RunContext, TextContent, ToolReturn
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.usage import RunUsage
 
@@ -262,3 +262,106 @@ async def test_terminal_release_joins_tree_cleanup_when_turn_is_revoked():
         assert callback.cancelled()
         assert calls == ["kill", "release"]
         assert not client._terminals
+
+
+async def test_host_tool_bridge_preserves_tool_return_binary_and_text_content(tmp_path):
+    import json
+    from base64 import b64encode
+
+    jpeg = b"\xff\xd8\xff\xe0fixture-jpeg"
+    audio = b"RIFFfixture-audio"
+    toolset: FunctionToolset[AgentContext] = FunctionToolset()
+
+    @toolset.tool_plain
+    async def screenshot() -> ToolReturn:
+        return ToolReturn(
+            return_value={"ref": "s1", "width": 640},
+            content=[
+                BinaryContent(data=jpeg, media_type="image/jpeg"),
+                BinaryContent(data=audio, media_type="audio/wav"),
+                TextContent("captured viewport"),
+                "plain note",
+            ],
+        )
+
+    bridge = AcpHostToolBridge([], toolsets=[toolset])
+    deps = cast(AgentContext, SimpleNamespace(run_id="run-owner", thread_id="thread-owner"))
+    ctx = RunContext(deps=deps, model=TestModel(), usage=RunUsage())
+    async with (
+        asyncio.timeout(12),
+        AcpSessionRuntime.open(local(tmp_path, "ui", "use-http"), host_tools=bridge) as acp,
+        bridge.prepare(ctx) as scope,
+    ):
+        await acp.open_session(setup(tmp_path), discovery=scope)
+        updates = []
+        await acp.prompt(
+            [schema.TextContentBlock(text="call-screenshot")],
+            binding=AcpRunBinding(host_tools=scope, on_update=updates.append),
+        )
+        reply = "".join(u.content.text for u in updates if isinstance(u, schema.AgentMessageChunk))
+        payload = json.loads(reply)
+        assert payload["isError"] is False
+        assert payload["content"] == [
+            {"type": "text", "text": json.dumps({"ref": "s1", "width": 640})},
+            {"type": "image", "data": b64encode(jpeg).decode("ascii"), "mimeType": "image/jpeg"},
+            {"type": "audio", "data": b64encode(audio).decode("ascii"), "mimeType": "audio/wav"},
+            {"type": "text", "text": "captured viewport"},
+            {"type": "text", "text": "plain note"},
+        ]
+
+
+async def test_multimodal_session_steering_and_prompt_block_separation(tmp_path):
+    import json
+    from base64 import b64encode
+
+    png = b"\x89PNG\r\n\x1a\nfixture"
+    updates = []
+    ready = asyncio.Event()
+
+    def observe(update):
+        updates.append(update)
+        if isinstance(update, schema.AgentMessageChunk) and update.content.text == "waiting":
+            ready.set()
+
+    async with asyncio.timeout(10), AcpSessionRuntime.open(local(tmp_path, "ui", "standard-steer")) as acp:
+        await acp.open_session(setup(tmp_path))
+        assert acp.supports_multimodal_steering
+        first = asyncio.create_task(
+            acp.prompt(
+                [schema.TextContentBlock(text="wait-steer")],
+                binding=AcpRunBinding(on_update=observe),
+            )
+        )
+        await ready.wait()
+        outcome = await acp.steer(
+            [
+                schema.TextContentBlock(text="Inspect image"),
+                schema.ImageContentBlock(data=b64encode(png).decode("ascii"), mime_type="image/png"),
+            ]
+        )
+        assert outcome == "accepted"
+        assert (await first).stop_reason == "end_turn"
+        steer_payload = json.loads(
+            "".join(
+                u.content.text
+                for u in updates
+                if isinstance(u, schema.AgentMessageChunk) and u.content.text != "waiting"
+            )
+        )
+        assert steer_payload == [
+            {"type": "text", "text": "Inspect image"},
+            {"type": "image", "data": b64encode(png).decode("ascii"), "mimeType": "image/png"},
+        ]
+
+        updates.clear()
+        await acp.prompt(
+            [schema.TextContentBlock(text="prefix"), schema.TextContentBlock(text="echo-prompt")],
+            binding=AcpRunBinding(on_update=updates.append),
+            context=("ctx-1", "ctx-2"),
+        )
+        prompt_payload = json.loads("".join(u.content.text for u in updates if isinstance(u, schema.AgentMessageChunk)))
+        assert prompt_payload == [
+            {"type": "text", "text": "ctx-1\n\nctx-2\n\n"},
+            {"type": "text", "text": "prefix\n\n"},
+            {"type": "text", "text": "echo-prompt"},
+        ]

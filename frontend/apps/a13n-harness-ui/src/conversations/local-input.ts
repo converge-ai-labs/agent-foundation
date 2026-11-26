@@ -29,6 +29,7 @@ export function previewInput(
   parts: OrderedInputPart[],
   attachments: Map<string, Schema<"ThreadAttachment">> = new Map(),
   catalog?: SkillCatalog,
+  excludedSlashNames?: ReadonlySet<string>,
 ): InputPart[] {
   return parts.map((part, index) => ({
     kind: "user",
@@ -43,7 +44,15 @@ export function previewInput(
       harness_ui: {
         composer: { index },
         ...(typeof part === "string" && catalog
-          ? { skills: skillSpans(part, catalog) }
+          ? {
+              skills: skillSpans(
+                part,
+                catalog,
+                index === 0
+                  ? { allowLeadingSlash: true, excludedSlashNames }
+                  : undefined,
+              ),
+            }
           : {}),
         ...(typeof part !== "string" && attachments.has(part.attachment_id)
           ? { attachment: attachments.get(part.attachment_id) }

@@ -26196,6 +26196,12 @@
             "type": "integer",
             "title": "Size"
           },
+          "storage_name": {
+            "type": "string",
+            "pattern": "^content(?:\\.[a-z0-9]{1,10})?$",
+            "title": "Storage Name",
+            "default": "content"
+          },
           "source": {
             "anyOf": [
               {

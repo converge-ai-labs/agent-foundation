@@ -110,6 +110,18 @@
   color: var(--a13n-secondary);
 }
 
+.commandOption::before {
+  content: "/";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  mask: none;
+  background: transparent;
+  font-family: var(--a13n-font-mono);
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .anchor .picker li.option:hover {
   background: var(--a13n-hover);
 }

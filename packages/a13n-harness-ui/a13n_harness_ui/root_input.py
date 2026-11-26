@@ -89,7 +89,7 @@ class RootInputFiles:
                 self.thread_id, AttachmentUpload(f"input-text-{index + 1}.txt", data, "text/plain")
             )
             await self.files.retain(self.thread_id, attachment.attachment_id)
-            relative_path = f"attachments/{attachment.attachment_id}/content"
+            relative_path = attachment.relative_path
             path = f"{root}/{relative_path}"
             reference = (
                 f"The user's submitted text ({len(text)} characters) is saved in a retained input file.\n"

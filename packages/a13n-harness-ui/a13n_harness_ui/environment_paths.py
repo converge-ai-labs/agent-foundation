@@ -11,6 +11,16 @@ BUILTIN_SKILLS_ROOT = Path(__file__).parent / "assets" / "builtin_skills"
 BUILTIN_SKILLS_SOURCE_ID = "a13n-harness-ui:builtin-skills"
 
 
+def acp_skill_host_path(logical_path: str) -> str:
+    """Resolve a Skill directory path to its real Host absolute path for local ACP peers."""
+    if logical_path == BUILTIN_SKILLS_PATH:
+        return BUILTIN_SKILLS_ROOT.resolve().as_posix()
+    prefix = f"{BUILTIN_SKILLS_PATH}/"
+    if logical_path.startswith(prefix):
+        return (BUILTIN_SKILLS_ROOT.resolve() / logical_path[len(prefix) :]).as_posix()
+    return logical_path
+
+
 @dataclass(frozen=True, slots=True)
 class EnvironmentPathLayout:
     """Model-facing paths for one admitted Harness UI Environment profile."""
@@ -67,4 +77,10 @@ class EnvironmentPathLayout:
         )
 
 
-__all__ = ["BUILTIN_SKILLS_PATH", "BUILTIN_SKILLS_ROOT", "BUILTIN_SKILLS_SOURCE_ID", "EnvironmentPathLayout"]
+__all__ = [
+    "BUILTIN_SKILLS_PATH",
+    "BUILTIN_SKILLS_ROOT",
+    "BUILTIN_SKILLS_SOURCE_ID",
+    "EnvironmentPathLayout",
+    "acp_skill_host_path",
+]

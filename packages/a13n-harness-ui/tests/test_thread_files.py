@@ -106,9 +106,10 @@ async def test_thread_files_reject_escape_oversize_and_symlink_reads(tmp_path: P
     with pytest.raises(ValueError, match="10 MiB"):
         await files.stage("thread-one", AttachmentUpload("big.bin", b"x" * (10 * 1024 * 1024 + 1)))
     attachment = await files.stage("thread-one", AttachmentUpload("small.txt", b"safe"))
+    assert attachment.storage_name == "content.txt"
     outside = tmp_path / "outside"
     outside.write_bytes(b"secret")
-    target = tmp_path / "threads/thread-one/tmp/uploads" / attachment.attachment_id / "content"
+    target = tmp_path / "threads/thread-one/tmp/uploads" / attachment.attachment_id / attachment.storage_name
     target.unlink()
     target.symlink_to(outside)
     with pytest.raises(ValueError, match="symbolic"):
@@ -588,7 +589,7 @@ async def test_draft_attachment_validation_rejects_changed_or_unsafe_files(tmp_p
     files = ThreadFiles(tmp_path)
     attachment = await files.stage("thread-one", AttachmentUpload("small.bin", b"safe"))
     directory = files.directory("thread-one") / "tmp/uploads" / attachment.attachment_id
-    content = directory / "content"
+    content = directory / attachment.storage_name
     if damage == "size":
         content.write_bytes(b"changed")
     elif damage == "identity":
@@ -627,5 +628,49 @@ async def test_retired_comment_capture_remains_an_ordinary_retained_file(tmp_pat
         assert restored.name == attachment.name
         assert content == b"Saved output and feedback"
         assert "comment" not in restored.model_dump()
+    finally:
+        await files.close()
+
+
+@pytest.mark.anyio
+async def test_attachment_storage_extensions_and_legacy_content_compatibility(tmp_path: Path) -> None:
+    files = ThreadFiles(tmp_path)
+    try:
+        png = BytesIO()
+        Image.new("RGB", (2, 2), "blue").save(png, format="PNG")
+        image = await files.stage("thread-one", AttachmentUpload("Photo.PNG", png.getvalue(), "image/png"))
+        assert image.storage_name == "content.png"
+        assert image.relative_path == f"attachments/{image.attachment_id}/content.png"
+
+        pdf = await files.stage("thread-one", AttachmentUpload("Report.PDF", b"%PDF-1.4", "application/pdf"))
+        assert pdf.storage_name == "content.pdf"
+
+        inferred = await files.stage("thread-one", AttachmentUpload("notes", b"hello", "text/plain"))
+        assert inferred.storage_name == "content.txt"
+
+        sanitized = await files.stage(
+            "thread-one", AttachmentUpload("weird.toolongextension", b"raw", "application/x-unknown-type")
+        )
+        assert sanitized.storage_name == "content"
+
+        # Legacy attachment stored as "content" without storage_name in metadata.json still reads cleanly.
+        legacy_id = "attachment-legacy1234"
+        legacy_dir = files.directory("thread-one") / "attachments" / legacy_id
+        legacy_dir.mkdir(parents=True)
+        (legacy_dir / "content").write_bytes(b"legacy-bytes")
+        (legacy_dir / "metadata.json").write_text(
+            json.dumps(
+                {
+                    "attachment_id": legacy_id,
+                    "name": "old.txt",
+                    "media_type": "text/plain",
+                    "size": len(b"legacy-bytes"),
+                }
+            )
+        )
+        restored, data = await files.read("thread-one", legacy_id)
+        assert restored.storage_name == "content"
+        assert restored.relative_path == f"attachments/{legacy_id}/content"
+        assert data == b"legacy-bytes"
     finally:
         await files.close()

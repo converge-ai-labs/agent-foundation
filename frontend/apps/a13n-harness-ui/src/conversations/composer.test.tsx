@@ -2090,3 +2090,89 @@ it("enforces blocking precedence across reconnect, runBlock, coordinator reasons
   query.clear();
   draft.doc.destroy();
 });
+
+it("attaches skill_references for direct leading /skill-name submits while preserving peer commands", async () => {
+  const catalog: Schema<"SkillCatalogView"> = {
+    catalog_id: "a".repeat(64),
+    context_kind: "idle",
+    items: [
+      {
+        item_id: "b".repeat(64),
+        name: "worktree-pr",
+        description: "Worktree PR workflow",
+        source_id: "a13n-harness-ui:project:workspace",
+        logical_path: "/repo/.agents/skills/worktree-pr",
+      },
+    ],
+  };
+  const acpCommands: Schema<"AcpCommand">[] = [
+    { name: "compact", description: "Compact session" },
+  ];
+  const loadSkills = vi.fn(async () => catalog);
+  const post = vi
+    .fn()
+    .mockResolvedValue({ data: { receipt_id: "r1", thread_id: "t1" } });
+  const transport = { client: { POST: post } } as unknown as Transport;
+
+  const skillDraft = new ThreadDraft();
+  skillDraft.doc.getText("text").insert(0, "/worktree-pr fix issue");
+  skillDraft.receive({
+    draft_id: "draft-1",
+    participant_id: "p1",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(skillDraft.doc)),
+  });
+  await submitDraft(
+    skillDraft,
+    transport,
+    "t1",
+    "send",
+    undefined,
+    undefined,
+    undefined,
+    loadSkills,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true,
+    acpCommands,
+  );
+  expect(loadSkills).toHaveBeenCalledTimes(1);
+  expect(post.mock.calls[0][1].body.skill_references).toEqual([
+    {
+      catalog_id: catalog.catalog_id,
+      item_id: catalog.items[0].item_id,
+      name: "worktree-pr",
+    },
+  ]);
+
+  const cmdDraft = new ThreadDraft();
+  cmdDraft.doc.getText("text").insert(0, "/compact");
+  cmdDraft.receive({
+    draft_id: "draft-2",
+    participant_id: "p1",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(cmdDraft.doc)),
+  });
+  await submitDraft(
+    cmdDraft,
+    transport,
+    "t1",
+    "send",
+    undefined,
+    undefined,
+    undefined,
+    loadSkills,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true,
+    acpCommands,
+  );
+  expect(loadSkills).toHaveBeenCalledTimes(1);
+  expect(post.mock.calls[1][1].body.skill_references).toBeUndefined();
+});

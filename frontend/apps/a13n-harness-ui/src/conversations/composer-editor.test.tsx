@@ -1114,11 +1114,12 @@ it("completes an ACP slash command without submitting the prompt", async () => {
       userEvent: "input.type",
     }),
   );
-  await screen.findByRole("option", { name: "/compact" });
+  await screen.findByRole("option", { name: /\/compact/ });
+  expect(screen.getByText("Command")).toBeTruthy();
   await waitFor(() =>
     expect(
       screen
-        .getByRole("option", { name: "/compact" })
+        .getByRole("option", { name: /\/compact/ })
         .getAttribute("aria-selected"),
     ).toBe("true"),
   );
@@ -1130,4 +1131,69 @@ it("completes an ACP slash command without submitting the prompt", async () => {
     expect(values(draft.doc).prompt).toBe("/compact ");
   });
   expect(submit).not.toHaveBeenCalled();
+});
+
+it("merges peer ACP commands and Harness UI skills on slash and shows skills on dollar", async () => {
+  const draft = new ThreadDraft();
+  const submit = vi.fn();
+  const editor = { current: null as EditorView | null };
+  const loadSkills = vi.fn(async () => ({
+    catalog_id: "a".repeat(64),
+    context_kind: "idle" as const,
+    items: [
+      {
+        item_id: "b".repeat(64),
+        name: "plan",
+        description: "Project planning workflow",
+        source_id: "a13n-harness-ui:project:workspace",
+        logical_path: "/repo/.agents/skills/plan",
+      },
+      {
+        item_id: "c".repeat(64),
+        name: "worktree-pr",
+        description: "Open a PR from a fresh worktree",
+        source_id: "a13n-harness-ui:builtin-skills",
+        logical_path: "/environment/builtin-skills/worktree-pr",
+      },
+    ],
+  }));
+  render(
+    <ComposerEditor
+      draft={draft}
+      profile={{ display_name: "Alice", color: "#2563eb" }}
+      presence={() => {}}
+      submit={submit}
+      editor={editor}
+      autoFocus
+      loadSkills={loadSkills}
+      acpCommands={[
+        { name: "compact", description: "Compact conversation" },
+        { name: "plan", description: "Peer plan mode" },
+      ]}
+    />,
+  );
+  act(() =>
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "/" },
+      selection: { anchor: 1 },
+      userEvent: "input.type",
+    }),
+  );
+  await screen.findByRole("option", { name: /\/compact/ });
+  await screen.findByRole("option", { name: /\/plan/ });
+  await screen.findByRole("option", { name: /Plan \(\$plan\)/ });
+  await screen.findByRole("option", { name: /Worktree Pr/ });
+  expect(screen.getAllByText("Command")).toHaveLength(2);
+  expect(screen.getByText("Project")).toBeTruthy();
+  expect(screen.getByText("Built-in")).toBeTruthy();
+
+  act(() =>
+    editor.current!.dispatch({
+      changes: { from: 0, to: 1, insert: "$" },
+      selection: { anchor: 1 },
+      userEvent: "input.type",
+    }),
+  );
+  await screen.findByRole("option", { name: /Worktree Pr/ });
+  expect(screen.queryByRole("option", { name: /\/compact/ })).toBeNull();
 });
