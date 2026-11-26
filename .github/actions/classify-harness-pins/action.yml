@@ -1,0 +1,17 @@
+name: Classify Harness pin updates
+description: Select consumer smoke checks for release-only Harness patch bumps.
+outputs:
+  components:
+    description: Space-separated consumer names; empty selects standard CI.
+    value: ${{ steps.classify.outputs.components }}
+runs:
+  using: composite
+  steps:
+    - id: classify
+      if: >-
+        (github.event_name == 'pull_request' && github.base_ref == 'main') ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.forced)
+      shell: bash
+      env:
+        PUSH_BEFORE: ${{ github.event.before }}
+      run: python3 scripts/classify_harness_pins.py

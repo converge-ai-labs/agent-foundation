@@ -88,7 +88,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # A pin-only push must not cancel checks for an earlier source change on main.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -107,9 +108,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Classify Harness pin updates
+        id: harness-pins
+        uses: ./.github/actions/classify-harness-pins
+
       - name: Classify UI inputs
         id: filter
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        if: steps.harness-pins.outputs.components == '' && (github.event_name == 'pull_request' || github.event_name == 'push')
         uses: dorny/paths-filter@v3
         with:
           filters: |

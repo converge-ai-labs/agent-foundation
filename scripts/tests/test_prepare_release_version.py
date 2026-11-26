@@ -213,18 +213,21 @@ def test_logging_and_service_release_independently(tmp_path: Path, logging_versi
     assert "uv.lock package a13n-logging: 3.0.0" in mismatch.stderr
 
 
-def test_current_release_sequence_preserves_consumer_requirements(tmp_path: Path) -> None:
+def test_release_sequence_preserves_consumer_requirements(tmp_path: Path) -> None:
     import tomllib
 
     from packaging.requirements import Requirement
 
     copy_release_files(tmp_path)
+    harness_version = "3.2.1"
+    for component in ("a13n-harness-ui", "a13n-service"):
+        select_harness_pin(tmp_path, component, f"=={harness_version}")
     releases = (
         ("a13n-envd", "0.8.3"),
         ("a13n-logging", "0.2.0"),
-        ("a13n-harness", "0.43.1"),
-        ("a13n-harness-ui", "0.43.1"),
-        ("a13n-service", "0.5.4"),
+        ("a13n-harness", harness_version),
+        ("a13n-harness-ui", "3.2.4"),
+        ("a13n-service", "1.2.3"),
     )
     for component, version in releases:
         prepared = run_script(PREPARER, tmp_path, component, version)
@@ -557,21 +560,19 @@ def test_same_group_pins_preserve_extras(tmp_path: Path, version: str) -> None:
     assert checked.returncode == 0, checked.stderr
 
 
-@pytest.mark.parametrize(
-    ("component", "version", "requirement"),
-    [
-        ("a13n-service", "0.5.4", "==0.43.1"),
-        ("a13n-harness-ui", "0.43.1", "==0.43.1"),
-    ],
-)
-def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path, component, version, requirement):
+@pytest.mark.parametrize("component", ["a13n-service", "a13n-harness-ui"])
+def test_consumer_contract_line_is_injected_without_changing_source_versions(tmp_path: Path, component: str) -> None:
     import tomllib
 
     copy_release_files(tmp_path)
     source_path = tmp_path / f"packages/{component}/pyproject.toml"
     source = tomllib.loads(source_path.read_text())
     assert source["project"]["version"] == "0.0.0"
-    assert source["tool"]["a13n"]["release-dependencies"]["a13n-harness"] == requirement
+    release_requirements = source["tool"]["a13n"]["release-dependencies"]
+    requirement = release_requirements["a13n-harness"]
+    assert requirement.startswith("==")
+    assert release_requirements["a13n-stream-protocol"] == requirement
+    version = "1.2.3"
     source_requirement = next(
         item for item in source["project"]["dependencies"] if item.split("[")[0] == "a13n-harness"
     )

@@ -56,7 +56,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # A pin-only push must not cancel checks for an earlier source change on main.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -65,16 +66,20 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       service: ${{ github.event_name == 'workflow_dispatch' || steps.paths.outputs.service == 'true' }}
-      deploy: ${{ github.event_name != 'pull_request' || steps.paths.outputs.deploy == 'true' }}
+      deploy: ${{ steps.harness-pins.outputs.components == '' && (github.event_name != 'pull_request' || steps.paths.outputs.deploy == 'true') }}
       image: ${{ steps.sandbox.outputs.image }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
           fetch-depth: 0
+      - name: Classify Harness pin updates
+        id: harness-pins
+        uses: ./.github/actions/classify-harness-pins
+
       - uses: dorny/paths-filter@v3
         id: paths
-        if: github.event_name != 'workflow_dispatch'
+        if: steps.harness-pins.outputs.components == '' && github.event_name != 'workflow_dispatch'
         with:
           filters: |
             service:
@@ -141,7 +146,9 @@ jobs:
               - "LICENSE"
       - name: Resolve a source-matched development sandbox
         id: sandbox
-        if: github.event_name != 'pull_request' || steps.paths.outputs.service == 'true' || steps.paths.outputs.deploy == 'true'
+        if: >-
+          steps.harness-pins.outputs.components == '' &&
+          (github.event_name != 'pull_request' || steps.paths.outputs.service == 'true' || steps.paths.outputs.deploy == 'true')
         run: bash .github/scripts/ci-sandbox-image.sh
 
   support:

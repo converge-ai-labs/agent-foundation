@@ -81,7 +81,8 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
 )
 def test_ui_ci_selects_only_affected_jobs(paths: list[str], expected: set[str]) -> None:
     workflow = yaml.safe_load(WORKFLOW.read_text())
-    filters = yaml.safe_load(workflow["jobs"]["changes"]["steps"][1]["with"]["filters"])
+    filter_step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "filter")
+    filters = yaml.safe_load(filter_step["with"]["filters"])
     assert all(not pattern.startswith("!") for patterns in filters.values() for pattern in patterns)
     actual = {
         name

@@ -77,7 +77,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # A pin-only push must not cancel checks for an earlier source change on main.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -87,6 +88,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      pin-consumers: ${{ steps.harness-pins.outputs.components }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -94,11 +96,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Classify Harness pin updates
+        id: harness-pins
+        uses: ./.github/actions/classify-harness-pins
+
       # Bundled documentation and package README/license text retain the checks
       # job (wheel builds and documentation search) without database-backed tests.
       - name: Classify Service inputs
         id: filter
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        if: steps.harness-pins.outputs.components == '' && (github.event_name == 'pull_request' || github.event_name == 'push')
         uses: dorny/paths-filter@v3
         with:
           filters: |
@@ -139,6 +145,7 @@ jobs:
 
       - name: Build validation matrix
         id: matrix
+        if: steps.harness-pins.outputs.components == ''
         env:
           TESTS_CHANGED: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.tests == 'true' }}
         run: |
@@ -181,7 +188,9 @@ jobs:
   validation:
     name: a13n Service Python (${{ matrix.task.name }}, ${{ matrix.python-version }})
     needs: changes
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: >-
+      needs.changes.outputs.pin-consumers == '' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     strategy:
       fail-fast: false
       matrix:
@@ -384,7 +393,7 @@ jobs:
     name: a13n Service Python
     needs: [changes, validation]
     if: >-
-      always() &&
+      always() && needs.changes.outputs.pin-consumers == '' &&
       (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     timeout-minutes: 5
