@@ -26,11 +26,7 @@ const get = vi.hoisted(() =>
                 name: "Antigravity",
                 executable: "agy",
                 detected_path: "/usr/local/bin/agy",
-                args: [
-                  "acp",
-                  "--dangerously-skip-permissions",
-                  "--process-per-session",
-                ],
+                args: ["acp", "--process-per-session"],
                 install_url: "https://antigravity.google/docs",
               },
               {
@@ -750,5 +746,21 @@ it("auto-fills ACP preset defaults and toggles Antigravity unattended permission
     id: "acp-one",
     name: "Claude Code",
     preset: "claude_code",
+  });
+});
+
+it("shows Skip permission prompts unchecked when bare Antigravity preset omits args and preserves session flag on toggle", async () => {
+  renderFields(
+    'schema_version: "1"\nkind: acp_agent\nid: acp-bare\nname: Antigravity\npreset: antigravity\n',
+  );
+  const user = userEvent.setup();
+  const skip = await screen.findByRole("switch", {
+    name: "Skip permission prompts",
+  });
+  expect(skip.getAttribute("aria-checked")).toBe("false");
+  await user.click(skip);
+  expect(parse(screen.getByTestId("source").textContent!)).toMatchObject({
+    preset: "antigravity",
+    args: ["acp", "--dangerously-skip-permissions", "--process-per-session"],
   });
 });

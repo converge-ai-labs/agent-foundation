@@ -3746,7 +3746,6 @@
   "This field is required.": "This field is required.",
   "Enter a valid value for this field.": "Enter a valid value for this field.",
   "Detected": "Detected",
-  "Not installed": "Not installed",
   "Skip permission prompts": "Skip permission prompts",
   "Allow unattended tool execution without interactive CLI prompts.": "Allow unattended tool execution without interactive CLI prompts.",
   "Customize command": "Customize command"

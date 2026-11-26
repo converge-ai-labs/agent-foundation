@@ -165,6 +165,7 @@ type RunChoiceProps = ModelControlProps & {
   onModelChange: (value: string | undefined) => void;
   externalOptions?: ReactNode;
   externalModel?: string;
+  externalModelId?: string;
   externalThinking?: string;
 };
 
@@ -217,7 +218,7 @@ export function ThreadRunChoices(props: RunChoiceProps) {
                 }
                 modelIdentity={acpModelIdentity(
                   props.externalModel,
-                  undefined,
+                  props.externalModelId,
                   agent.preset,
                 )}
               />
@@ -339,37 +340,34 @@ function AgentModelChoices({
         }}
       />
     );
-  if (isAcp && settings.page.startsWith("acp:")) return <>{externalOptions}</>;
   return (
     <>
       {settings.page === "root" && (
-        <>
-          <SettingsRow
-            label={t("Agent")}
-            value={agent?.name ?? (agentId || t("Default agent"))}
-            disabled={disabled || !catalog}
-            onClick={() => settings.navigate("agent")}
-          />
-          {isAcp && externalOptions}
-          {!isAcp && (
-            <SettingsRow
-              label={t("Model")}
-              value={
-                <ModelIdentity
-                  model={model}
-                  name={
-                    model?.name ??
-                    t("{{name}} (unavailable)", {
-                      name: modelId ?? inheritedModelId ?? t("Model"),
-                    })
-                  }
-                />
+        <SettingsRow
+          label={t("Agent")}
+          value={agent?.name ?? (agentId || t("Default agent"))}
+          disabled={disabled || !catalog}
+          onClick={() => settings.navigate("agent")}
+        />
+      )}
+      {isAcp && externalOptions}
+      {!isAcp && settings.page === "root" && (
+        <SettingsRow
+          label={t("Model")}
+          value={
+            <ModelIdentity
+              model={model}
+              name={
+                model?.name ??
+                t("{{name}} (unavailable)", {
+                  name: modelId ?? inheritedModelId ?? t("Model"),
+                })
               }
-              disabled={disabled || !catalog}
-              onClick={() => settings.navigate("model")}
             />
-          )}
-        </>
+          }
+          disabled={disabled || !catalog}
+          onClick={() => settings.navigate("model")}
+        />
       )}
       {!isAcp && (
         <ModelControlPanel

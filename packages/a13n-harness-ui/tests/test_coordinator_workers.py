@@ -316,6 +316,7 @@ async def test_agent_and_self_creation_work_without_allowed_models_while_model_o
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
         app._root_runs._executor._agents = _CompletedReconstructor()
         lead = await create_coordinator(app)
+        await app.set_auto_followup(lead.thread_id, False)
         compose = (await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Plan")).published.value
         tools = ThreadCollaborationCapability(
             controller=controller(app), source_thread_id=lead.thread_id, composition=compose
@@ -352,8 +353,13 @@ async def test_agent_and_self_creation_work_without_allowed_models_while_model_o
         root.write_text(yaml.safe_dump(document))
         await app.reload_configuration()
         reloaded = (await app._root_runs._executor.capture(thread_id=lead.thread_id, prompt="Plan 2")).published.value
+        stale_root = reloaded.root.model_copy(
+            update={"model": reloaded.root.model.model_copy(update={"model_id": "model-deleted"})}
+        )
         allowed_tools = ThreadCollaborationCapability(
-            controller=controller(app), source_thread_id=lead.thread_id, composition=reloaded
+            controller=controller(app),
+            source_thread_id=lead.thread_id,
+            composition=reloaded.model_copy(update={"root": stale_root}),
         )
         overridden = await allowed_tools.create_worker(ctx, prompt="override ok", model="model-secondary")
         assert overridden["ok"], overridden

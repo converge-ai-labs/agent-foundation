@@ -4,11 +4,13 @@ import type { Schema } from "../transport/client";
 import styles from "./model-identity.module.css";
 
 const acpPresetBrands: Record<string, string> = {
-  antigravity: "google",
-  claude_code: "claude",
-  codex: "openai",
-  gemini_cli: "google_gemini",
-  github_copilot: "github",
+  antigravity: "antigravity",
+  claude_code: "claudecode",
+  codex: "codex",
+  gemini_cli: "geminicli",
+  github_copilot: "githubcopilot",
+  opencode: "opencode",
+  goose: "goose",
   kimi_cli: "kimi",
 };
 

@@ -479,7 +479,6 @@ class AcpTurn(AbstractHarnessPlugin):
                 assert exchange.input.value is not None
                 binding.host_tools = scope
                 compacted = False
-                in_prompt = False
 
                 async def mark_prompted() -> None:
                     nonlocal active
@@ -490,9 +489,9 @@ class AcpTurn(AbstractHarnessPlugin):
 
                 async def observe(update: AcpUpdate) -> None:
                     nonlocal compacted, active
-                    if in_prompt and not active.prompted:
-                        await mark_prompted()
                     compacted |= isinstance(update, schema.SessionUpdateCompactionUpdate)
+                    transcript.update(update)
+                    await mark_prompted()
                     if (
                         isinstance(update, schema.SessionInfoUpdate)
                         and runtime.client.session_title
@@ -503,7 +502,6 @@ class AcpTurn(AbstractHarnessPlugin):
                         active = active.model_copy(update={"commands": acp_commands(runtime)})
                         if self.persist is not None:
                             await self.persist(active)
-                    transcript.update(update)
                     await publish()
 
                 binding.on_update = observe
@@ -516,7 +514,7 @@ class AcpTurn(AbstractHarnessPlugin):
                 prompted_this_turn = False
 
                 async def prompt_until_settled() -> schema.PromptResponse:
-                    nonlocal active, compacted, in_prompt, prior_conversation, prompted_this_turn
+                    nonlocal active, compacted, prior_conversation, prompted_this_turn
                     prompt = blocks
                     while True:
                         compacted = False
@@ -526,11 +524,7 @@ class AcpTurn(AbstractHarnessPlugin):
                             hidden = (*hidden, guidance)
                         if self._stop_requested:
                             return schema.PromptResponse(stop_reason="cancelled")
-                        in_prompt = True
-                        try:
-                            response = await runtime.prompt(prompt, binding=binding, context=hidden)
-                        finally:
-                            in_prompt = False
+                        response = await runtime.prompt(prompt, binding=binding, context=hidden)
                         await mark_prompted()
                         prompted_this_turn = True
                         prior_conversation = ()

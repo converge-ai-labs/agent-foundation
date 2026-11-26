@@ -3746,7 +3746,6 @@
   "This field is required.": "यह फ़ील्ड आवश्यक है।",
   "Enter a valid value for this field.": "इस फ़ील्ड के लिए मान्य मान दर्ज करें।",
   "Detected": "उपलब्ध",
-  "Not installed": "इंस्टॉल नहीं है",
   "Skip permission prompts": "अनुमति प्रॉम्प्ट छोड़ें",
   "Allow unattended tool execution without interactive CLI prompts.": "इंटरैक्टिव CLI प्रॉम्प्ट के बिना स्वचालित टूल निष्पादन की अनुमति दें।",
   "Customize command": "कमांड कस्टमाइज़ करें"

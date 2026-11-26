@@ -174,7 +174,7 @@ class ThreadToolController:
         self.create_project = create_project
         self.read_project_memory = read_project_memory
         self.inbox = inbox
-        self._deferred_coordinator_notices: dict[str, str] = {}
+        self._deferred_coordinator_notices: dict[str, tuple[str, str]] = {}
 
     async def post_owner_inbox(self, *, thread_id: str, kind: InboxKind, title: str, message: str) -> InboxItem:
         """Post on behalf of an instance owner outside any Agent Run."""
@@ -322,7 +322,7 @@ class ThreadToolController:
                 else configuration.agent_source.id
             )
             inherited_model_id: str | None = None
-            if inherited_agent in current.agents:
+            if model_id is None and inherited_agent in current.agents:
                 if source_composition is not None and isinstance(source_composition.root, ResolvedAgentNode):
                     captured_model = source_composition.root.model.model_id
                     if captured_model != current.agents[inherited_agent].model:
@@ -351,8 +351,6 @@ class ThreadToolController:
         if target.agent_source.kind == "acp_agent":
             if model_id is not None or thinking is not None:
                 raise ThreadError("This Agent source does not accept a Harness Model.", code="thread_model_invalid")
-            if defaults.default_model_id is not None:
-                defaults = defaults.model_copy(update={"default_model_id": None})
         elif model_id is not None:
             recipe = await self._configurations.creation_model(
                 source_composition, model_id, thinking, current_generation=True
@@ -458,21 +456,45 @@ class ThreadToolController:
             self._deferred_coordinator_notices.pop(owner_id, None)
             return
         if result.get("mode") == "steer":
-            if owner_id in self._deferred_coordinator_notices:
-                message = (
-                    "Host notification: Multiple managed worker operations updated while your previous turn was running "
-                    f"in Project {project_id} (latest: Thread {operation.receipt.thread_id}, "
-                    f"Receipt {operation.receipt.receipt_id}, Status: {'started' if started else operation.status.value}). "
-                    "Use list_threads and get_thread to inspect your workers' saved results and reconcile your tasks and notes. "
-                    "Do not send an acknowledgement or repeat an already integrated report."
-                )
-            self._deferred_coordinator_notices[owner_id] = message
+            target_receipt_id = result["receipt_id"]
+            active = await self._root_runs.active(owner_id)
+            if active is not None and active.receipt.receipt_id == target_receipt_id:
+                existing = self._deferred_coordinator_notices.get(owner_id)
+                if existing is not None and existing[0] == target_receipt_id:
+                    message = (
+                        "Host notification: Multiple managed worker operations updated while your previous turn was running "
+                        f"in Project {project_id} (latest: Thread {operation.receipt.thread_id}, "
+                        f"Receipt {operation.receipt.receipt_id}, Status: {'started' if started else operation.status.value}). "
+                        "Use list_threads and get_thread to inspect your workers' saved results and reconcile your tasks and notes. "
+                        "Do not send an acknowledgement or repeat an already integrated report."
+                    )
+                self._deferred_coordinator_notices[owner_id] = (target_receipt_id, message)
+            else:
+                try:
+                    settled = await self._root_runs.get(target_receipt_id)
+                    if settled.status is RootOperationStatus.completed:
+                        retry = await self._run_or_steer(
+                            thread_id=owner_id,
+                            prompt=[
+                                TextContent(
+                                    message,
+                                    metadata={"display": False, "source_id": "a13n-harness-ui.thread-lifecycle"},
+                                )
+                            ],
+                        )
+                        if retry["ok"]:
+                            return
+                except HarnessUiError:
+                    pass
         get_logger(__name__).info("Coordinator did not accept lifecycle notification: %s", operation.receipt.receipt_id)
 
     async def _flush_coordinator_followup(self, operation: RootOperationView) -> None:
         thread_id = operation.receipt.thread_id
-        pending = self._deferred_coordinator_notices.pop(thread_id, None)
-        if pending is None or operation.status is not RootOperationStatus.completed:
+        entry = self._deferred_coordinator_notices.get(thread_id)
+        if entry is None or entry[0] != operation.receipt.receipt_id:
+            return
+        self._deferred_coordinator_notices.pop(thread_id, None)
+        if operation.status is not RootOperationStatus.completed:
             return
         coordinator = (await self._threads.coordinators((thread_id,))).get(thread_id)
         if coordinator is None or not coordinator.auto_followup:
@@ -481,7 +503,7 @@ class ThreadToolController:
             await self._run_or_steer(
                 thread_id=thread_id,
                 prompt=[
-                    TextContent(pending, metadata={"display": False, "source_id": "a13n-harness-ui.thread-lifecycle"})
+                    TextContent(entry[1], metadata={"display": False, "source_id": "a13n-harness-ui.thread-lifecycle"})
                 ],
             )
         except HarnessUiError:

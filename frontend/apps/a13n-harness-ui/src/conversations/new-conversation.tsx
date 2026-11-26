@@ -315,7 +315,7 @@ function NewConversation({
     path: { agent_id: acpAgent ?? "" },
     query: { project_id: acpProject },
   };
-  const acpQueryKey = ["new-acp-options", acpKey] as const;
+  const acpQueryKey = ["new-acp-options", draft.threadId, acpKey] as const;
   const acp = useQuery({
     queryKey: acpQueryKey,
     enabled: !!acpAgent && !draft.created,
@@ -365,27 +365,31 @@ function NewConversation({
     mutationFn: ({
       change,
       data,
+      params,
     }: {
       change: Schema<"AcpOptionChange">;
       data: Schema<"AcpOptionsPreview">;
+      key: string;
+      queryKey: typeof acpQueryKey;
+      params: typeof acpParams;
     }) =>
       result(
         transport.client.POST("/api/acp-agents/{agent_id}/options", {
-          params: acpParams,
+          params,
           body: {
             selection: { scope: data.scope, values: data.selections },
             change,
           },
         }),
       ),
-    onSuccess: (updated) => {
-      if (activeAcpKey.current !== acpKey) return;
+    onSuccess: (updated, vars) => {
+      if (activeAcpKey.current !== vars.key) return;
       draft.acp = {
-        key: acpKey,
+        key: vars.key,
         selection: { scope: updated.scope, values: updated.selections },
       };
       draft.save();
-      queries.setQueryData(acpQueryKey, updated);
+      queries.setQueryData(vars.queryKey, updated);
     },
   });
   const runChoices = useComposerRunChoices(
@@ -633,50 +637,61 @@ function NewConversation({
                 }}
               />
             }
-            controls={() => (
-              <ThreadRunChoices
-                catalog={selectors.data}
-                agentId={defaults.agent_id ?? ""}
-                defaultAgentId={effectiveAgent?.agent_id}
-                defaultModelId={effective?.default_model_id}
-                modelId={composerDraft.modelId}
-                controls={composerDraft.controls}
-                onControlsChange={runChoices.onControlsChange}
-                disabled={choicesDisabled}
-                onAgentChange={(value) => {
-                  change({ agent_id: value || null });
-                }}
-                externalModel={acpOptionLabel(
-                  acp.data?.options.find(
-                    (option) =>
-                      option.category === "model" || option.id === "model",
-                  ),
-                )}
-                externalThinking={acpOptionLabel(
-                  acp.data?.options.find(
-                    (option) =>
-                      option.category === "thought_level" ||
-                      option.id === "thought_level",
-                  ),
-                )}
-                externalOptions={
-                  acpAgent && (
-                    <AcpOptionFields
-                      key={acpKey}
-                      options={acp.data?.options}
-                      preset={effectiveAgent?.preset}
-                      loading={acp.isFetching}
-                      disabled={choicesDisabled || acpChange.isPending}
-                      error={acpChange.error ?? acp.error}
-                      onChange={(change) =>
-                        acp.data && acpChange.mutate({ change, data: acp.data })
-                      }
-                    />
-                  )
-                }
-                onModelChange={runChoices.onModelChange}
-              />
-            )}
+            controls={() => {
+              const acpModelOption = acp.data?.options.find(
+                (option) =>
+                  option.category === "model" || option.id === "model",
+              );
+              return (
+                <ThreadRunChoices
+                  catalog={selectors.data}
+                  agentId={defaults.agent_id ?? ""}
+                  defaultAgentId={effectiveAgent?.agent_id}
+                  defaultModelId={effective?.default_model_id}
+                  modelId={composerDraft.modelId}
+                  controls={composerDraft.controls}
+                  onControlsChange={runChoices.onControlsChange}
+                  disabled={choicesDisabled}
+                  onAgentChange={(value) => {
+                    change({ agent_id: value || null });
+                  }}
+                  externalModel={acpOptionLabel(acpModelOption)}
+                  externalModelId={
+                    acpModelOption ? String(acpModelOption.value) : undefined
+                  }
+                  externalThinking={acpOptionLabel(
+                    acp.data?.options.find(
+                      (option) =>
+                        option.category === "thought_level" ||
+                        option.id === "thought_level",
+                    ),
+                  )}
+                  externalOptions={
+                    acpAgent && (
+                      <AcpOptionFields
+                        key={acpKey}
+                        options={acp.data?.options}
+                        preset={effectiveAgent?.preset}
+                        loading={acp.isFetching}
+                        disabled={choicesDisabled || acpChange.isPending}
+                        error={acpChange.error ?? acp.error}
+                        onChange={(change) =>
+                          acp.data &&
+                          acpChange.mutate({
+                            change,
+                            data: acp.data,
+                            key: acpKey,
+                            queryKey: acpQueryKey,
+                            params: acpParams,
+                          })
+                        }
+                      />
+                    )
+                  }
+                  onModelChange={runChoices.onModelChange}
+                />
+              );
+            }}
           />
           {drafts.error && (
             <p role="alert">{composerMessage(drafts.error, t)}</p>

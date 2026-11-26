@@ -751,6 +751,7 @@ async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_re
             "goose",
             "kimi_cli",
         } <= presets.keys()
+        assert presets["antigravity"].args == ("acp", "--process-per-session")
         assert presets["claude_code"].detected_path == str(fake_bin / "npx")
         assert presets["claude_code"].executable == "npx"
         assert presets["claude_code"].args == ("-y", "@zed-industries/claude-agent-acp")
@@ -758,10 +759,19 @@ async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_re
         assert presets["github_copilot"].detected_path == str(fake_bin / "copilot")
         assert resolve_acp_argv(
             AcpAgentResource(
-                schema_version="1", kind="acp_agent", id="acp-claude", name="Claude Code", preset="claude_code"
+                schema_version="1",
+                kind="acp_agent",
+                id="acp-claude",
+                name="Claude Code",
+                preset="claude_code",
+                args=("--verbose",),
             ),
             path=str(fake_bin),
-        ) == ("npx", "-y", "@zed-industries/claude-agent-acp")
+        ) == ("npx", "-y", "@zed-industries/claude-agent-acp", "--verbose")
+        assert resolve_acp_argv(
+            AcpAgentResource(schema_version="1", kind="acp_agent", id="acp-codex", name="Codex", preset="codex"),
+            path=str(fake_bin),
+        ) == ("codex-acp",)
 
     # 2. If the very first runtime.prompt fails before emitting updates, prompted stays False.
     root = tmp_path / "a13n-harness-ui.yaml"
@@ -822,3 +832,46 @@ async def test_failed_initial_acp_prompt_keeps_session_unprompted_and_presets_re
         assert (await app.wait_root_operation(recovered.receipt_id)).status is RootOperationStatus.completed
         reply = (await app.get_thread(thread.thread_id)).thread.excerpt.latest_reply
         assert reply is not None and ";mode=plan;" in reply
+
+        # 3. Concurrent initial updates preserve arrival order even if persisting prompted=True suspends.
+        import asyncio
+
+        from acp import schema
+
+        ordered_thread = await app.create_thread()
+        first_persist_entered = asyncio.Event()
+        release_persist = asyncio.Event()
+        original_save_acp = app._store.threads.save_acp_state
+
+        async def slow_first_prompted_save(tid: str, payload: str) -> None:
+            if tid == ordered_thread.thread_id and '"prompted":true' in payload and not first_persist_entered.is_set():
+                first_persist_entered.set()
+                await release_persist.wait()
+            await original_save_acp(tid, payload)
+
+        async def two_chunk_prompt(self, prompt, *, binding, context=()):
+            t1 = asyncio.create_task(
+                binding.on_update(
+                    schema.AgentMessageChunk(
+                        session_update="agent_message_chunk", content=schema.TextContentBlock(text="A")
+                    )
+                )
+            )
+            await first_persist_entered.wait()
+            t2 = asyncio.create_task(
+                binding.on_update(
+                    schema.AgentMessageChunk(
+                        session_update="agent_message_chunk", content=schema.TextContentBlock(text="B")
+                    )
+                )
+            )
+            await asyncio.sleep(0)
+            release_persist.set()
+            await asyncio.gather(t1, t2)
+            return schema.PromptResponse(stop_reason="end_turn")
+
+        monkeypatch.setattr(app._store.threads, "save_acp_state", slow_first_prompted_save)
+        monkeypatch.setattr(AcpSessionRuntime, "prompt", two_chunk_prompt)
+        ordered = await app.submit_thread(thread_id=ordered_thread.thread_id, prompt="order check")
+        assert (await app.wait_root_operation(ordered.receipt_id)).status is RootOperationStatus.completed
+        assert (await app.get_thread(ordered_thread.thread_id)).thread.excerpt.latest_reply == "AB"

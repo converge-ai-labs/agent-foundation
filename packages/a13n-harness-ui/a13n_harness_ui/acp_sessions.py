@@ -122,18 +122,28 @@ class AcpPresetView(SurfaceModel):
     install_url: str | None = None
 
 
+def _resolve_preset_command(preset: AcpAgentPreset, *, path: str) -> tuple[str, tuple[str, ...], str | None]:
+    command, default_args = ACP_AGENT_PRESETS[preset]
+    detected = shutil.which(command, path=path)
+    if detected is None and (adapter := _ACP_NPX_ADAPTERS.get(preset)) is not None:
+        npx = shutil.which("npx", path=path)
+        if npx is not None and shutil.which(adapter[0], path=path) is not None:
+            return "npx", ("-y", adapter[1]), npx
+    return command, default_args, detected
+
+
 def resolve_acp_argv(resource: AcpAgentResource, *, path: str | None = None) -> tuple[str, ...]:
-    executable, *arguments = resource.argv()
-    if resource.command is None and (adapter := _ACP_NPX_ADAPTERS.get(resource.preset)) is not None:
-        search_path = local_environment().get("PATH", os.defpath) if path is None else path
-        if shutil.which(executable, path=search_path) is None and shutil.which("npx", path=search_path) is not None:
-            return ("npx", "-y", adapter[1], *(resource.args or ()))
-    return (executable, *arguments)
+    if resource.command is not None or resource.preset == "custom":
+        return resource.argv()
+    search_path = local_environment().get("PATH", os.defpath) if path is None else path
+    executable, preset_args, _ = _resolve_preset_command(resource.preset, path=search_path)
+    if executable == "npx":
+        return (executable, *preset_args, *(resource.args or ()))
+    return (executable, *(preset_args if resource.args is None else resource.args))
 
 
 def acp_presets() -> tuple[AcpPresetView, ...]:
     path = local_environment().get("PATH", os.defpath)
-    npx = shutil.which("npx", path=path)
     metadata: dict[AcpAgentPreset, tuple[str, str]] = {
         "antigravity": ("Antigravity", "https://antigravity.google/docs/getting-started?tab=cli"),
         "claude_code": ("Claude Code", "https://github.com/zed-industries/claude-agent-acp"),
@@ -145,22 +155,13 @@ def acp_presets() -> tuple[AcpPresetView, ...]:
         "kimi_cli": ("Kimi CLI", "https://github.com/MoonshotAI/kimi-cli"),
     }
     views: list[AcpPresetView] = []
-    for key, (command, args) in ACP_AGENT_PRESETS.items():
-        detected = shutil.which(command, path=path)
-        preset_executable = command
-        preset_args = (
-            ("acp", "--dangerously-skip-permissions", "--process-per-session") if key == "antigravity" else args
-        )
-        if detected is None and npx is not None and (adapter := _ACP_NPX_ADAPTERS.get(key)) is not None:
-            if shutil.which(adapter[0], path=path) is not None:
-                detected = npx
-                preset_executable = "npx"
-                preset_args = ("-y", adapter[1])
+    for key in ACP_AGENT_PRESETS:
+        executable, preset_args, detected = _resolve_preset_command(key, path=path)
         views.append(
             AcpPresetView(
                 id=key,
                 name=metadata[key][0],
-                executable=preset_executable,
+                executable=executable,
                 detected_path=detected,
                 args=preset_args,
                 install_url=metadata[key][1],

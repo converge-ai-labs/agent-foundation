@@ -264,11 +264,20 @@ export function ResourceFields({
           const presetNames = new Set(
             (presets.data ?? []).map((item) => item.name),
           );
-          const resolvedArgs: readonly string[] = Array.isArray(raw.args)
+          const explicitCommand = text(["command"]);
+          const explicitArgs = Array.isArray(raw.args)
             ? raw.args.map((item: unknown) => String(item))
-            : (selectedPreset?.args ?? []);
+            : undefined;
+          const presetFallbackArgs =
+            presetValue === "antigravity"
+              ? ["acp", "--process-per-session"]
+              : [];
+          const resolvedArgs: readonly string[] =
+            !explicitCommand && selectedPreset?.executable === "npx"
+              ? [...(selectedPreset.args ?? []), ...(explicitArgs ?? [])]
+              : (explicitArgs ?? selectedPreset?.args ?? presetFallbackArgs);
           const commandPreview = [
-            text(["command"]) || selectedPreset?.executable || "",
+            explicitCommand || selectedPreset?.executable || "",
             ...resolvedArgs,
           ]
             .filter(Boolean)
@@ -342,11 +351,11 @@ export function ResourceFields({
                         next,
                         ["args"],
                         value === "antigravity"
-                          ? (preset?.args ?? [
+                          ? [
                               "acp",
                               "--dangerously-skip-permissions",
                               "--process-per-session",
-                            ])
+                            ]
                           : undefined,
                       );
                     }
@@ -379,24 +388,24 @@ export function ResourceFields({
                       </code>
                     }
                   >
-                    {!text(["command"]) &&
-                    selectedPreset &&
-                    !selectedPreset.detected_path &&
-                    selectedPreset.install_url ? (
-                      <a
-                        target="_blank"
-                        rel="noreferrer"
-                        href={selectedPreset.install_url}
-                      >
-                        {t("Installation instructions")}
-                      </a>
-                    ) : (
-                      <span>
-                        {text(["command"]) || selectedPreset?.detected_path
-                          ? t("Detected")
-                          : t("Not installed")}
-                      </span>
-                    )}
+                    {!explicitCommand &&
+                      selectedPreset &&
+                      (!selectedPreset.detected_path &&
+                      selectedPreset.install_url ? (
+                        <a
+                          target="_blank"
+                          rel="noreferrer"
+                          href={selectedPreset.install_url}
+                        >
+                          {t("Installation instructions")}
+                        </a>
+                      ) : (
+                        <span>
+                          {selectedPreset.detected_path
+                            ? t("Detected")
+                            : t("Not installed")}
+                        </span>
+                      ))}
                   </SettingsRow>
                 )}
                 {presetValue === "antigravity" && (

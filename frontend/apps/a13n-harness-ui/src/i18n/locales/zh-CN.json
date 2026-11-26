@@ -3714,7 +3714,6 @@
   "This field is required.": "此字段必填。",
   "Enter a valid value for this field.": "请输入有效值。",
   "Detected": "已检测到",
-  "Not installed": "未安装",
   "Skip permission prompts": "跳过权限确认",
   "Allow unattended tool execution without interactive CLI prompts.": "允许无人值守执行工具调用，不在命令行中弹出交互确认。",
   "Customize command": "自定义启动命令"

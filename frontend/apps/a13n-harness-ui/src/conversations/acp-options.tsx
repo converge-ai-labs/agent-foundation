@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect } from "react";
 import { useTranslation } from "../i18n";
 import {
   acpModelIdentity,
@@ -118,7 +118,6 @@ export function AcpOptionFields({
 }) {
   const { t } = useTranslation();
   const settings = useComposerSettings();
-  const [fallbackExpanded, setFallbackExpanded] = useState<string>();
   const isModelOption = (option: Schema<"AcpOption">) =>
     option.category === "model" || option.id === "model";
   const optionChoices = (option: Schema<"AcpOption">) => {
@@ -139,11 +138,26 @@ export function AcpOptionFields({
       ) : undefined,
     }));
   };
-  const activeOption = settings?.page.startsWith("acp:")
-    ? options?.find((option) => `acp:${option.id}` === settings.page)
+  const onSubpage = Boolean(settings?.page.startsWith("acp:"));
+  const activeOption = onSubpage
+    ? options?.find((option) => `acp:${option.id}` === settings?.page)
     : undefined;
-  if (settings && settings.page.startsWith("acp:")) {
-    if (!activeOption) return null;
+  useEffect(() => {
+    if (settings && onSubpage && !activeOption && !loading && !error && options)
+      settings.navigate("root");
+  }, [activeOption, error, loading, onSubpage, options, settings]);
+  if (settings && onSubpage) {
+    if (!activeOption)
+      return (
+        <>
+          {loading && (
+            <p className={panelStyles.optionHint} role="status">
+              {t("Loading Agent options…")}
+            </p>
+          )}
+          <ErrorNotice error={error} />
+        </>
+      );
     const boolean = typeof activeOption.value === "boolean";
     const choices = optionChoices(activeOption);
     return (
@@ -164,11 +178,11 @@ export function AcpOptionFields({
       />
     );
   }
+  if (settings && settings.page !== "root") return null;
   const modelOptions = options?.filter(isModelOption) ?? [];
   const controlOptions =
     options?.filter((option) => !isModelOption(option)) ?? [];
   const renderRow = (option: Schema<"AcpOption">) => {
-    const boolean = typeof option.value === "boolean";
     const choices = optionChoices(option);
     const disabled = locked || !choices.length;
     const selectedLabel =
@@ -176,54 +190,31 @@ export function AcpOptionFields({
       String(option.value);
     const model = isModelOption(option);
     return (
-      <div key={option.id}>
-        <SettingsRow
-          label={option.name}
-          value={
-            model ? (
-              <ModelIdentity
-                name={selectedLabel}
-                modelIdentity={acpModelIdentity(
-                  selectedLabel,
-                  String(option.value),
-                  preset,
-                )}
-              />
-            ) : (
-              selectedLabel
-            )
-          }
-          disabled={disabled}
-          onClick={() => {
-            if (settings)
-              settings.navigate(
-                `acp:${option.id}`,
-                model ? t("Select model") : option.name,
-              );
-            else
-              setFallbackExpanded(
-                fallbackExpanded === option.id ? undefined : option.id,
-              );
-          }}
-        />
-        {!settings && fallbackExpanded === option.id && (
-          <SettingsChoices
-            options={choices}
-            value={String(option.value)}
-            disabled={disabled}
-            onChange={(value) => {
-              onChange({
-                id: option.id,
-                value: boolean ? value === "true" : value,
-              });
-              setFallbackExpanded(undefined);
-            }}
-            searchLabel={option.name}
-            searchPlaceholder={option.description ?? option.name}
-            emptyLabel={t("No matching options.")}
-          />
-        )}
-      </div>
+      <SettingsRow
+        key={option.id}
+        label={option.name}
+        value={
+          model ? (
+            <ModelIdentity
+              name={selectedLabel}
+              modelIdentity={acpModelIdentity(
+                selectedLabel,
+                String(option.value),
+                preset,
+              )}
+            />
+          ) : (
+            selectedLabel
+          )
+        }
+        disabled={disabled}
+        onClick={() =>
+          settings?.navigate(
+            `acp:${option.id}`,
+            model ? t("Select model") : option.name,
+          )
+        }
+      />
     );
   };
   return (
