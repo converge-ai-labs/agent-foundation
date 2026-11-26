@@ -56,10 +56,10 @@ export function CredentialDetail() {
           status={
             <>
               <StatePill state={credential.state} />
-              {credential.owner_app_id && (
+              {credential.app_id && (
                 <span className={shared.muted}>
                   {t("Managed by {{appId}}", {
-                    appId: credential.owner_app_id,
+                    appId: credential.app_id,
                   })}
                 </span>
               )}
@@ -70,7 +70,7 @@ export function CredentialDetail() {
               <ComposerAction
                 target={{ kind: "credentials", resource_id: credential.id }}
               />
-              {can("write") && !credential.owner_app_id && (
+              {can("write") && !credential.app_id && (
                 <CredentialActions credential={credential} />
               )}
             </>
@@ -214,20 +214,18 @@ function CredentialConfiguration({ credential }: { credential: Credential }) {
           </SettingsRow>
         )}
       </SettingsSection>
-      {can("write") &&
-        !credential.owner_app_id &&
-        credential.state === "active" && (
-          <SettingsSection variant="outlined" title={t("Revoke credential")}>
-            <SettingsRow
-              label={t("Revoke credential")}
-              description={t(
-                "Prevents new use and removes the stored token. Active Sessions remove it asynchronously. This cannot be undone.",
-              )}
-            >
-              <RevokeCredential credential={credential} />
-            </SettingsRow>
-          </SettingsSection>
-        )}
+      {can("write") && !credential.app_id && credential.state === "active" && (
+        <SettingsSection variant="outlined" title={t("Revoke credential")}>
+          <SettingsRow
+            label={t("Revoke credential")}
+            description={t(
+              "Prevents new use and removes the stored token. Active Sessions remove it asynchronously. This cannot be undone.",
+            )}
+          >
+            <RevokeCredential credential={credential} />
+          </SettingsRow>
+        </SettingsSection>
+      )}
     </div>
   );
 }

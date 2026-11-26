@@ -4,7 +4,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from a13n_envd_client.eip.v1 import ProcessInfo, SessionDescriptor
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
+from a13n_harness.environment.models import (
+    ENVIRONMENT_ACTION_DISPATCH,
+    EnvironmentAction,
+    EnvironmentError,
+    EnvironmentPermissionSet,
+)
 from a13n_harness.environment.process_recovery import ShellExecutionState
 from sqlalchemy import select
 
@@ -14,7 +19,7 @@ from a13n_service.resources.providers.service import resolved_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import AuthorityRevoked, LeaseLost
 from a13n_service.runs.environments import connection, outbound
-from a13n_service.runs.environments.clients.routing import Request
+from a13n_service.runs.environments.clients.routing import LifecycleCaller, Request
 from a13n_service.runs.environments.clients.service import Attachment
 from a13n_service.runs.environments.clients.tables import ClientSettingsRow
 from a13n_service.runs.environments.schemas import Handle
@@ -23,6 +28,8 @@ from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import EnvironmentMount
 from a13n_service.runs.tables import RunRow
 from a13n_service.runs.tool_executions.authority import ControlSnapshot
+from a13n_service.runs.tool_executions.routing import Caller
+from a13n_service.tenancy.access import require_active_workspace
 from a13n_service.tenancy.authorize import WorkspaceScope, authorize
 from a13n_service.tenancy.cloudflare_deployments import DeploymentRow
 
@@ -57,7 +64,10 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
     if not checks:
         return []
     async with short_session(runtime.storage) as session:
-        snapshot = await ControlSnapshot.load(session, runtime, [check.request.caller for check in checks])
+        snapshot = await ControlSnapshot.load(
+            session, runtime, [check.request.caller for check in checks if isinstance(check.request.caller, Caller)]
+        )
+        active_workspaces: set[str] = set()
         rows = {
             environment.id: (environment, config)
             for environment, config in await session.execute(
@@ -83,11 +93,34 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
         for check in checks:
             request, attachment, actions = check.request, check.attachment, check.actions
             try:
-                if request.retained_cleanup:
+                pair = rows.get(request.environment_id)
+                if pair is None:
+                    raise LeaseLost()
+                environment, config = pair
+                lifecycle = request.caller if isinstance(request.caller, LifecycleCaller) else None
+                if isinstance(request.caller, LifecycleCaller):
+                    if (
+                        environment.kind != "managed"
+                        or request.mount_name != "lifecycle"
+                        or any(
+                            ENVIRONMENT_ACTION_DISPATCH[action].family not in {"files", "shell", "processes", "outputs"}
+                            for action in actions
+                        )
+                        or request.method.startswith("computer.")
+                    ):
+                        raise LeaseLost()
+                    workspace_id = environment.workspace_id
+                    if workspace_id not in active_workspaces:
+                        await require_active_workspace(session, workspace_id)
+                        active_workspaces.add(workspace_id)
+                    mount = EnvironmentMount(name="lifecycle", environment_id=environment.id)
+                    grant = None
+                elif request.retained_cleanup:
                     run, mount = retained_mount(snapshot, check)
                     grant = None
                     workspace_id = run.workspace_id
                 else:
+                    assert request.thread_id is not None
                     grant = snapshot.authorize(
                         request.caller,
                         thread_id=request.thread_id,
@@ -97,10 +130,6 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
                         cleanup=check.renewing or request.allows_cancelled_owner,
                     )
                     mount, workspace_id = grant.mount, grant.workspace_id
-                pair = rows.get(request.environment_id)
-                if pair is None:
-                    raise LeaseLost()
-                environment, config = pair
                 if environment.workspace_id != workspace_id or environment.id != attachment.environment_id:
                     raise LeaseLost()
                 scope = WorkspaceScope(environment.organization_id, workspace_id)
@@ -112,7 +141,14 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
                         authorize(grant.principal, scope, "run", authority=grant.authority)
                     provider_row, managed_deployment = provider_entry
                     provider = resolved_provider(provider_row, managed_deployment=managed_deployment)
-                    binding = outbound.binding_for(runtime.registry, environment, provider, executing=True)
+                    binding = outbound.binding_for(
+                        runtime.registry,
+                        environment,
+                        provider,
+                        executing=True,
+                        lifecycle=lifecycle,
+                        at=snapshot.current,
+                    )
                     if (binding.device_id, binding.credential_version) != (
                         attachment.device_id,
                         attachment.credential_version,
@@ -156,6 +192,7 @@ async def resolve_many(runtime: Runtime, checks: Sequence[Check]) -> list[Enviro
 def retained_mount(snapshot: ControlSnapshot, check: Check) -> tuple[RunRow, EnvironmentMount]:
     """Existing-work authority is restricted to the admitted Shell and its native resources."""
     request = check.request
+    assert isinstance(request.caller, Caller) and request.thread_id is not None
     run = snapshot.owner(request.caller, thread_id=request.thread_id, cleanup=True)
     execution = snapshot.executions.get(request.caller.execution_id or "")
     if execution is None or execution.shell is None:

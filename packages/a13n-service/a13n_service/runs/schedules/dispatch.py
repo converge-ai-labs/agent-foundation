@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra.audit import record
 from a13n_service.infra.db import advisory_lock, after_commit, now, transaction
 from a13n_service.infra.errors import IDEMPOTENCY_KEY_REUSED, RETRY_AFTER, ServiceError, conflict
@@ -156,6 +157,7 @@ async def process(runtime: Runtime, schedule_id: str) -> None:
                     request=None,
                     authority=authority,
                     schedule_occurrence_id=item.id,
+                    provenance=AppProvenance(item.app_id, item.app_context) if item.app_id else None,
                 )
             else:
                 thread = await get_thread(session, row.workspace_id, row.thread_id, lock="acceptance")
@@ -174,6 +176,7 @@ async def process(runtime: Runtime, schedule_id: str) -> None:
                     None,
                     authority=authority,
                     schedule_occurrence_id=item.id,
+                    trigger_app_id=item.app_id,
                 )
             await accept(session, runtime, thread, explicit=source)
             assert source.entry is not None

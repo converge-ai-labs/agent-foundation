@@ -95,6 +95,8 @@ def new_thread(
         organization_id=session_row.organization_id,
         workspace_id=session_row.workspace_id,
         session_id=session_row.id,
+        app_id=session_row.app_id,
+        app_context=session_row.app_context,
         schedule_occurrence_id=schedule_occurrence_id,
         origin=origin,
         origin_thread_id=origin_thread_id,

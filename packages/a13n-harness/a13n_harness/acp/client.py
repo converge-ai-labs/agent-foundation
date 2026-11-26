@@ -116,6 +116,7 @@ class AcpEnvironmentClient:
         self.available_commands: tuple[schema.AvailableCommand, ...] | None = None
         self.session_title: str | None = None
         self.context_window: tuple[int, int] | None = None
+        self.context_window_version: int = 0
         self._terminals: dict[str, _Terminal] = {}
         self._tool_calls: dict[str, schema.ToolCallUpdate] = {}
         self._update_error: Exception | None = None
@@ -166,6 +167,11 @@ class AcpEnvironmentClient:
                 # SDK notification tasks cannot propagate application failure to prompt().
                 self._update_error = exc
 
+    def clear_context_window(self) -> None:
+        """Invalidate cached context occupancy until a newer usage_update arrives."""
+        self.context_window = None
+        self.context_window_version += 1
+
     def _remember_session_update(self, update: AcpUpdate) -> None:
         if isinstance(update, schema.ConfigOptionUpdate):
             self.config_options = update.config_options
@@ -176,6 +182,9 @@ class AcpEnvironmentClient:
             self.session_title = update.title.strip()
         elif isinstance(update, schema.UsageUpdate) and update.size > 0:
             self.context_window = (update.used, update.size)
+            self.context_window_version += 1
+        elif isinstance(update, schema.SessionUpdateCompactionUpdate) and update.status == "completed":
+            self.clear_context_window()
 
     def _tool_call(self, call: schema.ToolCallUpdate) -> schema.ToolCallUpdate:
         prior = self._tool_calls.get(call.tool_call_id)

@@ -22,9 +22,11 @@ from a13n_service.infra.sweeps import Sweep, item
 from a13n_service.resources.environment_instances.access import superseded
 from a13n_service.resources.environment_templates.service import idle_past
 from a13n_service.resources.providers.service import MANUAL_CLOUDFLARE_UNSUPPORTED, manual_cloudflare_provider
-from a13n_service.runs.environments import vercel_snapshots
+from a13n_service.runs.environments import bootstrap_snapshots, vercel_snapshots
 from a13n_service.runs.environments.egress.storage import retire_environment
+from a13n_service.runs.environments.events import publish_after_commit as publish_event
 from a13n_service.runs.environments.lifecycle import (
+    HOOK_CLEANUP_SECONDS,
     LOST,
     PHASES,
     advance,
@@ -55,6 +57,7 @@ async def maintain_environments(runtime: Runtime, *, owner: str) -> None:
     due = select(EnvironmentRow.id).where(
         # Literal, so the partial index on unfinished operations applies.
         text(f"environments.status IN {OPERATIONS}"),
+        EnvironmentRow.operation_progress["hook_blocked"].as_boolean().is_not(True),
         # Keep historical outcomes, but this provider cannot dispatch or reconcile them anymore.
         EnvironmentRow.failure["code"].astext.is_distinct_from(MANUAL_CLOUDFLARE_UNSUPPORTED),
         # Settled preparation failures wait for retirement, not another dispatch.
@@ -187,11 +190,16 @@ async def _retire_idle(runtime: Runtime, phase: Literal["stopping", "deleting"],
             if environment.provider_identity is None:
                 await retire_environment(session, environment.id)
                 environment.status = "deleted"
+                await bootstrap_snapshots.discard(session, environment.id)
                 environment.operation_id = environment.operation_started_at = environment.operation_deadline = None
                 environment.next_operation_at = None
                 environment.operation_unsettled = False
+                environment.operation_progress = None
+                publish_event(session, runtime, environment, "deleted", reason=reason)
             else:
-                await begin(session, environment, phase)
+                await begin(
+                    session, environment, phase, environment_hooks=runtime.environment_hooks, delete_reason=reason
+                )
             record(
                 session,
                 WorkspaceScope(environment.organization_id, environment.workspace_id),
@@ -230,12 +238,13 @@ async def _logged(call: Callable[[str], Awaitable[None]], environment_id: str, s
 def maintenance_sweep(runtime: Runtime) -> Sweep:
     settings = runtime.settings.environments
     owner = new_object_id("ctl")
+    hook_budget = sum(hook.timeout + HOOK_CLEANUP_SECONDS for _, hook in runtime.environment_hooks)
     return Sweep(
         name="maintain_environments",
         every=settings.scan_seconds,
         run=partial(maintain_environments, runtime, owner=owner),
         # Two claims' worth: the dispatched calls are bounded by their deadlines and publication.
-        timeout=settings.operation_seconds * 2 + 30,
+        timeout=(settings.operation_seconds + hook_budget) * 2 + 30,
     )
 
 

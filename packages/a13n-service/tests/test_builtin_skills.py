@@ -132,6 +132,17 @@ async def test_custom_agent_uses_host_builtin_and_publishes_only_workspace_skill
     assert "/platform-skills" in first and "/platform-instance" in first
     assert "# Platform operations" in json.dumps(requests[-1])
     root = service.runtime.settings.provisioning.local.root / run["environment_mounts"][0]["environment_id"]
+    assert not root.exists()
+    [document] = re.findall(r"<path>(/workspace/[^<>\s]+/code-review)</path>", first)
+    scripted_model.call("view", {"file_path": f"{document}/SKILL.md"}, call_id="workspace-skill")
+    scripted_model.say("Read the workspace skill")
+    submitted = await runs_kit.start_thread(service, agent, "Read the workspace skill")
+    await (await runs_kit.attempt(service))
+    run = await runs_kit.get_run(service, submitted["run"]["id"])
+    [mount] = run["environment_mounts"]
+    root = service.runtime.settings.provisioning.local.root / mount["environment_id"]
+    await scripted_model.request()
+    assert "code-review" in json.dumps(await scripted_model.request())
     assert not list(root.rglob(NAME))
     assert len(list((root / ".agents").rglob("SKILL.md"))) == 1
 

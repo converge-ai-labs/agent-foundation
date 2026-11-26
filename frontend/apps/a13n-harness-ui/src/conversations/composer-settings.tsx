@@ -30,6 +30,7 @@ import {
   CaretRight,
   Check,
   CaretDown,
+  CircleNotch,
   X,
 } from "@phosphor-icons/react";
 import styles from "./composer-settings.module.css";
@@ -60,12 +61,14 @@ export function ComposerSettings({
   className,
   label,
   triggerDescription,
+  loading = false,
   onOpen,
 }: {
   children: ReactNode;
   className?: string;
   label?: ReactNode;
   triggerDescription?: string;
+  loading?: boolean;
   onOpen?: () => void;
 }) {
   const { t } = useTranslation();
@@ -129,11 +132,20 @@ export function ComposerSettings({
         document.activeElement.blur();
     },
   };
+  const triggerIcon = loading ? (
+    <CircleNotch
+      className={styles.loadingIndicator}
+      aria-hidden="true"
+      data-acp-loading=""
+    />
+  ) : (
+    <CaretDown aria-hidden="true" />
+  );
   return mobile ? (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger render={trigger} {...triggerProps}>
         <span>{label ?? t("Model")}</span>
-        <CaretDown aria-hidden="true" />
+        {triggerIcon}
       </DialogTrigger>
       <DialogPopup
         bottomStickOnMobile
@@ -147,7 +159,7 @@ export function ComposerSettings({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger render={trigger} {...triggerProps}>
         <span>{label ?? t("Model")}</span>
-        <CaretDown aria-hidden="true" />
+        {triggerIcon}
       </PopoverTrigger>
       <PopoverPopup side="top" align="end" className={styles.popup}>
         {content}

@@ -67,7 +67,7 @@ async def create_app_credential_in_transaction(
     if len(app_id) > 128:
         raise invalid("app_id", "Credential owner ID must be at most 128 characters")
     actor = await app_actor(session, runtime, scope, actor_id)
-    return await service.insert_credential(session, runtime.keys, actor, scope, body, owner_app_id=app_id)
+    return await service.insert_credential(session, runtime.keys, actor, scope, body, app_id=app_id)
 
 
 async def _owned(
@@ -81,7 +81,7 @@ async def _owned(
     query = select(CredentialRow).where(
         CredentialRow.id == credential_id,
         CredentialRow.workspace_id == workspace_id,
-        CredentialRow.owner_app_id == app_id,
+        CredentialRow.app_id == app_id,
     )
     return await session.scalar(query.with_for_update().execution_options(populate_existing=True) if lock else query)
 

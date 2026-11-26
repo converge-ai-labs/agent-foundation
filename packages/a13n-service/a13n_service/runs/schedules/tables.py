@@ -16,13 +16,15 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.app_provenance import AppOwned, app_context_requires_owner, guard_app_provenance
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules, trigger
 
 
-class ScheduleRow(Stamped, Base):
+class ScheduleRow(AppOwned, Stamped, Base):
     __tablename__ = "schedules"
     KIND: ClassVar[str] = "schedule"
     __table_args__ = (
+        app_context_requires_owner(),
         UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("workspace_id", "id", "session_id"),
         UniqueConstraint("workspace_id", "created_by_id", "create_request_key"),
@@ -69,6 +71,7 @@ class ScheduleRow(Stamped, Base):
         Index("ix_schedules_workspace_created", "workspace_id", "created_at", "id"),
         Index("ix_schedules_due", "next_fire_at", "id", postgresql_where=text("state = 'enabled'")),
         rules(
+            guard_app_provenance("schedules", "app_id", "app_context"),
             identity_guarded("schedules"),
             """
             CREATE FUNCTION guard_schedule() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -119,10 +122,11 @@ class ScheduleRow(Stamped, Base):
     last_occurrence_id: Mapped[str | None] = mapped_column(String(72))
 
 
-class OccurrenceRow(Stamped, Base):
+class OccurrenceRow(AppOwned, Stamped, Base):
     __tablename__ = "schedule_occurrences"
     KIND: ClassVar[str] = "schedule_occurrence"
     __table_args__ = (
+        app_context_requires_owner(),
         ForeignKeyConstraint(["workspace_id", "session_id"], ["sessions.workspace_id", "sessions.id"]),
         UniqueConstraint("schedule_id", "id"),
         UniqueConstraint("workspace_id", "id"),
@@ -199,6 +203,7 @@ class OccurrenceRow(Stamped, Base):
             postgresql_where=text("status = 'pending'"),
         ),
         rules(
+            guard_app_provenance("schedule_occurrences", "app_id", "app_context"),
             """
             CREATE FUNCTION guard_schedule_occurrence() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN

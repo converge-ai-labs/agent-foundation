@@ -1415,3 +1415,147 @@ async def test_harness_acp_client_interoperates_with_ui_agent(tmp_path, monkeypa
             assert await runtime.open_session(setup, saved_session_id=session_id) == session_id
             response = await runtime.prompt([TextContentBlock(text="model check")], binding=AcpRunBinding())
             assert response.stop_reason == "end_turn"
+
+
+@pytest.mark.anyio
+async def test_acp_server_forwards_compaction_only_when_advertised() -> None:
+    from a13n_stream_protocol.fragments import fragment_custom_event
+    from acp.schema import (
+        ClientCapabilities,
+        ClientSessionCapabilities,
+        CompactionCapabilities,
+        SessionUpdateCompactionUpdate,
+    )
+    from ag_ui.core.events import CustomEvent
+
+    sent: list[tuple[str, object]] = []
+
+    class FakeClient:
+        async def session_update(self, session_id: str, update: object, **_: object) -> None:
+            sent.append((session_id, update))
+
+    agent = AcpAgent(cast(HarnessUiApp, SimpleNamespace()))
+    agent.on_connect(cast(Client, FakeClient()))
+
+    # 1. Client does not advertise session.compaction -> never send compaction updates.
+    await agent.initialize(1, client_capabilities=ClientCapabilities())
+    assert not agent.client_supports_compaction
+    turn = _Turn(turn_id="t-1")
+    await agent._custom_update(
+        "s-1",
+        turn,
+        {
+            "type": "CUSTOM",
+            "name": "a13n.harness.context",
+            "value": {"event": {"payload": {"type": "compaction_started", "operation_id": "compaction-1"}}},
+        },
+    )
+    await agent._custom_update(
+        "s-1",
+        turn,
+        {
+            "type": "CUSTOM",
+            "name": "a13n.context.compaction_summary",
+            "value": {"event": {"operation_id": "compaction-1", "summary": "Should not send"}},
+        },
+    )
+    assert sent == []
+
+    # 2. Dict client_capabilities advertising session.compaction works as well.
+    await agent.initialize(1, client_capabilities={"session": {"compaction": {}}})
+    assert agent.client_supports_compaction
+
+    # 3. Typed ClientCapabilities advertising session.compaction forwards lifecycle & summaries in both orderings.
+    await agent.initialize(
+        1,
+        client_capabilities=ClientCapabilities(session=ClientSessionCapabilities(compaction=CompactionCapabilities())),
+    )
+    assert agent.client_supports_compaction
+    turn = _Turn(turn_id="t-2")
+
+    # Ordering A: started -> completed -> summary (inline compaction).
+    await agent._custom_update(
+        "s-1",
+        turn,
+        {
+            "type": "CUSTOM",
+            "name": "a13n.harness.context",
+            "value": {"event": {"payload": {"type": "compaction_started", "operation_id": "compaction-a"}}},
+        },
+    )
+    await agent._custom_update(
+        "s-1",
+        turn,
+        {
+            "type": "CUSTOM",
+            "name": "a13n.harness.context",
+            "value": {"event": {"payload": {"type": "compaction_completed", "operation_id": "compaction-a"}}},
+        },
+    )
+    # Fragmented summary event reassembles and preserves completed status.
+    large_summary = "Summary text " * 5000
+    fragments = fragment_custom_event(
+        CustomEvent(
+            name="a13n.context.compaction_summary",
+            value={"event": {"operation_id": "compaction-a", "summary": large_summary}},
+        ),
+        identity="frag-a",
+    )
+    assert len(fragments) > 1
+    for fragment in fragments:
+        await agent._custom_update("s-1", turn, fragment.model_dump(mode="json", by_alias=True))
+
+    # Ordering B: summary -> completed (background/restored compaction).
+    await agent._custom_update(
+        "s-1",
+        turn,
+        {
+            "type": "CUSTOM",
+            "name": "a13n.context.compaction_summary",
+            "value": {"event": {"operation_id": "compaction-b", "summary": "Restored summary"}},
+        },
+    )
+    await agent._custom_update(
+        "s-1",
+        turn,
+        {
+            "type": "CUSTOM",
+            "name": "a13n.harness.context",
+            "value": {"event": {"payload": {"type": "compaction_completed", "operation_id": "compaction-b"}}},
+        },
+    )
+
+    # Failure maps error_code/reason into error.
+    await agent._custom_update(
+        "s-1",
+        turn,
+        {
+            "type": "CUSTOM",
+            "name": "a13n.harness.context",
+            "value": {
+                "event": {
+                    "payload": {
+                        "type": "compaction_failed",
+                        "operation_id": "compaction-c",
+                        "error_code": "compaction_summary_invalid",
+                        "reason": "empty summary",
+                    }
+                }
+            },
+        },
+    )
+
+    updates = [update for _, update in sent]
+    assert all(isinstance(update, SessionUpdateCompactionUpdate) for update in updates)
+    assert [(u.compaction_id, u.status) for u in updates] == [
+        ("compaction-a", "in_progress"),
+        ("compaction-a", "completed"),
+        ("compaction-a", "completed"),
+        ("compaction-b", "in_progress"),
+        ("compaction-b", "completed"),
+        ("compaction-c", "failed"),
+    ]
+    assert updates[2].summary == [TextContentBlock(type="text", text=large_summary)]
+    assert updates[3].summary == [TextContentBlock(type="text", text="Restored summary")]
+    assert updates[4].summary is None
+    assert updates[5].error == "compaction_summary_invalid: empty summary"

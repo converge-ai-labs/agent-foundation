@@ -18,6 +18,7 @@ from a13n_harness.capabilities.browser import BrowserUseCapability
 from a13n_harness.capabilities.context import RuntimeContextCapability, RuntimeContextConfiguration
 from a13n_harness.capabilities.tool_execution import ToolExecutionCapability
 from a13n_harness.capabilities.web import WebBinding
+from a13n_harness.environment import EnvironmentRunExtension
 from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
 from a13n_harness.tools import ToolIdentity
 from pydantic_ai.capabilities import AbstractCapability, CombinedCapability
@@ -25,6 +26,7 @@ from pydantic_ai.models import Model
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.app_plugins import AppActivation
 from a13n_service.execution_policy import ExecutionPolicy
 from a13n_service.infra.errors import ServiceError, invalid
 from a13n_service.resources.agents import definition, instructions, stored
@@ -49,10 +51,12 @@ from a13n_service.runs.browsers.execution import open_backend
 from a13n_service.runs.browsers.schemas import BrowserBinding
 from a13n_service.runs.builtin_instructions import BuiltinInstructionsCapability
 from a13n_service.runs.calls import CallCheck
+from a13n_service.runs.environments.app_hooks import run_extensions
 from a13n_service.runs.environments.desktop.freshness import Freshness
 from a13n_service.runs.environments.desktop.notify import HandbackNotifications
 from a13n_service.runs.environments.egress.instructions import CredentialInstructionsCapability
 from a13n_service.runs.environments.egress.instructions import render as credential_instructions
+from a13n_service.runs.environments.execution import Source
 from a13n_service.runs.environments.mounts import PRIMARY
 from a13n_service.runs.mcp_apps.capture import Captures
 from a13n_service.runs.memories.execution import (
@@ -185,6 +189,7 @@ class Host:
     webs: Mapping[str, WebBinding]
     browsers: Mapping[str, BrowserBackend]
     environment: EnvironmentRuntime
+    primary_source: Source | None
 
     def capabilities(
         self, agent: ResolvedAgent, *, retain_tools: bool = False
@@ -216,6 +221,11 @@ class Host:
                     runtime=self.runtime,
                     workspace_id=self.lease.workspace_id,
                     prove_lease=partial(prove, self.runtime, self.lease),
+                    defer_materialization=(
+                        self.primary_source.defer_skills
+                        if self.primary_source is not None and agent.definition_id == self.plan.root_definition_id
+                        else None
+                    ),
                 )
             )
         return features
@@ -255,6 +265,8 @@ async def open_host(
     skill_cache: Cache,
     environments: Mapping[str, EnvironmentMount],
     app_captures: Captures | None = None,
+    app_activation: AppActivation | None = None,
+    owner_app_id: str | None = None,
     request_context: RequestContext | None = None,
 ) -> AsyncGenerator[Host]:
     """Connections, web backends and record memory stores stay open until the context exits; every paid call
@@ -342,6 +354,8 @@ async def open_host(
             )
         if memory:
             tools[plan.root_definition_id]["memory"] = CombinedCapability(memory)
+        primary = environments.get(PRIMARY)
+        source = primary.source if primary is not None else None
         yield Host(
             runtime,
             lease,
@@ -353,7 +367,13 @@ async def open_host(
             tools,
             webs,
             browsers,
-            _environment(environments, platform_mounts, command_environment=plan.execution.environment),
+            _environment(
+                environments,
+                platform_mounts,
+                command_environment=plan.execution.environment,
+                extensions=run_extensions(runtime, app_activation, owner_app_id),
+            ),
+            source if isinstance(source, Source) else None,
         )
 
 
@@ -362,11 +382,15 @@ def _environment(
     builtin: Mapping[str, EnvironmentMount],
     *,
     command_environment: Mapping[str, str] | None = None,
+    extensions: tuple[EnvironmentRunExtension, ...] = (),
 ) -> EnvironmentRuntime:
     """Preserve the user's default while adding non-default Host document mounts."""
     if user.keys() & builtin.keys():
         raise ServiceError("invalid_argument", "Environment names conflict with builtin Skill mounts")
     default = PRIMARY if PRIMARY in user else next(iter(user)) if len(user) == 1 else None
     return create_environment_runtime(
-        mounts={**user, **builtin}, default_mount=default, command_environment=command_environment
+        mounts={**user, **builtin},
+        default_mount=default,
+        command_environment=command_environment,
+        extensions=extensions,
     )

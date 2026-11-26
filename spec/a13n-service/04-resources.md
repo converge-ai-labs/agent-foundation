@@ -88,7 +88,7 @@ agent_revisions   revision columns; config: AgentConfig
 - `default_environment_template_id`: referenced, not pinned; it is read when an environment is created from it, never during execution.
 - `default_environment_id`: an existing environment in the workspace, mutually exclusive with `default_environment_template_id`. Publication checks caller access; acceptance rechecks the execution principal. It supplies `workspace` only when a non-child thread has no primary mount and never grants access to another principal's private device.
 - `default_session_configuration`: optional initial policy for a new primary Session binding, including workspace credential references. An existing binding keeps its desired configuration. A Run's explicit Session selection replaces that selection for the Run without editing Thread defaults ([Session credentials](06-environments.md#session-credentials)). Omission preserves historical configuration serialization.
-- `lazy_environment`: defaults to `true`; `false` creates or starts all frozen mounted instances before entering Harness, while execution connections still open on first use ([06](06-environments.md#execution)). A Run may override it through `options.overrides`.
+- `lazy_environment`: selects [on-demand, parallel warmup, or eager instance preparation](06-environments.md#execution). The default `true` means `on_demand`; `false` means `eager`. A Run may override it through `options.overrides`.
 - `memory`: defaults for new sessions' memory settings, snapshotted at first business acceptance unless explicitly configured ([11](11-memory.md#session-selection-and-run-views)). A run override cannot change these defaults.
 - `memory_mounts`: default memory mounts `{name, memory_id, access, recall}`, at most 32 with unique names and memories, which a thread takes at its first acceptance ([11](11-memory.md#mounts)). They are referenced, not pinned, and a run's override cannot change them.
 
@@ -291,6 +291,8 @@ The model sees a skill by the `name` its pinned revision's `SKILL.md` declares; 
 
 ### Skill materialization
 
+For a conversation root, pinned revision manifests provide the catalog before inference without opening the primary Environment. Shared synchronization and isolated package placement run when that mount opens, before the first operation uses it. An inline child synchronizes its own selection in the parent's shared Environment.
+
 Service loads each missing revision as its verified original ZIP and manifest and passes it to the Environment archive operation. Native sandbox providers receive one archive per skill and extract it inside the sandbox. Independent archive reads and package preparation use bounded concurrency. Cache pin creation, existence checks, recency writes, and release use bounded file batches across skills. Shared publication retains selection order; isolated packages publish independently. Preparation stops admitting new work after a failure and waits for already admitted work to settle before returning the error. An uncertain pin-creation batch retains all of its dispatched pins, preventing cleanup from racing late creation. Service publishes only a completely extracted candidate; a failed transfer or extraction cannot publish a partial skill. Shared publication stages all candidates in one directory and removes it after a failure, except after a move whose outcome is unknown. Archive transfer uses the same pinned file scope and directory-publication rules as other materialization operations.
 
 Each Agent chooses one `skill_sync` block, independently of its skill selections and its parent Agent's policy:
@@ -448,7 +450,7 @@ An egress credential is a workspace-owned, write-only static token for a control
 
 ```
 egress_credentials   (ecred_)
-  id  organization_id  workspace_id  name  description  owner_app_id NULL  allowed_hosts JSONB  value JSONB NULL
+  id  organization_id  workspace_id  name  description  app_id NULL  allowed_hosts JSONB  value JSONB NULL
   state  credential_version  version  created_by_id  updated_by_id  created_at  updated_at  revoked_at NULL
   UNIQUE (workspace_id, id)
   state IN ('active', 'revoked')
@@ -459,7 +461,7 @@ egress_credentials   (ecred_)
 
 `POST /egress-credentials` creates an active credential at credential version 1. `GET` lists it newest-first or reads one resource. `PATCH` edits only name and description. `PUT /egress-credentials/{id}/value` replaces the encrypted value and increments `credential_version`; `POST /egress-credentials/{id}/revoke` clears the value, records `revoked_at` and increments the same counter. Both return 202 after database commit: saving a version does not prove that every existing Session has applied it. Mutations of an existing resource require its `If-Match`. Metadata edits advance only the ordinary resource version; encryption-key rewrapping does not itself rotate the upstream token. Revocation is final and retained resources are not hard-deleted.
 
-`owner_app_id` is nullable, immutable metadata. `NULL` denotes an operator-owned credential. An installed App enabled for the organization can create, rotate and revoke only its own credentials through the [App SDK](15-app-plugins.md#app-sdk). The ordinary list/detail and synchronization request retain their existing permissions; operator metadata changes, rotation and revocation return `409 app_managed_credential` for an App-owned credential. App mutations record the acting principal and App ID in audit, and value changes publish the same post-commit version hint as operator changes.
+`app_id` is nullable, immutable metadata. `NULL` denotes an operator-owned credential. An installed App enabled for the organization can create, rotate and revoke only its own credentials through the [App SDK](15-app-plugins.md#app-sdk). The ordinary list/detail and synchronization request retain their existing permissions; operator metadata changes, rotation and revocation return `409 app_managed_credential` for an App-owned credential. App mutations record the acting principal and App ID in audit, and value changes publish the same post-commit version hint as operator changes.
 
 Management reads are explicitly admitted to MCP. Credential writes are excluded from management MCP and Run platform tools. Audit actions are `egress_credential.create`, `.update`, `.rotate` and `.revoke`; details contain changed field names or the credential version, never the value. Envd Session references, application evidence and lifecycle are owned by [Environments](06-environments.md).
 

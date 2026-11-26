@@ -240,7 +240,10 @@ def test_workflow_is_metadata_only_and_registered_in_automation_ci():
     ci = yaml.load((ROOT / ".github/workflows/ci-automation.yml").read_text(), Loader=yaml.BaseLoader)
     for event in ("push", "pull_request"):
         assert "scripts/tests/test_welcome_contributor.py" in ci["on"][event]["paths"]
-    assert "scripts/tests/test_welcome_contributor.py" in ci["jobs"]["release-tooling"]["steps"][-1]["run"]
+    test_step = next(
+        step for step in ci["jobs"]["release-tooling"]["steps"] if step.get("name") == "Test release tooling"
+    )
+    assert "scripts/tests/test_welcome_contributor.py" in test_step["run"]
     from scripts.verify_dependencies import tests_for
 
     assert Path(__file__) in tests_for(".github/workflows/welcome-contributor.yml", ROOT)

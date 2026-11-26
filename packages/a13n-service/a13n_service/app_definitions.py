@@ -5,11 +5,14 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from importlib.metadata import entry_points
 from types import MappingProxyType
+from typing import Literal
 
 from fastapi import APIRouter
 
 from a13n_service.app_database import AppDatabase
 from a13n_service.app_plugins import AppManifest, Frontend
+from a13n_service.app_sdk.hooks import EnvironmentLifecycleHook, EnvironmentRunHook, HookScope, validate_hook
+from a13n_service.runs.environments.events import EnvironmentEvent, EventKind
 from a13n_service.runs.runtime import Runtime
 from a13n_service.runs.schemas import Sealed
 from a13n_service.runs.seal_events import RunSealEvent
@@ -32,16 +35,34 @@ class RunSealSubscription:
 
     run: Callable[[Runtime, RunSealEvent], Awaitable[object]]
     timeout: float = 5.0
+    scope: Literal["app", "organization"] = "app"
     statuses: frozenset[Sealed] = frozenset({"completed", "failed", "cancelled"})
 
     def __post_init__(self) -> None:
         if (
-            not 0 < self.timeout <= 30
+            self.scope not in ("app", "organization")
+            or not 0 < self.timeout <= 30
             or not self.statuses
             or not self.statuses <= {"completed", "failed", "cancelled", "waiting"}
         ):
             raise ValueError("Invalid Run seal subscription")
         object.__setattr__(self, "statuses", frozenset(self.statuses))
+
+
+@dataclass(frozen=True)
+class EnvironmentEventSubscription:
+    """A bounded best-effort callback for committed Environment transitions."""
+
+    run: Callable[[Runtime, EnvironmentEvent], Awaitable[object]]
+    timeout: float = 5.0
+    scope: HookScope = "app"
+    events: frozenset[EventKind] = frozenset({"ready", "stopped", "deleted", "lost", "recreated"})
+
+    def __post_init__(self) -> None:
+        validate_hook(self.scope, self.timeout)
+        if not self.events or not self.events <= {"ready", "stopped", "deleted", "lost", "recreated"}:
+            raise ValueError("Invalid Environment event subscription")
+        object.__setattr__(self, "events", frozenset(self.events))
 
 
 @dataclass(frozen=True)
@@ -54,11 +75,17 @@ class AppDefinition:
     settings: Mapping[str, type[Section]] = field(default_factory=dict)
     sweeps: tuple[OrganizationSweep, ...] = ()
     run_seals: tuple[RunSealSubscription, ...] = ()
+    environment_hooks: tuple[EnvironmentLifecycleHook, ...] = ()
+    environment_run_hooks: tuple[EnvironmentRunHook, ...] = ()
+    environment_events: tuple[EnvironmentEventSubscription, ...] = ()
     startup: Callable[[Runtime, AsyncExitStack], Awaitable[None]] | None = None
     frontend: Frontend | None = None
     database: AppDatabase | None = None
 
     def __post_init__(self) -> None:
+        phases = {hook.phase for hook in self.environment_hooks}
+        if len(phases) != len(self.environment_hooks):
+            raise ValueError("An App can declare at most one hook per Environment lifecycle phase")
         if self.database is not None:
             if self.database.app_id != self.app_id:
                 raise ValueError("App database identity must match its AppDefinition")

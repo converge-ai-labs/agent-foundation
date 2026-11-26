@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
+from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra import cursors
 from a13n_service.infra.db import short_session
 from a13n_service.infra.errors import ServiceError, invalid, not_found
@@ -45,11 +46,12 @@ async def prepare_admission(
     principal_id: str,
     *,
     app_id: str,
+    app_context: dict[str, str] | None = None,
 ) -> Admission:
     """Call before locking App state or Threads in the outer Service transaction."""
     scope = await app_workspace(session, runtime, workspace_id, app_id)
     actor = await run_actor(session, runtime, scope, principal_id)
-    native = submit.AppSubmission(session, runtime, workspace_id, actor)
+    native = submit.AppSubmission(session, runtime, workspace_id, actor, AppProvenance(app_id, app_context))
     session.info["a13n.app_submission"] = native
     return Admission(native)
 

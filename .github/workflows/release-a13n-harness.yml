@@ -37,6 +37,7 @@ jobs:
         uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+          cache-suffix: py3.13-release-harness
 
       - name: Prepare release version
         id: version

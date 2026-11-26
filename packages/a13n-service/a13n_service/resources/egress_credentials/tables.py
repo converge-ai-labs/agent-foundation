@@ -38,7 +38,7 @@ class CredentialRow(Stamped, Base):
             """
             CREATE FUNCTION guard_egress_credential() RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
-                IF NEW.owner_app_id IS DISTINCT FROM OLD.owner_app_id
+                IF NEW.app_id IS DISTINCT FROM OLD.app_id
                 THEN RAISE EXCEPTION 'credential App ownership is immutable'; END IF;
                 IF NEW.allowed_hosts IS DISTINCT FROM OLD.allowed_hosts
                 THEN RAISE EXCEPTION 'credential injection hosts are immutable'; END IF;
@@ -60,7 +60,7 @@ class CredentialRow(Stamped, Base):
     workspace_id: Mapped[str]
     name: Mapped[str]
     description: Mapped[str]
-    owner_app_id: Mapped[str | None] = mapped_column(String(128))
+    app_id: Mapped[str | None] = mapped_column(String(128))
     allowed_hosts: Mapped[list[str]] = mapped_column(JSONB)
     value: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))
     state: Mapped[str] = mapped_column(server_default=text("'active'"))

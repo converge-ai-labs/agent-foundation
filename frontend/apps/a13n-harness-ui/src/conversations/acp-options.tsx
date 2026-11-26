@@ -1,14 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import type { TFunction } from "i18next";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "../i18n";
+import { errorMessage } from "../i18n/error-message";
 import {
   acpModelIdentity,
   ModelIcon,
   ModelIdentity,
 } from "../shell/model-identity";
 import { ErrorNotice } from "../shell/ui";
-import { result, type Schema } from "../transport/client";
+import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
+import type { ComposerBlock } from "./composer";
 import {
   SettingsChoices,
   SettingsRow,
@@ -45,6 +48,176 @@ export function useAcpOptions(
   });
 }
 
+export function useAcpOptionChange(
+  threadId: string,
+  active: boolean,
+  agentId?: string,
+  continuation?: string | null,
+) {
+  const transport = useTransport();
+  const queries = useQueryClient();
+  const scopeKey = JSON.stringify([threadId, agentId, continuation]);
+  const activeScope = useRef(scopeKey);
+  activeScope.current = scopeKey;
+  const activeRun = useRef(active);
+  activeRun.current = active;
+  const mutation = useMutation({
+    mutationFn: ({
+      change,
+      threadId: targetThreadId,
+    }: {
+      change: Schema<"AcpOptionChange">;
+      threadId: string;
+      scopeKey: string;
+      queryKey: readonly [
+        "thread",
+        string,
+        "acp-options",
+        string | undefined,
+        string | null | undefined,
+      ];
+    }) =>
+      result(
+        transport.client.PUT("/api/threads/{thread_id}/acp-options", {
+          params: { path: { thread_id: targetThreadId } },
+          body: change,
+        }),
+      ),
+    onSuccess: async (updated, vars) => {
+      await queries.cancelQueries({ queryKey: vars.queryKey, exact: true });
+      if (activeScope.current !== vars.scopeKey || activeRun.current) return;
+      queries.setQueryData(vars.queryKey, updated);
+      void queries.invalidateQueries({
+        queryKey: ["thread", vars.threadId, "context-usage"],
+      });
+    },
+  });
+  const reset = mutation.reset;
+  useEffect(() => {
+    reset();
+  }, [scopeKey, active, reset]);
+  const matchesScope = mutation.variables?.scopeKey === scopeKey;
+  const isPending = !active && mutation.isPending && matchesScope;
+  const error = !active && matchesScope ? mutation.error : null;
+  const mutate = (change: Schema<"AcpOptionChange">) => {
+    if (active) return;
+    mutation.mutate({
+      change,
+      threadId,
+      scopeKey,
+      queryKey: [
+        "thread",
+        threadId,
+        "acp-options",
+        agentId,
+        continuation,
+      ] as const,
+    });
+  };
+  const retry = () => {
+    if (active || !matchesScope || !mutation.variables) return;
+    mutation.mutate(mutation.variables);
+  };
+  return {
+    mutate,
+    retry,
+    reset,
+    isPending,
+    error,
+  };
+}
+
+export function acpRunBlock({
+  agentName,
+  hasData,
+  isFetching,
+  isError,
+  error,
+  onRetryLoad,
+  updating,
+  updateError,
+  onRetryUpdate,
+  onDismissUpdateError,
+  acpAuthPath,
+  t,
+}: {
+  agentName: string;
+  hasData: boolean;
+  isFetching: boolean;
+  isError: boolean;
+  error: unknown;
+  onRetryLoad: () => void;
+  updating: boolean;
+  updateError: unknown;
+  onRetryUpdate?: () => void;
+  onDismissUpdateError: () => void;
+  acpAuthPath?: string;
+  t: TFunction;
+}): ComposerBlock | null {
+  if (updating)
+    return {
+      kind: "loading",
+      message: t("Updating {{agent}} options…", { agent: agentName }),
+    };
+  if (updateError)
+    return {
+      kind: "error",
+      message: t("Could not update {{agent}} options.", { agent: agentName }),
+      detail: errorMessage(updateError, t),
+      showWhenEmpty: true,
+      action: onRetryUpdate
+        ? { label: t("Retry"), onClick: onRetryUpdate }
+        : undefined,
+      secondaryAction: {
+        label: t("Keep current"),
+        onClick: onDismissUpdateError,
+      },
+    };
+  // Check isFetching before isError so TanStack Query v5 retries immediately
+  // transition back to loading while a prior error is still retained.
+  if (isFetching || (!hasData && !isError))
+    return {
+      kind: "loading",
+      message: hasData
+        ? t("Refreshing {{agent}} options…", { agent: agentName })
+        : t("Loading {{agent}} options…", { agent: agentName }),
+    };
+  if (isError || error) {
+    const code = error instanceof ApiError ? error.code : undefined;
+    if (code === "acp_auth_required")
+      return {
+        kind: "action_required",
+        message: t("Sign in to {{agent}} before sending.", {
+          agent: agentName,
+        }),
+        showWhenEmpty: true,
+        action: acpAuthPath
+          ? { label: t("Open Agent authentication"), to: acpAuthPath }
+          : { label: t("Retry"), onClick: onRetryLoad },
+        secondaryAction: acpAuthPath
+          ? { label: t("Retry"), onClick: onRetryLoad }
+          : undefined,
+      };
+    if (code === "acp_agent_missing")
+      return {
+        kind: "error",
+        message: t(
+          "The selected ACP agent is no longer available. Choose another agent or check Settings.",
+        ),
+        showWhenEmpty: true,
+        action: { label: t("Retry"), onClick: onRetryLoad },
+      };
+    return {
+      kind: "error",
+      message: t("Could not load {{agent}} options.", { agent: agentName }),
+      detail: errorMessage(error, t),
+      showWhenEmpty: true,
+      action: { label: t("Retry"), onClick: onRetryLoad },
+    };
+  }
+  return null;
+}
+
 export function acpModelOption(options?: Schema<"AcpOption">[]) {
   return options?.find(
     (option) => option.category === "model" || option.id === "model",
@@ -69,6 +242,7 @@ export function AcpOptions({
   preset,
   continuation,
   options,
+  change,
 }: {
   threadId: string;
   active: boolean;
@@ -76,30 +250,15 @@ export function AcpOptions({
   preset?: string | null;
   continuation?: string | null;
   options: ReturnType<typeof useAcpOptions>;
+  change?: ReturnType<typeof useAcpOptionChange>;
 }) {
-  const transport = useTransport();
-  const queries = useQueryClient();
-  const key = [
-    "thread",
+  const internalChange = useAcpOptionChange(
     threadId,
-    "acp-options",
+    active,
     agentId,
     continuation,
-  ] as const;
-  const params = { path: { thread_id: threadId } };
-  const select = useMutation({
-    mutationFn: (body: Schema<"AcpOptionChange">) =>
-      result(
-        transport.client.PUT("/api/threads/{thread_id}/acp-options", {
-          params,
-          body,
-        }),
-      ),
-    onSuccess: async (updated) => {
-      await queries.cancelQueries({ queryKey: key, exact: true });
-      queries.setQueryData(key, updated);
-    },
-  });
+  );
+  const select = change ?? internalChange;
   return (
     <AcpOptionFields
       options={options.data}

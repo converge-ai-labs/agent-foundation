@@ -595,7 +595,7 @@ it("shows App ownership and preserves inspection and sync without editing contro
   fetcher.mockImplementation(async (request) =>
     new URL(request.url).pathname.endsWith("/sessions")
       ? sessionPage([])
-      : json({ ...credential, owner_app_id: "claw" }),
+      : json({ ...credential, app_id: "claw" }),
   );
   detail();
   await screen.findByText("Managed by claw");

@@ -40,7 +40,12 @@ import coordinatorStyles from "./coordinator.module.css";
 import { ErrorNotice } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
-import { Composer, submitContinuation, useDraft } from "./composer";
+import {
+  Composer,
+  submitContinuation,
+  useDraft,
+  type ComposerBlock,
+} from "./composer";
 import type { DictationTarget } from "./dictation-context";
 import { useDebug } from "../shell/debug";
 import {
@@ -54,6 +59,8 @@ import {
   AcpOptions,
   acpModelOption,
   acpOptionLabel,
+  acpRunBlock,
+  useAcpOptionChange,
   useAcpOptions,
 } from "./acp-options";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
@@ -756,6 +763,12 @@ function ConversationContent({
     acpAgent,
     detail.data?.continuation_id,
   );
+  const acpChange = useAcpOptionChange(
+    threadId,
+    acpActive,
+    acpAgent,
+    detail.data?.continuation_id,
+  );
   const acpCommands = useQuery({
     queryKey: [
       "thread",
@@ -776,9 +789,14 @@ function ConversationContent({
       ),
   });
   useEffect(() => {
-    if (acpOptions.isSuccess) void acpCommands.refetch();
+    if (acpOptions.isSuccess) {
+      void acpCommands.refetch();
+      void queries.invalidateQueries({
+        queryKey: ["thread", threadId, "context-usage"],
+      });
+    }
   }, [acpOptions.dataUpdatedAt]);
-  const sources = useSources();
+  const sources = useSources(!!acpAgent);
   const acpSource =
     acpAgent &&
     sources.data?.sources.find(
@@ -917,6 +935,78 @@ function ConversationContent({
         return [{ attachment_id: attachment.attachment_id }];
       return part.text && part.text !== "[Attachment]" ? [part.text] : [];
     }) ?? [];
+  const acpBlock =
+    acpOptionsEnabled && !acpActive
+      ? acpRunBlock({
+          agentName:
+            selectors.data?.agents.find((item) => item.agent_id === acpAgent)
+              ?.name ??
+            acpAgent ??
+            "",
+          hasData: acpOptions.data !== undefined,
+          isFetching: acpOptions.isFetching,
+          isError: acpOptions.isError,
+          error: acpOptions.error,
+          onRetryLoad: () => void acpOptions.refetch(),
+          updating: acpChange.isPending,
+          updateError: acpChange.error,
+          onRetryUpdate: acpChange.retry,
+          onDismissUpdateError: acpChange.reset,
+          acpAuthPath,
+          t,
+        })
+      : null;
+  const runBlock: ComposerBlock | null =
+    !detail.data && !detail.isError
+      ? { kind: "loading", message: t("Loading chat…") }
+      : detail.isError
+        ? {
+            kind: "error",
+            message: t("Could not load chat."),
+            coveredByFeedback: true,
+          }
+        : agentSelection.isPending
+          ? { kind: "loading", message: t("Updating chat settings…") }
+          : agentSelection.isError
+            ? {
+                kind: "error",
+                message: t("Could not update chat settings."),
+                coveredByFeedback: true,
+              }
+            : acpBlock
+              ? acpBlock
+              : !!runAgent && runChoices.pending
+                ? selectors.isError
+                  ? {
+                      kind: "error",
+                      message: t("Could not load model settings."),
+                      coveredByFeedback: true,
+                    }
+                  : {
+                      kind: "loading",
+                      message: t("Loading model settings…"),
+                    }
+                : thread?.root_activity.state === "inactive" &&
+                    !detail.data?.available_actions?.includes("run")
+                  ? detail.data?.deferred_requests?.length
+                    ? {
+                        kind: "action_required",
+                        message: guest
+                          ? t("Waiting for the instance owner to respond.")
+                          : t("Respond to pending requests before sending."),
+                        showWhenEmpty: false,
+                      }
+                    : {
+                        kind: "action_required",
+                        message: t(
+                          "Chat status is unavailable or out of date. Refresh before sending.",
+                        ),
+                        action: {
+                          label: t("Refresh chat"),
+                          onClick: reconcile,
+                        },
+                      }
+                  : null;
   const failureNotice = (
     <RootFailureNotice
       lastExecution={thread?.last_execution}
@@ -945,11 +1035,8 @@ function ConversationContent({
             }
       }
       retryDisabled={
-        !detail.data?.available_actions?.includes("run") ||
+        !!runBlock ||
         thread?.root_activity.state !== "inactive" ||
-        agentSelection.isPending ||
-        agentSelection.isError ||
-        detail.isError ||
         draft.submission.kind === "pending" ||
         draft.submission.kind === "unknown" ||
         (draft.submission.kind === "accepted" &&
@@ -1335,16 +1422,15 @@ function ConversationContent({
                       thread,
                       !!detail.data?.deferred_requests?.length,
                     ),
+                    unavailableReason: !thread.configuration.project_id
+                      ? "no_project"
+                      : detail.data?.deferred_requests?.length
+                        ? "pending_requests"
+                        : undefined,
                   }
                 : undefined
             }
-            canRun={
-              (!runAgent || !runChoices.pending) &&
-              !agentSelection.isPending &&
-              !agentSelection.isError &&
-              !detail.isError &&
-              (detail.data?.available_actions?.includes("run") ?? false)
-            }
+            runBlock={runBlock}
             continuationId={detail.data?.continuation_id}
             predictionEnabled={
               (guest
@@ -1361,13 +1447,6 @@ function ConversationContent({
               !detail.isError &&
               (detail.data?.available_actions?.includes("clear_context") ??
                 false)
-            }
-            unavailableReason={
-              agentSelection.isPending
-                ? t("Updating chat settings…")
-                : !detail.data
-                  ? t("Loading chat…")
-                  : undefined
             }
             leadingControls={
               guest ? undefined : thread?.configuration.agent_source.kind ===
@@ -1417,6 +1496,11 @@ function ConversationContent({
                             if (acpOptionsEnabled && !acpActive)
                               void acpOptions.refetch({ cancelRefetch: false });
                           }}
+                          externalLoading={
+                            acpOptionsEnabled &&
+                            !acpActive &&
+                            (acpChange.isPending || acpOptions.isFetching)
+                          }
                           externalModel={acpOptionLabel(
                             modelOption,
                             t("No model selected"),
@@ -1444,6 +1528,7 @@ function ConversationContent({
                                 )?.preset
                               }
                               options={acpOptions}
+                              change={acpChange}
                               continuation={detail.data?.continuation_id}
                             />
                           }

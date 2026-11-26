@@ -20,6 +20,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.app_provenance import AppOwned, app_context_requires_owner, guard_app_provenance
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
 
 type MemoryKind = Literal["file", "record"]
@@ -65,17 +66,18 @@ class MemoryRow(Stamped, Base):
     updated_by_id: Mapped[str] = mapped_column(ForeignKey("principals.id"))
 
 
-class MemorySpaceRow(Stamped, Base):
+class MemorySpaceRow(AppOwned, Stamped, Base):
     """Shared lifecycle and policy around one managed file Memory."""
 
     __tablename__ = "memory_spaces"
     KIND: ClassVar[str] = "memory_space"
     __table_args__ = (
+        app_context_requires_owner(),
         UniqueConstraint("workspace_id", "id"),
         UniqueConstraint("memory_id"),
         ForeignKeyConstraint(["organization_id", "workspace_id"], ["workspaces.organization_id", "workspaces.id"]),
         ForeignKeyConstraint(["workspace_id", "memory_id"], ["memories.workspace_id", "memories.id"]),
-        rules(identity_guarded("memory_spaces")),
+        rules(guard_app_provenance("memory_spaces", "app_id", "app_context"), identity_guarded("memory_spaces")),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))

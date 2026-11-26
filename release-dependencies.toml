@@ -1,0 +1,15 @@
+[a13n-harness]
+a13n-envd-client = ">=0.8.3,<0.9.0"
+a13n-logging = ">=0.2.0,<0.3.0"
+
+[a13n-harness-ui]
+a13n-envd-client = ">=0.8.3,<0.9.0"
+a13n-harness = "==0.43.1"
+a13n-stream-protocol = "==0.43.1"
+a13n-logging = ">=0.2.0,<0.3.0"
+
+[a13n-service]
+a13n-envd-client = ">=0.8.3,<0.9.0"
+a13n-logging = ">=0.2.0,<0.3.0"
+a13n-harness = "==0.43.1"
+a13n-stream-protocol = "==0.43.1"

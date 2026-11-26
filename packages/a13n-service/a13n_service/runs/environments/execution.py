@@ -1,13 +1,27 @@
 """Host-owned mount sources: inert registration, first-use lifecycle and fixed-target connectors."""
 
 import asyncio
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Literal, overload
 
 import anyio
 from a13n_harness import EnvironmentMount as HarnessMount
 from a13n_harness import RunConfiguration
+from a13n_harness.environment._mount_path import (
+    mount_path_from_provider_path,
+    parse_mount_path,
+    provider_path_from_suffix,
+)
+from a13n_harness.environment.bootstrap import (
+    BootstrapCapture,
+    EnvironmentBootstrapSnapshot,
+    FileBootstrapObservation,
+    ProjectGuidanceObservation,
+    WorkspaceOutlineObservation,
+)
 from a13n_harness.environment.commands import BoundProcessHandle
 from a13n_harness.environment.computer import ComputerCall
 from a13n_harness.environment.execution import EnvironmentConnector, EnvironmentExecution
@@ -20,8 +34,11 @@ from a13n_harness.environment.models import (
     EnvironmentOperationFamily,
     EnvironmentState,
 )
+from a13n_harness.environment.mounts import EnvironmentPath
 from a13n_harness.environment.operations import EnvironmentOperations
+from a13n_harness.environment.providers import FileScopeSelection
 from a13n_harness.environment.session_recovery import EnvdSessionBorrower
+from a13n_harness.environment.virtual_files import VirtualFileOperator, _PreparedFile
 from a13n_harness.errors import EnvironmentActivationError
 from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD
 from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD
@@ -29,14 +46,15 @@ from a13n_harness.tool_execution import current_execution, execution_cleanup_act
 from a13n_logging import exception_details, get_logger
 from sqlalchemy import func, select, update
 
-from a13n_service.infra.db import lock, now, transaction
+from a13n_service.infra.db import lock, now, short_session, transaction
 from a13n_service.infra.errors import ServiceError, conflict, not_found
 from a13n_service.providers.environment import envd_policy
+from a13n_service.resources.environment_instances.tables import EnvironmentBootstrapSnapshotRow
 from a13n_service.resources.environment_templates.service import read_template
 from a13n_service.resources.providers.service import resolve_provider
 from a13n_service.resources.providers.tables import EnvironmentProviderRow
 from a13n_service.runs.attempts import AuthorityRevoked, Lease, LeaseLost, lock_lease
-from a13n_service.runs.environments import external
+from a13n_service.runs.environments import bootstrap_snapshots, external
 from a13n_service.runs.environments.adapters import Target, execution_connector, managed_target, provider_identity
 from a13n_service.runs.environments.clients.observations import Incarnation
 from a13n_service.runs.environments.clients.worker import Target as ClientTarget
@@ -62,6 +80,7 @@ class PreparedMount:
     name: str
     working_directory: str | None
     target: Target | ClientTarget
+    generation: int
 
 
 class EnvironmentUnavailable(Exception):
@@ -79,12 +98,109 @@ class Source:
     mount: EnvironmentMount
     descriptor: EnvironmentDescriptor
     provider_key: str
-    state: EnvironmentState | None
+    management_state: EnvironmentState | None
     configuration: RunConfiguration | None = None
     activated: bool = False
     skill_cache: Cache | None = None
     session_recovery: EnvdSessionBorrower | None = None
     client: Incarnation | None = None
+    defer_bootstrap: bool = True
+    bootstrap_snapshot: EnvironmentBootstrapSnapshot | None = None
+    captures: dict[tuple[str, ...], BootstrapCapture] = field(default_factory=dict)
+    observation: tuple[int, datetime, EnvironmentBootstrapSnapshot] | None = None
+    skill_materializer: Callable[..., Awaitable[None]] | None = None
+
+    @property
+    def state(self) -> EnvironmentState | None:
+        state = self.management_state
+        # Outbound mounts use an Envd execution adapter over a different provisioning provider.
+        return state if state is not None and state.provider_key == self.provider_key else None
+
+    @property
+    def working_directory(self) -> str:
+        return (self.mount.working_directory or self.descriptor.working_directory).rstrip("/") or "/"
+
+    def observe_bootstrap(self, key: tuple[str, ...], capture: BootstrapCapture) -> None:
+        self.captures[key] = capture
+
+    def defer_skills(self, materializer: Callable[..., Awaitable[None]]) -> None:
+        self.skill_materializer = materializer
+
+    async def materialize_skills(self, execution: EnvironmentExecution) -> None:
+        if self.skill_materializer is None:
+            return
+        backend = execution.operations.files
+        if backend is None:
+            raise EnvironmentError("Skill placement requires files.", code="environment_unsupported")
+        root = parse_mount_path("/workspace")
+        generation = execution.descriptor.generation
+
+        def select(path: str) -> FileScopeSelection:
+            suffix = parse_mount_path(path).suffix_below(root)
+            if suffix is None:
+                raise EnvironmentError(
+                    "Skill placement is outside the primary mount.", code="environment_selection_invalid"
+                )
+            return FileScopeSelection(
+                path,
+                EnvironmentPath(
+                    mount_id=self.mount.name,
+                    execution_id=execution.execution_id,
+                    path=provider_path_from_suffix(suffix, self.working_directory),
+                ),
+                generation,
+            )
+
+        @asynccontextmanager
+        async def prepare(selection: FileScopeSelection, action: EnvironmentAction) -> AsyncGenerator[_PreparedFile]:
+            if (
+                action not in self.mount.permission_ceiling.operations
+                or action not in execution.descriptor.permissions.operations
+            ):
+                raise EnvironmentError("Skill placement is not permitted.", code="environment_permission_denied")
+            async with self.operation_guard(action):
+                yield _PreparedFile(
+                    selection.resolved_path,
+                    backend,
+                    lambda _: None,
+                    lambda path: mount_path_from_provider_path("/workspace", path, self.working_directory),
+                )
+
+        await self.skill_materializer(files=VirtualFileOperator(select, prepare))
+
+    async def capture_bootstrap(self, execution: EnvironmentExecution, generation: int) -> None:
+        if not self.captures:
+            return
+        observed_at = datetime.now(UTC)
+        files: list[FileBootstrapObservation] = []
+        guidance = None
+        outlines: list[WorkspaceOutlineObservation] = []
+        with anyio.move_on_after(2, shield=True):
+            for capture in self.captures.values():
+                try:
+                    observation = await capture(execution)
+                except (LeaseLost, AuthorityRevoked):
+                    return
+                except Exception as error:
+                    logger.warning(
+                        "Environment bootstrap observation failed",
+                        extra={"exception_details": exception_details(error)},
+                    )
+                    continue
+                if isinstance(observation, FileBootstrapObservation):
+                    files.append(observation)
+                elif isinstance(observation, ProjectGuidanceObservation):
+                    guidance = observation
+                elif isinstance(observation, WorkspaceOutlineObservation):
+                    outlines.append(observation)
+        if files or guidance is not None or outlines:
+            self.observation = (
+                generation,
+                observed_at,
+                EnvironmentBootstrapSnapshot(
+                    files=tuple(files), project_guidance=guidance, workspace_outline=tuple(outlines)
+                ),
+            )
 
     @property
     def environment_id(self) -> str:
@@ -119,7 +235,7 @@ class Source:
 
     @asynccontextmanager
     async def computer_guard(self, call: ComputerCall) -> AsyncGenerator[None]:
-        async with desktop_admission.operation(self.runtime, self.lease, self.mount, self.state, call):
+        async with desktop_admission.operation(self.runtime, self.lease, self.mount, self.management_state, call):
             yield
 
     async def ensure_ready(self) -> EnvironmentConnector:
@@ -152,23 +268,58 @@ class Source:
             if error.code == "unavailable":
                 raise
             raise EnvironmentUnavailable(error.message) from error
-        self.state = prepared.target.state
-        self.activated = True
-        if self.mount.working_directory is not None or self.skill_cache is not None:
-            return _DirectoryConnector(connector, prepared, seconds, self.skill_cache)
-        return connector
+        self.management_state = prepared.target.state
+        return _DirectoryConnector(connector, prepared, seconds, self)
+
+
+@overload
+async def prepare(
+    runtime: Runtime,
+    lease: Lease,
+    principal: Principal,
+    authority: ExecutionAuthority,
+    mount: EnvironmentMount,
+    *,
+    warmup: Literal[False] = False,
+) -> PreparedMount: ...
+
+
+@overload
+async def prepare(
+    runtime: Runtime,
+    lease: Lease,
+    principal: Principal,
+    authority: ExecutionAuthority,
+    mount: EnvironmentMount,
+    *,
+    warmup: Literal[True],
+) -> PreparedMount | None: ...
 
 
 async def prepare(
-    runtime: Runtime, lease: Lease, principal: Principal, authority: ExecutionAuthority, mount: EnvironmentMount
-) -> PreparedMount:
+    runtime: Runtime,
+    lease: Lease,
+    principal: Principal,
+    authority: ExecutionAuthority,
+    mount: EnvironmentMount,
+    *,
+    warmup: bool = False,
+) -> PreparedMount | None:
     """Create or start an instance and publish its state, without building or opening an execution connector."""
     seconds = runtime.settings.environments.wait_seconds
     logger.info("Environment instance preparation requested", extra={"environment_id": mount.environment_id})
     try:
         try:
-            with anyio.fail_after(seconds):
-                prepared = await _ready(runtime, lease, principal, authority, mount, anyio.current_time() + seconds)
+            deadline = anyio.current_time() + seconds
+            if warmup:
+                # A claimed provider call has its own deadline and may publish after the Attempt seals.
+                try:
+                    prepared = await _ready(runtime, lease, principal, authority, mount, deadline)
+                except (LeaseLost, AuthorityRevoked):
+                    return None
+            else:
+                with anyio.fail_after(seconds):
+                    prepared = await _ready(runtime, lease, principal, authority, mount, deadline)
         except TimeoutError as error:
             raise _not_ready(mount.environment_id) from error
     except ServiceError as error:
@@ -196,9 +347,9 @@ async def _ready(
     deadline: float,
 ) -> PreparedMount:
     while True:
-        target, operation = await _inspect(runtime, lease, principal, authority, mount)
-        if target is not None:
-            return PreparedMount(mount.name, mount.working_directory, target)
+        prepared, operation = await _inspect(runtime, lease, principal, authority, mount)
+        if prepared is not None:
+            return prepared
         if operation is not None:
             logger.info(
                 "Environment operation claimed",
@@ -221,7 +372,7 @@ async def _ready(
 
 async def _inspect(
     runtime: Runtime, lease: Lease, principal: Principal, authority: ExecutionAuthority, mount: EnvironmentMount
-) -> tuple[Target | ClientTarget | None, Operation | None]:
+) -> tuple[PreparedMount | None, Operation | None]:
     """Inspect readiness, beginning and claiming new work atomically under the lease and instance locks."""
     async with transaction(runtime.storage) as session:
         _, principal = await lock_owner(session, runtime, lease)
@@ -230,13 +381,19 @@ async def _inspect(
         if environment is None:
             raise not_found("environment", environment_id)
         require_usable(environment, principal.id)
+
+        def selected(target: Target | ClientTarget) -> PreparedMount:
+            return PreparedMount(mount.name, mount.working_directory, target, environment.generation)
+
         if environment.kind == "external":
             assert environment.device_id is not None and mount.working_directory is not None
-            return ClientTarget(environment.id, environment.device_id, mount.working_directory, mount.name), None
+            return selected(
+                ClientTarget(environment.id, environment.device_id, mount.working_directory, mount.name)
+            ), None
         if environment.kind == "external_http":
             # An external target is always ready; it is reached with its own endpoint and token.
             environment.last_used_at = await now(session)
-            return Target(environment.id, external.account(environment), {}, None), None
+            return selected(Target(environment.id, external.account(environment), {}, None)), None
         assert environment.provider_id is not None, "a managed instance has a provider"
         scope = WorkspaceScope(environment.organization_id, environment.workspace_id)
         provider = await resolve_provider(
@@ -271,14 +428,16 @@ async def _inspect(
                 from a13n_service.runs.environments import outbound
 
                 binding = outbound.binding_for(runtime.registry, environment, provider, executing=True)
-                return ClientTarget(
-                    environment.id,
-                    binding.device_id,
-                    plan.working_directory,
-                    mount.name,
-                    handle.state,
+                return selected(
+                    ClientTarget(
+                        environment.id,
+                        binding.device_id,
+                        plan.working_directory,
+                        mount.name,
+                        handle.state,
+                    )
                 ), None
-            return managed_target(runtime.keys, environment, provider, handle), None
+            return selected(managed_target(runtime.keys, environment, provider, handle)), None
         if environment.status == "reserved":
             await begin(session, environment, "creating")
         elif environment.status == "stopped":
@@ -298,6 +457,7 @@ async def open_mounts(
     *,
     configuration: RunConfiguration | None = None,
     skill_cache: Cache | None = None,
+    defer_bootstrap: bool = True,
 ) -> AsyncGenerator[dict[str, HarnessMount]]:
     """Publish inert sources. Only activated instances are marked used on completion."""
     sources: list[Source] = []
@@ -370,21 +530,30 @@ async def open_mounts(
                         }
                     )
                 )
-            sources.append(
-                Source(
-                    runtime,
-                    lease,
-                    principal,
-                    authority,
-                    mount,
-                    descriptor,
-                    provider_key,
-                    state,
-                    configuration,
-                    client=Incarnation(device_id) if device_id else None,
-                    skill_cache=skill_cache if mount.name == PRIMARY else None,
-                )
+            source = Source(
+                runtime,
+                lease,
+                principal,
+                authority,
+                mount,
+                descriptor,
+                provider_key,
+                state,
+                configuration,
+                client=Incarnation(device_id) if device_id else None,
+                skill_cache=skill_cache if mount.name == PRIMARY else None,
+                defer_bootstrap=defer_bootstrap,
             )
+            if defer_bootstrap:
+                row = await session.get(EnvironmentBootstrapSnapshotRow, (environment.id, source.working_directory))
+                if row is not None:
+                    try:
+                        source.bootstrap_snapshot = EnvironmentBootstrapSnapshot.model_validate(row.snapshot)
+                    except ValueError:
+                        logger.warning(
+                            "Invalid environment bootstrap snapshot", extra={"environment_id": environment.id}
+                        )
+            sources.append(source)
     for source in sources:
         source.session_recovery = await runtime.environment_contexts.get(lease, source.mount)
     try:
@@ -402,17 +571,15 @@ async def open_mounts(
             for source in sources
         }
     finally:
-        await _mark_used(runtime, [source.mount.environment_id for source in sources if source.activated])
+        await _mark_used(runtime, [source for source in sources if source.activated])
 
 
 class _DirectoryConnector(EnvironmentConnector):
     """Check the Host's mount selection in the exact execution Harness will own."""
 
-    def __init__(
-        self, connector: EnvironmentConnector, mount: PreparedMount, seconds: float, cache: Cache | None = None
-    ) -> None:
+    def __init__(self, connector: EnvironmentConnector, mount: PreparedMount, seconds: float, source: Source) -> None:
         self._connector, self._mount, self._seconds = connector, mount, seconds
-        self._cache = cache
+        self._source = source
 
     @property
     def provider_key(self) -> str:
@@ -439,20 +606,23 @@ class _DirectoryConnector(EnvironmentConnector):
                 # A shell-only client mount need not grant an extra directory listing.
                 if self._mount.working_directory is not None and not isinstance(self._mount.target, ClientTarget):
                     await _check_directory(self._mount, execution.operations.files)
-            if self._cache is not None:
-                root = self._mount.working_directory or self.descriptor.working_directory
-                return _CacheExecution(execution, self._cache, f"{root.rstrip('/')}/.agents/skill-cache")
-            return execution
+            await self._source.materialize_skills(execution)
+            self._source.activated = True
+            return _MountExecution(execution, self._source, self._mount.generation)
         except BaseException as error:
             if execution is not None:
                 with anyio.CancelScope(shield=True):
                     try:
+                        if (cache := self._source.skill_cache) is not None and (files := execution.operations.files):
+                            await cache.release(
+                                files, root=f"{self._source.working_directory.rstrip('/')}/.agents/skill-cache"
+                            )
                         await execution.close()
                     except BaseException as cleanup_error:
                         error.add_note(f"Environment execution cleanup also failed: {cleanup_error!r}")
-            if isinstance(error, ServiceError):
+            if isinstance(error, (ServiceError, LeaseLost)):
                 raise EnvironmentActivationError(
-                    "Host environment directory validation failed.", code="environment_activation_failed"
+                    "Host environment activation failed.", code="environment_activation_failed"
                 ) from error
             raise
 
@@ -489,30 +659,43 @@ async def _check_directory(item: PreparedMount, files: FileOperator | None) -> N
         ) from error
 
 
-async def _mark_used(runtime: Runtime, environment_ids: list[str]) -> None:
-    """Idle time counts from the end of use; best effort, since a stale mark only stops an instance early."""
-    if not environment_ids:
-        return
-    with anyio.CancelScope(shield=True), anyio.move_on_after(_POLL_SECONDS * 5):
-        try:
-            async with transaction(runtime.storage) as session:
-                await session.execute(
-                    update(EnvironmentRow)
-                    .where(EnvironmentRow.id.in_(sorted(environment_ids)), EnvironmentRow.status == "ready")
-                    .values(last_used_at=func.clock_timestamp())
+async def _mark_used(runtime: Runtime, sources: list[Source]) -> None:
+    """Record end of use and observations, without holding a session across file I/O."""
+    with anyio.move_on_after(_POLL_SECONDS * 5, shield=True):
+        for source in sources:
+            try:
+                async with transaction(runtime.storage) as session:
+                    await session.execute(
+                        update(EnvironmentRow)
+                        .where(EnvironmentRow.id == source.environment_id, EnvironmentRow.status == "ready")
+                        .values(last_used_at=func.clock_timestamp())
+                    )
+            except Exception as error:
+                logger.warning(
+                    "Recording environment use failed", extra={"exception_details": exception_details(error)}
                 )
-        except Exception as error:
-            logger.warning(
-                "Marking environments used failed",
-                extra={"error_type": type(error).__name__, "exception_details": exception_details(error)},
-            )
+            if source.observation is not None:
+                try:
+                    observation = (source.environment_id, source.working_directory, *source.observation)
+                    async with short_session(runtime.storage) as session:
+                        if await bootstrap_snapshots.is_fresh(session, *observation):
+                            continue
+                    async with transaction(runtime.storage) as session:
+                        await lock_owner(session, runtime, source.lease)
+                        await bootstrap_snapshots.save(session, *observation)
+                except (LeaseLost, AuthorityRevoked):
+                    continue
+                except Exception as error:
+                    logger.warning(
+                        "Recording environment bootstrap failed", extra={"exception_details": exception_details(error)}
+                    )
 
 
-class _CacheExecution(EnvironmentExecution):
-    """Release primary-cache pins while the provider file client is still open."""
+class _MountExecution(EnvironmentExecution):
+    """Capture final observations and release primary-cache pins before closing the file client."""
 
-    def __init__(self, execution: EnvironmentExecution, cache: Cache, root: str):
-        self._execution, self._cache, self._root = execution, cache, root
+    def __init__(self, execution: EnvironmentExecution, source: Source, generation: int):
+        self._execution, self._source, self._generation = execution, source, generation
 
     @property
     def provider_key(self) -> str:
@@ -550,7 +733,8 @@ class _CacheExecution(EnvironmentExecution):
 
     async def close(self) -> None:
         try:
-            if files := self._execution.operations.files:
-                await self._cache.release(files, root=self._root)
+            await self._source.capture_bootstrap(self._execution, self._generation)
+            if (cache := self._source.skill_cache) is not None and (files := self._execution.operations.files):
+                await cache.release(files, root=f"{self._source.working_directory.rstrip('/')}/.agents/skill-cache")
         finally:
             await self._execution.close()

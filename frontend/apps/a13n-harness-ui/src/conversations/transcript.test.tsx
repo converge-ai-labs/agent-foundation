@@ -362,3 +362,48 @@ it("keeps truncated saved HTML in source", () => {
   ).toContain("<p>Saved prefix");
   expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
 });
+
+it("renders saved ACP compaction states and diagnostics accurately even without a summary", () => {
+  const entry = {
+    position: 1,
+    message_kind: "response",
+    parts: [
+      {
+        kind: "assistant",
+        text: "",
+        metadata: {
+          "a13n.context": "compaction",
+          operation_id: "cmp-empty-done",
+          "a13n.context.state": "completed",
+          "a13n.acp.observation": "a13n.acp.compaction",
+        },
+      },
+      {
+        kind: "assistant",
+        text: "",
+        metadata: {
+          "a13n.context": "compaction",
+          operation_id: "cmp-failed",
+          "a13n.context.state": "failed",
+          "a13n.context.diagnostics": ["rate_limited"],
+          "a13n.acp.observation": "a13n.acp.compaction",
+        },
+      },
+      {
+        kind: "assistant",
+        text: "",
+        metadata: {
+          "a13n.context": "compaction",
+          operation_id: "cmp-cancelled",
+          "a13n.context.state": "cancelled",
+          "a13n.acp.observation": "a13n.acp.compaction",
+        },
+      },
+    ],
+  } as Schema<"TranscriptEntry">;
+  render(<SavedEntry entry={entry} />);
+  expect(screen.getByText("Completed")).toBeTruthy();
+  expect(screen.getByText("Failed - rate_limited")).toBeTruthy();
+  expect(screen.getByText("Cancelled")).toBeTruthy();
+  expect(screen.queryByText("In progress")).toBeNull();
+});

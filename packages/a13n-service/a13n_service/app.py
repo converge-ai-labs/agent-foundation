@@ -28,6 +28,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from a13n_service.api_access import CredentialAccess
 from a13n_service.app_definitions import InstalledApp, app_databases, discover_apps
 from a13n_service.app_plugin_runtime import (
+    app_environment_events,
     app_routers,
     app_run_seals,
     app_sweeps,
@@ -282,6 +283,11 @@ async def open_runtime(
             plugin_keys=tuple(dict.fromkeys((*config.plugins.keys, *catalog.factory_keys)))
         ),
         apps=catalog,
+        environment_hooks=tuple((app.app_id, hook) for app in apps for hook in app.definition.environment_hooks),
+        environment_run_hooks=tuple(
+            (app.app_id, hook) for app in apps for hook in app.definition.environment_run_hooks
+        ),
+        has_environment_subscribers=any(app.definition.environment_events for app in apps),
         admission=distribution.admission,
         instrumentation=instrumentation,
         # Backends hold no connection between queries, so the query side needs no lifecycle.
@@ -457,6 +463,10 @@ def build_app(
                     runtime.tasks.start(run_sweeps(sweeps), name="control-sweeps", service=True)
                     if any(app.definition.run_seals for app in apps):
                         runtime.tasks.start(app_run_seals(runtime, apps), name="app-run-seals", service=True)
+                    if any(app.definition.environment_events for app in apps):
+                        runtime.tasks.start(
+                            app_environment_events(runtime, apps), name="app-environment-events", service=True
+                        )
                 if executes:
                     runtime.tasks.start(Worker(runtime, execute).run(), name="worker", service=True)
                 app.state.started = True

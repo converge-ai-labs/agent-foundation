@@ -82,6 +82,32 @@ def _parts(item: Item) -> list[dict[str, Any]]:
     value = content.get("value")
     if name == "a13n.acp.plan":
         return [{"kind": "other", "value": value, "metadata": {"a13n.acp.observation": name}}]
+    if name == "a13n.acp.compaction" and isinstance(value, dict):
+        compaction_id = value.get("compactionId")
+        raw_status = value.get("status")
+        mapped_state = {
+            "in_progress": "in-progress",
+            "completed": "completed",
+            "failed": "failed",
+            "cancelled": "cancelled",
+        }.get(raw_status if isinstance(raw_status, str) else "", "in-progress")
+        compaction_metadata: dict[str, Any] = {
+            "a13n.context": "compaction",
+            "operation_id": compaction_id if isinstance(compaction_id, str) and compaction_id else item.id,
+            "a13n.context.state": mapped_state,
+            "a13n.acp.observation": name,
+        }
+        error = value.get("error")
+        if isinstance(error, str) and error:
+            compaction_metadata["a13n.context.diagnostics"] = [error]
+        summary = value.get("summary")
+        return [
+            {
+                "kind": "assistant",
+                "text": summary if isinstance(summary, str) else "",
+                "metadata": compaction_metadata,
+            }
+        ]
     event = value.get("event") if isinstance(value, dict) else None
     if not isinstance(event, dict):
         return []
