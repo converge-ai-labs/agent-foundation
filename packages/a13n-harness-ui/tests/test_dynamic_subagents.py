@@ -62,12 +62,9 @@ def test_defaults_and_invalid_subagent_configuration():
     ):
         with pytest.raises(ValidationError):
             AgentCreationConfiguration.model_validate(bad_creation)
-    for bad_doc in (
-        {"subagents": {"dynamic": {"enabled": True}}},
-        {"subagents": {"dynamic": {"enabled": True}}, "agent_creation": {"allowed_models": ["model-a"]}},
-    ):
-        with pytest.raises(ValidationError):
-            HarnessUiDocument.model_validate(bad_doc)
+    minimal = HarnessUiDocument.model_validate({"subagents": {"dynamic": {"enabled": True}}})
+    assert minimal.subagents.dynamic.enabled
+    assert minimal.agent_creation == creation
     doc = HarnessUiDocument.model_validate(
         {
             "subagents": {"dynamic": {"enabled": True}},
@@ -248,16 +245,17 @@ async def test_delegate_roster_uses_effective_child_models(tmp_path, monkeypatch
 
     async def model(messages, info):
         tools = {tool.name for tool in info.function_tools}
-        if allowed:
+        if "send_parent_message" in tools:
+            yield "CHILD_RESULT"
+        elif not returned(messages):
             assert control_tools <= tools
-            assert "agent-reviewer:" in info.instructions
+            assert ("agent-reviewer:" in info.instructions) == bool(allowed)
             assert guidance("parent") in info.instructions
+            assert "explorer:" in info.instructions
+            yield {0: DeltaToolCall(name="delegate", json_args='{"subagent_name":"explorer","prompt":"Task"}')}
         else:
-            assert control_tools.isdisjoint(tools)
-            assert "agent-reviewer:" not in info.instructions
-            assert guidance("parent") not in info.instructions
-        assert "explorer:" not in info.instructions
-        yield "done"
+            assert returned(messages)[0].content["execution_id"]
+            yield "done"
 
     context = await open_app(tmp_path, monkeypatch, model, dynamic={"allowed_models": allowed})
     alternative = yaml.safe_load((tmp_path / "models/main.yaml").read_text())
@@ -315,7 +313,19 @@ async def test_operator_spawn_rejects_when_dynamic_subagents_are_disabled(tmp_pa
     assert seen_error
 
 
-async def test_spawn_without_model_uses_the_default_model(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    ("default", "model_arg", "expected"),
+    [
+        (None, {}, "model-main"),
+        (None, {"model": None}, "model-main"),
+        (None, {"model": "model-main"}, "model-main"),
+        (None, {"model": "model-alt"}, None),
+        ("model-alt", {}, "model-alt"),
+        ("model-alt", {"model": "model-main"}, "model-main"),
+    ],
+    ids=["fallback", "null", "explicit-self", "disallowed", "configured-default", "self-with-default"],
+)
+async def test_spawn_uses_effective_model_policy(tmp_path, monkeypatch, default, model_arg, expected):
     (tmp_path / "models").mkdir()
     (tmp_path / "models/alt.yaml").write_text(
         yaml.safe_dump(
@@ -336,30 +346,36 @@ async def test_spawn_without_model_uses_the_default_model(tmp_path, monkeypatch)
         if "send_parent_message" in tools:
             yield "CHILD_RESULT"
         elif not returned(messages):
-            assert "model accepts model-main, model-alt; when omitted, it uses model-alt." in (
+            models = "model-alt, model-main" if default else "model-main"
+            assert f"model accepts {models}; when omitted, it uses {default or 'model-main'}." in (
                 tools["spawn_subagent"].description or ""
             )
-            args = {"name": "reviewer", "prompt": "TASK"}
+            args = {"name": "reviewer", "prompt": "TASK", **model_arg}
             yield {0: DeltaToolCall(name="spawn_subagent", json_args=json.dumps(args))}
         else:
             receipts.append(returned(messages)[0].content)
             yield "done"
 
-    dynamic = {"enabled": True, "allowed_models": ["model-main", "model-alt"], "default_model": "model-alt"}
-    async with await open_app(tmp_path, monkeypatch, model, dynamic=dynamic) as app:
+    policy = {"allowed_models": [default] if default else [], "default_model": default}
+    async with await open_app(tmp_path, monkeypatch, model, agent_creation=policy) as app:
         thread = await new_thread(app)
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="start")
         assert (
             await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
         ).status is RootOperationStatus.completed
+        if expected is None:
+            assert "creation_model_not_allowed" in str(receipts[0])
+            assert not (await app.query_child_executions(parent_thread_id=thread.thread_id)).executions
+            return
         execution_id = receipts[0]["execution_id"]
-        with fail_after(10):
-            while execution_id in await app._subagent_operator.active_execution_ids():
-                await sleep(0.01)
+        await app._subagent_operator.wait_executions(
+            parent_thread_id=thread.thread_id, execution_id=execution_id, timeout_seconds=10
+        )
         page = await app.query_child_executions(parent_thread_id=thread.thread_id, execution_id=execution_id)
         model_info = page.executions[0].model
         assert model_info is not None
-        assert (model_info.name, model_info.identity) == ("Alt", "openai:gpt-5-mini")
+        expected_resource = yaml.safe_load((tmp_path / f"models/{expected.removeprefix('model-')}.yaml").read_text())
+        assert (model_info.name, model_info.identity) == (expected_resource["name"], expected_resource["route"])
 
 
 @pytest.mark.parametrize(
@@ -854,7 +870,7 @@ async def test_idle_declared_child_keeps_grandchild_results_without_automatic_re
                 child_id = results[0].content["execution_id"]
             yield "Root finished."
 
-    context = await open_app(tmp_path, monkeypatch, model, include=())
+    context = await open_app(tmp_path, monkeypatch, model, include=(), agent_creation={"allowed_models": []})
     root_file = tmp_path / "agents/main.yaml"
     resource = yaml.safe_load(root_file.read_text())
     resource["subagents"] = [{"agent": "agent-reviewer"}]

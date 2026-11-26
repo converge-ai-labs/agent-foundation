@@ -322,7 +322,7 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
     model.update(id="model-worker", route="openai:gpt-4.1")
     (tmp_path / "models/worker.yaml").write_text(yaml.safe_dump(model))
     document = yaml.safe_load(path.read_text())
-    document["agent_creation"] = {"allowed_models": ["model-main", "model-worker"]}
+    document["agent_creation"] = {"allowed_models": [] if child_name == "explorer" else ["model-worker"]}
     path.write_text(yaml.safe_dump(document))
     calls = 0
     child_models = []

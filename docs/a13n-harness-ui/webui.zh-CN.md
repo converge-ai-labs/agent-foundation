@@ -155,7 +155,7 @@ flowchart TB
 | `spawn_subagent`      | 在当前对话树中启动子智能体           | 启用动态子智能体的根对话 |
 | `send_thread_message` | 向范围内的已有对话发送后续指令或引导 | 协作范围内的根对话       |
 
-在 **Settings → Agents → Agent creation**（`agent_creation.allowed_agents`、`agent_creation.default_agent`、`agent_creation.allowed_models` 与 `agent_creation.default_model`）中统一配置智能体创建新对话、Coordinator Worker 与子智能体时可用的智能体和模型。
+在 **Settings → Agents → Agent creation**（`agent_creation.allowed_agents`、`agent_creation.default_agent`、`agent_creation.allowed_models` 与 `agent_creation.default_model`）中统一配置智能体创建新对话、Coordinator Worker 与子智能体时可用的智能体和模型。子智能体始终可以使用当前对话的模型。将 **Default model** 设为 **None** 后，动态子智能体未指定模型时会使用当前对话的模型。
 
 ## 观察记忆与配置工作台
 
