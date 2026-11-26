@@ -1040,7 +1040,7 @@ type AcpAgentPreset = Literal[
 ]
 
 ACP_AGENT_PRESETS: dict[AcpAgentPreset, tuple[str, tuple[str, ...]]] = {
-    "antigravity": ("agy", ("acp", "--process-per-session")),
+    "antigravity": ("agy", ("acp",)),
     "claude_code": ("claude-agent-acp", ()),
     "codex": ("codex-acp", ()),
     "gemini_cli": ("gemini", ("--acp",)),

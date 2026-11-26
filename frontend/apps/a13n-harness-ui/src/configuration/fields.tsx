@@ -317,9 +317,7 @@ export function ResourceFields({
             ? raw.args.map((item: unknown) => String(item))
             : undefined;
           const presetFallbackArgs =
-            presetValue === "antigravity"
-              ? ["acp", "--process-per-session"]
-              : [];
+            presetValue === "antigravity" ? ["acp"] : [];
           const resolvedArgs: readonly string[] =
             !explicitCommand && selectedPreset?.executable === "npx"
               ? [...(selectedPreset.args ?? []), ...(explicitArgs ?? [])]
@@ -399,11 +397,7 @@ export function ResourceFields({
                         next,
                         ["args"],
                         value === "antigravity"
-                          ? [
-                              "acp",
-                              "--dangerously-skip-permissions",
-                              "--process-per-session",
-                            ]
+                          ? ["acp", "--dangerously-skip-permissions"]
                           : undefined,
                       );
                     }

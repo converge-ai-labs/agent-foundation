@@ -365,3 +365,129 @@ async def test_multimodal_session_steering_and_prompt_block_separation(tmp_path)
             {"type": "text", "text": "prefix\n\n"},
             {"type": "text", "text": "echo-prompt"},
         ]
+
+
+async def test_stdio_mcp_forwarder_uses_isolated_script_without_package_import():
+    import json
+    import subprocess
+
+    from a13n_harness.acp import _stdio
+
+    toolset: FunctionToolset[AgentContext] = FunctionToolset()
+
+    @toolset.tool_plain
+    async def echo(value: str) -> str:
+        return f"echo:{value}"
+
+    bridge = AcpHostToolBridge([], toolsets=[toolset])
+    deps = cast(AgentContext, SimpleNamespace(run_id="run-owner", thread_id="thread-owner"))
+    ctx = RunContext(deps=deps, model=TestModel(), usage=RunUsage())
+    expected_script = str(Path(_stdio.__file__))
+
+    async with asyncio.timeout(12), bridge._connection(), bridge.prepare(ctx) as scope:
+        await bridge._discover(scope)
+        bridge._bind(scope, "turn-1")
+        try:
+            async with bridge._loopback(http=False) as server:
+                assert isinstance(server, schema.McpServerStdio)
+                assert server.command == sys.executable
+                assert server.args == ["-I", expected_script]
+
+                env = {**os.environ, **{var.name: var.value for var in server.env}}
+                proc = await asyncio.create_subprocess_exec(
+                    server.command,
+                    *server.args,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                )
+                assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
+
+                async def rpc(payload: dict[str, object]) -> dict[str, object]:
+                    assert proc.stdin is not None and proc.stdout is not None
+                    proc.stdin.write((json.dumps(payload) + "\n").encode())
+                    await proc.stdin.drain()
+                    return json.loads(await proc.stdout.readline())
+
+                init = await rpc(
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25"}}
+                )
+                assert init["result"]["capabilities"] == {"tools": {}}
+
+                proc.stdin.write(
+                    (json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n").encode()
+                )
+                await proc.stdin.drain()
+
+                listed = await rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+                assert [tool["name"] for tool in listed["result"]["tools"]] == ["echo"]
+
+                called = await rpc(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "tools/call",
+                        "params": {"name": "echo", "arguments": {"value": "fast"}},
+                    }
+                )
+                assert called["result"] == {"content": [{"type": "text", "text": "echo:fast"}], "isError": False}
+
+                proc.stdin.close()
+                await proc.stdin.wait_closed()
+                assert await proc.wait() == 0
+                assert await proc.stderr.read() == b""
+
+                # Verify isolated direct execution does not import a13n_harness or heavy runtime packages.
+                probe_code = (
+                    "import json, runpy, sys; "
+                    f"runpy.run_path({expected_script!r}, run_name='__main__'); "
+                    "loaded = sorted(m for m in sys.modules if m.startswith(('a13n_harness', 'pydantic', 'aiohttp'))); "
+                    "print(json.dumps(loaded))"
+                )
+                probe = await asyncio.to_thread(
+                    subprocess.run,
+                    [sys.executable, "-I", "-c", probe_code],
+                    input="",
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                assert json.loads(probe.stdout) == []
+
+                # Verify -m invocation remains compatible.
+                module_proc = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-m",
+                    "a13n_harness.acp._stdio",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                )
+                assert (
+                    module_proc.stdin is not None and module_proc.stdout is not None and module_proc.stderr is not None
+                )
+                module_proc.stdin.write(
+                    (
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "initialize",
+                                "params": {"protocolVersion": "2025-11-25"},
+                            }
+                        )
+                        + "\n"
+                    ).encode()
+                )
+                await module_proc.stdin.drain()
+                module_init = json.loads(await module_proc.stdout.readline())
+                assert module_init["result"]["capabilities"] == {"tools": {}}
+                module_proc.stdin.close()
+                await module_proc.stdin.wait_closed()
+                assert await module_proc.wait() == 0
+                assert await module_proc.stderr.read() == b""
+        finally:
+            await bridge._unbind()

@@ -891,7 +891,7 @@ async def test_acp_presets_resolve_npx_adapters_and_options_cache_ttl_expires(
             "goose",
             "kimi_cli",
         } <= presets.keys()
-        assert presets["antigravity"].args == ("acp", "--process-per-session")
+        assert presets["antigravity"].args == ("acp",)
         assert presets["claude_code"].detected_path == str(fake_bin / "npx")
         assert presets["claude_code"].executable == "npx"
         assert presets["claude_code"].args == ("-y", "@zed-industries/claude-agent-acp")

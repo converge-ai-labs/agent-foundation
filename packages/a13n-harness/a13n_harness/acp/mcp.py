@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator, Callable, Collection, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from inspect import isawaitable, signature
+from pathlib import Path
 from typing import Any, cast
 
 from acp import RequestError, schema
@@ -43,6 +44,7 @@ _SERVER_NAME = "harness-host"
 _SERVER_PREFIXES = (f"mcp__{_SERVER_NAME}__", f"mcp_{_SERVER_NAME}_", f"{_SERVER_NAME}/", f"{_SERVER_NAME}.")
 _STDIO_URL = "A13N_ACP_MCP_URL"
 _STDIO_TOKEN = "A13N_ACP_MCP_TOKEN"
+_STDIO_SCRIPT = Path(__file__).with_name("_stdio.py")
 
 
 def acp_host_tool_name(name: str) -> str:
@@ -369,7 +371,7 @@ class AcpHostToolBridge:
                 yield schema.McpServerStdio(
                     name=_SERVER_NAME,
                     command=sys.executable,
-                    args=["-m", "a13n_harness.acp._stdio"],
+                    args=["-I", str(_STDIO_SCRIPT)],
                     env=[
                         schema.EnvVariable(name=_STDIO_URL, value=url),
                         schema.EnvVariable(name=_STDIO_TOKEN, value=token),

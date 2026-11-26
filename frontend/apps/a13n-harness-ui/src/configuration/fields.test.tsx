@@ -26,7 +26,7 @@ const get = vi.hoisted(() =>
                 name: "Antigravity",
                 executable: "agy",
                 detected_path: "/usr/local/bin/agy",
-                args: ["acp", "--process-per-session"],
+                args: ["acp"],
                 install_url: "https://antigravity.google/docs",
               },
               {
@@ -907,7 +907,7 @@ it("keeps Inbox posting enabled by default and writes the opt-out", () => {
 
 it("auto-fills ACP preset defaults and toggles Antigravity unattended permissions without manual command edits", async () => {
   renderFields(
-    'schema_version: "1"\nkind: acp_agent\nid: acp-one\nname: Antigravity\npreset: antigravity\nargs:\n  - acp\n  - --dangerously-skip-permissions\n  - --process-per-session\n',
+    'schema_version: "1"\nkind: acp_agent\nid: acp-one\nname: Antigravity\npreset: antigravity\nargs:\n  - acp\n  - --dangerously-skip-permissions\n',
   );
   const user = userEvent.setup();
   const skip = await screen.findByRole("switch", {
@@ -918,7 +918,7 @@ it("auto-fills ACP preset defaults and toggles Antigravity unattended permission
   expect(parse(screen.getByTestId("source").textContent!)).toMatchObject({
     name: "Antigravity",
     preset: "antigravity",
-    args: ["acp", "--process-per-session"],
+    args: ["acp"],
   });
   await user.click(screen.getByRole("combobox", { name: "ACP preset" }));
   await user.click(await screen.findByRole("option", { name: /Claude Code/ }));
@@ -930,9 +930,19 @@ it("auto-fills ACP preset defaults and toggles Antigravity unattended permission
     name: "Claude Code",
     preset: "claude_code",
   });
+  await user.click(screen.getByRole("combobox", { name: "ACP preset" }));
+  await user.click(await screen.findByRole("option", { name: /Antigravity/ }));
+  expect(parse(screen.getByTestId("source").textContent!)).toEqual({
+    schema_version: "1",
+    kind: "acp_agent",
+    id: "acp-one",
+    name: "Antigravity",
+    preset: "antigravity",
+    args: ["acp", "--dangerously-skip-permissions"],
+  });
 });
 
-it("shows Skip permission prompts unchecked when bare Antigravity preset omits args and preserves session flag on toggle", async () => {
+it("shows Skip permission prompts unchecked when bare Antigravity preset omits args and adds the flag on toggle", async () => {
   renderFields(
     'schema_version: "1"\nkind: acp_agent\nid: acp-bare\nname: Antigravity\npreset: antigravity\n',
   );
@@ -944,6 +954,6 @@ it("shows Skip permission prompts unchecked when bare Antigravity preset omits a
   await user.click(skip);
   expect(parse(screen.getByTestId("source").textContent!)).toMatchObject({
     preset: "antigravity",
-    args: ["acp", "--dangerously-skip-permissions", "--process-per-session"],
+    args: ["acp", "--dangerously-skip-permissions"],
   });
 });
