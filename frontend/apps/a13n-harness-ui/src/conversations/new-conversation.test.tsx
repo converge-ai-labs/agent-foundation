@@ -1030,7 +1030,7 @@ it("unlocks creation choices on the backend missing-thread response when retryin
     "Unable to reach the server. Check your connection and try again.",
   );
   readMissing = true;
-  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Send" }));
   await screen.findByText(
     "Chat not found. Your input is saved here. Send again to retry creating the same chat.",
   );
