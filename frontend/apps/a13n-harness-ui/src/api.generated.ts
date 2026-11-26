@@ -16467,7 +16467,9 @@ export interface operations {
     };
     preview_skills_api_threads_skills_preview_post: {
         parameters: {
-            query?: never;
+            query?: {
+                coordinator?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -16487,11 +16489,22 @@ export interface operations {
                     "application/json": components["schemas"]["SkillCatalogView"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     thread_skills_api_threads__thread_id__skills_get: {
         parameters: {
-            query?: never;
+            query?: {
+                coordinator?: boolean;
+            };
             header?: never;
             path: {
                 thread_id: string;
@@ -16522,7 +16535,9 @@ export interface operations {
     };
     preview_thread_skills_api_threads__thread_id__skills_post: {
         parameters: {
-            query?: never;
+            query?: {
+                coordinator?: boolean;
+            };
             header?: never;
             path: {
                 thread_id: string;

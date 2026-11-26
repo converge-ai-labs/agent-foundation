@@ -71,6 +71,7 @@ class AppDefinition:
     name: str
     factory_keys: frozenset[str] = frozenset()
     routers: tuple[APIRouter, ...] = ()
+    webhook_routers: tuple[APIRouter, ...] = ()
     settings: Mapping[str, type[Section]] = field(default_factory=dict)
     sweeps: tuple[OrganizationSweep, ...] = ()
     run_seals: tuple[RunSealSubscription, ...] = ()

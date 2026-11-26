@@ -51,7 +51,13 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, Valid
 from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability, NativeTool
 from pydantic_ai.native_tools import ImageGenerationTool
 
-from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_SOURCE_ID, EnvironmentPathLayout
+from a13n_harness_ui.environment_paths import (
+    BUILTIN_COORDINATOR_SKILLS_PATH,
+    BUILTIN_COORDINATOR_SKILLS_SOURCE_ID,
+    BUILTIN_SKILLS_PATH,
+    BUILTIN_SKILLS_SOURCE_ID,
+    EnvironmentPathLayout,
+)
 from a13n_harness_ui.errors import CompositionError
 from a13n_harness_ui.model_providers import ModelProviderPlugin
 from a13n_harness_ui.model_providers.catalog import ModelProviderCatalog
@@ -240,6 +246,7 @@ class HarnessUiExtensionCatalog:
         selections: tuple[tuple[str, dict[str, JsonValue]], ...],
         *,
         path_layout: EnvironmentPathLayout | None = None,
+        include_coordinator_skills: bool = False,
     ) -> tuple[SelectedCapability, ...]:
         result: list[SelectedCapability] = []
         custom_types: list[type[AbstractCapability[Any]]] = []
@@ -301,6 +308,7 @@ class HarnessUiExtensionCatalog:
                     capability_type,
                     configuration,
                     path_layout=path_layout,
+                    include_coordinator_skills=include_coordinator_skills,
                 )
             except (TypeError, ValidationError, ValueError) as exc:
                 raise CompositionError(
@@ -486,6 +494,7 @@ def _construct_capability(
     configuration: dict[str, JsonValue],
     *,
     path_layout: EnvironmentPathLayout | None,
+    include_coordinator_skills: bool = False,
 ) -> AbstractCapability[Any]:
     if capability_type is CodeActCapability:
         arguments: dict[str, Any] = dict(configuration)
@@ -529,6 +538,7 @@ def _construct_capability(
                     project_mounts=("/workspace",),
                     user_skills="/environment/user-skills",
                 ),
+                include_coordinator_skills=include_coordinator_skills,
             )
         )
 
@@ -551,6 +561,7 @@ def create_skill_manager(
     configuration: dict[str, JsonValue],
     *,
     path_layout: EnvironmentPathLayout,
+    include_coordinator_skills: bool = False,
 ) -> SkillManager:
     """Compose identical ordered sources for runtime freezing and short-lived previews."""
     if len(path_layout.project_mounts) > 64:
@@ -562,12 +573,22 @@ def create_skill_manager(
             (BUILTIN_SKILLS_PATH,),
             required=True,
         ),
+    ]
+    if include_coordinator_skills:
+        sources.append(
+            FileSkillSource(
+                BUILTIN_COORDINATOR_SKILLS_SOURCE_ID,
+                (BUILTIN_COORDINATOR_SKILLS_PATH,),
+                required=True,
+            )
+        )
+    sources.append(
         FileSkillSource(
             "a13n-harness-ui:user-skills",
             (path_layout.user_skills,),
             required=False,
-        ),
-    ]
+        )
+    )
     sources.extend(
         FileSkillSource(
             f"a13n-harness-ui:content-plugin:{plugin_id}",

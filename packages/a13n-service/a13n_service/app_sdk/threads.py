@@ -2,19 +2,24 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import cast
 
+from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
 from a13n_service.app_provenance import AppProvenance
 from a13n_service.infra import cursors
-from a13n_service.infra.errors import invalid, not_found
+from a13n_service.infra.db import short_session
+from a13n_service.infra.errors import ServiceError, invalid, not_found
+from a13n_service.infra.objects import interface as objects
+from a13n_service.resources.assets.tables import AssetRow
 from a13n_service.runs import submit
 from a13n_service.runs.accept import eligible, paused
 from a13n_service.runs.environments.schemas import SessionConfiguration as SessionConfiguration
 from a13n_service.runs.runtime import Runtime
-from a13n_service.runs.schemas import Failure, RunStatus
+from a13n_service.runs.schemas import Failure, RunStatus, WaitReason
 from a13n_service.runs.schemas import Message as Message
 from a13n_service.runs.schemas import NewThread as NewThread
 from a13n_service.runs.schemas import Submitted as Submitted
@@ -230,3 +235,149 @@ async def list_child_threads(
         ),
         next_cursor,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class RunAsset:
+    """An immutable workspace asset published by a Run."""
+
+    id: str
+    name: str
+    content_type: str
+    size: int
+    digest: str
+    retired_at: datetime | None
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class RunOutput:
+    """Read-only projection of a Run's sealed output, failure and published assets."""
+
+    run_id: str
+    session_id: str
+    thread_id: str
+    status: RunStatus
+    sealed_at: datetime | None
+    output: JsonValue | None
+    output_text: str | None
+    failure: Failure | None
+    wait_reason: WaitReason | None
+    assets: tuple[RunAsset, ...]
+
+    @property
+    def sealed(self) -> bool:
+        return self.sealed_at is not None
+
+
+async def get_run_output(session: AsyncSession, workspace_id: str, run_id: str) -> RunOutput:
+    """Read a Run's status, output, failure and published assets within an App-authorized workspace.
+
+    Non-sealed Runs return their current status with `sealed_at=None` and empty output/assets.
+    """
+    row = (
+        await session.execute(
+            select(
+                RunRow.id,
+                RunRow.session_id,
+                RunRow.thread_id,
+                RunRow.status,
+                RunRow.sealed_at,
+                RunRow.output,
+                RunRow.failure,
+                RunRow.wait_reason,
+            ).where(RunRow.workspace_id == workspace_id, RunRow.id == run_id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise not_found("run", run_id)
+    found_id, session_id, thread_id, status, sealed_at, output, failure_raw, wait_reason = row
+    if sealed_at is None:
+        return RunOutput(
+            run_id=found_id,
+            session_id=session_id,
+            thread_id=thread_id,
+            status=status,
+            sealed_at=None,
+            output=None,
+            output_text=None,
+            failure=None,
+            wait_reason=None,
+            assets=(),
+        )
+    asset_rows = (
+        await session.execute(
+            select(
+                AssetRow.id,
+                AssetRow.name,
+                AssetRow.content_type,
+                AssetRow.size,
+                AssetRow.digest,
+                AssetRow.retired_at,
+                AssetRow.created_at,
+            )
+            .where(
+                AssetRow.workspace_id == workspace_id,
+                AssetRow.source.is_not(None),
+                AssetRow.source["run_id"].astext == found_id,
+            )
+            .order_by(AssetRow.created_at, AssetRow.id)
+        )
+    ).all()
+    return RunOutput(
+        run_id=found_id,
+        session_id=session_id,
+        thread_id=thread_id,
+        status=status,
+        sealed_at=sealed_at,
+        output=output,
+        output_text=output if isinstance(output, str) else None,
+        failure=Failure.model_validate(failure_raw) if failure_raw is not None else None,
+        wait_reason=cast(WaitReason | None, wait_reason),
+        assets=tuple(
+            RunAsset(
+                id=item.id,
+                name=item.name,
+                content_type=item.content_type,
+                size=item.size,
+                digest=item.digest,
+                retired_at=item.retired_at,
+                created_at=item.created_at,
+            )
+            for item in asset_rows
+        ),
+    )
+
+
+async def read_asset_content(
+    runtime: Runtime,
+    workspace_id: str,
+    asset_id: str,
+    *,
+    max_bytes: int | None = None,
+) -> tuple[RunAsset, bytes]:
+    """Read verified bytes for a workspace asset already authorized by the App.
+
+    Retired assets remain readable. The SQL session closes before reading object storage.
+    """
+    if max_bytes is not None and (isinstance(max_bytes, bool) or max_bytes < 1):
+        raise invalid("max_bytes", "must_be_positive")
+    async with short_session(runtime.storage) as session:
+        row = await session.scalar(
+            select(AssetRow).where(AssetRow.workspace_id == workspace_id, AssetRow.id == asset_id)
+        )
+        if row is None:
+            raise not_found("asset", asset_id)
+        if max_bytes is not None and row.size > max_bytes:
+            raise ServiceError("payload_too_large", "Asset exceeds its byte limit", {"limit": max_bytes})
+        reference = objects.ObjectRef(row.content_ref, row.digest, row.size, row.content_type)
+        asset = RunAsset(
+            id=row.id,
+            name=row.name,
+            content_type=row.content_type,
+            size=row.size,
+            digest=row.digest,
+            retired_at=row.retired_at,
+            created_at=row.created_at,
+        )
+    return asset, await objects.read(runtime.objects, reference)

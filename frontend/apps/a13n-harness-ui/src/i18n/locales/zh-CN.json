@@ -3742,5 +3742,11 @@
   "Allow unattended tool execution without interactive CLI prompts.": "允许无人值守执行工具调用，不在命令行中弹出交互确认。",
   "Customize command": "自定义启动命令",
   "Context occupancy reported by the external ACP Agent. Chat totals are in Usage.": "外部 ACP Agent 上报的上下文占用情况。聊天总量见「用量」。",
-  "This external ACP Agent has not reported its current context window, so occupancy is unavailable.": "该外部 ACP Agent 尚未上报当前上下文窗口，因此暂无法显示占用率。"
+  "This external ACP Agent has not reported its current context window, so occupancy is unavailable.": "该外部 ACP Agent 尚未上报当前上下文窗口，因此暂无法显示占用率。",
+  "Allowed agents": "可用智能体",
+  "Agents can only use these configured agents for new chats and workers.": "智能体仅可使用这些已配置的智能体创建新对话和 Worker。",
+  "With no agents selected, all configured agents are allowed for new chats and workers.": "未选择智能体时，允许使用所有已配置的智能体创建新对话和 Worker。",
+  "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.": "配置中 allowed_agents 为空，已禁用智能体创建。请选择要允许的智能体。",
+  "Same as current agent": "与当前智能体相同",
+  "Used when creating a new chat or worker without specifying an agent.": "创建新对话或 Worker 时未指定智能体时使用。"
 }

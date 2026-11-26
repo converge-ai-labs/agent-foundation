@@ -40,8 +40,9 @@ def configuration(tmp_path: Path) -> Path:
         "defaults: {agent: agent-worker, mcp_servers: []}\n"
     )
     document = yaml.safe_load(root.read_text())
-    document["subagents"] = {
-        "dynamic": {"allowed_models": ["model-primary", "model-secondary"], "default_model": "model-secondary"}
+    document["agent_creation"] = {
+        "allowed_models": ["model-primary", "model-secondary"],
+        "default_model": "model-secondary",
     }
     root.write_text(yaml.safe_dump(document))
     return root
@@ -651,3 +652,61 @@ async def test_hidden_context_does_not_admit_empty_cross_thread_input(tmp_path: 
         )
         assert result["error"]["code"] == "thread_message_empty"
         assert await app._root_runs.active(target.thread_id) is None
+
+
+async def test_create_thread_enforces_agent_creation_policy_and_filters_list_agents(tmp_path: Path) -> None:
+    root = configuration(tmp_path)
+    document = yaml.safe_load(root.read_text())
+    document["agent_creation"] = {
+        "allowed_agents": ["agent-worker"],
+        "default_agent": "agent-worker",
+        "allowed_models": ["model-primary", "model-secondary"],
+        "default_model": "model-secondary",
+    }
+    root.write_text(yaml.safe_dump(document))
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        source = await app.create_thread()
+        captured = (await app._root_runs._executor.capture(thread_id=source.thread_id, prompt="Start")).published.value
+        capability = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=source.thread_id, composition=captured
+        )
+        ctx = SimpleNamespace(deps=SimpleNamespace(thread_id=source.thread_id))
+
+        # Omitting agent_id uses agent_creation.default_agent rather than inheriting agent-assistant.
+        created = await capability.create_thread(ctx, prompt="Delegate")
+        assert created["ok"], created
+        await app.wait_root_operation(created["receipt"]["receipt_id"])
+        child = (await app.get_thread(created["thread_id"])).thread
+        assert child.configuration.agent_source.id == "agent-worker"
+
+        # Disallowed agent_id is rejected before Thread allocation.
+        denied = await capability.create_thread(ctx, prompt="Denied", agent_id="agent-assistant")
+        assert not denied["ok"] and denied["error"]["code"] == "creation_agent_not_allowed"
+        assert (await app.list_threads()).total == 2
+
+        # list_agents filters to allowed_agents and binds cursor to the filter.
+        filtered = await capability.list_agents(ctx, limit=20)
+        assert filtered["ok"] and [item["id"] for item in filtered["agents"]] == ["agent-worker"]
+        source_cfg = await load_harness_ui_configuration(root)
+        unfiltered_page = resource_page(source_cfg, kind="agents", query=None, cursor=None, limit=1)
+        with pytest.raises(ConfigurationError, match="cursor"):
+            resource_page(
+                source_cfg,
+                kind="agents",
+                query=None,
+                cursor=unfiltered_page["next_cursor"],
+                limit=1,
+                allowed_agent_ids=("agent-worker",),
+            )
+
+        # allowed_agents: [] hides create_thread on ordinary roots.
+        document["agent_creation"] = {"allowed_agents": []}
+        root.write_text(yaml.safe_dump(document))
+        await app.reload_configuration()
+        disabled = (await app._root_runs._executor.capture(thread_id=source.thread_id, prompt="Next")).published.value
+        assert disabled.can_create_threads is False
+        disabled_cap = ThreadCollaborationCapability(
+            controller=controller(app), source_thread_id=source.thread_id, composition=disabled
+        )
+        assert "create_thread" not in disabled_cap.get_toolset().tools

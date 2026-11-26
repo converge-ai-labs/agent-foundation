@@ -16,12 +16,16 @@ def resource_page(
     query: str | None,
     cursor: str | None,
     limit: int,
+    allowed_agent_ids: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Page small summaries, binding continuation to the accepted generation and query."""
     if not 1 <= limit <= 100 or (query is not None and len(query) > 512):
         raise ConfigurationError("Resource query is outside supported bounds.", code="resource_query_invalid")
     normalized = (query or "").strip().casefold()
-    prefix = f"{source.source_digest}:{canonical_digest([kind, normalized])}:"
+    cursor_scope: list[Any] = [kind, normalized]
+    if kind == "agents" and allowed_agent_ids is not None:
+        cursor_scope.append(list(allowed_agent_ids))
+    prefix = f"{source.source_digest}:{canonical_digest(cursor_scope)}:"
     offset = 0
     if cursor is not None:
         suffix = cursor.removeprefix(prefix)
@@ -34,6 +38,9 @@ def resource_page(
     resources = {"projects": source.projects, "agents": source.agents | source.acp_agents, "models": source.models}[
         kind
     ]
+    if kind == "agents" and allowed_agent_ids is not None:
+        allowed_set = set(allowed_agent_ids)
+        resources = {resource_id: item for resource_id, item in resources.items() if resource_id in allowed_set}
     selected = sorted(
         (item for item in resources.values() if normalized in f"{item.id} {item.name}".casefold()),
         key=lambda item: item.id,

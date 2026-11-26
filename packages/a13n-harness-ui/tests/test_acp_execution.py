@@ -1254,9 +1254,19 @@ async def test_acp_prompt_context_deduplication_pruning_and_compaction_reset(tmp
 
 async def test_acp_skills_discovery_index_direct_slash_and_host_paths(tmp_path: Path) -> None:
     from a13n_harness_ui.app import open_harness_ui_app
-    from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT
+    from a13n_harness_ui.environment_paths import (
+        BUILTIN_COORDINATOR_SKILLS_PATH,
+        BUILTIN_COORDINATOR_SKILLS_ROOT,
+        BUILTIN_SKILLS_PATH,
+        BUILTIN_SKILLS_ROOT,
+        acp_skill_host_path,
+    )
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus, SkillReference
+
+    assert acp_skill_host_path(f"{BUILTIN_COORDINATOR_SKILLS_PATH}/coordinate-worktree-pr") == str(
+        (BUILTIN_COORDINATOR_SKILLS_ROOT.resolve() / "coordinate-worktree-pr").as_posix()
+    )
 
     workspace = tmp_path / "workspace"
     project_skill = workspace / ".agents" / "skills" / "proj-workflow"
@@ -1388,6 +1398,21 @@ async def test_acp_skills_discovery_index_direct_slash_and_host_paths(tmp_path: 
             assert steered.accepted
             assert (await app.cancel_root_operation(waiting.receipt_id)).accepted
             await app.wait_root_operation(waiting.receipt_id)
+
+        # Coordinator ACP Thread exposes Coordinator built-in Skills with real Host paths.
+        coord_thread = await app.create_thread()
+        await app.promote_coordinator(coord_thread.thread_id)
+        coord_catalog = await app.skill_catalog(thread_id=coord_thread.thread_id)
+        assert "coordinate-worktree-pr" in {item.name for item in coord_catalog.items}
+        coord_first = await app.submit_thread(thread_id=coord_thread.thread_id, prompt="echo-instructions")
+        assert (await app.wait_root_operation(coord_first.receipt_id)).status is RootOperationStatus.completed
+        coord_system_prompt = json.loads(await _latest_reply_text(app, coord_thread.thread_id) or "{}")
+        coord_joined = "\n".join(block["text"] for block in coord_system_prompt["content"])
+        assert BUILTIN_COORDINATOR_SKILLS_PATH not in coord_joined
+        assert (
+            str((BUILTIN_COORDINATOR_SKILLS_ROOT.resolve() / "coordinate-worktree-pr" / "SKILL.md").as_posix())
+            in coord_joined
+        )
 
 
 async def test_acp_attachments_embedded_context_image_fallback_and_multimodal_steering(tmp_path: Path) -> None:

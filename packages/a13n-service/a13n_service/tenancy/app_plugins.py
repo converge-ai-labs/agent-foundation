@@ -15,7 +15,13 @@ from a13n_service.infra.errors import ServiceError
 from a13n_service.infra.http import IfMatch, require_match, tagged
 from a13n_service.tenancy.access import OrganizationPath, administering, resolve_organization, workspace_scope
 from a13n_service.tenancy.authorize import Principal, Scope, allowed_verbs, authorize
-from a13n_service.tenancy.requests import Actor, CurrentRuntime, current_credential, current_workspace
+from a13n_service.tenancy.requests import (
+    Actor,
+    CurrentRuntime,
+    current_credential,
+    current_workspace,
+    limit_app_webhook,
+)
 from a13n_service.tenancy.tables import OrganizationRow
 
 
@@ -186,4 +192,41 @@ def app_router(app_id: str) -> APIRouter:
         route_class=OwnedRoute,
         tags=[f"app:{app_id}"],
         dependencies=[Depends(current_credential)],
+    )
+
+
+class AppWebhookRoute(APIRoute):
+    """Unauthenticated third-party webhook route owned by one installed App.
+
+    The host verifies App installation and applies per-client-address rate limiting; the App handler
+    verifies third-party signatures, resolves tenant scope, and checks organization enablement.
+    """
+
+    app_plugin_id: str
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+        app_id = self.app_plugin_id
+
+        async def guarded(request: Request) -> Response:
+            runtime = request.app.state.runtime
+            runtime.apps.require(app_id)
+            await limit_app_webhook(request, runtime, app_id)
+            response = await handler(request)
+            response.headers.setdefault("Cache-Control", "no-store")
+            return response
+
+        return guarded
+
+
+def app_webhook_router(app_id: str) -> APIRouter:
+    """Declare third-party webhook endpoints below a literal App webhook namespace."""
+
+    class OwnedWebhookRoute(AppWebhookRoute):
+        app_plugin_id = app_id
+
+    return APIRouter(
+        prefix=f"/api/v1/app-webhooks/{app_id}",
+        route_class=OwnedWebhookRoute,
+        tags=[f"app-webhook:{app_id}"],
     )

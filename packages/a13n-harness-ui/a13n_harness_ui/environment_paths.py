@@ -9,15 +9,22 @@ from pathlib import Path
 BUILTIN_SKILLS_PATH = "/environment/builtin-skills"
 BUILTIN_SKILLS_ROOT = Path(__file__).parent / "assets" / "builtin_skills"
 BUILTIN_SKILLS_SOURCE_ID = "a13n-harness-ui:builtin-skills"
+BUILTIN_COORDINATOR_SKILLS_PATH = "/environment/builtin-coordinator-skills"
+BUILTIN_COORDINATOR_SKILLS_ROOT = Path(__file__).parent / "assets" / "coordinator_skills"
+BUILTIN_COORDINATOR_SKILLS_SOURCE_ID = "a13n-harness-ui:builtin-coordinator-skills"
 
 
 def acp_skill_host_path(logical_path: str) -> str:
     """Resolve a Skill directory path to its real Host absolute path for local ACP peers."""
-    if logical_path == BUILTIN_SKILLS_PATH:
-        return BUILTIN_SKILLS_ROOT.resolve().as_posix()
-    prefix = f"{BUILTIN_SKILLS_PATH}/"
-    if logical_path.startswith(prefix):
-        return (BUILTIN_SKILLS_ROOT.resolve() / logical_path[len(prefix) :]).as_posix()
+    for virtual_root, host_root in (
+        (BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT),
+        (BUILTIN_COORDINATOR_SKILLS_PATH, BUILTIN_COORDINATOR_SKILLS_ROOT),
+    ):
+        if logical_path == virtual_root:
+            return host_root.resolve().as_posix()
+        prefix = f"{virtual_root}/"
+        if logical_path.startswith(prefix):
+            return (host_root.resolve() / logical_path[len(prefix) :]).as_posix()
     return logical_path
 
 
@@ -78,6 +85,9 @@ class EnvironmentPathLayout:
 
 
 __all__ = [
+    "BUILTIN_COORDINATOR_SKILLS_PATH",
+    "BUILTIN_COORDINATOR_SKILLS_ROOT",
+    "BUILTIN_COORDINATOR_SKILLS_SOURCE_ID",
     "BUILTIN_SKILLS_PATH",
     "BUILTIN_SKILLS_ROOT",
     "BUILTIN_SKILLS_SOURCE_ID",

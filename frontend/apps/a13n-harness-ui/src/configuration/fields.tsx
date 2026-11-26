@@ -14,6 +14,7 @@ import environments from "./environments.module.css";
 import management from "./management.module.css";
 import layout from "./settings.module.css";
 import { AddModelButton } from "./models";
+import { AgentSelectionField } from "./agent-selection";
 import { ModelSelectionField } from "./model-selection";
 import { Button, FormField, Input, Switch, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
@@ -163,11 +164,58 @@ export function ResourceFields({
       ? selected.filter((value): value is string => typeof value === "string")
       : null;
   };
+  const allowedAgentsPath = ["agent_creation", "allowed_agents"];
+  const defaultAgentPath = ["agent_creation", "default_agent"];
+  const allowedModelsPath = ["agent_creation", "allowed_models"];
+  const defaultModelPath = ["agent_creation", "default_model"];
+  const legacyAllowedModelsPath = ["subagents", "dynamic", "allowed_models"];
+  const legacyDefaultModelPath = ["subagents", "dynamic", "default_model"];
+  const allowedAgentsRaw = strings(allowedAgentsPath);
+  const allowedAgents = allowedAgentsRaw ?? [];
   const allowedModels =
-    strings(["subagents", "dynamic", "allowed_models"]) ?? [];
-  const defaultModelPath = ["subagents", "dynamic", "default_model"];
+    strings(allowedModelsPath) ?? strings(legacyAllowedModelsPath) ?? [];
+  const defaultModel = document.hasIn(defaultModelPath)
+    ? text(defaultModelPath)
+    : text(legacyDefaultModelPath);
+  const updateCreationModels = (
+    nextAllowed: string[] | undefined,
+    nextDefault: string | undefined,
+  ) => {
+    let updated = updateDocument(source, allowedModelsPath, nextAllowed);
+    updated = updateDocument(updated, defaultModelPath, nextDefault);
+    if (document.hasIn(legacyAllowedModelsPath))
+      updated = updateDocument(updated, legacyAllowedModelsPath, undefined);
+    if (document.hasIn(legacyDefaultModelPath))
+      updated = updateDocument(updated, legacyDefaultModelPath, undefined);
+    onChange(updated);
+  };
   const dynamicSubagentsEnabled =
     get(["subagents", "dynamic", "enabled"]) === true;
+  const creationAgentOptions = (selectors.data?.agents ?? [])
+    .filter(
+      (agent) =>
+        allowedAgentsRaw === null || allowedAgentsRaw.includes(agent.agent_id),
+    )
+    .map((agent) => {
+      const presetBrand =
+        agent.kind === "acp_agent" ? acpPresetBrand(agent.preset) : undefined;
+      const model =
+        agent.kind === "acp_agent"
+          ? undefined
+          : (selectors.data?.models ?? []).find(
+              (item) => item.model_id === agent.model_id,
+            );
+      return {
+        value: agent.agent_id,
+        label: agent.name,
+        badge: agent.kind === "acp_agent" ? t("ACP agent") : undefined,
+        icon: presetBrand ? (
+          <ModelIcon modelIdentity={presetBrand} />
+        ) : model ? (
+          <ModelIcon model={model} />
+        ) : undefined,
+      };
+    });
   const list = (
     label: string,
     path: string[],
@@ -908,6 +956,60 @@ export function ResourceFields({
             {(!group || group === "agents") && (
               <>
                 <SettingsSection title={t("Agent creation")}>
+                  <AgentSelectionField
+                    label={t("Allowed agents")}
+                    description={
+                      allowedAgentsRaw === null
+                        ? t(
+                            "With no agents selected, all configured agents are allowed for new chats and workers.",
+                          )
+                        : allowedAgents.length
+                          ? t(
+                              "Agents can only use these configured agents for new chats and workers.",
+                            )
+                          : t(
+                              "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.",
+                            )
+                    }
+                    agents={selectors.data?.agents ?? []}
+                    models={selectors.data?.models ?? []}
+                    value={allowedAgents}
+                    onChange={(value) => {
+                      let updated = updateDocument(
+                        source,
+                        allowedAgentsPath,
+                        value,
+                      );
+                      // Clear the default agent when it is excluded by a non-empty allowlist.
+                      const fallback = text(defaultAgentPath);
+                      if (
+                        fallback &&
+                        value !== undefined &&
+                        !value.includes(fallback)
+                      )
+                        updated = updateDocument(
+                          updated,
+                          defaultAgentPath,
+                          undefined,
+                        );
+                      onChange(updated);
+                    }}
+                  />
+                  <ResourceChoice
+                    label={t("Default agent")}
+                    description={t(
+                      "Used when creating a new chat or worker without specifying an agent.",
+                    )}
+                    value={text(defaultAgentPath)}
+                    loading={selectors.isPending || sources.isPending}
+                    onValueChange={(value) =>
+                      set(defaultAgentPath, value || undefined)
+                    }
+                    options={[
+                      { value: "", label: t("Same as current agent") },
+                      ...creationAgentOptions,
+                    ]}
+                  />
                   <ModelSelectionField
                     label={t("Allowed models")}
                     description={
@@ -922,20 +1024,12 @@ export function ResourceFields({
                     models={selectors.data?.models ?? []}
                     value={allowedModels}
                     onChange={(value) => {
-                      let updated = updateDocument(
-                        source,
-                        ["subagents", "dynamic", "allowed_models"],
-                        value,
-                      );
-                      // The default must stay one of the allowed models.
-                      const fallback = text(defaultModelPath);
-                      if (fallback && !value?.includes(fallback))
-                        updated = updateDocument(
-                          updated,
-                          defaultModelPath,
-                          undefined,
-                        );
-                      onChange(updated);
+                      // The default must stay one of the allowed models; editing also migrates legacy subagents.dynamic keys.
+                      const nextDefault =
+                        defaultModel && value?.includes(defaultModel)
+                          ? defaultModel
+                          : undefined;
+                      updateCreationModels(value, nextDefault);
                     }}
                   />
                   {allowedModels.length > 0 && (
@@ -944,11 +1038,11 @@ export function ResourceFields({
                       description={t(
                         "Used when the agent does not choose a model.",
                       )}
-                      value={text(defaultModelPath)}
+                      value={defaultModel}
                       placeholder={t("Choose a model")}
                       loading={selectors.isPending || sources.isPending}
                       onValueChange={(value) =>
-                        set(defaultModelPath, value || undefined)
+                        updateCreationModels(allowedModels, value || undefined)
                       }
                       options={[
                         ...(dynamicSubagentsEnabled
@@ -977,7 +1071,7 @@ export function ResourceFields({
                     label={t("Let the agent create subagents")}
                     controlId="dynamic-subagents-enabled"
                     description={
-                      dynamicSubagentsEnabled && !text(defaultModelPath)
+                      dynamicSubagentsEnabled && !defaultModel
                         ? t(
                             "Choose at least one allowed model and a default model in Agent creation above.",
                           )

@@ -43,7 +43,12 @@ const sectionFields = {
 export type EditorSection = keyof typeof sectionFields | "advanced";
 const commonFields = new Set<string>([...Object.values(sectionFields).flat()]);
 export function initialConfig(): AgentConfig {
-  return { model: "", instructions: "", subagents: { mode: "async" } };
+  return {
+    model: "",
+    instructions: "",
+    subagents: { mode: "async" },
+    tool_search: { mode: "native", sources: {} },
+  };
 }
 /** Configuration not represented by a dedicated editor section. */
 export function advancedConfig(config: AgentConfig) {

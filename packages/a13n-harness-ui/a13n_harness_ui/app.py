@@ -1549,12 +1549,14 @@ class HarnessUiApp:
         thread_id: str | None = None,
         defaults: NewThreadDefaults | None = None,
         environment: EnvironmentSelectionPatch | None = None,
+        coordinator: bool = False,
     ) -> SkillCatalogView:
         async with self._operation():
             return await self._terminal_projections.skill_catalog(
                 thread_id=thread_id,
                 defaults=defaults,
                 environment=environment,
+                coordinator=coordinator,
             )
 
     async def validate_skill_references(

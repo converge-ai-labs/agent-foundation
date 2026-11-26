@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
 from a13n_harness_ui.configuration.models import (
     AcpAgentResource,
+    AgentCreationConfiguration,
     AgentToolSearch,
     BackgroundCompactionConfiguration,
     DeviceResource,
@@ -18,6 +19,7 @@ from a13n_harness_ui.configuration.models import (
     SubagentsConfiguration,
     SubscriptionGroupResource,
     WebProviderResource,
+    lift_legacy_agent_creation,
     mcp_roots_enabled,
 )
 from a13n_harness_ui.connectors.models import Capture as ConnectorCapture
@@ -260,6 +262,10 @@ class ResolvedRunComposition(CompositionModel):
         default_factory=RunConfiguration, exclude_if=lambda value: value == RunConfiguration()
     )
     tool_execution: ToolExecutionConfig = Field(default_factory=ToolExecutionConfig)
+    agent_creation: AgentCreationConfiguration = Field(
+        default_factory=AgentCreationConfiguration,
+        exclude_if=lambda value: value == AgentCreationConfiguration(),
+    )
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
 
     role: Literal["ordinary", "coordinator", "worker"] | None = None
@@ -300,13 +306,18 @@ class ResolvedRunComposition(CompositionModel):
             pending.extend(reversed(tuple(item.definition for item in node.children)))
         return tuple(values)
 
-    # Historical Run snapshots can still carry the retired preference.
+    # Historical Run snapshots can still carry retired preferences or subagents.dynamic model policy.
     @model_validator(mode="before")
     @classmethod
     def _read_previous_capture(cls, value: object) -> object:
-        if isinstance(value, dict) and "webui_sidekick" in value:
-            return {key: item for key, item in value.items() if key != "webui_sidekick"}
-        return value
+        if not isinstance(value, dict):
+            return value
+        normalized = (
+            {key: item for key, item in value.items() if key != "webui_sidekick"}
+            if "webui_sidekick" in value
+            else value
+        )
+        return lift_legacy_agent_creation(normalized, check_conflicts=False)
 
     @model_validator(mode="after")
     def _valid_environment_selection(self) -> Self:

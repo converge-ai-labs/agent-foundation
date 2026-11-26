@@ -39,6 +39,31 @@ async def app_workspace(
     return scope
 
 
+async def is_app_enabled(
+    session: AsyncSession,
+    runtime: Runtime,
+    app_id: str,
+    *,
+    organization_id: str | None = None,
+    workspace_id: str | None = None,
+) -> bool:
+    """Check whether an installed App is currently enabled for an organization or workspace."""
+    runtime.apps.require(app_id)
+    if organization_id is None and workspace_id is None:
+        raise ValueError("Provide organization_id or workspace_id")
+    target_org = organization_id
+    if workspace_id is not None:
+        workspace = await session.get(WorkspaceRow, workspace_id)
+        if workspace is None or (target_org is not None and workspace.organization_id != target_org):
+            return False
+        target_org = workspace.organization_id
+    assert target_org is not None
+    organization = await session.get(OrganizationRow, target_org)
+    if organization is None:
+        return False
+    return app_id in policy(organization.settings).enabled
+
+
 async def app_actor(
     session: AsyncSession, runtime: Runtime, scope: WorkspaceScope, actor_id: str, *, share: bool = True
 ) -> Principal:

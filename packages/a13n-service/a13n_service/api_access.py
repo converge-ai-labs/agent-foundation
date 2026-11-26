@@ -37,14 +37,20 @@ class CredentialAccess:
             await self.app(scope, receive, send)
             return
         request = Request(scope)
-        # MCP authenticates at its own mount after removing browser cookies. Login sessions continue to
+        # MCP authenticates at its own mount after removing browser cookies. Third-party App webhooks verify
+        # their own sender credentials and signatures under `/api/v1/app-webhooks/`. Login sessions continue to
         # authenticate through route dependencies, including their Origin/CSRF checks.
-        if "authorization" not in request.headers or scope["path"] in {
-            "/api/v1/mcp",
-            "/api/v1/mcp/",
-            "/api/v1/platform-tools",
-            "/api/v1/platform-tools/",
-        }:
+        if (
+            "authorization" not in request.headers
+            or scope["path"]
+            in {
+                "/api/v1/mcp",
+                "/api/v1/mcp/",
+                "/api/v1/platform-tools",
+                "/api/v1/platform-tools/",
+            }
+            or scope["path"].startswith("/api/v1/app-webhooks/")
+        ):
             await self.app(scope, receive, send)
             return
         try:

@@ -3774,5 +3774,11 @@
   "Allow unattended tool execution without interactive CLI prompts.": "Allow unattended tool execution without interactive CLI prompts.",
   "Customize command": "Customize command",
   "Context occupancy reported by the external ACP Agent. Chat totals are in Usage.": "Context occupancy reported by the external ACP Agent. Chat totals are in Usage.",
-  "This external ACP Agent has not reported its current context window, so occupancy is unavailable.": "This external ACP Agent has not reported its current context window, so occupancy is unavailable."
+  "This external ACP Agent has not reported its current context window, so occupancy is unavailable.": "This external ACP Agent has not reported its current context window, so occupancy is unavailable.",
+  "Allowed agents": "Allowed agents",
+  "Agents can only use these configured agents for new chats and workers.": "Agents can only use these configured agents for new chats and workers.",
+  "With no agents selected, all configured agents are allowed for new chats and workers.": "With no agents selected, all configured agents are allowed for new chats and workers.",
+  "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.": "Agent creation is disabled because allowed_agents is empty in configuration. Select agents to allow them.",
+  "Same as current agent": "Same as current agent",
+  "Used when creating a new chat or worker without specifying an agent.": "Used when creating a new chat or worker without specifying an agent."
 }

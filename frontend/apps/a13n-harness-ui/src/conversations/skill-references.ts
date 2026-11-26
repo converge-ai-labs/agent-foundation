@@ -13,18 +13,22 @@ export function loadThreadSkills(
   threadId: string,
   environment?: Schema<"EnvironmentSelectionPatch"> | null,
   signal?: AbortSignal,
+  coordinator = false,
 ): Promise<SkillCatalog> {
+  const params = coordinator
+    ? { path: { thread_id: threadId }, query: { coordinator: true } }
+    : { path: { thread_id: threadId } };
   return environment != null
     ? result(
         transport.client.POST("/api/threads/{thread_id}/skills", {
-          params: { path: { thread_id: threadId } },
+          params,
           body: environment,
           signal,
         }),
       )
     : result(
         transport.client.GET("/api/threads/{thread_id}/skills", {
-          params: { path: { thread_id: threadId } },
+          params,
           signal,
         }),
       );
@@ -183,6 +187,8 @@ export function skillSourceLabel(id: string) {
       return "Personal";
     case "builtin-skills":
       return "Built-in";
+    case "builtin-coordinator-skills":
+      return "Coordinator";
     case "content-plugin":
       return "Plugin";
     case "device":

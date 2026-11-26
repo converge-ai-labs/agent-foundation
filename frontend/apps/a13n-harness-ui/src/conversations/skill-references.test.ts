@@ -56,9 +56,38 @@ it("forwards every Environment preview axis, including an explicit cleared defau
     expect(get).not.toHaveBeenCalled();
     await loadThreadSkills(transport, "thread-preview");
     expect(get).toHaveBeenCalledOnce();
+    await loadThreadSkills(transport, "thread-preview", null, signal, true);
+    expect(get).toHaveBeenLastCalledWith("/api/threads/{thread_id}/skills", {
+      params: {
+        path: { thread_id: "thread-preview" },
+        query: { coordinator: true },
+      },
+      signal,
+    });
+    await loadThreadSkills(
+      transport,
+      "thread-preview",
+      environment,
+      signal,
+      true,
+    );
+    expect(post).toHaveBeenLastCalledWith("/api/threads/{thread_id}/skills", {
+      params: {
+        path: { thread_id: "thread-preview" },
+        query: { coordinator: true },
+      },
+      body: environment,
+      signal,
+    });
   } finally {
     transport.close();
   }
+});
+it("labels built-in coordinator skills separately from ordinary built-in skills", () => {
+  expect(skillSourceLabel("a13n-harness-ui:builtin-skills")).toBe("Built-in");
+  expect(skillSourceLabel("a13n-harness-ui:builtin-coordinator-skills")).toBe(
+    "Coordinator",
+  );
 });
 it("matches TUI dollar names exactly, deduplicates, and leaves unknown text alone", () => {
   expect(

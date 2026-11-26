@@ -26,7 +26,7 @@ from a13n_service.runs import seal_events
 from a13n_service.runs.environments import events as environment_events
 from a13n_service.runs.environments.app_hooks import invoke
 from a13n_service.runs.runtime import Runtime
-from a13n_service.tenancy.app_plugins import AppRoute, policy
+from a13n_service.tenancy.app_plugins import AppRoute, AppWebhookRoute, policy
 from a13n_service.tenancy.tables import OrganizationRow
 
 SEAL_DROPS = meter.create_counter("a13n.app.run_seal.dropped", unit="{hint}")
@@ -47,6 +47,24 @@ def app_routers(apps: tuple[InstalledApp, ...]) -> tuple[APIRouter, ...]:
                     or not route.path.startswith(prefix)
                 ):
                     raise ValueError(f"App {app.app_id} must use its own app_router for direct HTTP routes")
+            routers.append(router)
+    return tuple(routers)
+
+
+def app_webhook_routers(apps: tuple[InstalledApp, ...]) -> tuple[APIRouter, ...]:
+    routers = []
+    for app in apps:
+        prefix = f"/api/v1/app-webhooks/{app.app_id}/"
+        for router in app.definition.webhook_routers:
+            for route in router.routes:
+                if (
+                    not isinstance(route, AppWebhookRoute)
+                    or route.app_plugin_id != app.app_id
+                    or not route.path.startswith(prefix)
+                ):
+                    raise ValueError(f"App {app.app_id} must use its own app_webhook_router for webhook routes")
+                if (route.openapi_extra or {}).get("x-a13n-mcp"):
+                    raise ValueError(f"App {app.app_id} webhook routes cannot be admitted to management MCP")
             routers.append(router)
     return tuple(routers)
 

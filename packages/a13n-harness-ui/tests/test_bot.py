@@ -19,7 +19,7 @@ def _write_configuration(tmp_path: Path, **kwargs) -> Path:
     root = _base_configuration(tmp_path, **kwargs)
     root.write_text(
         root.read_text()
-        + "subagents: {dynamic: {allowed_models: [model-primary], default_model: model-primary}}\nwebui:\n  bot:\n    enabled: true\n"
+        + "agent_creation: {allowed_models: [model-primary], default_model: model-primary}\nwebui:\n  bot:\n    enabled: true\n"
     )
     return root
 

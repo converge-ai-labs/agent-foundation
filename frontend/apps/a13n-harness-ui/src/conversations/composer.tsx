@@ -600,12 +600,18 @@ export function Composer({
     values?: Record<string, string>,
     raw = false,
   ) => setNotice({ message, values, raw });
+  const previewCoordinator =
+    !coordinatorActive &&
+    !owner &&
+    coordinatorRequested &&
+    !!coordinator?.available;
   const skillContext = JSON.stringify([
     local,
     externalAgent,
     skillDefaults,
     draft.environment,
     activity.receipt_id,
+    coordinatorActive || previewCoordinator,
   ]);
   const loadSkills: LoadSkills = () =>
     queries.fetchQuery({
@@ -614,6 +620,9 @@ export function Composer({
         local
           ? result(
               transport.client.POST("/api/threads/skills-preview", {
+                ...(previewCoordinator
+                  ? { params: { query: { coordinator: true } } }
+                  : {}),
                 body: {
                   ...skillDefaults,
                   ...draft.environment,
@@ -621,7 +630,13 @@ export function Composer({
                 signal,
               }),
             )
-          : loadThreadSkills(transport, threadId, draft.environment, signal),
+          : loadThreadSkills(
+              transport,
+              threadId,
+              draft.environment,
+              signal,
+              previewCoordinator,
+            ),
       staleTime: 10000,
     });
   const [syncDelayed, setSyncDelayed] = useState(false);
