@@ -1,4 +1,9 @@
-import { AcpOptionFields, acpModelOption, acpOptionLabel } from "./acp-options";
+import {
+  AcpOptionFields,
+  acpModelOption,
+  acpOptionLabel,
+  acpRunBlock,
+} from "./acp-options";
 import { useComposerRunChoices } from "./composer-run-choices";
 import {
   createContext,
@@ -10,6 +15,7 @@ import {
 } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "../i18n";
+import { errorMessage } from "../i18n/error-message";
 import { composerMessage } from "./composer-messages";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Folder } from "@phosphor-icons/react";
@@ -18,6 +24,7 @@ import {
   useProjects,
   useSelectors,
   useSetup,
+  useSources,
   useTransport,
 } from "../transport/context";
 import {
@@ -28,7 +35,12 @@ import {
 } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import type { Profile } from "../shell/presence";
-import { Composer, ComposerDrafts, useDraft } from "./composer";
+import {
+  Composer,
+  ComposerDrafts,
+  useDraft,
+  type ComposerBlock,
+} from "./composer";
 import { NewDraftStore, type NewDraft } from "./new-draft";
 import { attachmentSelections, isReadyAttachment } from "./inline-attachments";
 import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
@@ -316,7 +328,10 @@ function NewConversation({
     (item) => item.agent_id === effective?.agent_source.id,
   );
   const acpAgent =
-    effectiveAgent?.kind === "acp_agent" ? effectiveAgent.agent_id : undefined;
+    effective?.agent_source.kind === "acp_agent"
+      ? effective.agent_source.id
+      : undefined;
+  const acpEnabled = !!acpAgent && !draft.created;
   const acpProject = effective?.project_id ?? undefined;
   const acpKey = JSON.stringify([acpAgent, acpProject]);
   const activeAcpKey = useRef(acpKey);
@@ -328,7 +343,7 @@ function NewConversation({
   const acpQueryKey = ["new-acp-options", draft.threadId, acpKey] as const;
   const acp = useQuery<Schema<"AcpOptionsPreview">>({
     queryKey: acpQueryKey,
-    enabled: !!acpAgent && !draft.created,
+    enabled: acpEnabled,
     retry: false,
     refetchOnWindowFocus: false,
     staleTime: ({ state }) =>
@@ -411,6 +426,25 @@ function NewConversation({
       queries.setQueryData(vars.queryKey, updated);
     },
   });
+  const resetAcpChange = acpChange.reset;
+  useEffect(() => {
+    resetAcpChange();
+  }, [acpKey, draft.created, resetAcpChange]);
+  const acpChangeMatches = acpChange.variables?.key === acpKey;
+  const acpUpdating = acpEnabled && acpChange.isPending && acpChangeMatches;
+  const acpUpdateError =
+    acpEnabled && acpChangeMatches ? acpChange.error : null;
+  const sources = useSources(acpEnabled);
+  const acpSource =
+    acpAgent &&
+    sources.data?.sources.find(
+      (item) =>
+        item.resource_kind === "acp_agent" &&
+        item.resource_ids.includes(acpAgent),
+    );
+  const acpAuthPath = acpSource
+    ? `/settings/source?${new URLSearchParams({ path: acpSource.relative_path })}`
+    : undefined;
   const runChoices = useComposerRunChoices(
     composerDraft,
     defaults.agent_id ?? effective?.agent_source.id,
@@ -444,6 +478,83 @@ function NewConversation({
       { replace: true },
     );
   };
+  const acpBlock = acpEnabled
+    ? acpRunBlock({
+        agentName: effectiveAgent?.name ?? acpAgent,
+        hasData: acp.data !== undefined,
+        isFetching: acp.isFetching,
+        isError: acp.isError,
+        error: acp.error,
+        onRetryLoad: () => void acp.refetch(),
+        updating: acpUpdating,
+        updateError: acpUpdateError,
+        onRetryUpdate:
+          acpChangeMatches && acpChange.variables
+            ? () => acpChange.mutate(acpChange.variables!)
+            : undefined,
+        onDismissUpdateError: () => acpChange.reset(),
+        acpAuthPath,
+        t,
+      })
+    : null;
+  const runBlock: ComposerBlock | null = review.isPending
+    ? {
+        kind: "loading",
+        message: t("Checking the previous creation attempt…"),
+      }
+    : ownerId && (owner.isPending || projects.isPending)
+      ? {
+          kind: "loading",
+          message: t("Checking coordinator status…"),
+        }
+      : ownerId && !ownerAvailable
+        ? {
+            kind: "action_required",
+            message: t(
+              "The coordinator must be available in this project. Retry or remove the assignment.",
+            ),
+            showWhenEmpty: !owner.error,
+            action: {
+              label: t("Retry"),
+              onClick: () => {
+                void owner.refetch();
+                void projects.refetch();
+              },
+            },
+            secondaryAction: !draft.created
+              ? { label: t("Remove assignment"), onClick: clearOwner }
+              : undefined,
+          }
+        : !preview.data && (preview.isFetching || !preview.isError)
+          ? {
+              kind: "loading",
+              message: t("Updating chat settings…"),
+            }
+          : preview.isError || !preview.data
+            ? {
+                kind: "error",
+                message: t("Review chat settings before sending."),
+                showWhenEmpty: false,
+              }
+            : acpBlock
+              ? acpBlock
+              : runChoices.pending
+                ? selectors.isError
+                  ? {
+                      kind: "error",
+                      message: t("Could not load model settings."),
+                      detail: errorMessage(selectors.error, t),
+                      showWhenEmpty: true,
+                      action: {
+                        label: t("Retry"),
+                        onClick: () => void selectors.refetch(),
+                      },
+                    }
+                  : {
+                      kind: "loading",
+                      message: t("Loading model settings…"),
+                    }
+                : null;
   const [showAvailable, setShowAvailable] = useState(false);
   const projectAligned =
     requestedProject === null ||
@@ -597,6 +708,9 @@ function NewConversation({
                 : {
                     active: draft.created && composerDraft.coordinator === true,
                     available: canCoordinate,
+                    unavailableReason: !effective?.project_id
+                      ? "no_project"
+                      : undefined,
                     defaultEnabled:
                       canCoordinate &&
                       (draft.retainedCoordinatorDefault ??
@@ -604,27 +718,7 @@ function NewConversation({
                     locked: draft.attempted,
                   }
             }
-            canRun={
-              !runChoices.pending &&
-              (!acpAgent || (!!acp.data && !acpChange.isPending)) &&
-              !!preview.data &&
-              !preview.error &&
-              ownerAvailable &&
-              !review.isPending
-            }
-            unavailableReason={
-              review.isPending
-                ? t("Checking the previous creation attempt…")
-                : !ownerAvailable
-                  ? t(
-                      "The coordinator must be available in this project. Retry or remove the assignment.",
-                    )
-                  : preview.isPending
-                    ? t("Updating chat settings…")
-                    : preview.error
-                      ? t("Review chat settings before sending.")
-                      : undefined
-            }
+            runBlock={runBlock}
             profile={profile}
             unauthorized={unauthorized}
             reconcile={() => {
@@ -678,11 +772,14 @@ function NewConversation({
                   onExternalOptionsOpen={() => {
                     if (
                       !draft.created &&
-                      !acpChange.isPending &&
+                      !acpUpdating &&
                       !acpModelOption(acp.data?.options)
                     )
                       void acp.refetch({ cancelRefetch: false });
                   }}
+                  externalLoading={
+                    acpEnabled && (acpUpdating || acp.isFetching)
+                  }
                   externalModel={acpOptionLabel(
                     modelOption,
                     t("No model selected"),
@@ -706,8 +803,8 @@ function NewConversation({
                         options={acp.data?.options}
                         preset={effectiveAgent?.preset}
                         loading={acp.isFetching}
-                        disabled={choicesDisabled || acpChange.isPending}
-                        error={acpChange.error ?? acp.error}
+                        disabled={choicesDisabled || acpUpdating}
+                        error={acpUpdateError ?? acp.error}
                         onChange={(change) =>
                           acp.data &&
                           acpChange.mutate({

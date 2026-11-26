@@ -2268,6 +2268,7 @@ div:has(+ .execution) > .assistantMessage {
   max-height: min(240px, 30dvh);
   overflow: hidden auto;
   overscroll-behavior: contain;
+  margin-bottom: 8px;
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--a13n-surface);
@@ -2279,7 +2280,9 @@ div:has(+ .execution) > .assistantMessage {
 }
 .composerFeedback .warning,
 .composerFeedback .composerStatus,
-.composerFeedback .composerConnection {
+.composerFeedback .composerConnection,
+.composerFeedback .composerLoading,
+.composerFeedback .composerBlock {
   margin: 0;
   padding: 0;
   border: 0;
@@ -2287,8 +2290,48 @@ div:has(+ .execution) > .assistantMessage {
   width: auto;
 }
 .composerFeedback .warning p,
-.composerFeedback .composerStatus p {
+.composerFeedback .composerStatus p,
+.composerFeedback .composerBlock p {
   margin: 0;
+}
+.composerLoading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--a13n-text-body);
+  color: var(--harness-log-text);
+}
+.composerLoading > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.composerBlock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  font-size: var(--a13n-text-body);
+  color: var(--a13n-text);
+}
+.composerBlockText {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.composerBlockDetail {
+  display: block;
+  margin-top: 2px;
+  color: var(--harness-log-text);
+  font-size: var(--a13n-text-body);
+  overflow-wrap: anywhere;
+}
+.composerBlockActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .conversationFeedback {
   width: min(var(--harness-reading-width), calc(100% - 32px));
