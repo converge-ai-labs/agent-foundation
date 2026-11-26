@@ -39,7 +39,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
 
 from a13n_harness_ui import __version__
-from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus
+from a13n_harness_ui.acp_auth import AcpAuthRequest, AcpAuthStatus, AcpPresetAuthRequest
 from a13n_harness_ui.acp_sessions import (
     AcpCommand,
     AcpOption,
@@ -1821,6 +1821,7 @@ def create_webui(
 
     async def while_connected[T](request: Request, operation: Callable[[], Awaitable[T]]) -> T:
         result: list[T] = []
+        failure: HarnessUiError | None = None
         async with create_task_group() as tasks:
 
             async def disconnected() -> None:
@@ -1831,8 +1832,14 @@ def create_webui(
                         return
 
             tasks.start_soon(disconnected)
-            result.append(await operation())
-            tasks.cancel_scope.cancel()
+            try:
+                result.append(await operation())
+            except HarnessUiError as error:
+                failure = error
+            finally:
+                tasks.cancel_scope.cancel()
+        if failure is not None:
+            raise failure
         if not result:
             raise HarnessUiError("The client disconnected.", code="request_disconnected")
         return result[0]
@@ -2056,6 +2063,23 @@ def create_webui(
     @server.get("/api/acp-agents/presets", response_model=tuple[AcpPresetView, ...])
     async def acp_agent_presets() -> tuple[AcpPresetView, ...]:
         return acp_presets()
+
+    @server.post("/api/acp-agents/preset-auth", response_model=AcpAuthStatus, openapi_extra=_body(AcpPresetAuthRequest))
+    async def acp_preset_auth(request: Request) -> AcpAuthStatus:
+        document = await _document(request, AcpPresetAuthRequest)
+        return await while_connected(request, lambda: app().acp_preset_auth(document))
+
+    @server.get("/api/acp-agents/preset-auth/inputs", response_model=tuple[McpInputRequestView, ...])
+    async def acp_preset_auth_inputs() -> tuple[McpInputRequestView, ...]:
+        return await app().acp_preset_auth_inputs()
+
+    @server.post(
+        "/api/acp-agents/preset-auth/inputs/{request_id}/response",
+        response_model=McpInputRequestView,
+        openapi_extra=_body(McpInputResponse),
+    )
+    async def respond_acp_preset_auth_input(request_id: str, request: Request) -> McpInputRequestView:
+        return await app().respond_acp_preset_auth_input(request_id, await _document(request, McpInputResponse))
 
     @server.get("/api/acp-agents/{agent_id}/options", response_model=AcpOptionsPreview)
     async def acp_agent_options(agent_id: str, project_id: str | None = None) -> AcpOptionsPreview:

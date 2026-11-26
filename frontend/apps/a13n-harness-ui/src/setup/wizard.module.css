@@ -1,8 +1,11 @@
 .wizard {
   width: min(680px, calc(100vw - 48px));
   max-width: 680px;
-  height: min(600px, calc(100dvh - 48px));
+  height: min(720px, calc(100dvh - 48px));
   color: var(--a13n-text);
+}
+.wizard.start {
+  height: min(480px, calc(100dvh - 48px));
 }
 .steps {
   display: flex;
@@ -90,7 +93,7 @@
   margin-bottom: 24px;
 }
 .connections {
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 .environments {
   grid-template-columns: repeat(2, 1fr);
@@ -114,7 +117,7 @@
     border-color 120ms ease-out;
 }
 .connections button:hover,
-.environments button:hover {
+.environments button:not(:disabled):hover {
   background: var(--a13n-hover);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -134,12 +137,12 @@
   outline-offset: 3px;
 }
 .connections strong,
-.environments strong,
-.summary strong {
+.environments strong {
   font-weight: 500;
   font-size: var(--a13n-text-body);
 }
 .connections span,
+.connections small,
 .environments span {
   font-size: var(--a13n-text-body);
   color: var(--a13n-text-supporting);
@@ -158,20 +161,56 @@
   padding: 8px 0;
   font-size: var(--a13n-text-body);
 }
-.summary {
-  display: grid;
-  gap: 8px;
-  padding: 16px 0 0;
-  font-size: var(--a13n-text-body);
-}
-.summary span,
 .stepCount {
   color: var(--a13n-secondary);
 }
-.suggestions {
+.engineGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 4px 12px;
+}
+.engine {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--a13n-text);
+  text-align: start;
+  cursor: pointer;
+}
+.engine:hover {
+  background: var(--a13n-hover);
+}
+.engine[aria-pressed="true"] {
+  background: var(--a13n-selected);
+}
+.engine:focus-visible {
+  outline: 2px solid var(--a13n-signal);
+  outline-offset: 2px;
+}
+.engine small {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.capabilities {
+  display: grid;
   gap: 8px;
+}
+.environments button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+@media (pointer: coarse) {
+  .engine,
+  .check {
+    min-height: 44px;
+  }
 }
 .runtimeStatus {
   display: grid;
@@ -236,7 +275,8 @@
   margin-right: 8px;
 }
 @media (max-width: 600px) {
-  .wizard {
+  .wizard,
+  .wizard.start {
     position: fixed;
     inset: 0;
     width: 100vw;

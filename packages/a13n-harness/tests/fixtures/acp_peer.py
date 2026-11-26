@@ -189,7 +189,7 @@ for line in sys.stdin:
                 else {},
             },
         )
-    elif MODE == "auth" and method == "authenticate":
+    elif MODE in {"auth", "auth-required"} and method == "authenticate":
         assert params["methodId"] == "browser"
         answer = result(
             "elicitation/create",

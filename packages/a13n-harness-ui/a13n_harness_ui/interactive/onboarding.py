@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -27,7 +29,10 @@ from .setup import Question, SetupWizard
 from .theme import prompt_toolkit_style_rules, resolve_theme
 
 if TYPE_CHECKING:
+    from a13n_harness_ui.acp_auth import AcpAuthMethod
     from a13n_harness_ui.app import HarnessUiApp
+    from a13n_harness_ui.configuration.models import AcpAgentCandidate
+    from a13n_harness_ui.model_authoring import AccountConnection
     from a13n_harness_ui.setup import SetupStatus
 
     from .backend import SessionBackend
@@ -271,10 +276,10 @@ def _describe_accounts(status: SetupStatus) -> dict[str, str]:
     }
 
 
-async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit: Callable[[str], None]) -> None:
-    from a13n_harness_ui.model_authoring import account_connection
-
-    connection = account_connection(provider)
+async def _ensure_account(
+    app: HarnessUiApp, connection: AccountConnection, ask_user: Ask, emit: Callable[[str], None]
+) -> None:
+    provider = connection.provider
     login_choices = {
         "manual_callback": Choice(
             "manual_callback", "Sign in and paste the callback URL", "Works when this Host is remote"
@@ -383,6 +388,111 @@ async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit:
                 await _choose(ask_user, login.message or f"Login {login.state}", (Choice("continue", "Continue"),))
 
 
+async def _login_acp(
+    app: HarnessUiApp,
+    candidate: AcpAgentCandidate,
+    method: AcpAuthMethod,
+    ask_user: Ask,
+    emit: Callable[[str], None],
+) -> None:
+    from a13n_harness_ui.acp_auth import AcpPresetAuthRequest
+    from a13n_harness_ui.mcp_runtime.inputs import McpInputResponse
+
+    from .mcp_inputs import McpInteraction
+
+    request = AcpPresetAuthRequest.model_validate({**candidate.model_dump(), "action": "login", "method_id": method.id})
+    emit(f"Signing in with {method.name}. Ctrl+C cancels this login.")
+    operation = asyncio.create_task(app.acp_preset_auth(request))
+    try:
+        while not operation.done():
+            for item in await app.acp_preset_auth_inputs():
+                response: McpInputResponse | None = None
+                interaction = McpInteraction(item)
+                while response is None:
+                    if item.private_form:
+                        emit(f"Open {item.url} to sign in.")
+                        text = await ask_user(
+                            Question("acp_callback", "Paste the callback URL or code (hidden)", "", password=True), None
+                        )
+                        response = (
+                            McpInputResponse(action="accept", content={"callback": text})
+                            if text.strip()
+                            else McpInputResponse(action="cancel")
+                        )
+                    else:
+                        text = await ask_user(
+                            Question("acp_input", f"{item.message}\n{interaction.prompt()}", ""), None
+                        )
+                        try:
+                            response = interaction.answer(text)
+                        except ValueError as exc:
+                            emit(str(exc))
+                await app.respond_acp_preset_auth_input(item.request_id, response)
+            await asyncio.wait({operation}, timeout=0.2)
+        await operation
+    finally:
+        if not operation.done():
+            operation.cancel()
+            with CancelScope(shield=True), suppress(asyncio.CancelledError):
+                await operation
+
+
+async def _ensure_acp(app: HarnessUiApp, wizard: SetupWizard, ask_user: Ask, emit: Callable[[str], None]) -> None:
+    from a13n_harness_ui.acp_auth import AcpPresetAuthRequest
+
+    candidate = wizard.acp_candidate()
+    preset = next((item for item in wizard.acp_presets if item.id == candidate.preset), None)
+    while True:
+        emit("Checking the local ACP connection…")
+        try:
+            status = await app.acp_preset_auth(
+                AcpPresetAuthRequest.model_validate({**candidate.model_dump(), "action": "probe"})
+            )
+        except HarnessUiError as exc:
+            emit(str(exc))
+            await _choose(ask_user, "ACP check failed", (Choice("retry", "Check again"),))
+            continue
+        if status.state == "ready":
+            emit("Ready · Signed in")
+            return
+        if status.state == "executable_missing":
+            if preset and preset.install_url:
+                emit(f"Executable not found. Install: {preset.install_url}")
+            await _choose(
+                ask_user,
+                "Executable not found. Install it, then check again, or press Esc.",
+                (Choice("retry", "Check again"),),
+            )
+            continue
+        choices = tuple(
+            Choice(f"login:{index}", item.name, f"{item.kind.title()} login")
+            for index, item in enumerate(status.methods)
+        )
+        action = await _choose(
+            ask_user,
+            "Sign in to this local CLI",
+            (*choices, Choice("retry", "Check again"), Choice("later", "Continue without signing in")),
+        )
+        if action == "later":
+            return
+        if action.startswith("login:"):
+            method = status.methods[int(action.removeprefix("login:"))]
+            if method.kind == "terminal":
+                emit(f"Run on this Host: {shlex.join(method.argv)}")
+                if method.environment_keys:
+                    emit(f"Environment variables: {', '.join(method.environment_keys)}")
+                await _choose(
+                    ask_user,
+                    "Run the command in another terminal, then check again.",
+                    (Choice("retry", "Check again"),),
+                )
+            else:
+                try:
+                    await _login_acp(app, candidate, method, ask_user, emit)
+                except HarnessUiError as exc:
+                    emit(str(exc))
+
+
 async def run_setup(
     app: HarnessUiApp,
     directory: Path,
@@ -398,16 +508,16 @@ async def run_setup(
     """Publish the completed choices. Cancellation never starts chat."""
     from pydantic import SecretStr
 
+    from a13n_harness_ui.acp_sessions import acp_presets
     from a13n_harness_ui.configuration.setup import SetupSelection
     from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput
-    from a13n_harness_ui.model_authoring import SUBSCRIPTION_CONNECTIONS, subscription_connection
 
     emit(
         "Add an agent · Choose an existing Model or create a new one. Existing agents and defaults stay unchanged."
         if add_agent
         else "Add a model · Only a Model is created; agents and defaults stay unchanged."
         if add_model
-        else "Connect a model and review its settings. Saved after the final choice · Ctrl+C to cancel."
+        else "Connect a model or local CLI and review its settings. Saved after the final choice · Ctrl+C to cancel."
     )
     status = await app.setup_status(rediscover=True)
     if status.diagnostic:
@@ -418,6 +528,7 @@ async def run_setup(
         return False
     configuration = await app.current_configuration() if add_agent or add_model else None
     models = configuration.models if configuration is not None else {}
+    connections = (await app.model_choices()).connections
     wizard = SetupWizard(
         add_agent=add_agent,
         add_model=add_model,
@@ -425,14 +536,25 @@ async def run_setup(
         model_resources=dict(models),
         values={"model_source": existing_model_id} if existing_model_id is not None else {},
         advanced=advanced,
-        default_provider=next((item.provider for item in status.providers if item.available), "codex"),
+        connections=connections,
+        acp_presets=() if add_model else acp_presets(),
+        configured_presets=frozenset(status.acp_presets.values()),
+        detected_env_keys=status.detected_env_keys,
+        detected_accounts=tuple(
+            item.label
+            for item in connections
+            if item.account is not None
+            and any(account.provider == item.account.provider and account.available for account in status.providers)
+        ),
+        current_default=(
+            status.agents.get(status.default_agent, status.default_agent) if status.default_agent else None
+        ),
         default_environment="sandbox"
         if (environment or status.environment_profile) == "environment-sandbox"
         else "full-control",
         provider_descriptions=_describe_accounts(status),
         existing_agent_ids=frozenset(status.agents),
     )
-    checked_provider: str | None = None
     try:
         while True:
             try:
@@ -454,12 +576,12 @@ async def run_setup(
                         answer = f"key:{reference}"
                     wizard.accept(answer)
                     answer = ""
-                    if question.key == "provider" and wizard.values["provider"] == "api":
+                    if question.key == "track" and wizard.provider == "api":
                         emit("Loading model suggestions and saved API-key references…")
                         catalog = await app.model_catalog()
                         wizard.catalog_models, wizard.catalog_status = catalog.items, catalog.status
                         wizard.saved_credentials = tuple(key.credential_ref for key in await app.list_api_keys())
-                    if question.key == "model" and wizard.values.get("provider") == "api":
+                    if question.key == "model" and wizard.provider == "api":
                         from a13n_harness_ui.model_authoring import ModelOptionsRequest
 
                         options = await app.model_options(
@@ -470,30 +592,36 @@ async def run_setup(
                             )
                         )
                         wizard.context_window_hint = options.known_context_window
-                    if question.key == "provider" and wizard.values["provider"] != "api":
-                        await _ensure_account(app, wizard.values["provider"], ask_user, emit)
-                        checked_provider = wizard.values["provider"]
+                    picked_engine = (
+                        question.key in {"provider", "subscription_more"}
+                        and wizard.question is not None
+                        and wizard.question.key != "subscription_more"
+                    )
+                    if (picked_engine and wizard.selected_preset not in {None, "custom"}) or question.key == "acp_args":
+                        await _ensure_acp(app, wizard, ask_user, emit)
+                        if add_agent:
+                            wizard.suggested_name = next(
+                                (item.name for item in wizard.acp_presets if item.id == wizard.selected_preset),
+                                "Custom ACP",
+                            )
+                    if picked_engine and wizard.selected_preset is None:
+                        connection = wizard.connection().account
+                        assert connection is not None
+                        await _ensure_account(app, connection, ask_user, emit)
                         wizard.account_models = ()
-                        connection = subscription_connection(checked_provider)
-                        if connection.account is not None and connection.account.model_discovery:
-                            account = await app.inspect_model_account(checked_provider)
-                            if account.usable:
-                                action = await _choose(
-                                    ask_user,
-                                    "Choose Copilot models",
-                                    (
-                                        Choice("manual", "Enter a model ID", "No network request"),
-                                        Choice(
-                                            "fetch",
-                                            "Fetch account models",
-                                            "Explicit authenticated catalog request; Chat Completions only",
-                                        ),
-                                    ),
+                        if connection.model_discovery and (await app.inspect_model_account(wizard.provider)).usable:
+                            action = await _choose(
+                                ask_user,
+                                "Choose an account model",
+                                (
+                                    Choice("manual", "Enter a model ID", "No network request"),
+                                    Choice("fetch", "Fetch account models", "Explicit authenticated catalog request"),
+                                ),
+                            )
+                            if action == "fetch":
+                                wizard.account_models = tuple(
+                                    item.value for item in await app.discover_account_models(wizard.provider)
                                 )
-                                if action == "fetch":
-                                    wizard.account_models = tuple(
-                                        item.value for item in await app.discover_account_models(checked_provider)
-                                    )
                     if (add_agent or add_model) and (
                         question.key == "model"
                         or (question.key == "model_source" and wizard.existing_model_id is not None)
@@ -503,13 +631,7 @@ async def run_setup(
                         if wizard.existing_model_id is not None:
                             base = models[wizard.existing_model_id].name[:110]
                         else:
-                            provider = wizard.values["provider"]
-                            route = (
-                                wizard.values["api_provider"]
-                                if provider == "api"
-                                else subscription_connection(provider).id
-                            )
-                            base = model_name(route, wizard.values["model"])
+                            base = model_name(wizard.connection_id, wizard.values["model"])
                         if add_agent:
                             base = coding_agent_name(base)
                         name, number = base, 2
@@ -519,24 +641,21 @@ async def run_setup(
                             number += 1
                         wizard.suggested_name = name
                     continue
-                provider = wizard.values.get("provider", "existing")
+                recipe = None
                 if (
-                    provider in {item.account.provider for item in SUBSCRIPTION_CONNECTIONS if item.account is not None}
-                    and provider != checked_provider
+                    wizard.selected_preset is None
+                    and wizard.existing_model_id is None
+                    and wizard.connection().authentication == "plugin_subscription"
                 ):
-                    await _ensure_account(app, provider, ask_user, emit)
-                    checked_provider = provider
-                selection = SetupSelection.model_validate(wizard.selection(str(directory)))
+                    recipe = await app.prepare_model(wizard.recipe_request())
+                selection = SetupSelection.model_validate(wizard.selection(str(directory), prepared_recipe=recipe))
                 preview = await app.preview_setup(selection)
-                if not (add_agent or add_model):
+                if not (add_agent or add_model) and selection.model is not None and selection.set_as_default:
                     emit(
-                        "File memory and automatic organization are enabled by default. Organization automatically "
-                        "uses the global default Agent's model; no separate model selection is needed. WebUI may make additional "
-                        "background model requests that consume quota or incur costs. Existing choices are preserved; "
-                        "configure memory in General settings or the root YAML. CLI does not organize automatically."
+                        "Automatic memory organization uses the default Agent's model in WebUI and can consume model quota. Existing choices are kept."
                     )
                 emit("Saving agent…" if add_agent else "Saving model…" if add_model else "Saving your configuration…")
-                if not (add_agent or add_model) and selection.environment_profile == "environment-sandbox":
+                if selection.updates_workspace and selection.environment_profile == "environment-sandbox":
                     emit("Checking Sandbox prerequisites. Ctrl+C cancels; no fallback to Full Control.")
                     for root in preview.project_paths:
                         ready = await app.preflight_environment("environment-sandbox", project_path=root)

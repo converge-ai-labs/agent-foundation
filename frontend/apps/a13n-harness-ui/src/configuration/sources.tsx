@@ -152,11 +152,13 @@ export function SourcesPage({
     ? undefined
     : "The YAML and Markdown files behind every setting.",
   headingLevel = 1,
+  extraAction,
 }: {
   kinds?: ResourceKind[];
   title?: string;
   description?: string;
   headingLevel?: 1 | 2;
+  extraAction?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const sources = useSources();
@@ -235,7 +237,12 @@ export function SourcesPage({
             ? t(description)
             : description
         }
-        actions={addAction}
+        actions={
+          <>
+            {extraAction}
+            {addAction}
+          </>
+        }
       />
       <div className={layout.collection}>
         {!!listed?.length && (

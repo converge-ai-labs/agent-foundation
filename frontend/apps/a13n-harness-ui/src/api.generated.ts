@@ -2260,6 +2260,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/acp-agents/preset-auth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Acp Preset Auth */
+        post: operations["acp_preset_auth_api_acp_agents_preset_auth_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp-agents/preset-auth/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Acp Preset Auth Inputs */
+        get: operations["acp_preset_auth_inputs_api_acp_agents_preset_auth_inputs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/acp-agents/preset-auth/inputs/{request_id}/response": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Respond Acp Preset Auth Input */
+        post: operations["respond_acp_preset_auth_input_api_acp_agents_preset_auth_inputs__request_id__response_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/acp-agents/{agent_id}/options": {
         parameters: {
             query?: never;
@@ -3582,6 +3633,16 @@ export interface components {
             source: "native" | "copilot_cli_file";
             /** Account Id */
             account_id: string;
+        };
+        /** AcpAgentCandidate */
+        AcpAgentCandidate: {
+            preset: components["schemas"]["AcpAgentPreset"];
+            /** Command */
+            command?: string | null;
+            /** Args */
+            args?: string[] | null;
+            /** Name */
+            name?: string | null;
         };
         /** @enum {string} */
         AcpAgentPreset: "antigravity" | "claude_code" | "codex" | "gemini_cli" | "github_copilot" | "opencode" | "goose" | "kimi_cli" | "custom";
@@ -8325,6 +8386,7 @@ export interface components {
             preserved_paths: string[];
             /** Project Paths */
             project_paths: string[];
+            agent_id?: components["schemas"]["ResourceId"] | null;
         };
         /** SetupProvider */
         SetupProvider: {
@@ -8345,6 +8407,7 @@ export interface components {
             completed: boolean;
             /** Published Paths */
             published_paths: string[];
+            agent_id?: components["schemas"]["ResourceId"] | null;
             /** Error Code */
             error_code?: string | null;
             /** Error Message */
@@ -8353,6 +8416,26 @@ export interface components {
         /** SetupSelection */
         SetupSelection: {
             model?: components["schemas"]["ModelRecipe"] | null;
+            primary_acp_agent?: components["schemas"]["AcpAgentCandidate"] | null;
+            /**
+             * Additional Acp Presets
+             * @default []
+             */
+            additional_acp_presets?: components["schemas"]["AcpAgentPreset"][];
+            /**
+             * Set As Default
+             * @default true
+             */
+            set_as_default?: boolean;
+            /**
+             * Configure Workspace
+             * @default true
+             */
+            configure_workspace?: boolean;
+            /** Enable Dictation */
+            enable_dictation?: boolean | null;
+            /** Auto Organize Memory */
+            auto_organize_memory?: boolean | null;
             /**
              * Instructions
              * @default
@@ -8442,8 +8525,17 @@ export interface components {
             suggested_project_path?: string;
             /** Providers */
             providers: components["schemas"]["SetupProvider"][];
+            /**
+             * Detected Env Keys
+             * @default []
+             */
+            detected_env_keys?: string[];
             /** Agents */
             agents: {
+                [key: string]: string;
+            };
+            /** Acp Presets */
+            acp_presets?: {
                 [key: string]: string;
             };
             /** Projects */
@@ -11513,6 +11605,23 @@ export interface components {
             resource_digest: string;
             /** Tools */
             tools: components["schemas"]["McpToolName"][] | null;
+        };
+        /** AcpPresetAuthRequest */
+        AcpPresetAuthRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "probe" | "login" | "logout";
+            /** Method Id */
+            method_id?: string | null;
+            preset: components["schemas"]["AcpAgentPreset"];
+            /** Command */
+            command?: string | null;
+            /** Args */
+            args?: string[] | null;
+            /** Name */
+            name?: string | null;
         };
         /** AcpOptionChange */
         AcpOptionChange: {
@@ -16118,6 +16227,85 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AcpPresetView"][];
+                };
+            };
+        };
+    };
+    acp_preset_auth_api_acp_agents_preset_auth_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcpPresetAuthRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcpAuthStatus"];
+                };
+            };
+        };
+    };
+    acp_preset_auth_inputs_api_acp_agents_preset_auth_inputs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpInputRequestView"][];
+                };
+            };
+        };
+    };
+    respond_acp_preset_auth_input_api_acp_agents_preset_auth_inputs__request_id__response_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["McpInputResponse"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["McpInputRequestView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
