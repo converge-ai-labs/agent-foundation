@@ -315,7 +315,7 @@ class AgentReconstructor:
             if acp_turn is None:
                 raise CompositionError("ACP requires an admitted outbound turn.", code="acp_turn_required")
             acp_turn.capabilities = (
-                CurrentAgentContextCapability(),
+                CurrentAgentContextCapability(model_name_provider=lambda: acp_turn.current_model_id),
                 *root_capabilities,
                 *((memory,) if memory is not None else ()),
                 *(self._mcp_capability(item) for item in composition.root.mcp_servers),

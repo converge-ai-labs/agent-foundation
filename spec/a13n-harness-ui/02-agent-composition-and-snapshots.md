@@ -14,7 +14,7 @@ Bot root captures additionally include immutable Environment target recipes: tar
 
 ## Current Agent Context
 
-Every reconstructed Harness UI Agent, including child Agents and memory organization, projects its current Thread ID and resolved native Model name through the Harness model-context pipeline. This is default Host behavior shared by CLI and WebUI, independent of optional tools and Thread collaboration. The Model name comes from the current invocation's resolved Model, not a resource alias, a recipe ID, the next-Run selection, or a newly read configuration file. It is the requested provider model identifier used for attribution; it does not attest to private routing behind a provider endpoint.
+Every reconstructed Harness UI Agent, including child Agents and memory organization, projects its current Thread ID through the Harness model-context pipeline. This is default Host behavior shared by CLI and WebUI, independent of optional tools and Thread collaboration. Native invocations also project the resolved Model name, which comes from the current invocation's Model, not a resource alias, a recipe ID, the next-Run selection, or a newly read configuration file. It is the requested provider model identifier used for attribution; it does not attest to private routing behind a provider endpoint.
 
 Harness UI replaces the default `a13n.agent-context` block with plain text inside an `<agent-context source="a13n-harness-ui">` wrapper:
 
@@ -25,6 +25,8 @@ Current Model: gpt-5
 Use the current Model name when attributing work to a model.
 </agent-context>
 ```
+
+[Outbound ACP](14-agent-client-protocol.md#outbound-acp-in-local-chats) uses the same block and attribution hint with the active model ID reported by the peer. If the peer has no selected model, the block contains only the Thread ID.
 
 The identity block exposes no internal Run, Agent, Model-resource, or recipe IDs. The Thread ID remains available for interaction. Other context sources, tool results, and historical projections remain intact. The block is recomputed at eligible input and ordinary tool-result boundaries, using identical rendering and the automatic-metadata disclaimer at both boundaries. The UI identity owner queries retained context and contributes the block only when its rendered content differs from the latest retained value. It removes the default Harness identity before making this decision, including when its own block is omitted. A fresh Run still resolves current bindings and Model names; equality never skips resolution. Exact continuations retain Harness's no-projection boundary. After compaction or handoff, the next eligible boundary supplies fresh identity without relying on old history.
 

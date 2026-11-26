@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from copy import deepcopy
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Literal
 
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.content import request_input_content
+from a13n_harness.model_context import ModelContextProjection, ModelContextProjectionRequest, ModelContextRequestKind
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.model_context import CurrentAgentContextCapability
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
@@ -39,6 +41,31 @@ def _identity(request: ModelMessage) -> str:
     return values[0].value
 
 
+@pytest.mark.parametrize("empty_model_name", [None, "", " \t"])
+async def test_identity_reads_dynamic_model_name_at_each_projection(empty_model_name: str | None) -> None:
+    model_name: str | None = " vendor/model&<revision> "
+    capability = CurrentAgentContextCapability(model_name_provider=lambda: model_name)
+    ctx = SimpleNamespace(model=None, deps=SimpleNamespace(thread_id="thread-acp"), messages=[])
+    request = ModelContextProjectionRequest(kind=ModelContextRequestKind.INPUT)
+
+    async def next_projection(_: ModelContextProjectionRequest) -> ModelContextProjection:
+        return ModelContextProjection(blocks=())
+
+    (first,) = (await capability.wrap_model_context(ctx, request, next_projection)).blocks
+    assert first.content.startswith(
+        '<agent-context source="a13n-harness-ui">\n'
+        "Current Thread: thread-acp\n"
+        "Current Model: vendor/model&amp;&lt;revision&gt;\n"
+        "Use the current Model name when attributing work to a model.\n"
+        "</agent-context>"
+    )
+    model_name = empty_model_name
+    (next_block,) = (await capability.wrap_model_context(ctx, request, next_projection)).blocks
+    assert next_block.content.startswith(
+        '<agent-context source="a13n-harness-ui">\nCurrent Thread: thread-acp\n</agent-context>'
+    )
+
+
 async def test_identity_is_plain_text_and_preserves_tool_results_and_history() -> None:
     seen: list[list[ModelMessage]] = []
 
@@ -56,7 +83,10 @@ async def test_identity_is_plain_text_and_preserves_tool_results_and_history() -
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream, model_name="provider-model"),
-        capabilities=(CurrentAgentContextCapability(), Capability(tools=[Tool(advance)])),
+        capabilities=(
+            CurrentAgentContextCapability(model_name_provider=lambda: pytest.fail("native Model takes precedence")),
+            Capability(tools=[Tool(advance)]),
+        ),
     )
     result = await executable.run("start", bindings=RunBindings.embedded())
     assert result.output_or_raise() == "done"

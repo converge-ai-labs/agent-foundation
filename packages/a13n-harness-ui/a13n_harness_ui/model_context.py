@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from html import escape
 
 from a13n_harness import AgentContext
@@ -19,18 +20,24 @@ from a13n_harness_ui.surface_context import surface_context
 
 
 class CurrentAgentContextCapability(AbstractModelContextCapability):
-    """Replace Harness's default identity with the current Thread and native Model name."""
+    """Replace Harness's default identity with the current Thread and model name."""
 
     id = "a13n-harness-ui.agent-context"
+
+    def __init__(self, model_name_provider: Callable[[], str | None] | None = None) -> None:
+        self._model_name_provider = model_name_provider
 
     async def wrap_model_context(
         self, ctx: RunContext[AgentContext], request: ModelContextProjectionRequest, handler: ModelContextNext
     ) -> ModelContextProjection:
         projection = await handler(request)
+        model_name = ctx.model.model_name if ctx.model is not None else None
+        if ctx.model is None and self._model_name_provider is not None:
+            model_name = self._model_name_provider()
         model_identity = (
-            f"Current Model: {escape(ctx.model.model_name, quote=False)}\n"
+            f"Current Model: {escape(name, quote=False)}\n"
             "Use the current Model name when attributing work to a model.\n"
-            if ctx.model is not None
+            if model_name is not None and (name := model_name.strip())
             else ""
         )
         content = (
