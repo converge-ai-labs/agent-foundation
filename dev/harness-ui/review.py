@@ -624,39 +624,63 @@ async def model(messages, info) -> AsyncIterator[str | dict[int, DeltaToolCall] 
             await asyncio.sleep(pause / len(thoughts))
         yield {1: DeltaToolCall(name="view", tool_call_id="review-read", json_args='{"path":"checkout.ts"}')}
         return
-    shells = [part for part in returns if part.tool_name == "shell_exec"]
-    if not shells:
-        yield "The submit handler has no pending guard. I'll run the focused checks before changing the retry path.\n\n"
-        yield {
-            0: DeltaThinkingPart(
-                content="A small guard should stop duplicate clicks. The existing request identifier should survive a retry; generating a new one would defeat provider deduplication."
-            )
-        }
-        await asyncio.sleep(pause)
-        command = "pnpm test checkout --offline" if "[retry]" in prompt else "pnpm test checkout"
-        yield {
-            1: DeltaToolCall(name="shell_exec", tool_call_id="review-check", json_args=json.dumps({"command": command}))
-        }
-        return
-    if "[retry]" in prompt and len(shells) == 1:
-        yield "The offline check could not resolve the test dependencies. I'll retry with the available local runner.\n\n"
-        await asyncio.sleep(pause)
-        yield {
-            0: DeltaToolCall(
-                name="shell_exec", tool_call_id="review-retry", json_args='{"command":"pnpm test checkout"}'
-            )
-        }
-        return
-    if not any(part.tool_name == "note_write" for part in returns):
-        yield "All three checks passed. I'm saving the retry decision for the next review.\n\n"
-        yield {
-            0: DeltaToolCall(
-                name="note_write",
-                tool_call_id="review-note",
-                json_args='{"key":"Checkout retries","value":"Reuse the order identifier, reject duplicate clicks, and preserve form input after failure."}',
-            )
-        }
-        return
+    if "[thought]" in prompt:
+        if not any(part.tool_name == "note_write" for part in returns):
+            follow_up_thoughts = [
+                "The submit handler in checkout.ts calls checkout.submit directly without checking a pending flag or reusing an idempotency key.",
+                "Before introducing a guard, verify how the form transitions between idle, submitting, failed, and succeeded states so a failed attempt never leaves the button permanently disabled.",
+                *[
+                    f"Follow-up check {index + 1}: trace how concurrent clicks, slow payment acknowledgements, and browser retries interact with the order identifier and preserved cart fields."
+                    for index in range(12)
+                ],
+            ]
+            for thought in follow_up_thoughts:
+                yield {0: DeltaThinkingPart(content=thought + "\n\n")}
+                await asyncio.sleep(pause / len(follow_up_thoughts))
+            yield {
+                1: DeltaToolCall(
+                    name="note_write",
+                    tool_call_id="review-note",
+                    json_args='{"key":"Checkout retries","value":"Reuse the order identifier, reject duplicate clicks, and preserve form input after failure."}',
+                )
+            }
+            return
+    else:
+        shells = [part for part in returns if part.tool_name == "shell_exec"]
+        if not shells:
+            yield "The submit handler has no pending guard. I'll run the focused checks before changing the retry path.\n\n"
+            yield {
+                0: DeltaThinkingPart(
+                    content="A small guard should stop duplicate clicks. The existing request identifier should survive a retry; generating a new one would defeat provider deduplication."
+                )
+            }
+            await asyncio.sleep(pause)
+            command = "pnpm test checkout --offline" if "[retry]" in prompt else "pnpm test checkout"
+            yield {
+                1: DeltaToolCall(
+                    name="shell_exec", tool_call_id="review-check", json_args=json.dumps({"command": command})
+                )
+            }
+            return
+        if "[retry]" in prompt and len(shells) == 1:
+            yield "The offline check could not resolve the test dependencies. I'll retry with the available local runner.\n\n"
+            await asyncio.sleep(pause)
+            yield {
+                0: DeltaToolCall(
+                    name="shell_exec", tool_call_id="review-retry", json_args='{"command":"pnpm test checkout"}'
+                )
+            }
+            return
+        if not any(part.tool_name == "note_write" for part in returns):
+            yield "All three checks passed. I'm saving the retry decision for the next review.\n\n"
+            yield {
+                0: DeltaToolCall(
+                    name="note_write",
+                    tool_call_id="review-note",
+                    json_args='{"key":"Checkout retries","value":"Reuse the order identifier, reject duplicate clicks, and preserve form input after failure."}',
+                )
+            }
+            return
     answer = ANSWER
     if "[long]" in prompt:
         answer += "\n### Detailed observations\n\n" + "\n\n".join(

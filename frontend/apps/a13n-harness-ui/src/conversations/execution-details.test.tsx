@@ -10,7 +10,8 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ConversationTranscript } from "./transcript";
+import { ConversationTranscript, LiveOutput } from "./transcript";
+import { PauseConversationFollowing } from "./execution-details";
 import { RunActivity } from "./run-activity";
 import type { DisplayBlock } from "./stream";
 import type { Schema } from "../transport/client";
@@ -143,6 +144,12 @@ it("keeps immediate activity beside the response as tools arrive, outside collap
     />,
   );
   expect(trigger.textContent).toBe("ThinkingWork log");
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    within(screen.getByRole("region", { name: "Work log" }))
+      .getByText("Thinking")
+      .closest("details")?.open,
+  ).toBe(true);
 });
 
 it.each([
@@ -542,4 +549,431 @@ it("keeps the execution reader open without moving the preceding progress on com
   expect(
     screen.getByText("Finished.").closest("[data-execution-reader]"),
   ).toBeNull();
+});
+
+it("auto-expands active desktop execution and tails live thinking without pausing conversation follow, then collapses on tool and completion", async () => {
+  viewport()(false);
+  const pauseFollowing = vi.fn();
+  const input: Schema<"TranscriptEntry"> = {
+    position: 0,
+    message_kind: "request",
+    parts: [{ kind: "user", text: "Trace checkout retries" }],
+  };
+  const turn = {
+    turn_id: "live-turn",
+    input_position: 0,
+    end_position: 1,
+    final_position: null,
+    preview: "Trace checkout retries",
+  };
+  const renderTranscript = (
+    blocks: DisplayBlock[],
+    running = true,
+    complete = false,
+  ) => (
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={
+          complete
+            ? [
+                input,
+                {
+                  position: 1,
+                  message_kind: "response",
+                  parts: [
+                    { kind: "thinking", text: "First step\nSecond step" },
+                    {
+                      kind: "tool_call",
+                      tool_name: "view",
+                      tool_call_id: "read-1",
+                      value: { path: "checkout.ts" },
+                    },
+                    {
+                      kind: "tool_result",
+                      tool_name: "view",
+                      tool_call_id: "read-1",
+                      value: "ok",
+                    },
+                    { kind: "thinking", text: "Verify retry guard" },
+                    { kind: "assistant", text: "Guard added." },
+                  ],
+                },
+              ]
+            : [input]
+        }
+        turns={[
+          complete
+            ? {
+                ...turn,
+                end_position: 2,
+                final_position: 1,
+                duration_ms: 8400,
+              }
+            : turn,
+        ]}
+        blocks={blocks}
+        localInputs={[]}
+        running={running}
+      />
+    </PauseConversationFollowing>
+  );
+
+  // Empty thinking START frame opens desktop execution stretch without flashing an empty thought box.
+  const view = render(
+    renderTranscript([{ id: "t1", kind: "thinking", text: "   " }]),
+  );
+  const trigger = screen.getByRole("button", { name: /Work log/ });
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(pauseFollowing).not.toHaveBeenCalled();
+  const reader = screen.getByRole("region", { name: "Work log" });
+  expect(within(reader).getByText("Thinking").closest("details")?.open).toBe(
+    false,
+  );
+
+  // First non-empty delta auto-opens Thinking and scrolls viewport to bottom.
+  view.rerender(
+    renderTranscript([{ id: "t1", kind: "thinking", text: "First step" }]),
+  );
+  const firstDetails = within(reader).getByText("Thinking").closest("details")!;
+  expect(firstDetails.open).toBe(true);
+  const thoughtViewport = within(firstDetails).getByRole("region", {
+    name: "Thought content",
+  });
+  let scrollHeight = 320;
+  Object.defineProperty(thoughtViewport, "scrollHeight", {
+    configurable: true,
+    get: () => scrollHeight,
+  });
+  Object.defineProperty(thoughtViewport, "clientHeight", {
+    configurable: true,
+    get: () => 144,
+  });
+
+  scrollHeight = 460;
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+    ]),
+  );
+  expect(thoughtViewport.scrollTop).toBe(460);
+
+  // Brief gap after REASONING_MESSAGE_END keeps the trailing thought open until the next row arrives.
+  view.rerender(
+    renderTranscript([
+      {
+        id: "t1",
+        kind: "thinking",
+        text: "First step\nSecond step",
+        done: true,
+      },
+    ]),
+  );
+  expect(firstDetails.open).toBe(true);
+  expect(within(firstDetails).getByText("Thought")).toBeTruthy();
+
+  // Tool call arrives even if earlier thinking did not flip done: earlier thinking collapses and settles to Thought.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: true,
+        result: "ok",
+      },
+    ]),
+  );
+  expect(firstDetails.open).toBe(false);
+  expect(within(firstDetails).queryByText("Thinking")).toBeNull();
+  expect(within(firstDetails).getByText("Thought")).toBeTruthy();
+  expect(trigger.textContent).not.toContain("Thinking");
+
+  // Subsequent thinking after tool call auto-expands and scrolls live.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: true,
+        result: "ok",
+      },
+      { id: "t2", kind: "thinking", text: "Verify retry guard" },
+    ]),
+  );
+  expect(firstDetails.open).toBe(false);
+  const secondDetails = within(reader)
+    .getByText("Thinking")
+    .closest("details")!;
+  expect(secondDetails.open).toBe(true);
+
+  // Assistant prose follows: ExecutionDetails auto-collapses without pausing follow.
+  view.rerender(
+    renderTranscript([
+      { id: "t1", kind: "thinking", text: "First step\nSecond step" },
+      {
+        id: "tool-1",
+        kind: "tool",
+        name: "view",
+        toolCallId: "read-1",
+        text: '{"path":"checkout.ts"}',
+        done: true,
+        result: "ok",
+      },
+      { id: "t2", kind: "thinking", text: "Verify retry guard" },
+      { id: "reply-1", kind: "assistant", text: "Guard added." },
+    ]),
+  );
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(pauseFollowing).not.toHaveBeenCalled();
+
+  // Turn completes: collapses behind Worked for ... and stays collapsed.
+  view.rerender(renderTranscript([], false, true));
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(trigger.textContent).toContain("Worked for 8s");
+});
+
+it("respects manual overrides and pauses thinking auto-scroll when the viewer scrolls up", async () => {
+  viewport()(false);
+  const pauseFollowing = vi.fn();
+  const user = userEvent.setup();
+  const input: Schema<"TranscriptEntry"> = {
+    position: 0,
+    message_kind: "request",
+    parts: [{ kind: "user", text: "Inspect overrides" }],
+  };
+  const turn = {
+    turn_id: "override-turn",
+    input_position: 0,
+    end_position: 1,
+    final_position: null,
+    preview: "Inspect overrides",
+  };
+  const view = render(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[input]}
+        turns={[turn]}
+        blocks={[{ id: "t1", kind: "thinking", text: "Step one" }]}
+        localInputs={[]}
+        running
+      />
+    </PauseConversationFollowing>,
+  );
+
+  const trigger = screen.getByRole("button", { name: /Work log/ });
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  const reader = screen.getByRole("region", { name: "Work log" });
+  const details = within(reader).getByText("Thinking").closest("details")!;
+  expect(details.open).toBe(true);
+
+  // Scroll up pauses auto-scroll; scrolling back within 4px resumes auto-scroll.
+  const thoughtViewport = within(details).getByRole("region", {
+    name: "Thought content",
+  });
+  let scrollHeight = 400;
+  Object.defineProperty(thoughtViewport, "scrollHeight", {
+    configurable: true,
+    get: () => scrollHeight,
+  });
+  Object.defineProperty(thoughtViewport, "clientHeight", {
+    configurable: true,
+    get: () => 144,
+  });
+  thoughtViewport.scrollTop = 256;
+  fireEvent.wheel(thoughtViewport, { deltaY: -40 });
+  thoughtViewport.scrollTop = 120;
+  scrollHeight = 520;
+  view.rerender(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[input]}
+        turns={[turn]}
+        blocks={[{ id: "t1", kind: "thinking", text: "Step one\nStep two" }]}
+        localInputs={[]}
+        running
+      />
+    </PauseConversationFollowing>,
+  );
+  expect(thoughtViewport.scrollTop).toBe(120);
+
+  // Scroll back near bottom (520 - 374 - 144 = 2 <= 4) resumes auto-scroll.
+  thoughtViewport.scrollTop = 374;
+  fireEvent.scroll(thoughtViewport);
+  scrollHeight = 640;
+  view.rerender(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[input]}
+        turns={[turn]}
+        blocks={[
+          {
+            id: "t1",
+            kind: "thinking",
+            text: "Step one\nStep two\nStep three",
+          },
+        ]}
+        localInputs={[]}
+        running
+      />
+    </PauseConversationFollowing>,
+  );
+  expect(thoughtViewport.scrollTop).toBe(640);
+
+  // Manually collapsing active thinking keeps it collapsed across updates.
+  await user.click(within(details).getByText("Thinking"));
+  expect(details.open).toBe(false);
+  view.rerender(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[input]}
+        turns={[turn]}
+        blocks={[
+          {
+            id: "t1",
+            kind: "thinking",
+            text: "Step one\nStep two\nStep three\nStep four",
+          },
+        ]}
+        localInputs={[]}
+        running
+      />
+    </PauseConversationFollowing>,
+  );
+  expect(details.open).toBe(false);
+
+  // Manually expanding keeps it open across subsequent rows and live-to-saved cutover.
+  await user.click(within(details).getByText("Thinking"));
+  expect(details.open).toBe(true);
+
+  // Manually collapsing and re-expanding ExecutionDetails pins it open across completion and calls pauseFollowing on expand.
+  await user.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  expect(pauseFollowing).not.toHaveBeenCalled();
+  await user.click(trigger);
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(pauseFollowing).toHaveBeenCalledTimes(1);
+
+  view.rerender(
+    <PauseConversationFollowing value={pauseFollowing}>
+      <ConversationTranscript
+        threadId="one"
+        entries={[
+          input,
+          {
+            position: 1,
+            message_kind: "response",
+            parts: [
+              {
+                kind: "thinking",
+                text: "Step one\nStep two\nStep three\nStep four",
+              },
+              { kind: "assistant", text: "All set." },
+            ],
+          },
+        ]}
+        turns={[{ ...turn, end_position: 2, final_position: 1 }]}
+        blocks={[]}
+        localInputs={[]}
+        running={false}
+      />
+    </PauseConversationFollowing>,
+  );
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(details.open).toBe(true);
+});
+
+it("never auto-opens mobile modal or inline thinking preview during an active run", () => {
+  viewport();
+  render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[entries[0]]}
+      turns={[
+        {
+          turn_id: "mobile-live",
+          input_position: 0,
+          end_position: 1,
+          final_position: null,
+          preview: "Investigate scrolling",
+        },
+      ]}
+      blocks={[
+        { id: "t1", kind: "thinking", text: "Mobile streaming thought" },
+      ]}
+      localInputs={[]}
+      running
+    />,
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+  expect(screen.queryByText("Mobile streaming thought")).toBeNull();
+  expect(screen.getByRole("button", { name: /Work log/ }).textContent).toBe(
+    "ThinkingWork log",
+  );
+});
+
+it("keeps historical or reloaded unfinished runs collapsed by default on desktop", () => {
+  viewport()(false);
+  render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[entries[0]]}
+      turns={[
+        {
+          turn_id: "reloaded-turn",
+          input_position: 0,
+          end_position: 1,
+          final_position: null,
+          preview: "Investigate scrolling",
+        },
+      ]}
+      blocks={[{ id: "t1", kind: "thinking", text: "Reloaded thinking" }]}
+      localInputs={[]}
+      running={false}
+    />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /Work log/ })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(screen.queryByRole("region", { name: "Work log" })).toBeNull();
+});
+
+it("auto-expands live thinking in active LiveOutput and collapses it when a tool arrives", () => {
+  const view = render(
+    <LiveOutput
+      running
+      gap={false}
+      blocks={[{ id: "sub-t1", kind: "thinking", text: "Subagent plan" }]}
+    />,
+  );
+  const details = screen.getByText("Thinking").closest("details")!;
+  expect(details.open).toBe(true);
+
+  view.rerender(
+    <LiveOutput
+      running
+      gap={false}
+      blocks={[
+        { id: "sub-t1", kind: "thinking", text: "Subagent plan" },
+        { id: "sub-tool", kind: "tool", name: "view", text: "{}" },
+      ]}
+    />,
+  );
+  expect(details.open).toBe(false);
+  expect(within(details).getByText("Thought")).toBeTruthy();
+  expect(within(details).queryByText("Thinking")).toBeNull();
 });

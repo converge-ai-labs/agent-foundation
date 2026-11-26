@@ -32,35 +32,40 @@ export function ExecutionDetails({
   complete,
   preview,
   running,
+  autoOpen = false,
   children,
 }: {
   complete: boolean;
   preview: string;
   running?: boolean;
+  autoOpen?: boolean;
   children: (open: boolean) => ReactNode;
 }) {
   const { t } = useTranslation();
   const mobile = useMediaQuery("(max-width: 700px)");
   const pauseFollowing = useContext(PauseConversationFollowing);
-  const [expanded, setExpanded] = useState(false);
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
   const [inspecting, setInspecting] = useState(false);
   const [visited, setVisited] = useState(false);
-  const open = expanded;
+  const open = !mobile && (userExpanded ?? autoOpen);
   useEffect(() => {
     if (!mobile) setInspecting(false);
   }, [mobile]);
+  useEffect(() => {
+    if (open) setVisited(true);
+  }, [open]);
 
   if (!mobile)
     return (
       <Collapsible
         className={conversation.execution}
-        open={expanded}
+        open={open}
         onOpenChange={(next) => {
           if (next) {
             pauseFollowing?.();
             setVisited(true);
           }
-          setExpanded(next);
+          setUserExpanded(next);
         }}
       >
         <div className={conversation.executionHeading}>
@@ -86,7 +91,7 @@ export function ExecutionDetails({
           keepMounted
           inert={!open}
         >
-          {visited && children(open)}
+          {(open || visited) && children(open)}
           <ReaderFades />
         </CollapsiblePanel>
       </Collapsible>
