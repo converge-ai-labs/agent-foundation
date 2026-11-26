@@ -10,6 +10,7 @@ export const composerMessages = new Set([
   "Chat not found. Your input is saved here. Send again to retry creating the same chat.",
   "Couldn't confirm the chat was created. Send again to check.",
 
+  "Synchronize your edits before sending.",
   "Your message may already be sent. Open the chat and check before sending again.",
   "Review the archived chat's outcome before sending this input again.",
   "Couldn't remove the saved draft from this browser.",
