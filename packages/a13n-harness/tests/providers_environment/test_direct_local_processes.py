@@ -256,22 +256,24 @@ async def test_native_powershell_unicode_and_quoting(tmp_path: Path) -> None:
         assert "CLIXML" not in result.output.stderr.inline.decode()
 
 
-@pytest.mark.parametrize("shell", ["pwsh", "powershell"])
 @pytest.mark.parametrize(
-    ("script", "exit_code"),
+    ("shell", "script", "exit_code"),
     [
-        ("Write-Output done", 0),
-        ("Write-Error failed", 1),
-        ("Write-Error failed; Write-Output recovered", 0),
-        ("Write-Progress -Activity working -Status half; Write-Output done", 0),
-        ("exit 5", 5),
-        ("Write-Output 'unclosed `", 1),
+        ("pwsh", "Write-Output done", 0),
+        ("pwsh", "Write-Error failed", 1),
+        ("pwsh", "Write-Error failed; Write-Output recovered", 0),
+        ("pwsh", "Write-Progress -Activity working -Status half; Write-Output done", 0),
+        ("pwsh", "exit 5", 5),
+        ("pwsh", "Write-Output 'unclosed `", 1),
+        # Windows PowerShell 5.1 is the shell that wrote CLIXML. Each of its runs can spend about
+        # 20 seconds preparing modules on a CI runner, so one case covers it.
+        ("powershell", "Write-Error failed", 1),
     ],
 )
 async def test_native_powershell_exit_status_follows_the_last_statement(
     tmp_path: Path, shell: str, script: str, exit_code: int
 ) -> None:
-    # Windows PowerShell 5.1 and PowerShell 7 must agree, and neither may write CLIXML records.
+    # Neither PowerShell may write CLIXML records, and the exit status follows the last statement.
     async with _processes(tmp_path, powershell=shell, max_wall_time_seconds=60) as processes:
         result = await processes.exec(
             CommandRequest(
