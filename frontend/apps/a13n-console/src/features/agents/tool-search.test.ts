@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import {
   automaticSearchGroups,
+  enableConnectionDiscovery,
   toolSearchConfig,
   toolSearchDraft,
   usesToolDiscovery,
@@ -230,4 +231,81 @@ it("round-trips native sources without groups and keeps proxy settings separate"
       { connection_id: "con_excluded" },
     ]),
   ).toEqual(saved);
+});
+
+it("enables tool discovery for one connection across direct, native, automatic proxy, and custom proxy modes", () => {
+  const fromDirect = enableConnectionDiscovery(
+    toolSearchDraft(undefined),
+    "con_photon",
+    "Photon",
+  );
+  expect(fromDirect.mode).toBe("native");
+  expect(usesToolDiscovery(fromDirect, connection("con_photon"))).toBe(true);
+  expect(
+    toolSearchConfig(fromDirect, [{ connection_id: "con_photon" }]),
+  ).toEqual({
+    mode: "native",
+    sources: { connections: true },
+  });
+
+  const fromNativeExcluded = enableConnectionDiscovery(
+    toolSearchDraft({
+      mode: "native",
+      sources: {
+        connections: false,
+        exclude_connections: ["con_photon", "con_other"],
+      },
+    }),
+    "con_photon",
+  );
+  expect(usesToolDiscovery(fromNativeExcluded, connection("con_photon"))).toBe(
+    true,
+  );
+  expect(usesToolDiscovery(fromNativeExcluded, connection("con_other"))).toBe(
+    false,
+  );
+
+  const fromProxyAutomatic = enableConnectionDiscovery(
+    toolSearchDraft({
+      automatic: {
+        connections: false,
+        exclude_connections: ["con_photon"],
+      },
+    }),
+    "con_photon",
+  );
+  expect(fromProxyAutomatic.mode).toBe("proxy");
+  expect(usesToolDiscovery(fromProxyAutomatic, connection("con_photon"))).toBe(
+    true,
+  );
+
+  const fromCustomGroups = enableConnectionDiscovery(
+    toolSearchDraft({
+      groups: {
+        photon: { description: "Existing group", capabilities: ["browser"] },
+      },
+    }),
+    "con_photon",
+    "Photon",
+  );
+  expect(fromCustomGroups.mode).toBe("proxy");
+  expect(fromCustomGroups.automatic).toBeNull();
+  expect(fromCustomGroups.groups).toHaveLength(2);
+  expect(fromCustomGroups.groups[0]?.name).toBe("photon");
+  expect(fromCustomGroups.groups[1]).toEqual({
+    name: "photon-2",
+    description: "Tools from Photon.",
+    connections: ["con_photon"],
+  });
+  expect(usesToolDiscovery(fromCustomGroups, connection("con_photon"))).toBe(
+    true,
+  );
+  expect(
+    toolSearchConfig(fromCustomGroups, [{ connection_id: "con_photon" }]),
+  ).toMatchObject({
+    groups: {
+      photon: { capabilities: ["browser"] },
+      "photon-2": { connections: ["con_photon"] },
+    },
+  });
 });

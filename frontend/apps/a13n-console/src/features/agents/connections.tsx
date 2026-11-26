@@ -1,5 +1,9 @@
-import { CaretRightIcon, XIcon } from "@phosphor-icons/react";
+import { CaretRightIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import {
+  Alert,
+  AlertAction,
+  AlertDescription,
+  AlertTitle,
   BrandIcon,
   Button,
   Checkbox,
@@ -24,6 +28,7 @@ import { useConnectionStateLabels } from "../connections/status";
 import { MCPConnectionIcon } from "../connections/mcp-icon";
 import { ToolPermissions, type PermissionChoice } from "./tool-permissions";
 import { connectionReviewTarget, type ReviewTarget } from "./reviewer";
+import { DIRECT_CONNECTION_TOOL_LIMIT } from "./tool-search";
 import styles from "./agents.module.css";
 
 type Connections = NonNullable<AgentConfig["connection_tools"]>;
@@ -70,8 +75,10 @@ export function ConnectionGroup({
   onReview,
   onRequireReviewer,
   discovery,
+  onEnableDiscovery,
 }: {
-  discovery?: "proxy";
+  discovery?: "proxy" | "native";
+  onEnableDiscovery?: () => void;
   onReview?: (target?: ReviewTarget) => void;
   onRequireReviewer?: () => void;
   connection?: Connection;
@@ -171,6 +178,8 @@ export function ConnectionGroup({
     : state === "ready"
       ? connectionEndpoint(connection)
       : stateLabels[connectionState(connection)];
+  const directLimitExceeded =
+    !discovery && selectedCount > DIRECT_CONNECTION_TOOL_LIMIT;
   return (
     <section className={styles.toolsetGroup}>
       <Collapsible open={expanded} onOpenChange={setExpanded}>
@@ -220,11 +229,45 @@ export function ConnectionGroup({
             </Tooltip>
           )}
         </div>
+        {directLimitExceeded && (
+          <div className={styles.connectionLimitNotice}>
+            <Alert variant="warning">
+              <WarningIcon aria-hidden="true" />
+              <AlertTitle>
+                {t("More than {{limit}} tools selected", {
+                  limit: DIRECT_CONNECTION_TOOL_LIMIT,
+                })}
+              </AlertTitle>
+              <AlertDescription>
+                {t(
+                  "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.",
+                  { limit: DIRECT_CONNECTION_TOOL_LIMIT },
+                )}
+              </AlertDescription>
+              {!readOnly && onEnableDiscovery && (
+                <AlertAction>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={onEnableDiscovery}
+                  >
+                    {t("Enable tool discovery")}
+                  </Button>
+                </AlertAction>
+              )}
+            </Alert>
+          </div>
+        )}
         <CollapsiblePanel>
           <div className={styles.toolsetGroupBody}>
             <div className={styles.connectionOptions}>
               {discovery && (
-                <p>{t("This connection uses grouped proxy search.")}</p>
+                <p>
+                  {discovery === "native"
+                    ? t("This connection uses native tool discovery.")
+                    : t("This connection uses grouped proxy search.")}
+                </p>
               )}
               <div className={styles.connectionOption}>
                 <span>

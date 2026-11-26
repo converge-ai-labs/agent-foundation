@@ -660,6 +660,7 @@ async def test_checked_toolset_enforces_discovery_max_tools_ceiling() -> None:
         await exceeded.get_tools(ctx)
     assert error.value.code == "connection_tools_exceeded"
     assert str(DISCOVERY_MAX_TOOLS) in str(error.value)
+    assert "enable Tool Search" not in str(error.value)
 
 
 @pytest.mark.parametrize(
@@ -840,6 +841,7 @@ async def test_large_mcp_catalog_requires_tool_search_and_isolates_inline_agents
                 with pytest.raises(DefinitionError) as error:
                     await executable.run("call", bindings=bindings)
                 assert error.value.code == "connection_tools_exceeded"
+                assert "enable Tool Search on the Agent" in str(error.value)
                 assert dispatches == []
                 return
 

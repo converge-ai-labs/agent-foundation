@@ -656,6 +656,22 @@ it("defaults new and omitted subagent policies to async", () => {
   expect(draftFor({ subagents: undefined }).current.subagentMode).toBe("async");
 });
 
+it("defaults new agents to native tool discovery while keeping omitted saved configs direct", () => {
+  expect(initialConfig().tool_search).toEqual({ mode: "native", sources: {} });
+  const fresh = draftFor();
+  expect(fresh.current.toolSearch.mode).toBe("native");
+  expect(buildDraftConfig(fresh.current, undefined, asIs)).toMatchObject({
+    ok: true,
+    config: { tool_search: { mode: "native", sources: {} } },
+  });
+
+  const savedDirect = draftFor({ tool_search: undefined });
+  expect(savedDirect.current.toolSearch.mode).toBe("direct");
+  expect(savedDirect.current.dirty).toBe(false);
+  const builtDirect = buildDraftConfig(savedDirect.current, undefined, asIs);
+  expect(builtDirect.ok && builtDirect.config.tool_search).toBeUndefined();
+});
+
 it("round-trips the unified named and dynamic policy, including explicit thinking off", () => {
   const subagents = {
     mode: "async" as const,

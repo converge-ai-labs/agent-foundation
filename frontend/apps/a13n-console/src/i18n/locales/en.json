@@ -4657,5 +4657,9 @@
   "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.": "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page.",
   "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.": "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
   "This field is required.": "This field is required.",
-  "Enter a valid value for this field.": "Enter a valid value for this field."
+  "Enter a valid value for this field.": "Enter a valid value for this field.",
+  "This connection uses native tool discovery.": "This connection uses native tool discovery.",
+  "More than {{limit}} tools selected": "More than {{limit}} tools selected",
+  "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.": "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.",
+  "Enable tool discovery": "Enable tool discovery"
 }

@@ -70,8 +70,13 @@ class CheckedToolset(WrapperToolset[AgentContext]):
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await super().get_tools(ctx)
         if len(tools) > self.max_tools:
+            guidance = (
+                f"select up to {self.max_tools} tools or enable Tool Search on the Agent."
+                if self.max_tools == MAX_TOOLS
+                else f"select up to {MAX_TOOLS} tools it offers."
+            )
             raise DefinitionError(
-                f"Connection {self.connection_id} exposes more than {self.max_tools} tools; select the tools it offers.",
+                f"Connection {self.connection_id} exposes more than {self.max_tools} tools; {guidance}",
                 code="connection_tools_exceeded",
             )
         return tools
