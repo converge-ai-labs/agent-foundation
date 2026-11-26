@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createTransport, type Schema } from "../transport/client";
+import { activitySummary, describeTool } from "./tool-presentation";
 import { mockWebSocket, FakeWebSocket } from "../../tests/fake-websocket";
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -1680,6 +1681,99 @@ function rawFrame(
     },
   });
 }
+it("classifies ACP commands and file reads before the run is saved", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let position = 0;
+  const send = (
+    id: string,
+    payload: Record<string, unknown>,
+    state?: string,
+  ) => {
+    position++;
+    display.accept(
+      rawFrame(100 + position, position, payload, id, "tool_call", state),
+    );
+  };
+  for (const id of ["ls", "pwd"]) {
+    send(id, {
+      type: "TOOL_CALL_START",
+      toolCallId: id,
+      toolCallName: "run_command",
+    });
+    send(id, {
+      type: "TOOL_CALL_ARGS",
+      toolCallId: id,
+      delta: JSON.stringify({ CommandLine: id }),
+    });
+    send(id, {
+      type: "CUSTOM",
+      name: "a13n.acp.tool",
+      value: {
+        toolCallId: id,
+        title: `Run ${id}`,
+        kind: "execute",
+        status: "in_progress",
+      },
+    });
+  }
+  const tool = (id: string) => {
+    const block = display.blocks.get(id)!;
+    return {
+      ...block,
+      name: block.name!,
+      input: block.text,
+      inputComplete: block.done,
+      live: true,
+    };
+  };
+  expect(describeTool(tool("pwd"))).toMatchObject({
+    label: "Run command",
+    summary: "pwd",
+    running: true,
+  });
+  expect(activitySummary([tool("ls"), tool("pwd")]).title).toBe(
+    "Running 2 commands",
+  );
+
+  for (const id of ["ls", "pwd"]) {
+    send(id, { type: "TOOL_CALL_END", toolCallId: id });
+    send(
+      id,
+      { type: "TOOL_CALL_RESULT", toolCallId: id, content: "workspace" },
+      "completed",
+    );
+  }
+  expect(activitySummary([tool("ls"), tool("pwd")]).title).toBe(
+    "Ran 2 commands",
+  );
+
+  const id = "read";
+  send(id, {
+    type: "TOOL_CALL_START",
+    toolCallId: id,
+    toolCallName: "read_file",
+  });
+  send(id, {
+    type: "CUSTOM",
+    name: "a13n.acp.tool",
+    value: {
+      toolCallId: id,
+      title: "Read README",
+      kind: "read",
+      status: "in_progress",
+      locations: [{ path: "/workspace/README.md" }],
+    },
+  });
+  expect(describeTool(tool(id))).toMatchObject({
+    label: "Read",
+    summary: "/workspace/README.md",
+    running: true,
+  });
+  expect(display.blocks.size).toBe(3);
+});
+
 it("uses frozen compact coverage, not the later checkpoint notification position", () => {
   const display = new FocusDisplay();
   display.accept(snapshot(0));
