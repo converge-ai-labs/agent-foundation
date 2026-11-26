@@ -141,7 +141,7 @@ async def load_harness_ui_configuration(
         after = await to_thread.run_sync(_scan_tree, selected)
         if before != after:
             continue
-        parsed = _parse_complete_tree(selected, captured, content_plugins)
+        parsed, legacy_agent_creation = _parse_complete_tree(selected, captured, content_plugins)
         if plugin_store is not None:
             parsed = parsed.model_copy(
                 update={
@@ -157,6 +157,12 @@ async def load_harness_ui_configuration(
         if plugin_before != plugin_after:
             continue
         _warn_unknown_fields(parsed)
+        if legacy_agent_creation:
+            logger.warning(
+                "Deprecated configuration fields at configuration.document.subagents.dynamic were lifted into "
+                "agent_creation: %s",
+                ", ".join(repr(name) for name in legacy_agent_creation),
+            )
         return _with_normalized_digest(parsed)
 
     raise _error(
@@ -273,16 +279,28 @@ def _scan_directory(
     return tuple(sorted(selected, key=lambda item: item[0]))
 
 
+def _legacy_agent_creation_keys(raw_document: object) -> tuple[str, ...]:
+    if not isinstance(raw_document, dict):
+        return ()
+    subagents = raw_document.get("subagents")
+    dynamic = subagents.get("dynamic") if isinstance(subagents, dict) else None
+    if not isinstance(dynamic, dict):
+        return ()
+    return tuple(key for key in ("allowed_models", "default_model") if key in dynamic)
+
+
 def _parse_complete_tree(
     root_path: Path,
     captured: list[tuple[str, bytes, tuple[int, int, int, int]]],
     content_plugins: tuple[InstalledContentPlugin, ...],
-) -> LoadedHarnessUiConfiguration:
+) -> tuple[LoadedHarnessUiConfiguration, tuple[str, ...]]:
     if not captured or captured[0][0] != root_path.name:
         raise RuntimeError("configuration capture omitted its root")
+    raw_document = _parse_yaml_mapping(root_path, captured[0][1], code="settings_invalid")
+    legacy_agent_creation = _legacy_agent_creation_keys(raw_document)
     document = _validate_model(
         HarnessUiDocument,
-        _parse_yaml_mapping(root_path, captured[0][1], code="settings_invalid"),
+        raw_document,
         root_path,
         code="settings_invalid",
     )
@@ -426,7 +444,7 @@ def _parse_complete_tree(
         )
 
     try:
-        return LoadedHarnessUiConfiguration(
+        loaded = LoadedHarnessUiConfiguration(
             document=document,
             root_digest=sources[0].source_digest,
             source_digest=canonical_digest(
@@ -453,6 +471,7 @@ def _parse_complete_tree(
             projects=projects,
             devices=devices,
         )
+        return loaded, legacy_agent_creation
     except ValidationError as exc:
         raise _validation_error(
             "configuration_invalid",

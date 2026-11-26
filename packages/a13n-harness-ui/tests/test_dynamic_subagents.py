@@ -82,6 +82,59 @@ def test_defaults_and_invalid_subagent_configuration():
     assert doc.agent_creation.default_agent == "acp-b"
     assert doc.agent_creation.default_model == "model-b"
 
+    # Legacy subagents.dynamic.{allowed_models, default_model} lift cleanly into agent_creation without mutating input.
+    legacy_input = {
+        "agent_creation": {"allowed_agents": ["agent-a"]},
+        "subagents": {
+            "dynamic": {"enabled": True, "allowed_models": ["model-a", "model-b"], "default_model": "model-b"}
+        },
+    }
+    legacy_snapshot = json.loads(json.dumps(legacy_input))
+    lifted = HarnessUiDocument.model_validate(legacy_input)
+    assert legacy_input == legacy_snapshot
+    assert lifted.subagents.dynamic.enabled is True
+    assert lifted.subagents.dynamic.model_extra == {}
+    assert lifted.agent_creation.allowed_agents == ("agent-a",)
+    assert lifted.agent_creation.allowed_models == ("model-a", "model-b")
+    assert lifted.agent_creation.default_model == "model-b"
+
+    # Agreeing legacy and canonical keys succeed; conflicting keys raise clear errors without mutating input.
+    agreeing = HarnessUiDocument.model_validate(
+        {
+            "agent_creation": {"allowed_models": ("model-a",), "default_model": "model-a"},
+            "subagents": {"dynamic": {"enabled": True, "allowed_models": ["model-a"], "default_model": "model-a"}},
+        }
+    )
+    assert agreeing.agent_creation.allowed_models == ("model-a",)
+    assert agreeing.agent_creation.default_model == "model-a"
+    for conflict, pattern in (
+        (
+            {
+                "agent_creation": {"allowed_models": ["model-a"]},
+                "subagents": {"dynamic": {"allowed_models": ["model-b"]}},
+            },
+            "subagents.dynamic.allowed_models and agent_creation.allowed_models must agree",
+        ),
+        (
+            {
+                "agent_creation": {"allowed_models": ["model-a"], "default_model": "model-a"},
+                "subagents": {"dynamic": {"default_model": "model-b"}},
+            },
+            "subagents.dynamic.default_model and agent_creation.default_model must agree",
+        ),
+        (
+            {
+                "agent_creation": {"allowed_models": ["model-a"], "default_model": None},
+                "subagents": {"dynamic": {"default_model": "model-a"}},
+            },
+            "subagents.dynamic.default_model and agent_creation.default_model must agree",
+        ),
+    ):
+        original = json.loads(json.dumps(conflict))
+        with pytest.raises(ValidationError, match=pattern):
+            HarnessUiDocument.model_validate(conflict)
+        assert conflict == original
+
 
 async def test_dynamic_model_references_are_validated(tmp_path):
     path = _source(tmp_path, ())
@@ -95,9 +148,11 @@ async def test_dynamic_model_references_are_validated(tmp_path):
     path.write_text('schema_version: "1"\nagent_creation: {default_agent: agent-missing}\n')
     with pytest.raises(ConfigurationError):
         await load_harness_ui_configuration(path)
-    path.write_text('schema_version: "1"\nsubagents: {dynamic: {allowed_models: [model-main]}}\n')
-    with pytest.raises(ConfigurationError):
+    # Legacy subagents.dynamic.allowed_models lifts and preserves agent_creation.allowed_models error attribution.
+    path.write_text('schema_version: "1"\nsubagents: {dynamic: {allowed_models: [model-missing]}}\n')
+    with pytest.raises(ConfigurationError) as legacy_error:
         await load_harness_ui_configuration(path)
+    assert "agent_creation.allowed_models" in str(legacy_error.value)
 
 
 async def open_app(

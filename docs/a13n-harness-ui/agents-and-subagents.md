@@ -82,7 +82,7 @@ subagents:
     enabled: true
 ```
 
-- `agent_creation.allowed_agents` and `default_agent` govern which Agents `create_thread` and `create_worker` may use (and default to when `agent_id` is omitted); `agent_creation.allowed_models` and `default_model` govern model selection for `create_thread`, `create_worker`, `delegate`, and `spawn_subagent`.
+- `agent_creation.allowed_agents` and `default_agent` govern which Agents `create_thread` and `create_worker` may use (and default to when `agent_id` is omitted); `agent_creation.allowed_models` and `default_model` govern model selection for `create_thread`, `create_worker`, `delegate`, and `spawn_subagent`. Legacy `subagents.dynamic.{allowed_models, default_model}` entries are lifted into `agent_creation` at load time (rejecting conflicts) and migrated automatically on WebUI save.
 - Dynamic helpers inherit the parent's tools and Environment, start with a clean history, and report final results back automatically.
 - Agents manage running children with `subagent_info`, `wait_subagent`, `steer_subagent`, and `resume_subagent`.
 

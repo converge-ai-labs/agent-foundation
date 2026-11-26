@@ -317,7 +317,7 @@ class ResolvedRunComposition(CompositionModel):
             if "webui_sidekick" in value
             else value
         )
-        return lift_legacy_agent_creation(normalized)
+        return lift_legacy_agent_creation(normalized, check_conflicts=False)
 
     @model_validator(mode="after")
     def _valid_environment_selection(self) -> Self:

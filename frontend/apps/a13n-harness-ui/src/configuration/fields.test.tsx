@@ -768,6 +768,62 @@ it("preserves unavailable allowed_agents entries so they can be cleared", async 
   ).toEqual({});
 });
 
+it("displays legacy subagents.dynamic model settings and migrates both fields on Allowed models edit", async () => {
+  renderFields(
+    'schema_version: "1"\nsubagents:\n  dynamic:\n    enabled: true\n    allowed_models:\n      - model-primary\n    default_model: model-primary\n',
+    "agents",
+  );
+  const user = userEvent.setup();
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Primary" })
+      .getAttribute("aria-checked"),
+  ).toBe("true");
+  expect(
+    screen.getByRole("combobox", { name: "Default model" }).textContent,
+  ).toContain("Primary");
+  expect(
+    screen.queryByText(
+      "Choose at least one allowed model and a default model in Agent creation above.",
+    ),
+  ).toBeNull();
+
+  // Adding another allowed model migrates both allowed_models and default_model into agent_creation.
+  await user.click(screen.getByRole("checkbox", { name: "Alternate" }));
+  expect(parse(screen.getByTestId("source").textContent!)).toEqual({
+    schema_version: "1",
+    agent_creation: {
+      allowed_models: ["model-primary", "model-alternate"],
+      default_model: "model-primary",
+    },
+    subagents: {
+      dynamic: {
+        enabled: true,
+      },
+    },
+  });
+});
+
+it("migrates legacy subagents.dynamic model settings when editing Default model", async () => {
+  renderFields(
+    'schema_version: "1"\nsubagents:\n  dynamic:\n    allowed_models:\n      - model-primary\n      - model-alternate\n    default_model: model-primary\n',
+    "agents",
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Default model" }));
+  await user.click(await screen.findByRole("option", { name: "Alternate" }));
+  expect(parse(screen.getByTestId("source").textContent!)).toEqual({
+    schema_version: "1",
+    agent_creation: {
+      allowed_models: ["model-primary", "model-alternate"],
+      default_model: "model-alternate",
+    },
+    subagents: {
+      dynamic: {},
+    },
+  });
+});
+
 it("persists independent Bot selections and updates the inherited Model without clearing an override", async () => {
   const initial =
     'schema_version: "1"\ndefaults:\n  agent: agent-default\nwebui:\n  bot:\n    enabled: true\n';

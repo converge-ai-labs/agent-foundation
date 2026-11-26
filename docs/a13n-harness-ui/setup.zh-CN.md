@@ -80,7 +80,7 @@ a13n-harness-ui config validate
 
 首次设置会将所选的聊天模型自动加入允许列表并设为默认创建模型（`agent_creation.allowed_models` 与 `agent_creation.default_model`）。你随时可以在 **Settings → Agents → Agent creation** 中配置允许使用的智能体（`agent_creation.allowed_agents`）、默认创建智能体（`agent_creation.default_agent`）以及可用模型和默认模型，该配置由独立会话、Coordinator Worker 与子智能体共同使用。
 
-**从旧版升级。** 请在 **Settings → Agents → Agent creation** 检查创建策略。原有的 `subagents.dynamic.allowed_models` 与 `subagents.dynamic.default_model` 已迁移至顶层 `agent_creation`（若仍写在 `subagents.dynamic` 下，配置加载时会明确提示迁移错误）。不设置 `agent_creation.allowed_agents` 时默认允许所有已配置的原生与 ACP 智能体；显式设为空列表 `[]` 会禁用智能体主动创建会话或 Worker。当 `agent_creation.allowed_models` 为空时，智能体仍可使用已配置的智能体创建会话或 Worker，但无法覆盖模型或通过 `delegate` 委派子智能体。要启用 `spawn_subagent`，还需选择默认模型并打开动态创建开关。若已有 Agent 配置在 `tools` 白名单中显式列出了已移除的 `run_thread` 或 `steer_thread`，请将其删除（配置加载时会明确报错），并仅在需要同时支持空闲启动和活跃引导时再添加 `send_thread_message`。如果原先通过 `webui.sidekick` 指定模型，请在此重新选择，然后删除旧配置项。如果配置中仍有该字段，加载时会在日志中提示。
+**从旧版升级。** 请在 **Settings → Agents → Agent creation** 检查创建策略。原有的 `subagents.dynamic.allowed_models` 与 `subagents.dynamic.default_model` 已迁移至顶层 `agent_creation`；已有 YAML 文件仍可兼容加载并自动提升到 `agent_creation`（日志会输出弃用提示，若新旧字段同时存在且值冲突则会拒绝加载），在 WebUI 中编辑并保存可用模型或默认模型时会自动完成迁移。不设置 `agent_creation.allowed_agents` 时默认允许所有已配置的原生与 ACP 智能体；显式设为空列表 `[]` 会禁用智能体主动创建会话或 Worker。当 `agent_creation.allowed_models` 为空时，智能体仍可使用已配置的智能体创建会话或 Worker，但无法覆盖模型或通过 `delegate` 委派子智能体。要启用 `spawn_subagent`，还需选择默认模型并打开动态创建开关。若已有 Agent 配置在 `tools` 白名单中显式列出了已移除的 `run_thread` 或 `steer_thread`，请将其删除（配置加载时会明确报错），并仅在需要同时支持空闲启动和活跃引导时再添加 `send_thread_message`。如果原先通过 `webui.sidekick` 指定模型，请在此重新选择，然后删除旧配置项。如果配置中仍有该字段，加载时会在日志中提示。
 
 ## 添加其他连接或 Agent
 

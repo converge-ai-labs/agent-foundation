@@ -168,9 +168,27 @@ export function ResourceFields({
   const defaultAgentPath = ["agent_creation", "default_agent"];
   const allowedModelsPath = ["agent_creation", "allowed_models"];
   const defaultModelPath = ["agent_creation", "default_model"];
+  const legacyAllowedModelsPath = ["subagents", "dynamic", "allowed_models"];
+  const legacyDefaultModelPath = ["subagents", "dynamic", "default_model"];
   const allowedAgentsRaw = strings(allowedAgentsPath);
   const allowedAgents = allowedAgentsRaw ?? [];
-  const allowedModels = strings(allowedModelsPath) ?? [];
+  const allowedModels =
+    strings(allowedModelsPath) ?? strings(legacyAllowedModelsPath) ?? [];
+  const defaultModel = document.hasIn(defaultModelPath)
+    ? text(defaultModelPath)
+    : text(legacyDefaultModelPath);
+  const updateCreationModels = (
+    nextAllowed: string[] | undefined,
+    nextDefault: string | undefined,
+  ) => {
+    let updated = updateDocument(source, allowedModelsPath, nextAllowed);
+    updated = updateDocument(updated, defaultModelPath, nextDefault);
+    if (document.hasIn(legacyAllowedModelsPath))
+      updated = updateDocument(updated, legacyAllowedModelsPath, undefined);
+    if (document.hasIn(legacyDefaultModelPath))
+      updated = updateDocument(updated, legacyDefaultModelPath, undefined);
+    onChange(updated);
+  };
   const dynamicSubagentsEnabled =
     get(["subagents", "dynamic", "enabled"]) === true;
   const creationAgentOptions = (selectors.data?.agents ?? [])
@@ -1006,20 +1024,12 @@ export function ResourceFields({
                     models={selectors.data?.models ?? []}
                     value={allowedModels}
                     onChange={(value) => {
-                      let updated = updateDocument(
-                        source,
-                        allowedModelsPath,
-                        value,
-                      );
-                      // The default must stay one of the allowed models.
-                      const fallback = text(defaultModelPath);
-                      if (fallback && !value?.includes(fallback))
-                        updated = updateDocument(
-                          updated,
-                          defaultModelPath,
-                          undefined,
-                        );
-                      onChange(updated);
+                      // The default must stay one of the allowed models; editing also migrates legacy subagents.dynamic keys.
+                      const nextDefault =
+                        defaultModel && value?.includes(defaultModel)
+                          ? defaultModel
+                          : undefined;
+                      updateCreationModels(value, nextDefault);
                     }}
                   />
                   {allowedModels.length > 0 && (
@@ -1028,11 +1038,11 @@ export function ResourceFields({
                       description={t(
                         "Used when the agent does not choose a model.",
                       )}
-                      value={text(defaultModelPath)}
+                      value={defaultModel}
                       placeholder={t("Choose a model")}
                       loading={selectors.isPending || sources.isPending}
                       onValueChange={(value) =>
-                        set(defaultModelPath, value || undefined)
+                        updateCreationModels(allowedModels, value || undefined)
                       }
                       options={[
                         ...(dynamicSubagentsEnabled
@@ -1061,7 +1071,7 @@ export function ResourceFields({
                     label={t("Let the agent create subagents")}
                     controlId="dynamic-subagents-enabled"
                     description={
-                      dynamicSubagentsEnabled && !text(defaultModelPath)
+                      dynamicSubagentsEnabled && !defaultModel
                         ? t(
                             "Choose at least one allowed model and a default model in Agent creation above.",
                           )

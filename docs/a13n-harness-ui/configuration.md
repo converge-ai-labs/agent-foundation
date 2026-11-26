@@ -62,6 +62,7 @@ subagents:
 
 - `tools.enable_ask_user_question` / `enable_codeact`: Global switches that gate both automatic and explicit Agent selections.
 - `input.steering_mode`: `immediate` (default) interrupts model generation or releases supported tool waits; `queued` delivers at the next safe boundary.
+- `agent_creation`: Governs allowed/default Agents and Models for agent-initiated creation; legacy `subagents.dynamic.{allowed_models, default_model}` keys continue to lift into `agent_creation` at load time (with conflict checking) and migrate automatically when saved in WebUI.
 
 ## Shell review shortcut
 

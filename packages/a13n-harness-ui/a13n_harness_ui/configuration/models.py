@@ -235,7 +235,15 @@ class DynamicSubagentsConfiguration(ConfigurationModel):
         return value
 
 
-def lift_legacy_agent_creation(data: dict[str, object]) -> dict[str, object]:
+def _agent_creation_values_agree(key: str, legacy: object, canonical: object) -> bool:
+    if key == "allowed_models" and isinstance(legacy, (list, tuple)) and isinstance(canonical, (list, tuple)):
+        return len(legacy) == len(canonical) and all(
+            type(left) is type(right) and left == right for left, right in zip(legacy, canonical, strict=True)
+        )
+    return type(legacy) is type(canonical) and legacy == canonical
+
+
+def lift_legacy_agent_creation(data: dict[str, object], *, check_conflicts: bool = True) -> dict[str, object]:
     """Lift historical subagents.dynamic model policy into top-level agent_creation."""
     subagents = data.get("subagents")
     if not isinstance(subagents, dict):
@@ -248,12 +256,22 @@ def lift_legacy_agent_creation(data: dict[str, object]) -> dict[str, object]:
     cleaned_dynamic = {key: item for key, item in dynamic.items() if key not in {"allowed_models", "default_model"}}
     updated: dict[str, object] = {**data, "subagents": {**subagents, "dynamic": cleaned_dynamic}}
     if "agent_creation" not in data:
-        lifted: dict[str, object] = {}
-        if "allowed_models" in dynamic:
-            lifted["allowed_models"] = dynamic["allowed_models"]
-        if "default_model" in dynamic:
-            lifted["default_model"] = dynamic["default_model"]
-        updated["agent_creation"] = lifted
+        updated["agent_creation"] = {key: dynamic[key] for key in ("allowed_models", "default_model") if key in dynamic}
+        return updated
+    existing = data["agent_creation"]
+    if not isinstance(existing, dict):
+        return updated
+    merged = dict(existing)
+    for key in ("allowed_models", "default_model"):
+        if key not in dynamic:
+            continue
+        legacy = dynamic[key]
+        if key in merged:
+            if check_conflicts and not _agent_creation_values_agree(key, legacy, merged[key]):
+                raise ValueError(f"subagents.dynamic.{key} and agent_creation.{key} must agree")
+        else:
+            merged[key] = legacy
+    updated["agent_creation"] = merged
     return updated
 
 
@@ -543,6 +561,13 @@ class HarnessUiDocument(ConfigurationModel):
     live: LiveConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     max_goal_iterations: int = 10
     background_compaction: BackgroundCompactionConfiguration = Field(default_factory=BackgroundCompactionConfiguration)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_legacy_agent_creation(cls, value: object) -> object:
+        if isinstance(value, dict):
+            return lift_legacy_agent_creation(value, check_conflicts=True)
+        return value
 
     @model_validator(mode="after")
     def _valid_dynamic_subagent_policy(self) -> Self:
@@ -1250,7 +1275,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     @classmethod
     def _read_previous_generation(cls, value: object) -> object:
         if isinstance(value, dict) and isinstance(value.get("document"), dict):
-            document = lift_legacy_agent_creation(value["document"])
+            document = lift_legacy_agent_creation(value["document"], check_conflicts=False)
             if document is not value["document"]:
                 return {**value, "document": document}
         return value

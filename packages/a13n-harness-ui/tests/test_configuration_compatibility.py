@@ -273,6 +273,66 @@ async def test_legacy_subagents_dynamic_models_lift_into_agent_creation_for_stor
     assert restored_gen.document.agent_creation.default_model == "model-primary"
 
 
+async def test_legacy_subagents_dynamic_yaml_lifts_with_deprecation_warning_and_rejects_conflicts(tmp_path, caplog):
+    path = _write_configuration(tmp_path)
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1",
+                "subagents": {
+                    "dynamic": {
+                        "enabled": True,
+                        "allowed_models": ["model-primary"],
+                        "default_model": "model-primary",
+                    }
+                },
+            }
+        )
+    )
+    caplog.clear()
+    loaded = await load_harness_ui_configuration(path)
+    assert loaded.document.subagents.dynamic.enabled is True
+    assert loaded.document.agent_creation.allowed_models == ("model-primary",)
+    assert loaded.document.agent_creation.default_model == "model-primary"
+    assert "allowed_models" not in loaded.document.subagents.dynamic.model_dump()
+    assert "default_model" not in loaded.document.subagents.dynamic.model_dump()
+    assert "Deprecated configuration fields at configuration.document.subagents.dynamic were lifted" in caplog.text
+    assert "preserved but not applied" not in caplog.text
+
+    # Agreeing legacy + canonical keys load cleanly.
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1",
+                "agent_creation": {"allowed_models": ["model-primary"], "default_model": "model-primary"},
+                "subagents": {
+                    "dynamic": {
+                        "enabled": True,
+                        "allowed_models": ["model-primary"],
+                        "default_model": "model-primary",
+                    }
+                },
+            }
+        )
+    )
+    agreed = await load_harness_ui_configuration(path)
+    assert agreed.document.agent_creation.allowed_models == ("model-primary",)
+    assert agreed.document.agent_creation.default_model == "model-primary"
+
+    # Conflicting legacy + canonical keys fail loading.
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1",
+                "agent_creation": {"allowed_models": ["model-primary"]},
+                "subagents": {"dynamic": {"allowed_models": []}},
+            }
+        )
+    )
+    with pytest.raises(HarnessUiError):
+        await load_harness_ui_configuration(path)
+
+
 async def test_additive_configuration_fields_survive_nested_snapshot_round_trip(tmp_path, caplog):
     root = _write_configuration(tmp_path)
     extra = {"items": [1, True, None, "  private-future-value  "]}
