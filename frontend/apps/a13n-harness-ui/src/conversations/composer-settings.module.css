@@ -282,6 +282,10 @@
   line-height: 1.6;
 }
 @container composer (max-width: 480px) {
+  .modelTrigger {
+    gap: 4px;
+    padding-inline: 4px;
+  }
   /* Narrow composers keep one line: the model name only; the agent stays
      available in the settings popover the summary opens. */
   .summary > span:not([aria-hidden]):first-child,

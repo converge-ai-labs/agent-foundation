@@ -2572,10 +2572,16 @@ it.each([true, false])(
     failure = "submit-reject";
     mount(path, false, true);
     await fill();
-    await userEvent.click(screen.getByRole("button", { name: "Chat options" }));
-    const toggle = screen.getByRole("switch", { name: "Coordinate agents" });
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-    if (!enabled) await userEvent.click(toggle);
+    const options = screen.getByRole("button", { name: "Chat options" });
+    const mode = screen.getByRole("button", {
+      name: "Turn off agent coordination",
+    });
+    expect(options.nextElementSibling).toBe(mode);
+    if (!enabled) {
+      await userEvent.click(mode);
+      expect(document.activeElement).toBe(options);
+      expect(mode.isConnected).toBe(false);
+    }
     const restored = new NewDraftStore();
     const retained = restored.get(new Map(), false);
     expect(

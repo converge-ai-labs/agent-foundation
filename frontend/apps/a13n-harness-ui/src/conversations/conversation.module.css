@@ -991,6 +991,8 @@ summary:is(:hover, :focus-visible) > .logCaret {
   color: var(--a13n-secondary);
 }
 .composer {
+  /* Paint the composer and its notices in front of the overlapping reader fade. */
+  position: relative;
   container: composer / inline-size;
 
   --composer-content-height: 32px;
@@ -1086,29 +1088,12 @@ summary:is(:hover, :focus-visible) > .logCaret {
 .composerHeader {
   margin-bottom: 8px;
 }
-.composerModes {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
 .composer .composerWorkInspector {
   width: 100%;
   margin-bottom: 4px;
 }
 .composerWorkInspector .coordinatorIdentity {
   padding: 4px 4px 4px 0;
-}
-.composerWorkInspector .goalButton {
-  flex-shrink: 1;
-  min-width: 0;
-  height: auto;
-  min-height: var(--harness-control-height);
-  white-space: normal;
-}
-.goalButton {
-  flex-shrink: 0;
 }
 .coordinatorIdentity {
   display: inline-flex;
@@ -1125,7 +1110,7 @@ summary:is(:hover, :focus-visible) > .logCaret {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  max-width: 280px;
+  max-width: min(280px, 100%);
   padding: 4px 8px;
   border-radius: 8px;
   background: var(--a13n-hover);
@@ -1211,10 +1196,19 @@ summary:is(:hover, :focus-visible) > .logCaret {
   min-height: 30px;
 }
 .composerInput > button,
-.composerActions > button {
+.composerActions > button[data-size^="icon"] {
   flex-shrink: 0;
   width: 32px;
   height: 32px;
+}
+.composerActions > .composerMode {
+  flex: none;
+  color: var(--a13n-signal);
+  background-color: var(--a13n-signal-soft);
+  font-size: var(--a13n-text-body);
+}
+.composerActions > .composerMode:enabled:hover {
+  background-color: color-mix(in srgb, var(--a13n-signal) 16%, transparent);
 }
 .composerInput > button svg,
 .composerActions > button svg {
@@ -1233,20 +1227,12 @@ summary:is(:hover, :focus-visible) > .logCaret {
   .composerBody {
     --composer-content-height: 32px;
   }
-  /* Phone chrome keeps desktop type: 13px labels and 16px glyphs. */
-  .composerModes {
-    gap: 4px;
+  .composerMode {
+    width: 28px;
+    padding-inline: 0;
   }
-  .composerHeader button {
-    height: 32px;
-    font-size: var(--a13n-text-body);
-  }
-  .composerHeader button svg {
-    width: 16px;
-    height: 16px;
-  }
-  .composerActions {
-    gap: 2px;
+  .composerMode > span {
+    display: none;
   }
 }
 @media (max-width: 600px), (pointer: coarse) {
@@ -1256,10 +1242,20 @@ summary:is(:hover, :focus-visible) > .logCaret {
   .composerActions {
     gap: 0;
   }
+}
+@media (pointer: coarse) {
   .composerInput > button,
-  .composerActions > button {
-    min-width: 32px;
-    min-height: 32px;
+  .composerActions > button[data-size^="icon"],
+  .composerMode,
+  .workerIdentity > button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .composerMode {
+    /* Keep the tint compact inside the touch target. */
+    border-width: 6px;
+    border-radius: 14px;
+    background-clip: padding-box;
   }
 }
 .composerStatus {

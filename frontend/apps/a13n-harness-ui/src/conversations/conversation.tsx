@@ -1074,9 +1074,9 @@ function ConversationContent({
   const showComposer = canCompose && !thread?.archived;
   const renderWorkInspector =
     !readOnly && detail.data
-      ? (modes?: ReactNode) => (
+      ? (identity?: ReactNode) => (
           <WorkInspector
-            composerModes={modes}
+            composerIdentity={identity}
             className={showComposer ? styles.composerWorkInspector : undefined}
             showDetails={!isBot || debug.enabled}
             threadId={threadId}

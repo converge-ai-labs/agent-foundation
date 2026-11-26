@@ -419,6 +419,7 @@ it("enables Goal intent from its option label, keeps it visible and disables it 
                 ? { state: "running", receipt_id: "receipt-layout" }
                 : { state: "inactive" }
             }
+            coordinator={{ active: false, available: true }}
             leadingControls={<span>Full Control</span>}
             controls={() => <span>Agent and model summary</span>}
             profile={{ display_name: "Test", color: "#2563eb" }}
@@ -431,10 +432,34 @@ it("enables Goal intent from its option label, keeps it visible and disables it 
   );
   const view = render(renderComposer());
   const editor = screen.getByRole("textbox", { name: "Message" });
-  fireEvent.click(screen.getByRole("button", { name: "Chat options" }));
+  const options = screen.getByRole("button", { name: "Chat options" });
+  fireEvent.click(options);
   const goal = screen.getByRole("switch", { name: "Goal" });
   await userEvent.click(screen.getByText("Goal"));
   expect(goal.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(screen.getByRole("switch", { name: "Coordinate agents" }));
+  fireEvent.click(options);
+  const coordinate = screen.getByRole("button", {
+    name: "Turn off agent coordination",
+  });
+  const goalMode = screen.getByRole("button", {
+    name: "Turn off keep working",
+  });
+  expect(options.parentElement).toBe(coordinate.parentElement);
+  expect(
+    options.compareDocumentPosition(coordinate) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(coordinate.nextElementSibling).toBe(goalMode);
+  expect(
+    goalMode.nextElementSibling?.contains(
+      screen.getByText("Agent and model summary"),
+    ),
+  ).toBe(true);
+  await userEvent.click(coordinate);
+  expect(document.activeElement).toBe(options);
+  expect(draft.coordinator).toBe(false);
+  expect(draft.mode).toBe("goal");
   expect(draft.doc.getText("text").toString()).toBe("");
   act(() => draft.doc.getText("text").insert(0, "Verify the full objective"));
   expect(
@@ -453,7 +478,7 @@ it("enables Goal intent from its option label, keeps it visible and disables it 
     "Verify the full objective",
   );
   view.rerender(renderComposer(true));
-  expect(goal.getAttribute("aria-disabled")).toBe("true");
+  expect((goalMode as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByRole("textbox", { name: "Message" })).toBe(editor);
   view.unmount();
   query.clear();
@@ -1365,9 +1390,9 @@ it.each(["accepted", "promotion-unknown", "submit-rejected"] as const)(
               threadId="thread-one"
               activity={{ state: "inactive" }}
               coordinator={{ active: false, available: true }}
-              renderHeader={(modes) => (
+              renderHeader={(identity) => (
                 <div role="group" aria-label="Composer status">
-                  {modes}
+                  {identity}
                 </div>
               )}
               profile={{ display_name: "Test", color: "#000000" }}
@@ -1385,7 +1410,7 @@ it.each(["accepted", "promotion-unknown", "submit-rejected"] as const)(
       header.contains(
         screen.getByRole("button", { name: "Turn off agent coordination" }),
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(calls).toEqual([]);
     expect(screen.queryByRole("dialog", { name: /Make this/ })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1433,6 +1458,9 @@ it.each(["accepted", "promotion-unknown", "submit-rejected"] as const)(
         screen.queryByRole("switch", { name: "Coordinate agents" }),
       ).toBeNull();
       expect(header.contains(screen.getByText("Coordinator"))).toBe(true);
+      expect(
+        screen.queryByRole("button", { name: "Turn off agent coordination" }),
+      ).toBeNull();
       if (outcome === "submit-rejected") {
         expect(values(draft.doc).prompt).toBe("Coordinate this work");
         rejectSubmission = false;

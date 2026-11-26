@@ -6,6 +6,7 @@ import {
   useEffect,
   useState,
   type ReactNode,
+  type Ref,
 } from "react";
 import {
   Button,
@@ -35,12 +36,14 @@ export function useTaskOptionsDialog(open: boolean) {
 
 /** Infrequent work choices stay together, without taking space from the draft. */
 export function TaskOptions({
+  triggerRef,
   goal,
   coordinator,
   coordinatorEnabled = false,
   environment,
   context,
 }: {
+  triggerRef?: Ref<HTMLButtonElement>;
   goal: ReactNode;
   coordinator?: ReactNode;
   coordinatorEnabled?: boolean;
@@ -96,7 +99,7 @@ export function TaskOptions({
       </div>
     </>
   );
-  const trigger = <Button variant="ghost" size="icon-sm" />;
+  const trigger = <Button ref={triggerRef} variant="ghost" size="icon-sm" />;
   return (
     <Popover
       open={open}

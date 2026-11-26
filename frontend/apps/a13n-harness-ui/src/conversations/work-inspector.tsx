@@ -48,11 +48,11 @@ export function WorkInspector({
   onUseGoal,
   status,
   connectionStatus,
-  composerModes,
+  composerIdentity,
   className,
   showDetails = true,
 }: {
-  composerModes?: ReactNode;
+  composerIdentity?: ReactNode;
   className?: string;
   showDetails?: boolean;
   status?: ReactNode;
@@ -123,7 +123,7 @@ export function WorkInspector({
           className={styles.shortcuts}
           data-debug={debug.enabled || undefined}
         >
-          {composerModes}
+          {composerIdentity}
           {showDetails &&
             !hasActivityCard &&
             tabs.map((item) => {
