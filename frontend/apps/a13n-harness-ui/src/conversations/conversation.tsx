@@ -1384,55 +1384,65 @@ function ConversationContent({
               )
             }
             controls={() =>
-              guest ? null : thread?.configuration.agent_source.kind ===
-                "live" ? null : (() => {
-                const acpModelOption = acpOptions.data?.find(
-                  (item) => item.category === "model" || item.id === "model",
-                );
-                return (
-                  <ThreadRunChoices
-                    catalog={selectors.data}
-                    agentId={thread?.configuration.agent_source.id ?? ""}
-                    defaultModelId={thread?.configuration.default_model_id}
-                    modelId={draft.modelId}
-                    controls={draft.controls}
-                    onControlsChange={runChoices.onControlsChange}
-                    disabled={
-                      !thread ||
-                      agentSelection.isPending ||
-                      draft.submission.kind === "pending" ||
-                      draft.submission.kind === "unknown"
-                    }
-                    externalModel={acpOptionLabel(acpModelOption)}
-                    externalModelId={
-                      acpModelOption ? String(acpModelOption.value) : undefined
-                    }
-                    externalThinking={acpOptionLabel(
-                      acpOptions.data?.find(
+              guest
+                ? null
+                : thread?.configuration.agent_source.kind === "live"
+                  ? null
+                  : (() => {
+                      const acpModelOption = acpOptions.data?.find(
                         (item) =>
-                          item.category === "thought_level" ||
-                          item.id === "thought_level",
-                      ),
-                    )}
-                    externalOptions={
-                      <AcpOptions
-                        threadId={threadId}
-                        active={acpActive}
-                        agentId={acpAgent}
-                        preset={
-                          selectors.data?.agents.find(
-                            (item) => item.agent_id === acpAgent,
-                          )?.preset
-                        }
-                        options={acpOptions}
-                        continuation={detail.data?.continuation_id}
-                      />
-                    }
-                    onAgentChange={(value) => agentSelection.mutate(value)}
-                    onModelChange={runChoices.onModelChange}
-                  />
-                );
-              })()
+                          item.category === "model" || item.id === "model",
+                      );
+                      return (
+                        <ThreadRunChoices
+                          catalog={selectors.data}
+                          agentId={thread?.configuration.agent_source.id ?? ""}
+                          defaultModelId={
+                            thread?.configuration.default_model_id
+                          }
+                          modelId={draft.modelId}
+                          controls={draft.controls}
+                          onControlsChange={runChoices.onControlsChange}
+                          disabled={
+                            !thread ||
+                            agentSelection.isPending ||
+                            draft.submission.kind === "pending" ||
+                            draft.submission.kind === "unknown"
+                          }
+                          externalModel={acpOptionLabel(acpModelOption)}
+                          externalModelId={
+                            acpModelOption
+                              ? String(acpModelOption.value)
+                              : undefined
+                          }
+                          externalThinking={acpOptionLabel(
+                            acpOptions.data?.find(
+                              (item) =>
+                                item.category === "thought_level" ||
+                                item.id === "thought_level",
+                            ),
+                          )}
+                          externalOptions={
+                            <AcpOptions
+                              threadId={threadId}
+                              active={acpActive}
+                              agentId={acpAgent}
+                              preset={
+                                selectors.data?.agents.find(
+                                  (item) => item.agent_id === acpAgent,
+                                )?.preset
+                              }
+                              options={acpOptions}
+                              continuation={detail.data?.continuation_id}
+                            />
+                          }
+                          onAgentChange={(value) =>
+                            agentSelection.mutate(value)
+                          }
+                          onModelChange={runChoices.onModelChange}
+                        />
+                      );
+                    })()
             }
             profile={profile}
             unauthorized={unauthorized}
