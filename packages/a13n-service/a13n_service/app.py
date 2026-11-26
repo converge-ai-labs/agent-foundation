@@ -27,7 +27,13 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from a13n_service.api_access import CredentialAccess
 from a13n_service.app_definitions import InstalledApp, app_databases, discover_apps
-from a13n_service.app_plugin_runtime import app_routers, app_run_seals, app_sweeps, open_assets
+from a13n_service.app_plugin_runtime import (
+    app_routers,
+    app_run_seals,
+    app_sweeps,
+    app_webhook_routers,
+    open_assets,
+)
 from a13n_service.app_plugin_runtime import router as app_assets_router
 from a13n_service.app_plugins import AppCatalog
 from a13n_service.distribution import OSS, Distribution
@@ -66,6 +72,7 @@ from a13n_service.runs.stream import SessionHub
 from a13n_service.runs.thread_stream import ThreadHub
 from a13n_service.runs.worker import Worker
 from a13n_service.settings import Database, Encryption, Objects, ProcessRole, Settings, load_settings
+from a13n_service.tenancy.app_plugins import AppWebhookRoute
 from a13n_service.tenancy.app_plugins import router as app_policy_router
 from a13n_service.tenancy.authenticate import COOKIE_NAME, CSRF_HEADER, HTTP_COOKIE_NAME, SAFE_METHODS
 from a13n_service.tenancy.requests import current_credential
@@ -137,6 +144,7 @@ def contract(app: FastAPI, *, locally_authenticated: Sequence[APIRouter]) -> dic
         for route in router.routes:
             if (
                 not isinstance(route, APIRoute)
+                or isinstance(route, AppWebhookRoute)
                 or not route.include_in_schema
                 or current_credential not in _dependency_calls(route.dependant)
             ):
@@ -335,7 +343,14 @@ def compose_apps(distribution: Distribution, apps: tuple[InstalledApp, ...]) -> 
     for installed in apps:
         distribution = distribution.extend(Distribution(name=distribution.name, settings=installed.definition.settings))
     return replace(
-        distribution, routers=(*distribution.routers, app_policy_router, app_assets_router, *app_routers(apps))
+        distribution,
+        routers=(
+            *distribution.routers,
+            app_policy_router,
+            app_assets_router,
+            *app_routers(apps),
+            *app_webhook_routers(apps),
+        ),
     )
 
 

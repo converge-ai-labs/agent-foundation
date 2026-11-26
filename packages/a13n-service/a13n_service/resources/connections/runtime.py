@@ -6,7 +6,7 @@ connection, or a toolset over the connector account. Before every tool call the 
 enabled and ready, and the worker's `DispatchCheck` must pass; otherwise the call is never sent.
 """
 
-from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
+from collections.abc import AsyncGenerator, Callable, Collection, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -28,7 +28,7 @@ from a13n_service.infra.crypto import KeyRing
 from a13n_service.infra.db import Storage, short_session
 from a13n_service.infra.errors import conflict
 from a13n_service.providers.registry import Registry
-from a13n_service.providers.tools import DispatchCheck, ToolDispatch
+from a13n_service.providers.tools import DISCOVERY_MAX_TOOLS, MAX_TOOLS, DispatchCheck, ToolDispatch
 from a13n_service.providers.tools.connectors import connector_toolset, list_connector_tools
 from a13n_service.providers.tools.mcp import AcquireClient, PrepareClient, mcp_capability, mcp_client
 from a13n_service.resources.connections.access import McpConnection, ResolvedConnection, resolve_connection
@@ -50,6 +50,8 @@ class SelectedConnection:
     # The run's frozen caller headers for this connection; empty for connectors.
     caller_headers: Mapping[str, str]
     selection: ConnectionSelection | None = None
+    # Direct model exposure stays within MAX_TOOLS; Tool-Search-discovered connections allow DISCOVERY_MAX_TOOLS.
+    max_tools: int = MAX_TOOLS
 
 
 async def resolve_connections(
@@ -60,6 +62,7 @@ async def resolve_connections(
     mcp_headers: Mapping[str, Mapping[str, str]],
     *,
     authority: ExecutionAuthority,
+    discovered: Collection[str] = (),
 ) -> tuple[SelectedConnection, ...]:
     """Each selected connection, enabled, ready and usable under the run's authority; no external I/O."""
     selected: list[SelectedConnection] = []
@@ -80,7 +83,8 @@ async def resolve_connections(
             tools = exposed
         elif exposed is not None:
             tools = tuple(name for name in tools if name in exposed)
-        selected.append(SelectedConnection(connection, tools, headers, selection))
+        max_tools = DISCOVERY_MAX_TOOLS if selection.connection_id in discovered else MAX_TOOLS
+        selected.append(SelectedConnection(connection, tools, headers, selection, max_tools=max_tools))
     return tuple(selected)
 
 
@@ -171,6 +175,7 @@ async def open_connections(
                         durable_tasks=connection.config.durable_tasks,
                         check=checked,
                         capture=partial(capture, selected) if capture is not None else None,
+                        max_tools=selected.max_tools,
                     )
                 )
                 continue
@@ -196,6 +201,7 @@ async def open_connections(
                 chosen,
                 check=checked,
                 timeout=settings.tool_call_seconds,
+                max_tools=selected.max_tools,
             )
             capabilities.append(Toolset(toolset))
         yield tuple(capabilities)

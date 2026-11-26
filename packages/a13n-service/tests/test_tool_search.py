@@ -590,3 +590,271 @@ async def test_computer_group_includes_service_handback_notifications() -> None:
     assert toolsets.discovery_members(selected.toolsets, ("computer",))["computer-notify"] == {"computer_notify"}
     disabled = config(toolsets={"computer": {"enabled": True, "tools": {"notify": {"enabled": False}}}})
     assert "computer-notify" not in toolsets.discovery_members(disabled.toolsets, ("computer",))
+
+
+def test_discovered_connections_covers_proxy_automatic_and_native() -> None:
+    other = new_object_id("con")
+    both = [{"connection_id": CONNECTION}, {"connection_id": other}]
+    assert definition.discovered_connections(config(connection_tools=both)) == frozenset()
+    assert definition.discovered_connections(config(connection_tools=both, tool_search={"groups": {}})) == frozenset()
+    assert definition.discovered_connections(
+        config(
+            connection_tools=both,
+            tool_search={"groups": {"k": {"description": "Knowledge", "connections": [CONNECTION]}}},
+        )
+    ) == frozenset({CONNECTION})
+    assert definition.discovered_connections(
+        config(connection_tools=both, tool_search={"automatic": {"exclude_connections": [other]}})
+    ) == frozenset({CONNECTION})
+    assert (
+        definition.discovered_connections(
+            config(connection_tools=both, tool_search={"automatic": {"connections": False}})
+        )
+        == frozenset()
+    )
+    assert definition.discovered_connections(
+        config(connection_tools=both, tool_search={"mode": "native", "sources": {"exclude_connections": [CONNECTION]}})
+    ) == frozenset({other})
+    assert (
+        definition.discovered_connections(
+            config(connection_tools=both, tool_search={"mode": "native", "sources": {"connections": False}})
+        )
+        == frozenset()
+    )
+
+
+async def test_checked_toolset_enforces_discovery_max_tools_ceiling() -> None:
+    from unittest.mock import Mock
+
+    from a13n_harness import AgentContext, DefinitionError
+    from a13n_service.providers.tools import DISCOVERY_MAX_TOOLS, CheckedToolset
+    from pydantic_ai import RunContext
+    from pydantic_ai.models.test import TestModel
+    from pydantic_ai.toolsets import AbstractToolset, ToolsetTool
+    from pydantic_ai.usage import RunUsage
+
+    class _StubToolset(AbstractToolset[AgentContext]):
+        def __init__(self, count: int):
+            self._count = count
+
+        @property
+        def id(self) -> str | None:
+            return CONNECTION
+
+        async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
+            return {f"tool_{index}": Mock(spec=ToolsetTool) for index in range(self._count)}
+
+        async def call_tool(self, name, tool_args, ctx, tool):
+            return None
+
+    async def check(_dispatch) -> None:
+        pass
+
+    ctx = RunContext(deps=Mock(spec=AgentContext), model=TestModel(), usage=RunUsage())
+    within = CheckedToolset(_StubToolset(DISCOVERY_MAX_TOOLS), CONNECTION, None, check, max_tools=DISCOVERY_MAX_TOOLS)
+    assert len(await within.get_tools(ctx)) == DISCOVERY_MAX_TOOLS
+    exceeded = CheckedToolset(
+        _StubToolset(DISCOVERY_MAX_TOOLS + 1), CONNECTION, None, check, max_tools=DISCOVERY_MAX_TOOLS
+    )
+    with pytest.raises(DefinitionError) as error:
+        await exceeded.get_tools(ctx)
+    assert error.value.code == "connection_tools_exceeded"
+    assert str(DISCOVERY_MAX_TOOLS) in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["direct", "proxy_group", "proxy_automatic", "native", "native_excluded"],
+)
+async def test_large_mcp_catalog_requires_tool_search_and_isolates_inline_agents(service, mode: str) -> None:
+    from a13n_harness import DefinitionError
+    from a13n_service.infra.db import short_session
+    from a13n_service.providers.tools import DISCOVERY_MAX_TOOLS, MAX_TOOLS, ToolDispatch
+    from a13n_service.resources.agents.schemas import Subagents
+    from a13n_service.resources.connections.runtime import open_connections
+    from a13n_service.runs.agent import ResolvedSubagent
+    from a13n_service.runs.host import resolve_host
+    from a13n_service.runs.tables import RunRow
+    from a13n_service.tenancy.authorize import execution_authority
+    from pydantic_ai.profiles import ModelProfile
+
+    from .test_agents import create_agent, create_model, revision_config
+    from .test_connections import admin, create, remote, scope
+
+    async with remote(extra_tools=145) as server:
+        connection = await create(service, {"config": {"url": f"{server.url}/mcp"}})
+        connection_id = connection["id"]
+        model_key = await create_model(service)
+        tool_search_cfg: dict[str, Any] | None
+        if mode == "direct":
+            tool_search_cfg = None
+        elif mode == "proxy_group":
+            tool_search_cfg = {
+                "config": {"mode": "proxy"},
+                "groups": {"catalog": {"description": "Large catalog", "connections": [connection_id]}},
+            }
+        elif mode == "proxy_automatic":
+            tool_search_cfg = {"automatic": {}}
+        elif mode == "native":
+            tool_search_cfg = {"mode": "native"}
+        else:
+            tool_search_cfg = {"mode": "native", "sources": {"exclude_connections": [connection_id]}}
+
+        agent = await create_agent(
+            service,
+            f"Large catalog {mode}",
+            model_key,
+            toolsets={},
+            connection_tools=[{"connection_id": connection_id, "permission": "allow"}],
+            **({"tool_search": tool_search_cfg} if tool_search_cfg is not None else {}),
+        )
+        selected = AgentConfig.model_validate(await revision_config(service, agent))
+        # Attach a direct-exposure inline child selecting the same connection to verify per-agent isolation.
+        child_config = config(
+            toolsets={},
+            connection_tools=[{"connection_id": connection_id, "permission": "allow"}],
+        )
+        child = resolved(
+            HELPER,
+            HELPER_REVISION,
+            child_config,
+            connections={connection_id: toolsets.ConnectionInfo(name="Remote", type="mcp")},
+        )
+        root_config = selected.model_copy(
+            update={
+                "subagents": Subagents.model_validate(
+                    {
+                        "mode": "inline",
+                        "named": {"helper": {"agent_id": HELPER, "revision_id": HELPER_REVISION}},
+                    }
+                )
+            }
+        )
+        root = resolved(
+            agent["id"],
+            agent["default_revision_id"],
+            root_config,
+            connections={connection_id: toolsets.ConnectionInfo(name="Remote", type="mcp")},
+            subagents={
+                "helper": ResolvedSubagent(root_config.subagents.named["helper"], HELPER_REVISION, "Helper", child)
+            },
+        )
+        actor, workspace = admin(service), scope(service)
+        run = RunRow(options={}, memory_mounts=[], environment_mounts=[], mcp_headers={})
+        async with short_session(service.runtime.storage) as session:
+            plan = await resolve_host(
+                session, run, actor, workspace, root, authority=execution_authority(actor, workspace)
+            )
+        [root_planned] = plan.parts[root.definition_id].connections
+        [child_planned] = plan.parts[child.definition_id].connections
+        expect_discovered = mode in {"proxy_group", "proxy_automatic", "native"}
+        assert root_planned.max_tools == (DISCOVERY_MAX_TOOLS if expect_discovered else MAX_TOOLS)
+        assert child_planned.max_tools == MAX_TOOLS
+
+        dispatches: list[ToolDispatch] = []
+
+        async def check(dispatch: ToolDispatch) -> None:
+            dispatches.append(dispatch)
+
+        runtime = service.runtime
+        async with (
+            open_connections(
+                (root_planned,),
+                check,
+                storage=runtime.storage,
+                redis=runtime.redis,
+                keys=runtime.keys,
+                registry=runtime.registry,
+                policy=runtime.endpoint_policy,
+                settings=runtime.settings.providers,
+            ) as root_caps,
+            open_connections(
+                (child_planned,),
+                check,
+                storage=runtime.storage,
+                redis=runtime.redis,
+                keys=runtime.keys,
+                registry=runtime.registry,
+                policy=runtime.endpoint_policy,
+                settings=runtime.settings.providers,
+            ) as child_caps,
+        ):
+            group = (
+                toolsets.connection_discovery(connection_id, "Remote").group_name
+                if mode == "proxy_automatic"
+                else "catalog"
+            )
+            step = 0
+
+            async def stream(messages, info):
+                nonlocal step
+                step += 1
+                tools = {tool.name: tool for tool in info.function_tools}
+                if mode == "native":
+                    if step == 1:
+                        assert "search_tools" in tools and "tool_144" not in tools
+                        yield {
+                            0: DeltaToolCall(
+                                name="search_tools", json_args='{"queries":["tool_144"]}', tool_call_id="search"
+                            )
+                        }
+                    elif step == 2:
+                        assert "tool_144" in tools
+                        yield {0: DeltaToolCall(name="tool_144", json_args="{}", tool_call_id="invoke")}
+                    else:
+                        yield "done"
+                elif mode in {"proxy_group", "proxy_automatic"}:
+                    if step == 1:
+                        assert "call_tool" in tools and "tool_144" not in tools
+                        yield {
+                            0: DeltaToolCall(
+                                name="call_tool",
+                                json_args=json.dumps({"group": group, "tool": "tool_144", "arguments": {}}),
+                                tool_call_id="invoke",
+                            )
+                        }
+                    else:
+                        yield "done"
+                else:
+                    yield "unreachable"
+
+            async def model_resolver(context, model_id):
+                return FunctionModel(stream_function=stream, profile=ModelProfile(supported_native_tools=frozenset()))
+
+            # Build root alone for execution; verify child fails direct exposure independently.
+            root_only = resolved(
+                agent["id"],
+                agent["default_revision_id"],
+                selected,
+                connections={connection_id: toolsets.ConnectionInfo(name="Remote", type="mcp")},
+            )
+            executable = build(
+                root_only,
+                capabilities=lambda _: root_caps,
+                tool_sources=lambda _: {connection_id: root_caps[0]},
+                plugins=PLUGINS,
+                instrumentation=None,
+            )
+            bindings = RunBindings.embedded(model_resolver=model_resolver)
+            if not expect_discovered:
+                with pytest.raises(DefinitionError) as error:
+                    await executable.run("call", bindings=bindings)
+                assert error.value.code == "connection_tools_exceeded"
+                assert dispatches == []
+                return
+
+            result = await executable.run("call", bindings=bindings)
+            assert result.output_or_raise() == "done"
+            assert [item.tool_name for item in dispatches] == ["tool_144"]
+
+            # Inline child without Tool Search still rejects the same 147-tool connection.
+            child_exec = build(
+                child,
+                capabilities=lambda _: child_caps,
+                tool_sources=lambda _: {connection_id: child_caps[0]},
+                plugins=PLUGINS,
+                instrumentation=None,
+            )
+            with pytest.raises(DefinitionError) as child_error:
+                await child_exec.run("call", bindings=bindings)
+            assert child_error.value.code == "connection_tools_exceeded"

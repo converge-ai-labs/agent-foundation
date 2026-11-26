@@ -4,8 +4,8 @@ A tool source receives plain values (a URL, a revealed credential, an entered co
 Harness capabilities; it never reads business tables. Tools reach a model and calls leave the worker only
 through `CheckedToolset`, so a refused check means the call was never sent.
 
-Discovery reads up to the Harness directory bound, so a subset of a large server or app can be chosen; what
-one connection exposes to a model stays within `MAX_TOOLS`.
+Discovery reads up to the Harness directory bound (`DISCOVERY_MAX_TOOLS`), so a subset of a large server or app
+can be chosen or loaded on demand through Tool Search; direct model exposure stays within `MAX_TOOLS`.
 """
 
 from collections.abc import Awaitable, Callable
@@ -13,12 +13,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from a13n_harness import AgentContext, DefinitionError
+from a13n_harness.providers.connector.bounds import DISCOVERY_MAX_TOOLS as DISCOVERY_MAX_TOOLS
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.toolsets import ToolsetTool, WrapperToolset
 
-# Tools one connection exposes to a model, and an agent may select from it: every definition costs context.
+# Tools one connection exposes directly to a model, and an agent may select explicitly: every definition costs context.
 MAX_TOOLS = 128
 
 
@@ -64,12 +65,13 @@ class CheckedToolset(WrapperToolset[AgentContext]):
     connection_id: str
     provider_id: str | None
     check: DispatchCheck
+    max_tools: int = MAX_TOOLS
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await super().get_tools(ctx)
-        if len(tools) > MAX_TOOLS:
+        if len(tools) > self.max_tools:
             raise DefinitionError(
-                f"Connection {self.connection_id} exposes more than {MAX_TOOLS} tools; select the tools it offers.",
+                f"Connection {self.connection_id} exposes more than {self.max_tools} tools; select the tools it offers.",
                 code="connection_tools_exceeded",
             )
         return tools
