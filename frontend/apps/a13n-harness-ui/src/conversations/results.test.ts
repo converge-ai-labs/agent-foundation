@@ -260,3 +260,35 @@ it("requires foreground, rendered dimensions, and the actual transcript bottom",
   expect(savedResultVisible(element)).toBe(false);
   element.remove();
 });
+
+it("excludes Coordinator workers from unread state and read acknowledgements", async () => {
+  const worker = {
+    ...thread("worker-one", 1, true, 1),
+    role: "worker",
+    coordinator_thread_id: "coord-one",
+  } as Schema<"ThreadSummary">;
+  const coord = {
+    ...thread("coord-one", 1, true, 1),
+    role: "coordinator",
+  } as Schema<"ThreadSummary">;
+  threads.set(worker.thread_id, worker);
+  threads.set(coord.thread_id, coord);
+  const item = tracker();
+  item.observe(worker);
+  item.observe(coord);
+  expect(item.isUnread(worker.thread_id)).toBe(false);
+  expect(item.isUnread(coord.thread_id)).toBe(true);
+  await item.acknowledge(worker.thread_id, 1, 1);
+  expect(reads).toEqual([]);
+  await item.acknowledgeAll([worker, coord]);
+  expect(reads).toEqual([
+    [
+      {
+        thread_id: coord.thread_id,
+        completion_version: 1,
+        read_state_version: 1,
+      },
+    ],
+  ]);
+  expect(item.isUnread(coord.thread_id)).toBe(false);
+});

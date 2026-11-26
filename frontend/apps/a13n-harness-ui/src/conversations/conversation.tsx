@@ -497,11 +497,13 @@ function ConversationContent({
       ? 0
       : (history.data?.pages[0]?.completion_version ?? 0));
   const readState = results.threads.get(threadId)?.thread;
+  const threadRole = detail.data?.thread.role ?? readState?.role;
   useEffect(() => {
     if (
       hasLater ||
       !pageReady ||
       !tracker ||
+      threadRole === "worker" ||
       (!publication &&
         (!history.data || history.isPreviousHistory || history.isError)) ||
       !readState?.unread ||
@@ -543,6 +545,7 @@ function ConversationContent({
     pageReady,
     tracker,
     threadId,
+    threadRole,
     completionVersion,
     readState?.unread,
     readState?.read_state_version,

@@ -49,7 +49,7 @@ export function useNavigationObservations({
     }
     if (
       observed.has(thread.thread_id) ||
-      results.tracker?.isUnread(thread.thread_id)
+      (thread.role !== "worker" && results.tracker?.isUnread(thread.thread_id))
     )
       observed.set(thread.thread_id, {
         ...observed.get(thread.thread_id),

@@ -77,7 +77,7 @@ export class ResultTracker {
           : incoming.completion;
       thread = {
         ...thread,
-        unread: reading.unread,
+        unread: thread.role === "worker" ? false : reading.unread,
         read_state_version: reading.read_state_version,
         completion,
       };
@@ -96,6 +96,7 @@ export class ResultTracker {
     const thread = this.snapshot.threads.get(threadId)?.thread;
     if (
       !thread?.unread ||
+      thread.role === "worker" ||
       thread.read_state_version !== readStateVersion ||
       (thread.completion?.version ?? 0) !== completionVersion
     )
@@ -159,7 +160,7 @@ export class ResultTracker {
   acknowledgeAll = async (threads: readonly Schema<"ThreadSummary">[]) => {
     await this.acknowledgeReceipts(
       threads
-        .filter((thread) => thread.unread)
+        .filter((thread) => thread.unread && thread.role !== "worker")
         .map((thread) => ({
           thread_id: thread.thread_id,
           read_state_version: thread.read_state_version ?? 0,
@@ -168,7 +169,8 @@ export class ResultTracker {
     );
   };
   isUnread(threadId: string) {
-    return this.snapshot.threads.get(threadId)?.thread.unread ?? false;
+    const thread = this.snapshot.threads.get(threadId)?.thread;
+    return thread?.role !== "worker" && (thread?.unread ?? false);
   }
   invalidate = (threadId?: string) => {
     this.dirty = true;
@@ -199,7 +201,8 @@ export class ResultTracker {
             // already read/deleted them. Discover unseen roots independently
             // of the sidebar's recent pages, in bounded keyset pages.
             for (const { thread } of this.snapshot.threads.values())
-              if (thread.unread) ids.add(thread.thread_id);
+              if (thread.unread && thread.role !== "worker")
+                ids.add(thread.thread_id);
             let cursor: string | undefined;
             do {
               const observedAt = Date.now();

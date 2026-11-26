@@ -652,7 +652,7 @@ class ThreadProjectionService:
             touched_at=thread.touched_at,
             archived=thread.archived,
             starred=thread.starred,
-            unread=thread.unread,
+            unread=False if thread.thread_id in owners else thread.unread,
             read_state_version=thread.read_state_version,
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",

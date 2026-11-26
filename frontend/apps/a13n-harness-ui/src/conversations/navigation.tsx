@@ -400,15 +400,6 @@ function ProjectGroup({
       selected,
       selectedUpdatedAt,
     });
-  const unreadOwners = new Set(
-    [...observed.values()]
-      .filter(
-        ({ thread }) =>
-          !thread.archived && results.tracker?.isUnread(thread.thread_id),
-      )
-      .map(({ thread }) => thread.coordinator_thread_id)
-      .filter(Boolean),
-  );
   const activeRows: NavigationRow[] = [];
   const unreadRows: NavigationRow[] = [];
   const recentRows: NavigationRow[] = [];
@@ -416,14 +407,14 @@ function ProjectGroup({
   for (const row of observed.values()) {
     if (row.thread.archived && !ownerIds.includes(row.thread.thread_id))
       continue;
+    if (row.thread.role === "worker") continue;
     const unread = results.tracker?.isUnread(row.thread.thread_id);
     if (unread) unreadCount++;
-    if (row.thread.role === "worker") continue;
     (row.thread.root_activity.state !== "inactive" ||
     (row.thread.role === "coordinator" &&
       activeWorkerCounts.has(row.thread.thread_id))
       ? activeRows
-      : unread || unreadOwners.has(row.thread.thread_id)
+      : unread
         ? unreadRows
         : recentRows
     ).push(row);
@@ -477,7 +468,7 @@ function ProjectGroup({
     if (!results.tracker || markingRead) return;
     // Capture the displayed group's versions before storage writes can yield.
     const unread = [...observed.values()]
-      .filter(({ thread }) => !thread.archived)
+      .filter(({ thread }) => !thread.archived && thread.role !== "worker")
       .map(({ thread }) => thread);
     setMarkingRead(true);
     try {
