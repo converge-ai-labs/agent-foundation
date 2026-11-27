@@ -7,6 +7,7 @@ import pytest
 from a13n_harness.models.transport import create_model_http_client
 from a13n_harness.providers.model import routes
 from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.chat_titles import TitleMessage
 from a13n_harness_ui.input_prediction import PREDICTION_PROMPT, InputPredictionPlugin
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.shared_drafts import composer_options, options_document
@@ -82,7 +83,7 @@ async def test_prediction_replays_settled_prefix_and_persists_only_text(tmp_path
         await asyncio.wait_for(started.wait(), timeout=2)
 
         async def manual_title(thread_id, messages, source, model_id):
-            assert messages == ["Draft a note."]
+            assert messages == [TitleMessage("user", "Draft a note."), TitleMessage("assistant", "I wrote the draft.")]
             return "Manual title"
 
         monkeypatch.setattr(app, "_generate_chat_title", manual_title)
