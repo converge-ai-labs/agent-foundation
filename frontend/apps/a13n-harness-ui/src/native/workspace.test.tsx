@@ -24,6 +24,10 @@ import { TransportContext } from "../transport/context";
 import type { Transport } from "../transport/client";
 import { NativeWorkspace } from "./workspace";
 import { FileBuffers, joinPath } from "./buffer";
+import {
+  WorkbenchShortcutsContext,
+  type WorkbenchShortcuts,
+} from "../shell/workbench-shortcuts";
 
 const live = vi.hoisted(() => ({
   display: {
@@ -178,6 +182,7 @@ function setup(
   currentRoots: string[] = ["/native"],
   content?: ReactNode,
   buffers = new Map(),
+  shortcuts?: Partial<WorkbenchShortcuts>,
 ) {
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -331,7 +336,9 @@ function setup(
       <QueryClientProvider client={queries}>
         <TransportContext value={transport}>
           <FileBuffers value={buffers}>
-            <Page />
+            <WorkbenchShortcutsContext value={shortcuts}>
+              <Page />
+            </WorkbenchShortcutsContext>
           </FileBuffers>
         </TransportContext>
       </QueryClientProvider>
@@ -1709,6 +1716,88 @@ it("terminal shortcuts toggle the panel, ignore repeat/modal/composition, and cr
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   await screen.findByText(/Chat remains mounted \/settings/);
   expect(fireEvent.keyDown(window, chord)).toBe(true);
+});
+
+it("keeps Terminal chords disabled and only handles eligible native view actions outside input surfaces", async () => {
+  setup(
+    "/threads/current",
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    <>
+      <div data-browser-screen>
+        <button>Remote input</button>
+      </div>
+      <div data-terminal-input>
+        <button>Shell input</button>
+      </div>
+    </>,
+    undefined,
+    {
+      terminal: "off",
+      open_files: "mod-shift-e",
+      open_changes: "mod-shift-g",
+      toggle_supporting_panel: "mod-j",
+    },
+  );
+  const toggle = await screen.findByRole("button", {
+    name: "Close supporting panel",
+  });
+  expect(toggle.getAttribute("aria-keyshortcuts")).toBe("Control+J");
+  const panel = { key: "j", ctrlKey: true };
+  const files = { key: "e", ctrlKey: true, shiftKey: true };
+  const changes = { key: "g", ctrlKey: true, shiftKey: true };
+  for (const target of ["Remote input", "Shell input"]) {
+    const input = screen.getByRole("button", { name: target });
+    for (const chord of [panel, files, changes]) {
+      expect(fireEvent.keyDown(input, chord)).toBe(true);
+    }
+  }
+  for (const shiftKey of [false, true]) {
+    expect(
+      fireEvent.keyDown(window, {
+        key: "`",
+        code: "Backquote",
+        ctrlKey: true,
+        shiftKey,
+      }),
+    ).toBe(true);
+  }
+  expect(fireEvent.keyDown(window, panel)).toBe(false);
+  await screen.findByRole("button", { name: "Open supporting panel" });
+  expect(fireEvent.keyDown(window, files)).toBe(false);
+  await screen.findByRole("tabpanel", { name: "Files" });
+  expect(fireEvent.keyDown(window, changes)).toBe(false);
+  await screen.findByRole("tabpanel", { name: "Changes" });
+});
+
+it("returns to the current new-chat composer when a separate Files tab is active", async () => {
+  localStorage.setItem("a13n-harness-ui.native-layout", "tabs");
+  setup(
+    "/new",
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    <textarea aria-label="Draft message" data-composer-editor />,
+    undefined,
+    { new_chat: "mod-shift-o", open_files: "mod-shift-e" },
+  );
+  await screen.findByRole("button", { name: "Open supporting panel" });
+  expect(
+    fireEvent.keyDown(window, { key: "e", ctrlKey: true, shiftKey: true }),
+  ).toBe(false);
+  const files = await screen.findByRole("tabpanel", { name: "Files" });
+  expect(screen.queryByRole("textbox", { name: "Draft message" })).toBeNull();
+  expect(
+    fireEvent.keyDown(files, { key: "o", ctrlKey: true, shiftKey: true }),
+  ).toBe(false);
+  const draft = await screen.findByRole("textbox", { name: "Draft message" });
+  await waitFor(() => expect(document.activeElement).toBe(draft));
+  expect(screen.getByTestId("chat").textContent).toContain("/new");
 });
 
 it.each([false, true])(
