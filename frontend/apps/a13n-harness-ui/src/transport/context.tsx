@@ -33,6 +33,17 @@ export function useStatus(refetchInterval?: number) {
     queryFn: ({ signal }) => result(client.GET("/api/status", { signal })),
   });
 }
+export function useUpdateNotices() {
+  const { client, shareId } = useTransport();
+  return useQuery({
+    queryKey: ["update-notices"],
+    enabled: !shareId,
+    staleTime: 10 * 60 * 1000,
+    refetchInterval: 60 * 60 * 1000,
+    queryFn: ({ signal }) =>
+      result(client.GET("/api/update-notices", { signal })),
+  });
+}
 export function useSources(enabled = true) {
   const { client, shareId } = useTransport();
   return useQuery({

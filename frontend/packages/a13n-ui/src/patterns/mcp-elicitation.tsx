@@ -9,6 +9,7 @@ export type McpElicitationPrompt = {
   message: string;
   server_id: string;
   server_name?: string | null;
+  source?: "mcp" | "acp";
   mode: "form" | "url";
   schema?: unknown;
   url?: string | null;
@@ -22,10 +23,13 @@ export type McpElicitationResponse = {
 type Copy =
   | "Input requested"
   | "MCP input request"
+  | "Agent input request"
   | "External destination"
   | "Open external page"
   | "Finish the action in your browser, then choose Accept. Server credentials aren't sent to that page."
   | "Your response goes to this MCP server. Don't include passwords, tokens or other secrets."
+  | "Your response goes to this Agent. Don't include passwords, tokens or other secrets."
+  | "Select an option"
   | "Yes"
   | "No"
   | "Accept"
@@ -123,8 +127,12 @@ export function McpElicitationForm({
         : [[name, t("Enter a valid value for this field.")]];
     }),
   );
+  const isAcp = request.source === "acp";
   return (
-    <section className={styles.request} aria-label={t("MCP input request")}>
+    <section
+      className={styles.request}
+      aria-label={isAcp ? t("Agent input request") : t("MCP input request")}
+    >
       <header className={styles.heading}>
         <h3>{t("Input requested")}</h3>
         <span className={styles.hint}>
@@ -164,9 +172,13 @@ export function McpElicitationForm({
         >
           <div className={styles.request}>
             <p className={styles.hint}>
-              {t(
-                "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
-              )}
+              {isAcp
+                ? t(
+                    "Your response goes to this Agent. Don't include passwords, tokens or other secrets.",
+                  )
+                : t(
+                    "Your response goes to this MCP server. Don't include passwords, tokens or other secrets.",
+                  )}
             </p>
             {Object.entries(properties).map(([name, value]) => {
               const field = record(value) ?? {};
@@ -225,40 +237,40 @@ export function McpElicitationForm({
                 );
               if (field.type === "boolean" || enums)
                 return (
-                  <FormField
+                  <ChoiceField
                     key={name}
                     label={label}
                     description={description}
                     error={error}
-                  >
-                    <ChoiceField
-                      label={label}
-                      disabled={locked}
-                      value={
-                        content[name] === undefined ? "" : String(content[name])
-                      }
-                      options={(
-                        enums ?? [
-                          { value: true, label: t("Yes") },
-                          { value: false, label: t("No") },
-                        ]
-                      ).map((option) => ({
-                        value: String(option.value),
-                        label: option.label,
-                      }))}
-                      onValueChange={(selected) =>
-                        set(
-                          (
-                            enums ?? [
-                              { value: true, label: t("Yes") },
-                              { value: false, label: t("No") },
-                            ]
-                          ).find((option) => String(option.value) === selected)
-                            ?.value,
-                        )
-                      }
-                    />
-                  </FormField>
+                    required={required.includes(name)}
+                    disabled={locked}
+                    placeholder={t("Select an option")}
+                    value={
+                      content[name] === undefined
+                        ? undefined
+                        : String(content[name])
+                    }
+                    options={(
+                      enums ?? [
+                        { value: true, label: t("Yes") },
+                        { value: false, label: t("No") },
+                      ]
+                    ).map((option) => ({
+                      value: String(option.value),
+                      label: option.label,
+                    }))}
+                    onValueChange={(selected) =>
+                      set(
+                        (
+                          enums ?? [
+                            { value: true, label: t("Yes") },
+                            { value: false, label: t("No") },
+                          ]
+                        ).find((option) => String(option.value) === selected)
+                          ?.value,
+                      )
+                    }
+                  />
                 );
               return (
                 <FormField

@@ -530,6 +530,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/update-notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Update Notices */
+        get: operations["update_notices_api_update_notices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/presence": {
         parameters: {
             query?: never;
@@ -7003,6 +7020,12 @@ export interface components {
              * @constant
              */
             kind?: "mcp_elicitation";
+            /**
+             * Source
+             * @default mcp
+             * @enum {string}
+             */
+            source?: "mcp" | "acp";
             /** Request Id */
             request_id: string;
             /** Thread Id */
@@ -7033,7 +7056,7 @@ export interface components {
              * Mode
              * @enum {string}
              */
-            mode: "form" | "url" | "question";
+            mode: "form" | "url" | "question" | "permission";
             /** Message */
             message: string;
             /**
@@ -7041,6 +7064,8 @@ export interface components {
              * @default []
              */
             questions?: components["schemas"]["UserQuestion"][];
+            /** @default null */
+            permission?: components["schemas"]["PermissionRequestDetail"] | null;
             /**
              * Schema
              * @default null
@@ -7106,6 +7131,12 @@ export interface components {
             resource_digest: string;
             /** Tools */
             tools: components["schemas"]["McpToolName"][] | null;
+            /**
+             * Authority
+             * @default operator
+             * @enum {string}
+             */
+            authority?: "operator" | "user" | "none";
             /** Server Id */
             server_id: string;
             /** Name */
@@ -7792,6 +7823,63 @@ export interface components {
             /** Count */
             count: number;
         };
+        /** PermissionOptionView */
+        PermissionOptionView: {
+            /** Option Id */
+            option_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "allow_once" | "allow_always" | "reject_once" | "reject_always";
+        };
+        /** PermissionRequestDetail */
+        PermissionRequestDetail: {
+            /**
+             * Tool Kind
+             * @default null
+             */
+            tool_kind?: string | null;
+            /**
+             * Tool Name
+             * @default null
+             */
+            tool_name?: string | null;
+            /**
+             * Command
+             * @default null
+             */
+            command?: string | null;
+            /**
+             * Cwd
+             * @default null
+             */
+            cwd?: string | null;
+            /**
+             * Environment Keys
+             * @default []
+             */
+            environment_keys?: string[];
+            /**
+             * Locations
+             * @default []
+             */
+            locations?: string[];
+            /**
+             * Arguments
+             * @default null
+             */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Options
+             * @default []
+             */
+            options?: components["schemas"]["PermissionOptionView"][];
+        };
         /** PluginSubscriptionAuthentication */
         PluginSubscriptionAuthentication: {
             /**
@@ -8345,6 +8433,22 @@ export interface components {
             /** Next Offset */
             next_offset?: number | null;
         };
+        /** SecurityAdvisory */
+        SecurityAdvisory: {
+            /** Id */
+            id: string;
+            /** Summary */
+            summary: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "high" | "critical";
+            /** Url */
+            url: string;
+            /** Updated At */
+            updated_at: string | null;
+        };
         /** SelectableResourceSummary */
         SelectableResourceSummary: {
             /** Resource Id */
@@ -8789,6 +8893,15 @@ export interface components {
             used_percent: number;
             /** Reset At */
             reset_at: number;
+        };
+        /** StableRelease */
+        StableRelease: {
+            /** Version */
+            version: string;
+            /** Url */
+            url: string;
+            /** Is Newer */
+            is_newer: boolean;
         };
         /** Status */
         Status: {
@@ -9992,6 +10105,19 @@ export interface components {
              * @enum {string}
              */
             kind: "unlimited";
+        };
+        /** UpdateNotices */
+        UpdateNotices: {
+            /** Current Version */
+            current_version: string;
+            latest_stable: components["schemas"]["StableRelease"] | null;
+            /** Advisories */
+            advisories: components["schemas"]["SecurityAdvisory"][];
+            /**
+             * Install Method
+             * @enum {string}
+             */
+            install_method: "uv_tool" | "other";
         };
         /**
          * UrlInputSupport
@@ -11660,6 +11786,12 @@ export interface components {
             resource_digest: string;
             /** Tools */
             tools: components["schemas"]["McpToolName"][] | null;
+            /**
+             * Authority
+             * @default operator
+             * @enum {string}
+             */
+            authority?: "operator" | "user" | "none";
         };
         /** AcpPresetAuthRequest */
         AcpPresetAuthRequest: {
@@ -13009,6 +13141,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListenerStatus"];
+                };
+            };
+        };
+    };
+    update_notices_api_update_notices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateNotices"];
                 };
             };
         };

@@ -205,7 +205,7 @@ def active_model_request_index(ctx: RunContext[AgentContext]) -> int:
 
 
 def _failed_payload(exc: BaseException, *, request_id: str, request_index: int) -> ModelRequestFailedPayload:
-    """Name why the request failed: the provider's own message for an HTTP error, else the exception type.
+    """Name why the request failed: the provider message and hint for an HTTP error, else the exception type.
 
     A Harness error is already named by its code. Other exception messages stay out: they can carry anything the
     failing code held.
@@ -216,6 +216,15 @@ def _failed_payload(exc: BaseException, *, request_id: str, request_index: int) 
     if isinstance(exc, ModelHTTPError):
         status_code = exc.status_code
         detail = _provider_message(exc.body)
+        if detail:
+            detail = _bounded(detail)
+        hint = (exc.hint or "").strip()
+        if hint and (not detail or hint not in detail):
+            # Preserve the actionable hint even when the provider message is long.
+            hint = _bounded(hint)
+            budget = MAX_FAILURE_DETAIL_CHARS - len(hint) - 2
+            message = _bounded(detail, limit=budget) if detail and budget > 0 else None
+            detail = f"{message}\n\n{hint}" if message else hint
     elif not isinstance(exc, HarnessError | asyncio.CancelledError):
         detail = type(exc).__name__
     return ModelRequestFailedPayload(
@@ -232,17 +241,15 @@ def _provider_message(body: object) -> str | None:
     if isinstance(body, dict):
         for container in (body.get("error"), body):
             if isinstance(container, dict) and isinstance(container.get("message"), str):
-                return _bounded(container["message"])
+                return container["message"].strip() or None
     if body is None:
         return None
-    return _bounded(body if isinstance(body, str) else json.dumps(body, ensure_ascii=False, default=str))
+    text = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False, default=str)
+    return text.strip() or None
 
 
-def _bounded(text: str) -> str | None:
-    text = text.strip()
-    if len(text) > MAX_FAILURE_DETAIL_CHARS:
-        text = text[: MAX_FAILURE_DETAIL_CHARS - 1] + "…"
-    return text or None
+def _bounded(text: str, *, limit: int = MAX_FAILURE_DETAIL_CHARS) -> str:
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def _safe_error_code(exc: BaseException) -> str:

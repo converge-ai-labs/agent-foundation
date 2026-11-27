@@ -19,7 +19,7 @@ Declare only the binary input modalities that the active Model and transport nat
 from a13n_harness import AgentSpec, HarnessModelCharacteristics, ModelCapability
 
 agent_spec = AgentSpec(
-    model="google-cloud:gemini-2.5-pro",
+    model="google-cloud:gemini-3.5-flash",
     model_characteristics=HarnessModelCharacteristics(
         capabilities=frozenset({
             ModelCapability.IMAGE_UNDERSTANDING,

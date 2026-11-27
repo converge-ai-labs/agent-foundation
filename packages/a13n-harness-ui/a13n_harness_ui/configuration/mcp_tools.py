@@ -11,6 +11,7 @@ import yaml
 from anyio import fail_after
 from fastmcp import Client
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic_ai.messages import Authority
 from ruamel.yaml import YAML
 
 from a13n_harness_ui.composition.models import ResolvedMcpRecipe
@@ -30,6 +31,7 @@ class McpToolSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     resource_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     tools: list[McpToolName] | None = Field(max_length=1024)
+    authority: Authority = "operator"
 
 
 class McpToolSettings(McpToolSelection):
@@ -98,6 +100,7 @@ def tool_settings(
         oauth=isinstance(resource.transport, McpRemoteTransport) and resource.transport.oauth is not None,
         resource_digest=_resource_digest(raw, key),
         tools=list(resource.tools) if resource.tools is not None else None,
+        authority=resource.authority,
     )
 
 
@@ -111,7 +114,11 @@ def selection_mutation(
             "The MCP server changed. Reload its settings before saving.", code="configuration_source_changed"
         )
     selected = raw["mcpServers"][key] if key is not None else raw
-    if selected.get("tools") == request.tools:
+    tools_changed = selected.get("tools") != request.tools
+    authority_changed = "authority" in request.model_fields_set and request.authority != selected.get(
+        "authority", "operator"
+    )
+    if not tools_changed and not authority_changed:
         return document.relative_path, ResourceMutationRequest(content=content.decode())
     formatter = YAML()
     formatter.preserve_quotes = True
@@ -119,11 +126,17 @@ def selection_mutation(
         raw = formatter.load(content.decode())
         selected = raw["mcpServers"][key] if key is not None else raw
 
-    if request.tools is None:
-        selected.pop("tools", None)
-    else:
-        selected["tools"] = request.tools
-        raw["schema_version"] = "2"
+    if tools_changed:
+        if request.tools is None:
+            selected.pop("tools", None)
+        else:
+            selected["tools"] = request.tools
+            raw["schema_version"] = "2"
+    if authority_changed:
+        if request.authority == "operator":
+            selected.pop("authority", None)
+        else:
+            selected["authority"] = request.authority
     if target.suffix == ".json":
         updated = json.dumps(raw, indent=2) + "\n"
     else:

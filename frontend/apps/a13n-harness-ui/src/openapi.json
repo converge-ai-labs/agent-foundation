@@ -1340,6 +1340,24 @@
         }
       }
     },
+    "/api/update-notices": {
+      "get": {
+        "summary": "Update Notices",
+        "operationId": "update_notices_api_update_notices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateNotices"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/presence": {
       "get": {
         "summary": "Presence",
@@ -20332,6 +20350,15 @@
             "title": "Kind",
             "type": "string"
           },
+          "source": {
+            "default": "mcp",
+            "enum": [
+              "mcp",
+              "acp"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
           "request_id": {
             "title": "Request Id",
             "type": "string"
@@ -20396,7 +20423,8 @@
             "enum": [
               "form",
               "url",
-              "question"
+              "question",
+              "permission"
             ],
             "title": "Mode",
             "type": "string"
@@ -20412,6 +20440,17 @@
             },
             "title": "Questions",
             "type": "array"
+          },
+          "permission": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PermissionRequestDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           },
           "schema": {
             "anyOf": [
@@ -20573,6 +20612,16 @@
               }
             ],
             "title": "Tools"
+          },
+          "authority": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "user",
+              "none"
+            ],
+            "title": "Authority",
+            "default": "operator"
           },
           "server_id": {
             "type": "string",
@@ -22528,6 +22577,130 @@
         ],
         "title": "PendingDecisionSummary"
       },
+      "PermissionOptionView": {
+        "additionalProperties": false,
+        "properties": {
+          "option_id": {
+            "title": "Option Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "allow_once",
+              "allow_always",
+              "reject_once",
+              "reject_always"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "option_id",
+          "name",
+          "kind"
+        ],
+        "title": "PermissionOptionView",
+        "type": "object"
+      },
+      "PermissionRequestDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "tool_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Kind"
+          },
+          "tool_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tool Name"
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Command"
+          },
+          "cwd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cwd"
+          },
+          "environment_keys": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Environment Keys",
+            "type": "array"
+          },
+          "locations": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "arguments": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Arguments"
+          },
+          "options": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PermissionOptionView"
+            },
+            "title": "Options",
+            "type": "array"
+          }
+        },
+        "title": "PermissionRequestDetail",
+        "type": "object"
+      },
       "PluginSubscriptionAuthentication": {
         "properties": {
           "kind": {
@@ -24236,6 +24409,50 @@
         ],
         "title": "SavedOutputView"
       },
+      "SecurityAdvisory": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "summary": {
+            "type": "string",
+            "title": "Summary"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "high",
+              "critical"
+            ],
+            "title": "Severity"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "summary",
+          "severity",
+          "url",
+          "updated_at"
+        ],
+        "title": "SecurityAdvisory"
+      },
       "SelectableResourceSummary": {
         "properties": {
           "resource_id": {
@@ -25297,6 +25514,29 @@
           "reset_at"
         ],
         "title": "SpendControlLimit"
+      },
+      "StableRelease": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "is_newer": {
+            "type": "boolean",
+            "title": "Is Newer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "url",
+          "is_newer"
+        ],
+        "title": "StableRelease"
       },
       "Status": {
         "properties": {
@@ -28599,6 +28839,47 @@
           "kind"
         ],
         "title": "UnlimitedMemoryLimit"
+      },
+      "UpdateNotices": {
+        "properties": {
+          "current_version": {
+            "type": "string",
+            "title": "Current Version"
+          },
+          "latest_stable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StableRelease"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "advisories": {
+            "items": {
+              "$ref": "#/components/schemas/SecurityAdvisory"
+            },
+            "type": "array",
+            "title": "Advisories"
+          },
+          "install_method": {
+            "type": "string",
+            "enum": [
+              "uv_tool",
+              "other"
+            ],
+            "title": "Install Method"
+          }
+        },
+        "type": "object",
+        "required": [
+          "current_version",
+          "latest_stable",
+          "advisories",
+          "install_method"
+        ],
+        "title": "UpdateNotices"
       },
       "UrlInputSupport": {
         "properties": {
@@ -32885,6 +33166,16 @@
               }
             ],
             "title": "Tools"
+          },
+          "authority": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "user",
+              "none"
+            ],
+            "title": "Authority",
+            "type": "string"
           }
         },
         "required": [

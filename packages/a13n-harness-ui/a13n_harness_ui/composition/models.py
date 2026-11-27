@@ -7,6 +7,7 @@ from typing import ClassVar, Literal, Self, get_args, get_origin
 from a13n_harness import RunConfiguration, ToolExecutionConfig
 from a13n_harness.toolsets.file_media import NativeInputMediaKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+from pydantic_ai.messages import Authority
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
 from a13n_harness_ui.configuration.models import (
@@ -98,6 +99,7 @@ class ResolvedMcpRecipe(CompositionModel):
     expose_roots: bool | None = Field(default=None, exclude_if=lambda value: value is None)
     object_ref_tools: dict[str, bool] = Field(default_factory=dict, exclude_if=lambda value: not value)
     on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
+    authority: Authority = Field(default="operator", exclude_if=lambda value: value == "operator")
     oauth_binding: OAuthBinding | None = Field(default=None, exclude_if=lambda value: value is None)
     tools: tuple[str, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     apps_enabled: bool = Field(default=False, exclude_if=lambda value: not value)

@@ -48,6 +48,9 @@ transport:
 | `object_ref_tools`       | 启用[对象引用传输](../a13n-harness/capabilities.md#object-reference-transport)的工具名称或通配模式列表                                 |
 | `expose_roots`           | 共享 Thread 已保存的本地根目录。stdio 默认为 `true`，HTTP 默认为 `false`。                                                             |
 | `on_error`               | 启动失败策略（如 `fail` 或 `skip`）                                                                                                    |
+| `authority`              | 服务器指令的应用方式：`operator`（默认，直连时作为系统指令）、`user`（用户上下文）或 `none`（仅作参考数据）。保存资源时省略默认值。    |
+
+可在资源顶层或 `mcpServers` 的指定条目中设置 `authority`。在 WebUI 中编辑已有服务器时，打开 **设置 → 连接**，选择服务器，再修改 **服务器指令 → 应用方式**。编辑界面不会显示已保存的凭据，工具权限保持不变。
 
 MCP Roots 通过目录名和 `file://` URI 向服务器提供 Thread 已保存的本地目录。未关联 Project 的 Thread 也可以共享自己的本地目录；设备绑定中的目录不包含在内。编辑 Project 只会更新新 Thread 的默认值；如需更新已有 Thread，请显式应用 Project 环境。
 

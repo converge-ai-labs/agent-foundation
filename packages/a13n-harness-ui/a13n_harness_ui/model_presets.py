@@ -90,8 +90,6 @@ API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
         "gemini-3.5-flash-lite",
         "gemini-3.1-pro-preview",
         "gemini-3.5-flash",
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
     ),
     "openrouter": (
         "anthropic/claude-sonnet-5.5",
@@ -99,7 +97,6 @@ API_MODEL_SUGGESTIONS: dict[str, tuple[str, ...]] = {
         "moonshotai/kimi-k3",
         "anthropic/claude-sonnet-4.6",
         "openai/gpt-5.4",
-        "google/gemini-2.5-pro",
     ),
     "deepseek": ("deepseek-flash", "deepseek-v4-pro", "deepseek-v4-flash"),
     "zai": ("glm-5.3", "glm-5.3-flash", "glm-5.3-flashx", "glm-5.2", "glm-4.7", "glm-4.5"),

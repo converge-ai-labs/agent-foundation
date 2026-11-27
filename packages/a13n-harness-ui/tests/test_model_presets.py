@@ -632,6 +632,16 @@ def test_provider_model_suggestions_accept_numeric_default_and_custom_case(provi
     assert wizard.values["model"] == "Qwen/My-Custom-Model"
 
 
+@pytest.mark.parametrize(
+    ("provider", "model_id"),
+    [("google", "gemini-2.5-pro"), ("google", "gemini-2.5-flash"), ("openrouter", "google/gemini-2.5-pro")],
+)
+def test_deprecated_gemini_models_are_not_suggested(provider: str, model_id: str) -> None:
+    from a13n_harness_ui.model_presets import API_MODEL_SUGGESTIONS
+
+    assert model_id not in API_MODEL_SUGGESTIONS[provider]
+
+
 @pytest.mark.parametrize("hint,expected", [(None, 350000), (1000000, 350000), (128000, 128000)])
 def test_api_context_defaults_manual_override_and_model_change(hint, expected) -> None:
     wizard = SetupWizard()

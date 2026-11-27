@@ -110,7 +110,14 @@ async def test_guest_cannot_read_other_threads_or_call_owner_apis(tmp_path):
         )
         assert prediction.status_code == 403
         assert (await client.get(prefix + f"/threads/{private.thread_id}", headers=headers)).status_code == 401
-        for path in ("/api/status", "/api/shares", "/api/configuration/sources", "/api/host/files", "/api/presence"):
+        for path in (
+            "/api/status",
+            "/api/update-notices",
+            "/api/shares",
+            "/api/configuration/sources",
+            "/api/host/files",
+            "/api/presence",
+        ):
             assert (await client.get(path, headers=headers)).status_code == 401
         for method, path in (
             ("POST", "/api/threads/read"),

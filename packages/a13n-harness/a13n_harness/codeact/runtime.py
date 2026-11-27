@@ -86,6 +86,7 @@ class CodeActRunState:
         release: ReleaseFn,
         valid_names: set[str],
         sequential_names: set[str],
+        output_names: dict[str, str] | None = None,
         global_sequential: bool,
         restart: bool,
         finish: Callable[[CodeActExecution], Awaitable[Any]],
@@ -106,6 +107,7 @@ class CodeActRunState:
                     release=release,
                     valid_names=valid_names,
                     sequential_names=sequential_names,
+                    output_names=output_names,
                     global_sequential=global_sequential,
                 )
                 return await finish(result)
@@ -125,6 +127,7 @@ class CodeActRunState:
         release: ReleaseFn,
         valid_names: set[str],
         sequential_names: set[str],
+        output_names: dict[str, str] | None = None,
         global_sequential: bool,
     ) -> CodeActExecution:
         pool = await self._get_pool()
@@ -139,6 +142,7 @@ class CodeActRunState:
                 release=release,
                 valid_names=valid_names,
                 sequential_names=sequential_names,
+                output_names=output_names,
                 global_sequential=global_sequential,
             )
 
@@ -153,6 +157,7 @@ class CodeActRunState:
         release: ReleaseFn,
         valid_names: set[str],
         sequential_names: set[str],
+        output_names: dict[str, str] | None = None,
         global_sequential: bool,
         inputs: dict[str, Any] | None = None,
     ) -> CodeActExecution:
@@ -165,6 +170,7 @@ class CodeActRunState:
             release=release,
             valid_names=valid_names,
             sequential_names=sequential_names,
+            output_names=output_names or {},
             global_sequential=global_sequential,
             max_concurrency=self.config.max_concurrency,
         ).run(state)

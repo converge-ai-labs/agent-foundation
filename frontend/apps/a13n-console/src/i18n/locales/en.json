@@ -1,4 +1,12 @@
 {
+  "Server instructions": "Server instructions",
+  "System (default)": "System (default)",
+  "User context": "User context",
+  "Reference data": "Reference data",
+  "Added as system instructions for direct connections. Does not change tool permissions.": "Added as system instructions for direct connections. Does not change tool permissions.",
+  "Passed as user-level context with lower priority than system instructions. Does not change tool permissions.": "Passed as user-level context with lower priority than system instructions. Does not change tool permissions.",
+  "Passed as passive reference data with no instruction authority. Does not change tool permissions.": "Passed as passive reference data with no instruction authority. Does not change tool permissions.",
+  "Save server instructions setting": "Save server instructions setting",
   "Disk ID": "Disk ID",
   "boxd disks": "boxd disks",
   "Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.": "Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.",
@@ -4671,5 +4679,8 @@
   "This connection uses native tool discovery.": "This connection uses native tool discovery.",
   "More than {{limit}} tools selected": "More than {{limit}} tools selected",
   "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.": "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.",
-  "Enable tool discovery": "Enable tool discovery"
+  "Enable tool discovery": "Enable tool discovery",
+  "Agent input request": "Agent input request",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "Your response goes to this Agent. Don't include passwords, tokens or other secrets.",
+  "Select an option": "Select an option"
 }

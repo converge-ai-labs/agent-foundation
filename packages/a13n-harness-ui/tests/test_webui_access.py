@@ -67,7 +67,14 @@ async def test_bot_deep_link_serves_the_same_shell_without_swallowing_api_errors
     (assets / "index.html").write_text('<!doctype html><div id="root"></div>')
     async with webui(tmp_path, [PUBLIC], static_root=assets) as (server, _):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=server), base_url=PUBLIC) as client:
-            for path in ("/", "/bot", "/bot?refresh=1", "/threads/thread-example", "/share/share-example"):
+            for path in (
+                "/",
+                "/bot",
+                "/bot?refresh=1",
+                "/settings/diagnostics",
+                "/threads/thread-example",
+                "/share/share-example",
+            ):
                 response = await client.get(path)
                 assert response.status_code == 200, response.text
                 assert response.headers["content-type"].startswith("text/html")

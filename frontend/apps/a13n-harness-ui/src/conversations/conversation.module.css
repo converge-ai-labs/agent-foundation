@@ -1437,8 +1437,26 @@ dl.detailGrid > .detailLongRow dd {
 .decision {
   margin: 16px 0;
   padding: 16px;
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 8px;
+  border-radius: var(--harness-radius-panel);
+  background: var(--a13n-surface);
+  font-size: var(--a13n-text-body);
+}
+.decision
+  :is(
+    [data-slot="input-control"],
+    [data-slot="textarea-control"],
+    [data-slot="select-trigger"]
+  ) {
+  background: var(--a13n-elevated);
+}
+:global(.dark)
+  .decision
+  :is(
+    [data-slot="input-control"],
+    [data-slot="textarea-control"],
+    [data-slot="select-trigger"]
+  ) {
+  background: var(--a13n-canvas);
 }
 .decision h2 {
   font-size: calc(var(--a13n-text-body) * 16 / 14);
@@ -1456,7 +1474,7 @@ dl.detailGrid > .detailLongRow dd {
   line-height: 20px;
 }
 .decision > form {
-  margin-top: 24px;
+  margin-top: 20px;
 }
 .decisionActions {
   display: flex;
@@ -1472,24 +1490,34 @@ dl.detailGrid > .detailLongRow dd {
 }
 .question legend {
   color: var(--harness-log-text);
-  font-size: var(--a13n-text-body);
+  font-size: var(--a13n-text-sm);
   margin-bottom: 4px;
 }
 .question > p {
   margin-bottom: 12px;
-  font-size: calc(var(--a13n-text-body) * 16 / 14);
+  font-size: calc(var(--a13n-text-body) * 15 / 14);
   font-weight: 500;
 }
 .answerOption {
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  padding: 12px 12px;
-  margin: 8px 0;
-  border-radius: 6px;
-  background: var(--a13n-surface);
+  padding: 10px 12px;
+  margin: 6px 0;
+  border: 1px solid var(--a13n-border-soft);
+  border-radius: 10px;
+  background: var(--a13n-elevated);
   font-size: var(--a13n-text-body);
   cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+:global(.dark) .answerOption {
+  background: var(--a13n-canvas);
+}
+.answerOption:hover {
+  background: var(--a13n-hover);
 }
 .answerOption input {
   margin-top: 4px;
@@ -1498,6 +1526,7 @@ dl.detailGrid > .detailLongRow dd {
 }
 .answerOption:has(input:checked) {
   background: var(--a13n-selected);
+  border-color: var(--a13n-input-border);
 }
 .answerOption:has(input:focus-visible) {
   outline: 2px solid var(--ring);

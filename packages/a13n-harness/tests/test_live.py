@@ -33,7 +33,7 @@ from a13n_harness.toolsets import CodeActPolicyToolset, CodeActToolPolicy
 from a13n_harness.usage import ModelUsageRecord, UsageSnapshot
 from pydantic_ai import CallDeferred, RunContext, Tool, ToolReturn
 from pydantic_ai.capabilities import AbstractCapability, Capability, HandleDeferredToolCalls
-from pydantic_ai.exceptions import ModelRetry
+from pydantic_ai.exceptions import ModelRetry, UserError
 from pydantic_ai.messages import (
     BinaryAudio,
     FunctionToolResultEvent,
@@ -68,10 +68,11 @@ from pydantic_ai.realtime.codec import (
     ToolCall,
     ToolResult,
     TruncateOutput,
+    UpdateTools,
 )
 from pydantic_ai.realtime.lifecycle import InferredLifecycle, LifecycleEvent, RealtimeFrame
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
-from pydantic_ai.toolsets import FunctionToolset
+from pydantic_ai.toolsets import DynamicToolset, FunctionToolset
 from pydantic_ai.usage import RequestUsage, RunUsage, UsageLimits
 
 pytestmark = pytest.mark.anyio
@@ -97,13 +98,14 @@ class _Connection(RealtimeConnection):
 
 
 class _Model(RealtimeModel):
-    def __init__(self) -> None:
+    def __init__(self, *, supports_tool_updates: bool = False) -> None:
         super().__init__(
             profile={
                 "supports_session_seeding": True,
                 "supports_manual_turn_control": True,
                 "supports_interruption": True,
                 "supports_output_truncation": True,
+                "supports_tool_updates": supports_tool_updates,
             }
         )
         self.connection = _Connection()
@@ -292,6 +294,77 @@ async def test_live_tool_result_preserves_content_and_refreshes_context_before_s
         if isinstance(part, ToolReturnPart)
     ]
     assert returns[0].metadata is not None and returns[0].metadata["source"] == "test"
+
+
+@pytest.mark.parametrize("supports_tool_updates", [True, False])
+async def test_live_loads_deferred_capability_with_supplemental_context(supports_tool_updates, recwarn) -> None:
+    def lookup() -> str:
+        return "found"
+
+    def reveal() -> ToolReturn:
+        return ToolReturn(return_value="Loaded lookup", tools=["lookup"])
+
+    if supports_tool_updates:
+        capability = Capability(id="lookup-capability", defer_loading=True, tools=[lookup])
+        reveal_name, args = "load_capability", '{"id":"lookup-capability"}'
+    else:
+        # Fixed-tool models reject deferred declarations at startup. A dynamic
+        # toolset can contribute one after the session has already connected.
+        deferred = FunctionToolset(tools=[Tool(lookup, defer_loading=True)])
+        capability = Capability(
+            tools=[reveal], toolsets=[DynamicToolset(lambda ctx: deferred if ctx.run_step else None)]
+        )
+        reveal_name, args = "reveal", "{}"
+    executable = HarnessBuilder().build(AgentDefinition(output_type=str, agent=AgentSpec(), capabilities=(capability,)))
+    model = _Model(supports_tool_updates=supports_tool_updates)
+    projection = _ContextProjection()
+    async with executable.live(model=model, bindings=RunBindings.embedded(model_context=projection)) as live:
+        consume = asyncio.create_task(_collect(live))
+        assert model.parameters is not None
+        assert {tool.name for tool in model.parameters.declared_function_tools} == {reveal_name}
+        if not supports_tool_updates:
+            # Settle an initial model turn so the next tool call re-prepares the toolset.
+            await model.connection.events.put(OutputTranscript("Ready", is_final=True))
+            await model.connection.events.put(ResponseDone())
+
+        await model.connection.events.put(
+            ToolCall("load-1", tool_name=reveal_name, args=args, response_usage_follows=True)
+        )
+        await model.connection.events.put(ResponseDone())
+        sent = await asyncio.wait_for(model.connection.sent.get(), timeout=5)
+        if supports_tool_updates:
+            assert isinstance(sent, UpdateTools)
+            assert {tool.name for tool in sent.tools} == {"load_capability", "lookup"}
+            sent = await asyncio.wait_for(model.connection.sent.get(), timeout=5)
+        assert isinstance(sent, ToolResult)
+        assert sent.tool_call_id == "load-1" and not sent.failed
+        assert "Live context 2" in str(sent.content)
+
+        if supports_tool_updates:
+            result = await asyncio.wait_for(_call(model, "lookup"), timeout=5)
+            assert not result.failed and "found" in result.output
+            assert "Live context 3" in str(result.content)
+        reveal_warnings = [warning for warning in recwarn if "supports_tool_updates` is `False" in str(warning.message)]
+        assert len(reveal_warnings) == (0 if supports_tool_updates else 1)
+        await live.close()
+        await consume
+    assert live.result is not None and live.result.status == "completed"
+
+
+async def test_live_fixed_tool_model_rejects_deferred_capability_at_startup() -> None:
+    def lookup() -> str:
+        return "found"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        capabilities=(Capability(id="lookup-capability", defer_loading=True, tools=[lookup]),),
+    )
+    model = _Model()
+    with pytest.raises(UserError, match="deferred capabilities that contribute tools are not supported"):
+        async with executable.live(model=model):
+            pytest.fail("The session should not connect")
+    assert not model.opened
 
 
 @pytest.mark.parametrize("approved", [True, False])

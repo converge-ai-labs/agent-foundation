@@ -504,7 +504,7 @@ class AgentReconstructor:
             oauth=self._mcp_oauth,
             apps=self._mcp_apps if item.apps_enabled else None,
             connections=self._mcp_connections,
-        )
+        ).with_authority(item.authority)
 
     def _reconstruct_memory(
         self,

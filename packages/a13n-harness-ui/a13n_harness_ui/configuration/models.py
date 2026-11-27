@@ -33,6 +33,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_ai.messages import Authority
 
 from a13n_harness_ui.content_plugins import InstalledContentPlugin
 from a13n_harness_ui.environment_bindings import (
@@ -114,6 +115,7 @@ class ProcessConfiguration(ConfigurationModel):
     object_store: ObjectStoreSettings = Field(default_factory=ObjectStoreSettings)
     max_object_bytes: ObjectSizeLimit = DEFAULT_MAX_OBJECT_BYTES
     pricing_auto_update: bool = True
+    update_check: bool = True
     terminal_update_check: bool = True
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
     log_format: Literal["pretty", "json"] = "pretty"
@@ -926,6 +928,7 @@ class McpServerResource(ConfigurationModel):
         "Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
     )
     on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
+    authority: Authority = Field(default="operator", exclude_if=lambda value: value == "operator")
     tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from a13n_harness_ui.cli import CliRequest
+from a13n_harness_ui.configuration.models import ProcessConfiguration
 from a13n_harness_ui.interactive import onboarding, shell, startup, updates
 from a13n_harness_ui.updater import UpdateCommand
 
@@ -97,7 +98,7 @@ class StartupTests(unittest.IsolatedAsyncioTestCase):
                 notices.append(text)
 
         config = SimpleNamespace(
-            document=SimpleNamespace(process=SimpleNamespace(terminal_update_check=configured_check))
+            document=SimpleNamespace(process=ProcessConfiguration(terminal_update_check=configured_check))
         )
         backend = SimpleNamespace(
             app=SimpleNamespace(current_configuration=AsyncMock(return_value=config)),

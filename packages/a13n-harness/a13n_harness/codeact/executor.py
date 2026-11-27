@@ -37,6 +37,14 @@ def is_sandbox_panic(exc: BaseException) -> bool:
 
 
 @dataclass
+class OutputCall(Exception):
+    """Stop the host-side feed without resuming Monty at the output call site."""
+
+    tool_name: str
+    arguments: dict[str, Any]
+
+
+@dataclass
 class MontyExecutor:
     """Single-use host loop for one Monty feed."""
 
@@ -46,6 +54,7 @@ class MontyExecutor:
     release: ReleaseFn
     valid_names: Container[str]
     sequential_names: set[str] = field(default_factory=set)
+    output_names: dict[str, str] = field(default_factory=dict)
     global_sequential: bool = False
     max_concurrency: int = 1
     _pending: dict[int, PendingCall] = field(default_factory=dict, init=False)
@@ -116,6 +125,7 @@ class MontyExecutor:
         if name not in self.valid_names:
             return await snapshot.resume({"exception": NameError(f"Unknown function: {name}")})
 
+        output_name = self.output_names.get(name)
         # Charge arguments before queueing so waiting calls cannot retain unbudgeted data.
         ordinal = await self.admit(name)
         self._active_ordinals.add(ordinal)
@@ -126,10 +136,21 @@ class MontyExecutor:
             argument_bytes = await self.prepare_args(kwargs, ordinal)
         except Exception as exc:
             await self._release_once(ordinal)
+            if output_name is not None:
+                raise
             return await snapshot.resume({"exception": exc})
         except BaseException:
             await self._release_once(ordinal)
             raise
+
+        if output_name is not None:
+            await self._release_once(ordinal)
+            # Settle prior host calls (including inline approval) before handing off
+            # final output. Sandbox timers need not finish once the feed stops.
+            predecessors = [task for task, admitted in self._pending.values() if admitted is not None]
+            if predecessors:
+                await asyncio.shield(asyncio.gather(*predecessors, return_exceptions=True))
+            raise OutputCall(output_name, kwargs)
 
         barrier = name in self.sequential_names
         if barrier:

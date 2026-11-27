@@ -43,7 +43,7 @@ Arguments in capitals are values you supply. Square brackets mark optional argum
 | `--environment-mode`    | `full-control`, `sandbox` | Select a built-in mode for a new conversation.                                              |
 | `--environment-profile` | Profile ID                | Select a custom profile for a new conversation.                                             |
 | `--display`             | `concise`, `detailed`     | Override `display.mode`; the configured default is `concise`.                               |
-| `--no-update-check`     | Flag                      | Skip startup update detection for this invocation.                                          |
+| `--no-update-check`     | Flag                      | Skip terminal or WebUI update checks for this invocation.                                   |
 | `--version`             | Flag                      | Print the installed version and exit.                                                       |
 
 These options are unset by default; flags default to false. `--environment-mode` and `--environment-profile` are mutually exclusive. `--resume` cannot be combined with new-conversation Agent, Environment, or title overrides. Resume first, then change the selection in the TUI.

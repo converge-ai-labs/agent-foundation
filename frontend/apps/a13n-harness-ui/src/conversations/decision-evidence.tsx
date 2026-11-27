@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 import { useTranslation } from "../i18n";
 import { Badge, Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import styles from "./decisions.module.css";
 import { copyText } from "../platform";
+import { SyntaxCode } from "./syntax-code";
 
 type Request = Schema<"ApprovalRequestView"> | Schema<"ExternalRequestView">;
 export function record(value: unknown): Record<string, unknown> | undefined {
@@ -120,16 +122,20 @@ export function DecisionEvidence({ request }: { request: Request }) {
         </p>
       ) : command ? (
         <>
-          <div className={styles.heading}>
-            <span>{t("Command")}</span>
-            <CopyCommand command={command} />
+          <div className={styles.commandFrame}>
+            <div className={styles.commandBar}>
+              <span className={styles.commandLabel}>{t("Command")}</span>
+              <CopyCommand command={command} />
+            </div>
+            <pre className={styles.commandCode}>
+              <SyntaxCode source={command} language="bash" />
+            </pre>
           </div>
-          <pre className={styles.code}>
-            <code>{command}</code>
-          </pre>
           <dl className={styles.context}>
             <dt>{t("Working directory")}</dt>
-            <dd>{text(args?.cwd) ?? t("Not specified")}</dd>
+            <dd className={text(args?.cwd) ? styles.pathValue : undefined}>
+              {text(args?.cwd) ?? t("Not specified")}
+            </dd>
             {text(args?.alias) && (
               <>
                 <dt>{t("Environment mount")}</dt>
@@ -173,7 +179,7 @@ export function DecisionEvidence({ request }: { request: Request }) {
   );
 }
 
-function CopyCommand({ command }: { command: string }) {
+export function CopyCommand({ command }: { command: string }) {
   const { t } = useTranslation();
   const [status, setStatus] = useState<"copied" | "failed" | "">("");
   return (
@@ -181,6 +187,7 @@ function CopyCommand({ command }: { command: string }) {
       type="button"
       size="sm"
       variant="ghost"
+      className={styles.copyButton}
       onClick={() => {
         void (async () => {
           try {
@@ -192,6 +199,11 @@ function CopyCommand({ command }: { command: string }) {
         })();
       }}
     >
+      {status === "copied" ? (
+        <CheckIcon size={14} aria-hidden="true" />
+      ) : (
+        <CopyIcon size={14} aria-hidden="true" />
+      )}
       {status === "copied"
         ? t("Copied")
         : status === "failed"

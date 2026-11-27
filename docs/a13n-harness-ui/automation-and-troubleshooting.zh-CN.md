@@ -51,12 +51,16 @@ OTLP 链路追踪配置见[可观测性](observation.md)，WebUI 重启恢复见
 a13n-harness-ui update
 ```
 
-启动时的版本检查仅显示提示（升级由 `a13n-harness-ui update` 显式执行）；可通过 `--no-update-check` 单次跳过提示，或在 `a13n-harness-ui.yaml` 中永久关闭：
+在 WebUI 的**设置 → 诊断 → 关于**中，可以查看已安装版本、可用更新和适用于当前版本的安全公告。终端通过系统消息提示可用更新。请使用初次安装时的包管理器升级 Harness UI。
+
+如需跳过本次检查，在 `webui` 子命令之前传入 `--no-update-check`，或启动终端时直接传入该参数。要同时关闭 WebUI 和终端的检查，请在 `a13n-harness-ui.yaml` 中设置：
 
 ```yaml title="a13n-harness-ui.yaml"
 process:
-  terminal_update_check: false
+  update_check: false
 ```
+
+如果只想关闭终端提示，请设置 `process.terminal_update_check: false`。
 
 检查或获取与当前客户端匹配的沙箱 `a13n-envd` 二进制文件（或升级独立部署的可执行文件）前，请先停止共用同一数据目录的实例：
 
