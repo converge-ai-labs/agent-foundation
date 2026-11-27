@@ -531,7 +531,7 @@ async def test_read_skill_reads_bounded_local_files_in_a_mixed_catalog(tmp_path)
 
 
 @pytest.mark.parametrize("restriction", ["symlink", "read permission"])
-async def test_read_skill_local_respects_provider_path_and_read_authority(tmp_path, restriction):
+async def test_read_skill_local_respects_provider_path_and_read_authority(tmp_path, restriction, symlink):
     skill = tmp_path / ".agents" / "skills" / "remote"
     skill.mkdir(parents=True)
     (skill / "SKILL.md").write_bytes(_DOC.encode())
@@ -539,10 +539,7 @@ async def test_read_skill_local_respects_provider_path_and_read_authority(tmp_pa
         other = tmp_path / "other"
         other.mkdir()
         (other / "reference.md").write_text("outside the skill")
-        try:
-            (skill / "references").symlink_to(other, target_is_directory=True)
-        except OSError:
-            pytest.skip("This host cannot create symlinks")
+        symlink(skill / "references", other, target_is_directory=True)
         path, deny = "references/reference.md", ()
     else:
         path, deny = "SKILL.md", (EnvironmentAction.FILE_READ_BYTES,)

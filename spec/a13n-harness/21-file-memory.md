@@ -156,7 +156,7 @@ A process can stop after a write commits but before the Host records the tool re
 - `.a13n-memory/` is never listed and cannot be written. Symbolic links are not followed. A file whose path breaks the format or whose content is not UTF-8 is left out of the listing, and an invalid frontmatter lists without a description.
 - The cursor is a digest of the listing. `changes()` answers `Changes(cursor, ())` while the listing is unchanged and `FullResync` after any change.
 - `Origin` is ignored; the store keeps no history. It does not implement `SearchableFileStore`.
-- `purge()` removes content under the same lock and retains bookkeeping and the lock inode so waiting writers remain serialized. Direct filesystem editors that bypass this lock are outside its atomicity guarantee.
+- `purge()` removes content under the same lock and leaves the bookkeeping directory alone so waiting writers remain serialized. The lock backend owns the lock file's lifetime. Direct filesystem editors that bypass this lock are outside its atomicity guarantee.
 
 ## Invariants
 

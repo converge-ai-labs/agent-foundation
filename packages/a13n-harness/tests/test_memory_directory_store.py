@@ -138,14 +138,14 @@ async def test_files_with_crlf_line_endings_keep_their_frontmatter(tmp_path: Pat
     assert caught.value.code == "invalid_file"
 
 
-async def test_symbolic_links_are_never_followed(tmp_path: Path) -> None:
+async def test_symbolic_links_are_never_followed(tmp_path: Path, symlink) -> None:
     root, outside = tmp_path / "memory", tmp_path / "outside"
     outside.mkdir()
     (outside / "secret.md").write_text("secret\n")
     store = DirectoryFileStore(root)
     await store.write("kept.md", "kept\n", expected=None, origin=ORIGIN)
-    (root / "linked.md").symlink_to(outside / "secret.md")
-    (root / "linked").symlink_to(outside)
+    symlink(root / "linked.md", outside / "secret.md")
+    symlink(root / "linked", outside)
 
     assert [entry.path for entry in await store.list()] == ["kept.md"]
     for call in (
@@ -250,12 +250,16 @@ async def test_concurrent_processes_linearize_their_compare_and_swap(tmp_path: P
 
 
 async def test_purge_removes_every_file(tmp_path: Path) -> None:
-    store = DirectoryFileStore(tmp_path / "memory")
+    root = tmp_path / "memory"
+    store = DirectoryFileStore(root)
     await store.write("a/b.md", "x\n", expected=None, origin=ORIGIN)
     await store.purge()
-    assert (tmp_path / "memory/.a13n-memory/lock").exists()
+    # FileLock may remove its lock file when releasing it. Purge leaves bookkeeping untouched.
+    assert {path.name for path in root.iterdir()} == {".a13n-memory"}
     assert await store.list() == []
     await store.purge()
+    await store.write("new.md", "new\n", expected=None, origin=ORIGIN)
+    assert [entry.path for entry in await store.list()] == ["new.md"]
 
 
 @pytest.mark.parametrize("change", ["update", "delete", "move"])

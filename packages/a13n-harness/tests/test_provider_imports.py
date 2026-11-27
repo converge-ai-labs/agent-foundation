@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 # Optional vendor SDKs, Service, and the Agent runtime that Provider metadata must never import.
 _BLOCKED = (
@@ -36,7 +37,7 @@ httpx2.AsyncClient = lambda *args, **kwargs: (_ for _ in ()).throw(AssertionErro
 """
 
 
-def test_package_import_and_provider_metadata_stay_inert() -> None:
+def test_package_import_and_provider_metadata_stay_inert(tmp_path: Path) -> None:
     # One interpreter runs the checks in order; the import block stays active for all of them.
     script = (
         "import a13n_harness\n"
@@ -61,9 +62,9 @@ def test_package_import_and_provider_metadata_stay_inert() -> None:
         "from a13n_harness.providers.catalog import ProviderCatalog\n"
         "from a13n_harness.providers.environment.builtins import select_builtin_environment_providers\n"
         "catalog = ProviderCatalog(select_builtin_environment_providers(('direct_local',)))\n"
-        "assert catalog.require('direct_local').validate_environment({'root': {'path': '/tmp'}})\n"
+        "assert catalog.require('direct_local').validate_environment({'root': {'path': sys.argv[1]}})\n"
     )
     result = subprocess.run(
-        [sys.executable, "-c", _BLOCK + script], capture_output=True, text=True, timeout=120, check=False
+        [sys.executable, "-c", _BLOCK + script, str(tmp_path)], capture_output=True, text=True, timeout=120, check=False
     )
     assert result.returncode == 0, result.stdout + result.stderr

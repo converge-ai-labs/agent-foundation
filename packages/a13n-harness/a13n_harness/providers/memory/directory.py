@@ -97,7 +97,7 @@ class DirectoryFileStore:
         await to_thread.run_sync(self._purge)
 
     def _purge(self) -> None:
-        # Retain the lock inode so writers already waiting on it still serialize.
+        # Leave lock file cleanup to the lock backend so waiting writers stay serialized.
         with self._locked():
             for child in self.root.iterdir():
                 if child.name == _BOOKKEEPING:

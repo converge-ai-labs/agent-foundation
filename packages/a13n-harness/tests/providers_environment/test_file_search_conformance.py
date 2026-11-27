@@ -144,11 +144,11 @@ async def test_single_file_search_filters_paging_and_context(tmp_path, search_fi
 
 
 @pytest.mark.anyio
-async def test_explicit_file_bypasses_discovery_filters_and_preserves_symlink_path(tmp_path, search_files):
+async def test_explicit_file_bypasses_discovery_filters_and_preserves_symlink_path(tmp_path, search_files, symlink):
     (tmp_path / ".gitignore").write_text("ignored/\n")
     (tmp_path / "ignored").mkdir()
     (tmp_path / "ignored/.hidden").write_text("needle\n")
-    (tmp_path / "alias").symlink_to(tmp_path / "ignored/.hidden")
+    symlink(tmp_path / "alias", tmp_path / "ignored/.hidden")
     for root in ["/ignored/.hidden", "/alias"]:
         result = await search_files("search", root=root, pattern="needle", ignore_mode="git")
         assert [match["path"] for match in result["matches"]] == [root]
@@ -159,12 +159,12 @@ async def test_explicit_file_bypasses_discovery_filters_and_preserves_symlink_pa
 
 
 @pytest.mark.anyio
-async def test_single_file_missing_and_outside_symlink_are_failures(tmp_path, search_files):
+async def test_single_file_missing_and_outside_symlink_are_failures(tmp_path, search_files, symlink):
     with pytest.raises((EnvironmentError, FileNotFoundError)) as missing:
         await search_files("search", root="/missing", pattern="needle")
     if isinstance(missing.value, EnvironmentError):
         assert missing.value.code == "environment_not_found"
-    (tmp_path / "outside").symlink_to(tmp_path.parent)
+    symlink(tmp_path / "outside", tmp_path.parent)
     with pytest.raises((EnvironmentError, PermissionError)) as denied:
         await search_files("search", root="/outside", pattern="needle")
     if isinstance(denied.value, EnvironmentError):
@@ -173,11 +173,11 @@ async def test_single_file_missing_and_outside_symlink_are_failures(tmp_path, se
 
 @pytest.mark.anyio
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX special-file fixture")
-async def test_search_special_file_fails_without_opening(tmp_path, search_files):
+async def test_search_special_file_fails_without_opening(tmp_path, search_files, symlink):
     import os
 
     os.mkfifo(tmp_path / "pipe")
-    (tmp_path / "pipe-alias").symlink_to(tmp_path / "pipe")
+    symlink(tmp_path / "pipe-alias", tmp_path / "pipe")
     for root in ["/pipe", "/pipe-alias"]:
         with pytest.raises((EnvironmentError, ValueError)) as error:
             await search_files("search", root=root, pattern="needle")
@@ -196,12 +196,12 @@ async def test_query_still_requires_a_directory_with_actionable_details(tmp_path
 
 
 @pytest.mark.anyio
-async def test_search_literal_zero_binary_symlink_and_file_ceiling(tmp_path, search_files):
+async def test_search_literal_zero_binary_symlink_and_file_ceiling(tmp_path, search_files, symlink):
     (tmp_path / "a.txt").write_text("a.b\naxb\n")
     (tmp_path / "b.txt").write_text("a.b\n")
     (tmp_path / "binary.txt").write_bytes(b"\x00a.b")
     (tmp_path / "invalid.txt").write_bytes(b"\xffa.b")
-    (tmp_path / "link.txt").symlink_to(tmp_path / "a.txt")
+    symlink(tmp_path / "link.txt", tmp_path / "a.txt")
     literal = await search_files("search", pattern="a.b")
     regex = await search_files("search", pattern="a.b", regex=True)
     assert len(literal["matches"]) == 2

@@ -191,11 +191,11 @@ async def test_nonzero_offset_limit_applies_to_remaining_bytes(guest):
         ("escape", "environment_denied"),
     ],
 )
-async def test_complete_read_retains_path_validation_before_download(guest, tmp_path, kind, code):
+async def test_complete_read_retains_path_validation_before_download(guest, tmp_path, kind, code, symlink):
     if kind == "directory":
         guest.reader.path.mkdir()
     elif kind == "escape":
-        guest.reader.path.symlink_to(tmp_path.parent)
+        symlink(guest.reader.path, tmp_path.parent)
     with pytest.raises(EnvironmentError) as caught:
         await guest.files.read_bytes("/file")
     assert caught.value.code == code

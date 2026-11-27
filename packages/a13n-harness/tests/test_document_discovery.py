@@ -41,16 +41,16 @@ def _instance():
     return AgentInstanceContext(identity=AgentIdentityRef(issuer="test", subject="discovery"), agent_instance_id="scan")
 
 
-async def test_local_discovery_observes_links_errors_and_bounds(tmp_path):
+async def test_local_discovery_observes_links_errors_and_bounds(tmp_path, symlink):
     _skill(tmp_path, "skills", "root")
     _skill(tmp_path, "skills/z", "last")
     _skill(tmp_path, "skills/.hidden", "hidden")
     _skill(tmp_path, "skills/z/nested", "nested")
     (tmp_path / "skills/a").mkdir()
-    (tmp_path / "skills/a/SKILL.md").symlink_to("../z/SKILL.md")
+    symlink(tmp_path / "skills/a/SKILL.md", "../z/SKILL.md")
     (tmp_path / "skills/b").mkdir()
     (tmp_path / "skills/b/SKILL.md").write_bytes(b"\xff")
-    (tmp_path / "skills/link").symlink_to("z", target_is_directory=True)
+    symlink(tmp_path / "skills/link", "z", target_is_directory=True)
     files = _files(tmp_path)
     outcomes = [
         item async for item in files.discover_documents(FileDocumentRequest(root="/skills", basename="SKILL.md"))
@@ -74,17 +74,17 @@ async def test_local_discovery_observes_links_errors_and_bounds(tmp_path):
 
 
 @pytest.mark.parametrize("linked_parent", [False, True])
-async def test_local_discovery_preserves_selected_root_through_directory_links(tmp_path, linked_parent):
+async def test_local_discovery_preserves_selected_root_through_directory_links(tmp_path, linked_parent, symlink):
     _skill(tmp_path, "actual/skills", "root")
     _skill(tmp_path, "actual/skills/a", "child")
     _skill(tmp_path, "actual/skills/.hidden", "hidden")
     _skill(tmp_path, "actual/skills/a/nested", "nested")
-    (tmp_path / "actual/skills/link").symlink_to("a", target_is_directory=True)
+    symlink(tmp_path / "actual/skills/link", "a", target_is_directory=True)
     if linked_parent:
-        (tmp_path / "selected").symlink_to("actual", target_is_directory=True)
+        symlink(tmp_path / "selected", "actual", target_is_directory=True)
         root = "/selected/skills"
     else:
-        (tmp_path / "selected").symlink_to("actual/skills", target_is_directory=True)
+        symlink(tmp_path / "selected", "actual/skills", target_is_directory=True)
         root = "/selected"
     files = _files(tmp_path)
     documents = [item async for item in files.discover_documents(FileDocumentRequest(root=root, basename="SKILL.md"))]
@@ -97,11 +97,11 @@ async def test_local_discovery_preserves_selected_root_through_directory_links(t
     assert [(item.name, item.path) for item in catalog] == [("child", f"{root}/a"), ("root", root)]
 
 
-async def test_local_discovery_rejects_selected_root_link_outside_file_authority(tmp_path):
+async def test_local_discovery_rejects_selected_root_link_outside_file_authority(tmp_path, symlink):
     _skill(tmp_path, "outside/skills/a", "outside")
     confined = tmp_path / "confined"
     confined.mkdir()
-    (confined / "skills").symlink_to(tmp_path / "outside/skills", target_is_directory=True)
+    symlink(confined / "skills", tmp_path / "outside/skills", target_is_directory=True)
     files = _files(confined)
 
     with pytest.raises(EnvironmentError) as failure:
