@@ -18,6 +18,13 @@ use std::{
     },
 };
 
+#[cfg(windows)]
+fn windows_rename_target_name(path: &EIPPath) -> Result<PathBuf, PathError> {
+    let native = device_path::to_native(&path.path)?;
+    let opened = crate::windows_path::open_attributes(&native).map_err(PathError::from_io)?;
+    crate::windows_path::nt_name(&opened).map_err(PathError::from_io)
+}
+
 const CANDIDATE_PREFIX: &str = ".eip-stage-";
 const CANDIDATE_RANDOM_BYTES: usize = 16;
 
@@ -486,6 +493,13 @@ impl DeviceFilesystem {
                     ) {
                         return Err(PathError::from_io(error));
                     }
+                    // Resolve existing directory identities before the destructive fallback.
+                    // NT names collapse alternate DOS mappings and filename spellings.
+                    let original = windows_rename_target_name(source)?;
+                    let displaced = windows_rename_target_name(destination)?;
+                    if original.starts_with(&displaced) {
+                        return Err(PathError::Invalid);
+                    }
                     // Windows has no directory exchange; accept the remove/rename gap.
                     destination_parent
                         .remove_dir_all(&destination_name)
@@ -762,6 +776,27 @@ fn random_candidate_name() -> Result<String, getrandom::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn replacement_move_preserves_source_when_destination_contains_it() {
+        let root =
+            std::env::temp_dir().join(crate::operation::random_selector("ancestor-move").unwrap());
+        let destination = root.join("Parent");
+        let source = destination.join("source");
+        fs::create_dir_all(&source).unwrap();
+        fs::write(source.join("data"), b"preserved").unwrap();
+        let filesystem = DeviceFilesystem::new(&Config::for_test("test")).unwrap();
+        let original = EIPPath {
+            path: device_path::from_native(&source).unwrap(),
+        };
+        let target = EIPPath {
+            path: device_path::from_native(&root.join("parent")).unwrap(),
+        };
+        assert!(filesystem.rename(&original, &target, true).is_err());
+        assert_eq!(fs::read(source.join("data")).unwrap(), b"preserved");
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     #[cfg(any(target_os = "linux", target_os = "macos"))]
