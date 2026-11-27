@@ -340,7 +340,7 @@ async def test_url_hints_prefer_user_urls_and_stop_at_head_boundary(monkeypatch)
     async def handler(request):
         path = request.url.path
         requested.append(path)
-        assert request.extensions["timeout"]["read"] == 4.0
+        assert request.extensions["timeout"]["read"] == 10.0
         return httpx2.Response(
             200, headers={"Content-Type": "Application/XHTML+XML; charset=utf-8"}, stream=streams[path]
         )
@@ -492,7 +492,7 @@ async def test_url_hints_fetch_concurrently_without_redirect_cookies_and_keep_fi
         )
 
     def short_budget(seconds):
-        assert seconds == 5.0
+        assert seconds == 10.0
         return move_on_after(0.1)
 
     _mock_title_http(monkeypatch, handler)

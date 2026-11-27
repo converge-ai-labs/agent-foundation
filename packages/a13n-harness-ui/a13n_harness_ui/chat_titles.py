@@ -356,13 +356,13 @@ async def _url_hints(messages: Sequence[TitleMessage], configuration: RunConfigu
         return ""
     hints: dict[str, tuple[str, str]] = {}
     try:
-        async with httpx2.AsyncClient(timeout=4.0, verify=outbound_tls_verify()) as client:
+        async with httpx2.AsyncClient(timeout=10.0, verify=outbound_tls_verify()) as client:
 
             async def fetch(url: str) -> None:
                 if (hint := await _url_hint(client, url, configuration)) is not None:
                     hints[url] = hint
 
-            with move_on_after(5.0):
+            with move_on_after(10.0):
                 async with create_task_group() as group:
                     for url in urls:
                         group.start_soon(fetch, url)
