@@ -25,7 +25,9 @@ from pydantic_ai.exceptions import (
     ModelAPIError,
     ModelConnectionError,
     ModelContextWindowExceededError,
+    ModelEmptyResponseError,
     ModelHTTPError,
+    ModelInvalidResponseError,
     ModelOverloadedError,
     ModelQuotaExceededError,
     ModelRateLimitError,
@@ -290,6 +292,7 @@ def test_certificate_verification_error_is_not_retried(error: Exception) -> None
     "error",
     [
         ModelAPIError("test", "Streamed response ended without a `finish_reason`"),
+        ModelEmptyResponseError("test", "Streamed response ended without content or tool calls"),
         UnexpectedModelBehavior("Streamed response ended without content or tool calls"),
     ],
 )
@@ -318,6 +321,8 @@ def test_unknown_cyclic_provider_cause_is_terminal() -> None:
         ModelHTTPError.for_category(ModelQuotaExceededError, status_code=429, model_name="test"),
         _raw_http_error(429, {"error": {"code": "insufficient_quota"}}),
         ContentFilterError("filtered"),
+        ModelEmptyResponseError("test", "Chat completion returned no choices"),
+        ModelInvalidResponseError("test", "Streamed response ended without content or tool calls"),
         RuntimeError("programming error"),
         httpx2.LocalProtocolError("invalid headers"),
     ],

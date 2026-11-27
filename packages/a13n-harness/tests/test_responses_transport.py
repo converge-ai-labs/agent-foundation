@@ -8,6 +8,7 @@ import pytest
 from a13n_harness import HarnessBuilder
 from a13n_harness.models.responses import ResponsesModel
 from openai import AsyncOpenAI
+from pydantic_ai import Agent
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import InstructionPart, ModelRequest, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
@@ -60,7 +61,7 @@ def events(response_id="resp-test"):
 
 
 @asynccontextmanager
-async def endpoint(*, process_request=None, handler=None):
+async def endpoint(*, process_request=None, handler=None, model_name="gpt-5", settings=None):
     sockets, requests, http_requests = [], [], []
 
     async def respond(socket):
@@ -72,10 +73,11 @@ async def endpoint(*, process_request=None, handler=None):
 
     async def http_respond(request):
         http_requests.append(json.loads(request.content))
+        frames = events(f"resp-{len(http_requests)}")
         return httpx2.Response(
             200,
             headers={"content-type": "text/event-stream"},
-            content="".join(f"data: {json.dumps(event)}\n\n" for event in events()),
+            content="".join(f"data: {json.dumps(event)}\n\n" for event in frames),
         )
 
     async with serve(handler or respond, "127.0.0.1", 0, process_request=process_request) as server:
@@ -83,9 +85,9 @@ async def endpoint(*, process_request=None, handler=None):
         async with httpx2.AsyncClient(transport=httpx2.MockTransport(http_respond)) as http:
             client = AsyncOpenAI(api_key="test-key", base_url=f"http://127.0.0.1:{port}/v1", http_client=http)
             model = ResponsesModel(
-                "gpt-5",
+                model_name,
                 provider=OpenAIProvider(openai_client=client),
-                settings={"openai_transport": "websocket", "openai_store": False},
+                settings={"openai_transport": "websocket", "openai_store": False} if settings is None else settings,
             )
             yield model, sockets, requests, http_requests
 
@@ -551,8 +553,6 @@ async def test_gpt62_static_instruction_prefix_and_tool_continuation(model_name,
 
 @pytest.mark.parametrize("model_name", ["gpt-6.2-sol", "gpt-6.2-astra"])
 async def test_gpt62_append_on_change_delta_continues_auto_chain(model_name):
-    from pydantic_ai import Agent
-
     requests = []
 
     def reply(request):
@@ -616,3 +616,69 @@ async def test_gpt62_append_on_change_delta_continues_auto_chain(model_name):
     assert req3["previous_response_id"] == "resp-2"
     assert "instructions" not in req3
     assert [item["content"] for item in req3["input"]] == ["turn 3"]
+
+
+@pytest.mark.parametrize("model_name", ["gpt-6.2-sol", "gpt-6.2-astra"])
+@pytest.mark.parametrize("path", ["full", "http-auto", "websocket-auto", "websocket-default"])
+async def test_gpt62_rewrite_after_append_preserves_instruction_prefix(model_name, path):
+    websocket = path.startswith("websocket")
+    settings = {"openai_transport": "websocket" if websocket else "http", "openai_store": not websocket}
+    if path.endswith("-auto"):
+        settings["openai_previous_response_id"] = "auto"
+
+    async with endpoint(model_name=model_name, settings=settings) as (model, sockets, ws_requests, http_requests):
+        catalog = "Catalog V1"
+        request_local = "Request-local V1"
+        agent = Agent(model, instructions="Static A")
+
+        @agent.instructions(name="catalog", on_change="append")
+        def catalog_instructions():
+            return catalog
+
+        @agent.instructions(name="request-local", on_change="rewrite")
+        def request_instructions():
+            return request_local
+
+        async def turn(prompt, history=None):
+            async with agent.run_stream(prompt, message_history=history) as result:
+                assert await result.get_output() == "OK"
+                return result.all_messages()
+
+        async with model:
+            first = await turn("turn 1")
+            catalog = "Catalog V2"
+            second = await turn("turn 2", first)
+            request_local = "Request-local V2"
+            await turn("turn 3", second)
+
+    if websocket:
+        assert len(sockets) == 1
+        assert not http_requests
+        initial, appended, rewritten = ws_requests
+    else:
+        assert not ws_requests
+        initial, appended, rewritten = http_requests
+
+    assert "previous_response_id" not in initial
+    assert [request["instructions"] for request in (initial, appended, rewritten)] == [
+        "Request-local V1",
+        "Request-local V1",
+        "Request-local V2",
+    ]
+    assert initial["input"][0]["content"] == "Static A"
+    assert "Catalog V1" in initial["input"][1]["content"]
+    assert sum("Catalog V2" in str(item.get("content", "")) for item in appended["input"]) == 1
+
+    if path == "full":
+        assert "previous_response_id" not in appended
+        assert "previous_response_id" not in rewritten
+        assert appended["input"][: len(initial["input"])] == initial["input"]
+        # The entire prior input, including the recorded delta, stays in place.
+        assert rewritten["input"][: len(appended["input"])] == appended["input"]
+        assert sum("Catalog V2" in str(item.get("content", "")) for item in rewritten["input"]) == 1
+    else:
+        assert appended["previous_response_id"] == "resp-1"
+        assert all("Static A" not in str(item.get("content", "")) for item in appended["input"])
+        # The server-side chain already contains the leading input and append delta.
+        assert rewritten["previous_response_id"] == "resp-2"
+        assert rewritten["input"] == [{"role": "user", "content": "turn 3"}]
