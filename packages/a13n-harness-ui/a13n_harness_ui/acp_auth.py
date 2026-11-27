@@ -281,7 +281,14 @@ async def acp_auth(
                 assert request.method_id is not None
                 method = methods.get(request.method_id)
                 if method is not None and method.kind == "browser" and inputs is not None:
-                    interaction = AcpInputs(inputs, scope, resource.id, lambda: None, timeout_seconds=300)
+                    interaction = AcpInputs(
+                        inputs,
+                        scope,
+                        resource.id,
+                        lambda: None,
+                        server_name=resource.name,
+                        timeout_seconds=300,
+                    )
                     completed = await _agy_browser_login(command, transport, interaction)
                     return status.model_copy(update={"state": "login_completed"}) if completed else status
                 if method is None or method.kind != "agent":
@@ -295,7 +302,13 @@ async def acp_auth(
                         if runtime.client.binding is not binding:
                             raise HarnessUiError("The ACP login is no longer active.", code="mcp_input_stale")
 
-                    interaction = AcpInputs(inputs, scope, resource.id, require_active)
+                    interaction = AcpInputs(
+                        inputs,
+                        scope,
+                        resource.id,
+                        require_active,
+                        server_name=resource.name,
+                    )
 
                     async def elicitation(
                         message: str, mode: str, params: dict[str, Any]

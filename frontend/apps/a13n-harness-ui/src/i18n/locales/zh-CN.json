@@ -3797,5 +3797,19 @@
   "Setting an ACP agent as default changes the execution default to Full Control.": "将 ACP 智能体设为默认会把默认执行环境改为完全控制。",
   "Continue without signing in": "不登录，继续",
   "Check the executable before continuing.": "请先检查可执行程序，再继续。",
-  "Recommended model tools": "推荐模型工具"
+  "Recommended model tools": "推荐模型工具",
+  "Agent input request": "智能体输入请求",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "你的回复将发送给此智能体。请勿包含密码、令牌或其他机密。",
+  "Select an option": "请选择一项",
+  "Permission requested": "权限请求",
+  "Command permission": "命令执行权限",
+  "File edit permission": "文件编辑权限",
+  "Delete permission": "删除权限",
+  "Move permission": "移动权限",
+  "File read permission": "文件读取权限",
+  "Search permission": "搜索权限",
+  "Network permission": "网络访问权限",
+  "Mode change permission": "模式切换权限",
+  "Locations": "位置",
+  "Questions": "问题"
 }

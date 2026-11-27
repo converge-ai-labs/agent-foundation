@@ -7003,6 +7003,12 @@ export interface components {
              * @constant
              */
             kind?: "mcp_elicitation";
+            /**
+             * Source
+             * @default mcp
+             * @enum {string}
+             */
+            source?: "mcp" | "acp";
             /** Request Id */
             request_id: string;
             /** Thread Id */
@@ -7033,7 +7039,7 @@ export interface components {
              * Mode
              * @enum {string}
              */
-            mode: "form" | "url" | "question";
+            mode: "form" | "url" | "question" | "permission";
             /** Message */
             message: string;
             /**
@@ -7041,6 +7047,8 @@ export interface components {
              * @default []
              */
             questions?: components["schemas"]["UserQuestion"][];
+            /** @default null */
+            permission?: components["schemas"]["PermissionRequestDetail"] | null;
             /**
              * Schema
              * @default null
@@ -7791,6 +7799,63 @@ export interface components {
             kind: "question" | "approval" | "external" | "mixed";
             /** Count */
             count: number;
+        };
+        /** PermissionOptionView */
+        PermissionOptionView: {
+            /** Option Id */
+            option_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "allow_once" | "allow_always" | "reject_once" | "reject_always";
+        };
+        /** PermissionRequestDetail */
+        PermissionRequestDetail: {
+            /**
+             * Tool Kind
+             * @default null
+             */
+            tool_kind?: string | null;
+            /**
+             * Tool Name
+             * @default null
+             */
+            tool_name?: string | null;
+            /**
+             * Command
+             * @default null
+             */
+            command?: string | null;
+            /**
+             * Cwd
+             * @default null
+             */
+            cwd?: string | null;
+            /**
+             * Environment Keys
+             * @default []
+             */
+            environment_keys?: string[];
+            /**
+             * Locations
+             * @default []
+             */
+            locations?: string[];
+            /**
+             * Arguments
+             * @default null
+             */
+            arguments?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /**
+             * Options
+             * @default []
+             */
+            options?: components["schemas"]["PermissionOptionView"][];
         };
         /** PluginSubscriptionAuthentication */
         PluginSubscriptionAuthentication: {

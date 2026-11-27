@@ -493,6 +493,55 @@ async def test_stdio_mcp_forwarder_uses_isolated_script_without_package_import()
             await bridge._unbind()
 
 
+async def test_request_permission_merges_prior_tool_call_metadata():
+    from a13n_harness.acp.client import AcpEnvironmentClient
+
+    seen: list[tuple[schema.ToolCallUpdate, tuple[schema.PermissionOption, ...]]] = []
+
+    async def permission(call: schema.ToolCallUpdate, options: tuple[schema.PermissionOption, ...]) -> str | None:
+        seen.append((call, options))
+        return options[0].option_id
+
+    client = AcpEnvironmentClient()
+    client.session_id = "sess-1"
+    client.binding = AcpRunBinding(permission=permission)
+    await client.session_update(
+        "sess-1",
+        schema.ToolCallStart(
+            session_update="tool_call",
+            tool_call_id="call-1",
+            kind="execute",
+            name="run_command",
+            title="ps aux | grep a13n",
+            locations=[schema.ToolCallLocation(path="/repo/app.py", line=12)],
+            raw_input={"CommandLine": "ps aux | grep a13n", "Cwd": "/repo"},
+        ),
+    )
+    response = await client.request_permission(
+        "sess-1",
+        schema.ToolCallUpdate(tool_call_id="call-1", title="ps aux | grep a13n"),
+        [
+            schema.PermissionOption(option_id="allow_once", name="Allow once", kind="allow_once"),
+            schema.PermissionOption(option_id="reject_once", name="Reject", kind="reject_once"),
+        ],
+    )
+    assert isinstance(response.outcome, schema.AllowedOutcome)
+    assert response.outcome.option_id == "allow_once"
+    assert len(seen) == 1
+    merged_call, merged_options = seen[0]
+    assert merged_call.kind == "execute"
+    assert merged_call.name == "run_command"
+    assert merged_call.raw_input == {"CommandLine": "ps aux | grep a13n", "Cwd": "/repo"}
+    assert merged_call.locations == [schema.ToolCallLocation(path="/repo/app.py", line=12)]
+    assert [option.option_id for option in merged_options] == ["allow_once", "reject_once"]
+
+    await client.session_update(
+        "sess-1",
+        schema.ToolCallProgress(session_update="tool_call_update", tool_call_id="call-1", status="completed"),
+    )
+    assert "call-1" not in client._tool_calls
+
+
 async def test_windows_local_transport_overlays_environment_case_insensitively(tmp_path, monkeypatch):
     from contextlib import asynccontextmanager
 

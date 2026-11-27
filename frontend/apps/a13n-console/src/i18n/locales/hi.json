@@ -4671,5 +4671,8 @@
   "This connection uses native tool discovery.": "यह कनेक्शन मूल टूल खोज का उपयोग करता है।",
   "More than {{limit}} tools selected": "{{limit}} से अधिक टूल चुने गए",
   "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.": "सीधे प्रदान करने में प्रति कनेक्शन अधिकतम {{limit}} टूल समर्थित हैं। इस एजेंट पर टूल खोज सक्षम करें या कम टूल चुनें।",
-  "Enable tool discovery": "टूल खोज सक्षम करें"
+  "Enable tool discovery": "टूल खोज सक्षम करें",
+  "Agent input request": "एजेंट इनपुट अनुरोध",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "आपका जवाब इस एजेंट को जाएगा। पासवर्ड, टोकन या अन्य गोपनीय जानकारी शामिल न करें।",
+  "Select an option": "एक विकल्प चुनें"
 }

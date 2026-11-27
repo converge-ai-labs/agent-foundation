@@ -4671,5 +4671,8 @@
   "This connection uses native tool discovery.": "此连接使用原生工具发现。",
   "More than {{limit}} tools selected": "已选择超过 {{limit}} 个工具",
   "Direct exposure supports up to {{limit}} tools per connection. Enable tool discovery on this agent or select fewer tools.": "直接提供模式每个连接最多支持 {{limit}} 个工具。请为此智能体启用工具发现，或减少所选工具数量。",
-  "Enable tool discovery": "启用工具发现"
+  "Enable tool discovery": "启用工具发现",
+  "Agent input request": "智能体输入请求",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "你的回复将发送给此智能体。请勿包含密码、令牌或其他机密。",
+  "Select an option": "请选择一项"
 }

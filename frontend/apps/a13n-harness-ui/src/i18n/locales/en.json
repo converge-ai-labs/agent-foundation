@@ -3829,5 +3829,19 @@
   "Setting an ACP agent as default changes the execution default to Full Control.": "Setting an ACP agent as default changes the execution default to Full Control.",
   "Continue without signing in": "Continue without signing in",
   "Check the executable before continuing.": "Check the executable before continuing.",
-  "Recommended model tools": "Recommended model tools"
+  "Recommended model tools": "Recommended model tools",
+  "Agent input request": "Agent input request",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "Your response goes to this Agent. Don't include passwords, tokens or other secrets.",
+  "Select an option": "Select an option",
+  "Permission requested": "Permission requested",
+  "Command permission": "Command permission",
+  "File edit permission": "File edit permission",
+  "Delete permission": "Delete permission",
+  "Move permission": "Move permission",
+  "File read permission": "File read permission",
+  "Search permission": "Search permission",
+  "Network permission": "Network permission",
+  "Mode change permission": "Mode change permission",
+  "Locations": "Locations",
+  "Questions": "Questions"
 }

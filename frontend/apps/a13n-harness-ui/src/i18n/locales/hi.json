@@ -3829,5 +3829,19 @@
   "Setting an ACP agent as default changes the execution default to Full Control.": "ACP एजेंट को डिफ़ॉल्ट बनाने से डिफ़ॉल्ट एक्ज़ीक्यूशन मोड पूर्ण नियंत्रण हो जाता है।",
   "Continue without signing in": "साइन इन किए बिना आगे बढ़ें",
   "Check the executable before continuing.": "आगे बढ़ने से पहले एक्ज़ीक्यूटेबल जाँचें।",
-  "Recommended model tools": "सुझाए गए मॉडल टूल"
+  "Recommended model tools": "सुझाए गए मॉडल टूल",
+  "Agent input request": "एजेंट इनपुट अनुरोध",
+  "Your response goes to this Agent. Don't include passwords, tokens or other secrets.": "आपका जवाब इस एजेंट को जाता है। पासवर्ड, टोकन या अन्य गोपनीय जानकारी शामिल न करें।",
+  "Select an option": "एक विकल्प चुनें",
+  "Permission requested": "अनुमति का अनुरोध",
+  "Command permission": "कमांड अनुमति",
+  "File edit permission": "फ़ाइल संपादन अनुमति",
+  "Delete permission": "हटाने की अनुमति",
+  "Move permission": "स्थानांतरित करने की अनुमति",
+  "File read permission": "फ़ाइल पढ़ने की अनुमति",
+  "Search permission": "खोज अनुमति",
+  "Network permission": "नेटवर्क अनुमति",
+  "Mode change permission": "मोड बदलने की अनुमति",
+  "Locations": "स्थान",
+  "Questions": "प्रश्न"
 }
