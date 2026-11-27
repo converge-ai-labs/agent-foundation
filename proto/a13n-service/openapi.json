@@ -12818,6 +12818,16 @@
       "McpConfig": {
         "additionalProperties": false,
         "properties": {
+          "authority": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "user",
+              "none"
+            ],
+            "title": "Authority",
+            "type": "string"
+          },
           "durable_tasks": {
             "default": false,
             "title": "Durable Tasks",

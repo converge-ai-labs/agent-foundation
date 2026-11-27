@@ -73,6 +73,31 @@ it("loads tools explicitly and saves selected names while preserving filtered-ou
     ),
   );
 });
+it("saves instruction trust without discovering tools or replacing the connection", async () => {
+  setup();
+  const user = userEvent.setup();
+  const trust = await screen.findByRole("combobox", {
+    name: "Server instruction trust",
+  });
+  expect(trust.textContent).toContain("Trusted (default)");
+  await user.click(trust);
+  await user.click(
+    await screen.findByRole("option", { name: "Untrusted data" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(api.PUT).toHaveBeenCalledWith("/api/mcp/{server_id}/tools", {
+      params: { path: { server_id: "mcp-one" } },
+      body: {
+        resource_digest: "a".repeat(64),
+        tools: ["search"],
+        authority: "none",
+      },
+    }),
+  );
+  expect(api.POST).not.toHaveBeenCalled();
+});
+
 it("retains the list and unsaved selection when refresh fails", async () => {
   setup();
   fireEvent.click(await screen.findByRole("button", { name: "Load tools" }));

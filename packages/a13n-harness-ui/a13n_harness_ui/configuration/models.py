@@ -33,6 +33,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_ai.messages import Authority
 
 from a13n_harness_ui.content_plugins import InstalledContentPlugin
 from a13n_harness_ui.environment_bindings import (
@@ -926,6 +927,7 @@ class McpServerResource(ConfigurationModel):
         "Use {'*': true} to enable all tools; unmatched tools retain native metadata, defaulting to false.",
     )
     on_error: Literal["skip", "raise"] = Field(default="skip", exclude_if=lambda value: value == "skip")
+    authority: Authority = Field(default="operator", exclude_if=lambda value: value == "operator")
     tools: tuple[McpToolName, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")

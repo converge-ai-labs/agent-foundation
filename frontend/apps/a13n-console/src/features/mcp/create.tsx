@@ -1,6 +1,12 @@
 import { FormSection } from "../../shared/forms";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChoiceField, FormField, Input, ReadOnlyField } from "a13n-ui";
+import {
+  ChoiceField,
+  FormField,
+  Input,
+  ReadOnlyField,
+  SettingsSection,
+} from "a13n-ui";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -18,6 +24,7 @@ import {
   type HeaderDraft,
 } from "../../shared/forms";
 import { MCPCredentialFields } from "./credentials";
+import { McpAuthorityRow, type McpAuthority } from "./authority";
 
 export function CreateMCP({
   preset,
@@ -40,6 +47,7 @@ export function CreateMCP({
   const [name, setName] = useState(preset?.name ?? ""),
     [endpoint, setEndpoint] = useState(preset?.url ?? initialEndpoint),
     [mode, setMode] = useState<Schema["McpAuth"]>(preset?.auth ?? "oauth"),
+    [authority, setAuthority] = useState<McpAuthority>("operator"),
     [headerRows, setHeaderRows] = useState<HeaderDraft[]>(() =>
       (preset?.header_names ?? [""]).map((name) => ({
         id: crypto.randomUUID(),
@@ -92,6 +100,7 @@ export function CreateMCP({
               name,
               config: {
                 url: endpoint,
+                authority,
                 headers: mode === "headers" ? headerNames : [],
               },
               auth: mode,
@@ -166,6 +175,13 @@ export function CreateMCP({
           />
         </FormField>
       </FormSection>
+      <SettingsSection variant="outlined">
+        <McpAuthorityRow
+          value={authority}
+          disabled={started}
+          onChange={setAuthority}
+        />
+      </SettingsSection>
       <FormSection title={t("Authentication")}>
         {preset ? (
           <ReadOnlyField

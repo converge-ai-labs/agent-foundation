@@ -10368,6 +10368,12 @@ export interface components {
     /** McpConfig */
     McpConfig: {
       /**
+       * Authority
+       * @default operator
+       * @enum {string}
+       */
+      authority?: "operator" | "user" | "none";
+      /**
        * Durable Tasks
        * @default false
        */

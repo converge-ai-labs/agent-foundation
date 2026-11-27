@@ -20279,6 +20279,16 @@
             ],
             "title": "Tools"
           },
+          "authority": {
+            "type": "string",
+            "enum": [
+              "operator",
+              "user",
+              "none"
+            ],
+            "title": "Authority",
+            "default": "operator"
+          },
           "server_id": {
             "type": "string",
             "title": "Server Id"
@@ -32469,6 +32479,16 @@
               }
             ],
             "title": "Tools"
+          },
+          "authority": {
+            "default": "operator",
+            "enum": [
+              "operator",
+              "user",
+              "none"
+            ],
+            "title": "Authority",
+            "type": "string"
           }
         },
         "required": [

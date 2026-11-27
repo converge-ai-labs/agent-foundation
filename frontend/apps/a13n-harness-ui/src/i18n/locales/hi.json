@@ -1,4 +1,13 @@
 {
+  "Server instruction trust": "सर्वर के निर्देशों पर भरोसा",
+  "Trusted (default)": "विश्वसनीय (डिफ़ॉल्ट)",
+  "User-level": "उपयोगकर्ता स्तर",
+  "Untrusted data": "अविश्वसनीय डेटा",
+  "The model receives system instructions when this server is used directly.": "इस सर्वर का सीधे उपयोग करने पर मॉडल को इसका टेक्स्ट सिस्टम निर्देशों के रूप में मिलता है।",
+  "The model receives the server's text as user-level context.": "मॉडल को सर्वर का टेक्स्ट उपयोगकर्ता-स्तर के संदर्भ के रूप में मिलता है।",
+  "The model receives the server's text as data, not instructions.": "मॉडल को सर्वर का टेक्स्ट डेटा के रूप में मिलता है, निर्देशों के रूप में नहीं।",
+  "Tool permissions are unchanged.": "टूल की अनुमतियाँ नहीं बदलतीं।",
+  "Server instructions": "सर्वर के निर्देश",
   "Commands & skills": "कमांड और स्किल",
   "Dismiss suggestions": "सुझाव बंद करें",
   "Dismiss suggestions (Esc)": "सुझाव बंद करें (Esc)",

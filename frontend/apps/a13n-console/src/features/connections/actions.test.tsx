@@ -83,6 +83,71 @@ it("submits a renamed Connection from the bottom action row", async () => {
   cache.clear();
 });
 
+it("updates MCP instruction trust without saving an unrelated name draft", async () => {
+  const user = userEvent.setup();
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const resource = {
+    id: "connection_test",
+    workspace_id: "ws_test",
+    name: "Test connection",
+    type: "mcp",
+    status: "ready",
+    enabled: true,
+    version: 2,
+    auth: "headers",
+    config: {
+      url: "https://mcp.example",
+      tools: ["search"],
+      headers: ["x-key"],
+    },
+    credential_configured: true,
+  };
+  const config = { ...resource.config, authority: "user" };
+  const updated = { ...resource, config, version: 3 };
+  cache.setQueryData(["connections", "ws_test", resource.id], resource);
+  http.PATCH.mockResolvedValue({ data: updated, response: new Response() });
+  http.GET.mockResolvedValue({ data: updated, response: new Response() });
+  render(
+    <QueryClientProvider client={cache}>
+      <ConnectionDetails
+        connectionId={resource.id}
+        onClose={vi.fn()}
+        onCleanup={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+  const name = screen.getByRole<HTMLInputElement>("textbox", { name: "Name" });
+  await user.type(name, " draft");
+  const trust = screen.getByRole("combobox", {
+    name: "Server instruction trust",
+  });
+  await user.click(trust);
+  await user.click(await screen.findByRole("option", { name: "User-level" }));
+  await user.click(
+    screen.getByRole("button", { name: "Save instruction trust" }),
+  );
+  await waitFor(() =>
+    expect(http.PATCH).toHaveBeenCalledWith(
+      "/api/v1/connections/{connection_id}",
+      {
+        params: { path: { connection_id: resource.id } },
+        headers: { "If-Match": '"connection_test:2"' },
+        body: { config },
+      },
+    ),
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", { name: "Save instruction trust" }),
+    ).toBeNull(),
+  );
+  expect(name.value).toBe("Test connection draft");
+  expect(trust.textContent).toContain("User-level");
+  cache.clear();
+});
+
 for (const kind of ["connector", "mcp"] as const) {
   for (const action of ["Enable", "Revoke authorization"]) {
     it(`${kind} ${action} follows a refreshed resource version without remounting`, async () => {

@@ -113,7 +113,11 @@ it("prefills preset header names and sends their values only as the credential",
   expect(http.POST.mock.calls[0][1].body).toEqual({
     type: "mcp",
     name: preset.name,
-    config: { url: preset.url, headers: preset.header_names },
+    config: {
+      url: preset.url,
+      headers: preset.header_names,
+      authority: "operator",
+    },
     auth: "headers",
     credential: {
       headers: { "x-jentic-api-key": "value-0", "x-jentic-agent": "value-1" },
@@ -173,6 +177,14 @@ it("names headers in the configuration and sends their values only as the write-
   await user.click(await screen.findByRole("option", { name: "auth.headers" }));
   await user.type(screen.getByLabelText("Header name 1"), "X-Jentic-API-Key");
   await user.type(screen.getByLabelText("Header value 1"), "value-1");
+  const trust = screen.getByRole("combobox", {
+    name: "Server instruction trust",
+  });
+  expect(trust.textContent).toContain("Trusted (default)");
+  await user.click(trust);
+  await user.click(
+    await screen.findByRole("option", { name: "Untrusted data" }),
+  );
   await user.click(screen.getByRole("button", { name: "Connect" }));
   await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(created));
   expect(http.POST.mock.calls[0]).toEqual([
@@ -184,6 +196,7 @@ it("names headers in the configuration and sends their values only as the write-
         config: {
           url: "https://api.jentic.com/mcp",
           headers: ["x-jentic-api-key"],
+          authority: "none",
         },
         auth: "headers",
         credential: { headers: { "x-jentic-api-key": "value-1" } },

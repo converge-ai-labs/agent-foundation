@@ -33,6 +33,7 @@ import { WebProviderFields } from "./web-providers";
 import { AgentFields } from "./agent-fields";
 import { EnvironmentsEditor } from "./environments";
 import { DeviceFields } from "./device-fields";
+import { McpAuthorityField } from "./mcp-authority";
 import { type EnvironmentBinding } from "./environment-bindings";
 
 export type RootSettingsGroup = "chats" | "agents" | "bot" | "memory";
@@ -1311,6 +1312,12 @@ export function ResourceFields({
           {document.hasIn(["transport", "url"])
             ? field(t("Server URL"), ["transport", "url"])
             : field(t("Command"), ["transport", "command"])}
+          <McpAuthorityField
+            value={text(["authority"])}
+            onChange={(value) =>
+              set(["authority"], value === "operator" ? undefined : value)
+            }
+          />
           <p className={styles.sectionNote}>
             {t(
               "Add arguments, environment variables or headers in Advanced configuration. Keep a copy; saved connection details are hidden.",

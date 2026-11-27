@@ -1,4 +1,13 @@
 {
+  "Server instruction trust": "服务器指令信任级别",
+  "Trusted (default)": "受信任（默认）",
+  "User-level": "用户级",
+  "Untrusted data": "不受信任的数据",
+  "The model receives system instructions when this server is used directly.": "直接使用此服务器时，模型会将服务器文本作为系统指令接收。",
+  "The model receives the server's text as user-level context.": "模型将服务器文本作为用户级上下文接收。",
+  "The model receives the server's text as data, not instructions.": "模型将服务器文本作为数据接收，不视为指令。",
+  "Tool permissions are unchanged.": "工具权限不变。",
+  "Save instruction trust": "保存指令信任级别",
   "Disk ID": "磁盘 ID",
   "boxd disks": "boxd 持久化磁盘",
   "Mount existing boxd disks by ID. Files in mounted directories survive machine deletion.": "按 ID 挂载已有的 boxd 磁盘。删除机器后，挂载目录中的文件会保留。",

@@ -587,6 +587,7 @@ def _normalize_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResou
             transport = dict(server)
             selected_tools = transport.pop("tools", None)
             on_error = transport.pop("on_error", "skip")
+            authority = transport.pop("authority", "operator")
             expose_roots = transport.pop("expose_roots", None)
             transport_type = transport.pop("type", None)
             expected_type = "stdio" if "command" in transport else "http"
@@ -609,6 +610,7 @@ def _normalize_mcp_resources(path: Path, content: bytes) -> tuple[McpServerResou
                         "schema_version": raw.get("schema_version", "1"),
                         "tools": selected_tools,
                         "on_error": on_error,
+                        "authority": authority,
                         "expose_roots": expose_roots,
                         "kind": "mcp_server",
                         "id": resource_id,

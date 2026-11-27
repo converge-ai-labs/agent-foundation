@@ -6997,6 +6997,12 @@ export interface components {
             resource_digest: string;
             /** Tools */
             tools: components["schemas"]["McpToolName"][] | null;
+            /**
+             * Authority
+             * @default operator
+             * @enum {string}
+             */
+            authority?: "operator" | "user" | "none";
             /** Server Id */
             server_id: string;
             /** Name */
@@ -11513,6 +11519,12 @@ export interface components {
             resource_digest: string;
             /** Tools */
             tools: components["schemas"]["McpToolName"][] | null;
+            /**
+             * Authority
+             * @default operator
+             * @enum {string}
+             */
+            authority?: "operator" | "user" | "none";
         };
         /** AcpOptionChange */
         AcpOptionChange: {

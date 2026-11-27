@@ -35,6 +35,7 @@ import { CopyableId, IconTile } from "../../shared/identity";
 import { Panel } from "../../shared/page";
 import { ConnectionSetup } from "../connectors/setup";
 import { MCPAuthorization } from "../mcp/authorization";
+import { McpAuthorityRow, type McpAuthority } from "../mcp/authority";
 import { MCPTools } from "../mcp/tools";
 import { MCPConnectionIcon } from "./mcp-icon";
 import {
@@ -319,7 +320,7 @@ function AvailabilityConfirm({
   );
 }
 
-/** Settings rows: the name is editable in place; everything else is evidence. */
+/** Connection identity and editable settings. */
 function ConnectionSettings({
   connection,
   reload,
@@ -332,20 +333,27 @@ function ConnectionSettings({
     { can } = useWorkspace(),
     { t } = useTranslation(),
     nameId = useId(),
-    [name, setName] = useState(connection.name);
+    [name, setName] = useState(connection.name),
+    [authority, setAuthority] = useState<McpAuthority>();
+  const mcpConfig = "url" in connection.config ? connection.config : undefined;
+  const savedAuthority = mcpConfig?.authority ?? "operator";
   const save = useMutation({
-    mutationFn: () =>
+    mutationFn: (body: Schema["ConnectionUpdate"]) =>
       client
         .workspace(connection.workspace_id)
         .PATCH("/api/v1/connections/{connection_id}", {
           params: { path: { connection_id: connection.id } },
           headers: ifMatch(rowTag(connection)),
-          body: { name },
+          body,
         })
         .then(data),
-    onSuccess: async () => {
+    onSuccess: (updated, body) => {
+      cache.setQueryData(
+        ["connections", connection.workspace_id, connection.id],
+        updated,
+      );
       void cache.invalidateQueries({ queryKey: ["connections"] });
-      await reload();
+      if (body.config) setAuthority(undefined);
     },
   });
   const check = useMutation({
@@ -385,7 +393,7 @@ function ConnectionSettings({
               className={styles.inlineEdit}
               onSubmit={(event) => {
                 event.preventDefault();
-                save.mutate();
+                if (!save.isPending) save.mutate({ name });
               }}
             >
               <Input
@@ -397,7 +405,12 @@ function ConnectionSettings({
                 onChange={(event) => setName(event.target.value)}
               />
               {changed && (
-                <Button type="submit" size="sm" loading={save.isPending}>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={save.isPending}
+                  loading={save.isPending && !!save.variables?.name}
+                >
                   {t("Save")}
                 </Button>
               )}
@@ -423,6 +436,31 @@ function ConnectionSettings({
         <SettingsRow label={t("Created")}>
           <Timestamp value={connection.created_at} relative />
         </SettingsRow>
+        {mcpConfig && (
+          <McpAuthorityRow
+            value={authority ?? savedAuthority}
+            disabled={save.isPending}
+            onChange={manage ? setAuthority : undefined}
+            action={
+              manage &&
+              authority !== undefined &&
+              authority !== savedAuthority && (
+                <Button
+                  type="button"
+                  size="sm"
+                  aria-label={t("Save instruction trust")}
+                  disabled={save.isPending}
+                  loading={save.isPending && !!save.variables?.config}
+                  onClick={() =>
+                    save.mutate({ config: { ...mcpConfig, authority } })
+                  }
+                >
+                  {t("Save")}
+                </Button>
+              )
+            }
+          />
+        )}
       </SettingsSection>
       <ErrorNotice error={save.error} retry={() => void reload()} />
       <SettingsSection variant="outlined" title={t("Connection check")}>

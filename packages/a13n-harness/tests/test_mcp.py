@@ -257,7 +257,8 @@ def test_mcp_context_header_config_rejects_case_insensitive_duplicates() -> None
 
 
 @pytest.mark.anyio
-async def test_contextual_mcp_builds_and_reuses_one_fresh_upstream_capability_per_logical_run() -> None:
+@pytest.mark.parametrize("authority", ["operator", "none"])
+async def test_contextual_mcp_builds_and_reuses_one_fresh_upstream_capability_per_logical_run(authority) -> None:
     calls: list[str] = []
 
     async def headers_factory(context: AgentContext) -> dict[str, str]:
@@ -273,6 +274,8 @@ async def test_contextual_mcp_builds_and_reuses_one_fresh_upstream_capability_pe
         headers={"X-Static": "static"},
         allowed_tools=["search"],
     )
+    if authority != "operator":
+        capability = capability.with_authority(authority)
     first_deps = _MCPContextDeps("run-1")
 
     assert capability.get_native_tools() == []
@@ -286,6 +289,7 @@ async def test_contextual_mcp_builds_and_reuses_one_fresh_upstream_capability_pe
     assert calls == ["run-1", "run-2"]
     assert set(first_deps._capabilities) == {"a13n.mcp.context.context-server"}
     assert isinstance(first, MCP)
+    assert first._effective_authority == authority
     native = first.get_native_tools()[0]
     assert native.headers == {"X-Static": "static", "X-Run": "run-1"}
     assert native.allowed_tools == ["search"]

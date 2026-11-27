@@ -105,7 +105,9 @@ class RemoteMcp(Controller):
             await self.context.require_available(capture)
 
         return _ProgrammaticMcp(
-            HarnessUiMCP(recipe, private_values=self._private_value, operation_guard=guard, oauth=self.context.oauth)
+            HarnessUiMCP(
+                recipe, private_values=self._private_value, operation_guard=guard, oauth=self.context.oauth
+            ).with_authority(recipe.authority)
         )
 
 
