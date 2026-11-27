@@ -60,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ${{ fromJSON(github.event_name == 'push' && '["3.13"]' || '["3.13","3.14","3.15"]') }}
+        python-version: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["3.13","3.14","3.15"]' || '["3.13"]') }}
         name: [tests, checks, browser, Windows]
         exclude:
           - name: checks
@@ -104,19 +104,19 @@ jobs:
           cache-dependency-glob: uv.lock
           cache-suffix: py${{ matrix.python-version }}-harness
 
-      - name: Synchronize Python workspace
-        run: uv sync --locked --all-packages
+      - name: Synchronize Harness and workspace development tools
+        run: uv sync --locked --package a13n-harness --package a13n-workspace
 
       - name: Type-check a13n Harness
         if: matrix.name == 'checks'
-        run: uv run --locked pyright packages/a13n-harness/a13n_harness
+        run: uv run --locked --no-sync pyright packages/a13n-harness/a13n_harness
 
       - name: Test a13n Harness
         if: matrix.name == 'tests' || matrix.name == 'Windows'
         env:
           PYTEST_ADDOPTS: -vv --junitxml=test-results/harness.xml --durations=30 -r a
         run: >-
-          uv run --locked python scripts/run_python_tests.py
+          uv run --locked --no-sync python scripts/run_python_tests.py
           --workers 4 packages/a13n-harness/tests
 
       - name: Set up Chrome for Testing
@@ -150,14 +150,14 @@ jobs:
           BROWSER_EXECUTABLE: ${{ steps.chrome.outputs.chrome-path }}
         run: |
           "$BROWSER_EXECUTABLE" --version
-          uv run --locked python -m pytest -vv \
+          uv run --locked --no-sync python -m pytest -vv \
             packages/a13n-harness/tests/test_browser_cdp_native.py \
             packages/a13n-harness/tests/test_browser_workflows_native.py \
             --browser-executable="$BROWSER_EXECUTABLE" --junitxml=test-results/browser.xml
 
       - name: Test provider diagnostics without external calls
         if: matrix.name == 'checks'
-        run: uv run --locked python -m pytest scripts/tests/provider_smoke --junitxml=test-results/providers.xml
+        run: uv run --locked --no-sync python -m pytest scripts/tests/provider_smoke --junitxml=test-results/providers.xml
 
       - name: Retain Harness test reports
         if: always()

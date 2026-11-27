@@ -326,17 +326,18 @@ def _service_matrix(
 def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Path) -> None:
     workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
     matrix = _service_matrix(workflow, "true", tmp_path)
-    expected_entries = [("checks", "3.13")]
+    expected_entries = [("checks", "3.13"), ("dev-tools", "3.13")]
     for version in ("3.13", "3.14", "3.15"):
-        expected_entries.extend([("native", version), *((f"tests-{index}", version) for index in range(1, 6))])
+        expected_entries.extend([("native", version), *((f"tests-{index}", version) for index in range(1, 9))])
     assert [(entry["name"], entry["python_version"]) for entry in matrix] == expected_entries
     single_version = _service_matrix(workflow, "true", tmp_path, python_versions='["3.13"]')
     assert [(entry["name"], entry["python_version"]) for entry in single_version] == [
         ("checks", "3.13"),
+        ("dev-tools", "3.13"),
         ("native", "3.13"),
-        *((f"tests-{index}", "3.13") for index in range(1, 6)),
+        *((f"tests-{index}", "3.13") for index in range(1, 9)),
     ]
-    assert all(entry["targets"] for entry in single_version[2:])
+    assert all(entry["targets"] for entry in single_version if entry["name"].startswith("tests-"))
     targets = [path for entry in single_version[1:] for path in entry["targets"].splitlines()]
     assert targets
     assert len(targets) == len(set(targets))
@@ -350,6 +351,7 @@ def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Pa
             root / "test_environments_envd.py",
             root / "test_monitoring_collectors_live.py",
             root / "test_monitoring_bundle_live.py",
+            root / "test_browser_external_native.py",
             root / "test_browser_native_live.py",
             root / "test_browser_selfhost_live.py",
         }
@@ -357,6 +359,22 @@ def test_service_ci_partitions_the_current_suite_without_duplicates(tmp_path: Pa
     }
     assert set(targets) == expected
     assert matrix == _service_matrix(workflow, "true", tmp_path)
+
+
+def test_service_native_browser_keeps_required_chromium_coverage() -> None:
+    workflow = yaml.safe_load((WORKFLOWS / "ci-a13n-service.yml").read_text())
+    steps = {step["name"]: step for step in workflow["jobs"]["validation"]["steps"]}
+    for name in ("Set up Chrome for Testing", "Allow the test browser to create sandbox namespaces"):
+        assert steps[name]["if"] == "matrix.task.name == 'native'"
+    native = steps["Test native Browser lifecycle and Service assets"]
+    assert native["if"] == "matrix.task.name == 'native'"
+    assert "test_browser_external_native.py" in native["run"]
+    assert '--browser-executable="$A13N_TEST_BROWSER_NATIVE_CHROMIUM"' in native["run"]
+    assert "not report.findall('.//skipped')" in native["run"]
+    shards = steps["Test a13n Service"]
+    assert "--browser-executable" not in shards["run"]
+    assert "--dist loadgroup --no-loadscope-reorder" in shards["run"]
+    assert steps["Check local Service development tools"]["if"] == "matrix.task.name == 'dev-tools'"
 
 
 def test_service_selection_includes_new_nested_files_and_passes_paths_literally(tmp_path: Path) -> None:
@@ -442,7 +460,8 @@ def test_service_documentation_only_changes_skip_database_tests_but_keep_checks(
         assert any(Path(path).full_match(pattern) for pattern in workflow[True][event]["paths"])
     assert not any(Path(path).full_match(pattern) for pattern in tests)
     assert [(entry["name"], entry["python_version"]) for entry in _service_matrix(workflow, "false", tmp_path)] == [
-        ("checks", "3.13")
+        ("checks", "3.13"),
+        ("dev-tools", "3.13"),
     ]
 
 
@@ -880,10 +899,8 @@ def test_python_component_ci_tiers_interpreters_with_daily_schedule(
     job = workflow["jobs"][job_name]
     canonical = '["3.13"]'
     full = '["3.13","3.14","3.15"]'
-    tiered_expr = f"github.event_name == 'push' && '{canonical}' || '{full}'"
-    if filename == "ci-a13n-harness-ui.yml":
-        full_matrix = "(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')"
-        tiered_expr = f"{full_matrix} && '{full}' || '{canonical}'"
+    full_matrix = "(github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')"
+    tiered_expr = f"{full_matrix} && '{full}' || '{canonical}'"
     if filename == "ci-a13n-service.yml":
         matrix_step = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
         assert matrix_step["env"]["PYTHON_VERSIONS"] == f"${{{{ {tiered_expr} }}}}"
