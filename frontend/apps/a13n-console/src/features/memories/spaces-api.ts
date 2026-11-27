@@ -30,15 +30,22 @@ export function spaceQueries(client: Client, workspace: string) {
               .then(data),
           ),
       }),
-    page: (term: string, enabled: boolean | undefined, cursor?: string) =>
+    page: (
+      term: string,
+      enabled: boolean | undefined,
+      cursor?: string,
+      appId?: string,
+    ) =>
       queryOptions({
-        queryKey: [...root, "page", term, enabled, cursor],
+        queryKey: [...root, "page", term, enabled, cursor, appId],
         queryFn: ({ signal }) =>
           matchingPage(
             (next, limit) =>
               api
                 .GET("/api/v1/memory-spaces", {
-                  params: { query: { enabled, cursor: next, limit } },
+                  params: {
+                    query: { enabled, cursor: next, limit, app_id: appId },
+                  },
                   signal,
                 })
                 .then(data),

@@ -11,14 +11,14 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import "../../i18n";
-import { CreateBrowser } from "./page";
+import { BrowsersPage, CreateBrowser } from "./page";
 
 const api = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ http: api, workspace: () => api }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" } }),
+  useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => false }),
 }));
 
 afterEach(() => {
@@ -97,4 +97,50 @@ it("shows a provider placeholder and prevents submission before selection", asyn
   await userEvent.type(name, "Example");
   fireEvent.submit(name.closest("form")!);
   expect(api.POST).not.toHaveBeenCalled();
+});
+
+it("loads a Browser App selection from the URL and keeps attribution in its details", async () => {
+  const browser = {
+    id: "browser_test",
+    name: "Research profile",
+    source: "managed",
+    app_id: "research.app",
+    status: "reserved",
+    control: "automation",
+    created_at: "2026-11-25T12:00:00Z",
+  };
+  api.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/{browser_id}")
+      ? browser
+      : { items: [browser], next_cursor: null },
+    response: new Response(null, { headers: { ETag: '"browser_test:1"' } }),
+  }));
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter initialEntries={["/browsers?app_id=research.app"]}>
+        <BrowsersPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await screen.findByText(browser.name);
+  expect(api.GET).toHaveBeenCalledWith(
+    "/api/v1/browsers",
+    expect.objectContaining({
+      params: { query: expect.objectContaining({ app_id: browser.app_id }) },
+    }),
+  );
+  expect(
+    screen.getByRole("row", { name: /Research profile/ }).textContent,
+  ).toContain(browser.app_id);
+  await userEvent.click(screen.getByText(browser.name));
+  const details = within(await screen.findByRole("dialog"));
+  expect(
+    (await details.findByText(browser.app_id))
+      .closest("[title]")
+      ?.getAttribute("title"),
+  ).toBe(browser.app_id);
 });

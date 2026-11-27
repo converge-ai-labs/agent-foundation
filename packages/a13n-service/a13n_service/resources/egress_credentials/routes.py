@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Response
 
+from a13n_service.app_provenance import AppIdFilter
 from a13n_service.infra.http import IfMatch, PageLimit, tagged
 from a13n_service.resources.egress_credentials import service
 from a13n_service.resources.egress_credentials.schemas import (
@@ -26,9 +27,16 @@ async def create_egress_credential(
 
 @router.get("", response_model=CredentialPage, openapi_extra={"x-a13n-mcp": True})
 async def list_egress_credentials(
-    workspace_id: WorkspaceId, actor: Actor, runtime: CurrentRuntime, limit: PageLimit = 50, cursor: str | None = None
+    workspace_id: WorkspaceId,
+    actor: Actor,
+    runtime: CurrentRuntime,
+    limit: PageLimit = 50,
+    cursor: str | None = None,
+    app_id: AppIdFilter | None = None,
 ) -> CredentialPage:
-    return await service.list_credentials(runtime.storage, actor, workspace_id, limit=limit, cursor=cursor)
+    return await service.list_credentials(
+        runtime.storage, actor, workspace_id, limit=limit, cursor=cursor, app_id=app_id
+    )
 
 
 @router.get("/{credential_id}", response_model=Credential, openapi_extra={"x-a13n-mcp": True})

@@ -13,7 +13,7 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { CopyableId, ProviderIcon } from "../../shared/identity";
+import { AppBadge, CopyableId, ProviderIcon } from "../../shared/identity";
 import { Panel } from "../../shared/page";
 import { environmentQuery } from "./api";
 import styles from "./environments.module.css";
@@ -302,6 +302,12 @@ export function EnvironmentPanel({
                   <Fact label={t("Ownership")}>
                     {t(value.template_id ? "Managed" : "External")}
                   </Fact>
+                  {value.app_id && (
+                    <Fact label={t("App")}>
+                      <AppBadge appId={value.app_id} />
+                      <CopyableId value={value.app_id} />
+                    </Fact>
+                  )}
                   {value.endpoint ? (
                     <Fact label={t("Endpoint")}>
                       <CopyableId value={value.endpoint} />

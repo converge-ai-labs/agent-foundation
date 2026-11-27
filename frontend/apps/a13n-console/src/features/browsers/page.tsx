@@ -15,12 +15,14 @@ import {
   type Schema,
 } from "../../shared/api";
 import {
+  AppFilter,
   CollectionFooter,
   Empty,
   Pagination,
   ResourceIdentity,
   ResourceTable,
   Toolbar,
+  useAppFilterParam,
   useCursor,
 } from "../../shared/collection";
 import { Confirm } from "../../shared/dialogs";
@@ -35,7 +37,7 @@ import {
   SchemaFields,
   withSchemaValues,
 } from "../../shared/forms";
-import { CopyableId } from "../../shared/identity";
+import { AppBadge, CopyableId } from "../../shared/identity";
 import { Page, PageActions } from "../../shared/page";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { useProviderTypes } from "../providers/kind-providers";
@@ -45,19 +47,21 @@ export function BrowsersPage() {
   const { t } = useTranslation();
   const client = useClient();
   const { workspace, can } = useWorkspace();
+  const [appId, setAppId] = useAppFilterParam();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string>();
   const hasSearch = Boolean(search.trim());
-  const page = useCursor({ search });
+  const filtered = hasSearch || !!appId;
+  const page = useCursor({ search, appId });
   const query = useQuery({
-    queryKey: ["browsers", workspace.id, "list", page.cursor, search],
+    queryKey: ["browsers", workspace.id, "list", page.cursor, search, appId],
     queryFn: ({ signal }) =>
       matchingPage(
         (cursor, limit) =>
           client
             .workspace(workspace.id)
             .GET("/api/v1/browsers", {
-              params: { query: { cursor, limit } },
+              params: { query: { cursor, limit, app_id: appId } },
               signal,
             })
             .then(data),
@@ -78,6 +82,7 @@ export function BrowsersPage() {
           search={search}
           onSearchChange={setSearch}
           searchLabel={t("Search browsers")}
+          filters={<AppFilter value={appId} onChange={setAppId} />}
         />
       }
     >
@@ -106,6 +111,7 @@ export function BrowsersPage() {
                   <ResourceIdentity
                     name={item.name}
                     resourceId={item.id}
+                    badge={item.app_id && <AppBadge appId={item.app_id} />}
                     description={t(
                       item.source === "managed"
                         ? "Managed browser"
@@ -142,14 +148,16 @@ export function BrowsersPage() {
         !query.error && (
           <Empty
             icon={<GlobeIcon />}
-            title={t(hasSearch ? "No matching browsers" : "No browsers yet")}
+            title={t(filtered ? "No matching browsers" : "No browsers yet")}
             description={t(
-              hasSearch
-                ? "Try a different search."
-                : "Create a browser, then select it from Browser in your session.",
+              appId
+                ? "Change or clear the search and filters."
+                : hasSearch
+                  ? "Try a different search."
+                  : "Create a browser, then select it from Browser in your session.",
             )}
             action={
-              !hasSearch && can("write") ? (
+              !filtered && can("write") ? (
                 <CreateBrowser onCreated={(item) => setSelected(item.id)} />
               ) : undefined
             }
@@ -380,6 +388,7 @@ function BrowserDetails({ id, onClose }: { id: string; onClose: () => void }) {
         <div className="flex flex-col gap-5">
           <div className="flex flex-wrap items-center gap-3">
             <StatePill state={query.data.status} />
+            {query.data.app_id && <AppBadge appId={query.data.app_id} />}
             <CopyableId value={id} />
           </div>
           <dl className="grid grid-cols-2 gap-3 text-sm">

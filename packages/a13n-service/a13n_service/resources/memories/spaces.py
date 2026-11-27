@@ -141,6 +141,7 @@ async def list_spaces(
     enabled: bool | None,
     limit: int,
     cursor: str | None,
+    app_id: str | None = None,
 ) -> MemorySpacePage:
     async with short_session(storage) as session:
         scope = await workspace_scope(session, actor, workspace_id, "read")
@@ -149,12 +150,15 @@ async def list_spaces(
         )
         if enabled is not None:
             query = query.where(MemorySpaceRow.enabled == enabled)
+        if app_id is not None:
+            query = query.where(MemorySpaceRow.app_id == app_id)
+        filters = (labels, enabled) if app_id is None else (labels, enabled, app_id)
         rows, next_cursor = await cursors.id_page(
             session,
             query,
             MemorySpaceRow.id,
             kind="memory_spaces",
-            owner=cursors.query_owner(scope.workspace_id, labels, enabled),
+            owner=cursors.query_owner(scope.workspace_id, *filters),
             cursor=cursor,
             limit=limit,
         )

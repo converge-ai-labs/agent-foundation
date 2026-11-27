@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
-import { Toolbar } from "../../shared/collection";
+import { AppFilter, Toolbar } from "../../shared/collection";
 import { DateTimeField } from "../../shared/forms";
 import { ErrorNotice } from "../../shared/feedback";
 import {
@@ -52,6 +52,7 @@ const triggers: Schema["Trigger"][] = [
 const keys = [
   "q",
   "application",
+  "app_id",
   "label",
   "agent_id",
   "status",
@@ -64,6 +65,7 @@ export function readSessionFilters(search: URLSearchParams): SessionFilters {
   return {
     q: search.get("q")?.trim() || undefined,
     application: search.get("application") || undefined,
+    app_id: search.get("app_id") || undefined,
     label: search.getAll("label"),
     agent_id: search.get("agent_id") || undefined,
     status: known(search.getAll("status"), statuses),
@@ -131,14 +133,18 @@ export function SessionFilterBar({
       }
       return next;
     });
-  // Typing narrows the server query, so it is committed once the reader pauses.
+  // The debounce must merge with URL filters selected while the search was pending.
+  const latestUpdate = useRef(update);
+  useEffect(() => {
+    latestUpdate.current = update;
+  });
   const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(debounce.current), []);
   function onSearchChange(value: string) {
     setQuery(value);
     clearTimeout(debounce.current);
     debounce.current = setTimeout(
-      () => update({ q: value.trim() ? [value.trim()] : [] }),
+      () => latestUpdate.current({ q: value.trim() ? [value.trim()] : [] }),
       300,
     );
   }
@@ -202,6 +208,10 @@ export function SessionFilterBar({
                 label: t(`trigger.${value}`),
               }))}
               onChange={(values) => update({ trigger: values })}
+            />
+            <AppFilter
+              value={search.get("app_id") || undefined}
+              onChange={(value) => update({ app_id: value ? [value] : [] })}
             />
             <UpdatedFilter
               after={search.get("updated_after")}

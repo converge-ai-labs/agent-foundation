@@ -6,12 +6,14 @@ import { useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import {
+  AppFilter,
   CollectionFooter,
   Empty,
   Pagination,
   ResourceIdentity,
   ResourceTable,
   Toolbar,
+  useAppFilterParam,
   useCursor,
 } from "../../shared/collection";
 import {
@@ -20,6 +22,7 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
+import { AppBadge } from "../../shared/identity";
 import { Page } from "../../shared/page";
 import { ChoiceFilter } from "../conversations/filters";
 import { scheduleQueries } from "./api";
@@ -33,10 +36,12 @@ export function SchedulesPage() {
     { workspace, can } = useWorkspace(),
     { t } = useTranslation(),
     navigate = useNavigate();
+  const [appId, setAppId] = useAppFilterParam();
   const [search, setSearch] = useState("");
   const [state, setState] = useState<(typeof STATES)[number]>();
-  const filters = { state, q: search.trim() || undefined },
+  const filters = { state, q: search.trim() || undefined, app_id: appId },
     page = useCursor(filters);
+  const filtered = !!(filters.q || state || appId);
   const query = useQuery(
     scheduleQueries(client, workspace.id).page(filters, page.cursor),
   );
@@ -57,22 +62,25 @@ export function SchedulesPage() {
           onSearchChange={setSearch}
           searchLabel={t("Search schedules")}
           filters={
-            <ChoiceFilter
-              label={t("State")}
-              allLabel={t("All states")}
-              value={state}
-              onChange={(value) =>
-                setState(STATES.find((option) => option === value))
-              }
-              options={STATES.map((value) => ({
-                value,
-                label: t(
-                  value === "completed"
-                    ? "Scheduling finished"
-                    : `state.${value}`,
-                ),
-              }))}
-            />
+            <>
+              <ChoiceFilter
+                label={t("State")}
+                allLabel={t("All states")}
+                value={state}
+                onChange={(value) =>
+                  setState(STATES.find((option) => option === value))
+                }
+                options={STATES.map((value) => ({
+                  value,
+                  label: t(
+                    value === "completed"
+                      ? "Scheduling finished"
+                      : `state.${value}`,
+                  ),
+                }))}
+              />
+              <AppFilter value={appId} onChange={setAppId} />
+            </>
           }
         />
       }
@@ -96,6 +104,9 @@ export function SchedulesPage() {
                     name={schedule.name}
                     description={schedule.description}
                     resourceId={schedule.id}
+                    badge={
+                      schedule.app_id && <AppBadge appId={schedule.app_id} />
+                    }
                     icon={<ClockIcon size={16} />}
                   />
                 ),
@@ -140,15 +151,13 @@ export function SchedulesPage() {
         !query.error && (
           <Empty
             icon={<ClockIcon size={20} />}
-            title={t(
-              search || state ? "No matching schedules" : "No schedules yet",
-            )}
+            title={t(filtered ? "No matching schedules" : "No schedules yet")}
             description={t(
-              search || state
+              filtered
                 ? "Change or clear the search and filters."
                 : "Choose an agent, input and timing to create a schedule.",
             )}
-            action={!search && !state && create}
+            action={!filtered && create}
           />
         )
       )}

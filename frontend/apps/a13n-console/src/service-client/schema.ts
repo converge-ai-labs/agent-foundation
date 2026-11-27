@@ -6252,6 +6252,7 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    AppIdFilter: string;
     /** AppPlugins */
     AppPlugins: {
       /** Id */
@@ -6709,6 +6710,8 @@ export interface components {
     };
     /** Browser */
     Browser: {
+      /** App Id */
+      readonly app_id?: string | null;
       control: components["schemas"]["ControlStatus"];
       /** Control Expires At */
       control_expires_at: string | null;
@@ -17457,6 +17460,7 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
+        app_id?: components["schemas"]["AppIdFilter"] | null;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -19257,6 +19261,7 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
+        app_id?: components["schemas"]["AppIdFilter"] | null;
       };
       header?: {
         /** @description The workspace ID a login session acts in; required with a login session. An API key acts in its own workspace and needs none; naming another is forbidden. */
@@ -19868,6 +19873,7 @@ export interface operations {
     parameters: {
       query?: {
         status?: string | null;
+        app_id?: components["schemas"]["AppIdFilter"] | null;
         limit?: number;
         cursor?: string | null;
       };
@@ -21955,6 +21961,7 @@ export interface operations {
       query?: {
         label?: string[] | null;
         enabled?: boolean | null;
+        app_id?: components["schemas"]["AppIdFilter"] | null;
         limit?: number;
         cursor?: string | null;
       };
@@ -24506,6 +24513,7 @@ export interface operations {
     parameters: {
       query?: {
         limit?: number;
+        app_id?: components["schemas"]["AppIdFilter"] | null;
         cursor?: string | null;
         state?: components["schemas"]["ScheduleState"] | null;
         agent_id?: string | null;
@@ -24913,6 +24921,7 @@ export interface operations {
         /** @description Session/thread ID, title, origin, label value or retained conversation text */
         q?: string | null;
         application?: string | null;
+        app_id?: components["schemas"]["AppIdFilter"] | null;
         agent_id?: string | null;
         status?: components["schemas"]["RunStatus"][];
         trigger?: components["schemas"]["Trigger"][];

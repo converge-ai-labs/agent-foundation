@@ -1,11 +1,14 @@
 """Provision and check native workspace resources for an App project."""
 
+from pydantic import JsonValue
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.app_provenance import AppProvenance
 from a13n_service.resources.memories.schemas import MemorySpaceCreate
 from a13n_service.resources.memories.spaces import insert_space
 from a13n_service.runs.browsers.lifecycle import authorize_use, find, usable
+from a13n_service.runs.browsers.schemas import BrowserCreate
+from a13n_service.runs.browsers.service import insert_managed
 from a13n_service.runs.environments.access import audit
 from a13n_service.runs.environments.access import find as find_environment
 from a13n_service.runs.environments.lifecycle import begin, reserve
@@ -41,6 +44,32 @@ async def reserve_environment(
     await begin(session, row, "creating")
     await session.flush()
     audit(session, actor, row, "create")
+    return row.id
+
+
+async def reserve_browser(
+    session: AsyncSession,
+    runtime: Runtime,
+    workspace_id: str,
+    *,
+    app_id: str,
+    app_context: dict[str, str] | None = None,
+    principal_id: str,
+    provider_id: str,
+    name: str,
+    recipe: dict[str, JsonValue] | None = None,
+) -> str:
+    """Reserve a managed Browser for preparation on first use, in the caller's transaction."""
+    scope = await app_workspace(session, runtime, workspace_id, app_id)
+    actor = await run_actor(session, runtime, scope, principal_id)
+    row = await insert_managed(
+        session,
+        runtime,
+        actor,
+        scope,
+        BrowserCreate(provider_id=provider_id, name=name, recipe=recipe or {}),
+        provenance=AppProvenance(app_id, app_context),
+    )
     return row.id
 
 

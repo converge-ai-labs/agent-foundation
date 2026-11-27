@@ -16,10 +16,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
+from a13n_service.app_provenance import AppOwned, app_context_requires_owner, guard_app_provenance
 from a13n_service.infra.db import Base, Stamped, identity_guarded, rules
 
 
-class BrowserRow(Stamped, Base):
+class BrowserRow(AppOwned, Stamped, Base):
     __tablename__ = "browsers"
     __table_args__ = (
         UniqueConstraint("workspace_id", "id"),
@@ -41,7 +42,12 @@ class BrowserRow(Stamped, Base):
         CheckConstraint("(claim_id IS NULL) = (claim_until IS NULL)", name="claim"),
         CheckConstraint("generation > 0 AND episode >= 0", name="generation"),
         Index("ix_browsers_control_due", "control_due_at", postgresql_where=text("control <> 'automation'")),
-        rules(identity_guarded("browsers"), unversioned=("control_due_at",)),
+        app_context_requires_owner(),
+        rules(
+            identity_guarded("browsers"),
+            guard_app_provenance("browsers", "app_id", "app_context"),
+            unversioned=("control_due_at",),
+        ),
     )
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"))

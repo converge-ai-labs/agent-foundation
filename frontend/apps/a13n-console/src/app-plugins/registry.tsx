@@ -1,15 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 import { useClient } from "../auth/context";
 import { useAccess } from "../layout/workspace";
 import { data } from "../shared/api";
 import { getI18n } from "react-i18next";
+import { Registry } from "./context";
 import {
   validateContribution,
   type AppContribution,
@@ -76,11 +71,6 @@ export async function loadApp(
     };
   }
 }
-const Registry = createContext<{
-  apps: LoadedApp[];
-  pending: boolean;
-  error: unknown;
-}>({ apps: [], pending: false, error: null });
 
 export function AppPluginsProvider({ children }: { children: ReactNode }) {
   const { organization } = useAccess();
@@ -112,6 +102,7 @@ export function AppPluginsProvider({ children }: { children: ReactNode }) {
     <Registry.Provider
       value={{
         apps: current ? (loaded?.apps ?? []) : [],
+        catalog: catalog.data?.items ?? [],
         pending: catalog.isPending || (!!catalog.data && !current),
         error: catalog.data ? null : catalog.error,
       }}
