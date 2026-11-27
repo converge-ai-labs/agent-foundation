@@ -29,8 +29,15 @@ class LiveThread {
   readonly display = new FocusDisplay();
   private listeners = new Set<() => void>();
   private timer?: ReturnType<typeof setTimeout>;
+  restartFocus?: () => void;
+  reset = () => {
+    if (this.restartFocus) this.restartFocus();
+    else this.display.reset();
+    this.changed();
+  };
   private snapshot = {
     display: this.display,
+    reset: this.reset,
     connection: "Connecting",
     reconnections: 0,
     revision: 0,
@@ -161,7 +168,9 @@ function ObserveThread({
         }
       },
     );
+    entry.restartFocus = stop.reset;
     return () => {
+      entry.restartFocus = undefined;
       stop();
       // Force an authoritative snapshot handshake on next visit so events emitted
       // while unsubscribed (including cross-tab runs or completions) are never missed.

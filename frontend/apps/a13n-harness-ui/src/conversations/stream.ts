@@ -1533,9 +1533,23 @@ export function watchThread(
       }
     },
   });
-  return () => {
+  function stop() {
     display.processes.end();
     clearTimeout(timer);
     subscription();
-  };
+  }
+  return Object.assign(stop, {
+    reset() {
+      clearTimeout(timer);
+      failures = 0;
+      restarting = false;
+      replacement = undefined;
+      snapshotRetryAvailable = true;
+      reconcileReplacement = false;
+      display.reset();
+      connection("Loading current output");
+      subscription.restart();
+      changed();
+    },
+  });
 }

@@ -455,6 +455,7 @@ export function Composer({
   threadId,
   activity,
   runBlock,
+  editingMessage = false,
   dictation,
   canClearContext = false,
   continuationId,
@@ -469,6 +470,7 @@ export function Composer({
   threadId: string;
   activity: Schema<"RootActivityView">;
   runBlock?: ComposerBlock | null;
+  editingMessage?: boolean;
   dictation?: DictationTarget;
   canClearContext?: boolean;
   continuationId?: string | null;
@@ -691,7 +693,10 @@ export function Composer({
     [imagePreview],
   );
   const busy = activity.state !== "inactive";
-  const pending = draft.submission.kind === "pending" || !!queuedInput?.pending;
+  const pending =
+    editingMessage ||
+    draft.submission.kind === "pending" ||
+    !!queuedInput?.pending;
   const unknown = draft.submission.kind === "unknown";
   const input = values(draft.doc);
   const missing = selections.some(({ key, id }, index) =>

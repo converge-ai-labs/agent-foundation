@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from itertools import groupby
 
+from a13n_stream_protocol.display import Item
 from anyio import to_thread
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -41,15 +42,7 @@ def _split(archive: DisplayArchive) -> tuple[DisplayHistory, DisplayHistory, int
             groups.setdefault(str(item.content.get("input_group") or item.id), index)
     if len(groups) < 2:
         return None
-    boundary = next(reversed(groups.values()))
-    # RUN_STARTED precedes the input it describes. Keep it with that input so
-    # later failures retain their producing run attribution.
-    for index in range(boundary - 1, -1, -1):
-        if items[index].content.get("type") == "RUN_STARTED":
-            boundary = index
-            break
-        if items[index].kind != "observation" or "entry" in items[index].content:
-            break
+    boundary = _input_start(items, next(reversed(groups.values())))
     prefix_ids = {item.id for item in items[:boundary]}
     prefix = archive.tail.model_copy(
         update={
@@ -127,3 +120,92 @@ async def read_display_windows(objects: ImmutableObjectStore, archive: DisplayAr
 
 async def read_display(objects: ImmutableObjectStore, archive: DisplayArchive) -> DisplayHistory:
     return _join_display(await read_display_windows(objects, archive))
+
+
+def _display_input_key(item: Item) -> str:
+    imported = item.content.get("turn")
+    if not isinstance(imported, dict):
+        return str(item.content.get("input_group") or item.id)
+    key = str(imported["turn_id"])
+    if key.startswith("entry:") and imported.get("timestamp") is not None:
+        return f"{key}@{imported['timestamp']}"
+    return key
+
+
+def _display_input_boundaries(display: DisplayHistory) -> dict[str, int]:
+    """Match archived input-group identities and their authored source aliases."""
+    keys: dict[str, int] = {}
+    ambiguous: set[str] = set()
+    groups: dict[str, int] = {}
+    for index, item in enumerate(display.items):
+        if not ordinary_input(item):
+            continue
+        group = str(item.content.get("input_group") or item.id)
+        group_start = groups.setdefault(group, index)
+        key = _display_input_key(item)
+        metadata = item.content.get("metadata")
+        source_id = metadata.get("source_id") if isinstance(metadata, dict) else None
+        for alias in (key, source_id):
+            if isinstance(alias, str) and keys.setdefault(alias, group_start) != group_start:
+                ambiguous.add(alias)
+    return {key: index for key, index in keys.items() if key not in ambiguous}
+
+
+def _input_start(items: Sequence[Item], boundary: int) -> int:
+    group = items[boundary].content.get("input_group")
+    # The composer can emit hidden parts before its first visible part. Keep
+    # the Run header with those parts, but never cross the prior Run's end.
+    for index in range(boundary - 1, -1, -1):
+        item = items[index]
+        if item.content.get("type") == "RUN_STARTED":
+            boundary = index
+            break
+        if (group is not None and item.content.get("input_group") == group) or (
+            item.kind == "observation"
+            and "entry" not in item.content
+            and item.content.get("type") not in {"RUN_FINISHED", "RUN_ERROR"}
+        ):
+            boundary = index
+            continue
+        break
+    return boundary
+
+
+def _before_display_input(display: DisplayHistory, start: int) -> DisplayHistory:
+    items = display.items[:start]
+    ids = {item.id for item in items}
+    return DisplayHistory(
+        items=items,
+        position=display.position,
+        completed=tuple(key for key in display.completed if key in ids),
+    )
+
+
+async def crop_display_archive(
+    objects: ImmutableObjectStore, archive: DisplayArchive, turn_key: str
+) -> DisplayArchive | None:
+    """Crop before a selected native input, reusing sealed turns on tail edits."""
+
+    def crop(display: DisplayHistory, *, sealed: bool) -> DisplayHistory | None:
+        boundary = _display_input_boundaries(display).get(turn_key)
+        if boundary is None:
+            return None
+        start = _input_start(display.items, boundary)
+        if sealed:
+            # An authored alias can occur in an earlier sealed turn. Older
+            # archives may also have sealed hidden parts before the Run input.
+            first = display.items[start].content
+            if _display_input_key(display.items[boundary]) != turn_key or (
+                start == 0 and "entry" not in first and first.get("type") != "RUN_STARTED"
+            ):
+                return None
+        return _before_display_input(display, start)
+
+    tail = await to_thread.run_sync(lambda: crop(archive.tail, sealed=archive.prefix is not None))
+    if tail is not None:
+        return archive.model_copy(update={"tail": tail})
+    if archive.prefix is None:
+        return None
+    display = await read_display(objects, archive)
+    prefix = await to_thread.run_sync(lambda: crop(display, sealed=False))
+    return None if prefix is None else DisplayArchive(tail=prefix)

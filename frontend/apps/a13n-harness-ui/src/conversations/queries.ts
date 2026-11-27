@@ -358,14 +358,48 @@ export function transcriptHistory(pages: Schema<"TranscriptPage">[] = []) {
   };
 }
 
+type HistorySeed = {
+  continuation: string;
+  data: InfiniteData<Schema<"TranscriptPage">>;
+};
+
+export function rewindHistory(
+  continuation: string,
+  inputPosition: number,
+  history: ReturnType<typeof transcriptHistory>,
+): HistorySeed {
+  const entries = history.entries.filter(
+    (entry) => entry.position < inputPosition,
+  );
+  const turns = history.turns.filter(
+    (turn) => turn.end_position <= inputPosition,
+  );
+  return {
+    continuation,
+    data: {
+      pages: [
+        {
+          continuation_id: continuation,
+          entries,
+          turns,
+          total: (entries.at(-1)?.position ?? -1) + 1,
+        },
+      ],
+      pageParams: [undefined],
+    },
+  };
+}
+
 export function useHistory(
   threadId: string,
   continuation: string | null | undefined,
   enabled: boolean,
   turnId?: string,
+  rewind?: HistorySeed,
 ) {
   const { client } = useTransport();
   const queries = useQueryClient();
+  const resetKey = rewind?.continuation;
   const query = useInfiniteQuery({
     queryKey: [
       "thread",
@@ -411,11 +445,13 @@ export function useHistory(
           }),
         );
       let page = await readPage(pageParam);
-      if (!previous) return page;
+      const old =
+        (previous?.state.data as HistorySeed["data"] | undefined) ??
+        (pageParam === undefined && !turnId ? rewind?.data : undefined);
+      if (!old) return page;
       // Rebuild the loaded range using only the incoming continuation's cursors.
       // Collapsing it to the latest page would unmount older turns and destroy
       // their reading anchors before outer pagination can bring them back.
-      const old = previous.state.data as InfiniteData<Schema<"TranscriptPage">>;
       const bounds = (pages: Schema<"TranscriptPage">[]) => {
         const starts = pages.flatMap((page) => [
           ...page.entries.map((entry) => entry.position),
@@ -518,16 +554,19 @@ export function useHistory(
   });
   // Keep the last successful history, with its real continuation identity, while
   // a replacement loads or fails. Query placeholder data disappears on errors.
-  const previous = useRef<{ threadId: string; data: typeof query.data }>(
-    undefined,
-  );
+  const previous = useRef<{
+    threadId: string;
+    resetKey?: string;
+    data: typeof query.data;
+  }>(undefined);
   useEffect(() => {
-    if (query.isSuccess) previous.current = { threadId, data: query.data };
-  }, [threadId, query.data, query.isSuccess]);
+    if (query.isSuccess)
+      previous.current = { threadId, resetKey, data: query.data };
+  }, [threadId, resetKey, query.data, query.isSuccess]);
   // A newly opened page can reuse history warmed by the workbench even while a
   // newer continuation is loading. Keep its original identity, never relabel it.
   const cached =
-    !query.data && previous.current?.threadId !== threadId
+    !query.data && !resetKey && previous.current?.threadId !== threadId
       ? queries
           .getQueryCache()
           .findAll({ queryKey: ["thread", threadId, "history"] })
@@ -535,11 +574,14 @@ export function useHistory(
           .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)[0]
       : undefined;
   const retained =
-    previous.current?.threadId === threadId
+    previous.current?.threadId === threadId &&
+    previous.current.resetKey === resetKey
       ? previous.current.data
       : cached
         ? queries.getQueryData<NonNullable<typeof query.data>>(cached.queryKey)
-        : undefined;
+        : !turnId
+          ? rewind?.data
+          : undefined;
   const retryRead = useHistoryRecovery(
     threadId,
     continuation,

@@ -335,7 +335,9 @@ it("offers copy, branch and the stop time once after a tool interrupts the last 
   render(
     <MessageBranches
       value={{
-        busy: false,
+        active: false,
+        blocked: false,
+        edit: vi.fn(),
         pending: false,
         create,
         points: { turn: { edit: true, branch: true } },

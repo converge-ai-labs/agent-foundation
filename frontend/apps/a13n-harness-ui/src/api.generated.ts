@@ -2796,6 +2796,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/edit-message": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Edit Message */
+        post: operations["edit_message_api_threads__thread_id__edit_message_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/fork": {
         parameters: {
             query?: never;
@@ -4527,6 +4544,8 @@ export interface components {
         BranchPoints: {
             /** Source */
             source: string;
+            /** Edit Source */
+            edit_source: string;
             /** Points */
             points: {
                 [key: string]: components["schemas"]["BranchPoint"];
@@ -7239,6 +7258,12 @@ export interface components {
              * @default 0
              */
             output_tokens?: number;
+        };
+        /** MessageEditReceipt */
+        MessageEditReceipt: {
+            receipt: components["schemas"]["RootRunReceipt"];
+            /** Continuation Id */
+            continuation_id: string;
         };
         /** MetricsSample */
         MetricsSample: {
@@ -11932,9 +11957,38 @@ export interface components {
             turn_key: string;
             /**
              * Side
-             * @enum {string}
+             * @constant
              */
-            side: "before" | "after";
+            side: "after";
+        };
+        /** MessageEditSelection */
+        MessageEditSelection: {
+            /** Expected Source */
+            expected_source: string;
+            /** Turn Key */
+            turn_key: string;
+        };
+        /** SkillReference */
+        SkillReference: {
+            /** Catalog Id */
+            catalog_id: string;
+            /** Item Id */
+            item_id: string;
+            /** Name */
+            name: string;
+        };
+        /** MessageEditRequest */
+        MessageEditRequest: {
+            /** Parts */
+            parts: (string | components["schemas"]["InputAttachmentReference"])[];
+            /**
+             * Skill References
+             * @default []
+             */
+            skill_references?: components["schemas"]["SkillReference"][];
+            /** Source Id */
+            source_id?: string | null;
+            selection: components["schemas"]["MessageEditSelection"];
         };
         /** ApprovalDecision */
         ApprovalDecision: {
@@ -12064,15 +12118,6 @@ export interface components {
         FastSelection: boolean | "ultrafast";
         /** @enum {string} */
         ReasoningMode: "standard" | "pro";
-        /** SkillReference */
-        SkillReference: {
-            /** Catalog Id */
-            catalog_id: string;
-            /** Item Id */
-            item_id: string;
-            /** Name */
-            name: string;
-        };
         /** SubmitRequest */
         SubmitRequest: {
             thinking?: components["schemas"]["ThinkingSelection"] | null;
@@ -17678,6 +17723,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_message_api_threads__thread_id__edit_message_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-harness-browser"?: string | null;
+            };
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MessageEditRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageEditReceipt"];
                 };
             };
             /** @description Validation Error */

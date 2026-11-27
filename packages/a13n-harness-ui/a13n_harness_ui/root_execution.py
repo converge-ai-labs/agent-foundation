@@ -121,7 +121,7 @@ from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
 from a13n_harness_ui.thread_files import ThreadFiles
 from a13n_harness_ui.thread_projection import build_thread_inspection
-from a13n_harness_ui.thread_service import ThreadService
+from a13n_harness_ui.thread_service import MessageRewind, ThreadService
 from a13n_harness_ui.thread_work import ThreadWorkService
 from a13n_harness_ui.tool_evidence import ToolEvidenceCollector
 from a13n_harness_ui.tool_executions import ToolExecutions
@@ -478,6 +478,7 @@ class RootRunExecutor:
         model_overrides: RunModelOverrides | None = None,
         environment: EnvironmentSelectionPatch | None = None,
         organization: MemoryOrganizationRun | None = None,
+        rewind: MessageRewind | None = None,
     ) -> RootRunAdmission:
         """Resolve admission using detached store reads; never connect to a Device."""
         if sum(value is not None for value in (prompt, response, restart)) != 1:
@@ -487,7 +488,7 @@ class RootRunExecutor:
             )
         prompt = None if prompt is None else detach_input(prompt)
         response = None if response is None else response.model_copy(deep=True)
-        thread = await self._threads.get(thread_id)
+        thread = rewind.thread if rewind is not None else await self._threads.get(thread_id)
         if thread.parent_thread_id is not None:
             raise ThreadError("Only root Threads can start a root operation.", code="child_thread_scoped")
         if thread.archived:
@@ -518,9 +519,13 @@ class RootRunExecutor:
             execution = thread.last_execution
             if execution is None or execution.status != "running" or execution.run_id != restart.run_id:
                 raise RunCoordinationError("The interrupted execution is no longer selected.", code="restart_conflict")
-        previous_state, deferred, previous_composition, accepted, positions, archive = await self._load_run_state(
-            thread
-        )
+        if rewind is None:
+            previous_state, deferred, previous_composition, accepted, positions, archive = await self._load_run_state(
+                thread
+            )
+        else:
+            previous_state, previous_composition = rewind.state, rewind.prior_composition
+            deferred, accepted, positions, archive = None, None, {}, rewind.display
         if restart is not None and previous_composition != restart.composition:
             raise RunCoordinationError("The saved restart composition changed.", code="restart_conflict")
         if self._unattended and (deferred is not None or accepted is not None):
@@ -608,7 +613,7 @@ class RootRunExecutor:
             browser_binding=browser_binding,
             browser_unavailable=browser_unavailable,
             external_context=await self._store.threads.external_context(thread_id),
-            acp_state=await self._read_acp_state(thread_id)
+            acp_state=(rewind.acp_state if rewind is not None else await self._read_acp_state(thread_id))
             if isinstance(published.value.root, ResolvedAcpNode)
             else None,
         )
@@ -623,6 +628,7 @@ class RootRunExecutor:
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
         on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
         on_skill_catalog: Callable[[BoundSkillCatalog], None] | None = None,
+        on_checkpoint: Callable[[RootContinuationSelection], None] | None = None,
     ) -> RootRunOutcome:
         async with self._compaction.use(admission.thread.thread_id) if self._compaction is not None else nullcontext():
             return await self._execute(
@@ -632,6 +638,7 @@ class RootRunExecutor:
                 on_goal=on_goal,
                 on_main_account=on_main_account,
                 on_skill_catalog=on_skill_catalog,
+                on_checkpoint=on_checkpoint,
             )
 
     async def _execute(
@@ -644,6 +651,7 @@ class RootRunExecutor:
         on_goal: Callable[[GoalView], Awaitable[None]] | None = None,
         on_main_account: Callable[[MainAccountSelection], Awaitable[None]] | None = None,
         on_skill_catalog: Callable[[BoundSkillCatalog], None] | None = None,
+        on_checkpoint: Callable[[RootContinuationSelection], None] | None = None,
     ) -> RootRunOutcome:
         thread = admission.thread
         thread_id = thread.thread_id
@@ -730,6 +738,8 @@ class RootRunExecutor:
                     terminal=False,
                 )
                 del history
+                if on_checkpoint is not None:
+                    on_checkpoint(selected)
                 if selected.status != "selected" or selected.reference is None:
                     assert selected.error is not None
                     checkpoint_error = selected.error
@@ -1294,6 +1304,8 @@ class RootRunExecutor:
                         )
                 else:
                     continuation = RootContinuationSelection(status="not_available")
+                if on_checkpoint is not None:
+                    on_checkpoint(continuation)
                 try:
                     await self._drain_inspection(thread.thread_id)
                 finally:
