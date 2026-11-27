@@ -47,12 +47,11 @@ function invitationState(item: Schema["Invitation"]) {
 
 export function Invitations({
   scope,
-  actions,
+  emptyAction,
   canResend,
 }: {
   scope: MembershipScope;
-  /** The page's member actions, offered again when there is nothing to list. */
-  actions: ReactNode;
+  emptyAction?: ReactNode;
   canResend: boolean;
 }) {
   const client = useClient(),
@@ -212,7 +211,7 @@ export function Invitations({
           icon={<EnvelopeIcon aria-hidden="true" />}
           title={t("No invitations")}
           description={t("Invite a teammate to start collaborating.")}
-          action={actions}
+          action={emptyAction}
         />
       )}
     </div>
@@ -334,11 +333,12 @@ export function InvitationEditor({
               <p className={settings.note}>{t("Invitation sent")}</p>
             </>
           )}
-          <footer className={styles.formActions}>
-            <Button type="button" onClick={() => setOpen(false)}>
-              {t("Done")}
-            </Button>
-          </footer>
+          <FormActions
+            pending={false}
+            dismiss
+            cancelLabel={t("Done")}
+            onCancel={() => setOpen(false)}
+          />
         </div>
       ) : (
         <form

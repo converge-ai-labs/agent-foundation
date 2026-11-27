@@ -348,19 +348,21 @@ function OtherPane({ entry }: { entry: OtherEntry }) {
         {entry.observations.slice(0, visibleCount).map((observation) => (
           <li key={observation.id}>
             <code>{observation.name}</code>
-            {observation.occurredAt && (
-              <span>
-                {new Intl.DateTimeFormat(i18n.resolvedLanguage, {
+            <span>
+              {observation.occurredAt &&
+                new Intl.DateTimeFormat(i18n.resolvedLanguage, {
                   timeStyle: "medium",
                 }).format(new Date(observation.occurredAt))}
-              </span>
-            )}
+            </span>
             <RawDialog
               title={observation.name}
               value={observation.detail}
               label={t("Raw")}
             />
-            <ItemContents itemId={observation.id} />
+            <ItemContents
+              itemId={observation.id}
+              className={styles.observationContents}
+            />
           </li>
         ))}
       </ul>

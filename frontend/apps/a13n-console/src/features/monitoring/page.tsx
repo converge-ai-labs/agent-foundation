@@ -576,7 +576,7 @@ function DashboardWorkspace() {
                 </Button>
               }
             />
-          ) : (
+          ) : panels.length ? (
             <div className={styles.grid}>
               <DashboardGrid
                 layout={layout}
@@ -585,15 +585,12 @@ function DashboardWorkspace() {
               >
                 {children}
               </DashboardGrid>
-              {!panels.length && (
-                <Empty
-                  title={t("No panels yet")}
-                  description={t(
-                    "Edit this dashboard to add your first panel.",
-                  )}
-                />
-              )}
             </div>
+          ) : (
+            <Empty
+              title={t("No panels yet")}
+              description={t("Edit this dashboard to add your first panel.")}
+            />
           )}
           {draft && (
             <form

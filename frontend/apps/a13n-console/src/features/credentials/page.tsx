@@ -131,6 +131,7 @@ export function CredentialsPage() {
               },
               {
                 label: t("Credential version"),
+                align: "right",
                 render: (row) => row.credential_version,
               },
               {

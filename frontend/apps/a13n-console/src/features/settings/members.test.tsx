@@ -11,6 +11,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { ApiError } from "../../service-client";
 import { MemoryRouter } from "react-router";
+import { Page } from "../../shared/page";
 import { MemberSettings } from "./members";
 
 const access = vi.hoisted(() => ({
@@ -68,10 +69,10 @@ function grant(
 }
 const ada = { id: "usr_ada", kind: "user", name: "Ada" };
 
-function setup(items: () => ReturnType<typeof grant>[]) {
+function setup(items: () => ReturnType<typeof grant>[], passwords = true) {
   http.GET.mockImplementation(async (path: string) => ({
     data: path.endsWith("/configuration")
-      ? { password_enabled: true }
+      ? { password_enabled: passwords }
       : path.endsWith("/members")
         ? { items: [{ ...ada, email: "ada@example.com" }], next_cursor: null }
         : { items: items(), next_cursor: null },
@@ -84,12 +85,59 @@ function setup(items: () => ReturnType<typeof grant>[]) {
       }
     >
       <MemoryRouter>
-        <MemberSettings scope={scope} />
+        <Page title="Access settings">
+          <MemberSettings scope={scope} />
+        </Page>
       </MemoryRouter>
     </QueryClientProvider>,
   );
   return userEvent.setup();
 }
+
+it("offers both member actions once and only Invite when there are no invitations", async () => {
+  const user = setup(() => []);
+  const members = (await screen.findByText("No members")).closest<HTMLElement>(
+    '[data-slot="empty"]',
+  )!;
+  expect(screen.getAllByRole("button", { name: "Add member" })).toEqual([
+    within(members).getByRole("button", { name: "Add member" }),
+  ]);
+  const invite = await within(members).findByRole("button", { name: "Invite" });
+  expect(screen.getAllByRole("button", { name: "Invite" })).toEqual([invite]);
+
+  await user.click(screen.getByRole("tab", { name: "Invitations" }));
+  const invitations = (
+    await screen.findByText("No invitations")
+  ).closest<HTMLElement>('[data-slot="empty"]')!;
+  expect(screen.queryByRole("button", { name: "Add member" })).toBeNull();
+  expect(screen.getAllByRole("button", { name: "Invite" })).toEqual([
+    within(invitations).getByRole("button", { name: "Invite" }),
+  ]);
+});
+
+it.each([true, false])(
+  "renders no empty actions without membership access (passwords: %s)",
+  async (passwords) => {
+    access.workspaceAdmin = false;
+    access.organizationAdmin = false;
+    const user = setup(() => [], passwords);
+    await screen.findByText("No members");
+    expect(document.querySelector('[data-slot="empty-content"]')).toBeNull();
+    await user.click(screen.getByRole("tab", { name: "Invitations" }));
+    await screen.findByText("No invitations");
+    expect(document.querySelector('[data-slot="empty-content"]')).toBeNull();
+  },
+);
+
+it("keeps Add member in the header on the invitations tab when password sign-in is off", async () => {
+  const user = setup(() => [], false);
+  await screen.findByText("No members");
+  await user.click(screen.getByRole("tab", { name: "Invitations" }));
+  await screen.findByText("No invitations");
+  expect(document.querySelector('[data-slot="empty-content"]')).toBeNull();
+  expect(screen.getByRole("button", { name: "Add member" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Invite" })).toBeNull();
+});
 
 it("changes a role from the member's current grant after someone replaced it", async () => {
   let current = grant("rb_old", "viewer", ada);

@@ -33,7 +33,11 @@ export function SkillFiles({
   onRetry?: () => void;
 }) {
   const { t } = useTranslation();
-  const [selected, setSelected] = useState("SKILL.md");
+  const [selected, setSelected] = useState(() =>
+    manifest.files.some(({ path }) => path === "SKILL.md")
+      ? "SKILL.md"
+      : (manifest.files[0]?.path ?? ""),
+  );
   const nodes = useMemo(() => fileTree(manifest.files), [manifest.files]);
   const file = manifest.files.find((item) => item.path === selected);
   return (
@@ -59,7 +63,10 @@ export function SkillFiles({
           }}
         />
       ) : (
-        <FileNotice>{t("File not found in this version.")}</FileNotice>
+        <>
+          <FileHeader path={selected} />
+          <FileNotice>{t("File not found in this version.")}</FileNotice>
+        </>
       )}
     </FileBrowser>
   );

@@ -25,14 +25,18 @@
   display: flex;
   align-items: center;
 }
-.formActionsPrimary {
-  margin-left: auto;
-  max-width: 100%;
-  flex-wrap: wrap;
+.formActionsPrimary,
+.formActionsOutcome {
   display: flex;
   align-items: center;
-  flex: none;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 8px;
+}
+.formActionsPrimary {
+  margin-left: auto;
+  flex: none;
 }
 .formActions :global([data-slot="button"]) {
   font-size: var(--a13n-text-sm);

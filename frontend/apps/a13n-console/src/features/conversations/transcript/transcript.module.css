@@ -353,10 +353,8 @@
 .failureFacts code {
   font-family: var(--a13n-mono);
 }
-/* Inside the notice the error fold is part of it, not a second block: its
-   caret takes the text line and its surface reaches into the padding. */
+/* The error fold shares the notice surface. */
 .failure [data-slot="disclosure-surface"] {
-  margin-left: -12px;
   background: transparent;
 }
 
@@ -477,13 +475,16 @@
 /* Embedded details retain a readable inset and a stable boundary in both states. */
 .inlineDisclosure {
   margin-block: 8px;
+  overflow: hidden;
   border: 1px solid var(--a13n-border);
   border-radius: 8px;
 }
 .inlineDisclosure
   > [data-slot="disclosure-surface"]
   > [data-slot="collapsible-trigger"] {
+  width: 100%;
   min-height: 40px;
+  margin-inline: 0;
   padding: 8px 12px;
 }
 .inlineDisclosure

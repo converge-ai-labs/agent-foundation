@@ -15,6 +15,9 @@
   line-height: 18px;
   margin: 0;
 }
+.emailForm {
+  padding-block: 0;
+}
 .fields > * + * {
   border-top: 1px solid var(--a13n-border-soft);
 }

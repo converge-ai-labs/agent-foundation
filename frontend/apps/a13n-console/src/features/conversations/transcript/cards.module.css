@@ -171,13 +171,16 @@
 /* Embedded details retain a readable inset and a stable boundary in both states. */
 .inlineDisclosure {
   margin-block: 8px;
+  overflow: hidden;
   border: 1px solid var(--a13n-border);
   border-radius: 8px;
 }
 .inlineDisclosure
   > [data-slot="disclosure-surface"]
   > [data-slot="collapsible-trigger"] {
+  width: 100%;
   min-height: 40px;
+  margin-inline: 0;
   padding: 8px 12px;
 }
 .inlineDisclosure

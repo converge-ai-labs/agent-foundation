@@ -99,19 +99,16 @@ export function WebhookEditor({
                 "Verify webhook-signature with this secret and deduplicate by webhook-id.",
               )}
             </p>
-            <div className={styles.toolbar}>
-              <span />
-              <Button
-                type="button"
-                onClick={() => {
-                  const id = created.id;
-                  close();
-                  void navigate(`${basePath}/settings/webhooks/${id}`);
-                }}
-              >
-                {t("I saved the secret")}
-              </Button>
-            </div>
+            <FormActions
+              pending={false}
+              dismiss
+              cancelLabel={t("I saved the secret")}
+              onCancel={() => {
+                const id = created.id;
+                close();
+                void navigate(`${basePath}/settings/webhooks/${id}`);
+              }}
+            />
           </div>
         ) : (
           <WebhookForm

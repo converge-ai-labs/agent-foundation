@@ -68,9 +68,6 @@
 .toolbar {
   margin-bottom: 12px;
 }
-.toolbar input[type="search"] {
-  height: 32px;
-}
 .table th[data-column="file"] {
   width: 35%;
 }

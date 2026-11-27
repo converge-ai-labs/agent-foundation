@@ -105,7 +105,7 @@ export function MemoryRecords({ memory }: { memory: Memory }) {
             setText(value);
             if (!value.trim()) setSearch("");
           }}
-          trailing={add}
+          trailing={records.data?.items.length || search ? add : undefined}
         />
       </form>
       {records.isPending ? (
@@ -152,6 +152,7 @@ export function MemoryRecords({ memory }: { memory: Memory }) {
                 ? [
                     {
                       label: t("Score"),
+                      align: "right" as const,
                       render: (item: MemoryRecord) =>
                         item.score === null || item.score === undefined
                           ? "—"

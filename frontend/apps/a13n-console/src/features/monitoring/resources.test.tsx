@@ -112,6 +112,42 @@ function setup(children: ReactNode) {
   );
   return { cache, user: userEvent.setup() };
 }
+it.each([
+  ["data source", source.name, ["Delete data source"]],
+  ["device", "Lab workstation", ["Rotate attachment token", "Delete device"]],
+] as const)(
+  "opens %s confirmations without submitting the editor",
+  async (kind, name, actions) => {
+    if (kind === "device") {
+      state.GET.mockImplementation(async (path: string) =>
+        response({
+          items:
+            path === "/api/v1/devices"
+              ? [{ id: "dev_test", name, device_id: "lab", enabled: true }]
+              : [source],
+          next_cursor: null,
+        }),
+      );
+    }
+    const { user } = setup(
+      kind === "device" ? <DevicesPage /> : <DataSourcesPage />,
+    );
+    await user.click(await screen.findByText(name));
+    const editor = await screen.findByRole("dialog", { name });
+    for (const action of actions) {
+      await user.click(within(editor).getByRole("button", { name: action }));
+      const confirm = await screen.findByRole("dialog", { name: action });
+      await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: action })).toBeNull(),
+      );
+    }
+    expect(state.PATCH).not.toHaveBeenCalled();
+    expect(state.POST).not.toHaveBeenCalled();
+    expect(state.DELETE).not.toHaveBeenCalled();
+  },
+);
+
 it("keeps, replaces and explicitly clears independent source credentials with the opening ETag", async () => {
   const { user } = setup(<DataSourcesPage />);
   await user.click(await screen.findByText(source.name));

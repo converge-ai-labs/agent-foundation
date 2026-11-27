@@ -349,6 +349,10 @@
   padding: 16px 0;
   border-top: 1px solid var(--a13n-border-soft);
 }
+.e2bTemplate:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
 .e2bTemplateHeading {
   display: flex;
   align-items: center;
