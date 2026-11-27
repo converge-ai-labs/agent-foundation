@@ -1,5 +1,5 @@
 import { FormField, Textarea } from "a13n-ui";
-import { Info, Terminal } from "@phosphor-icons/react";
+import { Check, Info, Terminal } from "@phosphor-icons/react";
 import { acpPresetBrand, ModelIcon } from "../shell/model-identity";
 import { AcpAuth } from "../configuration/acp-auth";
 import {
@@ -23,7 +23,6 @@ const COMMON_API = [
   "google",
   "openrouter",
   "deepseek",
-  "zai",
   "moonshotai",
 ];
 const MAJOR_ACP = ["antigravity", "claude_code", "gemini_cli"];
@@ -126,6 +125,12 @@ export function SetupConnections({
         <span>{label}</span>
         <small>{detail}</small>
       </span>
+      <Check
+        size={14}
+        weight="bold"
+        className={styles.selectedMark}
+        aria-hidden
+      />
     </button>
   );
   if (track === "api") {
@@ -218,6 +223,12 @@ export function SetupConnections({
             <ModelIcon modelIdentity="codex" />
             <strong>{featured.label}</strong>
             <small className={styles.badge}>{t("Recommended")}</small>
+            <Check
+              size={14}
+              weight="bold"
+              className={styles.selectedMark}
+              aria-hidden
+            />
           </span>
           <span className={styles.cardDescription}>
             {t(
@@ -226,8 +237,10 @@ export function SetupConnections({
           </span>
         </button>
       )}
-      <div className={styles.stack}>
-        <h3>{t("Other subscriptions & local CLIs")}</h3>
+      <div className={styles.sectionGroup}>
+        <h3 className={styles.sectionHeading}>
+          {t("Other subscriptions & local CLIs")}
+        </h3>
         <div className={styles.engineGrid}>
           {native
             .filter((item) => item !== featured && item !== chatgpt)

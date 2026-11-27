@@ -498,7 +498,11 @@ export function SetupWizard({
                   data-complete={index < draft.step}
                 >
                   <span>
-                    {index < draft.step ? <Check size={14} /> : index + 1}
+                    {index < draft.step ? (
+                      <Check size={12} weight="bold" aria-hidden />
+                    ) : (
+                      index + 1
+                    )}
                   </span>
                   {step}
                 </li>
@@ -603,6 +607,12 @@ export function SetupWizard({
                               {t("Recommended")}
                             </small>
                           )}
+                          <Check
+                            size={14}
+                            weight="bold"
+                            className={styles.selectedMark}
+                            aria-hidden
+                          />
                         </span>
                         <span className={styles.cardDescription}>
                           {track === "subscription"
@@ -829,62 +839,75 @@ export function SetupWizard({
                     )}
                     {configureWorkspace && (
                       <>
-                        {acp && draft.originalDefault && (
-                          <p>
-                            {t(
-                              "Setting an ACP agent as default changes the execution default to Full Control.",
-                            )}
-                          </p>
-                        )}
-                        <div
-                          className={styles.environments}
-                          role="group"
-                          aria-label={t("Local mode - Harness server")}
-                        >
-                          {(
-                            [
+                        <div className={styles.sectionGroup}>
+                          <h3 className={styles.sectionHeading}>
+                            {t("Execution environment")}
+                          </h3>
+                          {acp && draft.originalDefault && (
+                            <p>
+                              {t(
+                                "Setting an ACP agent as default changes the execution default to Full Control.",
+                              )}
+                            </p>
+                          )}
+                          <div
+                            className={styles.environments}
+                            role="group"
+                            aria-label={t("Local mode - Harness server")}
+                          >
+                            {(
                               [
-                                "environment-native",
-                                t("Full Control"),
-                                Desktop,
-                                t(
-                                  "Run directly as your host account with full filesystem and network access.",
-                                ),
-                              ],
-                              [
-                                "environment-sandbox",
-                                t("Sandbox"),
-                                ShieldCheck,
-                                t(
-                                  "Runs in a sandbox. Downloads envd if needed and checks isolation.",
-                                ),
-                              ],
-                            ] as const
-                          ).map(([value, label, Icon, description]) => (
-                            <button
-                              type="button"
-                              key={value}
-                              className={styles.choiceCard}
-                              aria-label={label}
-                              aria-pressed={
-                                selection.environment_profile === value
-                              }
-                              disabled={
-                                !!acp && value === "environment-sandbox"
-                              }
-                              onClick={() =>
-                                changeSelection({ environment_profile: value })
-                              }
-                            >
-                              <span className={styles.cardTitle}>
-                                <Icon size={18} aria-hidden />
-                                <strong>{label}</strong>
-                              </span>
-                              <span className={styles.cardDescription}>
-                                {description}
-                              </span>
-                            </button>
-                          ))}
+                                [
+                                  "environment-native",
+                                  t("Full Control"),
+                                  Desktop,
+                                  t(
+                                    "Run directly as your host account with full filesystem and network access.",
+                                  ),
+                                ],
+                                [
+                                  "environment-sandbox",
+                                  t("Sandbox"),
+                                  ShieldCheck,
+                                  t(
+                                    "Runs in a sandbox. Downloads envd if needed and checks isolation.",
+                                  ),
+                                ],
+                              ] as const
+                            ).map(([value, label, Icon, description]) => (
+                              <button
+                                type="button"
+                                key={value}
+                                className={styles.choiceCard}
+                                aria-label={label}
+                                aria-pressed={
+                                  selection.environment_profile === value
+                                }
+                                disabled={
+                                  !!acp && value === "environment-sandbox"
+                                }
+                                onClick={() =>
+                                  changeSelection({
+                                    environment_profile: value,
+                                  })
+                                }
+                              >
+                                <span className={styles.cardTitle}>
+                                  <Icon size={18} aria-hidden />
+                                  <strong>{label}</strong>
+                                  <Check
+                                    size={14}
+                                    weight="bold"
+                                    className={styles.selectedMark}
+                                    aria-hidden
+                                  />
+                                </span>
+                                <span className={styles.cardDescription}>
+                                  {description}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
                         <div className={styles.runtimeStatus}>
                           <strong>

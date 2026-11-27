@@ -6,16 +6,11 @@
   color: var(--a13n-text);
 }
 .wizard.start {
-  height: min(410px, calc(100dvh - 48px));
-}
-@media (min-width: 601px) {
-  .wizard {
-    align-self: start;
-    margin-block-start: max(0px, calc((100dvh - 768px) / 2));
-  }
+  height: auto;
+  max-height: min(720px, calc(100dvh - 48px));
 }
 .header {
-  padding: 24px var(--setup-inset) 16px;
+  padding: 20px var(--setup-inset) 12px;
 }
 .title,
 .header > p {
@@ -26,14 +21,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px 16px;
-  margin-top: 12px;
-  padding: 0 0 12px;
+  margin-top: 10px;
+  padding: 0 0 10px;
   border-bottom: 1px solid var(--a13n-border-soft);
 }
 .steps {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 20px;
+  align-items: center;
+  gap: 6px 12px;
   list-style: none;
   padding: 0;
   margin: 0;
@@ -50,6 +46,13 @@
   color: var(--a13n-secondary);
   font-size: var(--a13n-text-body);
 }
+.steps li + li::before {
+  content: "";
+  width: 14px;
+  height: 1px;
+  background: var(--a13n-border-soft);
+  margin-inline-end: 2px;
+}
 .steps li > span {
   flex-shrink: 0;
   display: grid;
@@ -57,19 +60,26 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--a13n-hover);
+  border: 1px solid var(--a13n-border);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 .steps li[data-complete="true"] > span {
-  background: transparent;
+  border-color: transparent;
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
 }
 .steps li[aria-current] {
   color: var(--a13n-text);
 }
 .steps li[aria-current] > span {
+  border-color: var(--a13n-text);
   background: var(--a13n-text);
   color: var(--a13n-canvas);
 }
-/* Step content keeps one 16px rhythm; the step heading stays below the
+/* Step content keeps one clean vertical rhythm; the step heading stays below the
    dialog title in the hierarchy. */
 .panel {
   padding-inline: var(--setup-inset);
@@ -77,7 +87,7 @@
 }
 .content {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 .content h2 {
   margin: 0;
@@ -90,6 +100,15 @@
   margin: 0;
   font-size: var(--a13n-text-body);
   font-weight: 500;
+}
+.sectionGroup {
+  display: grid;
+  gap: 8px;
+}
+.content h3.sectionHeading {
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
+  font-weight: 500;
+  color: var(--a13n-secondary);
 }
 .content p {
   margin: 0;
@@ -108,7 +127,7 @@
 }
 .stack {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 .later {
   composes: textAction from "../shell/workbench.module.css";
@@ -130,7 +149,7 @@
   color: var(--a13n-text);
   border: 1px solid var(--a13n-border-soft);
   border-radius: 8px;
-  background: var(--a13n-surface);
+  background: var(--a13n-canvas);
   text-align: start;
   cursor: pointer;
 }
@@ -141,13 +160,17 @@
   gap: 8px;
   padding: 14px;
 }
+.featured {
+  padding: 12px 14px;
+}
 .choiceCard:hover:not(:disabled),
 .engine:hover {
   background: var(--a13n-hover);
+  border-color: var(--a13n-border);
 }
 .choiceCard[aria-pressed="true"],
 .engine[aria-pressed="true"] {
-  border-color: var(--a13n-input-border);
+  border-color: var(--a13n-text);
   background: var(--a13n-selected);
 }
 .choiceCard:focus-visible,
@@ -177,13 +200,28 @@
 .comparison > svg {
   flex: none;
 }
+.selectedMark {
+  margin-inline-start: auto;
+  flex: none;
+  color: var(--a13n-text);
+  opacity: 0;
+}
+.choiceCard[aria-pressed="true"] .selectedMark,
+.engine[aria-pressed="true"] .selectedMark {
+  opacity: 1;
+}
 .badge {
-  padding: 2px 7px;
+  padding: 1px 7px;
   border-radius: 999px;
-  background: var(--a13n-hover);
+  border: 1px solid var(--a13n-border-soft);
+  background: var(--a13n-surface);
   color: var(--a13n-secondary);
-  font-size: 0.82em;
-  line-height: 1.35;
+  font-size: 0.8em;
+  font-weight: 500;
+  line-height: 1.4;
+}
+.choiceCard[aria-pressed="true"] .badge {
+  background: var(--a13n-canvas);
 }
 .cardDescription,
 .detection {
@@ -208,7 +246,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 48px;
+  min-height: 44px;
   padding: 6px 10px;
   line-height: 1.25;
 }
@@ -226,6 +264,9 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
 }
 .comparison > svg {
   margin-top: 2px;
@@ -297,13 +338,14 @@
   flex-basis: 100%;
   margin: 0;
   color: var(--a13n-secondary);
-  font-size: var(--a13n-text-body);
+  font-size: calc(var(--a13n-text-body) * 13 / 14);
+  line-height: 1.3;
 }
 .footer {
   padding-inline: var(--setup-inset);
   flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
 }
 .footer > div {
   display: flex;
@@ -338,6 +380,9 @@
   }
   .steps {
     gap: 4px 8px;
+  }
+  .steps li + li::before {
+    display: none;
   }
   .steps li {
     gap: 4px;
