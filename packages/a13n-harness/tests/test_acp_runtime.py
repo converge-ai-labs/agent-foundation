@@ -68,8 +68,8 @@ async def test_environment_run_callbacks(tmp_path):
             )
             assert response.stop_reason == "end_turn"
             assert [u.content.text for u in starts if isinstance(u, schema.AgentMessageChunk)] == ["done:callbacks"]
-            assert Path(reviewed[0]).resolve() == Path(sys.executable).resolve()
-            assert reviewed[1:] == ["denied"]
+            assert [Path(executable).resolve() for executable in reviewed[:-1]] == [Path(sys.executable).resolve()] * 2
+            assert reviewed[-1:] == ["denied"]
 
 
 @pytest.mark.parametrize("mode", ["load", "resume", "standard-steer"])
@@ -217,6 +217,23 @@ async def test_native_stdio_reads_past_command_observation_limit(tmp_path):
     transport = LocalStdioTransport(sys.executable, str(tmp_path), ("-c", script))
     async with asyncio.timeout(6), transport.open() as channel:
         assert await channel.receive() == {"payload": "x" * 150000}
+
+
+@pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"], ids=["lf", "crlf"])
+async def test_native_stdio_round_trips_utf8_json(tmp_path, line_ending):
+    script = (
+        "import json, sys; "
+        "message = json.loads(sys.stdin.buffer.readline().decode('utf-8')); "
+        "encoded = json.dumps(message, ensure_ascii=False).encode('utf-8'); "
+        f"sys.stdout.buffer.write(encoded + {line_ending!r}); "
+        "sys.stdout.buffer.flush()"
+    )
+    transport = LocalStdioTransport(sys.executable, str(tmp_path), ("-c", script))
+    message = {"text": "café 界 😀"}
+    async with asyncio.timeout(6), transport.open() as channel:
+        await channel.send(message)
+        assert await channel.receive() == message
+        assert await channel.receive() is None
 
 
 async def test_terminal_release_joins_tree_cleanup_when_turn_is_revoked():

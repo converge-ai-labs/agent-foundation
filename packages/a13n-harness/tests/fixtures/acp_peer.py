@@ -614,22 +614,24 @@ for line in sys.stdin:
             session_call("terminal/release", terminalId=terminal)
         if message == "callbacks":
             path = "/workspace/sample.txt"
-            session_call("fs/write_text_file", path=path, content="one\ntwo\nthree\n")
-            assert session_call("fs/read_text_file", path=path, line=2, limit=1)["content"] == "two\n"
-            assert session_call("fs/read_text_file", path=path)["content"] == "one\ntwo\nthree\n"
-            # The byte-limit check requires UTF-8 and LF regardless of the child's text defaults.
-            terminal_bytes = "012345é界\n".encode()
-            terminal = session_call(
-                "terminal/create",
-                command=sys.executable,
-                args=["-c", f"import sys; sys.stdout.buffer.write({terminal_bytes!r})"],
-                cwd="/workspace",
-                outputByteLimit=5,
-            )["terminalId"]
-            assert session_call("terminal/wait_for_exit", terminalId=terminal)["exitCode"] == 0
-            output = session_call("terminal/output", terminalId=terminal)
-            assert output["output"] == "界\n" and output["truncated"], output
-            session_call("terminal/release", terminalId=terminal)
+            for line_ending in ("\n", "\r\n"):
+                contents = line_ending.join(("one", "two", "three", ""))
+                session_call("fs/write_text_file", path=path, content=contents)
+                assert session_call("fs/read_text_file", path=path, line=2, limit=1)["content"] == "two" + line_ending
+                assert session_call("fs/read_text_file", path=path)["content"] == contents
+                # Send exact UTF-8 bytes so the byte-limit check does not depend on the child's text defaults.
+                terminal_bytes = ("012345é界" + line_ending).encode()
+                terminal = session_call(
+                    "terminal/create",
+                    command=sys.executable,
+                    args=["-c", f"import sys; sys.stdout.buffer.write({terminal_bytes!r})"],
+                    cwd="/workspace",
+                    outputByteLimit=5,
+                )["terminalId"]
+                assert session_call("terminal/wait_for_exit", terminalId=terminal)["exitCode"] == 0
+                output = session_call("terminal/output", terminalId=terminal)
+                assert output["output"] == "界" + line_ending and output["truncated"], output
+                session_call("terminal/release", terminalId=terminal)
             denied = callback("terminal/create", sessionId=SESSION, command="denied")
             assert denied["error"]["data"]["code"] == "acp_command_denied"
         if MCP and MODE != "ui":
