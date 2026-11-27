@@ -86,7 +86,9 @@ Automatic context recovery is enabled by default to recover from provider contex
 
 ## Display settings
 
-Configure TUI/WebUI display preferences, notification sounds, and Inbox posting (`inbox.enabled: true`) in `a13n-harness-ui.yaml` or **Settings → General**.
+Configure instance display preferences and notification sounds in `a13n-harness-ui.yaml` or **Settings → General**.
+
+Set instance-wide Inbox options (`inbox.enabled` and `inbox.auto_mark_read`, both defaulting to `true`) in `a13n-harness-ui.yaml` or **Settings → Chats → Inbox**. See [Read your Inbox](webui.md#read-your-inbox) for what each switch controls.
 
 ## File memory
 

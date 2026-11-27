@@ -86,7 +86,9 @@ security:
 
 ## 显示设置
 
-在 `a13n-harness-ui.yaml` 或 **Settings → General** 中配置 TUI/WebUI 显示偏好、通知音效与收件箱开关（`inbox.enabled: true`）。
+在 `a13n-harness-ui.yaml` 或 **Settings → General** 中配置实例显示偏好和通知音效。
+
+在 `a13n-harness-ui.yaml` 或**设置 → 聊天 → 收件箱**中配置实例级收件箱开关（`inbox.enabled` 和 `inbox.auto_mark_read`，默认为 `true`）。各开关的作用见[查看收件箱](webui.md#read-your-inbox)。
 
 ## 文件记忆
 

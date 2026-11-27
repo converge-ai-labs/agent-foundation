@@ -3791,6 +3791,8 @@
   "Dismiss suggestion (Esc)": "Dismiss suggestion (Esc)",
   "Let agents post to Inbox": "Let agents post to Inbox",
   "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.": "Agents post results, questions and milestones to your Inbox and are reminded to do so. When this is off, new runs get no Inbox tool or reminders; existing items stay.",
+  "Automatically mark Inbox items as read in chats": "Automatically mark Inbox items as read in chats",
+  "Mark Inbox items as read when you view the latest messages in a focused chat, send a message, or respond to a decision. You can always open or mark an item yourself.": "Mark Inbox items as read when you view the latest messages in a focused chat, send a message, or respond to a decision. You can always open or mark an item yourself.",
   "Open provider sign-in": "Open provider sign-in",
   "Loads models available to the connected account.": "Loads models available to the connected account.",
   "Account catalog": "Account catalog",

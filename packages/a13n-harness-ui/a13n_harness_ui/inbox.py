@@ -1,6 +1,6 @@
 """Inbox delivery: intentional items from ordinary roots, read in one human place."""
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Literal
 from uuid import uuid4
@@ -15,7 +15,7 @@ from a13n_harness_ui.inbox_models import (
     InboxKind,
     InboxLocation,
     InboxPage,
-    InboxUnreadPost,
+    ThreadInboxPost,
 )
 from a13n_harness_ui.live import HarnessUiSummaryHub, InboxNotice, RootOperationNotice
 from a13n_harness_ui.notification_origin import origin_browser
@@ -33,11 +33,13 @@ class InboxController:
         store: LocalStore,
         projections: ThreadProjectionService,
         summaries: HarnessUiSummaryHub,
+        auto_mark_read: Callable[[], Awaitable[bool]],
         notify: Callable[[str, RootOperationNotice | InboxNotice], None] | None = None,
     ) -> None:
         self._store = store
         self._projections = projections
         self._summaries = summaries
+        self._auto_mark_read = auto_mark_read
         self._notify = notify
 
     async def post(self, *, thread_id: str, tool_call_id: str, kind: InboxKind, title: str, message: str) -> InboxItem:
@@ -79,25 +81,29 @@ class InboxController:
         await self._store.inbox.mark_group_read(group)
         await self._summaries.publish(kind="inbox")
 
-    async def thread_unread(self, thread_id: str) -> tuple[InboxUnreadPost, ...]:
+    async def thread_posts(self, thread_id: str) -> tuple[ThreadInboxPost, ...]:
         return tuple(
-            InboxUnreadPost(
+            ThreadInboxPost(
                 item_id=item_id,
                 tool_call_id=call_id,
                 has_transcript=not call_id.startswith(_MCP_CALL_PREFIX),
                 created_at=created_at,
+                read_at=read_at,
+                done_at=done_at,
             )
-            for item_id, call_id, created_at in await self._store.inbox.thread_unread(thread_id)
+            for item_id, call_id, created_at, read_at, done_at in await self._store.inbox.thread_posts(thread_id)
         )
 
     async def mark_thread_read(self, thread_id: str, *, item_ids: tuple[str, ...]) -> None:
-        if await self._store.inbox.mark_thread_read(thread_id, item_ids=item_ids):
+        if await self._auto_mark_read() and await self._store.inbox.mark_thread_read(thread_id, item_ids=item_ids):
             await self._summaries.publish(kind="inbox", root_thread_id=thread_id, thread_id=thread_id)
 
     async def acknowledge_owner_input(self, thread_id: str, *, through: datetime) -> None:
         # The input is already accepted. An Inbox write must not turn its receipt into a rejection.
         try:
-            if await self._store.inbox.mark_thread_read_through(thread_id, through=through):
+            if await self._auto_mark_read() and await self._store.inbox.mark_thread_read_through(
+                thread_id, through=through
+            ):
                 await self._summaries.publish(kind="inbox", root_thread_id=thread_id, thread_id=thread_id)
         except SQLAlchemyError:
             get_logger(__name__).exception("Could not mark Thread Inbox items read", extra={"thread_id": thread_id})
