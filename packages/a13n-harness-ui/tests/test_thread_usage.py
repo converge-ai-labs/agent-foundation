@@ -4,6 +4,8 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
+from sys import getsizeof
+from weakref import ref
 
 import pytest
 from a13n_harness import HarnessRunResult, HarnessRunResultEvent
@@ -533,6 +535,35 @@ def _snapshot(*records, sequence=1, usage_id="usage-scope", thread_id="thr_root"
     )
 
 
+def test_usage_cache_evicts_cold_rows_and_skips_oversized_replacements():
+    from a13n_harness_ui.storage.usage import _StoredSnapshot, _UsageRowCache
+
+    def payload(scope, *records, sequence=1):
+        snapshot = _snapshot(*records, usage_id=scope, sequence=sequence)
+        return _StoredSnapshot(snapshot=snapshot, observed_through=_NOW).model_dump_json()
+
+    first_json, second_json, third_json = (payload(f"scope-{i}", _model(i)) for i in range(3))
+    cache = _UsageRowCache(max_payload_bytes=getsizeof(first_json) + getsizeof(second_json))
+    first = cache.decode(1, first_json)
+    cold = ref(cache.decode(2, second_json).records[0])
+    assert cache.decode(1, first_json) is first
+    third = cache.decode(3, third_json)
+    assert cold() is None
+
+    # A growing scope can cross the entire budget. Its old version must leave,
+    # and the oversized read must not displace other hot scopes.
+    previous = ref(first.records[0])
+    del first
+    large = payload("scope-0", *(_model(i) for i in range(5)), sequence=2)
+    decoded = cache.decode(1, large)
+    assert len(decoded.records) == 5
+    assert previous() is None
+    uncached = ref(decoded.records[-1])
+    del decoded
+    assert uncached() is None
+    assert cache.decode(3, third_json) is third
+
+
 async def test_context_uses_the_latest_metered_root_request(tmp_path):
     first, retry = _model(1), _model(3)
 
@@ -574,6 +605,10 @@ async def test_latest_snapshots_replace_in_place_and_are_visible_to_another_engi
         await writer.save(thread_id="thr_root", snapshot=first)
         first_view = await reader.snapshot(thread_id="thr_root")
         assert first_view.combined.model_requests == 1
+        first_read = await reader.latest_root_request(thread_id="thr_root")
+        assert first_read is not None
+        previous_record = ref(first_read)
+        del first_read
         updated_record = first.records[0].model_copy(
             update={
                 "request_usage": BoundedRequestUsage(input_tokens=300, cost=Decimal("0.3")),
@@ -584,6 +619,7 @@ async def test_latest_snapshots_replace_in_place_and_are_visible_to_another_engi
         await writer.save(thread_id="thr_root", snapshot=first)
         await reader.save(thread_id="thr_root", snapshot=latest)
         latest_view = await reader.snapshot(thread_id="thr_root")
+        assert previous_record() is None
         assert latest_view.first_observed_at == first_view.first_observed_at
         assert latest_view.observed_through > first_view.observed_through
         totals = latest_view.combined
@@ -849,9 +885,12 @@ async def test_projection_pins_one_read_snapshot_during_concurrent_replacement(t
         await entered.wait()
         try:
             await writer.save(thread_id="thr_root", snapshot=_snapshot(_model(0), _model(1), sequence=2))
+            latest = await reader.latest_root_request(thread_id="thr_root")
+            assert latest == _model(1)
         finally:
             release.set()
         assert (await pending).combined.model_requests == 1
+        assert await reader.latest_root_request(thread_id="thr_root") is latest
         assert (await reader.snapshot(thread_id="thr_root")).combined.model_requests == 2
 
 

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import sqlite3
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
-from functools import cache, lru_cache
+from functools import cache
+from sys import getsizeof
+from threading import Lock
 from time import monotonic
 from typing import TYPE_CHECKING, Annotated, Literal
 
@@ -307,28 +309,71 @@ class _Aggregation:
         )
 
 
-@lru_cache(maxsize=4096)
-def _decode_usage_row(payload_json: str) -> tuple[datetime | None, tuple[UsageRecord, ...]]:
-    """Decode one immutable JSON payload string into frozen usage contributions."""
-    if '"kind":"snapshot"' in payload_json[:64] or '"kind": "snapshot"' in payload_json[:64]:
-        try:
-            stored = _StoredSnapshot.model_validate_json(payload_json)
-            return stored.observed_through, stored.snapshot.records
-        except ValueError:
-            pass
-    return None, (_RECORD.validate_json(payload_json),)
+_USAGE_ROW = TypeAdapter(Annotated[_StoredSnapshot | UsageRecord, Field(discriminator="kind")])
+
+
+@dataclass(frozen=True, slots=True)
+class _DecodedUsageRow:
+    payload_json: str
+    revision: int
+    observed_through: datetime | None
+    records: tuple[UsageRecord, ...]
+
+
+class _UsageRowCache:
+    """Share decoded rows between a repository's usage readers, within a source JSON budget."""
+
+    def __init__(self, max_payload_bytes: int = 96 * 1024 * 1024) -> None:
+        self._rows: OrderedDict[int, _DecodedUsageRow] = OrderedDict()
+        self._payload_bytes = 0
+        self._max_payload_bytes = max_payload_bytes
+        self._lock = Lock()
+
+    def decode(self, sequence: int, payload_json: str) -> _DecodedUsageRow:
+        # SQLite replaces a scope in place. Its row sequence identifies it within
+        # this database, but only matching content can satisfy a pinned read.
+        with self._lock:
+            cached = self._rows.get(sequence)
+            if cached is not None and cached.payload_json == payload_json:
+                self._rows.move_to_end(sequence)
+                return cached
+
+        stored = _USAGE_ROW.validate_json(payload_json)
+        if isinstance(stored, _StoredSnapshot):
+            row = _DecodedUsageRow(
+                payload_json, stored.snapshot.sequence, stored.observed_through, stored.snapshot.records
+            )
+        else:
+            row = _DecodedUsageRow(payload_json, 0, None, (stored,))
+
+        size = getsizeof(payload_json)
+        with self._lock:
+            cached = self._rows.get(sequence)
+            if cached is not None:
+                # An older read can finish decoding after a newer revision.
+                if row.revision < cached.revision:
+                    return row
+                del self._rows[sequence]
+                self._payload_bytes -= getsizeof(cached.payload_json)
+            if size <= self._max_payload_bytes:
+                self._rows[sequence] = row
+                self._payload_bytes += size
+                while self._payload_bytes > self._max_payload_bytes or len(self._rows) > 4096:
+                    _, evicted = self._rows.popitem(last=False)
+                    self._payload_bytes -= getsizeof(evicted.payload_json)
+        return row
 
 
 def _latest_root_from_rows(
     raw_rows: list[tuple[int, str]],
     *,
     run_id: str | None,
+    row_cache: _UsageRowCache,
 ) -> ModelUsageRecord | None:
     seen: set[str] = set()
     latest: ModelUsageRecord | None = None
-    for _, payload_json in raw_rows:
-        _, records = _decode_usage_row(payload_json)
-        for record in records:
+    for sequence, payload_json in raw_rows:
+        for record in row_cache.decode(sequence, payload_json).records:
             if record.record_id in seen:
                 continue
             seen.add(record.record_id)
@@ -347,6 +392,7 @@ def _build_usage_snapshot(
     raw_rows: list[tuple[int, bool, str, datetime, datetime | None]],
     recipe_rows: list[tuple[str, str | None, str | None]],
     model_identities: Mapping[str, tuple[str, str]] | None,
+    row_cache: _UsageRowCache,
 ) -> ThreadUsageView:
     catalog = get_current_pricing_catalog()
 
@@ -360,10 +406,10 @@ def _build_usage_snapshot(
     seen: set[str] = set()
     run_last_seq: dict[str, int] = {}
     for sequence, descendant, payload_json, observed_at, extracted_through in raw_rows:
-        decoded_through, records = _decode_usage_row(payload_json)
-        observed_through = extracted_through if extracted_through is not None else decoded_through
+        row = row_cache.decode(sequence, payload_json)
+        observed_through = extracted_through if extracted_through is not None else row.observed_through
         effective_through = observed_through if observed_through is not None else observed_at
-        for record in records:
+        for record in row.records:
             if record.record_id in seen:
                 continue
             seen.add(record.record_id)
@@ -510,6 +556,7 @@ class ThreadUsageReporter:
 class ThreadUsageRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
+        self._row_cache = _UsageRowCache()
 
     async def observe(self, *, thread_id: str, item: object) -> None:
         """Consume canonical events, not lossy UI summaries or inclusive RunUsage."""
@@ -734,7 +781,9 @@ class ThreadUsageRepository:
             ]
         if not raw_rows:
             return None
-        return await to_thread.run_sync(lambda: _latest_root_from_rows(raw_rows, run_id=run_id))
+        return await to_thread.run_sync(
+            lambda: _latest_root_from_rows(raw_rows, run_id=run_id, row_cache=self._row_cache)
+        )
 
     async def snapshot(
         self, *, thread_id: str, model_identities: Mapping[str, tuple[str, str]] | None = None
@@ -779,6 +828,7 @@ class ThreadUsageRepository:
             raw_rows,
             recipe_rows,
             model_identities,
+            self._row_cache,
         )
 
     @staticmethod
