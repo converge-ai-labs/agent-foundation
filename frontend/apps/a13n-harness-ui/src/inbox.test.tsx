@@ -121,6 +121,32 @@ it("leads with questions, reads a row in place, and acts from the row", async ()
   );
 });
 
+it("keeps CJK prose outside a bare URL in an expanded Inbox result", async () => {
+  const url = "https://github.com/converge-ai-labs/agent-foundation/pull/1923";
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    if (new URL((input as Request).url).pathname !== "/api/inbox")
+      return Response.json([]);
+    return Response.json({
+      items: [
+        {
+          ...item("update", "result", "Merge result"),
+          read_at: "2026-11-27T10:00:00Z",
+          message: `合并结果：PR #1923（${url}）已按仓库策略 squash 合并。`,
+        },
+      ],
+      unread_count: 0,
+      unread_by_group: { needs_you: 0, updates: 0 },
+    });
+  });
+  mount();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Result, Merge result" }),
+  );
+  const link = screen.getByRole("link", { name: url });
+  expect(link.getAttribute("href")).toBe(url);
+  expect(link.nextSibling?.textContent).toBe("）已按仓库策略 squash 合并。");
+});
+
 it("marks only the selected section read, refreshes counts, and keeps items open", async () => {
   const url = "/api/inbox/mark-read";
   const submitted: unknown[] = [];
