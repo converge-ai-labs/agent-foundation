@@ -340,7 +340,7 @@ async def test_url_hints_prefer_user_urls_and_stop_at_head_boundary(monkeypatch)
     async def handler(request):
         path = request.url.path
         requested.append(path)
-        assert request.extensions["timeout"]["read"] == 1.5
+        assert request.extensions["timeout"]["read"] == 4.0
         return httpx2.Response(
             200, headers={"Content-Type": "Application/XHTML+XML; charset=utf-8"}, stream=streams[path]
         )
@@ -381,6 +381,7 @@ async def test_url_hints_prefer_user_urls_and_stop_at_head_boundary(monkeypatch)
         ("/pdf", ["/pdf"]),
         ("/error", ["/error"]),
         ("/wall", ["/wall"]),
+        ("/client-challenge", ["/client-challenge"]),
         ("/must-login", ["/must-login"]),
         ("/denied-redirect", ["/denied-redirect"]),
         ("/userinfo-redirect", ["/userinfo-redirect"]),
@@ -405,6 +406,10 @@ async def test_url_hints_skip_unsafe_or_unhelpful_responses(monkeypatch, path, e
                     200,
                     headers={"content-type": "text/html"},
                     text='<title>Attention Required! | Cloudflare</title><meta property="og:title" content="Misleading">',
+                )
+            case "/client-challenge":
+                return httpx2.Response(
+                    200, headers={"content-type": "text/html"}, text="<title>Client Challenge</title>"
                 )
             case "/must-login":
                 return httpx2.Response(302, headers={"location": "/account/%73ign-in?next=/page"})
@@ -487,7 +492,7 @@ async def test_url_hints_fetch_concurrently_without_redirect_cookies_and_keep_fi
         )
 
     def short_budget(seconds):
-        assert seconds == 2
+        assert seconds == 5.0
         return move_on_after(0.1)
 
     _mock_title_http(monkeypatch, handler)

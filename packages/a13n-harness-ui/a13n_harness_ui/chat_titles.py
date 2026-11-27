@@ -42,7 +42,7 @@ _HEAD_BYTES = 48 * 1024
 _URL = re.compile(r"https?://[^\s<>\"'`]+", re.IGNORECASE)
 _LOGIN_PATH = re.compile(r"(?:^|/)(login|signin|sign-in|auth|sso)(?=/|$)")
 _WALL_TITLE = re.compile(
-    r"(?:just a moment|attention required|access denied|403 forbidden|404 not found|sign in|log in|登录)"
+    r"(?:just a moment|attention required|client challenge|access denied|403 forbidden|404 not found|sign in|log in|登录)"
     r"[.!…\s]*(?:[|\u2013\u2014-]\s*.*)?",
     re.IGNORECASE,
 )
@@ -356,13 +356,13 @@ async def _url_hints(messages: Sequence[TitleMessage], configuration: RunConfigu
         return ""
     hints: dict[str, tuple[str, str]] = {}
     try:
-        async with httpx2.AsyncClient(timeout=1.5, verify=outbound_tls_verify()) as client:
+        async with httpx2.AsyncClient(timeout=4.0, verify=outbound_tls_verify()) as client:
 
             async def fetch(url: str) -> None:
                 if (hint := await _url_hint(client, url, configuration)) is not None:
                     hints[url] = hint
 
-            with move_on_after(2):
+            with move_on_after(5.0):
                 async with create_task_group() as group:
                     for url in urls:
                         group.start_soon(fetch, url)
