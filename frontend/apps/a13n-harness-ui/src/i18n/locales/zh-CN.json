@@ -3797,5 +3797,12 @@
   "Setting an ACP agent as default changes the execution default to Full Control.": "将 ACP 智能体设为默认会把默认执行环境改为完全控制。",
   "Continue without signing in": "不登录，继续",
   "Check the executable before continuing.": "请先检查可执行程序，再继续。",
-  "Recommended model tools": "推荐模型工具"
+  "Recommended model tools": "推荐模型工具",
+  "This chat & its workers": "当前对话及子线程",
+  "Shares this Coordinator and its managed workers, including new ones.": "共享此协调器及其管理的子线程，包括新建的子线程。",
+  "People can send messages to this Coordinator and its workers using their agents’ tools and access. Share only with people you trust.": "访客可以向此协调器及其子线程发送消息，使用对应 Agent 的工具和访问权限。请仅与信任的人共享。",
+  "Shared coordinator": "共享协调器",
+  "Back to shared chat": "返回共享对话",
+  "Back to shared project": "返回共享项目",
+  "Coordinator worker": "协调器子线程"
 }

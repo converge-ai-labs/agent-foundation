@@ -9,7 +9,9 @@ import styles from "./conversation-unavailable.module.css";
 export function isUnavailableChat(error: unknown) {
   return (
     error instanceof ApiError &&
-    (error.code === "thread_missing" || [403, 404, 410].includes(error.status))
+    (error.code === "thread_missing" ||
+      error.code === "share_unavailable" ||
+      [403, 404, 410].includes(error.status))
   );
 }
 
@@ -20,16 +22,20 @@ export function ConversationUnavailable({
   retry,
   retrying,
   hasDraft,
+  back,
 }: {
   error: unknown;
   retry: () => void;
   retrying: boolean;
   hasDraft: boolean;
+  back?: { to: string; label: string };
 }) {
   const { t } = useTranslation();
   const missing =
     error instanceof ApiError &&
-    (error.code === "thread_missing" || [404, 410].includes(error.status));
+    (error.code === "thread_missing" ||
+      error.code === "share_unavailable" ||
+      [404, 410].includes(error.status));
   const denied = error instanceof ApiError && error.status === 403;
   const message = missing
     ? t("This chat may have been removed, or the link is out of date.")
@@ -58,8 +64,8 @@ export function ConversationUnavailable({
         <Button variant="outline" loading={retrying} onClick={retry}>
           {t("Retry")}
         </Button>
-        <Button variant="ghost" render={<Link to="/" />}>
-          {t("New chat")}
+        <Button variant="ghost" render={<Link to={back?.to ?? "/"} />}>
+          {back?.label ?? t("New chat")}
         </Button>
       </div>
     </section>

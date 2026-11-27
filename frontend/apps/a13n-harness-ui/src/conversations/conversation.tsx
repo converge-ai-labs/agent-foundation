@@ -184,17 +184,14 @@ function ConversationContent({
     !isBot && !readOnly && (!guest || guest.grant.permission === "prompt");
   const isCoordinator = detail.data?.thread.role === "coordinator";
   const ownerId = detail.data?.thread.coordinator_thread_id;
-  const owner = useQuery({
-    queryKey: ["thread", ownerId, "detail"],
-    enabled: !!ownerId && !guest,
-    queryFn: ({ signal }) =>
-      result(
-        transport.client.GET("/api/threads/{thread_id}", {
-          params: { path: { thread_id: ownerId! } },
-          signal,
-        }),
-      ),
-  });
+  const accessibleOwner =
+    ownerId &&
+    (!guest ||
+      guest.grant.scope === "project" ||
+      ownerId === guest.grant.target_id)
+      ? ownerId
+      : undefined;
+  const owner = useThread(accessibleOwner ?? "");
   const results = useResults();
   const tracker = readOnly ? undefined : results.tracker;
   useEffect(() => {
@@ -894,6 +891,19 @@ function ConversationContent({
         error={detail.error}
         retry={() => void detail.refetch()}
         retrying={detail.isFetching}
+        back={
+          (guest && {
+            to:
+              guest.grant.scope === "thread"
+                ? `/threads/${encodeURIComponent(guest.grant.target_id)}`
+                : "/",
+            label:
+              guest.grant.scope === "thread"
+                ? t("Back to shared chat")
+                : t("Back to shared project"),
+          }) ||
+          undefined
+        }
         hasDraft={
           !!draft.doc.getText("text").length ||
           !!draft.doc.getMap("attachments").size
@@ -1413,11 +1423,11 @@ function ConversationContent({
               thread?.configuration.agent_source.kind === "acp_agent"
             }
             owner={
-              !guest && ownerId
+              accessibleOwner
                 ? {
                     title: owner.data
                       ? conversationTitle(owner.data.thread)
-                      : ownerId,
+                      : accessibleOwner,
                   }
                 : undefined
             }
@@ -1548,11 +1558,25 @@ function ConversationContent({
             reconcile={reconcile}
           />
         )}
-        {guest && !canCompose && (
-          <p className={styles.composerConnection}>
-            {t("View-only link - Following this chat live.")}
-          </p>
-        )}
+        {guest &&
+          !showComposer &&
+          (!canCompose || (accessibleOwner && owner.data)) && (
+            <p className={styles.composerConnection}>
+              {!canCompose && (
+                <span>{t("View-only link - Following this chat live.")}</span>
+              )}
+              {accessibleOwner && owner.data && (
+                <>
+                  {!canCompose && <span aria-hidden="true">{" · "}</span>}
+                  <Link to={`/threads/${encodeURIComponent(accessibleOwner)}`}>
+                    {t("Managed by {{name}}", {
+                      name: conversationTitle(owner.data.thread),
+                    })}
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
         {!guest && !readOnly && !isBot && (
           <SharePanel
             open={dialog === "share"}

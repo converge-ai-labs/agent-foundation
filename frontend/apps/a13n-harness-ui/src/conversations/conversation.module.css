@@ -1048,6 +1048,14 @@ summary:is(:hover, :focus-visible) > .logCaret {
   font-size: var(--a13n-text-body);
   color: var(--harness-log-text);
 }
+.composerConnection a {
+  color: var(--a13n-text-supporting);
+  text-underline-offset: 0.15em;
+}
+.composerConnection a:is(:hover, :focus-visible) {
+  color: var(--a13n-text);
+  text-decoration: underline;
+}
 .sendButton {
   grid-area: send;
   flex-shrink: 0;

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "./i18n";
 import { SendShortcutContext } from "./conversations/send-shortcut";
 import {
   BrowserRouter,
   Navigate,
   NavLink,
+  useMatch,
   Route,
   Routes,
   useLocation,
@@ -20,7 +21,10 @@ import {
 } from "@tanstack/react-query";
 import { Button, Input, ModalFrame } from "a13n-ui";
 import {
+  CaretDown,
+  CaretRight,
   ChatCircle,
+  CornersIn,
   Folder,
   LinkBreak,
   List,
@@ -35,13 +39,20 @@ import {
 } from "./transport/client";
 import {
   GuestAccessContext,
+  GuestThreadIdsContext,
   TransportContext,
   useTransport,
 } from "./transport/context";
 import { ComposerDrafts } from "./conversations/composer";
 import type { ThreadDraft } from "./conversations/draft";
 import { ConversationPage } from "./conversations/conversation";
-import { LiveThreadsProvider } from "./conversations/live-threads";
+import {
+  LiveThreadsProvider,
+  useLiveThread,
+} from "./conversations/live-threads";
+import { CoordinatorIcon } from "./conversations/coordinator-icon";
+import { useThread } from "./conversations/queries";
+import { isUnavailableChat } from "./conversations/conversation-unavailable";
 import { ChildControlsProvider } from "./conversations/child-controls";
 import { useLiveWorkbench, type Profile } from "./shell/presence";
 import { ParticipantAvatars } from "./shell/participant-avatars";
@@ -92,9 +103,20 @@ export function GuestApp({ shareId }: { shareId: string }) {
     void queries.cancelQueries();
     queries.clear();
   }, [queries]);
+  const recheckScope = useCallback(
+    (realtime: boolean) => {
+      void queries.invalidateQueries(
+        { queryKey: ["share-access"] },
+        { cancelRefetch: false },
+      );
+      // A missing focus can close the socket even when the grant is valid.
+      if (realtime) void queries.invalidateQueries({ queryKey: ["thread"] });
+    },
+    [queries],
+  );
   const transport = useMemo(
-    () => createTransport(key, unauthorized, shareId),
-    [key, shareId, unauthorized],
+    () => createTransport(key, unauthorized, shareId, recheckScope),
+    [key, shareId, unauthorized, recheckScope],
   );
   useEffect(() => () => transport.close(), [transport]);
   return (
@@ -200,25 +222,75 @@ function GuestShell({
   const [name, setName] = useState(profile.display_name);
   const live = useLiveWorkbench(profile, true, refreshAccess);
   const project = access.grant.scope === "project";
+  const targetId = access.grant.target_id;
+  const coordinatorId =
+    !project && access.target_role === "coordinator" ? targetId : "";
+  const coordinatorQuery = useThread(
+    coordinatorId,
+    undefined,
+    WORKER_REFRESH_MS,
+  );
+  const coordinatorLive = useLiveThread(coordinatorId, true);
+  const coordinator = coordinatorQuery.data?.thread;
+  const selectedId = useMatch("/threads/:threadId")?.params.threadId;
+  const selection = useThread(selectedId ?? "");
+  const selected = isUnavailableChat(selection.error)
+    ? undefined
+    : selection.data?.thread;
+  const selectedWorker =
+    coordinatorId && selected?.coordinator_thread_id === coordinatorId;
+  const workers = useSharedThreads(access.grant.share_id, {
+    coordinatorId,
+    enabled: !!coordinatorId,
+    count: coordinator?.unarchived_worker_count,
+    liveCount:
+      coordinatorLive.display.snapshot?.thread.thread.unarchived_worker_count,
+  });
+  const workerRows = useMemo(
+    () => sharedThreadRows(workers.data?.pages),
+    [workers.data],
+  );
+  // Keep a known selected worker in navigation even if it is archived or off-page.
+  const showSidebar =
+    project ||
+    !!(
+      coordinatorId &&
+      (selectedWorker ||
+        workerRows.length ||
+        coordinator?.unarchived_worker_count)
+    );
+  const [expandedWorkers, setExpandedWorkers] = useState<
+    ReadonlyMap<string, ThreadSummary[]>
+  >(new Map());
+  const registerWorkers = useCallback((id: string, rows: ThreadSummary[]) => {
+    setExpandedWorkers((previous) => new Map(previous).set(id, rows));
+  }, []);
   const canPrompt = access.grant.permission === "prompt";
   useEffect(() => setSidebar(false), [location.pathname]);
-  const list = useInfiniteQuery({
-    queryKey: ["shared-threads", search],
+  const list = useSharedThreads(access.grant.share_id, {
     enabled: project,
-    initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam, signal }) =>
-      result(
-        client.GET("/api/shared/{share_id}/threads", {
-          params: {
-            path: { share_id: access.grant.share_id },
-            query: { query: search || undefined, cursor: pageParam, limit: 30 },
-          },
-          signal,
-        }),
-      ),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-    refetchInterval: 15000,
+    search: search.trim(),
   });
+  const threads = useMemo(
+    () => sharedThreadRows(list.data?.pages),
+    [list.data],
+  );
+  const knownThreads = useMemo(() => {
+    const ids = new Set(!project ? [targetId] : []);
+    if (selected) {
+      ids.add(selected.thread_id);
+      if (selected.coordinator_thread_id && project)
+        ids.add(selected.coordinator_thread_id);
+    }
+    for (const { thread_id } of [
+      ...threads,
+      ...workerRows,
+      ...[...expandedWorkers.values()].flat(),
+    ]) {
+      ids.add(thread_id);
+    }
+    return ids;
+  }, [project, targetId, selected, threads, workerRows, expandedWorkers]);
   const [newThreadId, setNewThreadId] = useState(
     () => `thread_${crypto.randomUUID().replaceAll("-", "")}`,
   );
@@ -265,7 +337,7 @@ function GuestShell({
     <main className={styles.guest}>
       <header className={styles.header}>
         <div className={styles.identity}>
-          {project && (
+          {showSidebar && (
             <Button
               className={styles.mobileToggle}
               variant="ghost"
@@ -278,12 +350,28 @@ function GuestShell({
             </Button>
           )}
           <span className={styles.mark}>
-            {project ? <Folder size={18} /> : <ChatCircle size={18} />}
+            {project ? (
+              <Folder size={18} />
+            ) : coordinatorId ? (
+              <CoordinatorIcon size={18} />
+            ) : (
+              <ChatCircle size={18} />
+            )}
           </span>
           <div>
             <h1 title={access.title}>{access.title}</h1>
             <p>
-              {project ? t("Shared project") : t("Shared chat")} -{" "}
+              {coordinatorId && (
+                <span className={styles.mobileCoordinator}>
+                  <CoordinatorIcon size={14} />
+                </span>
+              )}
+              {project
+                ? t("Shared project")
+                : coordinatorId
+                  ? t("Shared coordinator")
+                  : t("Shared chat")}{" "}
+              -{" "}
               <span>{canPrompt ? t("Can send messages") : t("View only")}</span>
             </p>
           </div>
@@ -361,29 +449,19 @@ function GuestShell({
               </p>
             )}
             <nav className={`${styles.threadList} a13n-scrollbar`}>
-              {list.data?.pages
-                .flatMap((page) => page.threads)
-                .map((thread) => (
-                  <NavLink
+              {threads.map((thread) =>
+                !search.trim() && thread.role === "coordinator" ? (
+                  <GuestCoordinatorEntry
                     key={thread.thread_id}
-                    to={`/threads/${thread.thread_id}`}
-                    className={({ isActive }) =>
-                      isActive ? styles.activeThread : styles.thread
-                    }
-                  >
-                    <span>{thread.title || t("Untitled chat")}</span>
-                    <small>
-                      {thread.root_activity.state === "inactive"
-                        ? new Date(
-                            thread.touched_at ?? thread.created_at,
-                          ).toLocaleDateString(i18n.resolvedLanguage, {
-                            month: "short",
-                            day: "numeric",
-                          })
-                        : t("Working…")}
-                    </small>
-                  </NavLink>
-                ))}
+                    thread={thread}
+                    shareId={access.grant.share_id}
+                    selected={selected}
+                    register={registerWorkers}
+                  />
+                ) : (
+                  <GuestThreadRow key={thread.thread_id} thread={thread} />
+                ),
+              )}
               {list.isPending && (
                 <p className={styles.hint}>{t("Loading chats…")}</p>
               )}
@@ -404,15 +482,41 @@ function GuestShell({
             </nav>
           </aside>
         )}
+        {!project && showSidebar && (
+          <aside
+            className={`${styles.sidebar} ${sidebar ? styles.sidebarOpen : ""}`}
+            aria-label={t("Shared coordinator")}
+          >
+            <nav className={`${styles.threadList} a13n-scrollbar`}>
+              <GuestThreadRow
+                thread={
+                  coordinator ?? {
+                    thread_id: targetId,
+                    title: access.title,
+                    role: "coordinator",
+                  }
+                }
+              />
+              <GuestWorkerRows
+                ownerId={targetId}
+                workers={workers}
+                rows={workerRows}
+                selected={selected}
+              />
+            </nav>
+          </aside>
+        )}
         <section className={styles.conversation}>
           <Routes>
             <Route
               path="/threads/:threadId"
               element={
-                <ConversationPage
-                  profile={profile}
-                  unauthorized={refreshAccess}
-                />
+                <GuestThreadIdsContext value={knownThreads}>
+                  <ConversationPage
+                    profile={profile}
+                    unauthorized={refreshAccess}
+                  />
+                </GuestThreadIdsContext>
               }
             />
             <Route
@@ -480,5 +584,255 @@ function GuestShell({
         </form>
       </ModalFrame>
     </main>
+  );
+}
+
+type ThreadSummary = Schema<"ThreadSummary">;
+const WORKER_REFRESH_MS = 8000;
+
+function useSharedThreads(
+  shareId: string,
+  {
+    enabled,
+    search = "",
+    coordinatorId,
+    count,
+    liveCount,
+  }: {
+    enabled: boolean;
+    search?: string;
+    coordinatorId?: string;
+    count?: number | null;
+    liveCount?: number | null;
+  },
+) {
+  const { client } = useTransport();
+  const queries = useQueryClient();
+  const effectiveCount = liveCount ?? count;
+  const previousCount = useRef(effectiveCount);
+  useEffect(() => {
+    const previous = previousCount.current;
+    previousCount.current = effectiveCount;
+    if (
+      coordinatorId &&
+      previous != null &&
+      effectiveCount != null &&
+      previous !== effectiveCount
+    )
+      void queries.invalidateQueries(
+        { queryKey: ["shared-threads", coordinatorId] },
+        { cancelRefetch: false },
+      );
+  }, [coordinatorId, effectiveCount, queries]);
+  return useInfiniteQuery({
+    queryKey: ["shared-threads", coordinatorId || null, search],
+    enabled,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      result(
+        client.GET("/api/shared/{share_id}/threads", {
+          params: {
+            path: { share_id: shareId },
+            query: {
+              coordinator_thread_id: coordinatorId || undefined,
+              independent_only: !coordinatorId && !search ? true : undefined,
+              query: search || undefined,
+              cursor: pageParam,
+              limit: coordinatorId ? 10 : 30,
+            },
+          },
+          signal,
+        }),
+      ),
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    refetchInterval: coordinatorId ? WORKER_REFRESH_MS : 15000,
+  });
+}
+
+function sharedThreadRows(pages: Schema<"ThreadPage">[] = []) {
+  return [
+    ...new Map(
+      pages
+        .flatMap((page) => page.threads)
+        .map((thread) => [thread.thread_id, thread]),
+    ).values(),
+  ];
+}
+
+type GuestRow = Pick<ThreadSummary, "thread_id" | "title" | "role"> &
+  Partial<ThreadSummary>;
+
+function GuestThreadRow({
+  thread,
+  nested,
+  disclosure,
+}: {
+  thread: GuestRow;
+  nested?: boolean;
+  disclosure?: { expanded: boolean; toggle: () => void };
+}) {
+  const { t, i18n } = useTranslation();
+  const date = thread.touched_at ?? thread.created_at;
+  const working =
+    thread.root_activity && thread.root_activity.state !== "inactive";
+  const title = thread.title || t("Untitled chat");
+  const worker = thread.role === "worker" && !nested;
+  return (
+    <div className={styles.threadEntry}>
+      <NavLink
+        to={`/threads/${encodeURIComponent(thread.thread_id)}`}
+        className={({ isActive }) =>
+          isActive ? styles.activeThread : styles.thread
+        }
+        title={title}
+      >
+        {!nested && (
+          <span className={styles.threadIcon}>
+            {thread.role === "coordinator" && !disclosure ? (
+              <CoordinatorIcon size={16} />
+            ) : worker ? (
+              <CornersIn size={14} aria-label={t("Coordinator worker")} />
+            ) : null}
+          </span>
+        )}
+        <span className={styles.threadTitle}>{title}</span>
+        {(working || date) && (
+          <small>
+            {working
+              ? t("Working…")
+              : new Date(date!).toLocaleDateString(i18n.resolvedLanguage, {
+                  month: "short",
+                  day: "numeric",
+                })}
+          </small>
+        )}
+      </NavLink>
+      {disclosure && (
+        <button
+          type="button"
+          className={styles.workerDisclosure}
+          aria-expanded={disclosure.expanded}
+          aria-label={t("Workers for {{title}}", { title })}
+          onClick={disclosure.toggle}
+        >
+          {disclosure.expanded ? (
+            <CaretDown size={12} />
+          ) : (
+            <CaretRight size={12} />
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function GuestCoordinatorEntry({
+  thread,
+  shareId,
+  selected,
+  register,
+}: {
+  thread: ThreadSummary;
+  shareId: string;
+  selected?: ThreadSummary;
+  register: (id: string, rows: ThreadSummary[]) => void;
+}) {
+  const ownerId = thread.thread_id;
+  const selectedWorkerId =
+    selected?.coordinator_thread_id === ownerId
+      ? selected.thread_id
+      : undefined;
+  const hasWorkers =
+    (thread.unarchived_worker_count ?? 0) > 0 || !!selectedWorkerId;
+  const [expanded, setExpanded] = useState(!!selectedWorkerId);
+  const lastAutoExpanded = useRef(selectedWorkerId);
+  useEffect(() => {
+    if (selectedWorkerId && selectedWorkerId !== lastAutoExpanded.current)
+      setExpanded(true);
+    lastAutoExpanded.current = selectedWorkerId;
+  }, [selectedWorkerId]);
+  if (!hasWorkers && expanded) setExpanded(false);
+  const open = expanded && hasWorkers;
+  const workers = useSharedThreads(shareId, {
+    coordinatorId: ownerId,
+    enabled: open,
+    count: thread.unarchived_worker_count,
+  });
+  const rows = useMemo(
+    () => sharedThreadRows(workers.data?.pages),
+    [workers.data],
+  );
+  useEffect(() => {
+    if (workers.data) register(ownerId, rows);
+  }, [register, ownerId, rows, workers.data]);
+  return (
+    <>
+      <GuestThreadRow
+        thread={thread}
+        disclosure={
+          hasWorkers
+            ? { expanded: open, toggle: () => setExpanded(!open) }
+            : undefined
+        }
+      />
+      {open && (
+        <GuestWorkerRows
+          ownerId={ownerId}
+          workers={workers}
+          rows={rows}
+          selected={selected}
+        />
+      )}
+    </>
+  );
+}
+
+function GuestWorkerRows({
+  ownerId,
+  workers,
+  rows,
+  selected,
+}: {
+  ownerId: string;
+  workers: ReturnType<typeof useSharedThreads>;
+  rows: ThreadSummary[];
+  selected?: ThreadSummary;
+}) {
+  const { t } = useTranslation();
+  const visible = [...rows].sort((a, b) => {
+    const active =
+      Number(b.root_activity.state !== "inactive") -
+      Number(a.root_activity.state !== "inactive");
+    return (
+      active ||
+      (b.touched_at ?? b.created_at).localeCompare(a.touched_at ?? a.created_at)
+    );
+  });
+  const pinned =
+    selected?.coordinator_thread_id === ownerId &&
+    !rows.some((row) => row.thread_id === selected.thread_id)
+      ? selected
+      : undefined;
+  return (
+    <div className={styles.workers}>
+      {pinned && <GuestThreadRow thread={pinned} nested />}
+      {visible.map((thread) => (
+        <GuestThreadRow key={thread.thread_id} thread={thread} nested />
+      ))}
+      {workers.isPending && (
+        <small role="status">{t("Loading workers…")}</small>
+      )}
+      <ErrorNotice error={workers.error} retry={() => void workers.refetch()} />
+      {workers.hasNextPage && (
+        <Button
+          variant="ghost"
+          size="xs"
+          loading={workers.isFetchingNextPage}
+          onClick={() => void workers.fetchNextPage()}
+        >
+          {t("More workers")}
+        </Button>
+      )}
+    </div>
   );
 }

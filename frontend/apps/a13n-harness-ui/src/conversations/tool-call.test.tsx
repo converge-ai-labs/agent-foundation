@@ -17,6 +17,11 @@ import {
 } from "./tool-presentation";
 import { LiveOutput, SavedEntry } from "./transcript";
 import type { Schema } from "../transport/client";
+import { MemoryRouter } from "react-router";
+import {
+  GuestAccessContext,
+  GuestThreadIdsContext,
+} from "../transport/context";
 import { DebugProvider } from "../shell/debug";
 import { i18n } from "../i18n";
 afterEach(async () => {
@@ -778,4 +783,79 @@ it("renders retained execution receipts as handoffs in live and saved tools", ()
   render(<ToolCall tool={saved} />);
   expect(screen.getByText("Moved to background")).toBeTruthy();
   expect(screen.queryByText("Result received")).toBeNull();
+});
+
+it("only links known guest chats in tool actions and lists, without host file actions", () => {
+  const openFile = vi.fn();
+  const access = {
+    grant: { scope: "thread", target_id: "thread-coordinator" },
+  } as Schema<"ShareAccess">;
+  render(
+    <MemoryRouter basename="/share/test" initialEntries={["/share/test/"]}>
+      <GuestAccessContext value={access}>
+        <GuestThreadIdsContext
+          value={new Set(["thread-coordinator", "thread-worker"])}
+        >
+          <OpenHostFile value={openFile}>
+            <ToolCall
+              tool={{
+                id: "worker",
+                name: "create_worker",
+                input: { title: "In scope" },
+                result: { thread_id: "thread-worker" },
+              }}
+            />
+            <ToolCall
+              tool={{
+                id: "send",
+                name: "send_thread_message",
+                input: { thread_id: "live", message: "External message" },
+                result: { ok: true },
+              }}
+            />
+            <ToolCall
+              tool={{
+                id: "list",
+                name: "list_threads",
+                result: {
+                  threads: [
+                    {
+                      thread_id: "thread-coordinator",
+                      title: "Coordinator home",
+                    },
+                    { thread_id: "thread_bot", title: "Outside" },
+                  ],
+                },
+              }}
+            />
+            <ToolCall
+              tool={{
+                id: "file",
+                name: "view",
+                input: { file_path: "/tmp/hidden" },
+                result: "Recorded file",
+              }}
+            />
+          </OpenHostFile>
+        </GuestThreadIdsContext>
+      </GuestAccessContext>
+    </MemoryRouter>,
+  );
+  for (const label of [
+    /Start worker/,
+    /Message chat/,
+    /Find chats/,
+    /Read \/tmp\/hidden/,
+  ]) {
+    fireEvent.click(screen.getByRole("button", { name: label }));
+  }
+  expect(
+    screen.getByRole("link", { name: "In scope" }).getAttribute("href"),
+  ).toBe("/share/test/threads/thread-worker");
+  expect(
+    screen.getByRole("link", { name: "Coordinator home" }).getAttribute("href"),
+  ).toBe("/share/test/threads/thread-coordinator");
+  expect(screen.queryByRole("link", { name: "Outside" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "Open chat" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Open on host" })).toBeNull();
 });

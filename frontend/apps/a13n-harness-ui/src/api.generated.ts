@@ -8704,6 +8704,8 @@ export interface components {
             grant: components["schemas"]["ShareGrant"];
             /** Title */
             title: string;
+            /** Target Role */
+            target_role?: ("ordinary" | "coordinator" | "worker") | null;
         };
         /** ShareCreated */
         ShareCreated: {
@@ -18602,6 +18604,8 @@ export interface operations {
         parameters: {
             query?: {
                 query?: string | null;
+                coordinator_thread_id?: string | null;
+                independent_only?: boolean;
                 cursor?: string | null;
                 limit?: number;
             };

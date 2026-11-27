@@ -2879,14 +2879,32 @@ def create_webui(
     async def shared_threads(
         share_id: str,
         query: Annotated[str | None, Query(max_length=500)] = None,
+        coordinator_thread_id: Annotated[str | None, Query(max_length=80)] = None,
+        independent_only: bool = False,
         cursor: Annotated[str | None, Query(max_length=4096)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 30,
     ) -> ThreadPage:
         grant = await app().sharing.active(share_id)
+        if coordinator_thread_id is not None:
+            if grant.scope == "thread" and coordinator_thread_id != grant.target_id:
+                raise unavailable()
+            if grant.scope == "project":
+                await app().sharing.thread(share_id, coordinator_thread_id)
+            return await app().list_threads(
+                project_id=grant.target_id if grant.scope == "project" else None,
+                coordinator_thread_id=coordinator_thread_id,
+                independent_only=independent_only,
+                query=query,
+                cursor=cursor,
+                limit=limit,
+                sort="touched",
+            )
         if grant.scope == "thread":
             detail = await app().sharing.thread(share_id, grant.target_id)
             return ThreadPage(threads=(detail.thread,), total=1)
-        return await app().list_threads(project_id=grant.target_id, query=query, cursor=cursor, limit=limit)
+        return await app().list_threads(
+            project_id=grant.target_id, query=query, independent_only=independent_only, cursor=cursor, limit=limit
+        )
 
     @guest.post(
         "/threads",

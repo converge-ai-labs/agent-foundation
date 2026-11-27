@@ -7,6 +7,17 @@ export const GuestAccessContext = createContext<Schema<"ShareAccess"> | null>(
 );
 export const useGuestAccess = () => useContext(GuestAccessContext);
 
+// Guest links are a navigation convenience, not a source of authorization.
+export const GuestThreadIdsContext = createContext<ReadonlySet<string> | null>(
+  null,
+);
+
+export function useCanLinkThread() {
+  const guest = useGuestAccess();
+  const ids = useContext(GuestThreadIdsContext);
+  return (id: string) => !guest || !!ids?.has(id);
+}
+
 export const TransportContext = createContext<Transport | null>(null);
 export function useTransport() {
   const transport = useContext(TransportContext);

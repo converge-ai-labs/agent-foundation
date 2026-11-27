@@ -127,7 +127,10 @@ function ShareContents({
   const { client } = useTransport();
   const queries = useQueryClient();
   const projects = useProjects();
+  const coordinator =
+    useThread(threadId ?? "").data?.thread.role === "coordinator";
   const [scope, setScope] = useState<Scope>(threadId ? "thread" : "project");
+  const includesWorkers = scope === "thread" && coordinator;
   const [permission, setPermission] = useState<Permission>("view");
   const [hours, setHours] = useState<1 | 24 | 168>(24);
   const [created, setCreated] = useState<Schema<"ShareCreated"> | null>(null);
@@ -190,7 +193,11 @@ function ShareContents({
           description={
             scope === "project"
               ? t("Shares every chat in this project, including new ones.")
-              : undefined
+              : includesWorkers
+                ? t(
+                    "Shares this Coordinator and its managed workers, including new ones.",
+                  )
+                : undefined
           }
         >
           <ChoiceField
@@ -201,7 +208,16 @@ function ShareContents({
             readOnly={!!created || !(threadId && projectId)}
             disabled={create.isPending}
             options={[
-              ...(threadId ? [{ value: "thread", label: t("This chat") }] : []),
+              ...(threadId
+                ? [
+                    {
+                      value: "thread",
+                      label: coordinator
+                        ? t("This chat & its workers")
+                        : t("This chat"),
+                    },
+                  ]
+                : []),
               ...(projectId
                 ? [
                     {
@@ -223,9 +239,13 @@ function ShareContents({
                 ? t(
                     "People can send messages using your agent’s tools and access. Share only with people you trust. They can also start new chats.",
                   )
-                : t(
-                    "People can send messages using your agent’s tools and access. Share only with people you trust.",
-                  )
+                : includesWorkers
+                  ? t(
+                      "People can send messages to this Coordinator and its workers using their agents’ tools and access. Share only with people you trust.",
+                    )
+                  : t(
+                      "People can send messages using your agent’s tools and access. Share only with people you trust.",
+                    )
               : undefined
           }
         >
@@ -369,6 +389,7 @@ function ShareContents({
           <GrantRow
             key={`${grant.share_id}:${grant.permission}`}
             grant={grant}
+            includesWorkers={includesWorkers}
             refresh={refresh}
             onRevoked={() => {
               if (created?.grant.share_id === grant.share_id) setCreated(null);
@@ -382,10 +403,12 @@ function ShareContents({
 
 function GrantRow({
   grant,
+  includesWorkers,
   refresh,
   onRevoked,
 }: {
   grant: Schema<"ShareGrant">;
+  includesWorkers: boolean;
   refresh: () => void;
   onRevoked: () => void;
 }) {
@@ -452,9 +475,13 @@ function GrantRow({
       </Button>
       {permission === "prompt" && grant.permission !== "prompt" && (
         <p className={styles.authority}>
-          {t(
-            "Messages can use this agent's tools, environment and permissions. Share only with people you trust.",
-          )}
+          {includesWorkers
+            ? t(
+                "People can send messages to this Coordinator and its workers using their agents’ tools and access. Share only with people you trust.",
+              )
+            : t(
+                "Messages can use this agent's tools, environment and permissions. Share only with people you trust.",
+              )}
         </p>
       )}
       <ErrorNotice error={update.error || revoke.error} />

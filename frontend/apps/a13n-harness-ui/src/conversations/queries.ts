@@ -321,12 +321,17 @@ export function useHistoryRecovery(
   };
 }
 
-export function useThread(threadId: string, revision?: string) {
+export function useThread(
+  threadId: string,
+  revision?: string,
+  refetchInterval?: number,
+) {
   const { client } = useTransport();
   const queries = useQueryClient();
   return useQuery({
     queryKey: ["thread", threadId, "detail", ...(revision ? [revision] : [])],
     enabled: !!threadId,
+    refetchInterval,
     retry: retryHistoryRead,
     queryFn: async ({ signal }) => {
       const detail = await result(

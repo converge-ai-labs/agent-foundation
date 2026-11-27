@@ -3829,5 +3829,12 @@
   "Setting an ACP agent as default changes the execution default to Full Control.": "Setting an ACP agent as default changes the execution default to Full Control.",
   "Continue without signing in": "Continue without signing in",
   "Check the executable before continuing.": "Check the executable before continuing.",
-  "Recommended model tools": "Recommended model tools"
+  "Recommended model tools": "Recommended model tools",
+  "This chat & its workers": "This chat & its workers",
+  "Shares this Coordinator and its managed workers, including new ones.": "Shares this Coordinator and its managed workers, including new ones.",
+  "People can send messages to this Coordinator and its workers using their agents’ tools and access. Share only with people you trust.": "People can send messages to this Coordinator and its workers using their agents’ tools and access. Share only with people you trust.",
+  "Shared coordinator": "Shared coordinator",
+  "Back to shared chat": "Back to shared chat",
+  "Back to shared project": "Back to shared project",
+  "Coordinator worker": "Coordinator worker"
 }

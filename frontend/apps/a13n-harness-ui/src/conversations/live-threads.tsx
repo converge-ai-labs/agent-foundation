@@ -11,6 +11,7 @@ import { useLocation } from "react-router";
 import { useBot } from "../bot";
 import { useQueryClient } from "@tanstack/react-query";
 import { useStatus, useTransport } from "../transport/context";
+import { isUnavailableChat } from "./conversation-unavailable";
 import { FocusDisplay, watchThread } from "./stream";
 import {
   seedThreadSnapshot,
@@ -135,8 +136,11 @@ function ObserveThread({
     !!detail.data &&
     (live || !["preparing", "running"].includes(activityState));
   useHistory(id, detail.data?.continuation_id, warmHistory);
+  const observe =
+    live &&
+    (!transport.shareId || (!!detail.data && !isUnavailableChat(detail.error)));
   useEffect(() => {
-    if (!live) return;
+    if (!observe) return;
     const stop = watchThread(
       transport,
       id,
@@ -163,7 +167,7 @@ function ObserveThread({
       // while unsubscribed (including cross-tab runs or completions) are never missed.
       entry.display.cursor = undefined;
     };
-  }, [transport, queries, id, entry, live]);
+  }, [transport, queries, id, entry, observe]);
   return null;
 }
 

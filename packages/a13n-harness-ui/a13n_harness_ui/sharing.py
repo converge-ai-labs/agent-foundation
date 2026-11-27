@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.share_models import ShareAccess, ShareCreate, ShareCreated, ShareGrant, SharePermission, ShareScope
 from a13n_harness_ui.storage.shares import ShareRepository, unavailable
-from a13n_harness_ui.surfaces import NewThreadDefaults, ThreadDetail, ThreadSummary
+from a13n_harness_ui.surfaces import NewThreadDefaults, ThreadDetail, ThreadRole, ThreadSummary
 
 if TYPE_CHECKING:
     from a13n_harness_ui.app import HarnessUiApp
@@ -22,11 +22,11 @@ class Sharing:
         self._app = app
         self._repository = repository
 
-    async def _target_title(self, scope: ShareScope, target_id: str) -> str:
+    async def _target(self, scope: ShareScope, target_id: str) -> tuple[str, ThreadRole | None]:
         if scope == "project":
             project = next((p for p in await self._app.projects() if p.project_id == target_id), None)
             if project is not None:
-                return project.name
+                return project.name, None
         else:
             try:
                 detail = await self._app.get_thread(target_id)
@@ -38,15 +38,15 @@ class Sharing:
                 and thread.memory_scope is None
                 and thread.configuration.agent_source.kind not in {"live", "bot"}
             ):
-                return thread.title or "Untitled conversation"
+                return thread.title or "Untitled conversation", thread.role
         raise unavailable()
 
     async def create(self, command: ShareCreate) -> ShareCreated:
-        await self._target_title(command.scope, command.target_id)
+        await self._target(command.scope, command.target_id)
         return await self._repository.create(command)
 
     async def list(self, scope: ShareScope, target_id: str) -> tuple[ShareGrant, ...]:
-        await self._target_title(scope, target_id)
+        await self._target(scope, target_id)
         return await self._repository.list(scope, target_id)
 
     async def update(self, share_id: str, permission: SharePermission) -> ShareGrant:
@@ -57,11 +57,12 @@ class Sharing:
 
     async def authenticate(self, share_id: str, key: str) -> ShareAccess:
         grant = await self._repository.authenticate(share_id, key)
-        return ShareAccess(grant=grant, title=await self._target_title(grant.scope, grant.target_id))
+        title, role = await self._target(grant.scope, grant.target_id)
+        return ShareAccess(grant=grant, title=title, target_role=role)
 
     async def active(self, share_id: str, *, prompt: bool = False) -> ShareGrant:
         grant = await self._repository.active(share_id)
-        await self._target_title(grant.scope, grant.target_id)
+        await self._target(grant.scope, grant.target_id)
         if prompt and grant.permission != "prompt":
             raise forbidden()
         return grant
@@ -78,7 +79,7 @@ class Sharing:
         if root.memory_scope is not None or root.configuration.agent_source.kind in {"live", "bot"}:
             raise unavailable()
         allowed = (
-            root.thread_id == grant.target_id
+            grant.target_id in (root.thread_id, root.coordinator_thread_id)
             if grant.scope == "thread"
             else root.configuration.project_id == grant.target_id
         )
@@ -90,8 +91,8 @@ class Sharing:
             if action == "wait" or (grant.permission == "prompt" and action in {"run", "steer"})
         )
         thread = detail.thread
-        if grant.scope == "thread":
-            thread = thread.model_copy(update={"unarchived_worker_count": None})
+        if grant.scope == "thread" and thread.thread_id == grant.target_id and thread.coordinator_thread_id is not None:
+            thread = thread.model_copy(update={"coordinator_thread_id": None})
         return detail.model_copy(update={"thread": thread, "available_actions": actions})
 
     async def create_thread(self, share_id: str, *, thread_id: str, title: str | None) -> ThreadSummary:
